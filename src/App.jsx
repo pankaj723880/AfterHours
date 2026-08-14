@@ -2,13 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 
 // ==========================================
 // YOUTUBE API ROTATION MANAGER (10 Keys)
-// Automatically shifts to the next key if quota is exhausted (403 / quotaExceeded)
+// Automatically shifts to the next key if quota is exhausted
 // ==========================================
 const YOUTUBE_API_KEYS = [
   import.meta.env.VITE_YOUTUBE_KEY_1,
   import.meta.env.VITE_YOUTUBE_KEY_2,
   import.meta.env.VITE_YOUTUBE_KEY_3,
-].filter(Boolean); // F
+].filter(Boolean);
 
 let currentApiKeyIndex = parseInt(localStorage.getItem('yt_key_index') || '0', 10);
 
@@ -91,9 +91,7 @@ const SPECIAL_STATIONS = {
       "https://images.unsplash.com/photo-1599351431202-1e0f0137899a?q=80&w=1600&auto=format&fit=crop",
       "https://images.unsplash.com/photo-1512864026219-c081e3752e5d?q=80&w=1600&auto=format&fit=crop"
     ],
-    queries: [
-      "90s bollywood hit songs kumar sanu Alka Yagnik"
-    ]
+    queries: ["90s bollywood hit songs kumar sanu Alka Yagnik"]
   },
   truck: {
     id: "truck",
@@ -105,9 +103,7 @@ const SPECIAL_STATIONS = {
       "https://images.unsplash.com/photo-1508873696983-2df5c92063c7?q=80&w=1600&auto=format&fit=crop",
       "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?q=80&w=1600&auto=format&fit=crop"
     ],
-    queries: [
-      "altaf raja best songs hindi highway dhaba hits"
-    ]
+    queries: ["altaf raja best songs hindi highway dhaba hits"]
   },
   pauwa: {
     id: "pauwa",
@@ -179,7 +175,8 @@ export default function App() {
   const [stationLoading, setStationLoading] = useState(false);
   const [currentBgIndex, setCurrentBgIndex] = useState(0);
 
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  // Default sidebar to false so it hides inside hamburger menu on mobile
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isPlayerMinimized, setIsPlayerMinimized] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -228,6 +225,7 @@ export default function App() {
     setShowInstallBtn(false);
   };
 
+  // Clock and User Count Simulation
   useEffect(() => {
     const updateClock = () => {
       const now = new Date();
@@ -246,6 +244,7 @@ export default function App() {
     };
   }, []);
 
+  // Load YouTube Iframe API
   useEffect(() => {
     if (!window.YT) {
       const tag = document.createElement('script');
@@ -254,6 +253,43 @@ export default function App() {
       firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
     }
   }, []);
+
+  // =========================================================
+  // Media Session API Hook (Enables Mobile Lock-Screen & Background Audio Controls)
+  // =========================================================
+  useEffect(() => {
+    if ('mediaSession' in navigator && currentSong) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: currentSong.title,
+        artist: currentSong.channel || "MAHAUL SET",
+        album: "Live Stream Audio",
+        artwork: [
+          { src: currentSong.thumbnail, sizes: '96x96', type: 'image/png' },
+          { src: currentSong.thumbnail, sizes: '128x128', type: 'image/png' },
+          { src: currentSong.thumbnail, sizes: '192x192', type: 'image/png' },
+          { src: currentSong.thumbnail, sizes: '512x512', type: 'image/png' },
+        ]
+      });
+
+      navigator.mediaSession.setActionHandler('play', () => {
+        playerRef.current?.playVideo?.();
+        setIsPlaying(true);
+      });
+
+      navigator.mediaSession.setActionHandler('pause', () => {
+        playerRef.current?.pauseVideo?.();
+        setIsPlaying(false);
+      });
+
+      navigator.mediaSession.setActionHandler('previoustrack', () => {
+        handlePrevSong();
+      });
+
+      navigator.mediaSession.setActionHandler('nexttrack', () => {
+        handleNextSong();
+      });
+    }
+  }, [currentSong, queue]);
 
   const playSong = (song) => {
     if (!song) return;
@@ -432,6 +468,7 @@ export default function App() {
   const handleStationSelect = (stationKey) => {
     setActiveTab(stationKey);
     setCurrentBgIndex(0);
+    setIsSidebarOpen(false); // Close mobile drawer when station selected
     if (['barber', 'truck', 'pauwa'].includes(stationKey)) {
       loadStationSongs(stationKey);
     }
@@ -545,7 +582,6 @@ export default function App() {
 
   const currentStation = SPECIAL_STATIONS[activeTab];
   const currentBgImage = currentStation?.bgImages?.[currentBgIndex] || currentStation?.bgImages?.[0];
-  const isSpecialGenreTab = ['barber', 'truck', 'pauwa'].includes(activeTab);
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative">
@@ -553,109 +589,157 @@ export default function App() {
         <div id="yt-player-instance"></div>
       </div>
 
-      {(!isSpecialGenreTab || isSidebarOpen) && (
-        <aside className="w-full md:w-64 bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80 p-4 flex flex-col justify-between shrink-0 z-30 transition-all duration-300">
-          <div>
-            <div className="flex items-center justify-between px-2 py-3 mb-6">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-700 via-orange-600 to-red-500 flex items-center justify-center shadow-xl border border-amber-500/35">
-                  <Icon name="radio" className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-black tracking-wider text-white">MAHAUL SET</h1>
-                </div>
-              </div>
+      {/* ========================================================= */}
+      {/* MOBILE TOP BAR WITH HAMBURGER BUTTON */}
+      {/* ========================================================= */}
+      <header className="md:hidden sticky top-0 z-40 bg-neutral-900/95 backdrop-blur-md border-b border-neutral-800/80 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="p-2 rounded-xl bg-neutral-800 text-neutral-200 hover:text-white focus:outline-none"
+            aria-label="Toggle Menu"
+          >
+            <Icon name={isSidebarOpen ? "close" : "menu"} className="w-6 h-6 text-amber-400" />
+          </button>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-700 via-orange-600 to-red-500 flex items-center justify-center shadow-md">
+              <Icon name="radio" className="w-5 h-5 text-white" />
+            </div>
+            <h1 className="text-lg font-black tracking-wider text-white">MAHAUL SET</h1>
+          </div>
+        </div>
 
-              {isSpecialGenreTab && (
-                <button 
-                  onClick={() => setIsSidebarOpen(false)}
-                  className="md:hidden p-2 rounded-lg bg-neutral-800 text-neutral-300 hover:text-white"
-                >
-                  <Icon name="close" className="w-5 h-5" />
-                </button>
-              )}
+        <div className="flex items-center gap-2">
+          {showInstallBtn && (
+            <button
+              onClick={handleInstallClick}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-neutral-950 font-bold text-xs"
+            >
+              <Icon name="download" className="w-3.5 h-3.5" />
+              <span>Install</span>
+            </button>
+          )}
+          <div className="px-2.5 py-1 rounded-lg bg-black/60 border border-neutral-800 font-mono text-[11px] text-amber-300">
+            {clockString || "00:00"}
+          </div>
+        </div>
+      </header>
+
+      {/* ========================================================= */}
+      {/* BACKDROP OVERLAY FOR MOBILE SIDEBAR */}
+      {/* ========================================================= */}
+      {isSidebarOpen && (
+        <div 
+          onClick={() => setIsSidebarOpen(false)}
+          className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity"
+        />
+      )}
+
+      {/* ========================================================= */}
+      {/* RESPONSIVE SIDEBAR (COLLAPSED ON MOBILE / DESKTOP PERSISTENT) */}
+      {/* ========================================================= */}
+      <aside 
+        className={`fixed md:static inset-y-0 left-0 z-50 w-72 md:w-64 bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80 p-4 flex flex-col justify-between shrink-0 transform transition-transform duration-300 ease-in-out ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        }`}
+      >
+        <div>
+          <div className="flex items-center justify-between px-2 py-3 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-700 via-orange-600 to-red-500 flex items-center justify-center shadow-xl border border-amber-500/35">
+                <Icon name="radio" className="w-6 h-6 text-white" />
+              </div>
+              <h1 className="text-xl font-black tracking-wider text-white">MAHAUL SET</h1>
             </div>
 
-            <nav className="space-y-1">
-              <button
-                onClick={() => setActiveTab('discover')}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-xs transition ${
-                  activeTab === 'discover' ? 'bg-amber-600/20 text-white border border-amber-500/30' : 'text-neutral-400 hover:bg-neutral-800/50'
-                }`}
-              >
-                <Icon name="discover" className="w-4 h-4 text-amber-400" />
-                <span>Discover & Search</span>
-              </button>
-
-              <div className="pt-4 pb-1 px-3">
-                <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Nostalgia Stations (Auto-Play Exclusive)</p>
-              </div>
-
-              <button
-                onClick={() => handleStationSelect('barber')}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-xs transition ${
-                  activeTab === 'barber' ? 'bg-red-600/25 text-red-200 border border-red-500/50 shadow-lg shadow-red-950/50' : 'text-neutral-400 hover:bg-neutral-800/50'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <Icon name="scissors" className="w-4 h-4 text-red-400" />
-                  <span>Barber Shop (सैलून)</span>
-                </div>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 font-bold">DRINK BG</span>
-              </button>
-
-              <button
-                onClick={() => handleStationSelect('truck')}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-xs transition ${
-                  activeTab === 'truck' ? 'bg-amber-600/25 text-amber-200 border border-amber-500/50 shadow-lg shadow-amber-950/50' : 'text-neutral-400 hover:bg-neutral-800/50'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <Icon name="truck" className="w-4 h-4 text-amber-400" />
-                  <span>Truck Pe Music</span>
-                </div>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold">TRUCK BG</span>
-              </button>
-
-              <button
-                onClick={() => handleStationSelect('pauwa')}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-xs transition ${
-                  activeTab === 'pauwa' ? 'bg-emerald-600/25 text-emerald-200 border border-emerald-500/50 shadow-lg shadow-emerald-950/50' : 'text-neutral-400 hover:bg-neutral-800/50'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <Icon name="beer" className="w-4 h-4 text-emerald-400" />
-                  <span>Pauwa Party</span>
-                </div>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">DUAL LIST</span>
-              </button>
-
-              <div className="pt-4 pb-1 px-3">
-                <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Your Collection</p>
-              </div>
-
-              <button
-                onClick={() => setActiveTab('library')}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-xs transition ${
-                  activeTab === 'library' ? 'bg-amber-600/20 text-white border border-amber-500/30' : 'text-neutral-400 hover:bg-neutral-800/50'
-                }`}
-              >
-                <Icon name="library" className="w-4 h-4 text-neutral-400" />
-                <span>Liked Songs</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('history')}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-xs transition ${
-                  activeTab === 'history' ? 'bg-amber-600/20 text-white border border-amber-500/30' : 'text-neutral-400 hover:bg-neutral-800/50'
-                }`}
-              >
-                <Icon name="history" className="w-4 h-4 text-pink-400" />
-                <span>History</span>
-              </button>
-            </nav>
+            <button 
+              onClick={() => setIsSidebarOpen(false)}
+              className="md:hidden p-2 rounded-lg bg-neutral-800 text-neutral-300 hover:text-white"
+            >
+              <Icon name="close" className="w-5 h-5" />
+            </button>
           </div>
-        </aside>
-      )}
+
+          <nav className="space-y-1">
+            <button
+              onClick={() => { setActiveTab('discover'); setIsSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-xs transition ${
+                activeTab === 'discover' ? 'bg-amber-600/20 text-white border border-amber-500/30' : 'text-neutral-400 hover:bg-neutral-800/50'
+              }`}
+            >
+              <Icon name="discover" className="w-4 h-4 text-amber-400" />
+              <span>Discover & Search</span>
+            </button>
+
+            <div className="pt-4 pb-1 px-3">
+              <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Nostalgia Stations</p>
+            </div>
+
+            <button
+              onClick={() => handleStationSelect('barber')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-xs transition ${
+                activeTab === 'barber' ? 'bg-red-600/25 text-red-200 border border-red-500/50 shadow-lg shadow-red-950/50' : 'text-neutral-400 hover:bg-neutral-800/50'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Icon name="scissors" className="w-4 h-4 text-red-400" />
+                <span>Barber Shop (सैलून)</span>
+              </div>
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 font-bold">DRINK BG</span>
+            </button>
+
+            <button
+              onClick={() => handleStationSelect('truck')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-xs transition ${
+                activeTab === 'truck' ? 'bg-amber-600/25 text-amber-200 border border-amber-500/50 shadow-lg shadow-amber-950/50' : 'text-neutral-400 hover:bg-neutral-800/50'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Icon name="truck" className="w-4 h-4 text-amber-400" />
+                <span>Truck Pe Music</span>
+              </div>
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold">TRUCK BG</span>
+            </button>
+
+            <button
+              onClick={() => handleStationSelect('pauwa')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-xs transition ${
+                activeTab === 'pauwa' ? 'bg-emerald-600/25 text-emerald-200 border border-emerald-500/50 shadow-lg shadow-emerald-950/50' : 'text-neutral-400 hover:bg-neutral-800/50'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Icon name="beer" className="w-4 h-4 text-emerald-400" />
+                <span>Pauwa Party</span>
+              </div>
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">DUAL LIST</span>
+            </button>
+
+            <div className="pt-4 pb-1 px-3">
+              <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Your Collection</p>
+            </div>
+
+            <button
+              onClick={() => { setActiveTab('library'); setIsSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-xs transition ${
+                activeTab === 'library' ? 'bg-amber-600/20 text-white border border-amber-500/30' : 'text-neutral-400 hover:bg-neutral-800/50'
+              }`}
+            >
+              <Icon name="library" className="w-4 h-4 text-neutral-400" />
+              <span>Liked Songs</span>
+            </button>
+
+            <button
+              onClick={() => { setActiveTab('history'); setIsSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-xs transition ${
+                activeTab === 'history' ? 'bg-amber-600/20 text-white border border-amber-500/30' : 'text-neutral-400 hover:bg-neutral-800/50'
+              }`}
+            >
+              <Icon name="history" className="w-4 h-4 text-pink-400" />
+              <span>History</span>
+            </button>
+          </nav>
+        </div>
+      </aside>
 
       {/* Main Container */}
       <main className={`flex-1 min-h-screen overflow-y-auto p-4 md:p-8 bg-neutral-950 relative w-full transition-all duration-300 ${isPlayerMinimized ? 'pb-24' : 'pb-64'}`}>
@@ -672,35 +756,17 @@ export default function App() {
         )}
 
         <div className="relative z-20 flex items-center justify-between pb-6 mb-2 border-b border-white/10 gap-2 flex-wrap">
-          <div className="flex items-center gap-3">
-            {isSpecialGenreTab && (
-              <button
-                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-900/80 border border-neutral-700 text-neutral-200 hover:text-white hover:bg-neutral-800 transition shadow-md"
-                title={isSidebarOpen ? "Enter Full Screen (Hide Sidebar)" : "Show Sidebar"}
-              >
-                <Icon name={isSidebarOpen ? "menu" : "expand"} className="w-4 h-4 text-amber-400" />
-                <span className="text-xs font-bold hidden sm:inline">
-                  {isSidebarOpen ? "Full Screen Mode" : "Show Menu"}
-                </span>
-              </button>
-            )}
+          <div className="hidden md:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/60 border border-neutral-800 backdrop-blur-md shadow-lg">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite] absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+            <span className="text-xs font-semibold text-neutral-200 tracking-wide">
+              <span className="text-emerald-400 font-bold">{activeUsersCount}</span> Active Users
+            </span>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="hidden md:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/60 border border-neutral-800 backdrop-blur-md shadow-lg">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite] absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-              </span>
-              <span className="text-xs font-semibold text-neutral-200 tracking-wide">
-                <span className="text-emerald-400 font-bold">{activeUsersCount}</span> Active Users
-              </span>
-            </div>
-          </div>
-
-          <div className="ml-auto flex items-center gap-2">
-            {/* Install Button placed next to the Clock */}
+          <div className="ml-auto hidden md:flex items-center gap-2">
             {showInstallBtn && (
               <button
                 onClick={handleInstallClick}
