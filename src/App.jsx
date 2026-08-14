@@ -81,6 +81,21 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
   );
 };
 
+const DisclaimerFooter = () => (
+  <div className="mt-8 pt-6 border-t border-neutral-800 text-neutral-400 text-xs space-y-2 leading-relaxed">
+    <p>
+      Audio plays through YouTube’s embedded player. Nothing is hosted on this site, and all rights stay with the labels, composers and performers. Song credits are put together from film soundtrack listings.[cite: 5]
+    </p>
+    <p>
+      If you hold rights to anything here and want it taken off, email{' '}
+      <a href="mailto:pankajsss7238@gmail.com" className="text-amber-400 underline font-medium hover:text-amber-300">
+        pankajsss7238@gmail.com
+      </a>{' '}
+      and it comes down.[cite: 5]
+    </p>
+  </div>
+);
+
 const SPECIAL_STATIONS = {
   barber: {
     id: "barber",
@@ -256,9 +271,7 @@ export default function App() {
     }
   }, []);
 
-  // =========================================================
   // Media Session API Hook (Enables Mobile Lock-Screen & Background Audio Controls)
-  // =========================================================
   useEffect(() => {
     if ('mediaSession' in navigator && currentSong) {
       navigator.mediaSession.metadata = new MediaMetadata({
@@ -362,7 +375,7 @@ export default function App() {
           disablekb: 1, 
           modestbranding: 1,
           enablejsapi: 1,
-          playsinline: 1, // Crucial for mobile background/inline execution
+          playsinline: 1,
           origin: window.location.origin
         },
         events: {
@@ -623,10 +636,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative">
       
-      {/* ========================================================= */}
-      {/* BACKGROUND AUDIO KEEP-ALIVE & PLAYER WRAPPER */}
-      {/* Do NOT use 'display: none' or 'hidden' class on container */}
-      {/* ========================================================= */}
+      {/* Background audio keep-alive & Youtube player iframe wrapper */}
       <audio 
         ref={silentAudioRef} 
         loop 
@@ -636,9 +646,7 @@ export default function App() {
         <div id="yt-player-instance"></div>
       </div>
 
-      {/* ========================================================= */}
-      {/* MOBILE TOP BAR WITH HAMBURGER BUTTON */}
-      {/* ========================================================= */}
+      {/* Mobile Top Header */}
       <header className="md:hidden sticky top-0 z-40 bg-neutral-900/95 backdrop-blur-md border-b border-neutral-800/80 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button
@@ -672,7 +680,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* BACKDROP OVERLAY FOR MOBILE SIDEBAR */}
+      {/* Backdrop overlay for Mobile Sidebar */}
       {isSidebarOpen && (
         <div 
           onClick={() => setIsSidebarOpen(false)}
@@ -680,7 +688,7 @@ export default function App() {
         />
       )}
 
-      {/* RESPONSIVE SIDEBAR */}
+      {/* Sidebar Navigation */}
       <aside 
         className={`fixed md:static inset-y-0 left-0 z-50 w-72 md:w-64 bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80 p-4 flex flex-col justify-between shrink-0 transform transition-transform duration-300 ease-in-out ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
@@ -784,7 +792,7 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Main Container */}
+      {/* Main App Workspace */}
       <main className={`flex-1 min-h-screen overflow-y-auto p-4 md:p-8 bg-neutral-950 relative w-full transition-all duration-300 ${isPlayerMinimized ? 'pb-24' : 'pb-64'}`}>
         {currentStation && currentBgImage && (
           <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden transition-all duration-700">
@@ -798,7 +806,7 @@ export default function App() {
           </div>
         )}
 
-        {/* MOBILE BACKGROUND PLAY TIP BAR */}
+        {/* Mobile playback tip */}
         {showMobileTip && (
           <div className="md:hidden relative z-30 mb-4 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 backdrop-blur-md flex items-start justify-between gap-2 text-xs text-amber-200">
             <div className="flex items-start gap-2">
@@ -840,6 +848,7 @@ export default function App() {
           </div>
         </div>
 
+        {/* Discover & Search Section */}
         {activeTab === 'discover' && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
             <div className="p-8 rounded-3xl border border-neutral-800 bg-neutral-900/60 backdrop-blur-xl shadow-2xl">
@@ -939,10 +948,13 @@ export default function App() {
                 )}
               </div>
             )}
+
+            {/* Disclaimer in Discover & Search Footer */}
+            <DisclaimerFooter />
           </div>
         )}
 
-        {/* Pauwa Party Special Dual-List View */}
+        {/* Pauwa Party Special View */}
         {activeTab === 'pauwa' && currentStation && (
           <div className="max-w-5xl mx-auto space-y-8 relative z-10">
             <div className="p-8 rounded-3xl border border-neutral-700/50 relative overflow-hidden shadow-2xl backdrop-blur-md bg-neutral-900/40">
@@ -1069,6 +1081,8 @@ export default function App() {
                 </div>
               </div>
             </div>
+
+            <DisclaimerFooter />
           </div>
         )}
 
@@ -1144,9 +1158,12 @@ export default function App() {
                 })}
               </div>
             )}
+
+            <DisclaimerFooter />
           </div>
         )}
 
+        {/* Library Tab */}
         {activeTab === 'library' && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
             <h2 className="text-2xl font-black text-white">Liked Songs Collection</h2>
@@ -1170,9 +1187,11 @@ export default function App() {
                 ))
               )}
             </div>
+            <DisclaimerFooter />
           </div>
         )}
 
+        {/* History Tab */}
         {activeTab === 'history' && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
             <h2 className="text-2xl font-black text-white">Listening History</h2>
@@ -1193,6 +1212,7 @@ export default function App() {
                 ))
               )}
             </div>
+            <DisclaimerFooter />
           </div>
         )}
       </main>
