@@ -3,18 +3,20 @@
   "name": "MAHAUL SET - Nostalgia Station",
   "icons": [
     {
-      "src": "icon-192.png",
+      "src": "/icon-192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "any maskable"
     },
     {
-      "src": "icon-512.png",
+      "src": "/icon-512.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any maskable"
     }
   ],
   "start_url": "/",
-  "background_color": "#121212",
-  "theme_color": "#ff5500",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
   "display": "standalone"
 }
