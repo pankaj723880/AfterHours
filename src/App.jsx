@@ -71,7 +71,8 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
     external: <path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" fill="currentColor" />,
     chevronUp: <path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z" fill="currentColor" />,
     chevronDown: <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" fill="currentColor" />,
-    download: <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor" />
+    download: <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor" />,
+    info: <path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="currentColor" />
   };
   return (
     <svg className={className} viewBox="0 0 24 24" {...props}>
@@ -175,9 +176,9 @@ export default function App() {
   const [stationLoading, setStationLoading] = useState(false);
   const [currentBgIndex, setCurrentBgIndex] = useState(0);
 
-  // Default sidebar to false so it hides inside hamburger menu on mobile
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isPlayerMinimized, setIsPlayerMinimized] = useState(false);
+  const [showMobileTip, setShowMobileTip] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [songs, setSongs] = useState([]);
@@ -193,6 +194,7 @@ export default function App() {
   const [showInstallBtn, setShowInstallBtn] = useState(false);
 
   const playerRef = useRef(null);
+  const silentAudioRef = useRef(null);
 
   useEffect(() => localStorage.setItem('liked_songs', JSON.stringify(likedSongs)), [likedSongs]);
   useEffect(() => localStorage.setItem('history_songs', JSON.stringify(history)), [history]);
@@ -273,11 +275,13 @@ export default function App() {
 
       navigator.mediaSession.setActionHandler('play', () => {
         playerRef.current?.playVideo?.();
+        if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
         setIsPlaying(true);
       });
 
       navigator.mediaSession.setActionHandler('pause', () => {
         playerRef.current?.pauseVideo?.();
+        if (silentAudioRef.current) silentAudioRef.current.pause();
         setIsPlaying(false);
       });
 
@@ -288,12 +292,41 @@ export default function App() {
       navigator.mediaSession.setActionHandler('nexttrack', () => {
         handleNextSong();
       });
+
+      navigator.mediaSession.setActionHandler('seekto', (details) => {
+        if (details.seekTime && playerRef.current?.seekTo) {
+          playerRef.current.seekTo(details.seekTime, true);
+          setCurrentTime(details.seekTime);
+        }
+      });
     }
   }, [currentSong, queue]);
+
+  // Update Media Session Position State
+  useEffect(() => {
+    if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession && duration > 0) {
+      try {
+        navigator.mediaSession.setPositionState({
+          duration: duration,
+          playbackRate: 1,
+          position: Math.min(currentTime, duration)
+        });
+      } catch (e) {}
+    }
+  }, [currentTime, duration]);
+
+  // Handle Play Silent Audio Keep-Alive
+  const startSilentAudio = () => {
+    if (silentAudioRef.current) {
+      silentAudioRef.current.play().catch(() => {});
+    }
+  };
 
   const playSong = (song) => {
     if (!song) return;
     
+    startSilentAudio();
+
     if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
       try {
         playerRef.current.stopVideo();
@@ -320,8 +353,8 @@ export default function App() {
       setIsPlaying(true);
     } else if (window.YT && window.YT.Player) {
       playerRef.current = new window.YT.Player('yt-player-instance', {
-        height: '0',
-        width: '0',
+        height: '100%',
+        width: '100%',
         videoId: currentSong.id,
         playerVars: { 
           autoplay: 1, 
@@ -329,6 +362,7 @@ export default function App() {
           disablekb: 1, 
           modestbranding: 1,
           enablejsapi: 1,
+          playsinline: 1, // Crucial for mobile background/inline execution
           origin: window.location.origin
         },
         events: {
@@ -340,6 +374,7 @@ export default function App() {
           onStateChange: (e) => {
             if (e.data === 1) {
               setIsPlaying(true);
+              if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
               if (playerRef.current?.getDuration) setDuration(playerRef.current.getDuration());
             } else if (e.data === 2) {
               setIsPlaying(false);
@@ -468,7 +503,7 @@ export default function App() {
   const handleStationSelect = (stationKey) => {
     setActiveTab(stationKey);
     setCurrentBgIndex(0);
-    setIsSidebarOpen(false); // Close mobile drawer when station selected
+    setIsSidebarOpen(false);
     if (['barber', 'truck', 'pauwa'].includes(stationKey)) {
       loadStationSongs(stationKey);
     }
@@ -487,9 +522,11 @@ export default function App() {
     }
     if (isPlaying) {
       playerRef.current?.pauseVideo?.();
+      if (silentAudioRef.current) silentAudioRef.current.pause();
       setIsPlaying(false);
     } else {
       playerRef.current?.playVideo?.();
+      if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
       setIsPlaying(true);
     }
   };
@@ -585,7 +622,17 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative">
-      <div className="hidden">
+      
+      {/* ========================================================= */}
+      {/* BACKGROUND AUDIO KEEP-ALIVE & PLAYER WRAPPER */}
+      {/* Do NOT use 'display: none' or 'hidden' class on container */}
+      {/* ========================================================= */}
+      <audio 
+        ref={silentAudioRef} 
+        loop 
+        src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" 
+      />
+      <div className="fixed top-0 left-0 w-1 h-1 opacity-0 pointer-events-none -z-50 overflow-hidden">
         <div id="yt-player-instance"></div>
       </div>
 
@@ -625,9 +672,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* ========================================================= */}
       {/* BACKDROP OVERLAY FOR MOBILE SIDEBAR */}
-      {/* ========================================================= */}
       {isSidebarOpen && (
         <div 
           onClick={() => setIsSidebarOpen(false)}
@@ -635,9 +680,7 @@ export default function App() {
         />
       )}
 
-      {/* ========================================================= */}
-      {/* RESPONSIVE SIDEBAR (COLLAPSED ON MOBILE / DESKTOP PERSISTENT) */}
-      {/* ========================================================= */}
+      {/* RESPONSIVE SIDEBAR */}
       <aside 
         className={`fixed md:static inset-y-0 left-0 z-50 w-72 md:w-64 bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80 p-4 flex flex-col justify-between shrink-0 transform transition-transform duration-300 ease-in-out ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
@@ -752,6 +795,19 @@ export default function App() {
               className="w-full h-full object-cover filter brightness-[0.75] contrast-100 scale-105 transition-opacity duration-1000 animate-fadeIn"
             />
             <div className="absolute inset-0 bg-gradient-to-b from-neutral-950/70 via-neutral-950/60 to-neutral-950/85" />
+          </div>
+        )}
+
+        {/* MOBILE BACKGROUND PLAY TIP BAR */}
+        {showMobileTip && (
+          <div className="md:hidden relative z-30 mb-4 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 backdrop-blur-md flex items-start justify-between gap-2 text-xs text-amber-200">
+            <div className="flex items-start gap-2">
+              <Icon name="info" className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <p>
+                <strong>Mobile Tip:</strong> If music pauses when switching apps, pull down your notification panel or lock screen and tap <strong>Play</strong> on the media control widget!
+              </p>
+            </div>
+            <button onClick={() => setShowMobileTip(false)} className="text-amber-400 font-bold text-sm px-1">✕</button>
           </div>
         )}
 
