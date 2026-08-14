@@ -84,14 +84,14 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
 const DisclaimerFooter = () => (
   <div className="mt-8 pt-6 border-t border-neutral-800 text-neutral-400 text-xs space-y-2 leading-relaxed">
     <p>
-      Audio plays through YouTube’s embedded player. Nothing is hosted on this site, and all rights stay with the labels, composers and performers. Song credits are put together from film soundtrack listings.[cite: 5]
+      Audio plays through YouTube’s embedded player. Nothing is hosted on this site, and all rights stay with the labels, composers and performers. Song credits are put together from film soundtrack listings.
     </p>
     <p>
       If you hold rights to anything here and want it taken off, email{' '}
       <a href="mailto:pankajsss7238@gmail.com" className="text-amber-400 underline font-medium hover:text-amber-300">
         pankajsss7238@gmail.com
       </a>{' '}
-      and it comes down.[cite: 5]
+      and it comes down.
     </p>
   </div>
 );
@@ -271,24 +271,25 @@ export default function App() {
     }
   }, []);
 
-  // Media Session API Hook (Enables Mobile Lock-Screen & Background Audio Controls)
+  // Complete Media Session API Integration (Mobile Lock-Screen & Background Action Handlers)
   useEffect(() => {
     if ('mediaSession' in navigator && currentSong) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: currentSong.title,
         artist: currentSong.channel || "MAHAUL SET",
-        album: "Live Stream Audio",
+        album: "Live Music Stream",
         artwork: [
-          { src: currentSong.thumbnail, sizes: '96x96', type: 'image/png' },
-          { src: currentSong.thumbnail, sizes: '128x128', type: 'image/png' },
-          { src: currentSong.thumbnail, sizes: '192x192', type: 'image/png' },
-          { src: currentSong.thumbnail, sizes: '512x512', type: 'image/png' },
+          { src: currentSong.thumbnail, sizes: '96x96', type: 'image/jpeg' },
+          { src: currentSong.thumbnail, sizes: '128x128', type: 'image/jpeg' },
+          { src: currentSong.thumbnail, sizes: '192x192', type: 'image/jpeg' },
+          { src: currentSong.thumbnail, sizes: '512x512', type: 'image/jpeg' },
         ]
       });
 
+      // Media Action Handlers
       navigator.mediaSession.setActionHandler('play', () => {
-        playerRef.current?.playVideo?.();
         if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
+        playerRef.current?.playVideo?.();
         setIsPlaying(true);
       });
 
@@ -307,13 +308,27 @@ export default function App() {
       });
 
       navigator.mediaSession.setActionHandler('seekto', (details) => {
-        if (details.seekTime && playerRef.current?.seekTo) {
+        if (details.seekTime !== undefined && playerRef.current?.seekTo) {
           playerRef.current.seekTo(details.seekTime, true);
           setCurrentTime(details.seekTime);
         }
       });
+
+      navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+        const skipTime = details.seekOffset || 10;
+        const targetTime = Math.max(currentTime - skipTime, 0);
+        playerRef.current?.seekTo?.(targetTime, true);
+        setCurrentTime(targetTime);
+      });
+
+      navigator.mediaSession.setActionHandler('seekforward', (details) => {
+        const skipTime = details.seekOffset || 10;
+        const targetTime = Math.min(currentTime + skipTime, duration);
+        playerRef.current?.seekTo?.(targetTime, true);
+        setCurrentTime(targetTime);
+      });
     }
-  }, [currentSong, queue]);
+  }, [currentSong, queue, currentTime, duration]);
 
   // Update Media Session Position State
   useEffect(() => {
@@ -385,13 +400,13 @@ export default function App() {
             setIsPlaying(true);
           },
           onStateChange: (e) => {
-            if (e.data === 1) {
+            if (e.data === 1) { // Playing
               setIsPlaying(true);
               if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
               if (playerRef.current?.getDuration) setDuration(playerRef.current.getDuration());
-            } else if (e.data === 2) {
+            } else if (e.data === 2) { // Paused
               setIsPlaying(false);
-            } else if (e.data === 0) {
+            } else if (e.data === 0) { // Ended
               if (isRepeat) {
                 playerRef.current?.seekTo?.(0, true);
                 playerRef.current?.playVideo?.();
@@ -812,7 +827,7 @@ export default function App() {
             <div className="flex items-start gap-2">
               <Icon name="info" className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
               <p>
-                <strong>Mobile Tip:</strong> If music pauses when switching apps, pull down your notification panel or lock screen and tap <strong>Play</strong> on the media control widget!
+                <strong>Mobile Tip:</strong> If audio pauses when switching apps or locking your phone, pull down your notification panel or lock screen and tap <strong>Play</strong> to continue!
               </p>
             </div>
             <button onClick={() => setShowMobileTip(false)} className="text-amber-400 font-bold text-sm px-1">✕</button>
@@ -949,7 +964,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Disclaimer in Discover & Search Footer */}
             <DisclaimerFooter />
           </div>
         )}
