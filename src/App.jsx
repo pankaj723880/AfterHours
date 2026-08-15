@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 // ==========================================
-// YOUTUBE API ROTATION MANAGER (10 Keys)
+// YOUTUBE API ROTATION MANAGER
 // ==========================================
 const YOUTUBE_API_KEYS = [
   import.meta.env.VITE_YOUTUBE_KEY_1,
@@ -11,14 +11,21 @@ const YOUTUBE_API_KEYS = [
 
 let currentApiKeyIndex = parseInt(localStorage.getItem('yt_key_index') || '0', 10);
 
-const getActiveApiKey = () => YOUTUBE_API_KEYS[currentApiKeyIndex % YOUTUBE_API_KEYS.length];
+const getActiveApiKey = () => {
+  if (YOUTUBE_API_KEYS.length === 0) return '';
+  return YOUTUBE_API_KEYS[currentApiKeyIndex % YOUTUBE_API_KEYS.length];
+};
 
 const rotateApiKey = () => {
+  if (YOUTUBE_API_KEYS.length === 0) return;
   currentApiKeyIndex = (currentApiKeyIndex + 1) % YOUTUBE_API_KEYS.length;
   localStorage.setItem('yt_key_index', currentApiKeyIndex.toString());
 };
 
 const fetchWithKeyRotation = async (urlGenerator) => {
+  if (YOUTUBE_API_KEYS.length === 0) {
+    throw new Error("No YouTube API keys provided in environment variables.");
+  }
   let attempts = 0;
   while (attempts < YOUTUBE_API_KEYS.length) {
     const apiKey = getActiveApiKey();
@@ -275,6 +282,25 @@ export default function App() {
     }
   }, []);
 
+  const handleNextSong = useCallback(() => {
+    if (queue.length === 0) return;
+    if (isShuffle) {
+      const randomIndex = Math.floor(Math.random() * queue.length);
+      playSong(queue[randomIndex]);
+      return;
+    }
+    const currentIndex = queue.findIndex(s => s.id === currentSong?.id);
+    const nextIdx = (currentIndex + 1) % queue.length;
+    playSong(queue[nextIdx]);
+  }, [queue, isShuffle, currentSong]);
+
+  const handlePrevSong = useCallback(() => {
+    if (queue.length === 0) return;
+    const currentIndex = queue.findIndex(s => s.id === currentSong?.id);
+    const prevIdx = currentIndex - 1 >= 0 ? currentIndex - 1 : queue.length - 1;
+    playSong(queue[prevIdx]);
+  }, [queue, currentSong]);
+
   useEffect(() => {
     if ('mediaSession' in navigator && currentSong) {
       navigator.mediaSession.metadata = new MediaMetadata({
@@ -311,7 +337,7 @@ export default function App() {
         }
       });
     }
-  }, [currentSong, queue]);
+  }, [currentSong, handlePrevSong, handleNextSong]);
 
   useEffect(() => {
     if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession && duration > 0) {
@@ -398,7 +424,7 @@ export default function App() {
     }
 
     setHistory(prev => [currentSong, ...prev.filter(s => s.id !== currentSong.id)].slice(0, 50));
-  }, [currentSong]);
+  }, [currentSong, isRepeat, handleNextSong]);
 
   useEffect(() => {
     let interval;
@@ -539,25 +565,6 @@ export default function App() {
     }
   };
 
-  const handleNextSong = () => {
-    if (queue.length === 0) return;
-    if (isShuffle) {
-      const randomIndex = Math.floor(Math.random() * queue.length);
-      playSong(queue[randomIndex]);
-      return;
-    }
-    const currentIndex = queue.findIndex(s => s.id === currentSong?.id);
-    const nextIdx = (currentIndex + 1) % queue.length;
-    playSong(queue[nextIdx]);
-  };
-
-  const handlePrevSong = () => {
-    if (queue.length === 0) return;
-    const currentIndex = queue.findIndex(s => s.id === currentSong?.id);
-    const prevIdx = currentIndex - 1 >= 0 ? currentIndex - 1 : queue.length - 1;
-    playSong(queue[prevIdx]);
-  };
-
   const handleSeek = (e) => {
     const seekTime = parseFloat(e.target.value);
     setCurrentTime(seekTime);
@@ -610,7 +617,7 @@ export default function App() {
       }
     } catch (err) {
       console.error(err);
-    } finally {
+    } font-bold {
       setIsLoading(false);
     }
   };
