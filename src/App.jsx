@@ -72,7 +72,8 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
     chevronUp: <path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z" fill="currentColor" />,
     chevronDown: <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" fill="currentColor" />,
     download: <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor" />,
-    info: <path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="currentColor" />
+    info: <path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="currentColor" />,
+    home: <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" fill="currentColor" />
   };
   return (
     <svg className={className} viewBox="0 0 24 24" {...props}>
@@ -97,6 +98,17 @@ const DisclaimerFooter = () => (
 );
 
 const SPECIAL_STATIONS = {
+  home: {
+    id: "home",
+    title: "Continuous Radio Stream",
+    subtitle: "Always-on automated playlist playing trending mix & evergreen hits uninterruptedly",
+    badge: "📻 Radio Home • Non-Stop Live Audio",
+    bgImages: [
+      "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=1600&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?q=80&w=1600&auto=format&fit=crop"
+    ],
+    queries: ["bollywood top hits trending jukebox"]
+  },
   barber: {
     id: "barber",
     title: "डीलक्स सैलून (Deluxe Salon)",
@@ -169,7 +181,7 @@ const formatTime = (secs) => {
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('truck');
+  const [activeTab, setActiveTab] = useState('home');
   const [likedSongs, setLikedSongs] = useState(() => JSON.parse(localStorage.getItem('liked_songs') || '[]'));
   const [history, setHistory] = useState(() => JSON.parse(localStorage.getItem('history_songs') || '[]'));
 
@@ -197,6 +209,7 @@ export default function App() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [songs, setSongs] = useState([]);
+  const [searchResults, setSearchResults] = useState([]);
   const [searchVisibleCount, setSearchVisibleCount] = useState(10);
   const [queue, setQueue] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -204,7 +217,6 @@ export default function App() {
   const [clockString, setClockString] = useState("");
   const [activeUsersCount, setActiveUsersCount] = useState(742);
 
-  // PWA Install Prompt State
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallBtn, setShowInstallBtn] = useState(false);
 
@@ -216,7 +228,6 @@ export default function App() {
   useEffect(() => localStorage.setItem('youtube_search_cache', JSON.stringify(searchCache)), [searchCache]);
   useEffect(() => localStorage.setItem('youtube_station_cache', JSON.stringify(stationCache)), [stationCache]);
 
-  // Listen for PWA installation event
   useEffect(() => {
     const handleBeforeInstallPrompt = (e) => {
       e.preventDefault();
@@ -242,7 +253,6 @@ export default function App() {
     setShowInstallBtn(false);
   };
 
-  // Clock and User Count Simulation
   useEffect(() => {
     const updateClock = () => {
       const now = new Date();
@@ -261,7 +271,6 @@ export default function App() {
     };
   }, []);
 
-  // Load YouTube Iframe API
   useEffect(() => {
     if (!window.YT) {
       const tag = document.createElement('script');
@@ -271,7 +280,6 @@ export default function App() {
     }
   }, []);
 
-  // Complete Media Session API Integration (Mobile Lock-Screen & Background Action Handlers)
   useEffect(() => {
     if ('mediaSession' in navigator && currentSong) {
       navigator.mediaSession.metadata = new MediaMetadata({
@@ -286,7 +294,6 @@ export default function App() {
         ]
       });
 
-      // Media Action Handlers
       navigator.mediaSession.setActionHandler('play', () => {
         if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
         playerRef.current?.playVideo?.();
@@ -313,24 +320,9 @@ export default function App() {
           setCurrentTime(details.seekTime);
         }
       });
-
-      navigator.mediaSession.setActionHandler('seekbackward', (details) => {
-        const skipTime = details.seekOffset || 10;
-        const targetTime = Math.max(currentTime - skipTime, 0);
-        playerRef.current?.seekTo?.(targetTime, true);
-        setCurrentTime(targetTime);
-      });
-
-      navigator.mediaSession.setActionHandler('seekforward', (details) => {
-        const skipTime = details.seekOffset || 10;
-        const targetTime = Math.min(currentTime + skipTime, duration);
-        playerRef.current?.seekTo?.(targetTime, true);
-        setCurrentTime(targetTime);
-      });
     }
   }, [currentSong, queue, currentTime, duration]);
 
-  // Update Media Session Position State
   useEffect(() => {
     if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession && duration > 0) {
       try {
@@ -343,7 +335,6 @@ export default function App() {
     }
   }, [currentTime, duration]);
 
-  // Handle Play Silent Audio Keep-Alive
   const startSilentAudio = () => {
     if (silentAudioRef.current) {
       silentAudioRef.current.play().catch(() => {});
@@ -364,7 +355,7 @@ export default function App() {
     setCurrentSong(song);
     setIsPlaying(true);
 
-    if (['barber', 'truck', 'pauwa'].includes(activeTab)) {
+    if (['home', 'barber', 'truck', 'pauwa'].includes(activeTab)) {
       const station = SPECIAL_STATIONS[activeTab];
       if (station && station.bgImages && station.bgImages.length > 0) {
         setCurrentBgIndex(prev => (prev + 1) % station.bgImages.length);
@@ -400,13 +391,13 @@ export default function App() {
             setIsPlaying(true);
           },
           onStateChange: (e) => {
-            if (e.data === 1) { // Playing
+            if (e.data === 1) {
               setIsPlaying(true);
               if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
               if (playerRef.current?.getDuration) setDuration(playerRef.current.getDuration());
-            } else if (e.data === 2) { // Paused
+            } else if (e.data === 2) {
               setIsPlaying(false);
-            } else if (e.data === 0) { // Ended
+            } else if (e.data === 0) {
               if (isRepeat) {
                 playerRef.current?.seekTo?.(0, true);
                 playerRef.current?.playVideo?.();
@@ -454,7 +445,10 @@ export default function App() {
       const cachedTracks = stationCache[stationKey].tracks;
       setSongs(cachedTracks);
       setQueue(cachedTracks);
-      if (!currentSong && cachedTracks.length > 0) playSong(cachedTracks[0]);
+      if (!currentSong && cachedTracks.length > 0) {
+        const randomTrack = cachedTracks[Math.floor(Math.random() * cachedTracks.length)];
+        playSong(randomTrack);
+      }
       return;
     }
 
@@ -499,7 +493,7 @@ export default function App() {
       } else {
         const query = station.queries[0];
         const data = await fetchWithKeyRotation(apiKey => 
-          `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=20&q=${encodeURIComponent(query)}&key=${apiKey}`
+          `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=25&q=${encodeURIComponent(query)}&key=${apiKey}`
         );
 
         const fetchedTracks = data.items ? data.items.map(item => ({
@@ -518,7 +512,8 @@ export default function App() {
         }));
 
         if (fetchedTracks.length > 0 && !currentSong) {
-          playSong(fetchedTracks[0]);
+          const randomIndex = Math.floor(Math.random() * fetchedTracks.length);
+          playSong(fetchedTracks[randomIndex]);
         }
       }
     } catch (err) {
@@ -532,13 +527,13 @@ export default function App() {
     setActiveTab(stationKey);
     setCurrentBgIndex(0);
     setIsSidebarOpen(false);
-    if (['barber', 'truck', 'pauwa'].includes(stationKey)) {
+    if (['home', 'barber', 'truck', 'pauwa'].includes(stationKey)) {
       loadStationSongs(stationKey);
     }
   };
 
   useEffect(() => {
-    if (['barber', 'truck', 'pauwa'].includes(activeTab)) {
+    if (['home', 'barber', 'truck', 'pauwa'].includes(activeTab)) {
       loadStationSongs(activeTab);
     }
   }, [activeTab]);
@@ -602,7 +597,7 @@ export default function App() {
 
     if (searchCache[trimmedQuery]) {
       const cachedSongs = searchCache[trimmedQuery];
-      setSongs(cachedSongs);
+      setSearchResults(cachedSongs);
       setQueue(cachedSongs);
       setSearchVisibleCount(10);
       return;
@@ -612,7 +607,7 @@ export default function App() {
     setIsLoading(true);
     try {
       const data = await fetchWithKeyRotation(apiKey =>
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=10&q=${encodeURIComponent(trimmedQuery + " official video original")}&key=${apiKey}`
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=25&q=${encodeURIComponent(trimmedQuery + " official video original")}&key=${apiKey}`
       );
 
       if (data.items) {
@@ -623,15 +618,11 @@ export default function App() {
           thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url,
         }));
 
-        setSongs(fetchedTracks);
+        setSearchResults(fetchedTracks);
         setQueue(fetchedTracks);
         setSearchVisibleCount(10);
 
         setSearchCache(prev => ({ ...prev, [trimmedQuery]: fetchedTracks }));
-
-        if (fetchedTracks.length > 0 && !currentSong) {
-          playSong(fetchedTracks[0]);
-        }
       }
     } catch (err) {
       console.error(err);
@@ -651,7 +642,6 @@ export default function App() {
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative">
       
-      {/* Background audio keep-alive & Youtube player iframe wrapper */}
       <audio 
         ref={silentAudioRef} 
         loop 
@@ -727,6 +717,16 @@ export default function App() {
           </div>
 
           <nav className="space-y-1">
+            <button
+              onClick={() => handleStationSelect('home')}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-xs transition ${
+                activeTab === 'home' ? 'bg-amber-600/20 text-white border border-amber-500/30' : 'text-neutral-400 hover:bg-neutral-800/50'
+              }`}
+            >
+              <Icon name="home" className="w-4 h-4 text-amber-400" />
+              <span>Home (Live Stream)</span>
+            </button>
+
             <button
               onClick={() => { setActiveTab('discover'); setIsSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-xs transition ${
@@ -821,7 +821,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Mobile playback tip */}
         {showMobileTip && (
           <div className="md:hidden relative z-30 mb-4 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 backdrop-blur-md flex items-start justify-between gap-2 text-xs text-amber-200">
             <div className="flex items-start gap-2">
@@ -868,7 +867,7 @@ export default function App() {
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
             <div className="p-8 rounded-3xl border border-neutral-800 bg-neutral-900/60 backdrop-blur-xl shadow-2xl">
               <h2 className="text-2xl font-black text-white mb-2">Discover & Search Tracks</h2>
-              <p className="text-xs text-neutral-400 mb-6">Cached results and optimized batch limits ensure maximum quota savings.</p>
+              <p className="text-xs text-neutral-400 mb-6">Type a query to load audio tracks. Results display only after searching.</p>
               
               <form onSubmit={handleSearchSubmit} className="flex gap-2">
                 <div className="relative flex-1">
@@ -894,15 +893,15 @@ export default function App() {
               </form>
             </div>
 
-            {songs.length > 0 && (
+            {searchResults.length > 0 && (
               <div className="space-y-3">
                 <div className="flex justify-between items-center px-1">
                   <h3 className="text-lg font-black text-white">Search Results</h3>
-                  <span className="text-xs text-neutral-400">Showing {Math.min(searchVisibleCount, songs.length)} of {songs.length} songs</span>
+                  <span className="text-xs text-neutral-400">Showing {Math.min(searchVisibleCount, searchResults.length)} of {searchResults.length} songs</span>
                 </div>
 
                 <div className="grid grid-cols-1 gap-2">
-                  {songs.slice(0, searchVisibleCount).map((track, i) => {
+                  {searchResults.slice(0, searchVisibleCount).map((track, i) => {
                     const isCurrent = currentSong?.id === track.id;
                     return (
                       <div
@@ -951,7 +950,7 @@ export default function App() {
                   })}
                 </div>
 
-                {searchVisibleCount < songs.length && (
+                {searchVisibleCount < searchResults.length && (
                   <div className="text-center pt-6 pb-4">
                     <button
                       onClick={() => setSearchVisibleCount(prev => prev + 10)}
@@ -993,7 +992,6 @@ export default function App() {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Party Songs */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between px-1 pb-1 border-b border-emerald-500/30">
                   <h3 className="text-md font-black text-emerald-300 flex items-center gap-2">
@@ -1044,7 +1042,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Heartbreak Songs */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between px-1 pb-1 border-b border-pink-500/30">
                   <h3 className="text-md font-black text-pink-300 flex items-center gap-2">
@@ -1100,8 +1097,8 @@ export default function App() {
           </div>
         )}
 
-        {/* Other Stations (Barber / Truck) */}
-        {['barber', 'truck'].includes(activeTab) && currentStation && (
+        {/* Other Stations (Home / Barber / Truck) */}
+        {['home', 'barber', 'truck'].includes(activeTab) && currentStation && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
             <div className="p-8 rounded-3xl border border-neutral-700/50 relative overflow-hidden shadow-2xl backdrop-blur-md bg-neutral-900/40">
               <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
