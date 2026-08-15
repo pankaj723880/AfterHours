@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 // ==========================================
 // YOUTUBE API ROTATION MANAGER (10 Keys)
-// Automatically shifts to the next key if quota is exhausted
 // ==========================================
 const YOUTUBE_API_KEYS = [
   import.meta.env.VITE_YOUTUBE_KEY_1,
@@ -17,7 +16,6 @@ const getActiveApiKey = () => YOUTUBE_API_KEYS[currentApiKeyIndex % YOUTUBE_API_
 const rotateApiKey = () => {
   currentApiKeyIndex = (currentApiKeyIndex + 1) % YOUTUBE_API_KEYS.length;
   localStorage.setItem('yt_key_index', currentApiKeyIndex.toString());
-  console.warn(`YouTube API Quota exceeded or failed. Rotating to key index: ${currentApiKeyIndex}`);
 };
 
 const fetchWithKeyRotation = async (urlGenerator) => {
@@ -49,7 +47,7 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
     pause: <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" fill="currentColor" />,
     skipNext: <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" fill="currentColor" />,
     skipPrev: <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" fill="currentColor" />,
-    search: <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 11.99 14 9.5 14z" fill="currentColor" />,
+    search: <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill="currentColor" />,
     heart: <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="currentColor" />,
     heartOutline: <path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z" fill="currentColor" />,
     discover: <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" fill="currentColor" />,
@@ -73,7 +71,8 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
     chevronDown: <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" fill="currentColor" />,
     download: <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor" />,
     info: <path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="currentColor" />,
-    home: <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" fill="currentColor" />
+    home: <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" fill="currentColor" />,
+    video: <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c0 .55.45-1 1-1v-3.5l4 4v-11l-4 4z" fill="currentColor" />
   };
   return (
     <svg className={className} viewBox="0 0 24 24" {...props}>
@@ -82,7 +81,7 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
   );
 };
 
-const DisclaimerFooter = () => (
+const DisclaimerFooter = React.memo(() => (
   <div className="mt-8 pt-6 border-t border-neutral-800 text-neutral-400 text-xs space-y-2 leading-relaxed">
     <p>
       Audio plays through YouTube’s embedded player. Nothing is hosted on this site, and all rights stay with the labels, composers and performers. Song credits are put together from film soundtrack listings.
@@ -95,7 +94,7 @@ const DisclaimerFooter = () => (
       and it comes down.
     </p>
   </div>
-);
+));
 
 const SPECIAL_STATIONS = {
   home: {
@@ -116,8 +115,7 @@ const SPECIAL_STATIONS = {
     badge: "💈 Nai Ki Dukaan • Vintage Barbershop & Drink Aesthetic",
     bgImages: [
       "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=1600&auto=format&fit=crop",
-      "https://images.unsplash.com/photo-1599351431202-1e0f0137899a?q=80&w=1600&auto=format&fit=crop",
-      "https://images.unsplash.com/photo-1512864026219-c081e3752e5d?q=80&w=1600&auto=format&fit=crop"
+      "https://images.unsplash.com/photo-1599351431202-1e0f0137899a?q=80&w=1600&auto=format&fit=crop"
     ],
     queries: ["90s bollywood hit songs kumar sanu Alka Yagnik"]
   },
@@ -125,11 +123,10 @@ const SPECIAL_STATIONS = {
     id: "truck",
     title: "Truck Pe Music (MAHAUL SET)",
     subtitle: "Highway Dhaba Hits, Sunset Vibes, Bhojpuri, Altaf Raja & Punjabi Beats",
-    badge: "🚛 Highway Truck Driver Vibe • 736 Online",
+    badge: "🚛 Highway Truck Driver Vibe • Live Audio",
     bgImages: [
       "https://images.unsplash.com/photo-1519003722824-194d4455a60c?q=80&w=1600&auto=format&fit=crop",
-      "https://images.unsplash.com/photo-1508873696983-2df5c92063c7?q=80&w=1600&auto=format&fit=crop",
-      "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?q=80&w=1600&auto=format&fit=crop"
+      "https://images.unsplash.com/photo-1508873696983-2df5c92063c7?q=80&w=1600&auto=format&fit=crop"
     ],
     queries: ["altaf raja best songs hindi highway dhaba hits"]
   },
@@ -139,8 +136,7 @@ const SPECIAL_STATIONS = {
     subtitle: "Desi Peg Bangers, Yo Yo Honey Singh, Badshah, Sidhu & Local Desi Beats",
     badge: "🍾 Desi Daru & Celebration Mix",
     bgImages: [
-      "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=1600&auto=format&fit=crop",
-      "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=1600&auto=format&fit=crop"
+      "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=1600&auto=format&fit=crop"
     ],
     queries: [
       "punjabi daru peg songs party hits yo yo honey singh badshah",
@@ -153,7 +149,7 @@ const SPECIAL_STATIONS = {
     subtitle: "Explore global tracks, classic retro gems, and personalized audio streams",
     badge: "✨ Global Audio Search",
     bgImages: [],
-    queries: ["bollywood trending songs continuous radio"]
+    queries: []
   },
   library: {
     id: "library",
@@ -207,11 +203,13 @@ export default function App() {
   const [isPlayerMinimized, setIsPlayerMinimized] = useState(false);
   const [showMobileTip, setShowMobileTip] = useState(true);
 
+  // Dedicated Video Modal State
+  const [videoModalSong, setVideoModalSong] = useState(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [songs, setSongs] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
   const [searchVisibleCount, setSearchVisibleCount] = useState(10);
-  const [discoverVisibleCount, setDiscoverVisibleCount] = useState(10);
   const [queue, setQueue] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -220,7 +218,6 @@ export default function App() {
 
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallBtn, setShowInstallBtn] = useState(false);
-  const [hasUserInteracted, setHasUserInteracted] = useState(false);
 
   const playerRef = useRef(null);
   const silentAudioRef = useRef(null);
@@ -238,10 +235,7 @@ export default function App() {
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    };
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, []);
 
   const handleInstallClick = async () => {
@@ -262,7 +256,6 @@ export default function App() {
     };
     updateClock();
     const clockInterval = setInterval(updateClock, 1000);
-
     const userInterval = setInterval(() => {
       setActiveUsersCount(prev => Math.max(500, prev + Math.floor(Math.random() * 7) - 3));
     }, 6000);
@@ -308,13 +301,8 @@ export default function App() {
         setIsPlaying(false);
       });
 
-      navigator.mediaSession.setActionHandler('previoustrack', () => {
-        handlePrevSong();
-      });
-
-      navigator.mediaSession.setActionHandler('nexttrack', () => {
-        handleNextSong();
-      });
+      navigator.mediaSession.setActionHandler('previoustrack', handlePrevSong);
+      navigator.mediaSession.setActionHandler('nexttrack', handleNextSong);
 
       navigator.mediaSession.setActionHandler('seekto', (details) => {
         if (details.seekTime !== undefined && playerRef.current?.seekTo) {
@@ -323,7 +311,7 @@ export default function App() {
         }
       });
     }
-  }, [currentSong, queue, currentTime, duration]);
+  }, [currentSong, queue]);
 
   useEffect(() => {
     if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession && duration > 0) {
@@ -337,35 +325,18 @@ export default function App() {
     }
   }, [currentTime, duration]);
 
-  const unlockAudioContext = () => {
-    setHasUserInteracted(true);
-    if (silentAudioRef.current) {
-      silentAudioRef.current.play().catch(() => {});
-    }
-    if (currentSong && playerRef.current?.playVideo) {
-      playerRef.current.playVideo();
-      setIsPlaying(true);
-    } else if (queue.length > 0) {
-      playSong(queue[0]);
-    }
-  };
-
   const startSilentAudio = () => {
     if (silentAudioRef.current) {
       silentAudioRef.current.play().catch(() => {});
     }
   };
 
-  const playSong = (song) => {
+  const playSong = useCallback((song) => {
     if (!song) return;
-    
-    setHasUserInteracted(true);
     startSilentAudio();
 
     if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
-      try {
-        playerRef.current.stopVideo();
-      } catch (e) {}
+      try { playerRef.current.stopVideo(); } catch (e) {}
     }
 
     setCurrentSong(song);
@@ -377,7 +348,7 @@ export default function App() {
         setCurrentBgIndex(prev => (prev + 1) % station.bgImages.length);
       }
     }
-  };
+  }, [activeTab]);
 
   useEffect(() => {
     if (!currentSong) return;
@@ -403,17 +374,8 @@ export default function App() {
         events: {
           onReady: (e) => {
             e.target.setVolume(volume);
-            const playPromise = e.target.playVideo();
-            if (playPromise !== undefined) {
-              playPromise.then(() => setIsPlaying(true)).catch(() => {
-                // If browser blocks unmuted autoplay on initial boot, mute & force continuous radio flow
-                e.target.mute();
-                e.target.playVideo();
-                setIsPlaying(true);
-              });
-            } else {
-              setIsPlaying(true);
-            }
+            e.target.playVideo();
+            setIsPlaying(true);
           },
           onStateChange: (e) => {
             if (e.data === 1) {
@@ -458,7 +420,7 @@ export default function App() {
     if (!station || station.queries.length === 0) return;
 
     if (stationKey === 'pauwa') {
-      if (stationCache[stationKey] && stationCache[stationKey].party && stationCache[stationKey].heartbreak) {
+      if (stationCache[stationKey]?.party && stationCache[stationKey]?.heartbreak) {
         const { party, heartbreak } = stationCache[stationKey];
         setPartyTracks(party);
         setHeartbreakTracks(heartbreak);
@@ -466,7 +428,7 @@ export default function App() {
         if (!currentSong && party.length > 0) playSong(party[0]);
         return;
       }
-    } else if (stationCache[stationKey] && stationCache[stationKey].tracks && stationCache[stationKey].tracks.length > 0) {
+    } else if (stationCache[stationKey]?.tracks?.length > 0) {
       const cachedTracks = stationCache[stationKey].tracks;
       setSongs(cachedTracks);
       setQueue(cachedTracks);
@@ -512,9 +474,7 @@ export default function App() {
           [stationKey]: { party: fetchedParty, heartbreak: fetchedSad } 
         }));
 
-        if (fetchedParty.length > 0 && !currentSong) {
-          playSong(fetchedParty[0]);
-        }
+        if (fetchedParty.length > 0 && !currentSong) playSong(fetchedParty[0]);
       } else {
         const query = station.queries[0];
         const data = await fetchWithKeyRotation(apiKey => 
@@ -552,13 +512,13 @@ export default function App() {
     setActiveTab(stationKey);
     setCurrentBgIndex(0);
     setIsSidebarOpen(false);
-    if (['home', 'barber', 'truck', 'pauwa', 'discover'].includes(stationKey)) {
+    if (['home', 'barber', 'truck', 'pauwa'].includes(stationKey)) {
       loadStationSongs(stationKey);
     }
   };
 
   useEffect(() => {
-    if (['home', 'barber', 'truck', 'pauwa', 'discover'].includes(activeTab)) {
+    if (['home', 'barber', 'truck', 'pauwa'].includes(activeTab)) {
       loadStationSongs(activeTab);
     }
   }, [activeTab]);
@@ -646,7 +606,6 @@ export default function App() {
         setSearchResults(fetchedTracks);
         setQueue(fetchedTracks);
         setSearchVisibleCount(10);
-
         setSearchCache(prev => ({ ...prev, [trimmedQuery]: fetchedTracks }));
       }
     } catch (err) {
@@ -664,27 +623,62 @@ export default function App() {
   const currentStation = SPECIAL_STATIONS[activeTab];
   const currentBgImage = currentStation?.bgImages?.[currentBgIndex] || currentStation?.bgImages?.[0];
 
-  const discoverList = searchResults.length > 0 ? searchResults : songs;
-
   return (
-    <div 
-      onClick={() => { if (!hasUserInteracted) unlockAudioContext(); }}
-      className="min-h-screen bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative"
-    >
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative">
       
+      {/* Preconnect for speed */}
+      <link rel="preconnect" href="https://i.ytimg.com" />
+      <link rel="preconnect" href="https://www.youtube.com" />
+
       <audio 
         ref={silentAudioRef} 
         loop 
         src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" 
       />
+      
+      {/* Background YouTube Audio Engine */}
       <div className="fixed top-0 left-0 w-1 h-1 opacity-0 pointer-events-none -z-50 overflow-hidden">
         <div id="yt-player-instance"></div>
       </div>
 
-      {!hasUserInteracted && (
-        <div className="fixed top-2 left-1/2 transform -translate-x-1/2 z-50 bg-amber-500 text-neutral-950 px-4 py-2 rounded-full font-bold text-xs shadow-2xl flex items-center gap-2 animate-bounce cursor-pointer">
-          <Icon name="radio" className="w-4 h-4" />
-          <span>Click anywhere to enable unmuted continuous radio playback!</span>
+      {/* Video Modal Player Overlay */}
+      {videoModalSong && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+          <div className="w-full max-w-4xl bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden shadow-2xl relative flex flex-col">
+            <div className="p-4 bg-neutral-900/90 border-b border-neutral-800 flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0 pr-4">
+                <Icon name="video" className="w-5 h-5 text-amber-400 shrink-0" />
+                <h3 className="font-bold text-sm text-white truncate">{videoModalSong.title}</h3>
+              </div>
+              <button
+                onClick={() => setVideoModalSong(null)}
+                className="p-1.5 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition"
+              >
+                <Icon name="close" className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="relative w-full aspect-video bg-black">
+              <iframe
+                className="w-full h-full"
+                src={`https://www.youtube.com/embed/${videoModalSong.id}?autoplay=1&enablejsapi=1`}
+                title={videoModalSong.title}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              ></iframe>
+            </div>
+
+            <div className="p-4 bg-neutral-900 flex items-center justify-between">
+              <span className="text-xs text-neutral-400 truncate">{videoModalSong.channel}</span>
+              <button
+                onClick={() => playSong(videoModalSong)}
+                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs flex items-center gap-1.5 transition"
+              >
+                <Icon name="play" className="w-4 h-4" />
+                <span>Listen Background Audio</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -852,6 +846,7 @@ export default function App() {
               key={currentBgImage}
               src={currentBgImage} 
               alt="Station Background" 
+              loading="lazy"
               className="w-full h-full object-cover filter brightness-[0.75] contrast-100 scale-105 transition-opacity duration-1000 animate-fadeIn"
             />
             <div className="absolute inset-0 bg-gradient-to-b from-neutral-950/70 via-neutral-950/60 to-neutral-950/85" />
@@ -863,7 +858,7 @@ export default function App() {
             <div className="flex items-start gap-2">
               <Icon name="info" className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
               <p>
-                <strong>Mobile Tip:</strong> If audio pauses when switching apps or locking your phone, pull down your notification panel or lock screen and tap <strong>Play</strong> to continue!
+                <strong>Mobile Tip:</strong> If audio pauses when switching apps or locking your phone, pull down your notification panel and tap <strong>Play</strong>!
               </p>
             </div>
             <button onClick={() => setShowMobileTip(false)} className="text-amber-400 font-bold text-sm px-1">✕</button>
@@ -904,7 +899,7 @@ export default function App() {
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
             <div className="p-8 rounded-3xl border border-neutral-800 bg-neutral-900/60 backdrop-blur-xl shadow-2xl">
               <h2 className="text-2xl font-black text-white mb-2">Discover & Search Tracks</h2>
-              <p className="text-xs text-neutral-400 mb-6">Type a query to search or browse top continuous radio streams below.</p>
+              <p className="text-xs text-neutral-400 mb-6">Type a query to load audio tracks. Results display only after searching.</p>
               
               <form onSubmit={handleSearchSubmit} className="flex gap-2">
                 <div className="relative flex-1">
@@ -930,81 +925,64 @@ export default function App() {
               </form>
             </div>
 
-            {discoverList.length > 0 && (
+            {searchResults.length > 0 && (
               <div className="space-y-3">
                 <div className="flex justify-between items-center px-1">
-                  <h3 className="text-lg font-black text-white">
-                    {searchResults.length > 0 ? "Search Results" : "Featured Tracks"}
-                  </h3>
-                  <span className="text-xs text-neutral-400">
-                    Showing {Math.min(searchResults.length > 0 ? searchVisibleCount : discoverVisibleCount, discoverList.length)} of {discoverList.length} songs
-                  </span>
+                  <h3 className="text-lg font-black text-white">Search Results</h3>
+                  <span className="text-xs text-neutral-400">Showing {Math.min(searchVisibleCount, searchResults.length)} of {searchResults.length} songs</span>
                 </div>
 
                 <div className="grid grid-cols-1 gap-2">
-                  {discoverList
-                    .slice(0, searchResults.length > 0 ? searchVisibleCount : discoverVisibleCount)
-                    .map((track, i) => {
-                      const isCurrent = currentSong?.id === track.id;
-                      return (
-                        <div
-                          key={track.id + i}
-                          onClick={() => playSong(track)}
-                          className={`p-3.5 rounded-2xl border flex items-center justify-between cursor-pointer transition backdrop-blur-md ${
-                            isCurrent
-                              ? 'bg-neutral-900/90 border-amber-500/80 shadow-xl'
-                              : 'bg-neutral-900/50 border-neutral-800/70 hover:bg-neutral-900/80'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3.5 min-w-0">
-                            <span className="text-xs font-mono text-neutral-400 w-6 text-center">{i + 1}</span>
-                            <img src={track.thumbnail} alt="" className="w-12 h-12 rounded-xl object-cover shrink-0 shadow-md" />
-                            <div className="min-w-0">
-                              <h4 className={`font-bold text-xs truncate ${isCurrent ? 'text-amber-400' : 'text-white'}`}>
-                                {track.title}
-                              </h4>
-                              <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-3">
-                            {isCurrent && isPlaying && (
-                              <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 animate-pulse border border-amber-500/30">
-                                PLAYING
-                              </span>
-                            )}
-                            <a
-                              href={`https://www.youtube.com/watch?v=${track.id}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="p-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 hover:text-white transition flex items-center gap-1 text-[10px] font-bold border border-neutral-700"
-                              title="Open Official YouTube Song Link"
-                            >
-                              <Icon name="external" className="w-3.5 h-3.5 text-red-400" />
-                              <span className="hidden sm:inline">YouTube</span>
-                            </a>
-                            <button onClick={(e) => { e.stopPropagation(); toggleLike(track); }} className="text-neutral-500 hover:text-pink-500 transition">
-                              <Icon name={likedSongs.some(s => s.id === track.id) ? "heart" : "heartOutline"} className="w-4 h-4 text-pink-500" />
-                            </button>
+                  {searchResults.slice(0, searchVisibleCount).map((track, i) => {
+                    const isCurrent = currentSong?.id === track.id;
+                    return (
+                      <div
+                        key={track.id + i}
+                        onClick={() => playSong(track)}
+                        className={`p-3.5 rounded-2xl border flex items-center justify-between cursor-pointer transition backdrop-blur-md ${
+                          isCurrent
+                            ? 'bg-neutral-900/90 border-amber-500/80 shadow-xl'
+                            : 'bg-neutral-900/50 border-neutral-800/70 hover:bg-neutral-900/80'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          <span className="text-xs font-mono text-neutral-400 w-6 text-center">{i + 1}</span>
+                          <img src={track.thumbnail} alt="" loading="lazy" className="w-12 h-12 rounded-xl object-cover shrink-0 shadow-md" />
+                          <div className="min-w-0">
+                            <h4 className={`font-bold text-xs truncate ${isCurrent ? 'text-amber-400' : 'text-white'}`}>
+                              {track.title}
+                            </h4>
+                            <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
                           </div>
                         </div>
-                      );
-                    })}
+
+                        <div className="flex items-center gap-2">
+                          {isCurrent && isPlaying && (
+                            <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 animate-pulse border border-amber-500/30">
+                              PLAYING
+                            </span>
+                          )}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); }}
+                            className="p-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center gap-1 text-[10px] font-bold"
+                            title="See Video"
+                          >
+                            <Icon name="video" className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Watch Video</span>
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); toggleLike(track); }} className="text-neutral-500 hover:text-pink-500 transition p-1">
+                            <Icon name={likedSongs.some(s => s.id === track.id) ? "heart" : "heartOutline"} className="w-4 h-4 text-pink-500" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
-                {/* SHOW MORE BUTTON LOGIC FOR BOTH DISCOVER AND SEARCH */}
-                {((searchResults.length > 0 && searchVisibleCount < searchResults.length) ||
-                  (searchResults.length === 0 && discoverVisibleCount < songs.length)) && (
+                {searchVisibleCount < searchResults.length && (
                   <div className="text-center pt-6 pb-4">
                     <button
-                      onClick={() => {
-                        if (searchResults.length > 0) {
-                          setSearchVisibleCount(prev => prev + 10);
-                        } else {
-                          setDiscoverVisibleCount(prev => prev + 10);
-                        }
-                      }}
+                      onClick={() => setSearchVisibleCount(prev => prev + 10)}
                       className="px-6 py-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-bold text-amber-400 border border-neutral-700 transition shadow-xl"
                     >
                       Show More Songs (+10)
@@ -1018,7 +996,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Pauwa Party Special View */}
+        {/* Pauwa Party View */}
         {activeTab === 'pauwa' && currentStation && (
           <div className="max-w-5xl mx-auto space-y-8 relative z-10">
             <div className="p-8 rounded-3xl border border-neutral-700/50 relative overflow-hidden shadow-2xl backdrop-blur-md bg-neutral-900/40">
@@ -1047,7 +1025,7 @@ export default function App() {
                 <div className="flex items-center justify-between px-1 pb-1 border-b border-emerald-500/30">
                   <h3 className="text-md font-black text-emerald-300 flex items-center gap-2">
                     <Icon name="beer" className="w-4 h-4 text-emerald-400" />
-                    <span>🎉 Party Songs (Desi Peg Bangers)</span>
+                    <span>🎉 Party Songs</span>
                   </h3>
                   <span className="text-[10px] text-neutral-400 font-mono">{partyTracks.length} tracks</span>
                 </div>
@@ -1067,7 +1045,7 @@ export default function App() {
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <span className="text-[10px] font-mono text-neutral-500 w-5 text-center">{i + 1}</span>
-                          <img src={track.thumbnail} alt="" className="w-10 h-10 rounded-xl object-cover shrink-0 shadow-md" />
+                          <img src={track.thumbnail} alt="" loading="lazy" className="w-10 h-10 rounded-xl object-cover shrink-0 shadow-md" />
                           <div className="min-w-0">
                             <h4 className={`font-bold text-xs truncate ${isCurrent ? 'text-emerald-400' : 'text-white'}`}>
                               {track.title}
@@ -1077,15 +1055,13 @@ export default function App() {
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <a
-                            href={`https://www.youtube.com/watch?v=${track.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="p-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 hover:text-white transition flex items-center text-[10px] border border-neutral-700"
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); }}
+                            className="p-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 transition flex items-center text-[10px] font-bold"
+                            title="See Video"
                           >
-                            <Icon name="external" className="w-3 h-3 text-red-400" />
-                          </a>
+                            <Icon name="video" className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
                     );
@@ -1097,7 +1073,7 @@ export default function App() {
                 <div className="flex items-center justify-between px-1 pb-1 border-b border-pink-500/30">
                   <h3 className="text-md font-black text-pink-300 flex items-center gap-2">
                     <Icon name="heart" className="w-4 h-4 text-pink-400" />
-                    <span>💔 Heartbreaking Songs</span>
+                    <span>💔 Heartbreak Songs</span>
                   </h3>
                   <span className="text-[10px] text-neutral-400 font-mono">{heartbreakTracks.length} tracks</span>
                 </div>
@@ -1117,7 +1093,7 @@ export default function App() {
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <span className="text-[10px] font-mono text-neutral-500 w-5 text-center">{i + 1}</span>
-                          <img src={track.thumbnail} alt="" className="w-10 h-10 rounded-xl object-cover shrink-0 shadow-md" />
+                          <img src={track.thumbnail} alt="" loading="lazy" className="w-10 h-10 rounded-xl object-cover shrink-0 shadow-md" />
                           <div className="min-w-0">
                             <h4 className={`font-bold text-xs truncate ${isCurrent ? 'text-pink-400' : 'text-white'}`}>
                               {track.title}
@@ -1127,15 +1103,13 @@ export default function App() {
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <a
-                            href={`https://www.youtube.com/watch?v=${track.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="p-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 hover:text-white transition flex items-center text-[10px] border border-neutral-700"
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); }}
+                            className="p-1.5 rounded-xl bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 border border-pink-500/30 transition flex items-center text-[10px] font-bold"
+                            title="See Video"
                           >
-                            <Icon name="external" className="w-3 h-3 text-red-400" />
-                          </a>
+                            <Icon name="video" className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
                     );
@@ -1148,7 +1122,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Other Stations (Home / Barber / Truck) */}
+        {/* Home / Barber / Truck Stations */}
         {['home', 'barber', 'truck'].includes(activeTab) && currentStation && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
             <div className="p-8 rounded-3xl border border-neutral-700/50 relative overflow-hidden shadow-2xl backdrop-blur-md bg-neutral-900/40">
@@ -1186,7 +1160,7 @@ export default function App() {
                     >
                       <div className="flex items-center gap-3.5 min-w-0">
                         <span className="text-xs font-mono text-neutral-400 w-6 text-center">{i + 1}</span>
-                        <img src={track.thumbnail} alt="" className="w-12 h-12 rounded-xl object-cover shrink-0 shadow-md" />
+                        <img src={track.thumbnail} alt="" loading="lazy" className="w-12 h-12 rounded-xl object-cover shrink-0 shadow-md" />
                         <div className="min-w-0">
                           <h4 className={`font-bold text-xs truncate ${isCurrent ? 'text-amber-400' : 'text-white'}`}>
                             {track.title}
@@ -1195,23 +1169,21 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
                         {isCurrent && isPlaying && (
                           <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 animate-pulse border border-amber-500/30">
                             PLAYING
                           </span>
                         )}
-                        <a
-                          href={`https://www.youtube.com/watch?v=${track.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="p-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 hover:text-white transition flex items-center gap-1 text-[10px] font-bold border border-neutral-700"
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); }}
+                          className="p-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center gap-1 text-[10px] font-bold"
+                          title="See Video"
                         >
-                          <Icon name="external" className="w-3.5 h-3.5 text-red-400" />
-                          <span className="hidden sm:inline">YouTube</span>
-                        </a>
-                        <button onClick={(e) => { e.stopPropagation(); toggleLike(track); }} className="text-neutral-500 hover:text-pink-500 transition">
+                          <Icon name="video" className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Watch Video</span>
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); toggleLike(track); }} className="text-neutral-500 hover:text-pink-500 transition p-1">
                           <Icon name={likedSongs.some(s => s.id === track.id) ? "heart" : "heartOutline"} className="w-4 h-4 text-pink-500" />
                         </button>
                       </div>
@@ -1236,15 +1208,23 @@ export default function App() {
                 likedSongs.map((track, i) => (
                   <div key={track.id + i} onClick={() => playSong(track)} className="p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 transition">
                     <div className="flex items-center gap-3.5 min-w-0">
-                      <img src={track.thumbnail} alt="" className="w-12 h-12 rounded-xl object-cover shrink-0" />
+                      <img src={track.thumbnail} alt="" loading="lazy" className="w-12 h-12 rounded-xl object-cover shrink-0" />
                       <div className="min-w-0">
                         <h4 className="font-bold text-xs text-white truncate">{track.title}</h4>
                         <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
                       </div>
                     </div>
-                    <button onClick={(e) => { e.stopPropagation(); toggleLike(track); }} className="text-pink-500">
-                      <Icon name="heart" className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); }}
+                        className="p-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center text-[10px]"
+                      >
+                        <Icon name="video" className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); toggleLike(track); }} className="text-pink-500 p-1">
+                        <Icon name="heart" className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
@@ -1264,12 +1244,18 @@ export default function App() {
                 history.map((track, i) => (
                   <div key={track.id + i} onClick={() => playSong(track)} className="p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 transition">
                     <div className="flex items-center gap-3.5 min-w-0">
-                      <img src={track.thumbnail} alt="" className="w-12 h-12 rounded-xl object-cover shrink-0" />
+                      <img src={track.thumbnail} alt="" loading="lazy" className="w-12 h-12 rounded-xl object-cover shrink-0" />
                       <div className="min-w-0">
                         <h4 className="font-bold text-xs text-white truncate">{track.title}</h4>
                         <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
                       </div>
                     </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); }}
+                      className="p-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center text-[10px]"
+                    >
+                      <Icon name="video" className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 ))
               )}
@@ -1279,7 +1265,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Persistent Audio Player Footer */}
+      {/* Persistent Player Footer */}
       {currentSong && (
         <footer className={`fixed bottom-0 left-0 right-0 z-40 bg-neutral-900/95 backdrop-blur-2xl border-t border-neutral-800/80 transition-all duration-300 shadow-2xl ${isPlayerMinimized ? 'p-2' : 'p-3 md:p-4'}`}>
           <div className="absolute -top-3.5 right-6 z-50">
@@ -1347,26 +1333,25 @@ export default function App() {
               </div>
             )}
 
-            <div className="hidden md:flex items-center justify-end w-1/4 gap-3">
+            <div className="hidden md:flex items-center justify-end w-1/4 gap-2">
               {!isPlayerMinimized && (
                 <>
-                  <a
-                    href={`https://www.youtube.com/watch?v=${currentSong.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-3 py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 hover:text-white transition flex items-center gap-1.5 text-xs font-bold border border-neutral-700 mr-2"
+                  <button
+                    onClick={() => setVideoModalSong(currentSong)}
+                    className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 transition flex items-center gap-1.5 text-xs font-bold"
                   >
-                    <Icon name="external" className="w-4 h-4 text-red-400" />
-                    <span>YouTube Link</span>
-                  </a>
-                  <Icon name="volume" className="w-4 h-4 text-neutral-400" />
+                    <Icon name="video" className="w-4 h-4" />
+                    <span>Watch Video</span>
+                  </button>
+
+                  <Icon name="volume" className="w-4 h-4 text-neutral-400 ml-2" />
                   <input
                     type="range"
                     min="0"
                     max="100"
                     value={volume}
                     onChange={handleVolumeChange}
-                    className="w-24 h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                    className="w-20 h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
                   />
                 </>
               )}
