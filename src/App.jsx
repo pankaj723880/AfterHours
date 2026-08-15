@@ -49,7 +49,7 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
     pause: <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" fill="currentColor" />,
     skipNext: <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" fill="currentColor" />,
     skipPrev: <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" fill="currentColor" />,
-    search: <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill="currentColor" />,
+    search: <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 11.99 14 9.5 14z" fill="currentColor" />,
     heart: <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="currentColor" />,
     heartOutline: <path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z" fill="currentColor" />,
     discover: <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" fill="currentColor" />,
@@ -153,7 +153,7 @@ const SPECIAL_STATIONS = {
     subtitle: "Explore global tracks, classic retro gems, and personalized audio streams",
     badge: "✨ Global Audio Search",
     bgImages: [],
-    queries: []
+    queries: ["bollywood trending songs continuous radio"]
   },
   library: {
     id: "library",
@@ -211,6 +211,7 @@ export default function App() {
   const [songs, setSongs] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
   const [searchVisibleCount, setSearchVisibleCount] = useState(10);
+  const [discoverVisibleCount, setDiscoverVisibleCount] = useState(10);
   const [queue, setQueue] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -219,6 +220,7 @@ export default function App() {
 
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallBtn, setShowInstallBtn] = useState(false);
+  const [hasUserInteracted, setHasUserInteracted] = useState(false);
 
   const playerRef = useRef(null);
   const silentAudioRef = useRef(null);
@@ -335,6 +337,19 @@ export default function App() {
     }
   }, [currentTime, duration]);
 
+  const unlockAudioContext = () => {
+    setHasUserInteracted(true);
+    if (silentAudioRef.current) {
+      silentAudioRef.current.play().catch(() => {});
+    }
+    if (currentSong && playerRef.current?.playVideo) {
+      playerRef.current.playVideo();
+      setIsPlaying(true);
+    } else if (queue.length > 0) {
+      playSong(queue[0]);
+    }
+  };
+
   const startSilentAudio = () => {
     if (silentAudioRef.current) {
       silentAudioRef.current.play().catch(() => {});
@@ -344,6 +359,7 @@ export default function App() {
   const playSong = (song) => {
     if (!song) return;
     
+    setHasUserInteracted(true);
     startSilentAudio();
 
     if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
@@ -387,8 +403,17 @@ export default function App() {
         events: {
           onReady: (e) => {
             e.target.setVolume(volume);
-            e.target.playVideo();
-            setIsPlaying(true);
+            const playPromise = e.target.playVideo();
+            if (playPromise !== undefined) {
+              playPromise.then(() => setIsPlaying(true)).catch(() => {
+                // If browser blocks unmuted autoplay on initial boot, mute & force continuous radio flow
+                e.target.mute();
+                e.target.playVideo();
+                setIsPlaying(true);
+              });
+            } else {
+              setIsPlaying(true);
+            }
           },
           onStateChange: (e) => {
             if (e.data === 1) {
@@ -527,13 +552,13 @@ export default function App() {
     setActiveTab(stationKey);
     setCurrentBgIndex(0);
     setIsSidebarOpen(false);
-    if (['home', 'barber', 'truck', 'pauwa'].includes(stationKey)) {
+    if (['home', 'barber', 'truck', 'pauwa', 'discover'].includes(stationKey)) {
       loadStationSongs(stationKey);
     }
   };
 
   useEffect(() => {
-    if (['home', 'barber', 'truck', 'pauwa'].includes(activeTab)) {
+    if (['home', 'barber', 'truck', 'pauwa', 'discover'].includes(activeTab)) {
       loadStationSongs(activeTab);
     }
   }, [activeTab]);
@@ -639,8 +664,13 @@ export default function App() {
   const currentStation = SPECIAL_STATIONS[activeTab];
   const currentBgImage = currentStation?.bgImages?.[currentBgIndex] || currentStation?.bgImages?.[0];
 
+  const discoverList = searchResults.length > 0 ? searchResults : songs;
+
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative">
+    <div 
+      onClick={() => { if (!hasUserInteracted) unlockAudioContext(); }}
+      className="min-h-screen bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative"
+    >
       
       <audio 
         ref={silentAudioRef} 
@@ -650,6 +680,13 @@ export default function App() {
       <div className="fixed top-0 left-0 w-1 h-1 opacity-0 pointer-events-none -z-50 overflow-hidden">
         <div id="yt-player-instance"></div>
       </div>
+
+      {!hasUserInteracted && (
+        <div className="fixed top-2 left-1/2 transform -translate-x-1/2 z-50 bg-amber-500 text-neutral-950 px-4 py-2 rounded-full font-bold text-xs shadow-2xl flex items-center gap-2 animate-bounce cursor-pointer">
+          <Icon name="radio" className="w-4 h-4" />
+          <span>Click anywhere to enable unmuted continuous radio playback!</span>
+        </div>
+      )}
 
       {/* Mobile Top Header */}
       <header className="md:hidden sticky top-0 z-40 bg-neutral-900/95 backdrop-blur-md border-b border-neutral-800/80 px-4 py-3 flex items-center justify-between">
@@ -867,7 +904,7 @@ export default function App() {
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
             <div className="p-8 rounded-3xl border border-neutral-800 bg-neutral-900/60 backdrop-blur-xl shadow-2xl">
               <h2 className="text-2xl font-black text-white mb-2">Discover & Search Tracks</h2>
-              <p className="text-xs text-neutral-400 mb-6">Type a query to load audio tracks. Results display only after searching.</p>
+              <p className="text-xs text-neutral-400 mb-6">Type a query to search or browse top continuous radio streams below.</p>
               
               <form onSubmit={handleSearchSubmit} className="flex gap-2">
                 <div className="relative flex-1">
@@ -893,67 +930,81 @@ export default function App() {
               </form>
             </div>
 
-            {searchResults.length > 0 && (
+            {discoverList.length > 0 && (
               <div className="space-y-3">
                 <div className="flex justify-between items-center px-1">
-                  <h3 className="text-lg font-black text-white">Search Results</h3>
-                  <span className="text-xs text-neutral-400">Showing {Math.min(searchVisibleCount, searchResults.length)} of {searchResults.length} songs</span>
+                  <h3 className="text-lg font-black text-white">
+                    {searchResults.length > 0 ? "Search Results" : "Featured Tracks"}
+                  </h3>
+                  <span className="text-xs text-neutral-400">
+                    Showing {Math.min(searchResults.length > 0 ? searchVisibleCount : discoverVisibleCount, discoverList.length)} of {discoverList.length} songs
+                  </span>
                 </div>
 
                 <div className="grid grid-cols-1 gap-2">
-                  {searchResults.slice(0, searchVisibleCount).map((track, i) => {
-                    const isCurrent = currentSong?.id === track.id;
-                    return (
-                      <div
-                        key={track.id + i}
-                        onClick={() => playSong(track)}
-                        className={`p-3.5 rounded-2xl border flex items-center justify-between cursor-pointer transition backdrop-blur-md ${
-                          isCurrent
-                            ? 'bg-neutral-900/90 border-amber-500/80 shadow-xl'
-                            : 'bg-neutral-900/50 border-neutral-800/70 hover:bg-neutral-900/80'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3.5 min-w-0">
-                          <span className="text-xs font-mono text-neutral-400 w-6 text-center">{i + 1}</span>
-                          <img src={track.thumbnail} alt="" className="w-12 h-12 rounded-xl object-cover shrink-0 shadow-md" />
-                          <div className="min-w-0">
-                            <h4 className={`font-bold text-xs truncate ${isCurrent ? 'text-amber-400' : 'text-white'}`}>
-                              {track.title}
-                            </h4>
-                            <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
+                  {discoverList
+                    .slice(0, searchResults.length > 0 ? searchVisibleCount : discoverVisibleCount)
+                    .map((track, i) => {
+                      const isCurrent = currentSong?.id === track.id;
+                      return (
+                        <div
+                          key={track.id + i}
+                          onClick={() => playSong(track)}
+                          className={`p-3.5 rounded-2xl border flex items-center justify-between cursor-pointer transition backdrop-blur-md ${
+                            isCurrent
+                              ? 'bg-neutral-900/90 border-amber-500/80 shadow-xl'
+                              : 'bg-neutral-900/50 border-neutral-800/70 hover:bg-neutral-900/80'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3.5 min-w-0">
+                            <span className="text-xs font-mono text-neutral-400 w-6 text-center">{i + 1}</span>
+                            <img src={track.thumbnail} alt="" className="w-12 h-12 rounded-xl object-cover shrink-0 shadow-md" />
+                            <div className="min-w-0">
+                              <h4 className={`font-bold text-xs truncate ${isCurrent ? 'text-amber-400' : 'text-white'}`}>
+                                {track.title}
+                              </h4>
+                              <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            {isCurrent && isPlaying && (
+                              <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 animate-pulse border border-amber-500/30">
+                                PLAYING
+                              </span>
+                            )}
+                            <a
+                              href={`https://www.youtube.com/watch?v=${track.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="p-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 hover:text-white transition flex items-center gap-1 text-[10px] font-bold border border-neutral-700"
+                              title="Open Official YouTube Song Link"
+                            >
+                              <Icon name="external" className="w-3.5 h-3.5 text-red-400" />
+                              <span className="hidden sm:inline">YouTube</span>
+                            </a>
+                            <button onClick={(e) => { e.stopPropagation(); toggleLike(track); }} className="text-neutral-500 hover:text-pink-500 transition">
+                              <Icon name={likedSongs.some(s => s.id === track.id) ? "heart" : "heartOutline"} className="w-4 h-4 text-pink-500" />
+                            </button>
                           </div>
                         </div>
-
-                        <div className="flex items-center gap-3">
-                          {isCurrent && isPlaying && (
-                            <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 animate-pulse border border-amber-500/30">
-                              PLAYING
-                            </span>
-                          )}
-                          <a
-                            href={`https://www.youtube.com/watch?v=${track.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="p-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 hover:text-white transition flex items-center gap-1 text-[10px] font-bold border border-neutral-700"
-                            title="Open Official YouTube Song Link"
-                          >
-                            <Icon name="external" className="w-3.5 h-3.5 text-red-400" />
-                            <span className="hidden sm:inline">YouTube</span>
-                          </a>
-                          <button onClick={(e) => { e.stopPropagation(); toggleLike(track); }} className="text-neutral-500 hover:text-pink-500 transition">
-                            <Icon name={likedSongs.some(s => s.id === track.id) ? "heart" : "heartOutline"} className="w-4 h-4 text-pink-500" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
                 </div>
 
-                {searchVisibleCount < searchResults.length && (
+                {/* SHOW MORE BUTTON LOGIC FOR BOTH DISCOVER AND SEARCH */}
+                {((searchResults.length > 0 && searchVisibleCount < searchResults.length) ||
+                  (searchResults.length === 0 && discoverVisibleCount < songs.length)) && (
                   <div className="text-center pt-6 pb-4">
                     <button
-                      onClick={() => setSearchVisibleCount(prev => prev + 10)}
+                      onClick={() => {
+                        if (searchResults.length > 0) {
+                          setSearchVisibleCount(prev => prev + 10);
+                        } else {
+                          setDiscoverVisibleCount(prev => prev + 10);
+                        }
+                      }}
                       className="px-6 py-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-bold text-amber-400 border border-neutral-700 transition shadow-xl"
                     >
                       Show More Songs (+10)
