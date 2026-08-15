@@ -362,6 +362,15 @@ export default function App() {
     if (!song) return;
     startSilentAudio();
 
+    // If already playing the same song, ensure player triggers playback
+    if (currentSong?.id === song.id) {
+      if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
+        playerRef.current.playVideo();
+      }
+      setIsPlaying(true);
+      return;
+    }
+
     if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
       try { playerRef.current.stopVideo(); } catch (e) {}
     }
@@ -375,7 +384,7 @@ export default function App() {
         setCurrentBgIndex(prev => (prev + 1) % station.bgImages.length);
       }
     }
-  }, [activeTab]);
+  }, [activeTab, currentSong]);
 
   useEffect(() => {
     if (!currentSong) return;
@@ -540,7 +549,6 @@ export default function App() {
     setCurrentBgIndex(0);
     setIsSidebarOpen(false);
 
-    // If video modal is open, convert it into floating PiP mini-player when switching tabs
     if (videoModalSong) {
       setIsPipActive(true);
     }
@@ -638,7 +646,7 @@ export default function App() {
   const currentBgImage = currentStation?.bgImages?.[currentBgIndex] || currentStation?.bgImages?.[0];
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative">
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative overflow-x-hidden">
       
       {/* Preconnect for speed */}
       <link rel="preconnect" href="https://i.ytimg.com" />
@@ -660,31 +668,31 @@ export default function App() {
         <div 
           className={
             isPipActive
-              ? "fixed bottom-24 right-4 z-50 w-72 sm:w-80 bg-neutral-900 border border-neutral-700 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 animate-fadeIn"
-              : "fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn"
+              ? "fixed bottom-24 right-4 z-[9999] w-72 sm:w-80 bg-neutral-900 border border-neutral-700 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 animate-fadeIn"
+              : "fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn"
           }
         >
           <div className={`w-full bg-neutral-900 ${isPipActive ? '' : 'max-w-4xl border border-neutral-800 rounded-3xl'} overflow-hidden shadow-2xl relative flex flex-col`}>
-            <div className="p-3 bg-neutral-900/90 border-b border-neutral-800 flex items-center justify-between">
-              <div className="flex items-center gap-2 min-w-0 pr-2">
+            <div className="p-3 bg-neutral-900/90 border-b border-neutral-800 flex items-center justify-between gap-2 overflow-visible">
+              <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
                 <Icon name="video" className="w-4 h-4 text-amber-400 shrink-0" />
                 <h3 className="font-bold text-xs text-white truncate">{videoModalSong.title}</h3>
               </div>
               
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5 shrink-0 z-10">
                 <button
                   onClick={() => setIsPipActive(!isPipActive)}
-                  className="p-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition"
+                  className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition shrink-0 inline-flex items-center justify-center"
                   title={isPipActive ? "Expand Fullscreen" : "Minimize to PiP"}
                 >
-                  <Icon name={isPipActive ? "expand" : "collapse"} className="w-4 h-4" />
+                  <Icon name={isPipActive ? "expand" : "collapse"} className="w-4 h-4 shrink-0" />
                 </button>
                 <button
                   onClick={() => { setVideoModalSong(null); setIsPipActive(false); }}
-                  className="p-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition"
+                  className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition shrink-0 inline-flex items-center justify-center"
                   title="Close Video (Audio continues in background)"
                 >
-                  <Icon name="close" className="w-4 h-4" />
+                  <Icon name="close" className="w-4 h-4 shrink-0" />
                 </button>
               </div>
             </div>
@@ -700,13 +708,17 @@ export default function App() {
             </div>
 
             {!isPipActive && (
-              <div className="p-4 bg-neutral-900 flex items-center justify-between">
-                <span className="text-xs text-neutral-400 truncate">{videoModalSong.channel}</span>
+              <div className="p-4 bg-neutral-900 flex items-center justify-between gap-4">
+                <span className="text-xs text-neutral-400 truncate flex-1 min-w-0">{videoModalSong.channel}</span>
                 <button
-                  onClick={() => playSong(videoModalSong)}
-                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs flex items-center gap-1.5 transition"
+                  onClick={() => {
+                    playSong(videoModalSong);
+                    setVideoModalSong(null);
+                    setIsPipActive(false);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs flex items-center gap-1.5 transition shrink-0 shadow-md cursor-pointer"
                 >
-                  <Icon name="play" className="w-4 h-4" />
+                  <Icon name="play" className="w-4 h-4 shrink-0" />
                   <span>Listen Background Audio</span>
                 </button>
               </div>
@@ -720,7 +732,7 @@ export default function App() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="p-2 rounded-xl bg-neutral-800 text-neutral-200 hover:text-white focus:outline-none"
+            className="p-2 rounded-xl bg-neutral-800 text-neutral-200 hover:text-white focus:outline-none shrink-0"
             aria-label="Toggle Menu"
           >
             <Icon name={isSidebarOpen ? "close" : "menu"} className="w-6 h-6 text-amber-400" />
@@ -737,7 +749,7 @@ export default function App() {
           {showInstallBtn && (
             <button
               onClick={handleInstallClick}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-neutral-950 font-bold text-xs"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-neutral-950 font-bold text-xs shrink-0"
             >
               <Icon name="download" className="w-3.5 h-3.5" />
               <span>Install</span>
@@ -894,7 +906,7 @@ export default function App() {
                 <strong>Mobile Tip:</strong> If audio pauses when switching apps or locking your phone, pull down your notification panel and tap <strong>Play</strong>!
               </p>
             </div>
-            <button onClick={() => setShowMobileTip(false)} className="text-amber-400 font-bold text-sm px-1">✕</button>
+            <button onClick={() => setShowMobileTip(false)} className="text-amber-400 font-bold text-sm px-1 shrink-0">✕</button>
           </div>
         )}
 
@@ -913,9 +925,9 @@ export default function App() {
             {showInstallBtn && (
               <button
                 onClick={handleInstallClick}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-neutral-950 font-bold text-xs shadow-lg animate-pulse transition"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-neutral-950 font-bold text-xs shadow-lg animate-pulse transition shrink-0"
               >
-                <Icon name="download" className="w-3.5 h-3.5 text-neutral-950" />
+                <Icon name="download" className="w-3.5 h-3.5 text-neutral-950 shrink-0" />
                 <span>Install App</span>
               </button>
             )}
@@ -950,9 +962,9 @@ export default function App() {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="px-6 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 font-bold text-xs text-white transition shadow-lg shadow-amber-950/50 flex items-center gap-2"
+                  className="px-6 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 font-bold text-xs text-white transition shadow-lg shadow-amber-950/50 flex items-center gap-2 shrink-0"
                 >
-                  {isLoading ? <Icon name="sparkles" className="w-4 h-4 animate-spin" /> : <Icon name="search" className="w-4 h-4" />}
+                  {isLoading ? <Icon name="sparkles" className="w-4 h-4 animate-spin shrink-0" /> : <Icon name="search" className="w-4 h-4 shrink-0" />}
                   <span>Search</span>
                 </button>
               </form>
@@ -989,22 +1001,22 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 shrink-0">
                           {isCurrent && isPlaying && (
-                            <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 animate-pulse border border-amber-500/30">
+                            <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 animate-pulse border border-amber-500/30 shrink-0">
                               PLAYING
                             </span>
                           )}
                           <button
                             onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); setIsPipActive(false); }}
-                            className="p-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center gap-1 text-[10px] font-bold"
+                            className="p-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center gap-1 text-[10px] font-bold shrink-0"
                             title="See Video"
                           >
-                            <Icon name="video" className="w-3.5 h-3.5" />
+                            <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
                             <span className="hidden sm:inline">Watch Video</span>
                           </button>
-                          <button onClick={(e) => { e.stopPropagation(); toggleLike(track); }} className="text-neutral-500 hover:text-pink-500 transition p-1">
-                            <Icon name={likedSongs.some(s => s.id === track.id) ? "heart" : "heartOutline"} className="w-4 h-4 text-pink-500" />
+                          <button onClick={(e) => { e.stopPropagation(); toggleLike(track); }} className="text-neutral-500 hover:text-pink-500 transition p-1 shrink-0">
+                            <Icon name={likedSongs.some(s => s.id === track.id) ? "heart" : "heartOutline"} className="w-4 h-4 text-pink-500 shrink-0" />
                           </button>
                         </div>
                       </div>
@@ -1048,7 +1060,7 @@ export default function App() {
             {stationLoading && (
               <div className="text-center py-6">
                 <span className="text-xs text-emerald-400 animate-pulse flex items-center justify-center gap-2">
-                  <Icon name="sparkles" className="w-4 h-4 animate-spin" /> Loading Party & Heartbreak tracks...
+                  <Icon name="sparkles" className="w-4 h-4 animate-spin shrink-0" /> Loading Party & Heartbreak tracks...
                 </span>
               </div>
             )}
@@ -1057,7 +1069,7 @@ export default function App() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between px-1 pb-1 border-b border-emerald-500/30">
                   <h3 className="text-md font-black text-emerald-300 flex items-center gap-2">
-                    <Icon name="beer" className="w-4 h-4 text-emerald-400" />
+                    <Icon name="beer" className="w-4 h-4 text-emerald-400 shrink-0" />
                     <span>🎉 Party Songs</span>
                   </h3>
                   <span className="text-[10px] text-neutral-400 font-mono">{partyTracks.length} tracks</span>
@@ -1087,13 +1099,13 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 shrink-0">
                           <button
                             onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); setIsPipActive(false); }}
-                            className="p-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 transition flex items-center text-[10px] font-bold"
+                            className="p-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 transition flex items-center text-[10px] font-bold shrink-0"
                             title="See Video"
                           >
-                            <Icon name="video" className="w-3.5 h-3.5" />
+                            <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
                           </button>
                         </div>
                       </div>
@@ -1105,7 +1117,7 @@ export default function App() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between px-1 pb-1 border-b border-pink-500/30">
                   <h3 className="text-md font-black text-pink-300 flex items-center gap-2">
-                    <Icon name="heart" className="w-4 h-4 text-pink-400" />
+                    <Icon name="heart" className="w-4 h-4 text-pink-400 shrink-0" />
                     <span>💔 Heartbreak Songs</span>
                   </h3>
                   <span className="text-[10px] text-neutral-400 font-mono">{heartbreakTracks.length} tracks</span>
@@ -1135,13 +1147,13 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 shrink-0">
                           <button
                             onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); setIsPipActive(false); }}
-                            className="p-1.5 rounded-xl bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 border border-pink-500/30 transition flex items-center text-[10px] font-bold"
+                            className="p-1.5 rounded-xl bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 border border-pink-500/30 transition flex items-center text-[10px] font-bold shrink-0"
                             title="See Video"
                           >
-                            <Icon name="video" className="w-3.5 h-3.5" />
+                            <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
                           </button>
                         </div>
                       </div>
@@ -1174,7 +1186,7 @@ export default function App() {
             {stationLoading ? (
               <div className="text-center py-6">
                 <span className="text-xs text-amber-400 animate-pulse flex items-center justify-center gap-2">
-                  <Icon name="sparkles" className="w-4 h-4 animate-spin" /> Fetching station music tracks...
+                  <Icon name="sparkles" className="w-4 h-4 animate-spin shrink-0" /> Fetching station music tracks...
                 </span>
               </div>
             ) : (
@@ -1202,22 +1214,22 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 shrink-0">
                         {isCurrent && isPlaying && (
-                          <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 animate-pulse border border-amber-500/30">
+                          <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 animate-pulse border border-amber-500/30 shrink-0">
                             PLAYING
                           </span>
                         )}
                         <button
                           onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); setIsPipActive(false); }}
-                          className="p-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center gap-1 text-[10px] font-bold"
+                          className="p-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center gap-1 text-[10px] font-bold shrink-0"
                           title="See Video"
                         >
-                          <Icon name="video" className="w-3.5 h-3.5" />
+                          <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
                           <span className="hidden sm:inline">Watch Video</span>
                         </button>
-                        <button onClick={(e) => { e.stopPropagation(); toggleLike(track); }} className="text-neutral-500 hover:text-pink-500 transition p-1">
-                          <Icon name={likedSongs.some(s => s.id === track.id) ? "heart" : "heartOutline"} className="w-4 h-4 text-pink-500" />
+                        <button onClick={(e) => { e.stopPropagation(); toggleLike(track); }} className="text-neutral-500 hover:text-pink-500 transition p-1 shrink-0">
+                          <Icon name={likedSongs.some(s => s.id === track.id) ? "heart" : "heartOutline"} className="w-4 h-4 text-pink-500 shrink-0" />
                         </button>
                       </div>
                     </div>
@@ -1247,15 +1259,15 @@ export default function App() {
                         <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                       <button
                         onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); setIsPipActive(false); }}
-                        className="p-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center text-[10px]"
+                        className="p-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center text-[10px] shrink-0"
                       >
-                        <Icon name="video" className="w-3.5 h-3.5" />
+                        <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
                       </button>
-                      <button onClick={(e) => { e.stopPropagation(); toggleLike(track); }} className="text-pink-500 p-1">
-                        <Icon name="heart" className="w-4 h-4" />
+                      <button onClick={(e) => { e.stopPropagation(); toggleLike(track); }} className="text-pink-500 p-1 shrink-0">
+                        <Icon name="heart" className="w-4 h-4 shrink-0" />
                       </button>
                     </div>
                   </div>
@@ -1285,9 +1297,9 @@ export default function App() {
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); setIsPipActive(false); }}
-                      className="p-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center text-[10px]"
+                      className="p-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center text-[10px] shrink-0"
                     >
-                      <Icon name="video" className="w-3.5 h-3.5" />
+                      <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
                     </button>
                   </div>
                 ))
@@ -1301,12 +1313,12 @@ export default function App() {
       {/* Persistent Player Footer */}
       {currentSong && (
         <footer className={`fixed bottom-0 left-0 right-0 z-40 bg-neutral-900/95 backdrop-blur-2xl border-t border-neutral-800/80 transition-all duration-300 shadow-2xl ${isPlayerMinimized ? 'p-2' : 'p-3 md:p-4'}`}>
-          <div className="absolute -top-3.5 right-6 z-50">
+          <div className="absolute -top-3.5 right-6 z-50 shrink-0">
             <button
               onClick={() => setIsPlayerMinimized(!isPlayerMinimized)}
-              className="px-3 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-amber-400 text-[10px] font-bold shadow-lg flex items-center gap-1 transition"
+              className="px-3 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-amber-400 text-[10px] font-bold shadow-lg flex items-center gap-1 transition shrink-0 cursor-pointer"
             >
-              <Icon name={isPlayerMinimized ? "chevronUp" : "chevronDown"} className="w-3.5 h-3.5" />
+              <Icon name={isPlayerMinimized ? "chevronUp" : "chevronDown"} className="w-3.5 h-3.5 shrink-0" />
               <span>{isPlayerMinimized ? "Expand Player" : "Minimize"}</span>
             </button>
           </div>
@@ -1322,21 +1334,21 @@ export default function App() {
 
             {!isPlayerMinimized && (
               <div className="flex flex-col items-center w-full md:w-2/4 gap-1.5 animate-fadeIn">
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 shrink-0">
                   <button onClick={() => setIsShuffle(!isShuffle)} className={`transition ${isShuffle ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`}>
-                    <Icon name="shuffle" className="w-4 h-4" />
+                    <Icon name="shuffle" className="w-4 h-4 shrink-0" />
                   </button>
                   <button onClick={handlePrevSong} className="text-neutral-300 hover:text-white transition">
-                    <Icon name="skipPrev" className="w-5 h-5" />
+                    <Icon name="skipPrev" className="w-5 h-5 shrink-0" />
                   </button>
-                  <button onClick={togglePlayPause} className="w-10 h-10 rounded-full bg-amber-500 hover:bg-amber-400 text-neutral-950 flex items-center justify-center shadow-lg transition">
-                    <Icon name={isPlaying ? "pause" : "play"} className="w-5 h-5" />
+                  <button onClick={togglePlayPause} className="w-10 h-10 rounded-full bg-amber-500 hover:bg-amber-400 text-neutral-950 flex items-center justify-center shadow-lg transition shrink-0">
+                    <Icon name={isPlaying ? "pause" : "play"} className="w-5 h-5 shrink-0" />
                   </button>
                   <button onClick={handleNextSong} className="text-neutral-300 hover:text-white transition">
-                    <Icon name="skipNext" className="w-5 h-5" />
+                    <Icon name="skipNext" className="w-5 h-5 shrink-0" />
                   </button>
                   <button onClick={() => setIsRepeat(!isRepeat)} className={`transition ${isRepeat ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`}>
-                    <Icon name="repeat" className="w-4 h-4" />
+                    <Icon name="repeat" className="w-4 h-4 shrink-0" />
                   </button>
                 </div>
 
@@ -1356,35 +1368,35 @@ export default function App() {
             )}
 
             {isPlayerMinimized && (
-              <div className="flex items-center gap-3">
-                <button onClick={togglePlayPause} className="w-8 h-8 rounded-full bg-amber-500 hover:bg-amber-400 text-neutral-950 flex items-center justify-center shadow-md transition">
-                  <Icon name={isPlaying ? "pause" : "play"} className="w-4 h-4" />
+              <div className="flex items-center gap-3 shrink-0">
+                <button onClick={togglePlayPause} className="w-8 h-8 rounded-full bg-amber-500 hover:bg-amber-400 text-neutral-950 flex items-center justify-center shadow-md transition shrink-0">
+                  <Icon name={isPlaying ? "pause" : "play"} className="w-4 h-4 shrink-0" />
                 </button>
-                <button onClick={handleNextSong} className="text-neutral-300 hover:text-white transition">
-                  <Icon name="skipNext" className="w-4 h-4" />
+                <button onClick={handleNextSong} className="text-neutral-300 hover:text-white transition shrink-0">
+                  <Icon name="skipNext" className="w-4 h-4 shrink-0" />
                 </button>
               </div>
             )}
 
-            <div className="hidden md:flex items-center justify-end w-1/4 gap-2">
+            <div className="hidden md:flex items-center justify-end w-1/4 gap-2 shrink-0">
               {!isPlayerMinimized && (
                 <>
                   <button
                     onClick={() => { setVideoModalSong(currentSong); setIsPipActive(false); }}
-                    className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 transition flex items-center gap-1.5 text-xs font-bold"
+                    className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 transition flex items-center gap-1.5 text-xs font-bold shrink-0"
                   >
-                    <Icon name="video" className="w-4 h-4" />
+                    <Icon name="video" className="w-4 h-4 shrink-0" />
                     <span>Watch Video</span>
                   </button>
 
-                  <Icon name="volume" className="w-4 h-4 text-neutral-400 ml-2" />
+                  <Icon name="volume" className="w-4 h-4 text-neutral-400 ml-2 shrink-0" />
                   <input
                     type="range"
                     min="0"
                     max="100"
                     value={volume}
                     onChange={handleVolumeChange}
-                    className="w-20 h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                    className="w-20 h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-amber-500 shrink-0"
                   />
                 </>
               )}
