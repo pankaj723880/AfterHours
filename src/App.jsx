@@ -362,7 +362,6 @@ export default function App() {
     if (!song) return;
     startSilentAudio();
 
-    // If already playing the same song, ensure player triggers playback
     if (currentSong?.id === song.id) {
       if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
         playerRef.current.playVideo();
@@ -539,7 +538,7 @@ export default function App() {
       }
     } catch (err) {
       console.error("Error loading station tracks across keys:", err);
-    } finally {
+    } fontally {
       setStationLoading(false);
     }
   };
@@ -648,7 +647,6 @@ export default function App() {
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative overflow-x-hidden">
       
-      {/* Preconnect for speed */}
       <link rel="preconnect" href="https://i.ytimg.com" />
       <link rel="preconnect" href="https://www.youtube.com" />
 
@@ -658,12 +656,10 @@ export default function App() {
         src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" 
       />
       
-      {/* Background YouTube Audio Engine */}
       <div className="fixed top-0 left-0 w-1 h-1 opacity-0 pointer-events-none -z-50 overflow-hidden">
         <div id="yt-player-instance"></div>
       </div>
 
-      {/* Video Modal Player / PiP Overlay */}
       {videoModalSong && (
         <div 
           className={
@@ -727,7 +723,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Mobile Top Header */}
       <header className="md:hidden sticky top-0 z-40 bg-neutral-900/95 backdrop-blur-md border-b border-neutral-800/80 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button
@@ -761,7 +756,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Backdrop overlay for Mobile Sidebar */}
       {isSidebarOpen && (
         <div 
           onClick={() => setIsSidebarOpen(false)}
@@ -769,7 +763,6 @@ export default function App() {
         />
       )}
 
-      {/* Sidebar Navigation */}
       <aside 
         className={`fixed md:static inset-y-0 left-0 z-50 w-72 md:w-64 bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80 p-4 flex flex-col justify-between shrink-0 transform transition-transform duration-300 ease-in-out ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
@@ -883,7 +876,6 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Main App Workspace */}
       <main className={`flex-1 min-h-screen overflow-y-auto p-4 md:p-8 bg-neutral-950 relative w-full transition-all duration-300 ${isPlayerMinimized ? 'pb-24' : 'pb-64'}`}>
         {currentStation && currentBgImage && (
           <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden transition-all duration-700">
@@ -939,7 +931,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Discover & Search Section */}
         {activeTab === 'discover' && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
             <div className="p-8 rounded-3xl border border-neutral-800 bg-neutral-900/60 backdrop-blur-xl shadow-2xl">
@@ -1041,7 +1032,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Pauwa Party View */}
         {activeTab === 'pauwa' && currentStation && (
           <div className="max-w-5xl mx-auto space-y-8 relative z-10">
             <div className="p-8 rounded-3xl border border-neutral-700/50 relative overflow-hidden shadow-2xl backdrop-blur-md bg-neutral-900/40">
@@ -1167,7 +1157,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Home / Barber / Truck Stations */}
         {['home', 'barber', 'truck'].includes(activeTab) && currentStation && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
             <div className="p-8 rounded-3xl border border-neutral-700/50 relative overflow-hidden shadow-2xl backdrop-blur-md bg-neutral-900/40">
@@ -1242,7 +1231,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Library Tab */}
         {activeTab === 'library' && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
             <h2 className="text-2xl font-black text-white">Liked Songs Collection</h2>
@@ -1278,7 +1266,6 @@ export default function App() {
           </div>
         )}
 
-        {/* History Tab */}
         {activeTab === 'history' && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
             <h2 className="text-2xl font-black text-white">Listening History</h2>
@@ -1310,7 +1297,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Persistent Player Footer */}
       {currentSong && (
         <footer className={`fixed bottom-0 left-0 right-0 z-40 bg-neutral-900/95 backdrop-blur-2xl border-t border-neutral-800/80 transition-all duration-300 shadow-2xl ${isPlayerMinimized ? 'p-2' : 'p-3 md:p-4'}`}>
           <div className="absolute -top-3.5 right-6 z-50 shrink-0">
