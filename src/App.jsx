@@ -210,8 +210,9 @@ export default function App() {
   const [isPlayerMinimized, setIsPlayerMinimized] = useState(false);
   const [showMobileTip, setShowMobileTip] = useState(true);
 
-  // Dedicated Video Modal State
+  // Dedicated Video Modal & PiP State
   const [videoModalSong, setVideoModalSong] = useState(null);
+  const [isPipActive, setIsPipActive] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [songs, setSongs] = useState([]);
@@ -441,7 +442,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isPlaying]);
 
-  const loadStationSongs = async (stationKey) => {
+  const loadStationSongs = async (stationKey, autoPlayIfEmpty = false) => {
     const station = SPECIAL_STATIONS[stationKey];
     if (!station || station.queries.length === 0) return;
 
@@ -450,15 +451,15 @@ export default function App() {
         const { party, heartbreak } = stationCache[stationKey];
         setPartyTracks(party);
         setHeartbreakTracks(heartbreak);
-        setQueue([...party, ...heartbreak]);
-        if (!currentSong && party.length > 0) playSong(party[0]);
+        if (!currentSong) setQueue([...party, ...heartbreak]);
+        if (autoPlayIfEmpty && !currentSong && party.length > 0) playSong(party[0]);
         return;
       }
     } else if (stationCache[stationKey]?.tracks?.length > 0) {
       const cachedTracks = stationCache[stationKey].tracks;
       setSongs(cachedTracks);
-      setQueue(cachedTracks);
-      if (!currentSong && cachedTracks.length > 0) {
+      if (!currentSong) setQueue(cachedTracks);
+      if (autoPlayIfEmpty && !currentSong && cachedTracks.length > 0) {
         const randomTrack = cachedTracks[Math.floor(Math.random() * cachedTracks.length)];
         playSong(randomTrack);
       }
@@ -493,14 +494,14 @@ export default function App() {
 
         setPartyTracks(fetchedParty);
         setHeartbreakTracks(fetchedSad);
-        setQueue([...fetchedParty, ...fetchedSad]);
+        if (!currentSong) setQueue([...fetchedParty, ...fetchedSad]);
 
         setStationCache(prev => ({ 
           ...prev, 
           [stationKey]: { party: fetchedParty, heartbreak: fetchedSad } 
         }));
 
-        if (fetchedParty.length > 0 && !currentSong) playSong(fetchedParty[0]);
+        if (autoPlayIfEmpty && fetchedParty.length > 0 && !currentSong) playSong(fetchedParty[0]);
       } else {
         const query = station.queries[0];
         const data = await fetchWithKeyRotation(apiKey => 
@@ -515,14 +516,14 @@ export default function App() {
         })) : [];
 
         setSongs(fetchedTracks);
-        setQueue(fetchedTracks);
+        if (!currentSong) setQueue(fetchedTracks);
 
         setStationCache(prev => ({ 
           ...prev, 
           [stationKey]: { tracks: fetchedTracks } 
         }));
 
-        if (fetchedTracks.length > 0 && !currentSong) {
+        if (autoPlayIfEmpty && fetchedTracks.length > 0 && !currentSong) {
           const randomIndex = Math.floor(Math.random() * fetchedTracks.length);
           playSong(fetchedTracks[randomIndex]);
         }
@@ -538,14 +539,20 @@ export default function App() {
     setActiveTab(stationKey);
     setCurrentBgIndex(0);
     setIsSidebarOpen(false);
+
+    // If video modal is open, convert it into floating PiP mini-player when switching tabs
+    if (videoModalSong) {
+      setIsPipActive(true);
+    }
+
     if (['home', 'barber', 'truck', 'pauwa'].includes(stationKey)) {
-      loadStationSongs(stationKey);
+      loadStationSongs(stationKey, false);
     }
   };
 
   useEffect(() => {
     if (['home', 'barber', 'truck', 'pauwa'].includes(activeTab)) {
-      loadStationSongs(activeTab);
+      loadStationSongs(activeTab, false);
     }
   }, [activeTab]);
 
@@ -617,7 +624,7 @@ export default function App() {
       }
     } catch (err) {
       console.error(err);
-    } font-bold {
+    } finally {
       setIsLoading(false);
     }
   };
@@ -648,21 +655,38 @@ export default function App() {
         <div id="yt-player-instance"></div>
       </div>
 
-      {/* Video Modal Player Overlay */}
+      {/* Video Modal Player / PiP Overlay */}
       {videoModalSong && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
-          <div className="w-full max-w-4xl bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden shadow-2xl relative flex flex-col">
-            <div className="p-4 bg-neutral-900/90 border-b border-neutral-800 flex items-center justify-between">
-              <div className="flex items-center gap-2 min-w-0 pr-4">
-                <Icon name="video" className="w-5 h-5 text-amber-400 shrink-0" />
-                <h3 className="font-bold text-sm text-white truncate">{videoModalSong.title}</h3>
+        <div 
+          className={
+            isPipActive
+              ? "fixed bottom-24 right-4 z-50 w-72 sm:w-80 bg-neutral-900 border border-neutral-700 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 animate-fadeIn"
+              : "fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn"
+          }
+        >
+          <div className={`w-full bg-neutral-900 ${isPipActive ? '' : 'max-w-4xl border border-neutral-800 rounded-3xl'} overflow-hidden shadow-2xl relative flex flex-col`}>
+            <div className="p-3 bg-neutral-900/90 border-b border-neutral-800 flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0 pr-2">
+                <Icon name="video" className="w-4 h-4 text-amber-400 shrink-0" />
+                <h3 className="font-bold text-xs text-white truncate">{videoModalSong.title}</h3>
               </div>
-              <button
-                onClick={() => setVideoModalSong(null)}
-                className="p-1.5 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition"
-              >
-                <Icon name="close" className="w-5 h-5" />
-              </button>
+              
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setIsPipActive(!isPipActive)}
+                  className="p-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition"
+                  title={isPipActive ? "Expand Fullscreen" : "Minimize to PiP"}
+                >
+                  <Icon name={isPipActive ? "expand" : "collapse"} className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => { setVideoModalSong(null); setIsPipActive(false); }}
+                  className="p-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition"
+                  title="Close Video (Audio continues in background)"
+                >
+                  <Icon name="close" className="w-4 h-4" />
+                </button>
+              </div>
             </div>
             
             <div className="relative w-full aspect-video bg-black">
@@ -675,16 +699,18 @@ export default function App() {
               ></iframe>
             </div>
 
-            <div className="p-4 bg-neutral-900 flex items-center justify-between">
-              <span className="text-xs text-neutral-400 truncate">{videoModalSong.channel}</span>
-              <button
-                onClick={() => playSong(videoModalSong)}
-                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs flex items-center gap-1.5 transition"
-              >
-                <Icon name="play" className="w-4 h-4" />
-                <span>Listen Background Audio</span>
-              </button>
-            </div>
+            {!isPipActive && (
+              <div className="p-4 bg-neutral-900 flex items-center justify-between">
+                <span className="text-xs text-neutral-400 truncate">{videoModalSong.channel}</span>
+                <button
+                  onClick={() => playSong(videoModalSong)}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs flex items-center gap-1.5 transition"
+                >
+                  <Icon name="play" className="w-4 h-4" />
+                  <span>Listen Background Audio</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -766,7 +792,7 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => { setActiveTab('discover'); setIsSidebarOpen(false); }}
+              onClick={() => handleStationSelect('discover')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-xs transition ${
                 activeTab === 'discover' ? 'bg-amber-600/20 text-white border border-amber-500/30' : 'text-neutral-400 hover:bg-neutral-800/50'
               }`}
@@ -823,7 +849,7 @@ export default function App() {
             </div>
 
             <button
-              onClick={() => { setActiveTab('library'); setIsSidebarOpen(false); }}
+              onClick={() => handleStationSelect('library')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-xs transition ${
                 activeTab === 'library' ? 'bg-amber-600/20 text-white border border-amber-500/30' : 'text-neutral-400 hover:bg-neutral-800/50'
               }`}
@@ -833,7 +859,7 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => { setActiveTab('history'); setIsSidebarOpen(false); }}
+              onClick={() => handleStationSelect('history')}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-xs transition ${
                 activeTab === 'history' ? 'bg-amber-600/20 text-white border border-amber-500/30' : 'text-neutral-400 hover:bg-neutral-800/50'
               }`}
@@ -970,7 +996,7 @@ export default function App() {
                             </span>
                           )}
                           <button
-                            onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); }}
+                            onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); setIsPipActive(false); }}
                             className="p-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center gap-1 text-[10px] font-bold"
                             title="See Video"
                           >
@@ -1063,7 +1089,7 @@ export default function App() {
 
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); }}
+                            onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); setIsPipActive(false); }}
                             className="p-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 transition flex items-center text-[10px] font-bold"
                             title="See Video"
                           >
@@ -1111,7 +1137,7 @@ export default function App() {
 
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); }}
+                            onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); setIsPipActive(false); }}
                             className="p-1.5 rounded-xl bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 border border-pink-500/30 transition flex items-center text-[10px] font-bold"
                             title="See Video"
                           >
@@ -1183,7 +1209,7 @@ export default function App() {
                           </span>
                         )}
                         <button
-                          onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); }}
+                          onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); setIsPipActive(false); }}
                           className="p-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center gap-1 text-[10px] font-bold"
                           title="See Video"
                         >
@@ -1223,7 +1249,7 @@ export default function App() {
                     </div>
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); }}
+                        onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); setIsPipActive(false); }}
                         className="p-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center text-[10px]"
                       >
                         <Icon name="video" className="w-3.5 h-3.5" />
@@ -1258,7 +1284,7 @@ export default function App() {
                       </div>
                     </div>
                     <button
-                      onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); }}
+                      onClick={(e) => { e.stopPropagation(); setVideoModalSong(track); setIsPipActive(false); }}
                       className="p-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center text-[10px]"
                     >
                       <Icon name="video" className="w-3.5 h-3.5" />
@@ -1344,7 +1370,7 @@ export default function App() {
               {!isPlayerMinimized && (
                 <>
                   <button
-                    onClick={() => setVideoModalSong(currentSong)}
+                    onClick={() => { setVideoModalSong(currentSong); setIsPipActive(false); }}
                     className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 transition flex items-center gap-1.5 text-xs font-bold"
                   >
                     <Icon name="video" className="w-4 h-4" />
