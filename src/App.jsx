@@ -79,7 +79,8 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
     download: <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor" />,
     info: <path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="currentColor" />,
     home: <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" fill="currentColor" />,
-    video: <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c0 .55.45-1 1-1v-3.5l4 4v-11l-4 4z" fill="currentColor" />
+    video: <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" fill="currentColor" />,
+    trash: <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor" />
   };
   return (
     <svg className={className} viewBox="0 0 24 24" {...props}>
@@ -210,7 +211,6 @@ export default function App() {
   const [isPlayerMinimized, setIsPlayerMinimized] = useState(false);
   const [showMobileTip, setShowMobileTip] = useState(true);
 
-  // Dedicated Video Modal & PiP State
   const [videoModalSong, setVideoModalSong] = useState(null);
   const [isPipActive, setIsPipActive] = useState(false);
 
@@ -283,8 +283,37 @@ export default function App() {
     }
   }, []);
 
+  const playSong = useCallback((song) => {
+    if (!song) return;
+    if (silentAudioRef.current) {
+      silentAudioRef.current.play().catch(() => {});
+    }
+
+    if (currentSong?.id === song.id) {
+      if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
+        playerRef.current.playVideo();
+      }
+      setIsPlaying(true);
+      return;
+    }
+
+    if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
+      try { playerRef.current.stopVideo(); } catch (e) {}
+    }
+
+    setCurrentSong(song);
+    setIsPlaying(true);
+
+    if (['home', 'barber', 'truck', 'pauwa'].includes(activeTab)) {
+      const station = SPECIAL_STATIONS[activeTab];
+      if (station && station.bgImages && station.bgImages.length > 0) {
+        setCurrentBgIndex(prev => (prev + 1) % station.bgImages.length);
+      }
+    }
+  }, [activeTab, currentSong]);
+
   const handleNextSong = useCallback(() => {
-    if (queue.length === 0) return;
+    if (!queue || queue.length === 0) return;
     if (isShuffle) {
       const randomIndex = Math.floor(Math.random() * queue.length);
       playSong(queue[randomIndex]);
@@ -293,14 +322,58 @@ export default function App() {
     const currentIndex = queue.findIndex(s => s.id === currentSong?.id);
     const nextIdx = (currentIndex + 1) % queue.length;
     playSong(queue[nextIdx]);
-  }, [queue, isShuffle, currentSong]);
+  }, [queue, isShuffle, currentSong, playSong]);
 
   const handlePrevSong = useCallback(() => {
-    if (queue.length === 0) return;
+    if (!queue || queue.length === 0) return;
+
+    let currentPos = currentTime;
+    if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
+      try {
+        const livePos = playerRef.current.getCurrentTime();
+        if (typeof livePos === 'number' && !isNaN(livePos)) {
+          currentPos = livePos;
+        }
+      } catch (e) {}
+    }
+
+    if (currentPos > 3) {
+      if (playerRef.current && typeof playerRef.current.seekTo === 'function') {
+        playerRef.current.seekTo(0, true);
+      }
+      setCurrentTime(0);
+      if (!isPlaying) {
+        playerRef.current?.playVideo?.();
+        setIsPlaying(true);
+      }
+      return;
+    }
+
+    if (isShuffle) {
+      const randomIndex = Math.floor(Math.random() * queue.length);
+      playSong(queue[randomIndex]);
+      return;
+    }
+
     const currentIndex = queue.findIndex(s => s.id === currentSong?.id);
-    const prevIdx = currentIndex - 1 >= 0 ? currentIndex - 1 : queue.length - 1;
+    if (currentIndex === -1) {
+      playSong(queue[0]);
+      return;
+    }
+
+    const prevIdx = currentIndex > 0 ? currentIndex - 1 : queue.length - 1;
     playSong(queue[prevIdx]);
-  }, [queue, currentSong]);
+  }, [queue, currentSong, currentTime, isPlaying, isShuffle, playSong]);
+
+  const toggleRepeatMode = () => {
+    if (isRepeat === false || isRepeat === 'off') {
+      setIsRepeat('all');
+    } else if (isRepeat === 'all') {
+      setIsRepeat('one');
+    } else {
+      setIsRepeat(false);
+    }
+  };
 
   useEffect(() => {
     if ('mediaSession' in navigator && currentSong) {
@@ -352,38 +425,45 @@ export default function App() {
     }
   }, [currentTime, duration]);
 
-  const startSilentAudio = () => {
-    if (silentAudioRef.current) {
-      silentAudioRef.current.play().catch(() => {});
-    }
-  };
-
-  const playSong = useCallback((song) => {
-    if (!song) return;
-    startSilentAudio();
-
-    if (currentSong?.id === song.id) {
-      if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
-        playerRef.current.playVideo();
+  const initPlayerInstance = useCallback((videoId) => {
+    playerRef.current = new window.YT.Player('yt-player-instance', {
+      height: '100%',
+      width: '100%',
+      videoId: videoId,
+      playerVars: { 
+        autoplay: 1, 
+        controls: 0, 
+        disablekb: 1, 
+        modestbranding: 1,
+        enablejsapi: 1,
+        playsinline: 1,
+        origin: window.location.origin
+      },
+      events: {
+        onReady: (e) => {
+          e.target.setVolume(volume);
+          e.target.playVideo();
+          setIsPlaying(true);
+        },
+        onStateChange: (e) => {
+          if (e.data === 1) {
+            setIsPlaying(true);
+            if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
+            if (playerRef.current?.getDuration) setDuration(playerRef.current.getDuration());
+          } else if (e.data === 2) {
+            setIsPlaying(false);
+          } else if (e.data === 0) {
+            if (isRepeat === 'one' || isRepeat === true) {
+              playerRef.current?.seekTo?.(0, true);
+              playerRef.current?.playVideo?.();
+            } else {
+              handleNextSong();
+            }
+          }
+        }
       }
-      setIsPlaying(true);
-      return;
-    }
-
-    if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
-      try { playerRef.current.stopVideo(); } catch (e) {}
-    }
-
-    setCurrentSong(song);
-    setIsPlaying(true);
-
-    if (['home', 'barber', 'truck', 'pauwa'].includes(activeTab)) {
-      const station = SPECIAL_STATIONS[activeTab];
-      if (station && station.bgImages && station.bgImages.length > 0) {
-        setCurrentBgIndex(prev => (prev + 1) % station.bgImages.length);
-      }
-    }
-  }, [activeTab, currentSong]);
+    });
+  }, [volume, isRepeat, handleNextSong]);
 
   useEffect(() => {
     if (!currentSong) return;
@@ -393,47 +473,15 @@ export default function App() {
       playerRef.current.playVideo();
       setIsPlaying(true);
     } else if (window.YT && window.YT.Player) {
-      playerRef.current = new window.YT.Player('yt-player-instance', {
-        height: '100%',
-        width: '100%',
-        videoId: currentSong.id,
-        playerVars: { 
-          autoplay: 1, 
-          controls: 0, 
-          disablekb: 1, 
-          modestbranding: 1,
-          enablejsapi: 1,
-          playsinline: 1,
-          origin: window.location.origin
-        },
-        events: {
-          onReady: (e) => {
-            e.target.setVolume(volume);
-            e.target.playVideo();
-            setIsPlaying(true);
-          },
-          onStateChange: (e) => {
-            if (e.data === 1) {
-              setIsPlaying(true);
-              if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
-              if (playerRef.current?.getDuration) setDuration(playerRef.current.getDuration());
-            } else if (e.data === 2) {
-              setIsPlaying(false);
-            } else if (e.data === 0) {
-              if (isRepeat) {
-                playerRef.current?.seekTo?.(0, true);
-                playerRef.current?.playVideo?.();
-              } else {
-                handleNextSong();
-              }
-            }
-          }
-        }
-      });
+      initPlayerInstance(currentSong.id);
+    } else {
+      window.onYouTubeIframeAPIReady = () => {
+        initPlayerInstance(currentSong.id);
+      };
     }
 
     setHistory(prev => [currentSong, ...prev.filter(s => s.id !== currentSong.id)].slice(0, 50));
-  }, [currentSong, isRepeat, handleNextSong]);
+  }, [currentSong, initPlayerInstance]);
 
   useEffect(() => {
     let interval;
@@ -450,7 +498,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isPlaying]);
 
-  const loadStationSongs = async (stationKey, autoPlayIfEmpty = false) => {
+  const loadStationSongs = useCallback(async (stationKey, autoPlayIfEmpty = false) => {
     const station = SPECIAL_STATIONS[stationKey];
     if (!station || station.queries.length === 0) return;
 
@@ -538,10 +586,10 @@ export default function App() {
       }
     } catch (err) {
       console.error("Error loading station tracks across keys:", err);
-    } fontally {
+    } finally {
       setStationLoading(false);
     }
-  };
+  }, [currentSong, playSong, stationCache]);
 
   const handleStationSelect = (stationKey) => {
     setActiveTab(stationKey);
@@ -551,17 +599,13 @@ export default function App() {
     if (videoModalSong) {
       setIsPipActive(true);
     }
-
-    if (['home', 'barber', 'truck', 'pauwa'].includes(stationKey)) {
-      loadStationSongs(stationKey, false);
-    }
   };
 
   useEffect(() => {
     if (['home', 'barber', 'truck', 'pauwa'].includes(activeTab)) {
       loadStationSongs(activeTab, false);
     }
-  }, [activeTab]);
+  }, [activeTab, loadStationSongs]);
 
   const togglePlayPause = () => {
     if (!currentSong) {
@@ -595,6 +639,11 @@ export default function App() {
 
   const toggleLike = (song) => {
     setLikedSongs(prev => prev.some(s => s.id === song.id) ? prev.filter(s => s.id !== song.id) : [song, ...prev]);
+  };
+
+  const clearHistory = () => {
+    setHistory([]);
+    localStorage.removeItem('history_songs');
   };
 
   const fetchYouTubeMusic = async (q) => {
@@ -1233,7 +1282,12 @@ export default function App() {
 
         {activeTab === 'library' && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
-            <h2 className="text-2xl font-black text-white">Liked Songs Collection</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-black text-white">Liked Songs Collection</h2>
+              {likedSongs.length > 0 && (
+                <span className="text-xs text-neutral-400 font-mono">{likedSongs.length} tracks</span>
+              )}
+            </div>
             <div className="grid grid-cols-1 gap-2">
               {likedSongs.length === 0 ? (
                 <p className="text-xs text-neutral-500">No liked songs yet.</p>
@@ -1268,7 +1322,19 @@ export default function App() {
 
         {activeTab === 'history' && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
-            <h2 className="text-2xl font-black text-white">Listening History</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-black text-white">Listening History</h2>
+              {history.length > 0 && (
+                <button
+                  onClick={clearHistory}
+                  className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 transition"
+                  title="Clear Listening History"
+                >
+                  <Icon name="trash" className="w-3.5 h-3.5" />
+                  <span>Clear History</span>
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-1 gap-2">
               {history.length === 0 ? (
                 <p className="text-xs text-neutral-500">No history available.</p>
@@ -1321,20 +1387,27 @@ export default function App() {
             {!isPlayerMinimized && (
               <div className="flex flex-col items-center w-full md:w-2/4 gap-1.5 animate-fadeIn">
                 <div className="flex items-center gap-4 shrink-0">
-                  <button onClick={() => setIsShuffle(!isShuffle)} className={`transition ${isShuffle ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`}>
+                  <button onClick={() => setIsShuffle(!isShuffle)} className={`transition ${isShuffle ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} title={isShuffle ? "Shuffle On" : "Shuffle Off"}>
                     <Icon name="shuffle" className="w-4 h-4 shrink-0" />
                   </button>
-                  <button onClick={handlePrevSong} className="text-neutral-300 hover:text-white transition">
+                  <button onClick={handlePrevSong} className="text-neutral-300 hover:text-white transition" title="Previous Track">
                     <Icon name="skipPrev" className="w-5 h-5 shrink-0" />
                   </button>
                   <button onClick={togglePlayPause} className="w-10 h-10 rounded-full bg-amber-500 hover:bg-amber-400 text-neutral-950 flex items-center justify-center shadow-lg transition shrink-0">
                     <Icon name={isPlaying ? "pause" : "play"} className="w-5 h-5 shrink-0" />
                   </button>
-                  <button onClick={handleNextSong} className="text-neutral-300 hover:text-white transition">
+                  <button onClick={handleNextSong} className="text-neutral-300 hover:text-white transition" title="Next Track">
                     <Icon name="skipNext" className="w-5 h-5 shrink-0" />
                   </button>
-                  <button onClick={() => setIsRepeat(!isRepeat)} className={`transition ${isRepeat ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`}>
+                  <button 
+                    onClick={toggleRepeatMode} 
+                    className={`relative transition ${isRepeat ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} 
+                    title={isRepeat === 'one' ? 'Repeat One' : isRepeat === 'all' ? 'Repeat All' : 'Repeat Off'}
+                  >
                     <Icon name="repeat" className="w-4 h-4 shrink-0" />
+                    {isRepeat === 'one' && (
+                      <span className="absolute -top-1 -right-1 text-[8px] font-bold bg-amber-500 text-neutral-950 rounded-full w-3 h-3 flex items-center justify-center">1</span>
+                    )}
                   </button>
                 </div>
 
@@ -1355,10 +1428,13 @@ export default function App() {
 
             {isPlayerMinimized && (
               <div className="flex items-center gap-3 shrink-0">
+                <button onClick={handlePrevSong} className="text-neutral-300 hover:text-white transition shrink-0" title="Previous Track">
+                  <Icon name="skipPrev" className="w-4 h-4 shrink-0" />
+                </button>
                 <button onClick={togglePlayPause} className="w-8 h-8 rounded-full bg-amber-500 hover:bg-amber-400 text-neutral-950 flex items-center justify-center shadow-md transition shrink-0">
                   <Icon name={isPlaying ? "pause" : "play"} className="w-4 h-4 shrink-0" />
                 </button>
-                <button onClick={handleNextSong} className="text-neutral-300 hover:text-white transition shrink-0">
+                <button onClick={handleNextSong} className="text-neutral-300 hover:text-white transition shrink-0" title="Next Track">
                   <Icon name="skipNext" className="w-4 h-4 shrink-0" />
                 </button>
               </div>
