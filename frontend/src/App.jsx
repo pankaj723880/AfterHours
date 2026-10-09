@@ -1631,6 +1631,7 @@ const sanitizeList = (list) => {
   const scrollPositions = useRef({});
 
   const handleStationSelect = (stationKey) => {
+    setShowQueuePanel(false);
     if (mainScrollRef.current) {
       scrollPositions.current[activeTab] = mainScrollRef.current.scrollTop;
     }
@@ -1655,6 +1656,7 @@ const sanitizeList = (list) => {
   };
 
   const handleGoBack = () => {
+    setShowQueuePanel(false);
     if (activeTab === "home" && (showAllTrending || showAllArtists || showAllAlbums || showAllRadio)) {
       setShowAllTrending(false);
       setShowAllArtists(false);
@@ -1903,7 +1905,7 @@ const sanitizeList = (list) => {
         </div>
       )}
 
-      <header className="md:hidden sticky top-0 z-40 bg-neutral-900/95 backdrop-blur-md border-b border-neutral-800/80 px-4 py-3 flex items-center justify-between">
+      <header className="md:hidden sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-md border-b border-neutral-800/80 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -1937,12 +1939,12 @@ const sanitizeList = (list) => {
       {isSidebarOpen && (
         <div 
           onClick={() => setIsSidebarOpen(false)}
-          className="md:hidden fixed inset-0 bg-neutral-900/80 backdrop-blur-xl backdrop-blur-sm z-40 transition-opacity"
+          className="md:hidden fixed inset-0 bg-neutral-900/80 backdrop-blur-xl backdrop-blur-sm z-[52] transition-opacity"
         />
       )}
 
       <aside 
-        className={`fixed md:relative h-screen inset-y-0 left-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80 p-4 flex flex-col shrink-0 transform transition-all duration-300 ease-in-out overflow-y-auto overflow-x-hidden ${
+        className={`fixed md:relative h-screen inset-y-0 left-0 z-[55] bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80 p-4 flex flex-col shrink-0 transform transition-all duration-300 ease-in-out overflow-y-auto overflow-x-hidden ${
           isSidebarOpen ? 'translate-x-0 w-72' : `-translate-x-full md:translate-x-0 ${isSidebarCollapsed ? 'w-20' : 'w-72'}`
         }`}
       >
@@ -2217,11 +2219,14 @@ const sanitizeList = (list) => {
                 <div className="grid grid-cols-1 gap-2">
                   {searchResults.slice(0, searchVisibleCount).map((track, i) => {
                     const isCurrent = currentSong?.id === track.id;
+                    const isMenuOpen = openMenuId === `${track.id}-${i}`;
                     return (
                       <div
                         key={track.id + i}
                         onClick={() => playSong(track)}
-                        className={`p-3.5 rounded-2xl border flex items-center justify-between cursor-pointer transition backdrop-blur-md ${
+                        className={`p-3.5 rounded-2xl border flex items-center justify-between cursor-pointer transition backdrop-blur-md relative ${
+                          isMenuOpen ? 'z-30' : 'z-auto'
+                        } ${
                           isCurrent
                             ? 'bg-neutral-900/90 border-amber-500/80 shadow-xl'
                             : 'bg-neutral-900/50 border-neutral-800/70 hover:bg-neutral-900 active:scale-[0.98]/80'
@@ -2238,31 +2243,31 @@ const sanitizeList = (list) => {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0 relative">
-      <button onClick={(e) => handleOpenVideo(track, e)} className="p-1.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition flex items-center shrink-0" title="See Video">
-        <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
-      </button>
-      
-      <button 
-        onClick={(e) => { 
-          e.stopPropagation(); 
-          setOpenMenuId(openMenuId === `${track.id}-${i}` ? null : `${track.id}-${i}`); 
-        }} 
-        className="p-1 text-neutral-500 hover:text-white transition shrink-0"
-      >
-        <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
-      </button>
+                        <div className={`flex items-center gap-2 shrink-0 relative ${isMenuOpen ? 'z-40' : ''}`}>
+                          <button onClick={(e) => handleOpenVideo(track, e)} className="p-1.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition flex items-center shrink-0" title="See Video">
+                            <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
+                          </button>
+                          
+                          <button 
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); 
+                            }} 
+                            className="p-1 text-neutral-500 hover:text-white transition shrink-0"
+                          >
+                            <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
+                          </button>
 
-      {openMenuId === `${track.id}-${i}` && (
-        <div className="absolute right-0 top-full mt-2 w-40 bg-neutral-900 rounded-xl shadow-2xl border border-neutral-800 overflow-hidden z-50">
-          {currentSong?.id !== track.id && (
-            <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
-          )}
-          <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
-          <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
-        </div>
-      )}
-    </div>
+                          {isMenuOpen && (
+                            <div className="absolute right-0 top-full mt-1.5 w-44 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
+                              {currentSong?.id !== track.id && (
+                                <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
+                              )}
+                              <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                              <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -2321,11 +2326,14 @@ const sanitizeList = (list) => {
                 <div className="grid grid-cols-1 gap-2">
                   {partyTracks.map((track, i) => {
                     const isCurrent = currentSong?.id === track.id;
+                    const isMenuOpen = openMenuId === `${track.id}-${i}`;
                     return (
                       <div
                         key={track.id + i}
                         onClick={() => playSong(track)}
-                        className={`p-3 rounded-2xl border flex items-center justify-between cursor-pointer transition backdrop-blur-md ${
+                        className={`p-3 rounded-2xl border flex items-center justify-between cursor-pointer transition backdrop-blur-md relative ${
+                          isMenuOpen ? 'z-30' : 'z-auto'
+                        } ${
                           isCurrent
                             ? 'bg-neutral-900/90 border-orange-500/80 shadow-xl'
                             : 'bg-neutral-900/50 border-neutral-800/70 hover:bg-neutral-900 active:scale-[0.98]/80'
@@ -2342,31 +2350,31 @@ const sanitizeList = (list) => {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0 relative">
-      <button onClick={(e) => handleOpenVideo(track, e)} className="p-1.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition flex items-center shrink-0" title="See Video">
-        <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
-      </button>
-      
-      <button 
-        onClick={(e) => { 
-          e.stopPropagation(); 
-          setOpenMenuId(openMenuId === `${track.id}-${i}` ? null : `${track.id}-${i}`); 
-        }} 
-        className="p-1 text-neutral-500 hover:text-white transition shrink-0"
-      >
-        <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
-      </button>
+                        <div className={`flex items-center gap-2 shrink-0 relative ${isMenuOpen ? 'z-40' : ''}`}>
+                          <button onClick={(e) => handleOpenVideo(track, e)} className="p-1.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition flex items-center shrink-0" title="See Video">
+                            <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
+                          </button>
+                          
+                          <button 
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); 
+                            }} 
+                            className="p-1 text-neutral-500 hover:text-white transition shrink-0"
+                          >
+                            <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
+                          </button>
 
-      {openMenuId === `${track.id}-${i}` && (
-        <div className="absolute right-0 top-full mt-2 w-40 bg-neutral-900 rounded-xl shadow-2xl border border-neutral-800 overflow-hidden z-50">
-          {currentSong?.id !== track.id && (
-            <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
-          )}
-          <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
-          <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
-        </div>
-      )}
-    </div>
+                          {isMenuOpen && (
+                            <div className="absolute right-0 top-full mt-1.5 w-44 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
+                              {currentSong?.id !== track.id && (
+                                <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
+                              )}
+                              <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                              <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -2385,11 +2393,14 @@ const sanitizeList = (list) => {
                 <div className="grid grid-cols-1 gap-2">
                   {heartbreakTracks.map((track, i) => {
                     const isCurrent = currentSong?.id === track.id;
+                    const isMenuOpen = openMenuId === `${track.id}-${i}`;
                     return (
                       <div
                         key={track.id + i}
                         onClick={() => playSong(track)}
-                        className={`p-3 rounded-2xl border flex items-center justify-between cursor-pointer transition backdrop-blur-md ${
+                        className={`p-3 rounded-2xl border flex items-center justify-between cursor-pointer transition backdrop-blur-md relative ${
+                          isMenuOpen ? 'z-30' : 'z-auto'
+                        } ${
                           isCurrent
                             ? 'bg-neutral-900/90 border-pink-500/80 shadow-xl'
                             : 'bg-neutral-900/50 border-neutral-800/70 hover:bg-neutral-900 active:scale-[0.98]/80'
@@ -2406,31 +2417,31 @@ const sanitizeList = (list) => {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0 relative">
-      <button onClick={(e) => handleOpenVideo(track, e)} className="p-1.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition flex items-center shrink-0" title="See Video">
-        <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
-      </button>
-      
-      <button 
-        onClick={(e) => { 
-          e.stopPropagation(); 
-          setOpenMenuId(openMenuId === `${track.id}-${i}` ? null : `${track.id}-${i}`); 
-        }} 
-        className="p-1 text-neutral-500 hover:text-white transition shrink-0"
-      >
-        <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
-      </button>
+                        <div className={`flex items-center gap-2 shrink-0 relative ${isMenuOpen ? 'z-40' : ''}`}>
+                          <button onClick={(e) => handleOpenVideo(track, e)} className="p-1.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition flex items-center shrink-0" title="See Video">
+                            <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
+                          </button>
+                          
+                          <button 
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); 
+                            }} 
+                            className="p-1 text-neutral-500 hover:text-white transition shrink-0"
+                          >
+                            <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
+                          </button>
 
-      {openMenuId === `${track.id}-${i}` && (
-        <div className="absolute right-0 top-full mt-2 w-40 bg-neutral-900 rounded-xl shadow-2xl border border-neutral-800 overflow-hidden z-50">
-          {currentSong?.id !== track.id && (
-            <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
-          )}
-          <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
-          <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
-        </div>
-      )}
-    </div>
+                          {isMenuOpen && (
+                            <div className="absolute right-0 top-full mt-1.5 w-44 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
+                              {currentSong?.id !== track.id && (
+                                <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
+                              )}
+                              <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                              <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -2558,11 +2569,14 @@ const sanitizeList = (list) => {
               <div className="grid grid-cols-1 gap-2">
                 {songs.map((track, i) => {
                   const isCurrent = currentSong?.id === track.id;
+                  const isMenuOpen = openMenuId === `${track.id}-${i}`;
                   return (
                     <div
                       key={track.id + i}
                       onClick={() => playSong(track)}
-                      className={`p-3.5 rounded-2xl border flex items-center justify-between cursor-pointer transition backdrop-blur-md ${
+                      className={`p-3.5 rounded-2xl border flex items-center justify-between cursor-pointer transition backdrop-blur-md relative ${
+                        isMenuOpen ? 'z-30' : 'z-auto'
+                      } ${
                         isCurrent
                           ? 'bg-neutral-900/90 border-amber-500/80 shadow-xl'
                           : 'bg-neutral-900/50 border-neutral-800/70 hover:bg-neutral-900 active:scale-[0.98]/80'
@@ -2579,31 +2593,31 @@ const sanitizeList = (list) => {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0 relative">
-      <button onClick={(e) => handleOpenVideo(track, e)} className="p-1.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition flex items-center shrink-0" title="See Video">
-        <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
-      </button>
-      
-      <button 
-        onClick={(e) => { 
-          e.stopPropagation(); 
-          setOpenMenuId(openMenuId === `${track.id}-${i}` ? null : `${track.id}-${i}`); 
-        }} 
-        className="p-1 text-neutral-500 hover:text-white transition shrink-0"
-      >
-        <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
-      </button>
+                      <div className={`flex items-center gap-2 shrink-0 relative ${isMenuOpen ? 'z-40' : ''}`}>
+                        <button onClick={(e) => handleOpenVideo(track, e)} className="p-1.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition flex items-center shrink-0" title="See Video">
+                          <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
+                        </button>
+                        
+                        <button 
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); 
+                          }} 
+                          className="p-1 text-neutral-500 hover:text-white transition shrink-0"
+                        >
+                          <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
+                        </button>
 
-      {openMenuId === `${track.id}-${i}` && (
-        <div className="absolute right-0 top-full mt-2 w-40 bg-neutral-900 rounded-xl shadow-2xl border border-neutral-800 overflow-hidden z-50">
-          {currentSong?.id !== track.id && (
-            <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
-          )}
-          <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
-          <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
-        </div>
-      )}
-    </div>
+                        {isMenuOpen && (
+                          <div className="absolute right-0 top-full mt-1.5 w-44 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
+                            {currentSong?.id !== track.id && (
+                              <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
+                            )}
+                            <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                            <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -2626,42 +2640,45 @@ const sanitizeList = (list) => {
               {likedSongs.length === 0 ? (
                 <p className="text-xs text-neutral-500">No liked songs yet.</p>
               ) : (
-                likedSongs.map((track, i) => (
-                  <div key={track.id + i} onClick={() => playSong(track)} className="p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition">
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      <img src={(track.thumbnail && track.thumbnail.replace(/(\\?sqp=.*|hq720\\.jpg)/, "hqdefault.jpg")) || "https://ui-avatars.com/api/?name="+encodeURIComponent(track.title)+"&background=random&size=300"} alt="" loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => { if(e.target.src.includes('hq720.jpg') || e.target.src.includes('maxresdefault.jpg')){ e.target.src = e.target.src.replace(/(hq720|maxresdefault)\.jpg.*/, 'hqdefault.jpg'); } else if(!e.target.src.includes('ui-avatars')){ e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(track.title) + '&background=random&size=300'; } }} />
-                      <div className="min-w-0">
-                        <h4 className="font-bold text-xs text-white truncate">{track.title}</h4>
-                        <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
+                likedSongs.map((track, i) => {
+                  const isMenuOpen = openMenuId === `${track.id}-${i}`;
+                  return (
+                    <div key={track.id + i} onClick={() => playSong(track)} className={`p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition relative ${isMenuOpen ? 'z-30' : 'z-auto'}`}>
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <img src={(track.thumbnail && track.thumbnail.replace(/(\\?sqp=.*|hq720\\.jpg)/, "hqdefault.jpg")) || "https://ui-avatars.com/api/?name="+encodeURIComponent(track.title)+"&background=random&size=300"} alt="" loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => { if(e.target.src.includes('hq720.jpg') || e.target.src.includes('maxresdefault.jpg')){ e.target.src = e.target.src.replace(/(hq720|maxresdefault)\.jpg.*/, 'hqdefault.jpg'); } else if(!e.target.src.includes('ui-avatars')){ e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(track.title) + '&background=random&size=300'; } }} />
+                        <div className="min-w-0">
+                          <h4 className="font-bold text-xs text-white truncate">{track.title}</h4>
+                          <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
+                        </div>
+                      </div>
+                      <div className={`flex items-center gap-2 shrink-0 relative ${isMenuOpen ? 'z-40' : ''}`}>
+                        <button onClick={(e) => handleOpenVideo(track, e)} className="p-1.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition flex items-center shrink-0" title="See Video">
+                          <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
+                        </button>
+                        
+                        <button 
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); 
+                          }} 
+                          className="p-1 text-neutral-500 hover:text-white transition shrink-0"
+                        >
+                          <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
+                        </button>
+
+                        {isMenuOpen && (
+                          <div className="absolute right-0 top-full mt-1.5 w-44 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
+                            {currentSong?.id !== track.id && (
+                              <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
+                            )}
+                            <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                            <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0 relative">
-      <button onClick={(e) => handleOpenVideo(track, e)} className="p-1.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition flex items-center shrink-0" title="See Video">
-        <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
-      </button>
-      
-      <button 
-        onClick={(e) => { 
-          e.stopPropagation(); 
-          setOpenMenuId(openMenuId === `${track.id}-${i}` ? null : `${track.id}-${i}`); 
-        }} 
-        className="p-1 text-neutral-500 hover:text-white transition shrink-0"
-      >
-        <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
-      </button>
-
-      {openMenuId === `${track.id}-${i}` && (
-        <div className="absolute right-0 top-full mt-2 w-40 bg-neutral-900 rounded-xl shadow-2xl border border-neutral-800 overflow-hidden z-50">
-          {currentSong?.id !== track.id && (
-            <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
-          )}
-          <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
-          <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
-        </div>
-      )}
-    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
             <DisclaimerFooter />
@@ -2687,37 +2704,40 @@ const sanitizeList = (list) => {
               {history.length === 0 ? (
                 <p className="text-xs text-neutral-500">No history available.</p>
               ) : (
-                history.map((track, i) => (
-                  <div key={track.id + i} onClick={() => playSong(track)} className="p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition">
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      <img src={(track.thumbnail && track.thumbnail.replace(/(\\?sqp=.*|hq720\\.jpg)/, "hqdefault.jpg")) || "https://ui-avatars.com/api/?name="+encodeURIComponent(track.title)+"&background=random&size=300"} alt="" loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => { if(e.target.src.includes('hq720.jpg') || e.target.src.includes('maxresdefault.jpg')){ e.target.src = e.target.src.replace(/(hq720|maxresdefault)\.jpg.*/, 'hqdefault.jpg'); } else if(!e.target.src.includes('ui-avatars')){ e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(track.title) + '&background=random&size=300'; } }} />
-                      <div className="min-w-0">
-                        <h4 className="font-bold text-xs text-white truncate">{track.title}</h4>
-                        <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
+                history.map((track, i) => {
+                  const isMenuOpen = openMenuId === `${track.id}-${i}`;
+                  return (
+                    <div key={track.id + i} onClick={() => playSong(track)} className={`p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition relative ${isMenuOpen ? 'z-30' : 'z-auto'}`}>
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <img src={(track.thumbnail && track.thumbnail.replace(/(\\?sqp=.*|hq720\\.jpg)/, "hqdefault.jpg")) || "https://ui-avatars.com/api/?name="+encodeURIComponent(track.title)+"&background=random&size=300"} alt="" loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => { if(e.target.src.includes('hq720.jpg') || e.target.src.includes('maxresdefault.jpg')){ e.target.src = e.target.src.replace(/(hq720|maxresdefault)\.jpg.*/, 'hqdefault.jpg'); } else if(!e.target.src.includes('ui-avatars')){ e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(track.title) + '&background=random&size=300'; } }} />
+                        <div className="min-w-0">
+                          <h4 className="font-bold text-xs text-white truncate">{track.title}</h4>
+                          <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={(e) => handleOpenVideo(track, e)}
-                        className="p-1.5 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center text-[10px] shrink-0"
-                      >
-                        <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
-                      </button>
-                      <div className="relative">
-                        <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === `${track.id}-${i}` ? null : `${track.id}-${i}`); }} className="p-1.5 rounded-2xl hover:bg-white/10 text-neutral-400 transition flex items-center shrink-0">
-                          <Icon name="moreVertical" className="w-4 h-4 shrink-0" />
+                      <div className={`flex items-center gap-1.5 relative ${isMenuOpen ? 'z-40' : ''}`}>
+                        <button
+                          onClick={(e) => handleOpenVideo(track, e)}
+                          className="p-1.5 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center text-[10px] shrink-0"
+                        >
+                          <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
                         </button>
-                        {openMenuId === `${track.id}-${i}` && (
-                          <div className="absolute right-0 top-full mt-2 w-40 bg-neutral-900 rounded-xl shadow-2xl border border-neutral-800 overflow-hidden z-50">
-                            <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
-                            <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
-                            <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
-                          </div>
-                        )}
+                        <div className="relative">
+                          <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); }} className="p-1.5 rounded-2xl hover:bg-white/10 text-neutral-400 transition flex items-center shrink-0">
+                            <Icon name="moreVertical" className="w-4 h-4 shrink-0" />
+                          </button>
+                          {isMenuOpen && (
+                            <div className="absolute right-0 top-full mt-1.5 w-44 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
+                              <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
+                              <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                              <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
             <DisclaimerFooter />
@@ -2790,40 +2810,41 @@ const sanitizeList = (list) => {
                   {selectedPlaylistForView.songs.length === 0 ? (
                     <p className="text-xs text-neutral-500 p-4 text-center border border-dashed border-neutral-800 rounded-2xl">Empty playlist.</p>
                   ) : (
-                    selectedPlaylistForView.songs.map((track, i) => (
-                      <div key={track.id + i} onClick={() => playSong(track)} className="p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition group">
-                        <div className="flex items-center gap-3.5 min-w-0">
-                          <img src={(track.thumbnail && track.thumbnail.replace(/(\\?sqp=.*|hq720\\.jpg)/, "hqdefault.jpg")) || "https://ui-avatars.com/api/?name="+encodeURIComponent(track.title)+"&background=random&size=300"} alt="" loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => { if(e.target.src.includes('hq720.jpg') || e.target.src.includes('maxresdefault.jpg')){ e.target.src = e.target.src.replace(/(hq720|maxresdefault)\.jpg.*/, 'hqdefault.jpg'); } else if(!e.target.src.includes('ui-avatars')){ e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(track.title) + '&background=random&size=300'; } }} />
-                          <div className="min-w-0 pr-4">
-                            <h4 className="font-bold text-sm text-white truncate group-hover:text-amber-400 transition">{track.title}</h4>
-                            <p className="text-[11px] text-amber-500/80 truncate mt-0.5">{track.channel}</p>
+                    selectedPlaylistForView.songs.map((track, i) => {
+                      const isMenuOpen = openMenuId === `${track.id}-${i}`;
+                      return (
+                        <div key={track.id + i} onClick={() => playSong(track)} className={`p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition group relative ${isMenuOpen ? 'z-30' : 'z-auto'}`}>
+                          <div className="flex items-center gap-3.5 min-w-0">
+                            <img src={(track.thumbnail && track.thumbnail.replace(/(\\?sqp=.*|hq720\\.jpg)/, "hqdefault.jpg")) || "https://ui-avatars.com/api/?name="+encodeURIComponent(track.title)+"&background=random&size=300"} alt="" loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => { if(e.target.src.includes('hq720.jpg') || e.target.src.includes('maxresdefault.jpg')){ e.target.src = e.target.src.replace(/(hq720|maxresdefault)\.jpg.*/, 'hqdefault.jpg'); } else if(!e.target.src.includes('ui-avatars')){ e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(track.title) + '&background=random&size=300'; } }} />
+                            <div className="min-w-0 pr-4">
+                              <h4 className="font-bold text-sm text-white truncate group-hover:text-amber-400 transition">{track.title}</h4>
+                              <p className="text-[11px] text-amber-500/80 truncate mt-0.5">{track.channel}</p>
+                            </div>
+                          </div>
+                          <div className={`flex items-center gap-2 shrink-0 opacity-100 sm:opacity-0 group-hover:opacity-100 transition relative ${isMenuOpen ? 'z-40' : ''}`}>
+                            <button 
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); 
+                              }} 
+                              className="p-1 text-neutral-500 hover:text-white transition shrink-0"
+                            >
+                              <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
+                            </button>
+
+                            {isMenuOpen && (
+                              <div className="absolute right-0 top-full mt-1.5 w-44 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
+                                {currentSong?.id !== track.id && (
+                                  <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
+                                )}
+                                <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                                <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                              </div>
+                            )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0 opacity-100 sm:opacity-0 group-hover:opacity-100 transition relative">
-      
-      
-      <button 
-        onClick={(e) => { 
-          e.stopPropagation(); 
-          setOpenMenuId(openMenuId === `${track.id}-${i}` ? null : `${track.id}-${i}`); 
-        }} 
-        className="p-1 text-neutral-500 hover:text-white transition shrink-0"
-      >
-        <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
-      </button>
-
-      {openMenuId === `${track.id}-${i}` && (
-        <div className="absolute right-0 top-full mt-2 w-40 bg-neutral-900 rounded-xl shadow-2xl border border-neutral-800 overflow-hidden z-50">
-          {currentSong?.id !== track.id && (
-            <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
-          )}
-          <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
-          <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
-        </div>
-      )}
-    </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </>
@@ -2834,7 +2855,7 @@ const sanitizeList = (list) => {
       </main>
 
       {currentSong && (
-        <footer className={`fixed bottom-0 right-0 z-40 bg-neutral-900/95 backdrop-blur-2xl border-t border-neutral-800/80 transition-all duration-300 shadow-2xl left-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-64'} ${isPlayerMinimized ? 'p-2' : 'p-3 md:p-4'}`}>
+        <footer className={`fixed bottom-0 right-0 z-40 bg-neutral-900/95 backdrop-blur-2xl border-t border-neutral-800/80 transition-all duration-300 shadow-2xl left-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'} ${isPlayerMinimized ? 'p-2' : 'p-3 md:p-4'}`}>
           <div className="absolute -top-3.5 right-6 z-50 shrink-0">
             <button
               onClick={() => setIsPlayerMinimized(!isPlayerMinimized)}
@@ -2940,7 +2961,7 @@ const sanitizeList = (list) => {
       )}
 
       {showQueuePanel && (
-        <div className="fixed inset-0 z-[40] bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn pb-24 md:pb-0">
+        <div className={`fixed inset-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'} z-[45] bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn pb-24 md:pb-0`}>
           <button onClick={() => setShowQueuePanel(false)} className="absolute top-6 right-6 text-neutral-400 hover:text-white z-50 bg-neutral-900/50 p-2 rounded-full backdrop-blur-md">
             <Icon name="close" className="w-6 h-6" />
           </button>
