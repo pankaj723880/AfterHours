@@ -3161,6 +3161,7 @@ const sanitizeList = (list) => {
                 <input
                   type="text"
                   required
+                  autoComplete="username"
                   value={authForm.username}
                   onChange={(e) => setAuthForm({...authForm, username: e.target.value})}
                   className="w-full px-4 py-3 rounded-2xl bg-neutral-900/50 backdrop-blur-lg border border-neutral-800 text-white text-sm focus:outline-none focus:border-amber-500 transition"
@@ -3172,7 +3173,7 @@ const sanitizeList = (list) => {
                 <input
                   type="password"
                   required
-                  autoComplete="current-password"
+                  autoComplete={isLoginMode ? "current-password" : "new-password"}
                   value={authForm.password}
                   onChange={(e) => setAuthForm({...authForm, password: e.target.value})}
                   className="w-full px-4 py-3 rounded-2xl bg-neutral-900/50 backdrop-blur-lg border border-neutral-800 text-white text-sm focus:outline-none focus:border-amber-500 transition"
