@@ -289,21 +289,53 @@ app.get('/api/stream/:videoId', async (req, res) => {
   try {
     await ensureYtDlp();
     
-    res.setHeader('Content-Type', 'audio/webm');
-    res.setHeader('Accept-Ranges', 'bytes');
-    
     const proc = youtubedl.exec(`https://www.youtube.com/watch?v=${videoId}`, {
       format: 'bestaudio',
-      output: '-'
-    }, { stdio: ['ignore', 'pipe', 'ignore'] });
+      output: '-',
+      geoBypass: true,
+      noCheckCertificates: true,
+      noWarnings: true
+    }, { stdio: ['ignore', 'pipe', 'pipe'] });
     
-    proc.stdout.pipe(res);
-    
-    proc.on('error', (err) => {
-      console.error(`yt-dlp stream error for ${videoId}:`, err.message);
-      if (!res.headersSent) res.status(500).end();
+    let headersSent = false;
+    let stderrOutput = '';
+
+    proc.stderr.on('data', chunk => {
+      stderrOutput += chunk.toString();
     });
-    
+
+    proc.stdout.on('data', chunk => {
+      if (!headersSent) {
+        res.setHeader('Content-Type', 'audio/webm');
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.status(200);
+        headersSent = true;
+      }
+      res.write(chunk);
+    });
+
+    proc.stdout.on('end', () => {
+      if (headersSent) {
+        res.end();
+      }
+    });
+
+    proc.on('close', code => {
+      if (code !== 0 && !headersSent) {
+        console.error(`yt-dlp stream process failed for ${videoId} (exit ${code}):`, stderrOutput.slice(-300));
+        res.status(500).json({ error: 'Stream extraction failed: ' + (stderrOutput.slice(-300) || `Exit code ${code}`) });
+      } else if (!headersSent) {
+        res.status(404).json({ error: 'No audio data found' });
+      }
+    });
+
+    proc.on('error', err => {
+      console.error(`yt-dlp stream error for ${videoId}:`, err.message);
+      if (!headersSent) {
+        res.status(500).json({ error: 'Failed to start stream process: ' + err.message });
+      }
+    });
+
     req.on('close', () => {
       try {
         proc.kill();
@@ -312,7 +344,7 @@ app.get('/api/stream/:videoId', async (req, res) => {
   } catch (err) {
     console.error(`Stream proxy failed entirely for ${videoId}:`, err.message);
     if (!res.headersSent) {
-      res.status(500).end();
+      res.status(500).json({ error: 'Stream proxy error: ' + err.message });
     }
   }
 });
