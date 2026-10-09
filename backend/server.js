@@ -275,84 +275,42 @@ app.get('/api/resolve/:videoId', async (req, res) => {
 });
 
 import youtubedl from 'youtube-dl-exec';
+import { ensureYtDlp } from './ensure-ytdlp.js';
+
+// Pre-warm yt-dlp binary
+ensureYtDlp().catch(e => console.warn('ensureYtDlp init warning:', e.message));
 
 const streamUrlCache = new Map();
 
-// Stream endpoint - proxies the direct audio stream bypassing CORS and handling Range requests
+// Stream endpoint - streams direct audio from yt-dlp to bypass CORS and 403 blocks
 app.get('/api/stream/:videoId', async (req, res) => {
   const videoId = req.params.videoId;
   
   try {
-    let url = streamUrlCache.get(videoId);
+    await ensureYtDlp();
     
-    if (!url) {
-      const output = await youtubedl.exec(`https://www.youtube.com/watch?v=${videoId}`, {
-        format: 'bestaudio',
-        getUrl: true
-      });
-      
-      const urls = output.stdout.trim().split('\n');
-      url = urls[urls.length - 1].trim(); // Take the last one, which is usually the direct media URL
-      
-      streamUrlCache.set(videoId, url);
-      
-      // Cache expiration (urls expire after some time, e.g., 2 hours)
-      setTimeout(() => {
-        if (streamUrlCache.get(videoId) === url) {
-          streamUrlCache.delete(videoId);
-        }
-      }, 1000 * 60 * 60 * 2);
-    }
-
-    const options = {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
-      }
-    };
+    res.setHeader('Content-Type', 'audio/webm');
+    res.setHeader('Accept-Ranges', 'bytes');
     
-    if (req.headers.range) {
-      options.headers.Range = req.headers.range;
-    }
-
-    console.log('Fetching stream with options:', options);
-
-    https.get(url, options, (proxyRes) => {
-      console.log('Proxy response status:', proxyRes.statusCode);
-      console.log('Proxy response headers:', proxyRes.headers);
-      if (proxyRes.statusCode >= 400) {
-        // If the cached URL is invalid/expired, we could clear cache here, but for now just pass error
-        streamUrlCache.delete(videoId);
-      }
-      
-      res.status(proxyRes.statusCode);
-      
-      // Forward relevant headers
-      const headersToForward = [
-        'content-type',
-        'content-length',
-        'content-range',
-        'accept-ranges'
-      ];
-      
-      headersToForward.forEach(header => {
-        if (proxyRes.headers[header]) {
-          res.setHeader(header, proxyRes.headers[header]);
-        }
-      });
-
-      // Pipe the stream
-      proxyRes.pipe(res);
-      
-      req.on('close', () => {
-        proxyRes.destroy();
-      });
-    }).on('error', (err) => {
-      console.error('HTTPS Proxy error:', err.message);
+    const proc = youtubedl.exec(`https://www.youtube.com/watch?v=${videoId}`, {
+      format: 'bestaudio',
+      output: '-'
+    }, { stdio: ['ignore', 'pipe', 'ignore'] });
+    
+    proc.stdout.pipe(res);
+    
+    proc.on('error', (err) => {
+      console.error(`yt-dlp stream error for ${videoId}:`, err.message);
       if (!res.headersSent) res.status(500).end();
     });
-
+    
+    req.on('close', () => {
+      try {
+        proc.kill();
+      } catch (e) {}
+    });
   } catch (err) {
-    console.error('Stream proxy failed entirely:', err.message);
+    console.error(`Stream proxy failed entirely for ${videoId}:`, err.message);
     if (!res.headersSent) {
       res.status(500).end();
     }
