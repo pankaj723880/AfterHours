@@ -380,7 +380,11 @@ app.get('/api/youtube/search', async (req, res) => {
 
   // 2. Pure JS yt-search fallback if official keys are exhausted, rate-limited, or unconfigured
   try {
-    const searchResult = await ytSearch({ query: queryStr, page: 1 });
+    const searchPromise = ytSearch({ query: queryStr, page: 1 });
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('yt-search timeout after 6500ms')), 6500)
+    );
+    const searchResult = await Promise.race([searchPromise, timeoutPromise]);
     const videos = (searchResult?.videos || []).slice(0, limit);
     const items = videos.map(v => ({
       id: { videoId: v.videoId },
