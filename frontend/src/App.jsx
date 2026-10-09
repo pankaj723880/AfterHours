@@ -990,6 +990,7 @@ const sanitizeList = (list) => {
   const [searchVisibleCount, setSearchVisibleCount] = useState(10);
   const [queue, setQueue] = useState([]);
   const [showQueuePanel, setShowQueuePanel] = useState(false);
+  const [mobileQueueTab, setMobileQueueTab] = useState('player');
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [searchError, setSearchError] = useState("");
@@ -3083,15 +3084,47 @@ const sanitizeList = (list) => {
 
       {showQueuePanel && (
         <div className={`fixed top-14 md:top-16 inset-x-0 bottom-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'} z-40 bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn pb-24 md:pb-0`}>
-          <button onClick={() => setShowQueuePanel(false)} className="absolute top-4 right-4 text-neutral-400 hover:text-white z-50 bg-neutral-900/80 hover:bg-neutral-800 p-2 rounded-full backdrop-blur-md border border-neutral-700/60 shadow-lg cursor-pointer transition">
+          {/* Mobile Tab Header with Segmented Switcher & Close Button */}
+          <div className="md:hidden flex items-center justify-between px-4 py-2 border-b border-neutral-800/80 bg-neutral-900/95 backdrop-blur-xl shrink-0 z-50">
+            <div className="flex bg-neutral-800/90 p-1 rounded-2xl gap-1 border border-neutral-700/60 shadow-inner">
+              <button 
+                onClick={() => setMobileQueueTab('player')}
+                className={`px-3.5 py-1 rounded-xl text-xs font-semibold transition ${mobileQueueTab === 'player' ? 'bg-amber-500 text-white shadow-md' : 'text-neutral-400 hover:text-white'}`}
+              >
+                Now Playing
+              </button>
+              <button 
+                onClick={() => setMobileQueueTab('queue')}
+                className={`px-3.5 py-1 rounded-xl text-xs font-semibold transition ${mobileQueueTab === 'queue' ? 'bg-amber-500 text-white shadow-md' : 'text-neutral-400 hover:text-white'}`}
+              >
+                Up Next ({queue.length})
+              </button>
+            </div>
+
+            <button 
+              onClick={() => setShowQueuePanel(false)} 
+              className="text-neutral-400 hover:text-white bg-neutral-800/90 hover:bg-neutral-700 p-1.5 rounded-full border border-neutral-700/60 shadow-md cursor-pointer transition shrink-0"
+              title="Close"
+            >
+              <Icon name="close" className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Desktop Close Button */}
+          <button 
+            onClick={() => setShowQueuePanel(false)} 
+            className="hidden md:flex absolute top-4 right-4 text-neutral-400 hover:text-white z-50 bg-neutral-900/80 hover:bg-neutral-800 p-2 rounded-full backdrop-blur-md border border-neutral-700/60 shadow-lg cursor-pointer transition"
+            title="Close"
+          >
             <Icon name="close" className="w-6 h-6" />
           </button>
 
-          <div className="w-full md:w-1/2 p-4 sm:p-6 md:p-10 flex flex-col justify-center items-center bg-gradient-to-br from-neutral-900 to-neutral-950 border-r border-neutral-800/50 overflow-y-auto hide-scrollbar">
+          {/* Player Column (Full on Mobile when 'player' tab is active; 50% on Desktop) */}
+          <div className={`${mobileQueueTab === 'player' ? 'flex' : 'hidden'} md:flex w-full md:w-1/2 p-4 sm:p-6 md:p-8 flex-col justify-start md:justify-center items-center bg-gradient-to-br from-neutral-900 to-neutral-950 border-r border-neutral-800/50 overflow-y-auto hide-scrollbar flex-1 md:flex-initial`}>
             {currentSong ? (
-              <div className="w-full max-w-sm flex flex-col items-center my-auto">
+              <div className="w-full max-w-sm flex flex-col items-center pt-3 sm:pt-6 md:pt-2 pb-6">
                 {/* Artwork */}
-                <div className="relative w-52 h-52 sm:w-64 sm:h-64 md:w-72 md:h-72 aspect-square mb-5 shadow-2xl rounded-3xl overflow-hidden group border border-neutral-800/80 shrink-0">
+                <div className="relative w-44 h-44 sm:w-56 sm:h-56 md:w-64 md:h-64 aspect-square mb-4 shadow-2xl rounded-3xl overflow-hidden group border border-neutral-800/80 shrink-0">
                   <img src={(currentSong.thumbnail && currentSong.thumbnail.replace(/(\\?sqp=.*|hq720\\.jpg)/, "maxresdefault.jpg")) || "https://ui-avatars.com/api/?name="+encodeURIComponent(currentSong.title)+"&background=random&size=600"} 
                     alt={currentSong.title} 
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
@@ -3105,12 +3138,12 @@ const sanitizeList = (list) => {
                 </div>
 
                 {/* Song Meta & Actions */}
-                <div className="w-full text-center space-y-1 mb-4">
-                  <h2 className="text-xl sm:text-2xl font-display font-bold text-white line-clamp-1 leading-tight">{currentSong.title}</h2>
-                  <p className="text-sm text-amber-500 font-medium truncate">{currentSong.channel}</p>
+                <div className="w-full text-center space-y-1 mb-3">
+                  <h2 className="text-lg sm:text-xl md:text-2xl font-display font-bold text-white line-clamp-1 leading-tight">{currentSong.title}</h2>
+                  <p className="text-xs sm:text-sm text-amber-500 font-medium truncate">{currentSong.channel}</p>
                   
                   {/* Secondary buttons */}
-                  <div className="flex items-center justify-center gap-3 pt-2">
+                  <div className="flex items-center justify-center gap-3 pt-1.5">
                     <button 
                       onClick={(e) => { e.stopPropagation(); toggleLike(currentSong); }} 
                       className="p-2 rounded-full bg-neutral-800/60 hover:bg-neutral-800 text-neutral-400 hover:text-pink-500 transition shadow" 
@@ -3136,12 +3169,12 @@ const sanitizeList = (list) => {
                 </div>
 
                 {/* Progress Bar */}
-                <div className="w-full mb-4 px-1">
+                <div className="w-full mb-3 px-1">
                   <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} />
                 </div>
 
                 {/* Main Playback Controls */}
-                <div className="flex items-center justify-center gap-6 w-full mb-4">
+                <div className="flex items-center justify-center gap-6 w-full mb-3">
                   <button 
                     onClick={() => setIsShuffle(!isShuffle)} 
                     className={`p-2 transition ${isShuffle ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} 
@@ -3160,7 +3193,7 @@ const sanitizeList = (list) => {
                   
                   <button 
                     onClick={togglePlayPause} 
-                    className="w-13 h-13 rounded-full bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/30 text-white flex items-center justify-center shadow-xl transition"
+                    className="w-12 h-12 sm:w-13 sm:h-13 rounded-full bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/30 text-white flex items-center justify-center shadow-xl transition"
                     title={isPlaying ? "Pause" : "Play"}
                   >
                     <Icon name={isPlaying ? "pause" : "play"} className="w-6 h-6" />
@@ -3187,7 +3220,7 @@ const sanitizeList = (list) => {
                 </div>
 
                 {/* Volume Slider */}
-                <div className="flex items-center gap-3 w-full max-w-xs justify-center px-4 py-1.5 rounded-2xl bg-neutral-900/50 border border-neutral-800/50">
+                <div className="flex items-center gap-3 w-full max-w-xs justify-center px-4 py-1.5 rounded-2xl bg-neutral-900/50 border border-neutral-800/50 mb-3">
                   <Icon name="volume" className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
                   <input
                     type="range"
@@ -3199,22 +3232,41 @@ const sanitizeList = (list) => {
                   />
                   <span className="text-[10px] font-mono text-neutral-400 w-7 text-right">{volume}%</span>
                 </div>
+
+                {/* Switch to Up Next on Mobile */}
+                <button
+                  onClick={() => setMobileQueueTab('queue')}
+                  className="md:hidden mt-2 flex items-center gap-2 px-4 py-2 rounded-2xl bg-neutral-800/80 hover:bg-neutral-700 text-xs text-amber-400 font-semibold border border-neutral-700/60 shadow-md transition"
+                >
+                  <Icon name="list" className="w-4 h-4" />
+                  <span>View Up Next Queue ({queue.length})</span>
+                </button>
               </div>
             ) : (
-              <div className="text-neutral-500 text-lg flex flex-col items-center gap-3">
+              <div className="text-neutral-500 text-lg flex flex-col items-center gap-3 py-16">
                 <Icon name="music" className="w-12 h-12 text-neutral-700" />
                 <span>No song playing</span>
               </div>
             )}
           </div>
 
-          <div className="w-full md:w-1/2 bg-neutral-900/30 backdrop-blur-3xl overflow-y-auto hide-scrollbar pb-32">
-            <div className="p-6 md:p-12 mt-8 md:mt-0">
-              <div className="flex items-center justify-between mb-8">
-                <h3 className="text-2xl font-display font-bold text-white flex items-center gap-3">
-                  <Icon name="list" className="w-6 h-6 text-amber-500" />
-                  Up Next
-                </h3>
+          {/* Up Next Column (Full on Mobile when 'queue' tab is active; 50% on Desktop) */}
+          <div className={`${mobileQueueTab === 'queue' ? 'flex' : 'hidden'} md:flex w-full md:w-1/2 flex-col bg-neutral-900/30 backdrop-blur-3xl overflow-y-auto hide-scrollbar pb-32 flex-1 md:flex-initial`}>
+            <div className="p-4 sm:p-6 md:p-12 mt-2 md:mt-0">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setMobileQueueTab('player')}
+                    className="md:hidden p-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium border border-neutral-700/60"
+                    title="Back to Now Playing"
+                  >
+                    ←
+                  </button>
+                  <h3 className="text-xl sm:text-2xl font-display font-bold text-white flex items-center gap-2.5">
+                    <Icon name="list" className="w-6 h-6 text-amber-500" />
+                    Up Next
+                  </h3>
+                </div>
                 <span className="text-xs font-medium bg-neutral-800 text-neutral-400 px-3 py-1 rounded-full">{queue.length} tracks</span>
               </div>
               
