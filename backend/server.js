@@ -16,6 +16,7 @@ const scClient = new SC.Client();
 
 const oauthClient = new OAuth2Client();
 
+dotenv.config();
 dotenv.config({ path: '../.env' });
 
 const app = express();
@@ -28,6 +29,15 @@ const io = new Server(server, {
 
 app.use(cors());
 app.use(express.json());
+
+// Health check endpoints for Render
+app.get('/', (req, res) => {
+  res.send('AfterHours API is running');
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 // MongoDB connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/afterhours')
