@@ -1788,7 +1788,6 @@ const sanitizeList = (list) => {
     if (searchCache[trimmedQuery]) {
       const cachedSongs = searchCache[trimmedQuery];
       setSearchResults(cachedSongs);
-      setQueue(cachedSongs);
       setSearchVisibleCount(10);
       return;
     }
@@ -1807,7 +1806,6 @@ const sanitizeList = (list) => {
         }));
 
         setSearchResults(fetchedTracks);
-        setQueue(fetchedTracks);
         setSearchVisibleCount(10);
         setSearchCache(prev => ({ ...prev, [trimmedQuery]: fetchedTracks }));
       }
