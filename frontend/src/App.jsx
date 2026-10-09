@@ -1078,21 +1078,50 @@ const sanitizeList = (list) => {
     }
   }, [currentSong]);
 
-  // Sync Data when user logs in or likedSongs/history change
+  // Sync Data — debounced 2.5s after last change, with retry on 502
+  const syncTimerRef = useRef(null);
   useEffect(() => {
     const id = user?.userId || user?._id;
-    if (user && id) {
-      fetch(`${BACKEND_URL}/api/user/${id}/sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ likedSongs, history, playlists })
-      }).catch(console.error);
-    } else if (user && !id) {
-      // Clear invalid old user state
+    if (user && !id) {
       setUser(null);
       localStorage.removeItem('afterhours_user');
+      return;
     }
+    if (!user || !id) return;
+
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(async () => {
+      const doSync = async () => {
+        const res = await fetch(`${BACKEND_URL}/api/user/${id}/sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ likedSongs, history, playlists })
+        });
+        return res;
+      };
+      try {
+        const res = await doSync();
+        // Retry once on 502 (Render cold-start timeout)
+        if (res.status === 502) {
+          await new Promise(r => setTimeout(r, 3000));
+          await doSync();
+        }
+      } catch (err) {
+        // Silent — sync failure is non-critical (data is in localStorage)
+        console.warn('[Sync] Network error, will retry on next change:', err.message);
+      }
+    }, 2500);
+
+    return () => { if (syncTimerRef.current) clearTimeout(syncTimerRef.current); };
   }, [likedSongs, history, playlists, user]);
+
+  // Keep-alive ping every 10 minutes to prevent Render cold starts
+  useEffect(() => {
+    const ping = () => fetch(`${BACKEND_URL}/health`, { method: 'GET' }).catch(() => {});
+    ping(); // ping once on mount
+    const keepAlive = setInterval(ping, 10 * 60 * 1000); // every 10 min
+    return () => clearInterval(keepAlive);
+  }, []);
 
   const handleGoogleSuccess = async (credentialResponse) => {
     try {
