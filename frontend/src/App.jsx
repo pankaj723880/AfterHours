@@ -768,8 +768,8 @@ const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlled
     <div className="space-y-4">
       <div className="flex items-end justify-between mb-4">
         <div>
-          {title && <h2 className="text-2xl font-display font-extrabold text-white tracking-tight">{title}</h2>}
-          {subtitle && <p className="text-neutral-400 mt-1 text-sm font-medium">{subtitle}</p>}
+          {title && <h2 className="text-lg md:text-2xl font-display font-extrabold text-white tracking-tight">{title}</h2>}
+          {subtitle && <p className="text-neutral-400 mt-0.5 md:mt-1 text-xs md:text-sm font-medium">{subtitle}</p>}
         </div>
         <button 
           onClick={() => setShowAll(!showAll)}
@@ -780,7 +780,7 @@ const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlled
       </div>
 
       {showAll ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4 md:gap-6">
           {items.map((item, i) => (
             <React.Fragment key={i}>
               {renderItem(item, i, true)}
@@ -789,17 +789,17 @@ const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlled
         </div>
       ) : (
         <div className="relative group/carousel">
-          <button onClick={() => scroll('left')} className="absolute left-0 top-1/2 -translate-y-1/2 -ml-4 w-10 h-10 bg-neutral-800/80 rounded-full flex items-center justify-center text-white opacity-0 group-hover/carousel:opacity-100 transition-opacity z-10 hover:bg-neutral-700 shadow-xl border border-neutral-700">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+          <button onClick={() => scroll('left')} className="absolute left-0 top-1/2 -translate-y-1/2 -ml-4 w-8 h-8 md:w-10 md:h-10 bg-neutral-800/80 rounded-full flex items-center justify-center text-white opacity-0 group-hover/carousel:opacity-100 transition-opacity z-10 hover:bg-neutral-700 shadow-xl border border-neutral-700">
+            <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
           </button>
-          <div ref={scrollRef} className="flex gap-6 overflow-x-auto pb-4 hide-scrollbar scroll-smooth">
+          <div ref={scrollRef} className="flex gap-3 sm:gap-4 md:gap-6 overflow-x-auto pb-4 hide-scrollbar scroll-smooth">
             {items.map((item, i) => (
-              <div key={i} className="w-40 md:w-48 shrink-0">
+              <div key={i} className="w-32 sm:w-36 md:w-48 shrink-0">
                 {renderItem(item, i, false)}
               </div>
             ))}
           </div>
-          <button onClick={() => scroll('right')} className="absolute right-0 top-1/2 -translate-y-1/2 -mr-4 w-10 h-10 bg-neutral-800/80 rounded-full flex items-center justify-center text-white opacity-0 group-hover/carousel:opacity-100 transition-opacity z-10 hover:bg-neutral-700 shadow-xl border border-neutral-700">
+          <button onClick={() => scroll('right')} className="absolute right-0 top-1/2 -translate-y-1/2 -mr-4 w-8 h-8 md:w-10 md:h-10 bg-neutral-800/80 rounded-full flex items-center justify-center text-white opacity-0 group-hover/carousel:opacity-100 transition-opacity z-10 hover:bg-neutral-700 shadow-xl border border-neutral-700">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
           </button>
         </div>
@@ -808,8 +808,20 @@ const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlled
   );
 };
 export default function App() {
-  const [activeTab, setActiveTab] = useState('home');
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      return localStorage.getItem('afterhours_active_tab') || 'home';
+    } catch (e) {
+      return 'home';
+    }
+  });
   
+  useEffect(() => {
+    try {
+      localStorage.setItem('afterhours_active_tab', activeTab);
+    } catch (e) {}
+  }, [activeTab]);
+
   useEffect(() => {
     const handleClickOutsideMenu = () => setOpenMenuId(null);
     document.addEventListener('click', handleClickOutsideMenu);
@@ -818,82 +830,69 @@ export default function App() {
 
   const [openMenuId, setOpenMenuId] = useState(null);
   const [navigationHistory, setNavigationHistory] = useState([]);
-  React.useEffect(() => {
-    const loadDynamicContent = async () => {
-      try {
-        const trendingRes = await fetchFromBackend("latest trending hindi hit songs");
-        if(trendingRes && trendingRes.items) {
-           setTrendingSongs(trendingRes.items.map(i => ({
-             title: i.snippet.title,
-             artist: i.snippet.channelTitle,
-             image: i.snippet.thumbnails?.high?.url || i.snippet.thumbnails?.medium?.url || undefined,
-             query: i.snippet.title + " " + i.snippet.channelTitle,
-             videoId: i.id?.videoId || i.id
-           })));
-        }
 
-        const albumRes = await fetchFromBackend("latest popular hindi english pop albums");
-        if(albumRes && albumRes.items) {
-           setPopularAlbums(albumRes.items.map(i => ({
-             title: i.snippet.title,
-             artist: i.snippet.channelTitle,
-             image: i.snippet.thumbnails?.high?.url || i.snippet.thumbnails?.medium?.url || undefined,
-             query: i.snippet.title
-           })));
-        }
-
-        const radioRes = await fetchFromBackend("popular radio station live stream");
-        if(radioRes && radioRes.items) {
-           setPopularRadio(radioRes.items.map(i => ({
-             title: i.snippet.title,
-             artist: i.snippet.channelTitle,
-             image: i.snippet.thumbnails?.high?.url || i.snippet.thumbnails?.medium?.url || undefined,
-             query: i.snippet.title
-           })));
-        }
-      } catch (err) {}
-    };
-    loadDynamicContent();
-  }, []);
-
-  const [trendingSongs, setTrendingSongs] = useState(TRENDING_SONGS);
-  const [popularAlbums, setPopularAlbums] = useState(POPULAR_ALBUMS);
-  const [popularRadio, setPopularRadio] = useState(POPULAR_RADIO);
+  const [trendingSongs, setTrendingSongs] = useState(() => {
+    try {
+      const cached = localStorage.getItem('afterhours_trending');
+      return cached ? JSON.parse(cached) : TRENDING_SONGS;
+    } catch (e) { return TRENDING_SONGS; }
+  });
+  const [popularAlbums, setPopularAlbums] = useState(() => {
+    try {
+      const cached = localStorage.getItem('afterhours_albums');
+      return cached ? JSON.parse(cached) : POPULAR_ALBUMS;
+    } catch (e) { return POPULAR_ALBUMS; }
+  });
+  const [popularRadio, setPopularRadio] = useState(() => {
+    try {
+      const cached = localStorage.getItem('afterhours_radio');
+      return cached ? JSON.parse(cached) : POPULAR_RADIO;
+    } catch (e) { return POPULAR_RADIO; }
+  });
 
   useEffect(() => {
     const fetchDynamicContent = async () => {
       try {
-        const trendingRes = await fetchFromBackend("latest trending hindi hit songs");
-        if(trendingRes && trendingRes.items) {
-           setTrendingSongs(trendingRes.items.map(i => ({
-             title: i.snippet.title,
-             artist: i.snippet.channelTitle,
-             image: i.snippet.thumbnails?.high?.url || i.snippet.thumbnails?.medium?.url || undefined,
-             query: i.snippet.title + " " + i.snippet.channelTitle,
-             videoId: i.id?.videoId || i.id
-           })));
+        const [trendingRes, albumsRes, radioRes] = await Promise.allSettled([
+          fetchFromBackend("latest trending hindi hit songs"),
+          fetchFromBackend("latest hit bollywood albums audio jukebox"),
+          fetchFromBackend("bollywood lofi romantic hits radio jukebox")
+        ]);
+
+        if (trendingRes.status === 'fulfilled' && trendingRes.value?.items) {
+          const list = trendingRes.value.items.map(i => ({
+            title: i.snippet.title,
+            artist: i.snippet.channelTitle,
+            image: i.snippet.thumbnails?.high?.url || i.snippet.thumbnails?.medium?.url || undefined,
+            query: i.snippet.title + " " + i.snippet.channelTitle,
+            videoId: i.id?.videoId || i.id
+          }));
+          setTrendingSongs(list);
+          try { localStorage.setItem('afterhours_trending', JSON.stringify(list)); } catch (e) {}
         }
         
-        const albumsRes = await fetchFromBackend("latest hit bollywood albums audio jukebox");
-        if(albumsRes && albumsRes.items) {
-           setPopularAlbums(albumsRes.items.map(i => ({
-             title: i.snippet.title,
-             artist: i.snippet.channelTitle,
-             image: i.snippet.thumbnails?.high?.url || i.snippet.thumbnails?.medium?.url || undefined,
-             query: i.snippet.title + " " + i.snippet.channelTitle,
-             videoId: i.id?.videoId || i.id
-           })));
+        if (albumsRes.status === 'fulfilled' && albumsRes.value?.items) {
+          const list = albumsRes.value.items.map(i => ({
+            title: i.snippet.title,
+            artist: i.snippet.channelTitle,
+            image: i.snippet.thumbnails?.high?.url || i.snippet.thumbnails?.medium?.url || undefined,
+            query: i.snippet.title + " " + i.snippet.channelTitle,
+            videoId: i.id?.videoId || i.id
+          }));
+          setPopularAlbums(list);
+          try { localStorage.setItem('afterhours_albums', JSON.stringify(list)); } catch (e) {}
         }
         
-        const radioRes = await fetchFromBackend("bollywood lofi romantic hits radio jukebox");
-        if(radioRes && radioRes.items) {
-           setPopularRadio(radioRes.items.map(i => ({
-             title: i.snippet.title,
-             artist: i.snippet.channelTitle,
-             image: i.snippet.thumbnails?.high?.url || i.snippet.thumbnails?.medium?.url || undefined,
-             query: i.snippet.title + " " + i.snippet.channelTitle,
-             videoId: i.id?.videoId || i.id
-           })));
+        if (radioRes.status === 'fulfilled' && radioRes.value?.items) {
+          const list = radioRes.value.items.map(i => ({
+            title: i.snippet.title,
+            artist: i.snippet.channelTitle,
+            image: i.snippet.thumbnails?.high?.url || i.snippet.thumbnails?.medium?.url || undefined,
+            query: i.snippet.title + " " + i.snippet.channelTitle,
+            videoId: i.id?.videoId || i.id
+          }));
+          setPopularRadio(list);
+          try { localStorage.setItem('afterhours_radio', JSON.stringify(list)); } catch (e) {}
         }
       } catch(e) { console.error("Failed to fetch dynamic content", e); }
     };
@@ -1568,7 +1567,10 @@ const sanitizeList = (list) => {
 
     try {
       if (stationKey === 'pauwa') {
-        const partyData = await fetchFromBackend(station.queries[0]);
+        const [partyData, sadData] = await Promise.all([
+          fetchFromBackend(station.queries[0]).catch(() => ({})),
+          fetchFromBackend(station.queries[1]).catch(() => ({}))
+        ]);
 
         const fetchedParty = partyData.items ? partyData.items.map(item => ({
           id: item.id.videoId || item.id,
@@ -1576,8 +1578,6 @@ const sanitizeList = (list) => {
           channel: item.snippet.channelTitle,
           thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url,
         })) : [];
-
-        const sadData = await fetchFromBackend(station.queries[1]);
 
         const fetchedSad = sadData.items ? sadData.items.map(item => ({
           id: item.id.videoId || item.id,
@@ -1921,9 +1921,30 @@ const sanitizeList = (list) => {
         </div>
 
         <div className="flex items-center gap-2">
+          {user ? (
+            <button
+              onClick={logout}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-white font-medium text-xs border border-neutral-700 shrink-0"
+              title="Logout"
+            >
+              <div className="w-5 h-5 rounded-full bg-neutral-950 text-white flex items-center justify-center font-bold text-[10px] border border-neutral-700">
+                {user.username ? user.username.charAt(0).toUpperCase() : 'U'}
+              </div>
+              <span className="hidden sm:inline">Logout</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => { setShowAuthModal(true); setIsSidebarOpen(false); }}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-white font-medium text-xs shadow-md transition shrink-0"
+            >
+              <Icon name="user" className="w-3.5 h-3.5 shrink-0" />
+              <span>Login</span>
+            </button>
+          )}
+
           <button
             onClick={handleInstallClick}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-500 to-amber-500 text-white font-medium tracking-wide text-xs shrink-0"
+            className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-500 to-amber-500 text-white font-medium tracking-wide text-xs shrink-0"
           >
             <Icon name="download" className="w-3.5 h-3.5" />
             <span>Install</span>
@@ -2461,16 +2482,16 @@ const sanitizeList = (list) => {
               setShowAll={setShowAllTrending}
               renderItem={(song) => (
                 <div onClick={() => handlePlayTrending(song.query || song.title, song)} className="group cursor-pointer">
-                  <div className="relative mb-3">
+                  <div className="relative mb-2 md:mb-3">
                     <img src={song.image || "https://ui-avatars.com/api/?name="+encodeURIComponent(song.title)+"&background=random&size=300"} alt={song.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => { e.target.src = "https://ui-avatars.com/api/?name="+encodeURIComponent(song.title)+"&background=random&size=300"; }} />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
-                      <div className="w-10 h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
-                        <Icon name="play" className="w-5 h-5 text-neutral-950 translate-x-[2px]" />
+                      <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
+                        <Icon name="play" className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-neutral-950 translate-x-[1px] md:translate-x-[2px]" />
                       </div>
                     </div>
                   </div>
-                  <h3 className="text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{song.title}</h3>
-                  <p className="text-xs text-neutral-400 truncate mt-1">{song.artist}</p>
+                  <h3 className="text-xs md:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{song.title}</h3>
+                  <p className="text-[11px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1">{song.artist}</p>
                 </div>
               )}
             />
@@ -2483,14 +2504,14 @@ const sanitizeList = (list) => {
               setShowAll={setShowAllArtists}
               renderItem={(artist) => (
                 <div onClick={() => handleArtistClick(artist.name)} className="group cursor-pointer flex flex-col items-center">
-                  <div className="relative mb-3 w-32 h-32 md:w-full md:aspect-square rounded-full overflow-hidden shadow-lg border-2 border-transparent group-hover:border-amber-500 transition-all duration-300">
+                  <div className="relative mb-2 md:mb-3 w-20 h-20 sm:w-28 sm:h-28 md:w-full md:aspect-square rounded-full overflow-hidden shadow-lg border-2 border-transparent group-hover:border-amber-500 transition-all duration-300">
                     <img src={artist.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(artist.name)}&background=random&size=300`} alt={artist.name} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" onError={(e) => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(artist.name)}&background=random&size=300`; }} />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
-                      <Icon name="search" className="w-8 h-8 text-white drop-shadow-md transform scale-90 group-hover:scale-100 transition" />
+                      <Icon name="search" className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-white drop-shadow-md transform scale-90 group-hover:scale-100 transition" />
                     </div>
                   </div>
-                  <h3 className="text-sm font-bold text-white truncate w-full text-center group-hover:text-amber-400 transition">{artist.name}</h3>
-                  <p className="text-xs text-neutral-400 truncate mt-1 w-full text-center">{artist.role}</p>
+                  <h3 className="text-xs md:text-sm font-bold text-white truncate w-full text-center group-hover:text-amber-400 transition">{artist.name}</h3>
+                  <p className="text-[10px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1 w-full text-center">{artist.role}</p>
                 </div>
               )}
             />
@@ -2503,16 +2524,16 @@ const sanitizeList = (list) => {
               setShowAll={setShowAllAlbums}
               renderItem={(album) => (
                 <div onClick={() => handlePlayTrending(album.query || album.title, album)} className="group cursor-pointer">
-                  <div className="relative mb-3">
+                  <div className="relative mb-2 md:mb-3">
                     <img src={album.image || "https://ui-avatars.com/api/?name="+encodeURIComponent(album.title)+"&background=random&size=300"} alt={album.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => { e.target.src = "https://ui-avatars.com/api/?name="+encodeURIComponent(album.title)+"&background=random&size=300"; }} />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
-                      <div className="w-10 h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
-                        <Icon name="play" className="w-5 h-5 text-neutral-950 translate-x-[2px]" />
+                      <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
+                        <Icon name="play" className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-neutral-950 translate-x-[1px] md:translate-x-[2px]" />
                       </div>
                     </div>
                   </div>
-                  <h3 className="text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{album.title}</h3>
-                  <p className="text-xs text-neutral-400 truncate mt-1">{album.artist}</p>
+                  <h3 className="text-xs md:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{album.title}</h3>
+                  <p className="text-[11px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1">{album.artist}</p>
                 </div>
               )}
             />
@@ -2525,16 +2546,16 @@ const sanitizeList = (list) => {
               setShowAll={setShowAllRadio}
               renderItem={(radio) => (
                 <div onClick={() => handlePlayTrending(radio.query || radio.title, radio)} className="group cursor-pointer">
-                  <div className="relative mb-3">
+                  <div className="relative mb-2 md:mb-3">
                     <img src={radio.image || "https://ui-avatars.com/api/?name="+encodeURIComponent(radio.title)+"&background=random&size=300"} alt={radio.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => { e.target.src = "https://ui-avatars.com/api/?name="+encodeURIComponent(radio.title)+"&background=random&size=300"; }} />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
-                      <div className="w-10 h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
-                        <Icon name="play" className="w-5 h-5 text-neutral-950 translate-x-[2px]" />
+                      <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
+                        <Icon name="play" className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-neutral-950 translate-x-[1px] md:translate-x-[2px]" />
                       </div>
                     </div>
                   </div>
-                  <h3 className="text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{radio.title}</h3>
-                  <p className="text-xs text-neutral-400 truncate mt-1">{radio.artist}</p>
+                  <h3 className="text-xs md:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{radio.title}</h3>
+                  <p className="text-[11px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1">{radio.artist}</p>
                 </div>
               )}
             />
@@ -2873,6 +2894,9 @@ const sanitizeList = (list) => {
               </div>
               {!isPlayerMinimized && (
                 <div className="flex items-center gap-1 shrink-0 ml-2">
+                  <button onClick={(e) => handleOpenVideo(currentSong, e)} className="text-amber-400 hover:text-amber-300 transition p-1 shrink-0" title="Watch Video">
+                    <Icon name="video" className="w-4 h-4 shrink-0" />
+                  </button>
                   <button onClick={(e) => handleAddToPlaylistClick(currentSong, e)} className="text-neutral-500 hover:text-amber-500 transition p-1 shrink-0" title="Add to Playlist">
                     <Icon name="plus" className="w-4 h-4 shrink-0" />
                   </button>
@@ -2918,7 +2942,10 @@ const sanitizeList = (list) => {
             )}
 
             {isPlayerMinimized && (
-              <div className="flex items-center gap-3 shrink-0">
+              <div className="flex items-center gap-2.5 shrink-0">
+                <button onClick={(e) => handleOpenVideo(currentSong, e)} className="text-amber-400 hover:text-amber-300 transition p-1 shrink-0" title="Watch Video">
+                  <Icon name="video" className="w-4 h-4 shrink-0" />
+                </button>
                 <button onClick={handlePrevSong} className="text-neutral-300 hover:text-white transition shrink-0" title="Previous Track">
                   <Icon name="skipPrev" className="w-4 h-4 shrink-0" />
                 </button>
@@ -3140,7 +3167,7 @@ const sanitizeList = (list) => {
       )}
 
       {showAuthModal && (
-        <div className="fixed inset-0 z-50 bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-neutral-950/85 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 md:p-8 w-full max-w-sm relative shadow-2xl">
             <button onClick={() => setShowAuthModal(false)} className="absolute top-4 right-4 text-neutral-500 hover:text-white transition">
               <Icon name="close" className="w-6 h-6" />
