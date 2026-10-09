@@ -951,6 +951,8 @@ const sanitizeList = (list) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const currentTimeRef = useRef(0);
   const durationRef = useRef(0);
+  const playerRef = useRef(null);
+  const wasPlayingBeforeAuthRef = useRef(false);
 
   const [isShuffle, setIsShuffle] = useState(false);
   const [isRepeat, setIsRepeat] = useState(false);
@@ -1008,6 +1010,32 @@ const sanitizeList = (list) => {
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
+  const openAuthModal = useCallback(() => {
+    if (isPlaying) {
+      wasPlayingBeforeAuthRef.current = true;
+      if (playerRef.current && typeof playerRef.current.pauseVideo === 'function') {
+        try { playerRef.current.pauseVideo(); } catch (e) {}
+      }
+      setIsPlaying(false);
+    } else {
+      wasPlayingBeforeAuthRef.current = false;
+    }
+    setAuthError('');
+    setIsSidebarOpen(false);
+    setShowAuthModal(true);
+  }, [isPlaying]);
+
+  const closeAuthModal = useCallback((resumed = false) => {
+    setShowAuthModal(false);
+    if (resumed && wasPlayingBeforeAuthRef.current && currentSong) {
+      wasPlayingBeforeAuthRef.current = false;
+      if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
+        try { playerRef.current.playVideo(); } catch (e) {}
+      }
+      setIsPlaying(true);
+    }
+  }, [currentSong]);
+
   // Sync Data when user logs in or likedSongs/history change
   useEffect(() => {
     const id = user?.userId || user?._id;
@@ -1044,7 +1072,7 @@ const sanitizeList = (list) => {
       const loggedInUser = { username: data.user.username, userId: data.user.userId || data.user._id };
       setUser(loggedInUser);
       localStorage.setItem('afterhours_user', JSON.stringify(loggedInUser));
-      setShowAuthModal(false);
+      closeAuthModal(true);
 
       const mergedLiked = data.user.likedSongs || [];
       const uniqueLiked = Array.from(new Set(mergedLiked.map(a => a.id))).map(id => mergedLiked.find(a => a.id === id));
@@ -1115,7 +1143,7 @@ const sanitizeList = (list) => {
       const loggedInUser = { username: authForm.username, userId: data.userId || (data.user && data.user._id) };
       setUser(loggedInUser);
       localStorage.setItem('afterhours_user', JSON.stringify(loggedInUser));
-      setShowAuthModal(false);
+      closeAuthModal(true);
 
       if (isLoginMode && data.user) {
         // Merge local data with remote data
@@ -1152,7 +1180,6 @@ const sanitizeList = (list) => {
     setPlaylists([]);
   };
 
-  const playerRef = useRef(null);
   const silentAudioRef = useRef(null);
   const videoTimeRef = useRef(0);
   const loadedVideoIdRef = useRef(null);
@@ -1736,7 +1763,7 @@ const sanitizeList = (list) => {
   };
 
   const toggleLike = (song) => {
-    if (!user) { setShowAuthModal(true); return; }
+    if (!user) { openAuthModal(); return; }
     setLikedSongs(prev => prev.some(s => s.id === song.id) ? prev.filter(s => s.id !== song.id) : [song, ...prev]);
   };
 
@@ -1934,7 +1961,7 @@ const sanitizeList = (list) => {
             </button>
           ) : (
             <button
-              onClick={() => { setShowAuthModal(true); setIsSidebarOpen(false); }}
+              onClick={openAuthModal}
               className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-white font-medium text-xs shadow-md transition shrink-0"
             >
               <Icon name="user" className="w-3.5 h-3.5 shrink-0" />
@@ -2176,7 +2203,7 @@ const sanitizeList = (list) => {
               </button>
             ) : (
               <button
-                onClick={() => setShowAuthModal(true)}
+                onClick={openAuthModal}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0"
               >
                 <Icon name="user" className="w-3.5 h-3.5 shrink-0" />
@@ -3167,9 +3194,12 @@ const sanitizeList = (list) => {
       )}
 
       {showAuthModal && (
-        <div className="fixed inset-0 z-[100] bg-neutral-950/85 backdrop-blur-md flex items-center justify-center p-4">
+        <div 
+          className="fixed inset-0 z-[100] bg-neutral-950/85 backdrop-blur-md flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) closeAuthModal(false); }}
+        >
           <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 md:p-8 w-full max-w-sm relative shadow-2xl">
-            <button onClick={() => setShowAuthModal(false)} className="absolute top-4 right-4 text-neutral-500 hover:text-white transition">
+            <button onClick={() => closeAuthModal(false)} className="absolute top-4 right-4 text-neutral-500 hover:text-white transition">
               <Icon name="close" className="w-6 h-6" />
             </button>
             <h2 className="text-2xl font-display font-extrabold tracking-tight text-white mb-6 text-center">
