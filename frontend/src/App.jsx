@@ -1976,58 +1976,6 @@ const sanitizeList = (list) => {
         </div>
       )}
 
-      <header className="md:hidden sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-md border-b border-neutral-800/80 px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="p-2 rounded-2xl bg-neutral-800 text-neutral-200 hover:text-white focus:outline-none shrink-0"
-            aria-label="Toggle Menu"
-          >
-            <Icon name={isSidebarOpen ? "close" : "menu"} className="w-6 h-6 text-amber-400" />
-          </button>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-700 via-amber-600 to-amber-500 flex items-center justify-center shadow-md">
-              <Icon name="radio" className="w-5 h-5 text-white" />
-            </div>
-            <h1 className="text-lg font-display font-extrabold tracking-tight tracking-wider text-white">MAHAUL SET</h1>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {user ? (
-            <button
-              onClick={logout}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-white font-medium text-xs border border-neutral-700 shrink-0"
-              title="Logout"
-            >
-              <div className="w-5 h-5 rounded-full bg-neutral-950 text-white flex items-center justify-center font-bold text-[10px] border border-neutral-700">
-                {user.username ? user.username.charAt(0).toUpperCase() : 'U'}
-              </div>
-              <span className="hidden sm:inline">Logout</span>
-            </button>
-          ) : (
-            <button
-              onClick={openAuthModal}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-white font-medium text-xs shadow-md transition shrink-0"
-            >
-              <Icon name="user" className="w-3.5 h-3.5 shrink-0" />
-              <span>Login</span>
-            </button>
-          )}
-
-          <button
-            onClick={handleInstallClick}
-            className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-500 to-amber-500 text-white font-medium tracking-wide text-xs shrink-0"
-          >
-            <Icon name="download" className="w-3.5 h-3.5" />
-            <span>Install</span>
-          </button>
-          <div className="px-2.5 py-1 rounded-xl bg-neutral-900/80 backdrop-blur-xl border border-neutral-800 font-mono text-[11px] text-amber-300">
-            {clockString || "00:00"}
-          </div>
-        </div>
-      </header>
-
       {isSidebarOpen && (
         <div 
           onClick={() => setIsSidebarOpen(false)}
@@ -2180,43 +2128,34 @@ const sanitizeList = (list) => {
         </div>
       </aside>
 
-      <main className={`flex-1 h-full min-h-0 overflow-y-auto p-4 md:p-8 bg-neutral-950 relative w-full transition-all duration-300 ${isPlayerMinimized ? 'pb-24' : 'pb-64'}`}>
-        {currentStation && currentBgImage && (
-          <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden transition-all duration-700">
-            <img 
-              key={currentBgImage}
-              src={currentBgImage} 
-              alt="Station Background" 
-              loading="lazy"
-              className="w-full h-full object-cover filter brightness-[0.75] contrast-100 scale-105 transition-opacity duration-1000 animate-fadeIn"
-            />
-            <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/85" />
-          </div>
-        )}
-
-        {showMobileTip && (
-          <div className="md:hidden relative z-30 mb-4 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 backdrop-blur-md flex items-start justify-between gap-2 text-xs text-amber-200">
-            <div className="flex items-start gap-2">
-              <Icon name="info" className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-              <p>
-                <strong>Mobile Tip:</strong> If audio pauses when switching apps or locking your phone, pull down your notification panel and tap <strong>Play</strong>!
-              </p>
+      <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 relative overflow-hidden">
+        {/* Unified Top Navbar for both Mobile and Desktop */}
+        <header className="sticky top-0 z-40 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-4 md:px-8 py-3 h-14 md:h-16 flex items-center justify-between shrink-0 w-full">
+          {/* LEFT: Mobile Menu & Logo | Desktop Clock */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="md:hidden p-2 rounded-2xl bg-neutral-800 text-neutral-200 hover:text-white focus:outline-none shrink-0"
+              aria-label="Toggle Menu"
+            >
+              <Icon name={isSidebarOpen ? "close" : "menu"} className="w-5 h-5 text-amber-400" />
+            </button>
+            <div className="flex md:hidden items-center gap-2">
+              <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-amber-700 via-amber-600 to-amber-500 flex items-center justify-center shadow-md">
+                <Icon name="radio" className="w-4 h-4 text-white" />
+              </div>
+              <h1 className="text-base font-display font-extrabold tracking-tight text-white">MAHAUL SET</h1>
             </div>
-            <button onClick={() => setShowMobileTip(false)} className="text-amber-400 font-bold text-sm px-1 shrink-0">✕</button>
-          </div>
-        )}
 
-        <div className="relative z-20 hidden md:flex items-center justify-between pb-6 mb-2 border-b border-white/10 w-full">
-          {/* LEFT: TIME */}
-          <div className="flex-1 flex justify-start">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-neutral-900/80 backdrop-blur-xl border border-neutral-800 backdrop-blur-md text-xs font-mono text-amber-300 shadow-md">
+            {/* Desktop Clock */}
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-neutral-900/80 backdrop-blur-xl border border-neutral-800 text-xs font-mono text-amber-300 shadow-md">
               <span>⏳</span>
               <span>{clockString || "00:00:00"}</span>
             </div>
           </div>
 
-          {/* CENTER: ACTIVE USERS */}
-          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-900/80 backdrop-blur-xl border border-neutral-800 backdrop-blur-md shadow-lg shrink-0">
+          {/* CENTER (Desktop only): ACTIVE USERS */}
+          <div className="hidden md:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-900/80 backdrop-blur-xl border border-neutral-800 shadow-lg shrink-0">
             <span className="relative flex h-2.5 w-2.5">
               <span className="animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite] absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-orange-500"></span>
@@ -2226,38 +2165,69 @@ const sanitizeList = (list) => {
             </span>
           </div>
 
-          {/* RIGHT: INSTALL APP & AUTH/LOGOUT */}
-          <div className="flex-1 flex justify-end items-center gap-2">
+          {/* RIGHT: INSTALL APP & AUTH/LOGOUT (+ MOBILE CLOCK) */}
+          <div className="flex items-center gap-2">
             <button
               onClick={handleInstallClick}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-500 hover:from-amber-400 hover:to-amber-500 text-white font-medium tracking-wide text-xs shadow-lg animate-pulse transition shrink-0"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-500 hover:from-amber-400 hover:to-amber-500 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0"
             >
               <Icon name="download" className="w-3.5 h-3.5 text-white shrink-0" />
-              <span>Install App</span>
+              <span className="hidden sm:inline">Install App</span>
             </button>
             
             {user ? (
               <button
                 onClick={logout}
-                className="flex items-center gap-2 pr-3 pl-1 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0 border border-neutral-700"
+                className="flex items-center gap-2 pr-2.5 pl-1 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0 border border-neutral-700"
                 title="Logout"
               >
-                <div className="w-7 h-7 rounded-full bg-neutral-950 text-white flex items-center justify-center font-extrabold uppercase text-sm border border-neutral-700">
+                <div className="w-6 h-6 rounded-full bg-neutral-950 text-white flex items-center justify-center font-extrabold uppercase text-xs border border-neutral-700">
                   {user.username ? user.username.charAt(0).toUpperCase() : 'U'}
                 </div>
-                <span>Logout</span>
+                <span className="hidden sm:inline">Logout</span>
               </button>
             ) : (
               <button
                 onClick={openAuthModal}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0"
               >
                 <Icon name="user" className="w-3.5 h-3.5 shrink-0" />
                 <span>Login</span>
               </button>
             )}
+
+            {/* Mobile Clock */}
+            <div className="md:hidden px-2.5 py-1 rounded-xl bg-neutral-900/80 backdrop-blur-xl border border-neutral-800 font-mono text-[11px] text-amber-300">
+              {clockString || "00:00"}
+            </div>
           </div>
-        </div>
+        </header>
+
+        <main className={`flex-1 h-full min-h-0 overflow-y-auto p-4 md:p-8 bg-neutral-950 relative w-full transition-all duration-300 ${isPlayerMinimized ? 'pb-24' : 'pb-64'}`}>
+          {currentStation && currentBgImage && (
+            <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden transition-all duration-700">
+              <img 
+                key={currentBgImage}
+                src={currentBgImage} 
+                alt="Station Background" 
+                loading="lazy"
+                className="w-full h-full object-cover filter brightness-[0.75] contrast-100 scale-105 transition-opacity duration-1000 animate-fadeIn"
+              />
+              <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/85" />
+            </div>
+          )}
+
+          {showMobileTip && (
+            <div className="md:hidden relative z-30 mb-4 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 backdrop-blur-md flex items-start justify-between gap-2 text-xs text-amber-200">
+              <div className="flex items-start gap-2">
+                <Icon name="info" className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <p>
+                  <strong>Mobile Tip:</strong> If audio pauses when switching apps or locking your phone, pull down your notification panel and tap <strong>Play</strong>!
+                </p>
+              </div>
+              <button onClick={() => setShowMobileTip(false)} className="text-amber-400 font-bold text-sm px-1 shrink-0">✕</button>
+            </div>
+          )}
 
         {((navigationHistory.length > 0 && activeTab !== 'home') || (activeTab === 'home' && (showAllTrending || showAllArtists || showAllAlbums || showAllRadio))) && (
           <div className="relative z-20 mb-6 flex justify-start">
@@ -2997,6 +2967,7 @@ const sanitizeList = (list) => {
         )}
 
       </main>
+      </div>
 
       {currentSong && (
         <footer className={`fixed bottom-0 right-0 z-40 bg-neutral-900/95 backdrop-blur-2xl border-t border-neutral-800/80 transition-all duration-300 shadow-2xl left-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'} ${isPlayerMinimized ? 'p-2' : 'p-3 md:p-4'}`}>
@@ -3111,12 +3082,12 @@ const sanitizeList = (list) => {
       )}
 
       {showQueuePanel && (
-        <div className={`fixed inset-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'} z-[45] bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn pb-24 md:pb-0`}>
-          <button onClick={() => setShowQueuePanel(false)} className="absolute top-6 right-6 text-neutral-400 hover:text-white z-50 bg-neutral-900/50 p-2 rounded-full backdrop-blur-md">
+        <div className={`fixed top-14 md:top-16 inset-x-0 bottom-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'} z-40 bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn pb-24 md:pb-0`}>
+          <button onClick={() => setShowQueuePanel(false)} className="absolute top-4 right-4 text-neutral-400 hover:text-white z-50 bg-neutral-900/80 hover:bg-neutral-800 p-2 rounded-full backdrop-blur-md border border-neutral-700/60 shadow-lg cursor-pointer transition">
             <Icon name="close" className="w-6 h-6" />
           </button>
 
-          <div className="w-full md:w-1/2 p-6 md:p-10 flex flex-col justify-center items-center bg-gradient-to-br from-neutral-900 to-neutral-950 border-r border-neutral-800/50 overflow-y-auto hide-scrollbar">
+          <div className="w-full md:w-1/2 p-4 sm:p-6 md:p-10 flex flex-col justify-center items-center bg-gradient-to-br from-neutral-900 to-neutral-950 border-r border-neutral-800/50 overflow-y-auto hide-scrollbar">
             {currentSong ? (
               <div className="w-full max-w-sm flex flex-col items-center my-auto">
                 {/* Artwork */}
