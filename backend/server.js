@@ -274,79 +274,11 @@ app.get('/api/resolve/:videoId', async (req, res) => {
   }
 });
 
-import youtubedl from 'youtube-dl-exec';
-import { ensureYtDlp } from './ensure-ytdlp.js';
-
-// Pre-warm yt-dlp binary
-ensureYtDlp().catch(e => console.warn('ensureYtDlp init warning:', e.message));
-
-const streamUrlCache = new Map();
-
-// Stream endpoint - streams direct audio from yt-dlp to bypass CORS and 403 blocks
-app.get('/api/stream/:videoId', async (req, res) => {
-  const videoId = req.params.videoId;
-  
-  try {
-    await ensureYtDlp();
-    
-    const proc = youtubedl.exec(`https://www.youtube.com/watch?v=${videoId}`, {
-      format: 'bestaudio',
-      output: '-',
-      geoBypass: true,
-      noCheckCertificates: true,
-      noWarnings: true
-    }, { stdio: ['ignore', 'pipe', 'pipe'] });
-    
-    let headersSent = false;
-    let stderrOutput = '';
-
-    proc.stderr.on('data', chunk => {
-      stderrOutput += chunk.toString();
-    });
-
-    proc.stdout.on('data', chunk => {
-      if (!headersSent) {
-        res.setHeader('Content-Type', 'audio/webm');
-        res.setHeader('Accept-Ranges', 'bytes');
-        res.status(200);
-        headersSent = true;
-      }
-      res.write(chunk);
-    });
-
-    proc.stdout.on('end', () => {
-      if (headersSent) {
-        res.end();
-      }
-    });
-
-    proc.on('close', code => {
-      if (code !== 0 && !headersSent) {
-        console.error(`yt-dlp stream process failed for ${videoId} (exit ${code}):`, stderrOutput.slice(-300));
-        res.status(500).json({ error: 'Stream extraction failed: ' + (stderrOutput.slice(-300) || `Exit code ${code}`) });
-      } else if (!headersSent) {
-        res.status(404).json({ error: 'No audio data found' });
-      }
-    });
-
-    proc.on('error', err => {
-      console.error(`yt-dlp stream error for ${videoId}:`, err.message);
-      if (!headersSent) {
-        res.status(500).json({ error: 'Failed to start stream process: ' + err.message });
-      }
-    });
-
-    req.on('close', () => {
-      try {
-        proc.kill();
-      } catch (e) {}
-    });
-  } catch (err) {
-    console.error(`Stream proxy failed entirely for ${videoId}:`, err.message);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Stream proxy error: ' + err.message });
-    }
-  }
+// Stream endpoint - returns safe response, playback is handled client-side via YouTube IFrame API
+app.get('/api/stream/:videoId', (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', '*');
+  res.status(200).json({ status: 'ok', message: 'Stream playback handled client-side via YouTube IFrame API' });
 });
 
 const PORT = process.env.PORT || 5000;

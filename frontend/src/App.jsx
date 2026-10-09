@@ -1221,9 +1221,18 @@ const sanitizeList = (list) => {
       socket.off('active_users');
     };
   }, []);
-
-  // Removed unused YouTube iframe API injection to fix [Violation] 'message' handler warning
-
+  useEffect(() => {
+    if (!window.YT) {
+      const tag = document.createElement('script');
+      tag.src = "https://www.youtube.com/iframe_api";
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      if (firstScriptTag && firstScriptTag.parentNode) {
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+      } else {
+        document.head.appendChild(tag);
+      }
+    }
+  }, []);
   const handleOpenVideo = (song, e) => {
     if (e) e.stopPropagation();
     if (!song) return;
@@ -1443,75 +1452,58 @@ const sanitizeList = (list) => {
   }, [soundProfile]);
 
   const initPlayerInstance = useCallback((videoId) => {
-    if (!audioContextRef.current) {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      audioContextRef.current = new AudioContext();
-      gainNodeRef.current = audioContextRef.current.createGain();
-      const bands = [60, 230, 910, 3600, 14000];
-      eqNodesRef.current = bands.map(freq => {
-        const filter = audioContextRef.current.createBiquadFilter();
-        filter.type = 'peaking';
-        filter.frequency.value = freq;
-        filter.Q.value = 1;
-        filter.gain.value = 0;
-        return filter;
-      });
-    }
+    if (!window.YT || !window.YT.Player) return;
 
-    if (audioContextRef.current.state === 'suspended') {
-      audioContextRef.current.resume();
-    }
-
-    if (audioElemRef.current && !audioElemRef.current.paused) {
-      audioElemRef.current.pause();
-    }
-
-    if (!audioElemRef.current) {
-      audioElemRef.current = new Audio();
-      audioElemRef.current.crossOrigin = 'anonymous';
-      audioElemRef.current.sourceNode = audioContextRef.current.createMediaElementSource(audioElemRef.current);
-    }
-
-    const audio = audioElemRef.current;
-    // Always use stream proxy to avoid direct Google media URL CORS and 206 failures
-    audio.src = `${BACKEND_URL}/api/stream/${videoId}`;
-    audio.play().catch(() => {});
-    
-    applySoundProfile(); // connects graph
-    
-    audio.onended = () => { 
-      const currentRepeat = isRepeatRef.current;
-      if (currentRepeat === 'one' || currentRepeat === true) {
-        audio.currentTime = 0;
-        audio.play().catch(()=>{});
-      } else {
-        handleNextSongRef.current?.();
+    try {
+      if (playerRef.current && typeof playerRef.current.destroy === 'function') {
+        playerRef.current.destroy();
       }
-    };
-    audio.onplay = () => { setIsPlaying(true); };
-    audio.onpause = () => { setIsPlaying(false); };
-    audio.ontimeupdate = () => {
-      durationRef.current = audio.duration || 0;
-    };
+    } catch (e) {}
 
-    // Mock YT.Player API
-    playerRef.current = {
-      playVideo: () => audio.play().catch(()=>{}),
-      pauseVideo: () => audio.pause(),
-      getCurrentTime: () => audio.currentTime,
-      getDuration: () => audio.duration || 0,
-      seekTo: (time) => { audio.currentTime = time; },
-      setVolume: (vol) => { 
-        if(gainNodeRef.current) gainNodeRef.current.gain.value = vol / 100; 
+    playerRef.current = new window.YT.Player('yt-player-instance', {
+      height: '100%',
+      width: '100%',
+      videoId: videoId,
+      playerVars: { 
+        autoplay: 1, 
+        controls: 0, 
+        disablekb: 1, 
+        modestbranding: 1,
+        enablejsapi: 1,
+        playsinline: 1,
+        origin: window.location.origin
       },
-      loadVideoById: ({ videoId }) => {
-        audio.src = `${BACKEND_URL}/api/stream/${videoId}`;
-        audio.play().catch(()=>{});
+      events: {
+        onReady: (e) => {
+          try {
+            e.target.setVolume(volume);
+            e.target.playVideo();
+            setIsPlaying(true);
+          } catch (err) {}
+        },
+        onStateChange: (e) => {
+          if (e.data === 1) { // Playing
+            setIsPlaying(true);
+            if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
+          } else if (e.data === 2) { // Paused
+            setIsPlaying(false);
+          } else if (e.data === 0) { // Ended
+            const currentRepeat = isRepeatRef.current;
+            if (currentRepeat === 'one' || currentRepeat === true) {
+              playerRef.current?.seekTo?.(0, true);
+              playerRef.current?.playVideo?.();
+            } else {
+              handleNextSongRef.current?.();
+            }
+          }
+        },
+        onError: (e) => {
+          console.warn("YouTube player playback error code:", e.data);
+          handleNextSongRef.current?.();
+        }
       }
-    };
-    
-    setIsPlaying(true);
-  }, [soundProfile]);
+    });
+  }, [volume]);
 
   useEffect(() => {
     if (!currentSong) return;
@@ -1519,16 +1511,23 @@ const sanitizeList = (list) => {
     if (loadedVideoIdRef.current === currentSong.id) return;
 
     if (playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
-      playerRef.current.loadVideoById({ videoId: currentSong.id });
-      playerRef.current.playVideo();
-      setIsPlaying(true);
+      try {
+        playerRef.current.loadVideoById({ videoId: currentSong.id });
+        playerRef.current.playVideo();
+        setIsPlaying(true);
+        loadedVideoIdRef.current = currentSong.id;
+      } catch (err) {
+        initPlayerInstance(currentSong.id);
+        loadedVideoIdRef.current = currentSong.id;
+      }
+    } else if (window.YT && window.YT.Player) {
+      initPlayerInstance(currentSong.id);
       loadedVideoIdRef.current = currentSong.id;
     } else {
-      // Mock player uses AudioContext and does not require YouTube IFrame API
-      initPlayerInstance(currentSong.id);
-      playerRef.current.playVideo();
-      setIsPlaying(true);
-      loadedVideoIdRef.current = currentSong.id;
+      window.onYouTubeIframeAPIReady = () => {
+        initPlayerInstance(currentSong.id);
+        loadedVideoIdRef.current = currentSong.id;
+      };
     }
 
     setHistory(prev => [currentSong, ...prev.filter(s => s.id !== currentSong.id)].slice(0, 50));

@@ -205,11 +205,9 @@ export const PlayerProvider = ({ children }) => {
 
   // Handle source updating and playing
   useEffect(() => {
-    if (currentTrack) {
+    if (currentTrack && audioRef.current && (currentTrack.url || currentTrack.audioUrl)) {
       const audio = audioRef.current;
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
-      audio.src = `${backendUrl}/api/stream/${currentTrack.id}`;
-      
+      audio.src = currentTrack.url || currentTrack.audioUrl;
       if (isPlaying) {
         audio.play().catch(e => handlePlaybackError(e));
       }
