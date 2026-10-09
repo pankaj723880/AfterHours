@@ -26,8 +26,21 @@ export const PlayerProvider = ({ children }) => {
   const [repeatMode, setRepeatMode] = useState(initialPrefs.repeatMode || 'off'); // 'off' | 'all' | 'one'
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackError, setPlaybackError] = useState(null);
+  
+  // Sound Customizer State
+  const [soundProfile, setSoundProfile] = useState(initialPrefs.soundProfile || 'flat'); // 'hall', 'theatre', 'flat'
 
-  const audioRef = useRef(new Audio());
+  const audioRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const sourceNodeRef = useRef(null);
+  const gainNodeRef = useRef(null);
+  const convolverRef = useRef(null);
+  const eqNodesRef = useRef(null);
+
+  if (!audioRef.current) {
+    audioRef.current = new Audio();
+    audioRef.current.crossOrigin = "anonymous";
+  }
 
   // Current track selector based on shuffle mode
   const currentTrack = isShuffle 
@@ -41,8 +54,9 @@ export const PlayerProvider = ({ children }) => {
       ...currentPrefs,
       isShuffle,
       repeatMode,
+      soundProfile
     });
-  }, [isShuffle, repeatMode]);
+  }, [isShuffle, repeatMode, soundProfile]);
 
   // Record successfully played tracks into historical storage
   useEffect(() => {
@@ -189,6 +203,169 @@ export const PlayerProvider = ({ children }) => {
     }
   };
 
+  // Handle source updating and playing
+  useEffect(() => {
+    if (currentTrack) {
+      const audio = audioRef.current;
+      audio.src = `http://localhost:5000/api/stream/${currentTrack.id}`;
+      
+      if (isPlaying) {
+        audio.play().catch(e => handlePlaybackError(e));
+      }
+    }
+  }, [currentTrack]);
+
+  // Load IR for Reverb
+  const fetchImpulseResponse = async (type) => {
+    if (!audioContextRef.current) return null;
+    const ctx = audioContextRef.current;
+    
+    let duration = 0.5;
+    let decay = 2.0;
+    
+    if (type === 'hall') {
+      duration = 2.5;
+      decay = 2.0;
+    } else if (type === 'theatre') {
+      duration = 1.0;
+      decay = 4.0;
+    } else {
+      return null;
+    }
+
+    const sampleRate = ctx.sampleRate;
+    const length = sampleRate * duration;
+    const impulse = ctx.createBuffer(2, length, sampleRate);
+    
+    for (let i = 0; i < 2; i++) {
+      const channel = impulse.getChannelData(i);
+      for (let j = 0; j < length; j++) {
+        channel[j] = (Math.random() * 2 - 1) * Math.pow(1 - j / length, decay);
+      }
+    }
+    return impulse;
+  };
+
+  // Audio Context and Effects setup
+  useEffect(() => {
+    const applyProfile = async () => {
+      if (!audioContextRef.current) return;
+      const ctx = audioContextRef.current;
+
+      if (!convolverRef.current) {
+        convolverRef.current = ctx.createConvolver();
+      }
+      
+      // Create EQ nodes
+      if (!eqNodesRef.current) {
+        const bands = [60, 230, 910, 3600, 14000];
+        eqNodesRef.current = bands.map(freq => {
+          const filter = ctx.createBiquadFilter();
+          filter.type = 'peaking';
+          filter.frequency.value = freq;
+          filter.Q.value = 1;
+          filter.gain.value = 0;
+          return filter;
+        });
+      }
+
+      // Configure EQ and Reverb based on profile
+      let ir = null;
+      const eq = eqNodesRef.current;
+      
+      // Reset EQ
+      eq.forEach(node => node.gain.value = 0);
+
+      if (soundProfile === 'hall') {
+        ir = await fetchImpulseResponse('hall');
+        eq[0].gain.value = 4; // bass
+        eq[4].gain.value = 5; // treble
+      } else if (soundProfile === 'theatre') {
+        ir = await fetchImpulseResponse('theatre');
+        eq[1].gain.value = 3; // low-mid
+        eq[2].gain.value = 3; // mid
+      }
+      
+      convolverRef.current.buffer = ir;
+      
+      // Disconnect existing graph
+      if (sourceNodeRef.current) {
+         sourceNodeRef.current.disconnect();
+      }
+      if (eqNodesRef.current) {
+        eqNodesRef.current.forEach(node => node.disconnect());
+      }
+      if (gainNodeRef.current) {
+        gainNodeRef.current.disconnect();
+      }
+      if (convolverRef.current) {
+        convolverRef.current.disconnect();
+      }
+
+      // Re-connect graph
+      let currentNode = sourceNodeRef.current;
+      if (currentNode) {
+         // Connect through EQ
+         eq.forEach(node => {
+           currentNode.connect(node);
+           currentNode = node;
+         });
+         
+         if (ir) {
+           currentNode.connect(convolverRef.current);
+           currentNode = convolverRef.current;
+         }
+         
+         if (!gainNodeRef.current) {
+            gainNodeRef.current = ctx.createGain();
+         }
+         gainNodeRef.current.gain.value = 1;
+         
+         currentNode.connect(gainNodeRef.current);
+         gainNodeRef.current.connect(ctx.destination);
+      }
+    };
+    
+    applyProfile();
+  }, [soundProfile]);
+
+  const initAudioContext = () => {
+    if (!audioContextRef.current) {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      audioContextRef.current = new AudioContext();
+      sourceNodeRef.current = audioContextRef.current.createMediaElementSource(audioRef.current);
+      gainNodeRef.current = audioContextRef.current.createGain();
+      sourceNodeRef.current.connect(gainNodeRef.current);
+      gainNodeRef.current.connect(audioContextRef.current.destination);
+      
+      // Trigger effect application
+      setSoundProfile(prev => {
+        setSoundProfile('temp');
+        setTimeout(() => setSoundProfile(prev), 10);
+        return prev;
+      });
+    }
+    if (audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume();
+    }
+  };
+
+  const togglePlay = () => {
+    initAudioContext();
+    if (isPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play().catch(handlePlaybackError);
+    }
+    setIsPlaying(!isPlaying);
+  };
+
+  const updateQueueWithPlay = (newQueue, startIdx = 0) => {
+    initAudioContext();
+    updateQueue(newQueue, startIdx);
+    setIsPlaying(true);
+  };
+
   // Bind audio element lifecycle and error handlers
   useEffect(() => {
     const audio = audioRef.current;
@@ -216,10 +393,14 @@ export const PlayerProvider = ({ children }) => {
         playbackError,
         toggleShuffle,
         toggleRepeat,
+        togglePlay,
         handleNext,
         handlePrevious,
         addToQueue,
-        updateQueue,
+        updateQueue: updateQueueWithPlay,
+        soundProfile,
+        setSoundProfile,
+        audioRef,
       }}
     >
       {children}

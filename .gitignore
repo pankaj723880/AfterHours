@@ -7,10 +7,20 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+node_modules/
+backend/node_modules/
+dist/
+dist-ssr/
 *.local
+
+# Environment files
+.env
+.env.*
+*.env
+backend/.env
+backend/.env.*
+!.env.example
+!backend/.env.example
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +32,17 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Scratch and temp scripts
+scratch/
+patch*.js
+patch*.cjs
+fix_*.cjs
+inject*.cjs
+replace_*.py
+update_*.cjs
+update_*.js
+add_queue.cjs
+fetch_images*.cjs
+scratch_*.cjs
+script.cjs

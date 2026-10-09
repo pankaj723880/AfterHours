@@ -1,0 +1,512 @@
+[
+  {
+    "name": "Arijit Singh",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/DcEzZrPCQRSSs47rMbdJ3UJkQUCN3X8SKf8aCnvOgd2BmPihAz-0jBGJgEVh9_P8EiSBVNyixDs=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Shreya Ghoshal",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/PgINZNe0qVxgMSXKG5vF82bNN4WCC12zgWsz9I7OLs4CLF9Cn0Vxq7Xc1ToupnzXrCv0nKfe3VM=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "A.R. Rahman",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/KJQybwuTx7c9ca68huvMRFOv88Nw2r1g2LroFKP7WVdQmWKpd0y4gYiwPsy_NTJOEhAgZifO-Q=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Kishore Kumar",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/VpeI8Z1Zy0cc-ek5mCcp2duFtwVZGlOM4M3q7dX6MXi3fDZ8KUHOMBKe987db2wOs-MxRxdxiQ=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Lata Mangeshkar",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/t1KBLb88VhoCXsnq8QYhpwmD41tcdvnKxq9injUT-kvGUnmfipJScsyo_EjATWHSEexZraZnHzE=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Sonu Nigam",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/ytc/AIdro_mDXgKWQEXHW2qJIPoV9uJnLaoPQGXMWsnCQ3hNx2MNEa8=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Udit Narayan",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/ytc/AIdro_kxFKx4HkNWtuXNJnvgAow_S1uCzZ6hCWS3PUyc_Mo8Eg=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Kumar Sanu",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/6HzcXZ7veDgWXD72YDaYNjDuPenUDM8qRzj1vUV_-G1WNxAYqCWckTxJhAqHR4_moQEMzer_=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Alka Yagnik",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/i5DI3JtNpskZZOvYgoW1-q8pY-wOadY2hz-jTQe6EFh25yrpLHOTieEgiN5CrbE7pajBgEhiCw=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Neha Kakkar",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/F89BItbRffdiUaxtR8d1KLGnz_65jmUDtcUb89-m7DG6b729TRiF86qtU5LM4fbqyp2S7ctZnQ=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Asha Bhosle",
+    "role": "Artist",
+    "image": "https://yt3.googleusercontent.com/ytc/AIdro_mIWst8Y8BTrt9z1sFERFgwQ8QTyZWX6bmguKavScFlog=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Sunidhi Chauhan",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/cI3RMhRcDJQg73GEBVYxW6rLZwIq_n5qZyE8IhUM6zJF5WOVpYPyEN2avZMF-2TDtCIFr9qogW4=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Atif Aslam",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/o_C-zwiPP8Wgz7T9wi9WzHEUN4lpnpHVoWRTJ0zn8OZECvIqmXUyTTSmTaQW1uKUrEeNFTtU2k0=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Darshan Raval",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/9lSNE7GRMKcDG26OqpuaX6wQVsubvwtQT5PXlGEI1mEOzbcAsNZ_8vDXABKLo4gJlyPBPS1uYA=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Jubin Nautiyal",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/H2Ml5UObbCePh2hgUmfLLV3d7NoNO6pqgloMKOMD30sGvOSyBGzeZoNBm_hOwzAzGMHn2Lpn=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Mika Singh",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/ytc/AIdro_kxV6a0zmy5XJAZ61ALwhzYKPoExUe2bIAqhdrkIaoiahs=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Badshah",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/-9oGvXUOGtVCmGynMpDFsgufXGL_IRKYxjF3bff8_qnIazQDrIa2MXDT5-xAKAA6rIEC8x2EfiM=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Yo Yo Honey Singh",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/2uUjDK69h-ijAxl6a_XrmKqLdL3ECr78FXXkUWERGJAHpSH0p3DEiNdlOuaR8LT3QCCF9P_ghg=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Guru Randhawa",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/djplSJ25P6NAn2Tzvbi-nnUwJdnLtwqReZK5I0Vk3q72oM9nGnkWzTB9TLVfVRa7W1_iju0YQ0E=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Diljit Dosanjh",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/7EYXXMXY594V8y4sZT2aawmdKgDAGTu5jNm9C-HpR3jY9cZJ0NMxS__nZKBdWZ1PUpJPjc2BAA=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "K.S. Chithra",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/ytc/AIdro_kCGTSKgzGoApggAtgunIKogbnrQQSeQ1i8UlfteLmoAKk=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "S.P. Balasubrahmanyam",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/ytc/AIdro_k-cEae30gRWw3b0ZvH1NrJN4qkQ--kZwixsI0uXqV-13E=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Yesudas",
+    "role": "Artist",
+    "image": "https://yt3.googleusercontent.com/ytc/AIdro_mOzBohiOrDQWMpnBznY16toIWn4FzbeivP9eS2mIqF298=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Hariharan",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/2QMn_GW5tyQI4G2SUK734ZuO09xsRYGSSDa3sCUszaau290JmjvvnS4nseSK3SEY31B0pWbqaQ=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Shankar Mahadevan",
+    "role": "Artist",
+    "image": "https://yt3.googleusercontent.com/ytc/AIdro_lxfdg5ZRXrQ-3AJDyHqRGGmdmNijuPbhYIdLPU9F5qSf1Z=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Vishal Dadlani",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/eObpSRvKoWaQZz8KcwYWfKjPVltStK6w68tlEbvLbl3mymlMfleXSNzRcvTG2kmLaeEqqMJuvQ=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Shekhar Ravjiani",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/6ubE1FtZwwNd2C7ahUGo3jQsMKPMM4WCtlfj4qrPoMZnZrycY_BX3NFthm5InTvFTls-OxZqdA=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Amit Trivedi",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/vLFf_rhkrGbA6qJYxNdtH4uTT55yEDftwJUyI_LPCaiNxIlUBfWcS8ckva5ZD2JF9_Od4oNBTw=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Pritam",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/cUtlode_d2bd71bN6AFO-8vZ6Q0KDBWWWgLO9RG9RDRb6Jddw5pSSQN7U9I1Pnb7L0JyWHC82Q=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Mohit Chauhan",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/iHlTfXwk3wCV5hwHWFJXZeNSSwHWU1KqvdkH3mP0eStfxHiiLL7QA7qAmKDpPJDW_z-NuxMrzaA=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Shaan",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/i5LOfQ8gES1w0m7G0nEdta24UgIZkNBZZrsaLYF6U18fgPj2YuZ4qGYyRcAFCAjRoYyF-8AX=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "KK",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/4XC6r7BS8SiH0RRyXnaXaDzl1Iv7PeFxEVv0khdfaarlR0kKQFysVU3VdMfWQSczstia9w2mv38=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Armaan Malik",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/-mURsoNpdl3A5rIywphE98BrLBbUExgzY1AYil_qgBtgAosGD7YgWdQ2VCPhOESWlZrgWxq5=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Amaal Mallik",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/ai-f5ZCVJ7c-oc-rew5m0OzgM3Vqntu0s7avu0_0NhkIcHlKWhReRCQsVr9-Q9B5Cwym4MarOQ=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Bappi Lahiri",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/e86NH0OOOGmTI-0rGxapF7RhpQsfv0mIxDKPSF1e5c6Z2eW2R0NkgSFx5J2nmp16t7PMvur7jQ=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Mohammed Rafi",
+    "role": "Artist",
+    "image": ""
+  },
+  {
+    "name": "Mukesh",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/tyeB_Soa4UKGDZz6a6guVdixn5_mBlxVCKHY3yeohqDsK1TzRYr3lGJWhn2JeYQzhi0SIXRbhw=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Hemant Kumar",
+    "role": "Artist",
+    "image": "https://yt3.googleusercontent.com/ytc/AIdro_kvw0Ok7MWPzrt-UoxmEYymNd_RYE7jZgr28yJO7uWmDAo=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Manna Dey",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/gBDgPkzQKdW4q7vMB52dTYSWdImmR8t626oD4nbYH_qTJmlz7Ziaxnedrqj9AfhktVPFRgXq2g=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Geeta Dutt",
+    "role": "Artist",
+    "image": ""
+  },
+  {
+    "name": "Shamshad Begum",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/JnSWLHSvtV7qgdHrKf4EDD5VGdBGESDWrdO0_S2tBb78AO_mhLeJ7sP8lCm_ejcch9ZUmJeu0Q=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Suraiya",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/gROoXIi5JeZSWGOUFvFQBhfPAp0c6c3LZcIiWtnVvSeQUpOQn9nlgf-RmMb1mrhY55mux-gGHw=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Kavita Krishnamurthy",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/H1k69zHrKg3ri3xadTwBU5nsH7cKcfJbEgi5fSjFqvnvEGPCfACsmEXG-HJp8DPdWj6yDHxB0MA=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Anuradha Paudwal",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/3_aXOzmvqweQgBaXbFLccZlhXq2-AMo_ZaCjCKnulj8kicdbf1fw-_3thbSD_3ujOY4K3lzz1A=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Sadhana Sargam",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/Yu93qTU1a2VyGZ5uQMR3dO46cNnhPxgP72O5oAppre-YrjPCsfiClNZEQv-Y0TZh1ibSg-rG=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Palak Muchhal",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/iQGSyp9TuKL-zmvDdEw030BOsH3kM0g_vKjbs_EMtBvGTxQ9IBHNxGhAPksqu_E0vOQ0j_JRmA=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Neeti Mohan",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/UeKSaQL3zQMF0pCromzDHpg0_emSz4KFqSYByKxKhK6p0rKNuhprzwb0MNWF4smuiArf6r2dhQ=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Jonita Gandhi",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/e-WlED_5ApeSSOnATNXmsrkfpyF2c0pAVfGHCYyCN_6zwtC-4T1oPbO5twWsVchyKNEb2Poa=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Shilpa Rao",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/ytc/AIdro_mGOu8_tOsJoSRMchjCbTn_o7oAoQuks7ubc2YUt30czRE=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Aditi Singh Sharma",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/yW8FWHBuNfNaF8hyv5Gea42zsOjsqb6W4pDr5UT6FRyankLJbzwv-dFlaKxAVeM7-bQNwv9iFQ=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Monali Thakur",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/ytc/AIdro_mc-YUD0xKbqnsI_6iejuURD66IBX8S5YMRxaEoefTg0A=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Kanika Kapoor",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/bYSwtEV7ohq_DcH2RRbSi2Uv4247EPIliIJqVaUNBJ5cp_m6e0MmoZoP6k-2L7WLRZGLw7GS5Q=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Tulsi Kumar",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/Ea_u7o1gYEKehVYjz_DQYUi-Nrsmo6EIJKYt2HuNbnaUPCQsV-M68OoXEtAfN3bRBAH1fuMuew=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Dhvani Bhanushali",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/OjW3T5ouXzjKO39bqPuC2ErTJXiU8P4qaeltjSiy1iuUe-51ldVh6bM91KUpWgLOs_T_urKniw=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Asees Kaur",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/YzQGOWRcNZCx8ZwSLsKE4QCCUpchjm0JJJLWhDzKqMSACIqLW-iZa-ICi1L0ZZDPf_gLr719OA=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Shirley Setia",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/vgCe_9a83erWYz3K7cuF0cyEYkx4WwAyddgfJeWNYPiQdXO42CAU0rkIRWZVSa1S8-Zu-O-LAA=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Hardy Sandhu",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/vZeoJSo7RDQpPnGjTe0Lx1xuDN2zLCcOS5O8FdT9r1YZjkcAJ4FdzSqTe5yfVgHTkShMJH2NsA=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Ammy Virk",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/xxdiZ92uX4-r1-rvVc2n9Mv8W2Wnw3U56T1T5ddmPZu7i-ERrzL13W7ys32_hFN6CgA00HPD1QM=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "B Praak",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/v3OLvtC4FbLMVN8q1NTWVMHC_PA1fB6kQ_G78J4zqh7wQfgeodjTTK85kxWmh-4HJuc5N58i9Q=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Jassie Gill",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/EYQAp8m5_TvoBdO8kyC7q2W3JXsquW_jKgvOjlLtczZjhMbVefpqP8BH2sRjlk8863tcxlBDBA=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Sidhu Moose Wala",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/ytc/AIdro_kiQJ0Hhp0O-tdaY1dy81-gSNujjccUlWstnpFr686ZlMk=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Karan Aujla",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/Da4zbrS4XLxzb3xVNT14aKr22aBg1blJCuCBppbYglO_uDmElYopgoDk7XV6UWNxthI96XOYrw=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Garry Sandhu",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/on0agiZFCsfLzEAnZp0WeVju_ec_GaxD5LXlaRXYqmyvnpWw8Z9HhhJOzAiMLn1uF6oIvqtuZuw=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Satinder Sartaaj",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/JaW60MdwEHgeN3wNHFf2hnRdlaKaoLqSTPpUB5PYAL-Aig5g7AzbdBz9Md6Acj52emLL-wIp=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Ravi",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/h9FNCmnSOlDxRP_15lbqtLSCnG3dFn5hhF77vuvwJsTtYkVJVrtk19eZInAt8kYRTY83cfCb=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Anirudh Ravichander",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/Tyx1R_RCijQJcBOOJEDqubRkpH0CYKeb_8KfxY_KCrGVktmwkB9yXYgQmwXySThHppPycR75=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Devi Sri Prasad",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/ytc/AIdro_kA66CGEVLVE0h0YpG7iU87PR2QCQcKwFC6pnD_Xk7_pRo=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Thaman S",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/pPHY2meVlq17vPG5ILDC1pwidcrz0BSSOj0ym9iycnbNAlpwlxRoOhyrteoD5-61WcjTooQ6Nw=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Harris Jayaraj",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/HdLl7UsS14OA5gnqFwTfHk5ClL4-a3g2eo2_Udr15jcFgOWLotM3w7_BFs3Fgk1Uh68wF74mIg=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Yuvan Shankar Raja",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/fC6KgtkXCEgppU133FosX_nKr7VeiGpSKh0tb0OlF7dv3argY8ZE4K2Nn1T_zX839KZo0YKA4w=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "M.M. Keeravani",
+    "role": "Artist",
+    "image": ""
+  },
+  {
+    "name": "Ilaiyaraaja",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/PimA4XNPAQMA7BQJAayg3CqvWGKPSCloQXjwOeS72il1VtOIoyCJNllZ0I0hwY6oa_tpawHu0kM=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Vidyasagar",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/cx8eq-hGm3jgjNdOnbLzirSpnPmmrnCZmTcdX3ocMdzq2lm_acHwr7cfb5U8pW3gs4JbGCWjaQ=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "G.V. Prakash Kumar",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/jEh-GLa0VeT7J8D3IhnDH9WqfdPNTp0OthFle0NNtpU6b2nVHUr3vS_trVXlBeYROz-36bAQYw=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "D. Imman",
+    "role": "Artist",
+    "image": "https://yt3.googleusercontent.com/ytc/AIdro_k9Qm2co3VHDrS9m_726uz0GxDRu1uWvFpo_d9-ZLlfjh4=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Santhosh Narayanan",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/YfMj32x0B85XqpZCgWu1KXSSXsy8t4Ajt3GUIJw5oLLU94for_wN4HMDQYNvO3U-Hou1TiML9w=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Ghibran",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/0iTsLseAxYeNA6Os3vPpNGXPMvetwZ1TDc7qU9a3EvnqEEkSFCIdGEqA0orlSpfjNRHkPgsg=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Vijay Antony",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/6wPyqCJCgEwys5PBHVU2fmh5apg5v2z1PIDCljvF52bfFG0OEUei3_YONVs_ZAIqDwvLfH27=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Hesham Abdul Wahab",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/ytc/AIdro_mjy1zj7IVDhdBMkrH-Q4YBuXnatZ6iLMXLIrLE9fDxOg=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Gopi Sundar",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/LYoBFbwEB15sLyGLOg3b_EsKwNdg1QqfqTWRRCH4DM7t5sDQyoLWjQmHfNAd0PoZpkCIaFvfXQ=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Deepak Dev",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/rjnhctZPw1mthbmIs6U5mgcmdNknZwM_vHYYb_7sD8W9AYBBqpzvUq-pCT1sh8PWUJjYE-4X1A=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Rahul Raj",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/fG4MeTMsIQuhb2oL7AvGegrvHEFdMaT_Uvq7CZziwon3eVyRydPku6mpSV5h-xEjXuR3iw-T5-k=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Ouseppachan",
+    "role": "Artist",
+    "image": ""
+  },
+  {
+    "name": "Raveendran",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/eGbd_n2RaARPn3ufFD_2NHi36zNHCCG0rhlhfrY4na4yZRi577Ma3Z0TWPU0f9gVc7QHRRJqWQ=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Devarajan",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/Gjz-v9Q9ALZl3jfcoukdWHpXRJHOl24F7EiB-wZZS0OLw97gSSXWPXCnm2XVEp5hlwgdgNDO=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "V. Dakshinamoorthy",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/G1gfnLUVVmTlk0TixhOprwNTgW590kNHXLCuE_q0oFJKXSBC0viwokykAWOAoQv8a2Uh_XbNEa0=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Salil Chowdhury",
+    "role": "Artist",
+    "image": ""
+  },
+  {
+    "name": "R.D. Burman",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/1dNWJ9ukvCtjzznwdndtuJvglS5laVTBycFkhsS_r0dZ6Mew54iCfzir95aW8GJljLoGrFZAbg=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "S.D. Burman",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/FIKqwHvyQe7HL8f1wYQXQp_4yyiTuJD8KmWybk9kRoeld7I58MmsC6Uefih-dBQM7WddVvlcffI=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "O.P. Nayyar",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/Nv_DfkXaYoEvKs0k7F4eu6AQI7aSPxzHOT5Urvl07pMxYkOcKgzsoWeFFoCszTyBZCufGtOyZw=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Madan Mohan",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/_39VTRajSa4_DMQUE0LpsJRcUrOKd7zQWwI2-gJmSfLtQkfW6sVGDBwWlZVQcBFKdGHJNg3zbw=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Naushad",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/4fNLrf5Sl5GCY4BxVtYsFmd0Y6o_ssOFxNIprigQ-3GL3TTIHDKkIqmdbYIK9xn8CQG9-0OmNQ=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Khayyam",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/qgRkOfrrhObjHZ4CitMgnEzNMnJCYmSE06qDk6zaefqo_0cH_efIku6KqpGtbxrqmm5jEcu1cw=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Laxmikant-Pyarelal",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/qwlc9Yekzk-r4_0p5Im8hRlr0psGdoh2MPqBcblOMsWHF4gmpdpAkU5Jquq_PcU_2U8HgItayg=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Kalyanji-Anandji",
+    "role": "Artist",
+    "image": ""
+  },
+  {
+    "name": "Nadeem-Shravan",
+    "role": "Artist",
+    "image": "https://yt3.googleusercontent.com/ytc/AIdro_lq5hnVoWTPYuWYyCT7GCTYBO8FBly_2m2ZOsKylblZwg=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Jatin-Lalit",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/zRIsM9wdf9RVawY2WXafCNQ1FGdkd_k4z7I7Tol186x046nYNTjVEGlg44nMDhUSSqspoUVvaQ=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Anu Malik",
+    "role": "Artist",
+    "image": ""
+  },
+  {
+    "name": "Himesh Reshammiya",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/vnz782S2Yld9jy6mAg2kNvwjDCsOZADNgAsyVCHsu3usdW0uNqHNCAOxywwGM3Fvw9Pq7EsGM48=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Sajid-Wajid",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/ytc/AIdro_kOLef5VUbX-vMB8m5OIRDntPLmi328cHZIdjaDOblEeQ=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Meet Bros",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/ytc/AIdro_koHsROua0GHlcexJaNnnWrQKUFRKsgcsOROPUNMfSgIw=s88-c-k-c0x00ffffff-no-rj-mo"
+  },
+  {
+    "name": "Tanishk Bagchi",
+    "role": "Artist",
+    "image": "https://yt3.ggpht.com/Uzlf4JggdL9rdRgYPAfIYMZ5NxusOwPLGhgfOLbtHTDhtduuRfmacLg2AUpIcPStDCcsSwRE=s88-c-k-c0x00ffffff-no-rj-mo"
+  }
+]
