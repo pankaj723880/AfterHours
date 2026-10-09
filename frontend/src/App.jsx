@@ -3,19 +3,30 @@ import { GoogleLogin } from '@react-oauth/google';
 
 import { io } from 'socket.io-client';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
-const socket = io(BACKEND_URL);
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://afterhours-cxsi.onrender.com');
+const socket = io(BACKEND_URL, {
+  transports: ['polling', 'websocket'],
+  withCredentials: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 2000,
+  timeout: 10000,
+  autoConnect: true,
+});
+
+socket.on('connect_error', (err) => {
+  console.warn('[Socket.io] Real-time connection notice:', err.message);
+});
 
 const fetchFromBackend = async (query) => {
   try {
     const res = await fetch(`${BACKEND_URL}/api/youtube/search?q=${encodeURIComponent(query)}`);
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || 'Backend fetch failed');
+      throw new Error(errData.error || 'Backend search failed');
     }
     return await res.json();
   } catch (err) {
-    console.error("Backend fetch error:", err);
+    console.warn("Backend fetch notice:", err.message);
     throw err;
   }
 };
@@ -980,6 +991,18 @@ const sanitizeList = (list) => {
   const [queue, setQueue] = useState([]);
   const [showQueuePanel, setShowQueuePanel] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const [toastMessage, setToastMessage] = useState(null);
+  const toastTimerRef = useRef(null);
+
+  const showToast = useCallback((msg, duration = 3200) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage(msg);
+    toastTimerRef.current = setTimeout(() => {
+      setToastMessage(null);
+    }, duration);
+  }, []);
 
   const [clockString, setClockString] = useState("");
   const [activeUsersCount, setActiveUsersCount] = useState(742);
@@ -1525,6 +1548,10 @@ const sanitizeList = (list) => {
         },
         onError: (e) => {
           console.warn("YouTube player playback error code:", e.data);
+          const msg = (e.data === 150 || e.data === 101)
+            ? "Playback restricted by video owner. Skipping to next song..."
+            : "Playback error encountered. Skipping to next song...";
+          showToast(msg, 3500);
           handleNextSongRef.current?.();
         }
       }
@@ -1753,18 +1780,27 @@ const sanitizeList = (list) => {
   const addToQueue = (song, e) => {
     if (e) e.stopPropagation();
     setQueue(prev => {
-      if (prev.some(s => s.id === song.id)) return prev;
+      if (prev.some(s => s.id === song.id)) {
+        showToast('Track already in queue');
+        return prev;
+      }
+      showToast('Added to queue');
       return [...prev, song];
     });
   };
 
   const removeFromQueue = (trackId) => {
     setQueue(prev => prev.filter(s => s.id !== trackId));
+    showToast('Removed from queue');
   };
 
   const toggleLike = (song) => {
     if (!user) { openAuthModal(); return; }
-    setLikedSongs(prev => prev.some(s => s.id === song.id) ? prev.filter(s => s.id !== song.id) : [song, ...prev]);
+    setLikedSongs(prev => {
+      const isAlreadyLiked = prev.some(s => s.id === song.id);
+      showToast(isAlreadyLiked ? 'Removed from favourites' : 'Added to favourites');
+      return isAlreadyLiked ? prev.filter(s => s.id !== song.id) : [song, ...prev];
+    });
   };
 
   const handleAddToPlaylistClick = (song, e) => {
@@ -1782,6 +1818,7 @@ const sanitizeList = (list) => {
       songs: selectedSongForPlaylist ? [selectedSongForPlaylist] : []
     };
     setPlaylists([...playlists, newPlaylist]);
+    showToast(`Created playlist "${newPlaylistName.trim()}"`);
     setNewPlaylistName('');
     if (selectedSongForPlaylist) {
       setIsPlaylistModalOpen(false);
@@ -1794,8 +1831,10 @@ const sanitizeList = (list) => {
     setPlaylists(prev => prev.map(pl => {
       if (pl.id === playlistId) {
         if (!pl.songs.some(s => s.id === selectedSongForPlaylist.id)) {
+          showToast(`Added to "${pl.name}"`);
           return { ...pl, songs: [...pl.songs, selectedSongForPlaylist] };
         }
+        showToast('Track already in playlist');
       }
       return pl;
     }));
@@ -1812,6 +1851,9 @@ const sanitizeList = (list) => {
     const trimmedQuery = q.trim().toLowerCase();
     if (!trimmedQuery) return;
 
+    setHasSearched(true);
+    setSearchError('');
+
     if (searchCache[trimmedQuery]) {
       const cachedSongs = searchCache[trimmedQuery];
       setSearchResults(cachedSongs);
@@ -1824,20 +1866,24 @@ const sanitizeList = (list) => {
     try {
       const data = await fetchFromBackend(trimmedQuery + " official video original");
 
-      if (data.items) {
+      if (data && data.items && data.items.length > 0) {
         const fetchedTracks = data.items.map(item => ({
-          id: item.id.videoId || item.id,
-          title: item.snippet.title.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&"),
-          channel: item.snippet.channelTitle,
-          thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url,
+          id: item.id?.videoId || item.id,
+          title: item.snippet?.title ? item.snippet.title.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&") : 'Untitled',
+          channel: item.snippet?.channelTitle || 'Unknown Artist',
+          thumbnail: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${item.id?.videoId || item.id}/hqdefault.jpg`,
         }));
 
         setSearchResults(fetchedTracks);
         setSearchVisibleCount(10);
         setSearchCache(prev => ({ ...prev, [trimmedQuery]: fetchedTracks }));
+      } else {
+        setSearchResults([]);
       }
     } catch (err) {
-      console.error(err);
+      console.warn("[Search Error]:", err.message);
+      setSearchError(err.message || 'Unable to connect to search service. Please try again.');
+      setSearchResults([]);
     } finally {
       setIsLoading(false);
     }
@@ -2329,6 +2375,58 @@ const sanitizeList = (list) => {
                     </button>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Loading Skeletons */}
+            {isLoading && (
+              <div className="space-y-3 pt-2 animate-pulse">
+                <div className="h-4 bg-neutral-800 rounded w-1/4"></div>
+                <div className="grid grid-cols-1 gap-2">
+                  {[1, 2, 3, 4, 5].map(n => (
+                    <div key={n} className="p-3.5 rounded-2xl border border-neutral-800/60 bg-neutral-900/40 flex items-center justify-between">
+                      <div className="flex items-center gap-3.5 flex-1">
+                        <div className="w-12 h-12 rounded-2xl bg-neutral-800 shrink-0"></div>
+                        <div className="space-y-2 flex-1">
+                          <div className="h-3.5 bg-neutral-800 rounded w-3/5"></div>
+                          <div className="h-2.5 bg-neutral-800/60 rounded w-2/5"></div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Error State */}
+            {!isLoading && searchError && (
+              <div className="p-8 rounded-3xl border border-rose-500/30 bg-rose-950/20 text-center space-y-3">
+                <div className="w-12 h-12 mx-auto rounded-full bg-rose-500/10 flex items-center justify-center text-rose-400">
+                  <Icon name="sparkles" className="w-6 h-6" />
+                </div>
+                <h3 className="text-base font-bold text-white">Search Encountered an Issue</h3>
+                <p className="text-xs text-rose-300/80 max-w-md mx-auto">{searchError}</p>
+                <button
+                  type="button"
+                  onClick={() => fetchYouTubeMusic(searchQuery)}
+                  className="px-5 py-2.5 rounded-2xl bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-white transition inline-flex items-center gap-2 border border-neutral-700"
+                >
+                  <Icon name="sparkles" className="w-3.5 h-3.5" />
+                  <span>Retry Search</span>
+                </button>
+              </div>
+            )}
+
+            {/* Empty State */}
+            {!isLoading && !searchError && hasSearched && searchResults.length === 0 && (
+              <div className="p-10 rounded-3xl border border-neutral-800/80 bg-neutral-900/40 text-center space-y-3">
+                <div className="w-12 h-12 mx-auto rounded-full bg-neutral-800 flex items-center justify-center text-neutral-400">
+                  <Icon name="search" className="w-6 h-6" />
+                </div>
+                <h3 className="text-base font-bold text-white">No Tracks Found</h3>
+                <p className="text-xs text-neutral-400 max-w-sm mx-auto">
+                  We couldn't find any tracks matching "{searchQuery}". Try different keywords, artist names, or movie titles.
+                </p>
               </div>
             )}
 
@@ -3254,7 +3352,7 @@ const sanitizeList = (list) => {
             <div className="mt-6 flex justify-center">
               <GoogleLogin
                 onSuccess={handleGoogleSuccess}
-                onError={() => setAuthError('Google Login Failed')}
+                onError={() => setAuthError('Google Sign-In origin not authorized by client ID. Please use username and password login above.')}
                 theme="filled_black"
                 shape="rectangular"
                 text="continue_with"
@@ -3332,6 +3430,13 @@ const sanitizeList = (list) => {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {toastMessage && (
+        <div className="fixed bottom-24 md:bottom-28 left-1/2 -translate-x-1/2 z-[9999] px-4 py-2.5 rounded-2xl bg-neutral-900/95 text-white text-xs border border-amber-500/40 shadow-2xl backdrop-blur-xl flex items-center gap-2 animate-fadeIn pointer-events-none">
+          <Icon name="sparkles" className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>{toastMessage}</span>
         </div>
       )}
     </div>

@@ -1,5 +1,4 @@
 import express from 'express';
-import https from 'https';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import http from 'http';
@@ -8,26 +7,106 @@ import mongoose from 'mongoose';
 import axios from 'axios';
 import ytSearch from 'yt-search';
 import { OAuth2Client } from 'google-auth-library';
-import ytdl from '@distube/ytdl-core';
-import SC from 'soundcloud-scraper';
 
-const scClient = new SC.Client();
+// Prevent unhandled rejections and exceptions from crashing the server
+process.on('uncaughtException', (err) => {
+  console.error('[CRITICAL] Uncaught Exception:', err.message, err.stack);
+});
 
-const oauthClient = new OAuth2Client();
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[CRITICAL] Unhandled Rejection at:', promise, 'reason:', reason);
+});
 
 dotenv.config();
 dotenv.config({ path: '../.env' });
 
+const oauthClient = new OAuth2Client();
 const app = express();
 const server = http.createServer(app);
+
+// Allowed origins for CORS (Production Vercel + Localhost)
+const allowedOrigins = [
+  'https://after-hours-five-beryl.vercel.app',
+  process.env.CLIENT_URL,
+].filter(Boolean);
+
+const isOriginAllowed = (origin) => {
+  if (!origin) return true; // Allow curl, same-origin, or non-browser server requests
+  if (allowedOrigins.includes(origin)) return true;
+  if (/^https:\/\/after-hours-[a-z0-9-]+\.vercel\.app$/.test(origin)) return true;
+  if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+  return false;
+};
+
+// Express CORS Configuration
+app.use(cors({
+  origin: (origin, callback) => {
+    if (isOriginAllowed(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, false);
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+
+app.use(express.json());
+
+// Socket.io Setup with CORS & Transports
 const io = new Server(server, {
   cors: {
-    origin: '*',
-  }
+    origin: (origin, callback) => {
+      if (isOriginAllowed(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST']
+  },
+  transports: ['polling', 'websocket'],
+  allowEIO3: true,
+  pingTimeout: 30000,
+  pingInterval: 25000
 });
 
-app.use(cors());
-app.use(express.json());
+io.engine.on('connection_error', (err) => {
+  console.warn('[Socket.io] Engine connection notice:', err.req?.url, err.code, err.message);
+});
+
+// MongoDB Connection Resilience
+let isMongoConnected = false;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/afterhours';
+
+mongoose.connect(MONGODB_URI, {
+  serverSelectionTimeoutMS: 5000,
+})
+  .then(() => {
+    isMongoConnected = true;
+    console.log('[MongoDB] Connected successfully');
+  })
+  .catch((err) => {
+    isMongoConnected = false;
+    console.warn('[MongoDB] Initial connection error (will retry in background):', err.message);
+  });
+
+mongoose.connection.on('connected', () => {
+  isMongoConnected = true;
+  console.log('[MongoDB] Connection established');
+});
+
+mongoose.connection.on('error', (err) => {
+  isMongoConnected = false;
+  console.warn('[MongoDB] Connection error:', err.message);
+});
+
+mongoose.connection.on('disconnected', () => {
+  isMongoConnected = false;
+  console.warn('[MongoDB] Disconnected. Waiting for reconnection...');
+});
 
 // Health check endpoints for Render
 app.get('/', (req, res) => {
@@ -35,13 +114,12 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    database: isMongoConnected ? 'connected' : 'disconnected',
+    timestamp: new Date().toISOString()
+  });
 });
-
-// MongoDB connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/afterhours')
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err));
 
 // Socket.io for Real-time Active Users
 let realActiveUsers = 0;
@@ -50,16 +128,15 @@ let simulatedBase = 742;
 io.on('connection', (socket) => {
   realActiveUsers++;
   io.emit('active_users', simulatedBase + realActiveUsers * 3);
-  
+
   socket.on('disconnect', () => {
     realActiveUsers = Math.max(0, realActiveUsers - 1);
     io.emit('active_users', simulatedBase + realActiveUsers * 3);
   });
 });
 
-// Continuously fluctuate the simulated base to show activity
+// Fluctuate the simulated active users
 setInterval(() => {
-  // Random fluctuation between -3 and +4
   const change = Math.floor(Math.random() * 8) - 3;
   simulatedBase = Math.max(500, simulatedBase + change);
   io.emit('active_users', simulatedBase + realActiveUsers * 3);
@@ -75,10 +152,16 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// Basic Auth (No strict hashing for simplicity, but recommend bcrypt in production)
+// Auth Routes with Database Availability Guards
 app.post('/api/auth/register', async (req, res) => {
+  if (!isMongoConnected) {
+    return res.status(503).json({ error: 'Database service is temporarily unavailable. Please try again in a few moments.' });
+  }
   try {
     const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
     const existing = await User.findOne({ username });
     if (existing) return res.status(400).json({ error: 'Username exists' });
     const user = new User({ username, password });
@@ -90,8 +173,14 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 app.post('/api/auth/login', async (req, res) => {
+  if (!isMongoConnected) {
+    return res.status(503).json({ error: 'Database service is temporarily unavailable. Please try again in a few moments.' });
+  }
   try {
     const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
     const user = await User.findOne({ username, password });
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
     res.json({ message: 'Login successful', userId: user._id, user });
@@ -101,31 +190,37 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 app.post('/api/auth/google', async (req, res) => {
+  if (!isMongoConnected) {
+    return res.status(503).json({ error: 'Database service is temporarily unavailable. Please try again in a few moments.' });
+  }
   try {
     const { token, likedSongs, history, playlists } = req.body;
-    const clientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID;
+    if (!token) {
+      return res.status(400).json({ error: 'Google ID token is required' });
+    }
+    const clientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '335095702236-g3n6b7mgq2d3vbdg9qj9vv53b3nuohs7.apps.googleusercontent.com';
     const ticket = await oauthClient.verifyIdToken({
       idToken: token,
       audience: clientId,
     });
     const payload = ticket.getPayload();
-    const email = payload.email;
-    const name = payload.name;
+    const email = payload?.email;
 
-    // Check if user exists by email (we'll use email as username)
+    if (!email) {
+      return res.status(400).json({ error: 'Google account email could not be verified' });
+    }
+
     let user = await User.findOne({ username: email });
     if (!user) {
-      // Create new user
-      user = new User({ 
-        username: email, 
-        password: 'google_oauth_user', // dummy password
+      user = new User({
+        username: email,
+        password: 'google_oauth_user',
         likedSongs: likedSongs || [],
         history: history || [],
         playlists: playlists || []
       });
       await user.save();
     } else {
-      // Merge data
       if (likedSongs && likedSongs.length > 0) {
         const mergedLiked = [...user.likedSongs, ...likedSongs];
         user.likedSongs = Array.from(new Set(mergedLiked.map(a => a.id))).map(id => mergedLiked.find(a => a.id === id));
@@ -143,13 +238,16 @@ app.post('/api/auth/google', async (req, res) => {
 
     res.json({ message: 'Google Login successful', userId: user._id, user, username: user.username });
   } catch (err) {
-    console.error("Google verify error:", err);
+    console.warn('[Google Auth Error]:', err.message);
     res.status(401).json({ error: 'Google Auth failed: ' + err.message });
   }
 });
 
 // User Data Sync
 app.get('/api/user/:id', async (req, res) => {
+  if (!isMongoConnected) {
+    return res.status(503).json({ error: 'Database service is temporarily unavailable.' });
+  }
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ error: 'Not found' });
@@ -160,6 +258,9 @@ app.get('/api/user/:id', async (req, res) => {
 });
 
 app.post('/api/user/:id/sync', async (req, res) => {
+  if (!isMongoConnected) {
+    return res.status(503).json({ error: 'Database service is temporarily unavailable.' });
+  }
   try {
     const { likedSongs, history, playlists } = req.body;
     await User.findByIdAndUpdate(req.params.id, { likedSongs, history, playlists });
@@ -168,6 +269,36 @@ app.post('/api/user/:id/sync', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// YouTube API Search with In-Memory Caching & Rotating Keys
+const searchCache = new Map();
+const SEARCH_CACHE_TTL = 15 * 60 * 1000; // 15 minutes TTL
+
+const getCachedSearch = (key) => {
+  const cached = searchCache.get(key);
+  if (cached && Date.now() - cached.timestamp < SEARCH_CACHE_TTL) {
+    return cached.data;
+  }
+  searchCache.delete(key);
+  return null;
+};
+
+const setCachedSearch = (key, data) => {
+  if (searchCache.size > 500) {
+    const oldestKey = searchCache.keys().next().value;
+    searchCache.delete(oldestKey);
+  }
+  searchCache.set(key, { data, timestamp: Date.now() });
+};
+
+const decodeHtml = (str = '') => {
+  return str
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+};
 
 let currentApiKeyIndex = 0;
 const getYoutubeApiKeys = () => {
@@ -188,11 +319,20 @@ const rotateApiKey = () => {
 
 app.get('/api/youtube/search', async (req, res) => {
   const { q } = req.query;
-  if (!q) return res.status(400).json({ error: 'Query is required' });
+  if (!q || !q.toString().trim()) {
+    return res.json({ items: [] });
+  }
 
+  const queryStr = q.toString().trim();
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 15, 1), 50);
+  const cacheKey = `${queryStr.toLowerCase()}_${limit}`;
 
-  // 1. Try YouTube Data API v3 search.list with key rotation
+  const cached = getCachedSearch(cacheKey);
+  if (cached) {
+    return res.json({ items: cached });
+  }
+
+  // 1. Try YouTube Data API v3 with rotating keys
   const apiKeys = getYoutubeApiKeys();
   if (apiKeys.length > 0) {
     let attempts = 0;
@@ -204,45 +344,49 @@ app.get('/api/youtube/search', async (req, res) => {
             part: 'snippet',
             type: 'video',
             maxResults: limit,
-            q,
+            q: queryStr,
             key: apiKey
           },
-          timeout: 8000
+          timeout: 7000
         });
 
-        if (response.data && response.data.items) {
-          const items = response.data.items.map(item => ({
-            id: { videoId: item.id?.videoId || item.id },
-            snippet: {
-              title: item.snippet?.title || '',
-              channelTitle: item.snippet?.channelTitle || 'Unknown',
-              thumbnails: {
-                high: { url: item.snippet?.thumbnails?.high?.url || `https://i.ytimg.com/vi/${item.id?.videoId || item.id}/hqdefault.jpg` },
-                medium: { url: item.snippet?.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${item.id?.videoId || item.id}/mqdefault.jpg` },
-                default: { url: item.snippet?.thumbnails?.default?.url || `https://i.ytimg.com/vi/${item.id?.videoId || item.id}/default.jpg` }
+        if (response.data && Array.isArray(response.data.items)) {
+          const items = response.data.items.map(item => {
+            const videoId = item.id?.videoId || item.id;
+            return {
+              id: { videoId },
+              snippet: {
+                title: decodeHtml(item.snippet?.title || ''),
+                channelTitle: decodeHtml(item.snippet?.channelTitle || 'Unknown'),
+                thumbnails: {
+                  high: { url: item.snippet?.thumbnails?.high?.url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` },
+                  medium: { url: item.snippet?.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` },
+                  default: { url: item.snippet?.thumbnails?.default?.url || `https://i.ytimg.com/vi/${videoId}/default.jpg` }
+                }
               }
-            }
-          }));
+            };
+          });
 
+          setCachedSearch(cacheKey, items);
           return res.json({ items });
         }
       } catch (apiErr) {
-        console.warn(`YouTube Data API request failed with key (attempt ${attempts + 1}/${apiKeys.length}):`, apiErr.response?.data?.error?.message || apiErr.message);
+        console.warn(`[YouTube API] Key attempt ${attempts + 1}/${apiKeys.length} failed:`, apiErr.response?.data?.error?.message || apiErr.message);
         rotateApiKey();
         attempts++;
       }
     }
   }
 
-  // 2. Pure JS yt-search fallback if API keys are exhausted, invalid, or unconfigured
+  // 2. Pure JS yt-search fallback if official keys are exhausted, rate-limited, or unconfigured
   try {
-    const searchResult = await ytSearch({ query: q, page: 1 });
+    const searchResult = await ytSearch({ query: queryStr, page: 1 });
     const videos = (searchResult?.videos || []).slice(0, limit);
     const items = videos.map(v => ({
       id: { videoId: v.videoId },
       snippet: {
-        title: v.title,
-        channelTitle: v.author?.name || 'Unknown',
+        title: decodeHtml(v.title || ''),
+        channelTitle: decodeHtml(v.author?.name || 'Unknown'),
         thumbnails: {
           high: { url: v.image || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg` },
           medium: { url: v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg` },
@@ -251,37 +395,23 @@ app.get('/api/youtube/search', async (req, res) => {
       }
     }));
 
+    setCachedSearch(cacheKey, items);
     return res.json({ items });
   } catch (err) {
-    console.error("YouTube search error:", err.message);
-    return res.status(500).json({ error: 'Search failed.' });
+    console.error('[YouTube Search Error]:', err.message);
+    return res.json({ items: [] });
   }
 });
 
-// Fast resolve endpoint - returns direct audio URL as JSON
-app.get('/api/resolve/:videoId', async (req, res) => {
-  try {
-    const info = await ytdl.getInfo(req.params.videoId);
-    const format = ytdl.chooseFormat(info.formats, { filter: 'audioonly' });
-    if (format && format.url) {
-      res.json({ url: format.url });
-    } else {
-      res.status(404).json({ error: 'No audio format found' });
-    }
-  } catch (err) {
-    console.error('Resolve failed:', err.message);
-    res.status(500).json({ error: 'Failed to resolve audio URL' });
-  }
-});
-
-// Stream endpoint - returns safe response, playback is handled client-side via YouTube IFrame API
+// Stream endpoint - safe placeholder, playback is handled client-side via YouTube IFrame API
 app.get('/api/stream/:videoId', (req, res) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Headers', '*');
-  res.status(200).json({ status: 'ok', message: 'Stream playback handled client-side via YouTube IFrame API' });
+  res.status(200).json({
+    status: 'ok',
+    message: 'Stream playback handled client-side via YouTube IFrame API'
+  });
 });
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log(`Backend server running on port ${PORT}`);
+  console.log(`[AfterHours Backend] Server running on port ${PORT}`);
 });
