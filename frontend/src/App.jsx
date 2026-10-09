@@ -219,12 +219,12 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek }) => {
 });
 
 const TRENDING_SONGS = [
-  { title: "Chalray Chalray Waal", artist: "Ravzz Musica", image: "https://images.unsplash.com/photo-1493225457124-a1a2a5f5f9af?w=300&h=300&fit=crop", query: "Chalray Chalray Waal Ravzz Musica" },
-  { title: "CHALREH CHALREH WAAL - Acoustic", artist: "Sufi Mafiya", image: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=300&h=300&fit=crop", query: "CHALREH CHALREH WAAL Acoustic Sufi Mafiya" },
-  { title: "Magale", artist: "Sai Abhyankkar, Harini", image: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop", query: "Magale Sai Abhyankkar" },
-  { title: "Ashke", artist: "Karan Aujla, Mxrci", image: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop", query: "Ashke Karan Aujla" },
-  { title: "One Name", artist: "Anirudh Ravichander", image: "https://images.unsplash.com/photo-1506157786151-b8491531f063?w=300&h=300&fit=crop", query: "One Name Anirudh Ravichander" },
-  { title: "BADASS", artist: "Arjan Dhillon", image: "https://images.unsplash.com/photo-1485579149621-3123dd979885?w=300&h=300&fit=crop", query: "BADASS Arjan Dhillon" },
+  { id: "iH2v67z7s9I", videoId: "iH2v67z7s9I", title: "Chalray Chalray Waal", artist: "Ravzz Musica", image: "https://images.unsplash.com/photo-1493225457124-a1a2a5f5f9af?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1493225457124-a1a2a5f5f9af?w=300&h=300&fit=crop", query: "Chalray Chalray Waal Ravzz Musica" },
+  { id: "5z9t6xXhQ-o", videoId: "5z9t6xXhQ-o", title: "CHALREH CHALREH WAAL - Acoustic", artist: "Sufi Mafiya", image: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=300&h=300&fit=crop", query: "CHALREH CHALREH WAAL Acoustic Sufi Mafiya" },
+  { id: "2w0iE7o_P8c", videoId: "2w0iE7o_P8c", title: "Magale", artist: "Sai Abhyankkar, Harini", image: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop", query: "Magale Sai Abhyankkar" },
+  { id: "VnsJ-a_hG6U", videoId: "VnsJ-a_hG6U", title: "Ashke", artist: "Karan Aujla, Mxrci", image: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop", query: "Ashke Karan Aujla" },
+  { id: "9c3yVz7bQ8I", videoId: "9c3yVz7bQ8I", title: "One Name", artist: "Anirudh Ravichander", image: "https://images.unsplash.com/photo-1506157786151-b8491531f063?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1506157786151-b8491531f063?w=300&h=300&fit=crop", query: "One Name Anirudh Ravichander" },
+  { id: "Lg2eQp3YVb8", videoId: "Lg2eQp3YVb8", title: "BADASS", artist: "Arjan Dhillon", image: "https://images.unsplash.com/photo-1485579149621-3123dd979885?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1485579149621-3123dd979885?w=300&h=300&fit=crop", query: "BADASS Arjan Dhillon" },
 ];
 
 const POPULAR_ARTISTS = [
@@ -741,21 +741,21 @@ const POPULAR_ARTISTS = [
 ];
 
 const POPULAR_ALBUMS = [
-  { title: "Aashiqui 2", artist: "Mithoon, Ankit Tiwari", image: "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300&h=300&fit=crop", query: "Aashiqui 2 songs" },
-  { title: "Yeh Jawaani Hai Deewani", artist: "Pritam", image: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&h=300&fit=crop", query: "Yeh Jawaani Hai Deewani songs" },
-  { title: "Sanam Teri Kasam", artist: "Himesh Reshammiya", image: "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&h=300&fit=crop", query: "Sanam Teri Kasam songs" },
-  { title: "Finding Her", artist: "Kushagra, Bharath", image: "https://images.unsplash.com/photo-1483000805330-4eaf0a0d81a2?w=300&h=300&fit=crop", query: "Finding Her Kushagra" },
-  { title: "Young G.O.A.T", artist: "Cheema Y, Gur Sidhu", image: "https://images.unsplash.com/photo-1516280440502-8692794eb84e?w=300&h=300&fit=crop", query: "Young G.O.A.T Cheema Y" },
-  { title: "Raanjhan", artist: "Sachet-Parampara", image: "https://images.unsplash.com/photo-1520872024865-3ff2805d8bb3?w=300&h=300&fit=crop", query: "Raanjhan Do Patti" },
+  { id: "NbyHNASFi6U", videoId: "NbyHNASFi6U", title: "Aashiqui 2", artist: "Mithoon, Ankit Tiwari", image: "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300&h=300&fit=crop", query: "Aashiqui 2 songs" },
+  { id: "RbxZhy87q-M", videoId: "RbxZhy87q-M", title: "Yeh Jawaani Hai Deewani", artist: "Pritam", image: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&h=300&fit=crop", query: "Yeh Jawaani Hai Deewani songs" },
+  { id: "1G9mN0P197o", videoId: "1G9mN0P197o", title: "Sanam Teri Kasam", artist: "Himesh Reshammiya", image: "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&h=300&fit=crop", query: "Sanam Teri Kasam songs" },
+  { id: "oF6R9B0t9q8", videoId: "oF6R9B0t9q8", title: "Finding Her", artist: "Kushagra, Bharath", image: "https://images.unsplash.com/photo-1483000805330-4eaf0a0d81a2?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1483000805330-4eaf0a0d81a2?w=300&h=300&fit=crop", query: "Finding Her Kushagra" },
+  { id: "W6n0R_1Vq6Y", videoId: "W6n0R_1Vq6Y", title: "Young G.O.A.T", artist: "Cheema Y, Gur Sidhu", image: "https://images.unsplash.com/photo-1516280440502-8692794eb84e?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1516280440502-8692794eb84e?w=300&h=300&fit=crop", query: "Young G.O.A.T Cheema Y" },
+  { id: "V0P_1bQ5c8o", videoId: "V0P_1bQ5c8o", title: "Raanjhan", artist: "Sachet-Parampara", image: "https://images.unsplash.com/photo-1520872024865-3ff2805d8bb3?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1520872024865-3ff2805d8bb3?w=300&h=300&fit=crop", query: "Raanjhan Do Patti" },
 ];
 
 const POPULAR_RADIO = [
-  { title: "Arijit Singh", artist: "With Pritam, A.R. Rahman", image: "https://images.unsplash.com/photo-1511192336575-5a79af67a629?w=300&h=300&fit=crop", query: "Arijit Singh radio" },
-  { title: "KK", artist: "With Pritam, Roop Kumar", image: "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&h=300&fit=crop", query: "KK radio" },
-  { title: "Shreya Ghoshal", artist: "With Atif Aslam", image: "https://images.unsplash.com/photo-1493225457124-a1a2a5f5f9af?w=300&h=300&fit=crop", query: "Shreya Ghoshal radio" },
-  { title: "Alka Yagnik", artist: "With Vinod Rathod", image: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=300&h=300&fit=crop", query: "Alka Yagnik radio" },
-  { title: "Diljit Dosanjh", artist: "With Harrdy Sandhu", image: "https://images.unsplash.com/photo-1516280440502-8692794eb84e?w=300&h=300&fit=crop", query: "Diljit Dosanjh radio" },
-  { title: "A.R. Rahman", artist: "With Hariharan", image: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop", query: "A.R. Rahman radio" },
+  { id: "mCeYN9dx1io", videoId: "mCeYN9dx1io", title: "Arijit Singh", artist: "With Pritam, A.R. Rahman", image: "https://images.unsplash.com/photo-1511192336575-5a79af67a629?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1511192336575-5a79af67a629?w=300&h=300&fit=crop", query: "Arijit Singh radio" },
+  { id: "9eL4C1vQ0iI", videoId: "9eL4C1vQ0iI", title: "KK", artist: "With Pritam, Roop Kumar", image: "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&h=300&fit=crop", query: "KK radio" },
+  { id: "dvgZkm1xWPE", videoId: "dvgZkm1xWPE", title: "Shreya Ghoshal", artist: "With Atif Aslam", image: "https://images.unsplash.com/photo-1493225457124-a1a2a5f5f9af?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1493225457124-a1a2a5f5f9af?w=300&h=300&fit=crop", query: "Shreya Ghoshal radio" },
+  { id: "S6IW8Rj1WqQ", videoId: "S6IW8Rj1WqQ", title: "Alka Yagnik", artist: "With Vinod Rathod", image: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=300&h=300&fit=crop", query: "Alka Yagnik radio" },
+  { id: "cIGd8gm_pYE", videoId: "cIGd8gm_pYE", title: "Diljit Dosanjh", artist: "With Harrdy Sandhu", image: "https://images.unsplash.com/photo-1516280440502-8692794eb84e?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1516280440502-8692794eb84e?w=300&h=300&fit=crop", query: "Diljit Dosanjh radio" },
+  { id: "P9YpfmNc_p4", videoId: "P9YpfmNc_p4", title: "A.R. Rahman", artist: "With Hariharan", image: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop", query: "A.R. Rahman radio" },
 ];
 
 const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlledShowAll, setShowAll: setControlledShowAll }) => {
@@ -871,37 +871,55 @@ export default function App() {
         ]);
 
         if (trendingRes.status === 'fulfilled' && trendingRes.value?.items) {
-          const list = trendingRes.value.items.map(i => ({
-            title: i.snippet.title,
-            artist: i.snippet.channelTitle,
-            image: i.snippet.thumbnails?.high?.url || i.snippet.thumbnails?.medium?.url || undefined,
-            query: i.snippet.title + " " + i.snippet.channelTitle,
-            videoId: i.id?.videoId || i.id
-          }));
+          const list = trendingRes.value.items.map(i => {
+            const vid = i.id?.videoId || i.id;
+            const img = (i.snippet.thumbnails?.high?.url || i.snippet.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`).replace(/(\?sqp=.*|hq720\.jpg)/, 'hqdefault.jpg');
+            return {
+              id: vid,
+              videoId: vid,
+              title: i.snippet.title,
+              artist: i.snippet.channelTitle,
+              image: img,
+              thumbnail: img,
+              query: i.snippet.title + " " + i.snippet.channelTitle
+            };
+          });
           setTrendingSongs(list);
           try { localStorage.setItem('afterhours_trending', JSON.stringify(list)); } catch (e) {}
         }
         
         if (albumsRes.status === 'fulfilled' && albumsRes.value?.items) {
-          const list = albumsRes.value.items.map(i => ({
-            title: i.snippet.title,
-            artist: i.snippet.channelTitle,
-            image: i.snippet.thumbnails?.high?.url || i.snippet.thumbnails?.medium?.url || undefined,
-            query: i.snippet.title + " " + i.snippet.channelTitle,
-            videoId: i.id?.videoId || i.id
-          }));
+          const list = albumsRes.value.items.map(i => {
+            const vid = i.id?.videoId || i.id;
+            const img = (i.snippet.thumbnails?.high?.url || i.snippet.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`).replace(/(\?sqp=.*|hq720\.jpg)/, 'hqdefault.jpg');
+            return {
+              id: vid,
+              videoId: vid,
+              title: i.snippet.title,
+              artist: i.snippet.channelTitle,
+              image: img,
+              thumbnail: img,
+              query: i.snippet.title + " " + i.snippet.channelTitle
+            };
+          });
           setPopularAlbums(list);
           try { localStorage.setItem('afterhours_albums', JSON.stringify(list)); } catch (e) {}
         }
         
         if (radioRes.status === 'fulfilled' && radioRes.value?.items) {
-          const list = radioRes.value.items.map(i => ({
-            title: i.snippet.title,
-            artist: i.snippet.channelTitle,
-            image: i.snippet.thumbnails?.high?.url || i.snippet.thumbnails?.medium?.url || undefined,
-            query: i.snippet.title + " " + i.snippet.channelTitle,
-            videoId: i.id?.videoId || i.id
-          }));
+          const list = radioRes.value.items.map(i => {
+            const vid = i.id?.videoId || i.id;
+            const img = (i.snippet.thumbnails?.high?.url || i.snippet.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`).replace(/(\?sqp=.*|hq720\.jpg)/, 'hqdefault.jpg');
+            return {
+              id: vid,
+              videoId: vid,
+              title: i.snippet.title,
+              artist: i.snippet.channelTitle,
+              image: img,
+              thumbnail: img,
+              query: i.snippet.title + " " + i.snippet.channelTitle
+            };
+          });
           setPopularRadio(list);
           try { localStorage.setItem('afterhours_radio', JSON.stringify(list)); } catch (e) {}
         }
@@ -1121,7 +1139,51 @@ const sanitizeList = (list) => {
     }
   };
 
-  const handlePlayTrending = async (query) => {
+  const handlePlayTrending = async (queryOrTitle, itemObj, contextList = []) => {
+    const candidateId = itemObj?.videoId || itemObj?.id || (typeof queryOrTitle === 'object' ? (queryOrTitle?.videoId || queryOrTitle?.id) : null);
+
+    const toFormattedSong = (item, fallbackId) => {
+      const id = item?.videoId || item?.id || fallbackId;
+      return {
+        id,
+        videoId: id,
+        title: item?.title?.replace(/&quot;/g, '"')?.replace(/&#39;/g, "'")?.replace(/&amp;/g, "&") || "Unknown Title",
+        artist: item?.artist || item?.snippet?.channelTitle || "Unknown Artist",
+        thumbnail: (item?.thumbnail || item?.image || item?.snippet?.thumbnails?.high?.url || item?.snippet?.thumbnails?.default?.url || (id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : "/default-cover.png")).replace(/(\?sqp=.*|hq720\.jpg)/, 'hqdefault.jpg'),
+        duration: item?.duration || "Stream"
+      };
+    };
+
+    // Instant playback path (0ms network delay)
+    if (candidateId) {
+      const formattedSong = toFormattedSong(itemObj, candidateId);
+
+      if (Array.isArray(contextList) && contextList.length > 0) {
+        const formattedQueue = contextList.map(t => {
+          const tId = t?.videoId || t?.id;
+          return tId ? toFormattedSong(t, tId) : null;
+        }).filter(Boolean);
+        if (formattedQueue.length > 0) {
+          setQueue(formattedQueue);
+        }
+      }
+
+      playSong(formattedSong);
+      return;
+    }
+
+    const query = typeof queryOrTitle === 'string' ? queryOrTitle : (itemObj?.query || itemObj?.title || '');
+    if (!query) return;
+
+    if (searchCache[query] && searchCache[query].length > 0) {
+      const cached = searchCache[query][0];
+      const cachedId = cached?.id || cached?.videoId;
+      if (cachedId) {
+        playSong(toFormattedSong(cached, cachedId));
+        return;
+      }
+    }
+
     setIsLoading(true);
     try {
       const response = await fetch(`${BACKEND_URL}/api/youtube/search?limit=1&q=` + encodeURIComponent(query));
@@ -1130,7 +1192,8 @@ const sanitizeList = (list) => {
         const item = data.items[0];
         const formattedSong = {
           id: item.id.videoId || item.id,
-          title: item.snippet?.title?.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&") || "Unknown Title",
+          videoId: item.id.videoId || item.id,
+          title: item.snippet?.title?.replace(/&quot;/g, '"')?.replace(/&#39;/g, "'")?.replace(/&amp;/g, "&") || "Unknown Title",
           artist: item.snippet?.channelTitle || "Unknown Artist",
           thumbnail: (item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.default?.url || "/default-cover.png").replace(/(\?sqp=.*|hq720\.jpg)/, 'hqdefault.jpg'),
           duration: "Stream"
@@ -1143,6 +1206,7 @@ const sanitizeList = (list) => {
       setIsLoading(false);
     }
   };
+
 
   const handleArtistClick = (artistName) => {
     setSearchQuery(artistName);
@@ -2577,7 +2641,7 @@ const sanitizeList = (list) => {
               showAll={showAllTrending}
               setShowAll={setShowAllTrending}
               renderItem={(song) => (
-                <div onClick={() => handlePlayTrending(song.query || song.title, song)} className="group cursor-pointer">
+                <div onClick={() => handlePlayTrending(song.query || song.title, song, trendingSongs)} className="group cursor-pointer">
                   <div className="relative mb-2 md:mb-3">
                     <img src={song.image || "https://ui-avatars.com/api/?name="+encodeURIComponent(song.title)+"&background=random&size=300"} alt={song.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => { e.target.src = "https://ui-avatars.com/api/?name="+encodeURIComponent(song.title)+"&background=random&size=300"; }} />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
@@ -2619,7 +2683,7 @@ const sanitizeList = (list) => {
               showAll={showAllAlbums}
               setShowAll={setShowAllAlbums}
               renderItem={(album) => (
-                <div onClick={() => handlePlayTrending(album.query || album.title, album)} className="group cursor-pointer">
+                <div onClick={() => handlePlayTrending(album.query || album.title, album, popularAlbums)} className="group cursor-pointer">
                   <div className="relative mb-2 md:mb-3">
                     <img src={album.image || "https://ui-avatars.com/api/?name="+encodeURIComponent(album.title)+"&background=random&size=300"} alt={album.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => { e.target.src = "https://ui-avatars.com/api/?name="+encodeURIComponent(album.title)+"&background=random&size=300"; }} />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
@@ -2641,7 +2705,7 @@ const sanitizeList = (list) => {
               showAll={showAllRadio}
               setShowAll={setShowAllRadio}
               renderItem={(radio) => (
-                <div onClick={() => handlePlayTrending(radio.query || radio.title, radio)} className="group cursor-pointer">
+                <div onClick={() => handlePlayTrending(radio.query || radio.title, radio, popularRadio)} className="group cursor-pointer">
                   <div className="relative mb-2 md:mb-3">
                     <img src={radio.image || "https://ui-avatars.com/api/?name="+encodeURIComponent(radio.title)+"&background=random&size=300"} alt={radio.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => { e.target.src = "https://ui-avatars.com/api/?name="+encodeURIComponent(radio.title)+"&background=random&size=300"; }} />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
