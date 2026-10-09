@@ -8,7 +8,6 @@ import mongoose from 'mongoose';
 import axios from 'axios';
 import ytSearch from 'yt-search';
 import { OAuth2Client } from 'google-auth-library';
-import { spawn } from 'child_process';
 import ytdl from '@distube/ytdl-core';
 import SC from 'soundcloud-scraper';
 
@@ -173,9 +172,10 @@ app.post('/api/user/:id/sync', async (req, res) => {
 let currentApiKeyIndex = 0;
 const getYoutubeApiKeys = () => {
   return [
-    process.env.VITE_YOUTUBE_KEY_1 || process.env.YOUTUBE_KEY_1,
-    process.env.VITE_YOUTUBE_KEY_2 || process.env.YOUTUBE_KEY_2,
-    process.env.VITE_YOUTUBE_KEY_3 || process.env.YOUTUBE_KEY_3,
+    process.env.YOUTUBE_KEY_1 || process.env.VITE_YOUTUBE_KEY_1,
+    process.env.YOUTUBE_KEY_2 || process.env.VITE_YOUTUBE_KEY_2,
+    process.env.YOUTUBE_KEY_3 || process.env.VITE_YOUTUBE_KEY_3,
+    process.env.YOUTUBE_API_KEY,
   ].filter(Boolean);
 };
 
@@ -189,40 +189,71 @@ const rotateApiKey = () => {
 app.get('/api/youtube/search', async (req, res) => {
   const { q } = req.query;
   if (!q) return res.status(400).json({ error: 'Query is required' });
-  
-  try {
-    const limit = req.query.limit || 15;
-    const ytdlp = spawn('yt-dlp', ['--flat-playlist', '-j', `ytsearch${limit}:${q}`]);
-    let output = '';
 
-    ytdlp.stdout.on('data', (data) => {
-      output += data.toString();
-    });
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 15, 1), 50);
 
-    ytdlp.on('close', (code) => {
-      const items = output.trim().split('\n').map(line => {
-        try {
-          const v = JSON.parse(line);
-          return {
-            id: { videoId: v.id },
+  // 1. Try YouTube Data API v3 search.list with key rotation
+  const apiKeys = getYoutubeApiKeys();
+  if (apiKeys.length > 0) {
+    let attempts = 0;
+    while (attempts < apiKeys.length) {
+      const apiKey = apiKeys[currentApiKeyIndex % apiKeys.length];
+      try {
+        const response = await axios.get('https://www.googleapis.com/youtube/v3/search', {
+          params: {
+            part: 'snippet',
+            type: 'video',
+            maxResults: limit,
+            q,
+            key: apiKey
+          },
+          timeout: 8000
+        });
+
+        if (response.data && response.data.items) {
+          const items = response.data.items.map(item => ({
+            id: { videoId: item.id?.videoId || item.id },
             snippet: {
-              title: v.title,
-              channelTitle: v.uploader || "Unknown",
+              title: item.snippet?.title || '',
+              channelTitle: item.snippet?.channelTitle || 'Unknown',
               thumbnails: {
-                high: { url: `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg` },
-                medium: { url: `https://i.ytimg.com/vi/${v.id}/mqdefault.jpg` }
+                high: { url: item.snippet?.thumbnails?.high?.url || `https://i.ytimg.com/vi/${item.id?.videoId || item.id}/hqdefault.jpg` },
+                medium: { url: item.snippet?.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${item.id?.videoId || item.id}/mqdefault.jpg` },
+                default: { url: item.snippet?.thumbnails?.default?.url || `https://i.ytimg.com/vi/${item.id?.videoId || item.id}/default.jpg` }
               }
             }
-          };
-        } catch(e) {
-          return null;
+          }));
+
+          return res.json({ items });
         }
-      }).filter(Boolean);
-      
-      res.json({ items });
-    });
+      } catch (apiErr) {
+        console.warn(`YouTube Data API request failed with key (attempt ${attempts + 1}/${apiKeys.length}):`, apiErr.response?.data?.error?.message || apiErr.message);
+        rotateApiKey();
+        attempts++;
+      }
+    }
+  }
+
+  // 2. Pure JS yt-search fallback if API keys are exhausted, invalid, or unconfigured
+  try {
+    const searchResult = await ytSearch({ query: q, page: 1 });
+    const videos = (searchResult?.videos || []).slice(0, limit);
+    const items = videos.map(v => ({
+      id: { videoId: v.videoId },
+      snippet: {
+        title: v.title,
+        channelTitle: v.author?.name || 'Unknown',
+        thumbnails: {
+          high: { url: v.image || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg` },
+          medium: { url: v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg` },
+          default: { url: `https://i.ytimg.com/vi/${v.videoId}/default.jpg` }
+        }
+      }
+    }));
+
+    return res.json({ items });
   } catch (err) {
-    console.error("yt-dlp search failed:", err);
+    console.error("YouTube search error:", err.message);
     return res.status(500).json({ error: 'Search failed.' });
   }
 });
