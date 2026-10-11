@@ -53,8 +53,6 @@ app.use(cors({
   optionsSuccessStatus: 204
 }));
 
-app.options('*', cors());
-
 // Generous payload limit so sync never throws 413 or truncates
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -289,7 +287,7 @@ app.post('/api/user/:id/sync', async (req, res) => {
     const user = await User.findByIdAndUpdate(
       req.params.id,
       { $set: update },
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     ).maxTimeMS(4000);
 
     if (!user) {
