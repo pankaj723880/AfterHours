@@ -49,10 +49,15 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 204
 }));
 
-app.use(express.json());
+app.options('*', cors());
+
+// Generous payload limit so sync never throws 413 or truncates
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Socket.io Setup with CORS & Transports
 const io = new Server(server, {
@@ -77,12 +82,16 @@ io.engine.on('connection_error', (err) => {
   console.warn('[Socket.io] Engine connection notice:', err.req?.url, err.code, err.message);
 });
 
-// MongoDB Connection Resilience
+// MongoDB Connection Resilience & Fail-Fast settings
+// bufferCommands: false ensures operations fail fast with controlled 503 instead of hanging until proxy 502
+mongoose.set('bufferCommands', false);
+
 let isMongoConnected = false;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/afterhours';
 
 mongoose.connect(MONGODB_URI, {
   serverSelectionTimeoutMS: 5000,
+  connectTimeoutMS: 10000,
 })
   .then(() => {
     isMongoConnected = true;
@@ -108,15 +117,21 @@ mongoose.connection.on('disconnected', () => {
   console.warn('[MongoDB] Disconnected. Waiting for reconnection...');
 });
 
+const isDatabaseReady = () => {
+  return mongoose.connection.readyState === 1;
+};
+
 // Health check endpoints for Render
 app.get('/', (req, res) => {
   res.send('AfterHours API is running');
 });
 
 app.get('/health', (req, res) => {
+  const ready = isDatabaseReady();
   res.json({
     status: 'ok',
-    database: isMongoConnected ? 'connected' : 'disconnected',
+    database: ready ? 'connected' : 'disconnected',
+    readyState: mongoose.connection.readyState,
     timestamp: new Date().toISOString()
   });
 });
@@ -155,44 +170,46 @@ const User = mongoose.model('User', userSchema);
 
 // Auth Routes with Database Availability Guards
 app.post('/api/auth/register', async (req, res) => {
-  if (!isMongoConnected) {
-    return res.status(503).json({ error: 'Database service is temporarily unavailable. Please try again in a few moments.' });
+  if (!isDatabaseReady()) {
+    return res.status(503).json({ error: 'Database service is temporarily unavailable. Please try again shortly.', retryable: true });
   }
   try {
     const { username, password } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
     }
-    const existing = await User.findOne({ username });
+    const existing = await User.findOne({ username }).maxTimeMS(4000);
     if (existing) return res.status(400).json({ error: 'Username exists' });
     const user = new User({ username, password, likedSongs: [], history: [], playlists: [], queue: [] });
     await user.save();
     res.json({ message: 'User registered', userId: user._id, user });
   } catch (err) {
+    console.error('[Register Error]:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 app.post('/api/auth/login', async (req, res) => {
-  if (!isMongoConnected) {
-    return res.status(503).json({ error: 'Database service is temporarily unavailable. Please try again in a few moments.' });
+  if (!isDatabaseReady()) {
+    return res.status(503).json({ error: 'Database service is temporarily unavailable. Please try again shortly.', retryable: true });
   }
   try {
     const { username, password } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
     }
-    const user = await User.findOne({ username, password });
+    const user = await User.findOne({ username, password }).maxTimeMS(4000);
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
     res.json({ message: 'Login successful', userId: user._id, user });
   } catch (err) {
+    console.error('[Login Error]:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 app.post('/api/auth/google', async (req, res) => {
-  if (!isMongoConnected) {
-    return res.status(503).json({ error: 'Database service is temporarily unavailable. Please try again in a few moments.' });
+  if (!isDatabaseReady()) {
+    return res.status(503).json({ error: 'Database service is temporarily unavailable. Please try again shortly.', retryable: true });
   }
   try {
     const { token } = req.body;
@@ -211,7 +228,7 @@ app.post('/api/auth/google', async (req, res) => {
       return res.status(400).json({ error: 'Google account email could not be verified' });
     }
 
-    let user = await User.findOne({ username: email });
+    let user = await User.findOne({ username: email }).maxTimeMS(4000);
     if (!user) {
       user = new User({
         username: email,
@@ -233,30 +250,56 @@ app.post('/api/auth/google', async (req, res) => {
 
 // User Data Sync
 app.get('/api/user/:id', async (req, res) => {
-  if (!isMongoConnected) {
-    return res.status(503).json({ error: 'Database service is temporarily unavailable.' });
+  if (!isDatabaseReady()) {
+    return res.status(503).json({ error: 'Database service is temporarily unavailable. Please retry shortly.', retryable: true });
+  }
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid user ID format' });
   }
   try {
-    const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ error: 'Not found' });
-    res.json({ likedSongs: user.likedSongs, history: user.history, playlists: user.playlists, queue: user.queue || [] });
+    const user = await User.findById(req.params.id).maxTimeMS(4000);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({
+      likedSongs: user.likedSongs || [],
+      history: user.history || [],
+      playlists: user.playlists || [],
+      queue: user.queue || []
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[User GET Error]:', err.message);
+    res.status(500).json({ error: 'Failed to retrieve user data: ' + err.message });
   }
 });
 
 app.post('/api/user/:id/sync', async (req, res) => {
-  if (!isMongoConnected) {
-    return res.status(503).json({ error: 'Database service is temporarily unavailable.' });
+  if (!isDatabaseReady()) {
+    return res.status(503).json({ error: 'Database service is temporarily unavailable. Please retry shortly.', retryable: true });
+  }
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid user ID format' });
   }
   try {
-    const { likedSongs, history, playlists, queue } = req.body;
-    const update = { likedSongs, history, playlists };
-    if (queue !== undefined) update.queue = queue;
-    await User.findByIdAndUpdate(req.params.id, update);
-    res.json({ message: 'Synced' });
+    const { likedSongs, history, playlists, queue } = req.body || {};
+    const update = {};
+    if (Array.isArray(likedSongs)) update.likedSongs = likedSongs.slice(0, 500);
+    if (Array.isArray(history)) update.history = history.slice(0, 100);
+    if (Array.isArray(playlists)) update.playlists = playlists.slice(0, 100);
+    if (Array.isArray(queue)) update.queue = queue.slice(0, 200);
+
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { $set: update },
+      { new: true, runValidators: true }
+    ).maxTimeMS(4000);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ message: 'Synced', timestamp: Date.now() });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[User Sync Error]:', err.message);
+    res.status(500).json({ error: 'Failed to sync user data: ' + err.message });
   }
 });
 
@@ -403,6 +446,20 @@ app.get('/api/stream/:videoId', (req, res) => {
     status: 'ok',
     message: 'Stream playback handled client-side via YouTube IFrame API'
   });
+});
+
+// Global Express Error Handler ensuring CORS headers are always attached
+app.use((err, req, res, next) => {
+  console.error('[Express Global Error]:', err.message);
+  const origin = req.headers.origin;
+  if (isOriginAllowed(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+  }
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Payload too large to sync' });
+  }
+  res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 
 const PORT = process.env.PORT || 5000;

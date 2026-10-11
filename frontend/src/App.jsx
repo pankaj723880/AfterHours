@@ -1176,6 +1176,8 @@ const sanitizeList = (list) => {
   } catch(e) { return []; }
 };
 
+const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+
 
   const [likedSongs, setLikedSongs] = useState(() => {
     const u = JSON.parse(localStorage.getItem('afterhours_user') || 'null');
@@ -1394,7 +1396,92 @@ const sanitizeList = (list) => {
     }
   }, [currentSong]);
 
-  // Sync Data — debounced 2.5s after last change, with retry on 502
+  // Remote Hydration on Mount — Reconciles server data with local state so data is never overwritten
+  const isHydratedRef = useRef(!user);
+  const lastSyncedDataRef = useRef('');
+  const syncRetryTimerRef = useRef(null);
+  const syncAttemptsRef = useRef(0);
+  const isSyncingRef = useRef(false);
+
+  useEffect(() => {
+    const id = user?.userId || user?._id;
+    if (!user || !id) {
+      isHydratedRef.current = true;
+      return;
+    }
+
+    if (!isValidMongoId(id)) {
+      console.warn('[Sync] Invalid user ID format:', id);
+      return;
+    }
+
+    let isMounted = true;
+    const hydrateUserData = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/user/${id}`, {
+          headers: { 'Accept': 'application/json' }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (!isMounted) return;
+
+          // Merge without losing local offline edits or remote favourites
+          setLikedSongs(prev => {
+            const remote = sanitizeList(data.likedSongs || []);
+            const map = new Map();
+            remote.forEach(s => map.set(s.id, s));
+            prev.forEach(s => map.set(s.id, s));
+            const merged = Array.from(map.values());
+            try { localStorage.setItem('liked_songs', JSON.stringify(merged)); } catch (e) {}
+            return merged;
+          });
+
+          setPlaylists(prev => {
+            const remote = sanitizeList(data.playlists || []);
+            const map = new Map();
+            remote.forEach(p => map.set(p.id, p));
+            prev.forEach(p => map.set(p.id, p));
+            const merged = Array.from(map.values());
+            try { localStorage.setItem('playlists', JSON.stringify(merged)); } catch (e) {}
+            return merged;
+          });
+
+          if (Array.isArray(data.history) && data.history.length > 0) {
+            setHistory(prev => {
+              if (prev.length === 0) {
+                const h = sanitizeList(data.history).slice(0, 50);
+                try { localStorage.setItem('history_songs', JSON.stringify(h)); } catch (e) {}
+                return h;
+              }
+              return prev;
+            });
+          }
+
+          if (Array.isArray(data.queue) && data.queue.length > 0) {
+            setQueue(prev => {
+              if (prev.length === 0) {
+                const q = sanitizeList(data.queue);
+                try { localStorage.setItem('afterhours_queue', JSON.stringify(q)); } catch (e) {}
+                return q;
+              }
+              return prev;
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('[Hydration] Could not fetch remote user data (relying on local storage):', err.message);
+      } finally {
+        if (isMounted) {
+          isHydratedRef.current = true;
+        }
+      }
+    };
+
+    hydrateUserData();
+    return () => { isMounted = false; };
+  }, [user]);
+
+  // Sync Data — debounced 2.5s after last change, with bounded exponential backoff
   const syncTimerRef = useRef(null);
   useEffect(() => {
     const id = user?.userId || user?._id;
@@ -1404,31 +1491,80 @@ const sanitizeList = (list) => {
       return;
     }
     if (!user || !id) return;
+    if (!isHydratedRef.current) return; // Never sync before remote hydration is complete
+    if (!isValidMongoId(id)) return;
+
+    const payload = {
+      likedSongs: sanitizeList(likedSongs),
+      history: sanitizeList(history).slice(0, 50),
+      playlists: sanitizeList(playlists),
+      queue: sanitizeList(queue)
+    };
+    const payloadStr = JSON.stringify(payload);
+
+    // Skip redundant network sync if nothing changed
+    if (payloadStr === lastSyncedDataRef.current) return;
 
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-    syncTimerRef.current = setTimeout(async () => {
-      const doSync = async () => {
+    if (syncRetryTimerRef.current) clearTimeout(syncRetryTimerRef.current);
+
+    const performSync = async (retryCount = 0) => {
+      if (isSyncingRef.current) return;
+      isSyncingRef.current = true;
+
+      try {
         const res = await fetch(`${BACKEND_URL}/api/user/${id}/sync`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ likedSongs, history, playlists, queue })
+          body: payloadStr
         });
-        return res;
-      };
-      try {
-        const res = await doSync();
-        // Retry once on 502 (Render cold-start timeout)
-        if (res.status === 502) {
-          await new Promise(r => setTimeout(r, 3000));
-          await doSync();
+
+        if (res.ok) {
+          lastSyncedDataRef.current = payloadStr;
+          syncAttemptsRef.current = 0;
+          return;
+        }
+
+        // Retry on transient server errors (502, 503, 504) with bounded exponential backoff (max 3 retries)
+        if ([502, 503, 504].includes(res.status) && retryCount < 3) {
+          const delay = [2500, 5000, 10000][retryCount] || 5000;
+          console.warn(`[Sync] Transient ${res.status} error, retrying in ${delay}ms (attempt ${retryCount + 1}/3)...`);
+          syncRetryTimerRef.current = setTimeout(() => {
+            isSyncingRef.current = false;
+            performSync(retryCount + 1);
+          }, delay);
+          return;
+        }
+
+        if (res.status === 400 || res.status === 404) {
+          console.warn('[Sync] Non-retryable response:', res.status);
+          return;
         }
       } catch (err) {
-        // Silent — sync failure is non-critical (data is in localStorage)
-        console.warn('[Sync] Network error, will retry on next change:', err.message);
+        // Network error (e.g. Render waking up or network loss) with bounded exponential backoff
+        if (retryCount < 3) {
+          const delay = [2500, 5000, 10000][retryCount] || 5000;
+          console.warn(`[Sync] Network error, retrying in ${delay}ms (attempt ${retryCount + 1}/3):`, err.message);
+          syncRetryTimerRef.current = setTimeout(() => {
+            isSyncingRef.current = false;
+            performSync(retryCount + 1);
+          }, delay);
+          return;
+        }
+        console.warn('[Sync] Retries exhausted. Will retry on next explicit user change:', err.message);
+      } finally {
+        isSyncingRef.current = false;
       }
+    };
+
+    syncTimerRef.current = setTimeout(() => {
+      performSync(0);
     }, 2500);
 
-    return () => { if (syncTimerRef.current) clearTimeout(syncTimerRef.current); };
+    return () => {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+      if (syncRetryTimerRef.current) clearTimeout(syncRetryTimerRef.current);
+    };
   }, [likedSongs, history, playlists, queue, user]);
 
   // Keep-alive ping every 10 minutes to prevent Render cold starts
