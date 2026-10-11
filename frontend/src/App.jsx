@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
-import { Reorder } from 'framer-motion';
+import { Reorder, useDragControls } from 'framer-motion';
 
 import { io } from 'socket.io-client';
 
@@ -71,7 +71,8 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
     video: <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" fill="currentColor" />,
     trash: <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor" />,
     moreVertical: <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" fill="currentColor" />,
-    user: <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="currentColor" />
+    user: <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="currentColor" />,
+    grip: <path d="M9 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6-16a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" fill="currentColor" />
   };
   return (
     <svg className={className} viewBox="0 0 24 24" {...props}>
@@ -245,6 +246,140 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
       />
       <span>{formatTime(duration)}</span>
     </div>
+  );
+});
+
+const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove }) => {
+  const dragControls = useDragControls();
+  const [isHolding, setIsHolding] = useState(false);
+  const holdTimerRef = useRef(null);
+  const startPosRef = useRef({ x: 0, y: 0 });
+  const didDragRef = useRef(false);
+
+  const clearHoldTimer = () => {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+  };
+
+  const handlePointerDown = (e) => {
+    if (e.target.closest('button')) return;
+
+    didDragRef.current = false;
+    startPosRef.current = { x: e.clientX, y: e.clientY };
+
+    clearHoldTimer();
+    holdTimerRef.current = setTimeout(() => {
+      setIsHolding(true);
+      didDragRef.current = true;
+      try {
+        if (navigator.vibrate) navigator.vibrate(40);
+      } catch (err) {}
+      dragControls.start(e);
+    }, 200);
+  };
+
+  const handlePointerMove = (e) => {
+    if (!didDragRef.current && holdTimerRef.current) {
+      const dist = Math.hypot(e.clientX - startPosRef.current.x, e.clientY - startPosRef.current.y);
+      if (dist > 10) {
+        clearHoldTimer();
+      }
+    }
+  };
+
+  const handlePointerUp = () => {
+    clearHoldTimer();
+    setIsHolding(false);
+  };
+
+  const handleClick = (e) => {
+    if (didDragRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      didDragRef.current = false;
+      return;
+    }
+    onPlay(track);
+  };
+
+  return (
+    <Reorder.Item
+      value={track}
+      dragListener={false}
+      dragControls={dragControls}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      whileDrag={{
+        scale: 1.03,
+        zIndex: 50,
+        boxShadow: "0 14px 28px rgba(0,0,0,0.5)",
+        backgroundColor: "rgba(245, 158, 11, 0.16)",
+        borderColor: "rgba(245, 158, 11, 0.6)",
+      }}
+      className={`group flex items-center gap-3.5 p-3 rounded-2xl transition-all cursor-pointer select-none relative ${
+        isHolding ? 'scale-[1.02] bg-amber-500/15 border border-amber-500/50 shadow-lg' : ''
+      } ${
+        isCurrent
+          ? 'bg-amber-500/10 border border-amber-500/25'
+          : 'hover:bg-neutral-800/50 border border-transparent hover:border-neutral-700/50'
+      }`}
+      onClick={handleClick}
+    >
+      <div
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          didDragRef.current = true;
+          dragControls.start(e);
+        }}
+        className="touch-none p-1.5 -ml-1 text-neutral-500 hover:text-amber-400 group-hover:text-neutral-300 transition cursor-grab active:cursor-grabbing shrink-0"
+        title="Tap & hold or slide grip to rearrange"
+      >
+        <Icon name="grip" className="w-4 h-4 sm:w-5 sm:h-5" />
+      </div>
+
+      <div className="relative w-12 h-12 rounded-xl overflow-hidden shrink-0 shadow-md">
+        <img
+          src={track.thumbnail?.replace(/(\?sqp=.*|hq720\.jpg)/, "hqdefault.jpg")}
+          alt=""
+          className="w-full h-full object-cover pointer-events-none"
+        />
+        <div
+          className={`absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity ${
+            isCurrent ? 'opacity-100' : ''
+          } pointer-events-none`}
+        >
+          <Icon name={isCurrent && isPlaying ? "pause" : "play"} className="w-5 h-5 text-white" />
+        </div>
+      </div>
+
+      <div className="flex-1 min-w-0 pointer-events-none">
+        <h4 className={`font-medium text-sm truncate ${isCurrent ? 'text-amber-500' : 'text-white'}`}>
+          {track.title}
+        </h4>
+        <p className="text-xs text-neutral-400 truncate">{track.channel}</p>
+      </div>
+
+      {track.duration && (
+        <span className="text-xs text-neutral-500 font-mono shrink-0 pointer-events-none">
+          {track.duration}
+        </span>
+      )}
+
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove(track.id);
+        }}
+        className="text-neutral-500 hover:text-red-400 opacity-80 sm:opacity-0 group-hover:opacity-100 transition p-2 shrink-0"
+        title="Remove from Queue"
+      >
+        <Icon name="close" className="w-4 h-4" />
+      </button>
+    </Reorder.Item>
   );
 });
 
@@ -3579,40 +3714,34 @@ const sanitizeList = (list) => {
                     Up Next
                   </h3>
                 </div>
-                <span className="text-xs font-medium bg-neutral-800 text-neutral-400 px-3 py-1 rounded-full">{queue.length} tracks</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-amber-400/80 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full hidden sm:inline-flex items-center gap-1.5 font-medium">
+                    <Icon name="grip" className="w-3.5 h-3.5" />
+                    Tap & hold to slide
+                  </span>
+                  <span className="text-xs font-medium bg-neutral-800 text-neutral-400 px-3 py-1 rounded-full">{queue.length} tracks</span>
+                </div>
               </div>
+
+              {queue.length > 0 && (
+                <p className="text-[11px] text-neutral-500 mb-3 flex items-center gap-1.5 sm:hidden">
+                  <Icon name="grip" className="w-3.5 h-3.5 text-amber-500/80 shrink-0" />
+                  <span>Tap & hold or slide grip to rearrange queue</span>
+                </p>
+              )}
               
               <Reorder.Group axis="y" values={queue} onReorder={setQueue} className="space-y-2">
-                {queue.map((track, idx) => {
+                {queue.map((track) => {
                   const isCurrent = currentSong?.id === track.id;
                   return (
-                    <Reorder.Item 
-                      key={track.id + '-' + idx}
-                      value={track}
-                      onClick={() => { playSong(track); }}
-                      className={`group flex items-center gap-4 p-3 rounded-2xl transition-all cursor-pointer ${isCurrent ? 'bg-amber-500/10 border border-amber-500/20' : 'hover:bg-neutral-800/50 border border-transparent hover:border-neutral-700/50'}`}
-                    >
-                      <div className="relative w-12 h-12 rounded-xl overflow-hidden shrink-0 shadow-md">
-                        <img src={track.thumbnail?.replace(/(\\?sqp=.*|hq720\\.jpg)/, "hqdefault.jpg")} alt="" className="w-full h-full object-cover pointer-events-none" />
-                        <div className={`absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity ${isCurrent ? 'opacity-100' : ''} pointer-events-none`}>
-                          <Icon name={isCurrent && isPlaying ? "pause" : "play"} className="w-5 h-5 text-white" />
-                        </div>
-                      </div>
-                      <div className="flex-1 min-w-0 pointer-events-none">
-                        <h4 className={`font-medium text-sm truncate ${isCurrent ? 'text-amber-500' : 'text-white'}`}>{track.title}</h4>
-                        <p className="text-xs text-neutral-400 truncate">{track.channel}</p>
-                      </div>
-                      {track.duration && (
-                        <span className="text-xs text-neutral-500 font-mono shrink-0 pointer-events-none">{track.duration}</span>
-                      )}
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); removeFromQueue(track.id); }} 
-                        className="text-neutral-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition p-2 shrink-0" 
-                        title="Remove from Queue"
-                      >
-                        <Icon name="close" className="w-4 h-4" />
-                      </button>
-                    </Reorder.Item>
+                    <QueueItem
+                      key={track.id}
+                      track={track}
+                      isCurrent={isCurrent}
+                      isPlaying={isPlaying}
+                      onPlay={playSong}
+                      onRemove={removeFromQueue}
+                    />
                   );
                 })}
                 {queue.length === 0 && (
