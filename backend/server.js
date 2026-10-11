@@ -149,6 +149,7 @@ const userSchema = new mongoose.Schema({
   likedSongs: { type: Array, default: [] },
   history: { type: Array, default: [] },
   playlists: { type: Array, default: [] },
+  queue: { type: Array, default: [] },
 });
 const User = mongoose.model('User', userSchema);
 
@@ -164,9 +165,9 @@ app.post('/api/auth/register', async (req, res) => {
     }
     const existing = await User.findOne({ username });
     if (existing) return res.status(400).json({ error: 'Username exists' });
-    const user = new User({ username, password });
+    const user = new User({ username, password, likedSongs: [], history: [], playlists: [], queue: [] });
     await user.save();
-    res.json({ message: 'User registered', userId: user._id });
+    res.json({ message: 'User registered', userId: user._id, user });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -194,7 +195,7 @@ app.post('/api/auth/google', async (req, res) => {
     return res.status(503).json({ error: 'Database service is temporarily unavailable. Please try again in a few moments.' });
   }
   try {
-    const { token, likedSongs, history, playlists } = req.body;
+    const { token } = req.body;
     if (!token) {
       return res.status(400).json({ error: 'Google ID token is required' });
     }
@@ -215,24 +216,11 @@ app.post('/api/auth/google', async (req, res) => {
       user = new User({
         username: email,
         password: 'google_oauth_user',
-        likedSongs: likedSongs || [],
-        history: history || [],
-        playlists: playlists || []
+        likedSongs: [],
+        history: [],
+        playlists: [],
+        queue: []
       });
-      await user.save();
-    } else {
-      if (likedSongs && likedSongs.length > 0) {
-        const mergedLiked = [...user.likedSongs, ...likedSongs];
-        user.likedSongs = Array.from(new Set(mergedLiked.map(a => a.id))).map(id => mergedLiked.find(a => a.id === id));
-      }
-      if (history && history.length > 0) {
-        const mergedHistory = [...user.history, ...history];
-        user.history = Array.from(new Set(mergedHistory.map(a => a.id))).map(id => mergedHistory.find(a => a.id === id)).slice(0, 50);
-      }
-      if (playlists && playlists.length > 0) {
-        const mergedPlaylists = [...user.playlists, ...playlists];
-        user.playlists = Array.from(new Set(mergedPlaylists.map(a => a.id))).map(id => mergedPlaylists.find(a => a.id === id));
-      }
       await user.save();
     }
 
@@ -251,7 +239,7 @@ app.get('/api/user/:id', async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ error: 'Not found' });
-    res.json({ likedSongs: user.likedSongs, history: user.history });
+    res.json({ likedSongs: user.likedSongs, history: user.history, playlists: user.playlists, queue: user.queue || [] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -262,8 +250,10 @@ app.post('/api/user/:id/sync', async (req, res) => {
     return res.status(503).json({ error: 'Database service is temporarily unavailable.' });
   }
   try {
-    const { likedSongs, history, playlists } = req.body;
-    await User.findByIdAndUpdate(req.params.id, { likedSongs, history, playlists });
+    const { likedSongs, history, playlists, queue } = req.body;
+    const update = { likedSongs, history, playlists };
+    if (queue !== undefined) update.queue = queue;
+    await User.findByIdAndUpdate(req.params.id, update);
     res.json({ message: 'Synced' });
   } catch (err) {
     res.status(500).json({ error: err.message });

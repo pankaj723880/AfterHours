@@ -1351,7 +1351,7 @@ const sanitizeList = (list) => {
         const res = await fetch(`${BACKEND_URL}/api/user/${id}/sync`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ likedSongs, history, playlists })
+          body: JSON.stringify({ likedSongs, history, playlists, queue })
         });
         return res;
       };
@@ -1369,7 +1369,7 @@ const sanitizeList = (list) => {
     }, 2500);
 
     return () => { if (syncTimerRef.current) clearTimeout(syncTimerRef.current); };
-  }, [likedSongs, history, playlists, user]);
+  }, [likedSongs, history, playlists, queue, user]);
 
   // Keep-alive ping every 10 minutes to prevent Render cold starts
   useEffect(() => {
@@ -1386,12 +1386,7 @@ const sanitizeList = (list) => {
       const res = await fetch(`${BACKEND_URL}/api/auth/google`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: credentialResponse.credential,
-          // Sending current local state to merge
-          likedSongs: likedSongs,
-          history: history,
-          playlists: playlists
-        })
+        body: JSON.stringify({ token: credentialResponse.credential })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Google Auth failed');
@@ -1401,20 +1396,21 @@ const sanitizeList = (list) => {
       localStorage.setItem('afterhours_user', JSON.stringify(loggedInUser));
       closeAuthModal(true);
 
-      const mergedLiked = data.user.likedSongs || [];
-      const uniqueLiked = Array.from(new Set(mergedLiked.map(a => a.id))).map(id => mergedLiked.find(a => a.id === id));
-      setLikedSongs(sanitizeList(uniqueLiked));
-      localStorage.setItem('liked_songs', JSON.stringify(sanitizeList(uniqueLiked)));
+      const userLiked = data.user.likedSongs || [];
+      setLikedSongs(sanitizeList(userLiked));
+      localStorage.setItem('liked_songs', JSON.stringify(sanitizeList(userLiked)));
 
-      const mergedHistory = data.user.history || [];
-      const uniqueHistory = Array.from(new Set(mergedHistory.map(a => a.id))).map(id => mergedHistory.find(a => a.id === id)).slice(0, 50);
-      setHistory(sanitizeList(uniqueHistory));
-      localStorage.setItem('history_songs', JSON.stringify(sanitizeList(uniqueHistory)));
+      const userHistory = (data.user.history || []).slice(0, 50);
+      setHistory(sanitizeList(userHistory));
+      localStorage.setItem('history_songs', JSON.stringify(sanitizeList(userHistory)));
 
-      const mergedPlaylists = data.user.playlists || [];
-      const uniquePlaylists = Array.from(new Set(mergedPlaylists.map(a => a.id))).map(id => mergedPlaylists.find(a => a.id === id));
-      setPlaylists(sanitizeList(uniquePlaylists));
-      localStorage.setItem('playlists', JSON.stringify(sanitizeList(uniquePlaylists)));
+      const userPlaylists = data.user.playlists || [];
+      setPlaylists(sanitizeList(userPlaylists));
+      localStorage.setItem('playlists', JSON.stringify(sanitizeList(userPlaylists)));
+
+      const userQueue = data.user.queue || [];
+      setQueue(sanitizeList(userQueue));
+      localStorage.setItem('afterhours_queue', JSON.stringify(sanitizeList(userQueue)));
       
     } catch (err) {
       console.error('Google Auth Error:', err);
@@ -1517,21 +1513,40 @@ const sanitizeList = (list) => {
       closeAuthModal(true);
 
       if (isLoginMode && data.user) {
-        // Merge local data with remote data
-        const mergedLiked = [...likedSongs, ...(data.user.likedSongs || [])];
-        const uniqueLiked = Array.from(new Set(mergedLiked.map(a => a.id))).map(id => mergedLiked.find(a => a.id === id));
-        setLikedSongs(sanitizeList(uniqueLiked));
-        localStorage.setItem('liked_songs', JSON.stringify(sanitizeList(uniqueLiked)));
+        // Existing user login: load their saved account data
+        const userLiked = data.user.likedSongs || [];
+        setLikedSongs(sanitizeList(userLiked));
+        localStorage.setItem('liked_songs', JSON.stringify(sanitizeList(userLiked)));
 
-        const mergedHistory = [...history, ...(data.user.history || [])];
-        const uniqueHistory = Array.from(new Set(mergedHistory.map(a => a.id))).map(id => mergedHistory.find(a => a.id === id)).slice(0, 50);
-        setHistory(sanitizeList(uniqueHistory));
-        localStorage.setItem('history_songs', JSON.stringify(sanitizeList(uniqueHistory)));
+        const userHistory = (data.user.history || []).slice(0, 50);
+        setHistory(sanitizeList(userHistory));
+        localStorage.setItem('history_songs', JSON.stringify(sanitizeList(userHistory)));
 
-        const mergedPlaylists = [...playlists, ...(data.user.playlists || [])];
-        const uniquePlaylists = Array.from(new Set(mergedPlaylists.map(a => a.id))).map(id => mergedPlaylists.find(a => a.id === id));
-        setPlaylists(sanitizeList(uniquePlaylists));
-        localStorage.setItem('playlists', JSON.stringify(sanitizeList(uniquePlaylists)));
+        const userPlaylists = data.user.playlists || [];
+        setPlaylists(sanitizeList(userPlaylists));
+        localStorage.setItem('playlists', JSON.stringify(sanitizeList(userPlaylists)));
+
+        const userQueue = data.user.queue || [];
+        setQueue(sanitizeList(userQueue));
+        localStorage.setItem('afterhours_queue', JSON.stringify(sanitizeList(userQueue)));
+      } else {
+        // Register mode: Brand new account starts with clean, empty data
+        setLikedSongs([]);
+        localStorage.removeItem('liked_songs');
+        setHistory([]);
+        localStorage.removeItem('history_songs');
+        setPlaylists([]);
+        localStorage.removeItem('playlists');
+        setQueue([]);
+        localStorage.removeItem('afterhours_queue');
+        setCurrentSong(null);
+        localStorage.removeItem('afterhours_current_song');
+        localStorage.removeItem('afterhours_current_time');
+        localStorage.removeItem('afterhours_duration');
+        setIsPlaying(false);
+        if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
+          try { playerRef.current.stopVideo(); } catch (e) {}
+        }
       }
     } catch (err) {
       setAuthError(err.message);
@@ -1546,9 +1561,19 @@ const sanitizeList = (list) => {
     localStorage.removeItem('liked_songs');
     localStorage.removeItem('history_songs');
     localStorage.removeItem('playlists');
+    localStorage.removeItem('afterhours_queue');
+    localStorage.removeItem('afterhours_current_song');
+    localStorage.removeItem('afterhours_current_time');
+    localStorage.removeItem('afterhours_duration');
     setLikedSongs([]);
     setHistory([]);
     setPlaylists([]);
+    setQueue([]);
+    setCurrentSong(null);
+    setIsPlaying(false);
+    if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
+      try { playerRef.current.stopVideo(); } catch (e) {}
+    }
   };
 
   const silentAudioRef = useRef(null);
