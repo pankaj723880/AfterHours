@@ -349,9 +349,9 @@ app.get('/api/youtube/search', async (req, res) => {
                 title: decodeHtml(item.snippet?.title || ''),
                 channelTitle: decodeHtml(item.snippet?.channelTitle || 'Unknown'),
                 thumbnails: {
-                  high: { url: item.snippet?.thumbnails?.high?.url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` },
-                  medium: { url: item.snippet?.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` },
-                  default: { url: item.snippet?.thumbnails?.default?.url || `https://i.ytimg.com/vi/${videoId}/default.jpg` }
+                  high: { url: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` },
+                  medium: { url: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` },
+                  default: { url: `https://i.ytimg.com/vi/${videoId}/default.jpg` }
                 }
               }
             };
@@ -382,8 +382,8 @@ app.get('/api/youtube/search', async (req, res) => {
         title: decodeHtml(v.title || ''),
         channelTitle: decodeHtml(v.author?.name || 'Unknown'),
         thumbnails: {
-          high: { url: v.image || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg` },
-          medium: { url: v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg` },
+          high: { url: `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg` },
+          medium: { url: `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg` },
           default: { url: `https://i.ytimg.com/vi/${v.videoId}/default.jpg` }
         }
       }

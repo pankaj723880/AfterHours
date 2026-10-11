@@ -165,6 +165,65 @@ const formatTime = (secs) => {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 };
 
+const getCleanThumbnail = (itemOrUrl, explicitId) => {
+  if (!itemOrUrl && !explicitId) return "https://ui-avatars.com/api/?name=Music&background=1e1e1e&color=f59e0b&size=300";
+
+  let url = typeof itemOrUrl === 'string' ? itemOrUrl : (itemOrUrl?.thumbnail || itemOrUrl?.image || '');
+  const id = explicitId || (typeof itemOrUrl === 'object' ? (itemOrUrl?.videoId || itemOrUrl?.id) : null);
+
+  if (id && typeof id === 'string' && /^[a-zA-Z0-9_-]{11}$/.test(id)) {
+    return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+  }
+
+  if (url && typeof url === 'string') {
+    const ytMatch = url.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})\//);
+    if (ytMatch && ytMatch[1]) {
+      return `https://i.ytimg.com/vi/${ytMatch[1]}/hqdefault.jpg`;
+    }
+
+    if (url.includes('i.ytimg.com')) {
+      return url
+        .replace(/\/hq720[^/]*\.(?:jpg|webp)(?:\?.*)?$/i, '/hqdefault.jpg')
+        .replace(/\/maxresdefault\.(?:jpg|webp)(?:\?.*)?$/i, '/hqdefault.jpg')
+        .replace(/\?sqp=.*$/i, '');
+    }
+
+    return url;
+  }
+
+  if (id) {
+    return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+  }
+
+  const fallbackTitle = typeof itemOrUrl === 'object' ? (itemOrUrl?.title || itemOrUrl?.name || 'Music') : 'Music';
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(fallbackTitle)}&background=1e1e1e&color=f59e0b&size=300`;
+};
+
+const handleImageError = (e, fallbackTitle, explicitId) => {
+  const target = e.currentTarget || e.target;
+  if (!target) return;
+
+  const attempts = parseInt(target.dataset.errorAttempts || '0', 10);
+  const currentSrc = target.src || '';
+
+  if (attempts >= 2 || currentSrc.includes('ui-avatars.com')) {
+    target.onerror = null;
+    return;
+  }
+
+  target.dataset.errorAttempts = (attempts + 1).toString();
+
+  const ytMatch = currentSrc.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})\//) || (explicitId ? [null, explicitId] : null);
+  if (ytMatch && ytMatch[1] && !currentSrc.includes('mqdefault.jpg')) {
+    target.src = `https://i.ytimg.com/vi/${ytMatch[1]}/mqdefault.jpg`;
+    return;
+  }
+
+  target.onerror = null;
+  const name = fallbackTitle || 'Music';
+  target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1e1e1e&color=f59e0b&size=300`;
+};
+
 const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId }) => {
   const [currentTime, setCurrentTime] = useState(() => {
     try {
@@ -349,9 +408,10 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove })
 
       <div className="relative w-12 h-12 rounded-xl overflow-hidden shrink-0 shadow-md">
         <img
-          src={track.thumbnail?.replace(/(\?sqp=.*|hq720\.jpg)/, "hqdefault.jpg")}
-          alt=""
+          src={getCleanThumbnail(track)}
+          alt={track.title || ""}
           className="w-full h-full object-cover pointer-events-none"
+          onError={(e) => handleImageError(e, track.title, track.id)}
         />
         <div
           className={`absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 ${
@@ -1034,7 +1094,7 @@ export default function App() {
         if (trendingRes.status === 'fulfilled' && trendingRes.value?.items) {
           const list = trendingRes.value.items.map(i => {
             const vid = i.id?.videoId || i.id;
-            const img = (i.snippet.thumbnails?.high?.url || i.snippet.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`).replace(/(\?sqp=.*|hq720\.jpg)/, 'hqdefault.jpg');
+            const img = getCleanThumbnail(i, vid);
             return {
               id: vid,
               videoId: vid,
@@ -1052,7 +1112,7 @@ export default function App() {
         if (albumsRes.status === 'fulfilled' && albumsRes.value?.items) {
           const list = albumsRes.value.items.map(i => {
             const vid = i.id?.videoId || i.id;
-            const img = (i.snippet.thumbnails?.high?.url || i.snippet.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`).replace(/(\?sqp=.*|hq720\.jpg)/, 'hqdefault.jpg');
+            const img = getCleanThumbnail(i, vid);
             return {
               id: vid,
               videoId: vid,
@@ -1070,7 +1130,7 @@ export default function App() {
         if (radioRes.status === 'fulfilled' && radioRes.value?.items) {
           const list = radioRes.value.items.map(i => {
             const vid = i.id?.videoId || i.id;
-            const img = (i.snippet.thumbnails?.high?.url || i.snippet.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`).replace(/(\?sqp=.*|hq720\.jpg)/, 'hqdefault.jpg');
+            const img = getCleanThumbnail(i, vid);
             return {
               id: vid,
               videoId: vid,
@@ -1095,9 +1155,9 @@ const sanitizeCache = (cache) => {
     const newCache = { ...cache };
     Object.keys(newCache).forEach(k => {
       newCache[k] = newCache[k].map(track => {
-        if (track.id && track.thumbnail && (track.thumbnail.includes('?sqp=') || track.thumbnail.includes('hq720'))) {
-           track.thumbnail = `https://i.ytimg.com/vi/${track.id}/hqdefault.jpg`;
-        }
+        const vid = track.videoId || track.id;
+        track.thumbnail = getCleanThumbnail(track, vid);
+        if (track.image) track.image = track.thumbnail;
         return track;
       });
     });
@@ -1108,9 +1168,9 @@ const sanitizeList = (list) => {
   try {
     if (!Array.isArray(list)) return [];
     return list.map(track => {
-      if (track.id && track.thumbnail && (track.thumbnail.includes('?sqp=') || track.thumbnail.includes('hq720'))) {
-         track.thumbnail = `https://i.ytimg.com/vi/${track.id}/hqdefault.jpg`;
-      }
+      const vid = track.videoId || track.id;
+      track.thumbnail = getCleanThumbnail(track, vid);
+      if (track.image) track.image = track.thumbnail;
       return track;
     });
   } catch(e) { return []; }
@@ -1430,7 +1490,7 @@ const sanitizeList = (list) => {
         videoId: id,
         title: item?.title?.replace(/&quot;/g, '"')?.replace(/&#39;/g, "'")?.replace(/&amp;/g, "&") || "Unknown Title",
         artist: item?.artist || item?.snippet?.channelTitle || "Unknown Artist",
-        thumbnail: (item?.thumbnail || item?.image || item?.snippet?.thumbnails?.high?.url || item?.snippet?.thumbnails?.default?.url || (id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : "/default-cover.png")).replace(/(\?sqp=.*|hq720\.jpg)/, 'hqdefault.jpg'),
+        thumbnail: getCleanThumbnail(item, id),
         duration: item?.duration || "Stream"
       };
     };
@@ -1474,7 +1534,7 @@ const sanitizeList = (list) => {
           videoId: item.id.videoId || item.id,
           title: item.snippet?.title?.replace(/&quot;/g, '"')?.replace(/&#39;/g, "'")?.replace(/&amp;/g, "&") || "Unknown Title",
           artist: item.snippet?.channelTitle || "Unknown Artist",
-          thumbnail: (item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.default?.url || "/default-cover.png").replace(/(\?sqp=.*|hq720\.jpg)/, 'hqdefault.jpg'),
+          thumbnail: getCleanThumbnail(item, item.id.videoId || item.id),
           duration: "Stream"
         };
         playSong(formattedSong);
@@ -1883,6 +1943,19 @@ const sanitizeList = (list) => {
     queueRef.current = queue;
   }, [queue]);
 
+  const ytContainerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      try {
+        if (playerRef.current && typeof playerRef.current.destroy === 'function') {
+          playerRef.current.destroy();
+          playerRef.current = null;
+        }
+      } catch (e) {}
+    };
+  }, []);
+
   const initPlayerInstance = useCallback((videoId, shouldAutoPlay = true, startSeconds = 0) => {
     if (!window.YT || !window.YT.Player) return;
 
@@ -1892,10 +1965,15 @@ const sanitizeList = (list) => {
       }
     } catch (e) {}
 
+    if (ytContainerRef.current) {
+      ytContainerRef.current.innerHTML = '<div id="yt-player-instance"></div>';
+    }
+
     playerRef.current = new window.YT.Player('yt-player-instance', {
       height: '100%',
       width: '100%',
       videoId: videoId,
+      host: 'https://www.youtube.com',
       playerVars: { 
         autoplay: shouldAutoPlay ? 1 : 0, 
         controls: 0, 
@@ -1904,7 +1982,8 @@ const sanitizeList = (list) => {
         enablejsapi: 1,
         playsinline: 1,
         start: startSeconds > 0 ? Math.floor(startSeconds) : 0,
-        origin: window.location.origin
+        origin: window.location.origin,
+        widget_referrer: window.location.origin
       },
       events: {
         onReady: (e) => {
@@ -2355,7 +2434,7 @@ const sanitizeList = (list) => {
         src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" 
       />
       
-      <div className="fixed top-0 left-0 w-1 h-1 opacity-0 pointer-events-none -z-50 overflow-hidden">
+      <div ref={ytContainerRef} className="fixed top-0 left-0 w-1 h-1 opacity-0 pointer-events-none -z-50 overflow-hidden">
         <div id="yt-player-instance"></div>
       </div>
 
@@ -2395,7 +2474,7 @@ const sanitizeList = (list) => {
             <div className="relative w-full aspect-video bg-neutral-950">
               <iframe
                 className="w-full h-full"
-                src={`https://www.youtube.com/embed/${videoModalSong.id}?autoplay=1&enablejsapi=1${videoModalSong.startAt ? '&start='+Math.floor(videoModalSong.startAt) : ''}`}
+                src={`https://www.youtube.com/embed/${videoModalSong.id}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}&widget_referrer=${encodeURIComponent(window.location.origin)}${videoModalSong.startAt ? '&start='+Math.floor(videoModalSong.startAt) : ''}`}
                 title={videoModalSong.title}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
@@ -2775,7 +2854,7 @@ const sanitizeList = (list) => {
                       >
                         <div className="flex items-center gap-3.5 min-w-0">
                           <span className="text-xs font-mono text-neutral-400 w-6 text-center">{i + 1}</span>
-                          <img src={(track.thumbnail && track.thumbnail.replace(/(\\?sqp=.*|hq720\\.jpg)/, "hqdefault.jpg")) || "https://ui-avatars.com/api/?name="+encodeURIComponent(track.title)+"&background=random&size=300"} alt="" loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0 shadow-md" onError={(e) => { if(e.target.src.includes('hq720.jpg') || e.target.src.includes('maxresdefault.jpg')){ e.target.src = e.target.src.replace(/(hq720|maxresdefault)\.jpg.*/, 'hqdefault.jpg'); } else if(!e.target.src.includes('ui-avatars')){ e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(track.title) + '&background=random&size=300'; } }} />
+                          <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0 shadow-md" onError={(e) => handleImageError(e, track.title, track.id)} />
                           <div className="min-w-0">
                             <h4 className={`font-bold text-xs truncate ${isCurrent ? 'text-amber-400' : 'text-white'}`}>
                               {track.title}
@@ -2934,7 +3013,7 @@ const sanitizeList = (list) => {
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <span className="text-[10px] font-mono text-neutral-500 w-5 text-center">{i + 1}</span>
-                          <img src={(track.thumbnail && track.thumbnail.replace(/(\\?sqp=.*|hq720\\.jpg)/, "hqdefault.jpg")) || "https://ui-avatars.com/api/?name="+encodeURIComponent(track.title)+"&background=random&size=300"} alt="" loading="lazy" className="w-10 h-10 rounded-2xl object-cover shrink-0 shadow-md" onError={(e) => { if(e.target.src.includes('hq720.jpg') || e.target.src.includes('maxresdefault.jpg')){ e.target.src = e.target.src.replace(/(hq720|maxresdefault)\.jpg.*/, 'hqdefault.jpg'); } else if(!e.target.src.includes('ui-avatars')){ e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(track.title) + '&background=random&size=300'; } }} />
+                          <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-10 h-10 rounded-2xl object-cover shrink-0 shadow-md" onError={(e) => handleImageError(e, track.title, track.id)} />
                           <div className="min-w-0">
                             <h4 className={`font-bold text-xs truncate ${isCurrent ? 'text-orange-400' : 'text-white'}`}>
                               {track.title}
@@ -3001,7 +3080,7 @@ const sanitizeList = (list) => {
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <span className="text-[10px] font-mono text-neutral-500 w-5 text-center">{i + 1}</span>
-                          <img src={(track.thumbnail && track.thumbnail.replace(/(\\?sqp=.*|hq720\\.jpg)/, "hqdefault.jpg")) || "https://ui-avatars.com/api/?name="+encodeURIComponent(track.title)+"&background=random&size=300"} alt="" loading="lazy" className="w-10 h-10 rounded-2xl object-cover shrink-0 shadow-md" onError={(e) => { if(e.target.src.includes('hq720.jpg') || e.target.src.includes('maxresdefault.jpg')){ e.target.src = e.target.src.replace(/(hq720|maxresdefault)\.jpg.*/, 'hqdefault.jpg'); } else if(!e.target.src.includes('ui-avatars')){ e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(track.title) + '&background=random&size=300'; } }} />
+                          <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-10 h-10 rounded-2xl object-cover shrink-0 shadow-md" onError={(e) => handleImageError(e, track.title, track.id)} />
                           <div className="min-w-0">
                             <h4 className={`font-bold text-xs truncate ${isCurrent ? 'text-pink-400' : 'text-white'}`}>
                               {track.title}
@@ -3057,7 +3136,7 @@ const sanitizeList = (list) => {
               renderItem={(song) => (
                 <div onClick={() => handlePlayTrending(song.query || song.title, song, trendingSongs)} className="group cursor-pointer">
                   <div className="relative mb-2 md:mb-3">
-                    <img src={song.image || "https://ui-avatars.com/api/?name="+encodeURIComponent(song.title)+"&background=random&size=300"} alt={song.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => { e.target.src = "https://ui-avatars.com/api/?name="+encodeURIComponent(song.title)+"&background=random&size=300"; }} />
+                    <img src={getCleanThumbnail(song)} alt={song.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => handleImageError(e, song.title, song.id)} />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
                       <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
                         <Icon name="play" className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-neutral-950 translate-x-[1px] md:translate-x-[2px]" />
@@ -3079,7 +3158,7 @@ const sanitizeList = (list) => {
               renderItem={(artist) => (
                 <div onClick={() => handleArtistClick(artist.name)} className="group cursor-pointer flex flex-col items-center">
                   <div className="relative mb-2 md:mb-3 w-full aspect-square rounded-full overflow-hidden shadow-lg border-2 border-transparent group-hover:border-amber-500 transition-all duration-300">
-                    <img src={artist.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(artist.name)}&background=random&size=300`} alt={artist.name} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" onError={(e) => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(artist.name)}&background=random&size=300`; }} />
+                    <img src={artist.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(artist.name)}&background=1e1e1e&color=f59e0b&size=300`} alt={artist.name} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" onError={(e) => handleImageError(e, artist.name)} />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
                       <Icon name="search" className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-white drop-shadow-md transform scale-90 group-hover:scale-100 transition" />
                     </div>
@@ -3099,7 +3178,7 @@ const sanitizeList = (list) => {
               renderItem={(album) => (
                 <div onClick={() => handlePlayTrending(album.query || album.title, album, popularAlbums)} className="group cursor-pointer">
                   <div className="relative mb-2 md:mb-3">
-                    <img src={album.image || "https://ui-avatars.com/api/?name="+encodeURIComponent(album.title)+"&background=random&size=300"} alt={album.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => { e.target.src = "https://ui-avatars.com/api/?name="+encodeURIComponent(album.title)+"&background=random&size=300"; }} />
+                    <img src={getCleanThumbnail(album)} alt={album.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => handleImageError(e, album.title, album.id)} />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
                       <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
                         <Icon name="play" className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-neutral-950 translate-x-[1px] md:translate-x-[2px]" />
@@ -3121,7 +3200,7 @@ const sanitizeList = (list) => {
               renderItem={(radio) => (
                 <div onClick={() => handlePlayTrending(radio.query || radio.title, radio, popularRadio)} className="group cursor-pointer">
                   <div className="relative mb-2 md:mb-3">
-                    <img src={radio.image || "https://ui-avatars.com/api/?name="+encodeURIComponent(radio.title)+"&background=random&size=300"} alt={radio.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => { e.target.src = "https://ui-avatars.com/api/?name="+encodeURIComponent(radio.title)+"&background=random&size=300"; }} />
+                    <img src={getCleanThumbnail(radio)} alt={radio.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => handleImageError(e, radio.title, radio.id)} />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
                       <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
                         <Icon name="play" className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-neutral-950 translate-x-[1px] md:translate-x-[2px]" />
@@ -3177,7 +3256,7 @@ const sanitizeList = (list) => {
                     >
                       <div className="flex items-center gap-3.5 min-w-0">
                         <span className="text-xs font-mono text-neutral-400 w-6 text-center">{i + 1}</span>
-                        <img src={(track.thumbnail && track.thumbnail.replace(/(\\?sqp=.*|hq720\\.jpg)/, "hqdefault.jpg")) || "https://ui-avatars.com/api/?name="+encodeURIComponent(track.title)+"&background=random&size=300"} alt="" loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0 shadow-md" onError={(e) => { if(e.target.src.includes('hq720.jpg') || e.target.src.includes('maxresdefault.jpg')){ e.target.src = e.target.src.replace(/(hq720|maxresdefault)\.jpg.*/, 'hqdefault.jpg'); } else if(!e.target.src.includes('ui-avatars')){ e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(track.title) + '&background=random&size=300'; } }} />
+                        <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0 shadow-md" onError={(e) => handleImageError(e, track.title, track.id)} />
                         <div className="min-w-0">
                           <h4 className={`font-bold text-xs truncate ${isCurrent ? 'text-amber-400' : 'text-white'}`}>
                             {track.title}
@@ -3238,7 +3317,7 @@ const sanitizeList = (list) => {
                   return (
                     <div key={track.id + i} onClick={() => playSong(track)} className={`p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition relative ${isMenuOpen ? 'z-30' : 'z-auto'}`}>
                       <div className="flex items-center gap-3.5 min-w-0">
-                        <img src={(track.thumbnail && track.thumbnail.replace(/(\\?sqp=.*|hq720\\.jpg)/, "hqdefault.jpg")) || "https://ui-avatars.com/api/?name="+encodeURIComponent(track.title)+"&background=random&size=300"} alt="" loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => { if(e.target.src.includes('hq720.jpg') || e.target.src.includes('maxresdefault.jpg')){ e.target.src = e.target.src.replace(/(hq720|maxresdefault)\.jpg.*/, 'hqdefault.jpg'); } else if(!e.target.src.includes('ui-avatars')){ e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(track.title) + '&background=random&size=300'; } }} />
+                        <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => handleImageError(e, track.title, track.id)} />
                         <div className="min-w-0">
                           <h4 className="font-bold text-xs text-white truncate">{track.title}</h4>
                           <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
@@ -3302,7 +3381,7 @@ const sanitizeList = (list) => {
                   return (
                     <div key={track.id + i} onClick={() => playSong(track)} className={`p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition relative ${isMenuOpen ? 'z-30' : 'z-auto'}`}>
                       <div className="flex items-center gap-3.5 min-w-0">
-                        <img src={(track.thumbnail && track.thumbnail.replace(/(\\?sqp=.*|hq720\\.jpg)/, "hqdefault.jpg")) || "https://ui-avatars.com/api/?name="+encodeURIComponent(track.title)+"&background=random&size=300"} alt="" loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => { if(e.target.src.includes('hq720.jpg') || e.target.src.includes('maxresdefault.jpg')){ e.target.src = e.target.src.replace(/(hq720|maxresdefault)\.jpg.*/, 'hqdefault.jpg'); } else if(!e.target.src.includes('ui-avatars')){ e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(track.title) + '&background=random&size=300'; } }} />
+                        <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => handleImageError(e, track.title, track.id)} />
                         <div className="min-w-0">
                           <h4 className="font-bold text-xs text-white truncate">{track.title}</h4>
                           <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
@@ -3408,7 +3487,7 @@ const sanitizeList = (list) => {
                       return (
                         <div key={track.id + i} onClick={() => playSong(track)} className={`p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition group relative ${isMenuOpen ? 'z-30' : 'z-auto'}`}>
                           <div className="flex items-center gap-3.5 min-w-0">
-                            <img src={(track.thumbnail && track.thumbnail.replace(/(\\?sqp=.*|hq720\\.jpg)/, "hqdefault.jpg")) || "https://ui-avatars.com/api/?name="+encodeURIComponent(track.title)+"&background=random&size=300"} alt="" loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => { if(e.target.src.includes('hq720.jpg') || e.target.src.includes('maxresdefault.jpg')){ e.target.src = e.target.src.replace(/(hq720|maxresdefault)\.jpg.*/, 'hqdefault.jpg'); } else if(!e.target.src.includes('ui-avatars')){ e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(track.title) + '&background=random&size=300'; } }} />
+                            <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => handleImageError(e, track.title, track.id)} />
                             <div className="min-w-0 pr-4">
                               <h4 className="font-bold text-sm text-white truncate group-hover:text-amber-400 transition">{track.title}</h4>
                               <p className="text-[11px] text-amber-500/80 truncate mt-0.5">{track.channel}</p>
@@ -3462,7 +3541,7 @@ const sanitizeList = (list) => {
 
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3 w-full md:w-1/4 min-w-0">
-              <img src={(currentSong.thumbnail && currentSong.thumbnail.replace(/(\\?sqp=.*|hq720\\.jpg)/, "hqdefault.jpg")) || "https://ui-avatars.com/api/?name="+encodeURIComponent(currentSong.title)+"&background=random&size=300"} alt="" className={`rounded-2xl object-cover shrink-0 shadow-md transition-all duration-300 ${isPlayerMinimized ? 'w-8 h-8' : 'w-12 h-12'}`} onError={(e) => { if(e.target.src.includes('hq720.jpg') || e.target.src.includes('maxresdefault.jpg')){ e.target.src = e.target.src.replace(/(hq720|maxresdefault)\.jpg.*/, 'hqdefault.jpg'); } else if(!e.target.src.includes('ui-avatars')){ e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentSong.title) + '&background=random&size=300'; } }} />
+              <img src={getCleanThumbnail(currentSong)} alt={currentSong.title || ""} className={`rounded-2xl object-cover shrink-0 shadow-md transition-all duration-300 ${isPlayerMinimized ? 'w-8 h-8' : 'w-12 h-12'}`} onError={(e) => handleImageError(e, currentSong.title, currentSong.id)} />
               <div className="min-w-0 flex-1">
                 <h4 className="font-bold text-xs text-white truncate">{currentSong.title}</h4>
                 <p className="text-[10px] text-amber-400 truncate">{currentSong.channel}</p>
@@ -3603,14 +3682,11 @@ const sanitizeList = (list) => {
               <div className="w-full max-w-sm flex flex-col items-center pt-3 sm:pt-6 md:pt-2 pb-6">
                 {/* Artwork */}
                 <div className="relative w-44 h-44 sm:w-56 sm:h-56 md:w-64 md:h-64 aspect-square mb-4 shadow-2xl rounded-3xl overflow-hidden group border border-neutral-800/80 shrink-0">
-                  <img src={(currentSong.thumbnail && currentSong.thumbnail.replace(/(\\?sqp=.*|hq720\\.jpg)/, "maxresdefault.jpg")) || "https://ui-avatars.com/api/?name="+encodeURIComponent(currentSong.title)+"&background=random&size=600"} 
+                  <img 
+                    src={getCleanThumbnail(currentSong)} 
                     alt={currentSong.title} 
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
-                    onError={(e) => { 
-                      if(e.target.src.includes('hq720.jpg') || e.target.src.includes('maxresdefault.jpg')){ 
-                        e.target.src = e.target.src.replace(/(hq720|maxresdefault)\.jpg.*/, 'hqdefault.jpg'); 
-                      } 
-                    }} 
+                    onError={(e) => handleImageError(e, currentSong.title, currentSong.id)} 
                   />
                   <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors duration-500"></div>
                 </div>
@@ -3879,7 +3955,7 @@ const sanitizeList = (list) => {
             <h2 className="text-xl font-bold text-white mb-4">Add to Playlist</h2>
             {selectedSongForPlaylist && (
               <div className="flex items-center gap-3 mb-6 p-3 rounded-2xl bg-neutral-800/50">
-                <img src={(selectedSongForPlaylist.thumbnail && selectedSongForPlaylist.thumbnail.replace(/(\\?sqp=.*|hq720\\.jpg)/, "hqdefault.jpg")) || "https://ui-avatars.com/api/?name="+encodeURIComponent(selectedSongForPlaylist.title)+"&background=random&size=300"} className="w-10 h-10 rounded object-cover" alt="" onError={(e) => { if(e.target.src.includes('hq720.jpg') || e.target.src.includes('maxresdefault.jpg')){ e.target.src = e.target.src.replace(/(hq720|maxresdefault)\.jpg.*/, 'hqdefault.jpg'); } else if(!e.target.src.includes('ui-avatars')){ e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(selectedSongForPlaylist.title) + '&background=random&size=300'; } }} />
+                <img src={getCleanThumbnail(selectedSongForPlaylist)} className="w-10 h-10 rounded object-cover" alt={selectedSongForPlaylist.title || ""} onError={(e) => handleImageError(e, selectedSongForPlaylist.title, selectedSongForPlaylist.id)} />
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-white truncate">{selectedSongForPlaylist.title}</p>
                   <p className="text-xs text-amber-500/80 truncate">{selectedSongForPlaylist.channel}</p>
