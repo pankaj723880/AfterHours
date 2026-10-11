@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
+import { Reorder } from 'framer-motion';
 
 import { io } from 'socket.io-client';
 
@@ -163,9 +164,25 @@ const formatTime = (secs) => {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 };
 
-const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek }) => {
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId }) => {
+  const [currentTime, setCurrentTime] = useState(() => {
+    try {
+      const savedSong = JSON.parse(localStorage.getItem('afterhours_current_song') || 'null');
+      if (savedSong) {
+        return parseFloat(localStorage.getItem('afterhours_current_time') || '0') || 0;
+      }
+    } catch (e) {}
+    return 0;
+  });
+  const [duration, setDuration] = useState(() => {
+    try {
+      const savedSong = JSON.parse(localStorage.getItem('afterhours_current_song') || 'null');
+      if (savedSong) {
+        return parseFloat(localStorage.getItem('afterhours_duration') || '0') || 0;
+      }
+    } catch (e) {}
+    return 0;
+  });
   const [isSeeking, setIsSeeking] = useState(false);
 
   useEffect(() => {
@@ -175,11 +192,21 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek }) => {
         try {
           if (playerRef.current?.getCurrentTime) {
             const cur = playerRef.current.getCurrentTime();
-            if (typeof cur === 'number' && !isNaN(cur)) setCurrentTime(cur);
+            if (typeof cur === 'number' && !isNaN(cur)) {
+              setCurrentTime(cur);
+              try {
+                localStorage.setItem('afterhours_current_time', cur.toString());
+              } catch (e) {}
+            }
           }
           if (playerRef.current?.getDuration) {
             const dur = playerRef.current.getDuration();
-            if (typeof dur === 'number' && !isNaN(dur)) setDuration(dur);
+            if (typeof dur === 'number' && !isNaN(dur) && dur > 0) {
+              setDuration(dur);
+              try {
+                localStorage.setItem('afterhours_duration', dur.toString());
+              } catch (e) {}
+            }
           }
         } catch (e) {}
       }, 500);
@@ -195,6 +222,9 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek }) => {
     setIsSeeking(false);
     const seekTime = parseFloat(e.target.value);
     setCurrentTime(seekTime);
+    try {
+      localStorage.setItem('afterhours_current_time', seekTime.toString());
+    } catch (e) {}
     if (onSeek) onSeek(seekTime);
   };
 
@@ -791,7 +821,7 @@ const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlled
       </div>
 
       {showAll ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4 md:gap-6">
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 sm:gap-4 md:gap-6">
           {items.map((item, i) => (
             <React.Fragment key={i}>
               {renderItem(item, i, true)}
@@ -805,7 +835,7 @@ const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlled
           </button>
           <div ref={scrollRef} className="flex gap-3 sm:gap-4 md:gap-6 overflow-x-auto pb-4 hide-scrollbar scroll-smooth">
             {items.map((item, i) => (
-              <div key={i} className="w-32 sm:w-36 md:w-48 shrink-0">
+              <div key={i} className="w-24 sm:w-36 md:w-48 shrink-0">
                 {renderItem(item, i, false)}
               </div>
             ))}
@@ -819,19 +849,9 @@ const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlled
   );
 };
 export default function App() {
-  const [activeTab, setActiveTab] = useState(() => {
-    try {
-      return localStorage.getItem('afterhours_active_tab') || 'home';
-    } catch (e) {
-      return 'home';
-    }
-  });
-  
-  useEffect(() => {
-    try {
-      localStorage.setItem('afterhours_active_tab', activeTab);
-    } catch (e) {}
-  }, [activeTab]);
+  const [activeTab, setActiveTab] = useState('home');
+
+  // Removed activeTab localStorage persistence to always open 'home' by default
 
   useEffect(() => {
     const handleClickOutsideMenu = () => setOpenMenuId(null);
@@ -976,16 +996,71 @@ const sanitizeList = (list) => {
   const [searchCache, setSearchCache] = useState(() => sanitizeCache(JSON.parse(localStorage.getItem('youtube_search_cache') || '{}')));
   const [stationCache, setStationCache] = useState(() => sanitizeCache(JSON.parse(localStorage.getItem('youtube_station_cache') || '{}')));
 
-  const [currentSong, setCurrentSong] = useState(null);
+  const [currentSong, setCurrentSong] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('afterhours_current_song')) || null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      if (currentSong) {
+        localStorage.setItem('afterhours_current_song', JSON.stringify(currentSong));
+      } else {
+        localStorage.removeItem('afterhours_current_song');
+      }
+    } catch (e) {}
+  }, [currentSong]);
   const [isPlaying, setIsPlaying] = useState(false);
   const currentTimeRef = useRef(0);
   const durationRef = useRef(0);
   const playerRef = useRef(null);
   const wasPlayingBeforeAuthRef = useRef(false);
+  const isInitialMountRef = useRef(true);
 
-  const [isShuffle, setIsShuffle] = useState(false);
-  const [isRepeat, setIsRepeat] = useState(false);
-  const [volume, setVolume] = useState(80);
+  const [isShuffle, setIsShuffle] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('afterhours_shuffle') || 'false');
+    } catch (e) {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('afterhours_shuffle', JSON.stringify(isShuffle));
+    } catch (e) {}
+  }, [isShuffle]);
+
+  const [isRepeat, setIsRepeat] = useState(() => {
+    try {
+      const saved = localStorage.getItem('afterhours_repeat');
+      if (saved === 'one' || saved === 'all') return saved;
+      return JSON.parse(saved || 'false');
+    } catch (e) {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('afterhours_repeat', typeof isRepeat === 'string' ? isRepeat : JSON.stringify(isRepeat));
+    } catch (e) {}
+  }, [isRepeat]);
+
+  const [volume, setVolume] = useState(() => {
+    try {
+      const v = localStorage.getItem('afterhours_volume');
+      return v !== null ? parseInt(v, 10) : 80;
+    } catch (e) {
+      return 80;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('afterhours_volume', volume.toString());
+    } catch (e) {}
+  }, [volume]);
   const [soundProfile, setSoundProfile] = useState('flat');
 
   const [partyTracks, setPartyTracks] = useState([]);
@@ -1006,8 +1081,48 @@ const sanitizeList = (list) => {
   const [songs, setSongs] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
   const [searchVisibleCount, setSearchVisibleCount] = useState(10);
-  const [queue, setQueue] = useState([]);
+  const [queue, setQueue] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('afterhours_queue')) || [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('afterhours_queue', JSON.stringify(queue));
+    } catch (e) {}
+  }, [queue]);
+
   const [showQueuePanel, setShowQueuePanel] = useState(false);
+  const [draggedItemIndex, setDraggedItemIndex] = useState(null);
+
+  const handleDragStart = (e, index) => {
+    setDraggedItemIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e, dropIndex) => {
+    e.preventDefault();
+    if (draggedItemIndex === null || draggedItemIndex === dropIndex) return;
+
+    const newQueue = [...queue];
+    const draggedItem = newQueue[draggedItemIndex];
+    newQueue.splice(draggedItemIndex, 1);
+    newQueue.splice(dropIndex, 0, draggedItem);
+    
+    setQueue(newQueue);
+    setDraggedItemIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItemIndex(null);
+  };
   const [mobileQueueTab, setMobileQueueTab] = useState('player');
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -1192,9 +1307,7 @@ const sanitizeList = (list) => {
           const tId = t?.videoId || t?.id;
           return tId ? toFormattedSong(t, tId) : null;
         }).filter(Boolean);
-        if (formattedQueue.length > 0) {
-          setQueue(formattedQueue);
-        }
+        // User requested queue to only contain manually added songs, removing auto-population.
       }
 
       playSong(formattedSong);
@@ -1396,6 +1509,7 @@ const sanitizeList = (list) => {
 
   const playSong = useCallback((song) => {
     if (!song) return;
+    isInitialMountRef.current = false;
     setVideoModalSong(null);
     setIsPipActive(false);
     if (silentAudioRef.current) {
@@ -1409,6 +1523,10 @@ const sanitizeList = (list) => {
       setIsPlaying(true);
       return;
     }
+
+    try {
+      localStorage.setItem('afterhours_current_time', '0');
+    } catch (e) {}
 
     if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
       try { playerRef.current.stopVideo(); } catch (e) {}
@@ -1594,7 +1712,12 @@ const sanitizeList = (list) => {
     applySoundProfile();
   }, [soundProfile]);
 
-  const initPlayerInstance = useCallback((videoId) => {
+  const queueRef = useRef(queue);
+  useEffect(() => {
+    queueRef.current = queue;
+  }, [queue]);
+
+  const initPlayerInstance = useCallback((videoId, shouldAutoPlay = true, startSeconds = 0) => {
     if (!window.YT || !window.YT.Player) return;
 
     try {
@@ -1608,25 +1731,35 @@ const sanitizeList = (list) => {
       width: '100%',
       videoId: videoId,
       playerVars: { 
-        autoplay: 1, 
+        autoplay: shouldAutoPlay ? 1 : 0, 
         controls: 0, 
         disablekb: 1, 
         modestbranding: 1,
         enablejsapi: 1,
         playsinline: 1,
+        start: startSeconds > 0 ? Math.floor(startSeconds) : 0,
         origin: window.location.origin
       },
       events: {
         onReady: (e) => {
           try {
             e.target.setVolume(volume);
-            e.target.playVideo();
-            setIsPlaying(true);
+            if (startSeconds > 0) {
+              e.target.seekTo(startSeconds, true);
+            }
+            if (shouldAutoPlay) {
+              e.target.playVideo();
+              setIsPlaying(true);
+            } else {
+              e.target.pauseVideo();
+              setIsPlaying(false);
+            }
           } catch (err) {}
         },
         onStateChange: (e) => {
           if (e.data === 1) { // Playing
             setIsPlaying(true);
+            isInitialMountRef.current = false;
             if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
           } else if (e.data === 2) { // Paused
             setIsPlaying(false);
@@ -1642,37 +1775,75 @@ const sanitizeList = (list) => {
         },
         onError: (e) => {
           console.warn("YouTube player playback error code:", e.data);
-          const msg = (e.data === 150 || e.data === 101)
-            ? "Playback restricted by video owner. Skipping to next song..."
-            : "Playback error encountered. Skipping to next song...";
-          showToast(msg, 3500);
-          handleNextSongRef.current?.();
+          
+          if (isInitialMountRef.current) {
+            setIsPlaying(false);
+            return;
+          }
+
+          const isRestricted = (e.data === 150 || e.data === 101);
+          const currentQ = queueRef.current;
+          
+          if (!currentQ || currentQ.length === 0) {
+            const msg = isRestricted 
+              ? "This official video restricts embedding. Please try another song or add a lyric version."
+              : "Playback error encountered.";
+            showToast(msg, 4000);
+            setIsPlaying(false);
+          } else {
+            const msg = isRestricted
+              ? "Playback restricted by video owner. Skipping to next song..."
+              : "Playback error encountered. Skipping to next song...";
+            showToast(msg, 3500);
+            handleNextSongRef.current?.();
+          }
         }
       }
     });
-  }, [volume]);
+  }, [volume, showToast]);
 
   useEffect(() => {
     if (!currentSong) return;
 
     if (loadedVideoIdRef.current === currentSong.id) return;
 
+    const isFirstMount = isInitialMountRef.current;
+    let savedSeekTime = 0;
+    if (isFirstMount) {
+      try {
+        savedSeekTime = parseFloat(localStorage.getItem('afterhours_current_time') || '0') || 0;
+      } catch (e) {}
+    }
+
     if (playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
       try {
-        playerRef.current.loadVideoById({ videoId: currentSong.id });
-        playerRef.current.playVideo();
-        setIsPlaying(true);
+        if (isFirstMount) {
+          if (typeof playerRef.current.cueVideoById === 'function') {
+            playerRef.current.cueVideoById({
+              videoId: currentSong.id,
+              startSeconds: savedSeekTime
+            });
+          } else {
+            playerRef.current.loadVideoById({ videoId: currentSong.id, startSeconds: savedSeekTime });
+            playerRef.current.pauseVideo();
+          }
+          setIsPlaying(false);
+        } else {
+          playerRef.current.loadVideoById({ videoId: currentSong.id });
+          playerRef.current.playVideo();
+          setIsPlaying(true);
+        }
         loadedVideoIdRef.current = currentSong.id;
       } catch (err) {
-        initPlayerInstance(currentSong.id);
+        initPlayerInstance(currentSong.id, !isFirstMount, savedSeekTime);
         loadedVideoIdRef.current = currentSong.id;
       }
     } else if (window.YT && window.YT.Player) {
-      initPlayerInstance(currentSong.id);
+      initPlayerInstance(currentSong.id, !isFirstMount, savedSeekTime);
       loadedVideoIdRef.current = currentSong.id;
     } else {
       window.onYouTubeIframeAPIReady = () => {
-        initPlayerInstance(currentSong.id);
+        initPlayerInstance(currentSong.id, !isFirstMount, savedSeekTime);
         loadedVideoIdRef.current = currentSong.id;
       };
     }
@@ -1693,7 +1864,6 @@ const sanitizeList = (list) => {
         if (party.length > 0 || heartbreak.length > 0) {
           setPartyTracks(party);
           setHeartbreakTracks(heartbreak);
-          if (!currentSong) setQueue([...party, ...heartbreak]);
           if (autoPlayIfEmpty && !currentSong && party.length > 0) playSong(party[0]);
           return;
         }
@@ -1702,7 +1872,6 @@ const sanitizeList = (list) => {
       const cachedTracks = stationCache[stationKey].tracks || [];
       if (cachedTracks.length > 0) {
         setSongs(cachedTracks);
-        if (!currentSong) setQueue(cachedTracks);
         if (autoPlayIfEmpty && !currentSong && cachedTracks.length > 0) {
           const randomTrack = cachedTracks[Math.floor(Math.random() * cachedTracks.length)];
           playSong(randomTrack);
@@ -1736,7 +1905,6 @@ const sanitizeList = (list) => {
 
         setPartyTracks(fetchedParty);
         setHeartbreakTracks(fetchedSad);
-        if (!currentSong) setQueue([...fetchedParty, ...fetchedSad]);
 
         setStationCache(prev => ({ 
           ...prev, 
@@ -1756,7 +1924,6 @@ const sanitizeList = (list) => {
         })) : [];
 
         setSongs(fetchedTracks);
-        if (!currentSong) setQueue(fetchedTracks);
 
         setStationCache(prev => ({ 
           ...prev, 
@@ -1843,6 +2010,7 @@ const sanitizeList = (list) => {
       if (queue.length > 0) playSong(queue[0]);
       return;
     }
+    isInitialMountRef.current = false;
     if (videoModalSong) {
       setVideoModalSong(null);
       setIsPipActive(false);
@@ -1852,7 +2020,22 @@ const sanitizeList = (list) => {
       if (silentAudioRef.current) silentAudioRef.current.pause();
       setIsPlaying(false);
     } else {
-      playerRef.current?.playVideo?.();
+      if (!playerRef.current || typeof playerRef.current.playVideo !== 'function') {
+        let savedSeek = 0;
+        try {
+          savedSeek = parseFloat(localStorage.getItem('afterhours_current_time') || '0') || 0;
+        } catch (e) {}
+        initPlayerInstance(currentSong.id, true, savedSeek);
+      } else {
+        try {
+          const savedSeek = parseFloat(localStorage.getItem('afterhours_current_time') || '0') || 0;
+          const curTime = playerRef.current.getCurrentTime ? playerRef.current.getCurrentTime() : 0;
+          if (savedSeek > 0 && curTime < 1) {
+            playerRef.current.seekTo(savedSeek, true);
+          }
+        } catch (e) {}
+        playerRef.current?.playVideo?.();
+      }
       if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
       setIsPlaying(true);
     }
@@ -1860,6 +2043,9 @@ const sanitizeList = (list) => {
 
   const handleSeek = useCallback((seekTime) => {
     currentTimeRef.current = seekTime;
+    try {
+      localStorage.setItem('afterhours_current_time', seekTime.toString());
+    } catch (e) {}
     playerRef.current?.seekTo?.(seekTime, true);
   }, []);
 
@@ -2012,7 +2198,7 @@ const sanitizeList = (list) => {
           className={
             isPipActive
               ? "fixed bottom-24 right-4 z-[9999] w-72 sm:w-80 bg-neutral-900 border border-neutral-700 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 animate-fadeIn"
-              : "fixed inset-0 z-[9999] bg-neutral-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn"
+              : "fixed top-14 md:top-16 inset-x-0 bottom-0 z-[9999] bg-neutral-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn"
           }
         >
           <div className={`w-full bg-neutral-900 ${isPipActive ? '' : 'max-w-4xl border border-neutral-800 rounded-3xl'} overflow-hidden shadow-2xl relative flex flex-col`}>
@@ -2218,27 +2404,55 @@ const sanitizeList = (list) => {
               <Icon name="list" className="w-5 h-5 shrink-0 text-amber-400" />
               {!isSidebarCollapsed && <span className="whitespace-nowrap">Playlists</span>}
             </button>
+            
+            {/* Mobile Auth Button in Sidebar */}
+            <div className="md:hidden pt-4 pb-1 border-t border-neutral-800 mt-4">
+              {user ? (
+                <button
+                  onClick={() => { logout(); setIsSidebarOpen(false); }}
+                  className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition text-neutral-400 hover:text-white hover:bg-neutral-800`}
+                >
+                  <Icon name="user" className="w-5 h-5 shrink-0" />
+                  {!isSidebarCollapsed && <span>Logout</span>}
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    if (isPlaying) {
+                      togglePlayPause();
+                    }
+                    openAuthModal();
+                    setIsSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition bg-amber-500/10 text-amber-400 hover:bg-amber-500/20`}
+                >
+                  <Icon name="user" className="w-5 h-5 shrink-0" />
+                  {!isSidebarCollapsed && <span>Login / Sign Up</span>}
+                </button>
+              )}
+            </div>
+            
           </nav>
         </div>
       </aside>
 
       <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 relative overflow-hidden">
         {/* Unified Top Navbar for both Mobile and Desktop */}
-        <header className="sticky top-0 z-40 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-4 md:px-8 py-3 h-14 md:h-16 flex items-center justify-between shrink-0 w-full">
+        <header className="relative z-40 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-4 md:px-8 py-3 h-14 md:h-16 flex items-center justify-between shrink-0 w-full">
           {/* LEFT: Mobile Menu & Logo | Desktop Clock */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="md:hidden p-2 rounded-2xl bg-neutral-800 text-neutral-200 hover:text-white focus:outline-none shrink-0"
+              className="md:hidden p-1.5 sm:p-2 rounded-2xl bg-neutral-800 text-neutral-200 hover:text-white focus:outline-none shrink-0"
               aria-label="Toggle Menu"
             >
-              <Icon name={isSidebarOpen ? "close" : "menu"} className="w-5 h-5 text-amber-400" />
+              <Icon name={isSidebarOpen ? "close" : "menu"} className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
             </button>
-            <div className="flex md:hidden items-center gap-2">
-              <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-amber-700 via-amber-600 to-amber-500 flex items-center justify-center shadow-md">
-                <Icon name="radio" className="w-4 h-4 text-white" />
+            <div className="flex md:hidden items-center gap-1.5 sm:gap-2">
+              <div className="w-5 h-5 sm:w-7 sm:h-7 rounded-xl bg-gradient-to-tr from-amber-700 via-amber-600 to-amber-500 flex items-center justify-center shadow-md">
+                <Icon name="radio" className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
               </div>
-              <h1 className="text-base font-display font-extrabold tracking-tight text-white">MAHAUL SET</h1>
+              <h1 className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white">MAHAUL SET</h1>
             </div>
 
             {/* Desktop Clock */}
@@ -2282,16 +2496,21 @@ const sanitizeList = (list) => {
               </button>
             ) : (
               <button
-                onClick={openAuthModal}
+                onClick={() => {
+                  if (isPlaying) {
+                    togglePlayPause();
+                  }
+                  openAuthModal();
+                }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0"
               >
                 <Icon name="user" className="w-3.5 h-3.5 shrink-0" />
-                <span>Login</span>
+                <span className="hidden sm:inline">Login</span>
               </button>
             )}
 
             {/* Mobile Clock */}
-            <div className="md:hidden px-2.5 py-1 rounded-xl bg-neutral-900/80 backdrop-blur-xl border border-neutral-800 font-mono text-[11px] text-amber-300">
+            <div className="md:hidden px-2 py-1 rounded-xl bg-neutral-900/80 backdrop-blur-xl border border-neutral-800 font-mono text-[10px] sm:text-[11px] text-amber-300">
               {clockString || "00:00"}
             </div>
           </div>
@@ -2693,7 +2912,7 @@ const sanitizeList = (list) => {
               setShowAll={setShowAllArtists}
               renderItem={(artist) => (
                 <div onClick={() => handleArtistClick(artist.name)} className="group cursor-pointer flex flex-col items-center">
-                  <div className="relative mb-2 md:mb-3 w-20 h-20 sm:w-28 sm:h-28 md:w-full md:aspect-square rounded-full overflow-hidden shadow-lg border-2 border-transparent group-hover:border-amber-500 transition-all duration-300">
+                  <div className="relative mb-2 md:mb-3 w-full aspect-square rounded-full overflow-hidden shadow-lg border-2 border-transparent group-hover:border-amber-500 transition-all duration-300">
                     <img src={artist.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(artist.name)}&background=random&size=300`} alt={artist.name} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" onError={(e) => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(artist.name)}&background=random&size=300`; }} />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
                       <Icon name="search" className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-white drop-shadow-md transform scale-90 group-hover:scale-100 transition" />
@@ -3127,7 +3346,7 @@ const sanitizeList = (list) => {
                   </button>
                 </div>
 
-                <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} />
+                <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} currentSongId={currentSong?.id} />
               </div>
             )}
 
@@ -3263,7 +3482,7 @@ const sanitizeList = (list) => {
 
                 {/* Progress Bar */}
                 <div className="w-full mb-3 px-1">
-                  <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} />
+                  <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} currentSongId={currentSong?.id} />
                 </div>
 
                 {/* Main Playback Controls */}
@@ -3363,27 +3582,28 @@ const sanitizeList = (list) => {
                 <span className="text-xs font-medium bg-neutral-800 text-neutral-400 px-3 py-1 rounded-full">{queue.length} tracks</span>
               </div>
               
-              <div className="space-y-2">
+              <Reorder.Group axis="y" values={queue} onReorder={setQueue} className="space-y-2">
                 {queue.map((track, idx) => {
                   const isCurrent = currentSong?.id === track.id;
                   return (
-                    <div 
-                      key={`${track.id}-${idx}`}
+                    <Reorder.Item 
+                      key={track.id + '-' + idx}
+                      value={track}
                       onClick={() => { playSong(track); }}
                       className={`group flex items-center gap-4 p-3 rounded-2xl transition-all cursor-pointer ${isCurrent ? 'bg-amber-500/10 border border-amber-500/20' : 'hover:bg-neutral-800/50 border border-transparent hover:border-neutral-700/50'}`}
                     >
                       <div className="relative w-12 h-12 rounded-xl overflow-hidden shrink-0 shadow-md">
-                        <img src={track.thumbnail?.replace(/(\\?sqp=.*|hq720\\.jpg)/, "hqdefault.jpg")} alt="" className="w-full h-full object-cover" />
-                        <div className={`absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity ${isCurrent ? 'opacity-100' : ''}`}>
+                        <img src={track.thumbnail?.replace(/(\\?sqp=.*|hq720\\.jpg)/, "hqdefault.jpg")} alt="" className="w-full h-full object-cover pointer-events-none" />
+                        <div className={`absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity ${isCurrent ? 'opacity-100' : ''} pointer-events-none`}>
                           <Icon name={isCurrent && isPlaying ? "pause" : "play"} className="w-5 h-5 text-white" />
                         </div>
                       </div>
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-0 pointer-events-none">
                         <h4 className={`font-medium text-sm truncate ${isCurrent ? 'text-amber-500' : 'text-white'}`}>{track.title}</h4>
                         <p className="text-xs text-neutral-400 truncate">{track.channel}</p>
                       </div>
                       {track.duration && (
-                        <span className="text-xs text-neutral-500 font-mono shrink-0">{track.duration}</span>
+                        <span className="text-xs text-neutral-500 font-mono shrink-0 pointer-events-none">{track.duration}</span>
                       )}
                       <button 
                         onClick={(e) => { e.stopPropagation(); removeFromQueue(track.id); }} 
@@ -3392,7 +3612,7 @@ const sanitizeList = (list) => {
                       >
                         <Icon name="close" className="w-4 h-4" />
                       </button>
-                    </div>
+                    </Reorder.Item>
                   );
                 })}
                 {queue.length === 0 && (
@@ -3401,7 +3621,7 @@ const sanitizeList = (list) => {
                     <p className="text-neutral-500">Your queue is empty</p>
                   </div>
                 )}
-              </div>
+              </Reorder.Group>
             </div>
           </div>
         </div>
