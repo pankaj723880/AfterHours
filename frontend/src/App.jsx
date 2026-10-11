@@ -274,16 +274,16 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove })
       setIsHolding(true);
       didDragRef.current = true;
       try {
-        if (navigator.vibrate) navigator.vibrate(40);
+        if (navigator.vibrate) navigator.vibrate(35);
       } catch (err) {}
       dragControls.start(e);
-    }, 200);
+    }, 180);
   };
 
   const handlePointerMove = (e) => {
     if (!didDragRef.current && holdTimerRef.current) {
       const dist = Math.hypot(e.clientX - startPosRef.current.x, e.clientY - startPosRef.current.y);
-      if (dist > 10) {
+      if (dist > 8) {
         clearHoldTimer();
       }
     }
@@ -313,19 +313,25 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove })
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
+      layout="position"
+      transition={{
+        layout: { type: "spring", stiffness: 350, damping: 30, mass: 0.8 },
+        scale: { duration: 0.18, ease: "easeOut" }
+      }}
       whileDrag={{
         scale: 1.03,
-        zIndex: 50,
-        boxShadow: "0 14px 28px rgba(0,0,0,0.5)",
-        backgroundColor: "rgba(245, 158, 11, 0.16)",
+        zIndex: 60,
+        boxShadow: "0 20px 35px -5px rgba(0, 0, 0, 0.6), 0 0 20px rgba(245, 158, 11, 0.25)",
+        backgroundColor: "rgba(38, 38, 38, 0.95)",
         borderColor: "rgba(245, 158, 11, 0.6)",
+        cursor: "grabbing"
       }}
-      className={`group flex items-center gap-3.5 p-3 rounded-2xl transition-all cursor-pointer select-none relative ${
-        isHolding ? 'scale-[1.02] bg-amber-500/15 border border-amber-500/50 shadow-lg' : ''
-      } ${
-        isCurrent
-          ? 'bg-amber-500/10 border border-amber-500/25'
-          : 'hover:bg-neutral-800/50 border border-transparent hover:border-neutral-700/50'
+      className={`group flex items-center gap-3.5 p-3 rounded-2xl cursor-pointer select-none relative transition-colors duration-200 border ${
+        isHolding
+          ? 'bg-amber-500/15 border-amber-500/50 shadow-lg'
+          : isCurrent
+          ? 'bg-amber-500/10 border-amber-500/25'
+          : 'bg-neutral-900/60 hover:bg-neutral-800/60 border-neutral-800/80 hover:border-neutral-700/80'
       }`}
       onClick={handleClick}
     >
@@ -335,10 +341,10 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove })
           didDragRef.current = true;
           dragControls.start(e);
         }}
-        className="touch-none p-1.5 -ml-1 text-neutral-500 hover:text-amber-400 group-hover:text-neutral-300 transition cursor-grab active:cursor-grabbing shrink-0"
-        title="Tap & hold or slide grip to rearrange"
+        className="touch-none p-2 -ml-1 text-neutral-500 hover:text-amber-400 group-hover:text-neutral-300 transition-colors cursor-grab active:cursor-grabbing shrink-0"
+        title="Slide grip to rearrange"
       >
-        <Icon name="grip" className="w-4 h-4 sm:w-5 sm:h-5" />
+        <Icon name="grip" className="w-4 h-4 sm:w-5 sm:h-5 pointer-events-none" />
       </div>
 
       <div className="relative w-12 h-12 rounded-xl overflow-hidden shrink-0 shadow-md">
@@ -348,7 +354,7 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove })
           className="w-full h-full object-cover pointer-events-none"
         />
         <div
-          className={`absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity ${
+          className={`absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 ${
             isCurrent ? 'opacity-100' : ''
           } pointer-events-none`}
         >
@@ -374,7 +380,7 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove })
           e.stopPropagation();
           onRemove(track.id);
         }}
-        className="text-neutral-500 hover:text-red-400 opacity-80 sm:opacity-0 group-hover:opacity-100 transition p-2 shrink-0"
+        className="text-neutral-500 hover:text-red-400 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-all duration-200 p-2 shrink-0 hover:scale-110 active:scale-95"
         title="Remove from Queue"
       >
         <Icon name="close" className="w-4 h-4" />
@@ -3730,7 +3736,7 @@ const sanitizeList = (list) => {
                 </p>
               )}
               
-              <Reorder.Group axis="y" values={queue} onReorder={setQueue} className="space-y-2">
+              <Reorder.Group axis="y" values={queue} onReorder={setQueue} layoutScroll className="space-y-2.5">
                 {queue.map((track) => {
                   const isCurrent = currentSong?.id === track.id;
                   return (
