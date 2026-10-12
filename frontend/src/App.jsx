@@ -176,7 +176,7 @@ const formatTime = (secs) => {
 const getCleanThumbnail = (itemOrUrl, explicitId) => {
   if (!itemOrUrl && !explicitId) return "https://ui-avatars.com/api/?name=Music&background=1e1e1e&color=f59e0b&size=300";
 
-  let url = typeof itemOrUrl === 'string' ? itemOrUrl : (itemOrUrl?.thumbnail || itemOrUrl?.image || '');
+  let url = typeof itemOrUrl === 'string' ? itemOrUrl : (itemOrUrl?.thumbnail || itemOrUrl?.image || itemOrUrl?.snippet?.thumbnails?.high?.url || itemOrUrl?.snippet?.thumbnails?.medium?.url || '');
   const rawId = explicitId || (typeof itemOrUrl === 'object' ? (itemOrUrl?.videoId || itemOrUrl?.id) : null);
   const id = typeof rawId === 'string' ? rawId : (rawId?.videoId || null);
 
@@ -185,16 +185,17 @@ const getCleanThumbnail = (itemOrUrl, explicitId) => {
   }
 
   if (url && typeof url === 'string') {
-    const ytMatch = url.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})\//);
+    const ytMatch = url.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})\//) || url.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
     if (ytMatch && ytMatch[1]) {
       return `https://i.ytimg.com/vi/${ytMatch[1]}/hqdefault.jpg`;
     }
 
-    if (url.includes('i.ytimg.com')) {
+    if (url.includes('ytimg.com') || url.includes('ggpht.com')) {
       return url
-        .replace(/\/hq720[^/]*\.(?:jpg|webp)(?:\?.*)?$/i, '/hqdefault.jpg')
+        .replace(/\/[^/]*hq720[^/]*\.(?:jpg|webp)(?:\?.*)?$/i, '/hqdefault.jpg')
+        .replace(/\/[^/]*custom[^/]*\.(?:jpg|webp)(?:\?.*)?$/i, '/hqdefault.jpg')
         .replace(/\/maxresdefault\.(?:jpg|webp)(?:\?.*)?$/i, '/hqdefault.jpg')
-        .replace(/\?sqp=.*$/i, '');
+        .replace(/\?.*$/i, '');
     }
 
     return url;
@@ -254,6 +255,7 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
     return 0;
   });
   const [isSeeking, setIsSeeking] = useState(false);
+  const lastSavedTimeRef = useRef(0);
 
   useEffect(() => {
     let interval;
@@ -264,18 +266,24 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
             const cur = playerRef.current.getCurrentTime();
             if (typeof cur === 'number' && !isNaN(cur)) {
               setCurrentTime(cur);
-              try {
-                localStorage.setItem('afterhours_current_time', cur.toString());
-              } catch (e) {}
+              if (Math.abs(cur - lastSavedTimeRef.current) >= 3) {
+                lastSavedTimeRef.current = cur;
+                try {
+                  localStorage.setItem('afterhours_current_time', cur.toString());
+                } catch (e) {}
+              }
             }
           }
           if (playerRef.current?.getDuration) {
             const dur = playerRef.current.getDuration();
             if (typeof dur === 'number' && !isNaN(dur) && dur > 0) {
-              setDuration(dur);
-              try {
-                localStorage.setItem('afterhours_duration', dur.toString());
-              } catch (e) {}
+              setDuration(prev => {
+                if (prev !== dur) {
+                  try { localStorage.setItem('afterhours_duration', dur.toString()); } catch (e) {}
+                  return dur;
+                }
+                return prev;
+              });
             }
           }
         } catch (e) {}
@@ -2355,14 +2363,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           id: item.id.videoId || item.id,
           title: item.snippet.title.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&"),
           channel: item.snippet.channelTitle,
-          thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url,
+          thumbnail: getCleanThumbnail(item, item.id.videoId || item.id),
         })) : [];
 
         const fetchedSad = sadData.items ? sadData.items.map(item => ({
           id: item.id.videoId || item.id,
           title: item.snippet.title.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&"),
           channel: item.snippet.channelTitle,
-          thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url,
+          thumbnail: getCleanThumbnail(item, item.id.videoId || item.id),
         })) : [];
 
         setPartyTracks(fetchedParty);
@@ -2382,7 +2390,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           id: item.id.videoId || item.id,
           title: item.snippet.title.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&"),
           channel: item.snippet.channelTitle,
-          thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url,
+          thumbnail: getCleanThumbnail(item, item.id.videoId || item.id),
         })) : [];
 
         setSongs(fetchedTracks);
@@ -2613,7 +2621,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           id: item.id?.videoId || item.id,
           title: item.snippet?.title ? item.snippet.title.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&") : 'Untitled',
           channel: item.snippet?.channelTitle || 'Unknown Artist',
-          thumbnail: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${item.id?.videoId || item.id}/hqdefault.jpg`,
+          thumbnail: getCleanThumbnail(item, item.id?.videoId || item.id),
         }));
 
         setSearchResults(fetchedTracks);

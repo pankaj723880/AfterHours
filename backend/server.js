@@ -615,16 +615,19 @@ const getCuratedFallback = (queryStr) => {
   return null;
 };
 
-let currentApiKeyIndex = 0;
 const getYoutubeApiKeys = () => {
   return [
     process.env.YOUTUBE_KEY_1 || process.env.VITE_YOUTUBE_KEY_1,
     process.env.YOUTUBE_KEY_2 || process.env.VITE_YOUTUBE_KEY_2,
     process.env.YOUTUBE_KEY_3 || process.env.VITE_YOUTUBE_KEY_3,
+    process.env.YOUTUBE_KEY_4 || process.env.VITE_YOUTUBE_KEY_4,
+    process.env.YOUTUBE_KEY_5 || process.env.VITE_YOUTUBE_KEY_5,
+    process.env.YOUTUBE_KEY_6 || process.env.VITE_YOUTUBE_KEY_6,
     process.env.YOUTUBE_API_KEY,
   ].filter(Boolean);
 };
 
+let currentApiKeyIndex = 0;
 const rotateApiKey = () => {
   const keys = getYoutubeApiKeys().filter(k => !isKeyDead(k));
   if (keys.length > 0) {
