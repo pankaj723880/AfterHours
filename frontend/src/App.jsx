@@ -1395,6 +1395,32 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
+  const isAdmin = Boolean(
+    (user && user.role === 'admin') ||
+    (user?.username && [
+      'admin@afterhours.com',
+      'pankajsss7238@gmail.com',
+      'pss809352@gmail.com',
+      'ps207800@gmail.com'
+    ].includes(user.username.toLowerCase()))
+  );
+
+  useEffect(() => {
+    if (authToken) {
+      fetch(`${BACKEND_URL}/api/auth/me`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      })
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data && data.user) {
+            setUser(prev => ({ ...(prev || {}), ...data.user }));
+            localStorage.setItem('afterhours_user', JSON.stringify(data.user));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [authToken]);
+
   const openAuthModal = useCallback(() => {
     if (isPlaying) {
       wasPlayingBeforeAuthRef.current = true;
@@ -2841,7 +2867,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               {!isSidebarCollapsed && <span className="whitespace-nowrap">Playlists</span>}
             </button>
 
-            {user?.role === 'admin' && (
+            {isAdmin && (
               <button
                 onClick={() => {
                   handleStationSelect('admin');
@@ -2937,7 +2963,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             
             {user ? (
               <>
-                {user.role === 'admin' && (
+                {isAdmin && (
                   <button
                     onClick={() => {
                       setActiveTab('admin');

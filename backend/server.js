@@ -376,6 +376,27 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+    res.json({
+      user: {
+        id: user._id,
+        userId: user._id,
+        username: user.username,
+        role: user.role,
+        status: user.status,
+        likedSongs: user.likedSongs,
+        history: user.history,
+        playlists: user.playlists,
+        queue: user.queue
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/auth/google', async (req, res) => {
   if (!isDatabaseReady()) {
     return res.status(503).json({ error: 'Database service is temporarily unavailable. Please try again shortly.', retryable: true });

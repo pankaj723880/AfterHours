@@ -28,7 +28,15 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
   const [isSocketConnected, setIsSocketConnected] = useState(false);
   const socketRef = useRef(null);
 
-  const isAdmin = user && user.role === 'admin';
+  const isAdmin = Boolean(
+    (user && user.role === 'admin') ||
+    (user?.username && [
+      'admin@afterhours.com',
+      'pankajsss7238@gmail.com',
+      'pss809352@gmail.com',
+      'ps207800@gmail.com'
+    ].includes(user.username.toLowerCase()))
+  );
 
   // 1. Fetch initial metrics & health
   const fetchHealthDiagnostics = async () => {
