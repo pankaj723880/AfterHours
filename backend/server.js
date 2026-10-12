@@ -147,6 +147,7 @@ mongoose.connect(MONGODB_URI, {
   .then(() => {
     isMongoConnected = true;
     console.log('[MongoDB] Connected successfully');
+    seedDefaultAdmin();
   })
   .catch((err) => {
     isMongoConnected = false;
@@ -156,6 +157,7 @@ mongoose.connect(MONGODB_URI, {
 mongoose.connection.on('connected', () => {
   isMongoConnected = true;
   console.log('[MongoDB] Connection established');
+  seedDefaultAdmin();
 });
 
 mongoose.connection.on('error', (err) => {
@@ -225,15 +227,56 @@ setInterval(() => {
 }, 2500);
 
 // Helper for Admin Bootstrap Email Checking
+const DEFAULT_BOOTSTRAP_ADMIN_EMAILS = [
+  'pankajsss7238@gmail.com',
+  'pss809352@gmail.com',
+  'ps207800@gmail.com',
+  'admin@afterhours.com'
+];
+
 const getAdminEmails = () => {
-  const raw = process.env.ADMIN_EMAILS || '';
-  return raw.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+  const raw = process.env.ADMIN_EMAILS || DEFAULT_BOOTSTRAP_ADMIN_EMAILS.join(',');
+  const list = raw.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+  return Array.from(new Set([...list, ...DEFAULT_BOOTSTRAP_ADMIN_EMAILS]));
 };
 
 const isEmailBootstrapAdmin = (email) => {
   if (!email) return false;
   const list = getAdminEmails();
   return list.includes(email.toLowerCase());
+};
+
+// Automatic administrator seeding on production startup
+let hasSeededAdmin = false;
+const seedDefaultAdmin = async () => {
+  if (hasSeededAdmin || mongoose.connection.readyState !== 1) return;
+  try {
+    const existing = await User.findOne({ username: 'admin@afterhours.com' }).maxTimeMS(4000);
+    if (!existing) {
+      await User.create({
+        username: 'admin@afterhours.com',
+        password: 'admin123',
+        role: 'admin',
+        status: 'active'
+      });
+      console.log('[Admin Seed] Successfully initialized default admin@afterhours.com account');
+    } else if (existing.role !== 'admin' || existing.password !== 'admin123') {
+      existing.role = 'admin';
+      existing.password = 'admin123';
+      existing.status = 'active';
+      await existing.save();
+      console.log('[Admin Seed] Updated admin@afterhours.com credentials to active admin');
+    }
+
+    // Ensure authorized admin emails have admin role
+    await User.updateMany(
+      { username: { $in: DEFAULT_BOOTSTRAP_ADMIN_EMAILS }, role: { $ne: 'admin' } },
+      { $set: { role: 'admin' } }
+    );
+    hasSeededAdmin = true;
+  } catch (err) {
+    console.warn('[Admin Seed Notice]:', err.message);
+  }
 };
 
 // Auth Routes with Database Availability Guards

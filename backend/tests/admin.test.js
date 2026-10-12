@@ -126,12 +126,21 @@ async function runTests() {
     assert(usersList.data?.users.every(u => !u.password), 'Passwords strictly excluded from response');
 
     // Test 7: Safeguard — Prevent demoting last remaining admin
+    // Temporarily ensure admin is the only active admin in DB to test the safeguard
+    const otherAdmins = await User.find({ _id: { $ne: admin._id }, role: 'admin' });
+    await User.updateMany({ _id: { $ne: admin._id }, role: 'admin' }, { $set: { role: 'user' } });
+
     const demoteLastAdminRes = await request({
       path: `/api/admin/users/${admin._id}`,
       method: 'PATCH',
       headers: { 'Authorization': `Bearer ${adminToken}` }
     }, { role: 'user' });
     assert(demoteLastAdminRes.status === 400, 'Safeguard blocks demoting the last active administrator');
+
+    // Restore other admins
+    if (otherAdmins.length > 0) {
+      await User.updateMany({ _id: { $in: otherAdmins.map(a => a._id) } }, { $set: { role: 'admin' } });
+    }
 
     // Test 8: User Update & Audit Log Generation
     const targetUser = regRes.data?.user;
