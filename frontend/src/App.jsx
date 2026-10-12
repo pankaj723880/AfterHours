@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import { Reorder, useDragControls } from 'framer-motion';
+import AdminDashboard from './components/Admin/AdminDashboard';
 
 import { io } from 'socket.io-client';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://afterhours-cxsi.onrender.com');
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:5000' : 'https://afterhours-cxsi.onrender.com');
 const socket = io(BACKEND_URL, {
   transports: ['polling', 'websocket'],
   withCredentials: true,
@@ -19,14 +20,20 @@ socket.on('connect_error', (err) => {
 });
 
 const fetchFromBackend = async (query) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 9000);
   try {
-    const res = await fetch(`${BACKEND_URL}/api/youtube/search?q=${encodeURIComponent(query)}`);
+    const res = await fetch(`${BACKEND_URL}/api/youtube/search?q=${encodeURIComponent(query)}`, {
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
       throw new Error(errData.error || 'Backend search failed');
     }
     return await res.json();
   } catch (err) {
+    clearTimeout(timeoutId);
     console.warn("Backend fetch notice:", err.message);
     throw err;
   }
@@ -72,7 +79,8 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
     trash: <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor" />,
     moreVertical: <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" fill="currentColor" />,
     user: <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="currentColor" />,
-    grip: <path d="M9 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6-16a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" fill="currentColor" />
+    grip: <path d="M9 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6-16a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" fill="currentColor" />,
+    shield: <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z" fill="currentColor" />
   };
   return (
     <svg className={className} viewBox="0 0 24 24" {...props}>
@@ -169,7 +177,8 @@ const getCleanThumbnail = (itemOrUrl, explicitId) => {
   if (!itemOrUrl && !explicitId) return "https://ui-avatars.com/api/?name=Music&background=1e1e1e&color=f59e0b&size=300";
 
   let url = typeof itemOrUrl === 'string' ? itemOrUrl : (itemOrUrl?.thumbnail || itemOrUrl?.image || '');
-  const id = explicitId || (typeof itemOrUrl === 'object' ? (itemOrUrl?.videoId || itemOrUrl?.id) : null);
+  const rawId = explicitId || (typeof itemOrUrl === 'object' ? (itemOrUrl?.videoId || itemOrUrl?.id) : null);
+  const id = typeof rawId === 'string' ? rawId : (rawId?.videoId || null);
 
   if (id && typeof id === 'string' && /^[a-zA-Z0-9_-]{11}$/.test(id)) {
     return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
@@ -191,7 +200,7 @@ const getCleanThumbnail = (itemOrUrl, explicitId) => {
     return url;
   }
 
-  if (id) {
+  if (id && typeof id === 'string') {
     return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
   }
 
@@ -213,8 +222,9 @@ const handleImageError = (e, fallbackTitle, explicitId) => {
 
   target.dataset.errorAttempts = (attempts + 1).toString();
 
-  const ytMatch = currentSrc.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})\//) || (explicitId ? [null, explicitId] : null);
-  if (ytMatch && ytMatch[1] && !currentSrc.includes('mqdefault.jpg')) {
+  const safeId = typeof explicitId === 'string' ? explicitId : (explicitId?.videoId || null);
+  const ytMatch = currentSrc.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})\//) || (safeId ? [null, safeId] : null);
+  if (ytMatch && ytMatch[1] && typeof ytMatch[1] === 'string' && !currentSrc.includes('mqdefault.jpg')) {
     target.src = `https://i.ytimg.com/vi/${ytMatch[1]}/mqdefault.jpg`;
     return;
   }
@@ -450,12 +460,12 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove })
 });
 
 const TRENDING_SONGS = [
-  { id: "iH2v67z7s9I", videoId: "iH2v67z7s9I", title: "Chalray Chalray Waal", artist: "Ravzz Musica", image: "https://images.unsplash.com/photo-1493225457124-a1a2a5f5f9af?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1493225457124-a1a2a5f5f9af?w=300&h=300&fit=crop", query: "Chalray Chalray Waal Ravzz Musica" },
-  { id: "5z9t6xXhQ-o", videoId: "5z9t6xXhQ-o", title: "CHALREH CHALREH WAAL - Acoustic", artist: "Sufi Mafiya", image: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=300&h=300&fit=crop", query: "CHALREH CHALREH WAAL Acoustic Sufi Mafiya" },
-  { id: "2w0iE7o_P8c", videoId: "2w0iE7o_P8c", title: "Magale", artist: "Sai Abhyankkar, Harini", image: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop", query: "Magale Sai Abhyankkar" },
-  { id: "VnsJ-a_hG6U", videoId: "VnsJ-a_hG6U", title: "Ashke", artist: "Karan Aujla, Mxrci", image: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop", query: "Ashke Karan Aujla" },
-  { id: "9c3yVz7bQ8I", videoId: "9c3yVz7bQ8I", title: "One Name", artist: "Anirudh Ravichander", image: "https://images.unsplash.com/photo-1506157786151-b8491531f063?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1506157786151-b8491531f063?w=300&h=300&fit=crop", query: "One Name Anirudh Ravichander" },
-  { id: "Lg2eQp3YVb8", videoId: "Lg2eQp3YVb8", title: "BADASS", artist: "Arjan Dhillon", image: "https://images.unsplash.com/photo-1485579149621-3123dd979885?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1485579149621-3123dd979885?w=300&h=300&fit=crop", query: "BADASS Arjan Dhillon" },
+  { id: "Yvl6m9x5ZR0", videoId: "Yvl6m9x5ZR0", title: "New Trending Love Songs", artist: "Grow Music", image: "https://i.ytimg.com/vi/Yvl6m9x5ZR0/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/Yvl6m9x5ZR0/hqdefault.jpg", query: "New Trending Love Songs Grow Music" },
+  { id: "IJJX39HRvlc", videoId: "IJJX39HRvlc", title: "Mere Humdum | New Songs 2026", artist: "Vatsal Bhoya", image: "https://i.ytimg.com/vi/IJJX39HRvlc/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/IJJX39HRvlc/hqdefault.jpg", query: "New Songs 2026 Mere Humdum Vatsal Bhoya" },
+  { id: "RLzC55ai0eo", videoId: "RLzC55ai0eo", title: "Heeriye (Official Video)", artist: "Jasleen Royal ft Arijit Singh", image: "https://i.ytimg.com/vi/RLzC55ai0eo/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/RLzC55ai0eo/hqdefault.jpg", query: "Heeriye Jasleen Royal Arijit Singh" },
+  { id: "kRs375-oliY", videoId: "kRs375-oliY", title: "All Instagram Trending Songs 2026", artist: "HeartBeat Lyrics", image: "https://i.ytimg.com/vi/kRs375-oliY/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/kRs375-oliY/hqdefault.jpg", query: "All Instagram Trending Songs 2026 HeartBeat Lyrics" },
+  { id: "41HX_5G6eqQ", videoId: "41HX_5G6eqQ", title: "Barsaat - Trending Mashup", artist: "Voxwaves", image: "https://i.ytimg.com/vi/41HX_5G6eqQ/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/41HX_5G6eqQ/hqdefault.jpg", query: "Barsaat All Trending Songs Mashup Voxwaves" },
+  { id: "WWIfHemqSEA", videoId: "WWIfHemqSEA", title: "Tujhko - Love Song 2026", artist: "Arijit Singh", image: "https://i.ytimg.com/vi/WWIfHemqSEA/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/WWIfHemqSEA/hqdefault.jpg", query: "Arijit Singh Tujhko Love Song iPop Superhits" }
 ];
 
 const POPULAR_ARTISTS = [
@@ -972,29 +982,33 @@ const POPULAR_ARTISTS = [
 ];
 
 const POPULAR_ALBUMS = [
-  { id: "NbyHNASFi6U", videoId: "NbyHNASFi6U", title: "Aashiqui 2", artist: "Mithoon, Ankit Tiwari", image: "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300&h=300&fit=crop", query: "Aashiqui 2 songs" },
-  { id: "RbxZhy87q-M", videoId: "RbxZhy87q-M", title: "Yeh Jawaani Hai Deewani", artist: "Pritam", image: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&h=300&fit=crop", query: "Yeh Jawaani Hai Deewani songs" },
-  { id: "1G9mN0P197o", videoId: "1G9mN0P197o", title: "Sanam Teri Kasam", artist: "Himesh Reshammiya", image: "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&h=300&fit=crop", query: "Sanam Teri Kasam songs" },
-  { id: "oF6R9B0t9q8", videoId: "oF6R9B0t9q8", title: "Finding Her", artist: "Kushagra, Bharath", image: "https://images.unsplash.com/photo-1483000805330-4eaf0a0d81a2?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1483000805330-4eaf0a0d81a2?w=300&h=300&fit=crop", query: "Finding Her Kushagra" },
-  { id: "W6n0R_1Vq6Y", videoId: "W6n0R_1Vq6Y", title: "Young G.O.A.T", artist: "Cheema Y, Gur Sidhu", image: "https://images.unsplash.com/photo-1516280440502-8692794eb84e?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1516280440502-8692794eb84e?w=300&h=300&fit=crop", query: "Young G.O.A.T Cheema Y" },
-  { id: "V0P_1bQ5c8o", videoId: "V0P_1bQ5c8o", title: "Raanjhan", artist: "Sachet-Parampara", image: "https://images.unsplash.com/photo-1520872024865-3ff2805d8bb3?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1520872024865-3ff2805d8bb3?w=300&h=300&fit=crop", query: "Raanjhan Do Patti" },
+  { id: "B61fSzdCzzs", videoId: "B61fSzdCzzs", title: "Aashiqui 2", artist: "Mithoon, Ankit Tiwari", image: "https://i.ytimg.com/vi/B61fSzdCzzs/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/B61fSzdCzzs/hqdefault.jpg", query: "Aashiqui 2 full album songs jukebox" },
+  { id: "ZdyaixHYviA", videoId: "ZdyaixHYviA", title: "Yeh Jawaani Hai Deewani", artist: "Pritam", image: "https://i.ytimg.com/vi/ZdyaixHYviA/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/ZdyaixHYviA/hqdefault.jpg", query: "Yeh Jawaani Hai Deewani full songs jukebox" },
+  { id: "SQWDGLnvxF4", videoId: "SQWDGLnvxF4", title: "Sanam Teri Kasam", artist: "Himesh Reshammiya", image: "https://i.ytimg.com/vi/SQWDGLnvxF4/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/SQWDGLnvxF4/hqdefault.jpg", query: "Sanam Teri Kasam full songs jukebox" },
+  { id: "BDlNjOc3wiQ", videoId: "BDlNjOc3wiQ", title: "Kabir Singh", artist: "Sachet-Parampara, Mithoon", image: "https://i.ytimg.com/vi/BDlNjOc3wiQ/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/BDlNjOc3wiQ/hqdefault.jpg", query: "Kabir Singh full album songs jukebox" },
+  { id: "ARtRGkaG_OA", videoId: "ARtRGkaG_OA", title: "Rockstar", artist: "A.R. Rahman", image: "https://i.ytimg.com/vi/ARtRGkaG_OA/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/ARtRGkaG_OA/hqdefault.jpg", query: "Rockstar audio jukebox songs" },
+  { id: "jsgPZVMfJQk", videoId: "jsgPZVMfJQk", title: "Animal", artist: "Pritam, Vishal Mishra", image: "https://i.ytimg.com/vi/jsgPZVMfJQk/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/jsgPZVMfJQk/hqdefault.jpg", query: "Animal movie all songs audio jukebox" },
 ];
 
 const POPULAR_RADIO = [
-  { id: "mCeYN9dx1io", videoId: "mCeYN9dx1io", title: "Arijit Singh", artist: "With Pritam, A.R. Rahman", image: "https://images.unsplash.com/photo-1511192336575-5a79af67a629?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1511192336575-5a79af67a629?w=300&h=300&fit=crop", query: "Arijit Singh radio" },
-  { id: "9eL4C1vQ0iI", videoId: "9eL4C1vQ0iI", title: "KK", artist: "With Pritam, Roop Kumar", image: "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&h=300&fit=crop", query: "KK radio" },
-  { id: "dvgZkm1xWPE", videoId: "dvgZkm1xWPE", title: "Shreya Ghoshal", artist: "With Atif Aslam", image: "https://images.unsplash.com/photo-1493225457124-a1a2a5f5f9af?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1493225457124-a1a2a5f5f9af?w=300&h=300&fit=crop", query: "Shreya Ghoshal radio" },
-  { id: "S6IW8Rj1WqQ", videoId: "S6IW8Rj1WqQ", title: "Alka Yagnik", artist: "With Vinod Rathod", image: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=300&h=300&fit=crop", query: "Alka Yagnik radio" },
-  { id: "cIGd8gm_pYE", videoId: "cIGd8gm_pYE", title: "Diljit Dosanjh", artist: "With Harrdy Sandhu", image: "https://images.unsplash.com/photo-1516280440502-8692794eb84e?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1516280440502-8692794eb84e?w=300&h=300&fit=crop", query: "Diljit Dosanjh radio" },
-  { id: "P9YpfmNc_p4", videoId: "P9YpfmNc_p4", title: "A.R. Rahman", artist: "With Hariharan", image: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop", thumbnail: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop", query: "A.R. Rahman radio" },
+  { id: "O5gwxm3NxFU", videoId: "O5gwxm3NxFU", title: "Arijit Singh Radio", artist: "With Pritam, A.R. Rahman", image: "https://i.ytimg.com/vi/O5gwxm3NxFU/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/O5gwxm3NxFU/hqdefault.jpg", query: "Arijit Singh Best Songs jukebox" },
+  { id: "r0c1f6XxRQg", videoId: "r0c1f6XxRQg", title: "Evergreen KK Radio", artist: "With Pritam, Roop Kumar", image: "https://i.ytimg.com/vi/r0c1f6XxRQg/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/r0c1f6XxRQg/hqdefault.jpg", query: "KK best songs jukebox" },
+  { id: "dvgZkm1xWPE", videoId: "dvgZkm1xWPE", title: "Shreya Ghoshal Radio", artist: "With Atif Aslam", image: "https://i.ytimg.com/vi/dvgZkm1xWPE/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/dvgZkm1xWPE/hqdefault.jpg", query: "Shreya Ghoshal romantic hits jukebox" },
+  { id: "S6IW8Rj1WqQ", videoId: "S6IW8Rj1WqQ", title: "Alka Yagnik 90s Radio", artist: "With Kumar Sanu, Udit Narayan", image: "https://i.ytimg.com/vi/S6IW8Rj1WqQ/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/S6IW8Rj1WqQ/hqdefault.jpg", query: "Alka Yagnik 90s hits jukebox" },
+  { id: "cIGd8gm_pYE", videoId: "cIGd8gm_pYE", title: "Diljit Dosanjh Radio", artist: "With Harrdy Sandhu, AP Dhillon", image: "https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg", query: "Diljit Dosanjh hit songs jukebox" },
+  { id: "P9YpfmNc_p4", videoId: "P9YpfmNc_p4", title: "A.R. Rahman Live Radio", artist: "With Hariharan, Javed Ali", image: "https://i.ytimg.com/vi/P9YpfmNc_p4/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/P9YpfmNc_p4/hqdefault.jpg", query: "AR Rahman magical hits jukebox" },
 ];
 
-const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlledShowAll, setShowAll: setControlledShowAll }) => {
+const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlledShowAll, setShowAll: setControlledShowAll, fallbackItems = [] }) => {
   const scrollRef = React.useRef(null);
   const [internalShowAll, setInternalShowAll] = React.useState(false);
 
   const showAll = controlledShowAll !== undefined ? controlledShowAll : internalShowAll;
   const setShowAll = setControlledShowAll !== undefined ? setControlledShowAll : setInternalShowAll;
+
+  const validItems = Array.isArray(items) && items.length > 0 ? items : [];
+  const safeFallback = Array.isArray(fallbackItems) && fallbackItems.length > 0 ? fallbackItems : [];
+  const rowItems = validItems.length > 0 ? validItems : safeFallback;
 
   const scroll = (direction) => {
     if (scrollRef.current) {
@@ -1023,7 +1037,7 @@ const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlled
 
       {showAll ? (
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 sm:gap-4 md:gap-6">
-          {items.map((item, i) => (
+          {rowItems.map((item, i) => (
             <React.Fragment key={i}>
               {renderItem(item, i, true)}
             </React.Fragment>
@@ -1035,7 +1049,7 @@ const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlled
             <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
           </button>
           <div ref={scrollRef} className="flex gap-3 sm:gap-4 md:gap-6 overflow-x-auto pb-4 hide-scrollbar scroll-smooth">
-            {items.map((item, i) => (
+            {rowItems.map((item, i) => (
               <div key={i} className="w-24 sm:w-36 md:w-48 shrink-0">
                 {renderItem(item, i, false)}
               </div>
@@ -1050,9 +1064,24 @@ const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlled
   );
 };
 export default function App() {
-  const [activeTab, setActiveTab] = useState('home');
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined' && window.location.pathname === '/admin') {
+      return 'admin';
+    }
+    return 'home';
+  });
 
-  // Removed activeTab localStorage persistence to always open 'home' by default
+  useEffect(() => {
+    const handlePopState = () => {
+      if (window.location.pathname === '/admin') {
+        setActiveTab('admin');
+      } else if (activeTab === 'admin') {
+        setActiveTab('home');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [activeTab]);
 
   useEffect(() => {
     const handleClickOutsideMenu = () => setOpenMenuId(null);
@@ -1063,90 +1092,85 @@ export default function App() {
   const [openMenuId, setOpenMenuId] = useState(null);
   const [navigationHistory, setNavigationHistory] = useState([]);
 
-  const [trendingSongs, setTrendingSongs] = useState(() => {
+  const validateAndSanitizeItems = (raw, fallback) => {
     try {
-      const cached = localStorage.getItem('afterhours_trending');
-      return cached ? JSON.parse(cached) : TRENDING_SONGS;
-    } catch (e) { return TRENDING_SONGS; }
+      if (!raw) return fallback;
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (!Array.isArray(parsed) || parsed.length < 3) return fallback;
+      const cleaned = parsed.map(item => {
+        const rawId = typeof item?.id === 'string' ? item.id : (item?.id?.videoId || item?.videoId);
+        if (!rawId || typeof rawId !== 'string' || rawId.length < 5) return null;
+        return {
+          ...item,
+          id: rawId,
+          videoId: rawId,
+          title: item.title || 'Unknown Title',
+          artist: item.artist || 'Unknown Artist',
+          thumbnail: item.thumbnail || item.image || `https://i.ytimg.com/vi/${rawId}/hqdefault.jpg`,
+          image: item.image || item.thumbnail || `https://i.ytimg.com/vi/${rawId}/hqdefault.jpg`
+        };
+      }).filter(Boolean);
+      return cleaned.length >= 3 ? cleaned : fallback;
+    } catch (e) {
+      return fallback;
+    }
+  };
+
+  const [trendingSongs, setTrendingSongs] = useState(() => {
+    return validateAndSanitizeItems(localStorage.getItem('afterhours_trending'), TRENDING_SONGS);
   });
   const [popularAlbums, setPopularAlbums] = useState(() => {
-    try {
-      const cached = localStorage.getItem('afterhours_albums');
-      return cached ? JSON.parse(cached) : POPULAR_ALBUMS;
-    } catch (e) { return POPULAR_ALBUMS; }
+    return validateAndSanitizeItems(localStorage.getItem('afterhours_albums'), POPULAR_ALBUMS);
   });
   const [popularRadio, setPopularRadio] = useState(() => {
-    try {
-      const cached = localStorage.getItem('afterhours_radio');
-      return cached ? JSON.parse(cached) : POPULAR_RADIO;
-    } catch (e) { return POPULAR_RADIO; }
+    return validateAndSanitizeItems(localStorage.getItem('afterhours_radio'), POPULAR_RADIO);
   });
 
   useEffect(() => {
-    const fetchDynamicContent = async () => {
+    const fetchDynamicSection = async (query, setState, storageKey) => {
       try {
-        const [trendingRes, albumsRes, radioRes] = await Promise.allSettled([
-          fetchFromBackend("latest trending hindi hit songs"),
-          fetchFromBackend("latest hit bollywood albums audio jukebox"),
-          fetchFromBackend("bollywood lofi romantic hits radio jukebox")
-        ]);
+        const res = await fetchFromBackend(query);
+        if (res?.items && Array.isArray(res.items) && res.items.length > 0) {
+          const list = res.items.map(i => {
+            const vid = (typeof i.id === 'string' ? i.id : i.id?.videoId) || (typeof i.videoId === 'string' ? i.videoId : null);
+            const img = getCleanThumbnail(i, vid);
+            return {
+              id: vid,
+              videoId: vid,
+              title: i.snippet?.title || 'Unknown Title',
+              artist: i.snippet?.channelTitle || 'Unknown Artist',
+              image: img,
+              thumbnail: img,
+              query: (i.snippet?.title || '') + " " + (i.snippet?.channelTitle || '')
+            };
+          }).filter(item => item.id && typeof item.id === 'string' && item.id.length >= 5 && item.title);
 
-        if (trendingRes.status === 'fulfilled' && trendingRes.value?.items) {
-          const list = trendingRes.value.items.map(i => {
-            const vid = i.id?.videoId || i.id;
-            const img = getCleanThumbnail(i, vid);
-            return {
-              id: vid,
-              videoId: vid,
-              title: i.snippet.title,
-              artist: i.snippet.channelTitle,
-              image: img,
-              thumbnail: img,
-              query: i.snippet.title + " " + i.snippet.channelTitle
-            };
-          });
-          setTrendingSongs(list);
-          try { localStorage.setItem('afterhours_trending', JSON.stringify(list)); } catch (e) {}
+          // Only replace state if we have a rich, valid list of at least 3 tracks
+          if (list.length >= 3) {
+            setState(list);
+            try { localStorage.setItem(storageKey, JSON.stringify(list)); } catch (e) {}
+          }
         }
-        
-        if (albumsRes.status === 'fulfilled' && albumsRes.value?.items) {
-          const list = albumsRes.value.items.map(i => {
-            const vid = i.id?.videoId || i.id;
-            const img = getCleanThumbnail(i, vid);
-            return {
-              id: vid,
-              videoId: vid,
-              title: i.snippet.title,
-              artist: i.snippet.channelTitle,
-              image: img,
-              thumbnail: img,
-              query: i.snippet.title + " " + i.snippet.channelTitle
-            };
-          });
-          setPopularAlbums(list);
-          try { localStorage.setItem('afterhours_albums', JSON.stringify(list)); } catch (e) {}
-        }
-        
-        if (radioRes.status === 'fulfilled' && radioRes.value?.items) {
-          const list = radioRes.value.items.map(i => {
-            const vid = i.id?.videoId || i.id;
-            const img = getCleanThumbnail(i, vid);
-            return {
-              id: vid,
-              videoId: vid,
-              title: i.snippet.title,
-              artist: i.snippet.channelTitle,
-              image: img,
-              thumbnail: img,
-              query: i.snippet.title + " " + i.snippet.channelTitle
-            };
-          });
-          setPopularRadio(list);
-          try { localStorage.setItem('afterhours_radio', JSON.stringify(list)); } catch (e) {}
-        }
-      } catch(e) { console.error("Failed to fetch dynamic content", e); }
+      } catch (e) {
+        console.warn(`[Dynamic Content] Notice fetching ${storageKey}:`, e.message);
+      }
     };
-    fetchDynamicContent();
+
+    // Stagger section fetches to eliminate concurrent YouTube scraping / 429 rate limit
+    fetchDynamicSection("latest trending hindi hit songs", setTrendingSongs, 'afterhours_trending');
+
+    const albumsTimer = setTimeout(() => {
+      fetchDynamicSection("latest hit bollywood albums audio jukebox", setPopularAlbums, 'afterhours_albums');
+    }, 1200);
+
+    const radioTimer = setTimeout(() => {
+      fetchDynamicSection("bollywood lofi romantic hits radio jukebox", setPopularRadio, 'afterhours_radio');
+    }, 2400);
+
+    return () => {
+      clearTimeout(albumsTimer);
+      clearTimeout(radioTimer);
+    };
   }, []);
 
 const sanitizeCache = (cache) => {
@@ -1364,6 +1388,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   // Auth State
   const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('afterhours_user') || 'null'));
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('afterhours_token') || '');
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isLoginMode, setIsLoginMode] = useState(true);
   const [authForm, setAuthForm] = useState({ username: '', password: '' });
@@ -1587,9 +1612,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Google Auth failed');
       
-      const loggedInUser = { username: data.user.username, userId: data.user.userId || data.user._id };
+      const loggedInUser = {
+        username: data.user.username,
+        userId: data.user.userId || data.user._id,
+        role: data.user.role || data.role || 'user',
+        status: data.user.status || 'active'
+      };
       setUser(loggedInUser);
       localStorage.setItem('afterhours_user', JSON.stringify(loggedInUser));
+
+      if (data.token) {
+        setAuthToken(data.token);
+        localStorage.setItem('afterhours_token', data.token);
+      }
       closeAuthModal(true);
 
       const userLiked = data.user.likedSongs || [];
@@ -1703,9 +1738,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Authentication failed');
       
-      const loggedInUser = { username: authForm.username, userId: data.userId || (data.user && data.user._id) };
+      const loggedInUser = {
+        username: authForm.username,
+        userId: data.userId || (data.user && data.user._id),
+        role: data.role || (data.user && data.user.role) || 'user',
+        status: (data.user && data.user.status) || 'active'
+      };
       setUser(loggedInUser);
       localStorage.setItem('afterhours_user', JSON.stringify(loggedInUser));
+
+      if (data.token) {
+        setAuthToken(data.token);
+        localStorage.setItem('afterhours_token', data.token);
+      }
       closeAuthModal(true);
 
       if (isLoginMode && data.user) {
@@ -1753,6 +1798,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   const logout = () => {
     setUser(null);
+    setAuthToken('');
+    localStorage.removeItem('afterhours_token');
     localStorage.removeItem('afterhours_user');
     localStorage.removeItem('liked_songs');
     localStorage.removeItem('history_songs');
@@ -1896,6 +1943,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
     setCurrentSong(song);
     setIsPlaying(true);
+
+    try {
+      fetch(`${BACKEND_URL}/api/admin/telemetry/event`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'play_start', trackId: song?.id, title: song?.title })
+      }).catch(() => {});
+    } catch (e) {}
 
     if (['home', 'barber', 'truck', 'pauwa'].includes(activeTab)) {
       const station = SPECIAL_STATIONS[activeTab];
@@ -2785,6 +2840,22 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               <Icon name="list" className="w-5 h-5 shrink-0 text-amber-400" />
               {!isSidebarCollapsed && <span className="whitespace-nowrap">Playlists</span>}
             </button>
+
+            {user?.role === 'admin' && (
+              <button
+                onClick={() => {
+                  handleStationSelect('admin');
+                  window.history.pushState(null, '', '/admin');
+                }}
+                title="Admin Dashboard"
+                className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-semibold text-xs transition ${
+                  activeTab === 'admin' ? 'bg-amber-500 text-neutral-950 font-bold shadow-lg shadow-amber-500/30' : 'text-amber-400 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20'
+                }`}
+              >
+                <Icon name="shield" className="w-5 h-5 shrink-0" />
+                {!isSidebarCollapsed && <span className="whitespace-nowrap">Admin Dashboard</span>}
+              </button>
+            )}
             
             {/* Mobile Auth Button in Sidebar */}
             <div className="md:hidden pt-4 pb-1 border-t border-neutral-800 mt-4">
@@ -2865,17 +2936,32 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             </button>
             
             {user ? (
-              <button
-                onClick={logout}
-                className="flex items-center gap-2 pr-2.5 pl-1 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0 border border-neutral-700"
-                title="Logout"
-              >
+              <>
+                {user.role === 'admin' && (
+                  <button
+                    onClick={() => {
+                      setActiveTab('admin');
+                      window.history.pushState(null, '', '/admin');
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-semibold tracking-wide text-xs border border-amber-500/40 shadow-lg transition shrink-0"
+                    title="Admin Dashboard"
+                  >
+                    <Icon name="shield" className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span className="hidden sm:inline">Admin</span>
+                  </button>
+                )}
+                <button
+                  onClick={logout}
+                  className="flex items-center gap-2 pr-2.5 pl-1 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0 border border-neutral-700"
+                  title="Logout"
+                >
                 <div className="w-6 h-6 rounded-full bg-neutral-950 text-white flex items-center justify-center font-extrabold uppercase text-xs border border-neutral-700">
                   {user.username ? user.username.charAt(0).toUpperCase() : 'U'}
                 </div>
                 <span className="hidden sm:inline">Logout</span>
               </button>
-            ) : (
+            </>
+          ) : (
               <button
                 onClick={() => {
                   if (isPlaying) {
@@ -3267,6 +3353,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               title="Trending songs"
               subtitle="The most played hits right now"
               items={trendingSongs}
+              fallbackItems={TRENDING_SONGS}
               showAll={showAllTrending}
               setShowAll={setShowAllTrending}
               renderItem={(song) => (
@@ -3309,6 +3396,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               title="Popular albums and singles"
               subtitle="Latest releases"
               items={popularAlbums}
+              fallbackItems={POPULAR_ALBUMS}
               showAll={showAllAlbums}
               setShowAll={setShowAllAlbums}
               renderItem={(album) => (
@@ -3331,6 +3419,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               title="Popular radio"
               subtitle="Live streams 24/7"
               items={popularRadio}
+              fallbackItems={POPULAR_RADIO}
               showAll={showAllRadio}
               setShowAll={setShowAllRadio}
               renderItem={(radio) => (
@@ -3660,6 +3749,21 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
         )}
 
+        {activeTab === 'admin' && (
+          <div className="fixed inset-0 z-[60] bg-neutral-950 overflow-y-auto">
+            <AdminDashboard
+              user={user}
+              token={authToken}
+              backendUrl={BACKEND_URL}
+              onExit={() => {
+                setActiveTab('home');
+                window.history.pushState(null, '', '/');
+              }}
+              onOpenAuth={openAuthModal}
+              showToast={showToast}
+            />
+          </div>
+        )}
       </main>
       </div>
 

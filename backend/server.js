@@ -7,6 +7,11 @@ import mongoose from 'mongoose';
 import axios from 'axios';
 import ytSearch from 'yt-search';
 import { OAuth2Client } from 'google-auth-library';
+import User from './models/User.js';
+import AuditLog from './models/AuditLog.js';
+import { generateToken, verifyToken, authenticateToken, requireAdmin } from './middleware/auth.js';
+import { metricsService } from './services/metrics.js';
+import adminRoutes from './routes/admin.js';
 
 // Prevent unhandled rejections and exceptions from crashing the server
 process.on('uncaughtException', (err) => {
@@ -48,7 +53,7 @@ app.use(cors({
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   optionsSuccessStatus: 204
 }));
@@ -56,6 +61,26 @@ app.use(cors({
 // Generous payload limit so sync never throws 413 or truncates
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Live Request Tracking Middleware for Admin Observability
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown')
+      .toString()
+      .split(',')[0]
+      .trim();
+    metricsService.recordRequest({
+      method: req.method,
+      path: req.originalUrl || req.url,
+      status: res.statusCode,
+      duration,
+      ip
+    });
+  });
+  next();
+});
 
 // Socket.io Setup with CORS & Transports
 const io = new Server(server, {
@@ -80,8 +105,36 @@ io.engine.on('connection_error', (err) => {
   console.warn('[Socket.io] Engine connection notice:', err.req?.url, err.code, err.message);
 });
 
+// Authenticated Socket.io Handshake for Admin Subscriptions
+const activeUserSocketMap = new Map(); // socket.id -> userId string
+
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token || 
+      (socket.handshake.headers?.authorization && socket.handshake.headers.authorization.replace('Bearer ', ''));
+
+    if (token) {
+      const decoded = verifyToken(token);
+      if (decoded && decoded.userId) {
+        if (mongoose.connection.readyState === 1) {
+          const user = await User.findById(decoded.userId).select('role status username').lean();
+          if (user && user.status === 'active') {
+            socket.user = user;
+            activeUserSocketMap.set(socket.id, user._id.toString());
+            if (user.role === 'admin') {
+              socket.join('admin_room');
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    // Non-fatal, regular socket continues
+  }
+  next();
+});
+
 // MongoDB Connection Resilience & Fail-Fast settings
-// bufferCommands: false ensures operations fail fast with controlled 503 instead of hanging until proxy 502
 mongoose.set('bufferCommands', false);
 
 let isMongoConnected = false;
@@ -134,37 +187,54 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Socket.io for Real-time Active Users
+// Socket.io for Real-time Active Users & Admin Streams
 let realActiveUsers = 0;
 let simulatedBase = 742;
 
 io.on('connection', (socket) => {
   realActiveUsers++;
+  metricsService.updateSocketCount(realActiveUsers, Array.from(activeUserSocketMap.values()));
   io.emit('active_users', simulatedBase + realActiveUsers * 3);
+
+  // If newly connected socket is admin, send immediate snapshot
+  if (socket.user && socket.user.role === 'admin') {
+    socket.emit('admin_live_metrics', metricsService.getSnapshot());
+  }
 
   socket.on('disconnect', () => {
     realActiveUsers = Math.max(0, realActiveUsers - 1);
+    activeUserSocketMap.delete(socket.id);
+    metricsService.updateSocketCount(realActiveUsers, Array.from(activeUserSocketMap.values()));
     io.emit('active_users', simulatedBase + realActiveUsers * 3);
   });
 });
 
-// Fluctuate the simulated active users
+// Fluctuate the simulated active users for standard music player
 setInterval(() => {
   const change = Math.floor(Math.random() * 8) - 3;
   simulatedBase = Math.max(500, simulatedBase + change);
   io.emit('active_users', simulatedBase + realActiveUsers * 3);
 }, 3000);
 
-// User Schema & Model
-const userSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  likedSongs: { type: Array, default: [] },
-  history: { type: Array, default: [] },
-  playlists: { type: Array, default: [] },
-  queue: { type: Array, default: [] },
-});
-const User = mongoose.model('User', userSchema);
+// Push live metrics to authorized admin room only
+setInterval(() => {
+  const adminRoom = io.sockets.adapter.rooms.get('admin_room');
+  if (adminRoom && adminRoom.size > 0) {
+    io.to('admin_room').emit('admin_live_metrics', metricsService.getSnapshot());
+  }
+}, 2500);
+
+// Helper for Admin Bootstrap Email Checking
+const getAdminEmails = () => {
+  const raw = process.env.ADMIN_EMAILS || '';
+  return raw.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+};
+
+const isEmailBootstrapAdmin = (email) => {
+  if (!email) return false;
+  const list = getAdminEmails();
+  return list.includes(email.toLowerCase());
+};
 
 // Auth Routes with Database Availability Guards
 app.post('/api/auth/register', async (req, res) => {
@@ -176,11 +246,36 @@ app.post('/api/auth/register', async (req, res) => {
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
     }
-    const existing = await User.findOne({ username }).maxTimeMS(4000);
+    const cleanUsername = username.trim().toLowerCase();
+    const existing = await User.findOne({ username: cleanUsername }).maxTimeMS(4000);
     if (existing) return res.status(400).json({ error: 'Username exists' });
-    const user = new User({ username, password, likedSongs: [], history: [], playlists: [], queue: [] });
+
+    // Enforce least privilege: role is strictly 'user'
+    const user = new User({
+      username: cleanUsername,
+      password,
+      role: 'user',
+      status: 'active',
+      likedSongs: [],
+      history: [],
+      playlists: [],
+      queue: []
+    });
     await user.save();
-    res.json({ message: 'User registered', userId: user._id, user });
+    const token = generateToken(user);
+
+    res.json({
+      message: 'User registered',
+      token,
+      userId: user._id,
+      user: {
+        id: user._id,
+        userId: user._id,
+        username: user.username,
+        role: user.role,
+        status: user.status
+      }
+    });
   } catch (err) {
     console.error('[Register Error]:', err.message);
     res.status(500).json({ error: err.message });
@@ -196,9 +291,42 @@ app.post('/api/auth/login', async (req, res) => {
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
     }
-    const user = await User.findOne({ username, password }).maxTimeMS(4000);
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-    res.json({ message: 'Login successful', userId: user._id, user });
+    const cleanUsername = username.trim().toLowerCase();
+    const cleanPassword = typeof password === 'string' ? password.trim() : password;
+    console.log(`[Auth Login Attempt]: username="${cleanUsername}", password length=${cleanPassword.length}`);
+    const user = await User.findOne({ username: cleanUsername, password: cleanPassword }).maxTimeMS(4000);
+    if (!user) {
+      console.warn(`[Auth Login Failed]: username="${cleanUsername}" - user not found or password mismatch`);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (user.status === 'suspended') {
+      return res.status(403).json({ error: 'Account has been suspended. Please contact support.' });
+    }
+    if (user.status === 'deactivated') {
+      return res.status(403).json({ error: 'Account is deactivated.' });
+    }
+
+    user.lastLogin = new Date();
+    await user.save();
+    const token = generateToken(user);
+
+    res.json({
+      message: 'Login successful',
+      token,
+      userId: user._id,
+      user: {
+        id: user._id,
+        userId: user._id,
+        username: user.username,
+        role: user.role,
+        status: user.status,
+        likedSongs: user.likedSongs,
+        history: user.history,
+        playlists: user.playlists,
+        queue: user.queue
+      }
+    });
   } catch (err) {
     console.error('[Login Error]:', err.message);
     res.status(500).json({ error: err.message });
@@ -226,20 +354,63 @@ app.post('/api/auth/google', async (req, res) => {
       return res.status(400).json({ error: 'Google account email could not be verified' });
     }
 
-    let user = await User.findOne({ username: email }).maxTimeMS(4000);
+    const cleanEmail = email.trim().toLowerCase();
+    let user = await User.findOne({ username: cleanEmail }).maxTimeMS(4000);
+    const shouldBeAdmin = isEmailBootstrapAdmin(cleanEmail);
+
     if (!user) {
+      // Check if there are no admins at all in DB, allow bootstrapping if explicitly configured
+      const existingAdminsCount = await User.countDocuments({ role: 'admin' });
+      const makeAdmin = shouldBeAdmin || (existingAdminsCount === 0 && process.env.BOOTSTRAP_FIRST_USER_AS_ADMIN === 'true');
+
       user = new User({
-        username: email,
+        username: cleanEmail,
         password: 'google_oauth_user',
+        role: makeAdmin ? 'admin' : 'user',
+        status: 'active',
+        lastLogin: new Date(),
         likedSongs: [],
         history: [],
         playlists: [],
         queue: []
       });
       await user.save();
+    } else {
+      // If user matched bootstrap admin email in environment, promote to admin
+      if (shouldBeAdmin && user.role !== 'admin') {
+        user.role = 'admin';
+      }
+      user.lastLogin = new Date();
+      await user.save();
     }
 
-    res.json({ message: 'Google Login successful', userId: user._id, user, username: user.username });
+    if (user.status === 'suspended') {
+      return res.status(403).json({ error: 'Account has been suspended.' });
+    }
+    if (user.status === 'deactivated') {
+      return res.status(403).json({ error: 'Account is deactivated.' });
+    }
+
+    const appToken = generateToken(user);
+
+    res.json({
+      message: 'Google Login successful',
+      token: appToken,
+      userId: user._id,
+      user: {
+        id: user._id,
+        userId: user._id,
+        username: user.username,
+        role: user.role,
+        status: user.status,
+        likedSongs: user.likedSongs,
+        history: user.history,
+        playlists: user.playlists,
+        queue: user.queue
+      },
+      username: user.username,
+      role: user.role
+    });
   } catch (err) {
     console.warn('[Google Auth Error]:', err.message);
     res.status(401).json({ error: 'Google Auth failed: ' + err.message });
@@ -301,9 +472,22 @@ app.post('/api/user/:id/sync', async (req, res) => {
   }
 });
 
+// Mount Protected Admin Routes
+app.use('/api/admin', adminRoutes);
+
 // YouTube API Search with In-Memory Caching & Rotating Keys
 const searchCache = new Map();
-const SEARCH_CACHE_TTL = 15 * 60 * 1000; // 15 minutes TTL
+const SEARCH_CACHE_TTL = 60 * 60 * 1000; // 60 minutes TTL
+const deadApiKeys = new Map(); // key -> { reason, time }
+
+const isKeyDead = (key) => {
+  if (!deadApiKeys.has(key)) return false;
+  const { reason, time } = deadApiKeys.get(key);
+  if (reason === 'invalid') return true; // permanently bad key
+  if (reason === 'quota' && Date.now() - time < 60 * 60 * 1000) return true; // 1-hour quota cooldown
+  deadApiKeys.delete(key);
+  return false;
+};
 
 const getCachedSearch = (key) => {
   const cached = searchCache.get(key);
@@ -331,6 +515,42 @@ const decodeHtml = (str = '') => {
     .replace(/&gt;/g, '>');
 };
 
+// Curated fallbacks if YouTube scrapers hit 429 rate limit or keys are exhausted
+const FALLBACK_TRENDING = [
+  { id: { videoId: 'Yvl6m9x5ZR0' }, snippet: { title: 'New Trending Love Songs | Best Hindi Romantic Songs Playlist', channelTitle: 'Grow Music', thumbnails: { high: { url: 'https://i.ytimg.com/vi/Yvl6m9x5ZR0/hqdefault.jpg' } } } },
+  { id: { videoId: 'IJJX39HRvlc' }, snippet: { title: 'New Songs 2026 | Mere Humdum | Emraan Hashmi, Rashmika', channelTitle: 'Vatsal Bhoya', thumbnails: { high: { url: 'https://i.ytimg.com/vi/IJJX39HRvlc/hqdefault.jpg' } } } },
+  { id: { videoId: 'RLzC55ai0eo' }, snippet: { title: 'Heeriye | Jasleen Royal ft Arijit Singh | Dulquer Salmaan', channelTitle: 'Jasleen Royal', thumbnails: { high: { url: 'https://i.ytimg.com/vi/RLzC55ai0eo/hqdefault.jpg' } } } },
+  { id: { videoId: 'kRs375-oliY' }, snippet: { title: 'All Instagram Trending Songs 2026 | Taare x Pal Pal x Aarzu', channelTitle: 'HeartBeat Lyrics', thumbnails: { high: { url: 'https://i.ytimg.com/vi/kRs375-oliY/hqdefault.jpg' } } } },
+  { id: { videoId: '41HX_5G6eqQ' }, snippet: { title: 'Barsaat | All Trending Songs Mashup', channelTitle: 'Voxwaves', thumbnails: { high: { url: 'https://i.ytimg.com/vi/41HX_5G6eqQ/hqdefault.jpg' } } } },
+  { id: { videoId: 'WWIfHemqSEA' }, snippet: { title: 'Arijit Singh - Tujhko | Love Song', channelTitle: 'iPop Superhits', thumbnails: { high: { url: 'https://i.ytimg.com/vi/WWIfHemqSEA/hqdefault.jpg' } } } }
+];
+
+const FALLBACK_ALBUMS = [
+  { id: { videoId: 'B61fSzdCzzs' }, snippet: { title: 'Aashiqui 2 | All Best Songs Audio Jukebox', channelTitle: 'Love Mashup', thumbnails: { high: { url: 'https://i.ytimg.com/vi/B61fSzdCzzs/hqdefault.jpg' } } } },
+  { id: { videoId: 'ZdyaixHYviA' }, snippet: { title: 'Yeh Jawaani Hai Deewani Full Songs Jukebox', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/ZdyaixHYviA/hqdefault.jpg' } } } },
+  { id: { videoId: 'SQWDGLnvxF4' }, snippet: { title: 'Sanam Teri Kasam All Songs Jukebox', channelTitle: 'ASIF INDIAN VLOGS', thumbnails: { high: { url: 'https://i.ytimg.com/vi/SQWDGLnvxF4/hqdefault.jpg' } } } },
+  { id: { videoId: 'BDlNjOc3wiQ' }, snippet: { title: 'FULL ALBUM: Kabir Singh | Audio Jukebox', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/BDlNjOc3wiQ/hqdefault.jpg' } } } },
+  { id: { videoId: 'ARtRGkaG_OA' }, snippet: { title: 'Rockstar | Audio Jukebox | A.R. Rahman', channelTitle: 'AmZe Music', thumbnails: { high: { url: 'https://i.ytimg.com/vi/ARtRGkaG_OA/hqdefault.jpg' } } } },
+  { id: { videoId: 'jsgPZVMfJQk' }, snippet: { title: 'ANIMAL (AUDIO JUKEBOX): Ranbir Kapoor', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/jsgPZVMfJQk/hqdefault.jpg' } } } }
+];
+
+const FALLBACK_RADIO = [
+  { id: { videoId: 'O5gwxm3NxFU' }, snippet: { title: 'Best Of Arijit Singh 2024 Hits Radio Jukebox', channelTitle: 'ABT Lofi Music', thumbnails: { high: { url: 'https://i.ytimg.com/vi/O5gwxm3NxFU/hqdefault.jpg' } } } },
+  { id: { videoId: 'r0c1f6XxRQg' }, snippet: { title: 'Evergreen Hits of KK (Audio Jukebox)', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/r0c1f6XxRQg/hqdefault.jpg' } } } },
+  { id: { videoId: 'dvgZkm1xWPE' }, snippet: { title: 'Shreya Ghoshal Romantic Hits Radio', channelTitle: 'SonyMusicIndiaVEVO', thumbnails: { high: { url: 'https://i.ytimg.com/vi/dvgZkm1xWPE/hqdefault.jpg' } } } },
+  { id: { videoId: 'S6IW8Rj1WqQ' }, snippet: { title: 'Alka Yagnik 90s Melodies Radio', channelTitle: 'Tips Official', thumbnails: { high: { url: 'https://i.ytimg.com/vi/S6IW8Rj1WqQ/hqdefault.jpg' } } } },
+  { id: { videoId: 'cIGd8gm_pYE' }, snippet: { title: 'Diljit Dosanjh Superhits Radio', channelTitle: 'Speed Records', thumbnails: { high: { url: 'https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg' } } } },
+  { id: { videoId: 'P9YpfmNc_p4' }, snippet: { title: 'A.R. Rahman Magical Hits Live Radio', channelTitle: 'SonyMusicIndiaVEVO', thumbnails: { high: { url: 'https://i.ytimg.com/vi/P9YpfmNc_p4/hqdefault.jpg' } } } }
+];
+
+const getCuratedFallback = (queryStr) => {
+  const q = queryStr.toLowerCase();
+  if (q.includes('album') || q.includes('jukebox')) return FALLBACK_ALBUMS;
+  if (q.includes('radio') || q.includes('lofi')) return FALLBACK_RADIO;
+  if (q.includes('trending') || q.includes('hit')) return FALLBACK_TRENDING;
+  return null;
+};
+
 let currentApiKeyIndex = 0;
 const getYoutubeApiKeys = () => {
   return [
@@ -342,7 +562,7 @@ const getYoutubeApiKeys = () => {
 };
 
 const rotateApiKey = () => {
-  const keys = getYoutubeApiKeys();
+  const keys = getYoutubeApiKeys().filter(k => !isKeyDead(k));
   if (keys.length > 0) {
     currentApiKeyIndex = (currentApiKeyIndex + 1) % keys.length;
   }
@@ -358,17 +578,22 @@ app.get('/api/youtube/search', async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 15, 1), 50);
   const cacheKey = `${queryStr.toLowerCase()}_${limit}`;
 
+  // Record search term in music metrics
+  metricsService.recordMusicEvent({ type: 'search', query: queryStr });
+
   const cached = getCachedSearch(cacheKey);
   if (cached) {
     return res.json({ items: cached });
   }
 
-  // 1. Try YouTube Data API v3 with rotating keys
-  const apiKeys = getYoutubeApiKeys();
-  if (apiKeys.length > 0) {
+  // 1. Try YouTube Data API v3 with active, non-dead rotating keys
+  const allKeys = getYoutubeApiKeys();
+  const activeKeys = allKeys.filter(k => !isKeyDead(k));
+
+  if (activeKeys.length > 0) {
     let attempts = 0;
-    while (attempts < apiKeys.length) {
-      const apiKey = apiKeys[currentApiKeyIndex % apiKeys.length];
+    while (attempts < activeKeys.length) {
+      const apiKey = activeKeys[currentApiKeyIndex % activeKeys.length];
       try {
         const response = await axios.get('https://www.googleapis.com/youtube/v3/search', {
           params: {
@@ -378,10 +603,10 @@ app.get('/api/youtube/search', async (req, res) => {
             q: queryStr,
             key: apiKey
           },
-          timeout: 7000
+          timeout: 5000
         });
 
-        if (response.data && Array.isArray(response.data.items)) {
+        if (response.data && Array.isArray(response.data.items) && response.data.items.length > 0) {
           const items = response.data.items.map(item => {
             const videoId = item.id?.videoId || item.id;
             return {
@@ -398,11 +623,23 @@ app.get('/api/youtube/search', async (req, res) => {
             };
           });
 
+          metricsService.recordYouTube('api');
           setCachedSearch(cacheKey, items);
           return res.json({ items });
         }
       } catch (apiErr) {
-        console.warn(`[YouTube API] Key attempt ${attempts + 1}/${apiKeys.length} failed:`, apiErr.response?.data?.error?.message || apiErr.message);
+        const status = apiErr.response?.status;
+        const errMsg = apiErr.response?.data?.error?.message || apiErr.message;
+        console.warn(`[YouTube API] Key attempt failed (${status}):`, errMsg);
+
+        if (status === 400 || errMsg.includes('API key not valid')) {
+          deadApiKeys.set(apiKey, { reason: 'invalid', time: Date.now() });
+          metricsService.recordYouTube('invalid_key');
+        } else if (status === 403 || errMsg.includes('quota')) {
+          deadApiKeys.set(apiKey, { reason: 'quota', time: Date.now() });
+          metricsService.recordYouTube('quota');
+        }
+
         rotateApiKey();
         attempts++;
       }
@@ -413,29 +650,45 @@ app.get('/api/youtube/search', async (req, res) => {
   try {
     const searchPromise = ytSearch({ query: queryStr, page: 1 });
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('yt-search timeout after 6500ms')), 6500)
+      setTimeout(() => reject(new Error('yt-search timeout after 10000ms')), 10000)
     );
     const searchResult = await Promise.race([searchPromise, timeoutPromise]);
-    const videos = (searchResult?.videos || []).slice(0, limit);
-    const items = videos.map(v => ({
-      id: { videoId: v.videoId },
-      snippet: {
-        title: decodeHtml(v.title || ''),
-        channelTitle: decodeHtml(v.author?.name || 'Unknown'),
-        thumbnails: {
-          high: { url: `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg` },
-          medium: { url: `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg` },
-          default: { url: `https://i.ytimg.com/vi/${v.videoId}/default.jpg` }
-        }
-      }
-    }));
+    let videos = (searchResult?.videos || []);
+    if (videos.length === 0 && searchResult?.all) {
+      videos = searchResult.all.filter(v => v.videoId || v.type === 'video');
+    }
 
-    setCachedSearch(cacheKey, items);
-    return res.json({ items });
+    if (videos.length > 0) {
+      const items = videos.slice(0, limit).map(v => ({
+        id: { videoId: v.videoId },
+        snippet: {
+          title: decodeHtml(v.title || ''),
+          channelTitle: decodeHtml(v.author?.name || 'Unknown'),
+          thumbnails: {
+            high: { url: `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg` },
+            medium: { url: `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg` },
+            default: { url: `https://i.ytimg.com/vi/${v.videoId}/default.jpg` }
+          }
+        }
+      }));
+
+      metricsService.recordYouTube('scraper');
+      setCachedSearch(cacheKey, items);
+      return res.json({ items });
+    }
   } catch (err) {
-    console.error('[YouTube Search Error]:', err.message);
-    return res.json({ items: [] });
+    console.error('[YouTube Search Notice]:', err.message);
   }
+
+  // 3. Resilient Curated Fallback if search scraper is rate-limited (e.g. 429) or empty
+  const fallback = getCuratedFallback(queryStr);
+  if (fallback) {
+    metricsService.recordYouTube('fallback');
+    setCachedSearch(cacheKey, fallback);
+    return res.json({ items: fallback });
+  }
+
+  return res.json({ items: [] });
 });
 
 // Stream endpoint - safe placeholder, playback is handled client-side via YouTube IFrame API
@@ -446,9 +699,18 @@ app.get('/api/stream/:videoId', (req, res) => {
   });
 });
 
-// Global Express Error Handler ensuring CORS headers are always attached
+// Global Express Error Handler ensuring CORS headers are always attached & errors logged
 app.use((err, req, res, next) => {
   console.error('[Express Global Error]:', err.message);
+  const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').toString().split(',')[0].trim();
+  metricsService.recordError({
+    method: req.method,
+    path: req.originalUrl || req.url,
+    status: err.status || 500,
+    message: err.message,
+    ip
+  });
+
   const origin = req.headers.origin;
   if (isOriginAllowed(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
