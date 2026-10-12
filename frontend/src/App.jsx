@@ -21,7 +21,7 @@ socket.on('connect_error', (err) => {
 
 const fetchFromBackend = async (query) => {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 9000);
+  const timeoutId = setTimeout(() => controller.abort(), 35000);
   try {
     const res = await fetch(`${BACKEND_URL}/api/youtube/search?q=${encodeURIComponent(query)}`, {
       signal: controller.signal

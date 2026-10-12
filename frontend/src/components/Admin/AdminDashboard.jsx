@@ -112,6 +112,35 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
     return <AccessDenied user={user} onBack={onExit} onLogin={onOpenAuth} />;
   }
 
+  // If admin but token is not present in session, prompt to sign in to obtain authenticated stream token
+  if (!token) {
+    return (
+      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-4 shadow-xl">
+          <ShieldCheck className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-bold text-white mb-2">Admin Session Authentication Required</h2>
+        <p className="text-sm text-neutral-400 max-w-md mb-6">
+          To connect to real-time telemetry, server diagnostics, and user management, please authenticate your administrator session.
+        </p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onOpenAuth}
+            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 font-bold text-xs shadow-lg shadow-amber-500/20 transition cursor-pointer"
+          >
+            Authenticate Admin Session
+          </button>
+          <button
+            onClick={onExit}
+            className="px-4 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 text-xs font-semibold border border-neutral-800 transition cursor-pointer"
+          >
+            Back to Music
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const navItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'traffic', label: 'Live Traffic', icon: Activity, badge: isSocketConnected ? 'LIVE' : null },
