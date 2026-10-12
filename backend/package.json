@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node tests/admin.test.js"
+    "test": "node tests/admin.test.js",
+    "test:e2e": "node tests/e2e_verification.js"
   },
   "keywords": [],
   "author": "",
