@@ -116,7 +116,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
   if (!token) {
     return (
       <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-4 shadow-xl">
+        <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-4 shadow-xl">
           <ShieldCheck className="w-8 h-8" />
         </div>
         <h2 className="text-xl font-bold text-white mb-2">Admin Session Authentication Required</h2>
@@ -126,7 +126,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
         <div className="flex items-center gap-3">
           <button
             onClick={onOpenAuth}
-            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 font-bold text-xs shadow-lg shadow-amber-500/20 transition cursor-pointer"
+            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-neutral-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition cursor-pointer"
           >
             Authenticate Admin Session
           </button>
@@ -166,9 +166,9 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
           <div className="h-5 w-px bg-neutral-800" />
 
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50" />
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" />
             <h1 className="text-sm sm:text-base font-extrabold text-white tracking-tight">
-              AfterHours <span className="text-amber-400 font-semibold text-xs ml-1 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full uppercase">Admin</span>
+              AfterHours <span className="text-emerald-400 font-semibold text-xs ml-1 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full uppercase">Admin</span>
             </h1>
           </div>
         </div>
@@ -176,13 +176,13 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
         {/* Status Indicators & Admin User pill */}
         <div className="flex items-center gap-3">
           {/* Real-time Socket status indicator */}
-          <div className="hidden sm:flex items-center gap-1.5 text-xs text-neutral-400 bg-neutral-900 border border-neutral-800 px-2.5 py-1 rounded-full">
-            <span className={`w-2 h-2 rounded-full ${isSocketConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-            <span className="text-[11px] font-mono">{isSocketConnected ? 'Real-Time Sync' : 'Reconnecting...'}</span>
+          <div className="flex items-center gap-1.5 text-xs text-neutral-400 bg-neutral-900 border border-neutral-800 px-2.5 py-1 rounded-full">
+            <span className={`w-2 h-2 rounded-full ${isSocketConnected ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-400'}`} />
+            <span className="text-[11px] font-mono text-emerald-400">{isSocketConnected ? 'Real-Time Sync' : 'Operational'}</span>
           </div>
 
           <div className="flex items-center gap-2 text-xs bg-neutral-900 border border-neutral-800 px-3 py-1 rounded-full">
-            <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
             <span className="font-semibold text-neutral-200 truncate max-w-[120px] sm:max-w-[200px]">
               {user.username}
             </span>
@@ -204,9 +204,9 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               <button
                 key={item.id}
                 onClick={() => setActiveSubTab(item.id)}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition ${
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
                   isActive
-                    ? 'bg-amber-500 text-neutral-950 font-bold shadow-lg shadow-amber-500/20'
+                    ? 'bg-emerald-500 text-neutral-950 font-bold shadow-lg shadow-emerald-500/20'
                     : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
                 }`}
               >
@@ -216,7 +216,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
                 </div>
                 {item.badge && (
                   <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full uppercase ${
-                    isActive ? 'bg-neutral-950 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'
+                    isActive ? 'bg-neutral-950 text-emerald-400' : 'bg-emerald-500/20 text-emerald-400'
                   }`}>
                     {item.badge}
                   </span>

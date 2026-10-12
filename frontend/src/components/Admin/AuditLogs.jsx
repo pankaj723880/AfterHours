@@ -48,9 +48,9 @@ export default function AuditLogs({ token, backendUrl, showToast }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-neutral-900/60 border border-neutral-800 rounded-2xl p-5 backdrop-blur-md">
         <div>
           <h3 className="text-base font-bold text-white flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-amber-500" />
+            <ShieldCheck className="w-5 h-5 text-emerald-400" />
             Immutable Audit Trail
-            <span className="text-xs font-mono font-medium bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded-full">
+            <span className="text-xs font-mono font-medium bg-neutral-800 text-emerald-400 px-2 py-0.5 rounded-full">
               {total} events
             </span>
           </h3>
@@ -63,7 +63,7 @@ export default function AuditLogs({ token, backendUrl, showToast }) {
           <select
             value={actionFilter}
             onChange={(e) => { setActionFilter(e.target.value); setPage(1); }}
-            className="bg-neutral-950/80 border border-neutral-800 text-neutral-300 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-amber-500/50"
+            className="bg-neutral-950/80 border border-neutral-800 text-neutral-300 rounded-xl px-3 py-1.5 text-xs outline-none focus:border-emerald-500/50"
           >
             <option value="">All Actions</option>
             <option value="USER_UPDATE">USER_UPDATE</option>
@@ -73,7 +73,7 @@ export default function AuditLogs({ token, backendUrl, showToast }) {
           <button
             onClick={fetchLogs}
             disabled={isLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-medium border border-neutral-700 transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-semibold border border-emerald-500/30 transition cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh
@@ -82,7 +82,7 @@ export default function AuditLogs({ token, backendUrl, showToast }) {
       </div>
 
       {/* Logs Table */}
-      <div className="bg-neutral-900/40 border border-neutral-800 rounded-2xl overflow-hidden">
+      <div className="bg-neutral-900/40 border border-neutral-800 rounded-2xl overflow-hidden hover:border-emerald-500/30 transition">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
@@ -100,7 +100,7 @@ export default function AuditLogs({ token, backendUrl, showToast }) {
               {isLoading && logs.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="py-12 text-center text-neutral-500">
-                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-amber-500" />
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-emerald-400" />
                     Loading audit records...
                   </td>
                 </tr>
@@ -120,7 +120,7 @@ export default function AuditLogs({ token, backendUrl, showToast }) {
                       {log.adminUsername}
                     </td>
                     <td className="py-3 px-4">
-                      <span className="font-mono text-[11px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                      <span className="font-mono text-[11px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
                         {log.action}
                       </span>
                     </td>
@@ -184,7 +184,7 @@ export default function AuditLogs({ token, backendUrl, showToast }) {
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-amber-500" />
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
                 Audit Event Details
               </h4>
               <span className="text-[11px] font-mono text-neutral-500">ID: {selectedLog.id}</span>
@@ -193,7 +193,7 @@ export default function AuditLogs({ token, backendUrl, showToast }) {
             <div className="space-y-2 text-xs">
               <div className="flex justify-between py-1 border-b border-neutral-800">
                 <span className="text-neutral-400">Action:</span>
-                <span className="font-mono font-bold text-amber-400">{selectedLog.action}</span>
+                <span className="font-mono font-bold text-emerald-400">{selectedLog.action}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-neutral-800">
                 <span className="text-neutral-400">Actor (Admin):</span>

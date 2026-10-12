@@ -7,7 +7,7 @@ export default function AccessDenied({ onBack, onLogin, user }) {
       <div className="max-w-md w-full bg-neutral-900/80 border border-red-500/30 rounded-2xl p-8 text-center backdrop-blur-xl shadow-2xl relative overflow-hidden">
         {/* Ambient glow */}
         <div className="absolute -top-24 -left-24 w-48 h-48 bg-red-600/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-amber-600/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="w-16 h-16 bg-red-500/10 border border-red-500/30 rounded-2xl flex items-center justify-center mx-auto mb-6 text-red-400 shadow-inner">
           <ShieldAlert className="w-8 h-8" />
@@ -24,7 +24,7 @@ export default function AccessDenied({ onBack, onLogin, user }) {
           {!user && (
             <button
               onClick={onLogin}
-              className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-semibold py-2.5 px-4 rounded-xl transition shadow-lg shadow-amber-500/20"
+              className="w-full flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold py-2.5 px-4 rounded-xl transition shadow-lg shadow-emerald-500/20 cursor-pointer"
             >
               <LogIn className="w-4 h-4" />
               Sign in with Admin Account

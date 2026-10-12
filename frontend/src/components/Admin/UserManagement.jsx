@@ -144,9 +144,9 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <Users className="w-5 h-5 text-amber-500" />
+              <Users className="w-5 h-5 text-emerald-400" />
               Registered Accounts
-              <span className="text-xs font-mono font-medium bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded-full">
+              <span className="text-xs font-mono font-medium bg-neutral-800 text-emerald-400 px-2 py-0.5 rounded-full">
                 {total} total
               </span>
             </h3>
@@ -158,7 +158,7 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
           <button
             onClick={fetchUsers}
             disabled={isLoading}
-            className="self-start sm:self-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-medium border border-neutral-700 transition"
+            className="self-start sm:self-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-semibold border border-emerald-500/30 transition cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh
@@ -174,11 +174,11 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
               placeholder="Search by username or email..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-neutral-950/80 border border-neutral-800 focus:border-amber-500/50 rounded-xl pl-9 pr-20 py-2 text-xs text-white placeholder-neutral-500 outline-none transition"
+              className="w-full bg-neutral-950/80 border border-neutral-800 focus:border-emerald-500/50 rounded-xl pl-9 pr-20 py-2 text-xs text-white placeholder-neutral-500 outline-none transition"
             />
             <button
               type="submit"
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-[11px] transition"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold text-[11px] transition cursor-pointer"
             >
               Search
             </button>
@@ -188,7 +188,7 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
             <select
               value={roleFilter}
               onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}
-              className="bg-neutral-950/80 border border-neutral-800 text-neutral-300 rounded-xl px-3 py-2 text-xs outline-none focus:border-amber-500/50"
+              className="bg-neutral-950/80 border border-neutral-800 text-neutral-300 rounded-xl px-3 py-2 text-xs outline-none focus:border-emerald-500/50"
             >
               <option value="">All Roles</option>
               <option value="user">User</option>
@@ -198,7 +198,7 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
             <select
               value={statusFilter}
               onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-              className="bg-neutral-950/80 border border-neutral-800 text-neutral-300 rounded-xl px-3 py-2 text-xs outline-none focus:border-amber-500/50"
+              className="bg-neutral-950/80 border border-neutral-800 text-neutral-300 rounded-xl px-3 py-2 text-xs outline-none focus:border-emerald-500/50"
             >
               <option value="">All Statuses</option>
               <option value="active">Active</option>
@@ -234,7 +234,7 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
               {isLoading && users.length === 0 ? (
                 <tr>
                   <td colSpan="6" className="py-12 text-center text-neutral-500">
-                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-amber-500" />
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-emerald-400" />
                     Loading users...
                   </td>
                 </tr>
@@ -254,7 +254,7 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
                         <div className="font-semibold text-white flex items-center gap-1.5">
                           {u.username}
                           {isCurrent && (
-                            <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded font-mono">
+                            <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.2 rounded font-mono">
                               You
                             </span>
                           )}
@@ -266,7 +266,7 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
                       <td className="py-3 px-4">
                         <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border ${
                           u.role === 'admin'
-                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-sm shadow-emerald-500/20'
                             : 'bg-neutral-800 text-neutral-400 border-neutral-700'
                         }`}>
                           <Shield className="w-3 h-3" />
@@ -358,7 +358,7 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl">
             <h4 className="text-base font-bold text-white flex items-center gap-2">
-              <Shield className="w-4 h-4 text-amber-500" />
+              <Shield className="w-4 h-4 text-emerald-400" />
               Modify User Role & Status
             </h4>
 
@@ -374,7 +374,7 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
                 <select
                   value={newRole}
                   onChange={(e) => setNewRole(e.target.value)}
-                  className="w-full bg-neutral-950 border border-neutral-800 text-white rounded-xl px-3 py-2 text-xs outline-none focus:border-amber-500"
+                  className="w-full bg-neutral-950 border border-neutral-800 text-white rounded-xl px-3 py-2 text-xs outline-none focus:border-emerald-500"
                 >
                   <option value="user">User (Standard privilege)</option>
                   <option value="admin">Admin (Full administrative dashboard access)</option>
@@ -388,7 +388,7 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
                 <select
                   value={newStatus}
                   onChange={(e) => setNewStatus(e.target.value)}
-                  className="w-full bg-neutral-950 border border-neutral-800 text-white rounded-xl px-3 py-2 text-xs outline-none focus:border-amber-500"
+                  className="w-full bg-neutral-950 border border-neutral-800 text-white rounded-xl px-3 py-2 text-xs outline-none focus:border-emerald-500"
                 >
                   <option value="active">Active</option>
                   <option value="suspended">Suspended (Login blocked)</option>
@@ -400,14 +400,14 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
             <div className="flex gap-2 pt-4">
               <button
                 onClick={() => setIsEditModalOpen(false)}
-                className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-medium py-2 rounded-xl text-xs transition"
+                className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-medium py-2 rounded-xl text-xs transition cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveUser}
                 disabled={isSaving}
-                className="flex-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-neutral-950 font-bold py-2 rounded-xl text-xs transition shadow-lg shadow-amber-500/20"
+                className="flex-1 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-neutral-950 font-bold py-2 rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 cursor-pointer"
               >
                 {isSaving ? 'Saving...' : 'Save Changes'}
               </button>
