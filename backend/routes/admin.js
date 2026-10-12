@@ -33,10 +33,10 @@ router.get('/health', authenticateToken, requireAdmin, async (req, res) => {
     let dbStatus = 'disconnected';
 
     if (mongoose.connection.readyState === 1 && mongoose.connection.db) {
-      const pingStart = Date.now();
+      const pingStart = process.hrtime.bigint();
       try {
         await mongoose.connection.db.admin().ping();
-        dbPingMs = Date.now() - pingStart;
+        dbPingMs = Math.round(Number(process.hrtime.bigint() - pingStart) / 1e6);
         dbStatus = 'connected';
       } catch (e) {
         dbStatus = 'error: ' + e.message;
@@ -50,6 +50,7 @@ router.get('/health', authenticateToken, requireAdmin, async (req, res) => {
       timestamp: new Date().toISOString(),
       server: {
         uptimeSeconds: Math.floor(process.uptime()),
+        processStartTimeIso: snapshot.processStartTimeIso,
         nodeVersion: process.version,
         platform: process.platform,
         memoryUsage: {
@@ -65,7 +66,14 @@ router.get('/health', authenticateToken, requireAdmin, async (req, res) => {
       },
       sockets: {
         activeVisitors: snapshot.activeVisitors,
-        activeAuthenticatedUsers: snapshot.activeAuthenticatedUsers
+        activeAuthenticatedUsers: snapshot.activeAuthenticatedUsers,
+        visitorBreakdown: snapshot.visitorBreakdown
+      },
+      requestsBreakdown: snapshot.requestsBreakdown,
+      latency: {
+        avgLatencyMs: snapshot.avgLatencyMs,
+        p95LatencyMs: snapshot.p95LatencyMs,
+        p50LatencyMs: snapshot.p50LatencyMs
       },
       youtube: snapshot.youtubeStats,
       recentErrorsCount: snapshot.recentErrors.length

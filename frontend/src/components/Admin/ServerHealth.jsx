@@ -23,8 +23,12 @@ export default function ServerHealth({ health, metrics, onRefresh, isLoading }) 
   };
 
   const dbStatus = health?.database ? (health.database.status === 'connected') : true;
-  const pingLatency = (health?.database?.pingLatencyMs && health.database.pingLatencyMs > 0) ? health.database.pingLatencyMs : (health ? 12 : 8);
-  const readyStateText = (health?.database?.readyState === 0) ? '0 (Reconnecting)' : '1 (Connected)';
+  const pingLatency = (typeof health?.database?.pingLatencyMs === 'number' && health.database.pingLatencyMs >= 0)
+    ? `${health.database.pingLatencyMs} ms`
+    : 'N/A';
+  const readyStateText = (health?.database?.readyState === 1)
+    ? '1 (Ready)'
+    : (health?.database?.readyState === 2 ? '2 (Connecting)' : '0 (Disconnected)');
 
   return (
     <div className="space-y-6">
@@ -72,7 +76,7 @@ export default function ServerHealth({ health, metrics, onRefresh, isLoading }) 
             <div className="p-3 bg-neutral-800/40 rounded-xl border border-neutral-800">
               <div className="text-neutral-500 text-[10px] uppercase font-bold">Roundtrip Ping</div>
               <div className="text-base font-mono font-bold text-emerald-400 mt-1">
-                {pingLatency} ms
+                {pingLatency}
               </div>
             </div>
 
@@ -105,21 +109,21 @@ export default function ServerHealth({ health, metrics, onRefresh, isLoading }) 
             <div className="p-2.5 bg-neutral-800/40 rounded-xl border border-neutral-800">
               <div className="text-neutral-500 text-[10px] uppercase font-bold">Heap Used</div>
               <div className="text-sm font-mono font-bold text-emerald-400 mt-1">
-                {health?.server?.memoryUsage?.heapUsedMB ?? 34} MB
+                {health?.server?.memoryUsage?.heapUsedMB ?? 0} MB
               </div>
             </div>
 
             <div className="p-2.5 bg-neutral-800/40 rounded-xl border border-neutral-800">
               <div className="text-neutral-500 text-[10px] uppercase font-bold">Heap Total</div>
               <div className="text-sm font-mono font-bold text-white mt-1">
-                {health?.server?.memoryUsage?.heapTotalMB ?? 48} MB
+                {health?.server?.memoryUsage?.heapTotalMB ?? 0} MB
               </div>
             </div>
 
             <div className="p-2.5 bg-neutral-800/40 rounded-xl border border-neutral-800">
               <div className="text-neutral-500 text-[10px] uppercase font-bold">Process RSS</div>
               <div className="text-sm font-mono font-bold text-white mt-1">
-                {health?.server?.memoryUsage?.rssMB ?? 62} MB
+                {health?.server?.memoryUsage?.rssMB ?? 0} MB
               </div>
             </div>
           </div>
@@ -127,7 +131,7 @@ export default function ServerHealth({ health, metrics, onRefresh, isLoading }) 
           <div className="text-[11px] text-neutral-400 flex items-center justify-between bg-neutral-950/60 p-3 rounded-xl border border-neutral-800/80">
             <span>Server Uptime:</span>
             <span className="text-emerald-400 font-mono font-bold">
-              {formatUptime(health?.server?.uptimeSeconds || metrics?.uptimeSeconds || 3600)}
+              {formatUptime(health?.server?.uptimeSeconds || metrics?.uptimeSeconds || 0)}
             </span>
           </div>
         </div>
@@ -137,35 +141,35 @@ export default function ServerHealth({ health, metrics, onRefresh, isLoading }) 
       <div className="bg-neutral-900/40 border border-neutral-800 rounded-2xl p-5 space-y-4 hover:border-emerald-500/30 transition">
         <h4 className="text-sm font-bold text-white flex items-center gap-2">
           <Radio className="w-4 h-4 text-emerald-400" />
-          Music Search & Scraper Redundancy Status
+          Music Search & Fallback Resolver Status
         </h4>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
           <div className="p-3 bg-neutral-800/40 rounded-xl border border-neutral-800">
             <div className="text-neutral-500 text-[10px] uppercase font-bold">API Hits</div>
             <div className="text-base font-mono font-bold text-emerald-400 mt-1">
-              {metrics?.youtubeStats?.apiHits ?? 12}
-            </div>
-          </div>
-
-          <div className="p-3 bg-neutral-800/40 rounded-xl border border-neutral-800">
-            <div className="text-neutral-500 text-[10px] uppercase font-bold">Scraper Hits</div>
-            <div className="text-base font-mono font-bold text-emerald-400 mt-1">
-              {metrics?.youtubeStats?.scraperHits ?? 28}
+              {metrics?.youtubeStats?.apiHits ?? 0}
             </div>
           </div>
 
           <div className="p-3 bg-neutral-800/40 rounded-xl border border-neutral-800">
             <div className="text-neutral-500 text-[10px] uppercase font-bold">Fallback Hits</div>
-            <div className="text-base font-mono font-bold text-white mt-1">
+            <div className="text-base font-mono font-bold text-emerald-400 mt-1">
               {metrics?.youtubeStats?.fallbackHits ?? 0}
+            </div>
+          </div>
+
+          <div className="p-3 bg-neutral-800/40 rounded-xl border border-neutral-800">
+            <div className="text-neutral-500 text-[10px] uppercase font-bold">Curated Fallback</div>
+            <div className="text-base font-mono font-bold text-white mt-1">
+              {metrics?.youtubeStats?.curatedFallbackHits ?? 0}
             </div>
           </div>
 
           <div className="p-3 bg-neutral-800/40 rounded-xl border border-neutral-800">
             <div className="text-neutral-500 text-[10px] uppercase font-bold">Quota / Key Errors</div>
             <div className="text-base font-mono font-bold text-emerald-400 mt-1">
-              0
+              {(metrics?.youtubeStats?.quotaErrors ?? 0) + (metrics?.youtubeStats?.invalidKeyErrors ?? 0)}
             </div>
           </div>
         </div>

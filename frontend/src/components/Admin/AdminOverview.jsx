@@ -31,15 +31,35 @@ export default function AdminOverview({ metrics, health, onNavigate }) {
   const errorPct = statusTotal > 0 ? ((errorCount / statusTotal) * 100).toFixed(1) : '0.0';
 
   const isDbConnected = health?.database ? (health.database.status === 'connected') : true;
-  const pingLatency = (health?.database?.pingLatencyMs && health.database.pingLatencyMs > 0) ? health.database.pingLatencyMs : (health ? 12 : 8);
-  const readyStateText = (health?.database?.readyState === 0) ? '0 (Reconnecting)' : '1 (Ready)';
+  const pingLatency = (typeof health?.database?.pingLatencyMs === 'number' && health.database.pingLatencyMs >= 0)
+    ? `${health.database.pingLatencyMs} ms`
+    : 'N/A';
+  const readyStateText = (health?.database?.readyState === 1)
+    ? '1 (Ready)'
+    : (health?.database?.readyState === 2 ? '2 (Connecting)' : '0 (Disconnected)');
 
-  const activeVisitors = Math.max(metrics?.activeVisitors ?? 1, 1);
-  const activeAuthUsers = Math.max(metrics?.activeAuthenticatedUsers ?? 1, 1);
-  const rpm = metrics?.requestsPerMinute ?? 4;
-  const totalRequests = metrics?.requestsTotal ?? 142;
-  const avgLatency = (metrics?.avgLatencyMs && metrics.avgLatencyMs > 0) ? metrics.avgLatencyMs : 24;
-  const uptimeSeconds = metrics?.uptimeSeconds || health?.server?.uptimeSeconds || 3600;
+  const activeVisitors = metrics?.activeVisitors ?? 0;
+  const activeAuthUsers = metrics?.visitorBreakdown?.authenticated ?? 0;
+  const activeAnonUsers = metrics?.visitorBreakdown?.anonymous ?? 0;
+  const activeConn = metrics?.visitorBreakdown?.activeConnections ?? 0;
+
+  const rpm = metrics?.requestsPerMinute ?? 0;
+  const rpmUser = metrics?.requestsPerMinuteUser ?? 0;
+  const processRequests = metrics?.requestsTotal ?? 0;
+  const lifetimeRequests = metrics?.requestsLifetimeTotal ?? processRequests;
+
+  const avgLatency = metrics?.avgLatencyMs ?? 0;
+  const p95Latency = metrics?.p95LatencyMs ?? 0;
+  const p50Latency = metrics?.p50LatencyMs ?? 0;
+  const latencySamples = metrics?.latencySampleSize ?? 0;
+
+  const serverErrors = metrics?.serverErrorsCount ?? (metrics?.requestsByStatus?.['5xx'] || 0);
+  const clientErrors = metrics?.clientErrorsCount ?? (metrics?.requestsByStatus?.['4xx'] || 0);
+  const eligibleTotal = metrics?.eligibleRequestsTotal ?? statusTotal;
+  const serverErrorPct = metrics?.serverErrorRatePercent ?? (eligibleTotal > 0 ? ((serverErrors / eligibleTotal) * 100).toFixed(1) : '0.0');
+  const totalErrorPct = metrics?.errorRatePercent ?? errorPct;
+
+  const uptimeSeconds = metrics?.uptimeSeconds || health?.server?.uptimeSeconds || 0;
 
   return (
     <div className="space-y-6">
@@ -48,56 +68,78 @@ export default function AdminOverview({ metrics, health, onNavigate }) {
         {/* Active Visitors */}
         <div className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-4 backdrop-blur-md relative overflow-hidden group hover:border-emerald-500/40 transition">
           <div className="flex items-center justify-between text-neutral-400 mb-2">
-            <span className="text-xs font-medium uppercase tracking-wider">Live Visitors</span>
-            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-sm shadow-emerald-500/50" />
+            <span className="text-xs font-medium uppercase tracking-wider" title="Unique active visitor sessions deduplicated across browser tabs and connections">
+              Live Visitors
+            </span>
+            <div className={`w-2.5 h-2.5 rounded-full ${activeVisitors > 0 ? 'bg-emerald-500 animate-pulse shadow-sm shadow-emerald-500/50' : 'bg-neutral-600'}`} />
           </div>
           <div className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
             {activeVisitors}
           </div>
-          <div className="text-[11px] text-neutral-400 mt-1 flex items-center gap-1.5">
-            <span className="text-emerald-400 font-semibold">{activeAuthUsers}</span> authenticated
+          <div className="text-[11px] text-neutral-400 mt-1 flex flex-col gap-0.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-emerald-400 font-semibold">{activeAuthUsers}</span> auth • <span className="text-neutral-300 font-semibold">{activeAnonUsers}</span> anon
+            </div>
+            <div className="text-[10px] text-neutral-500">
+              {activeConn} active socket connection{activeConn !== 1 ? 's' : ''}
+            </div>
           </div>
         </div>
 
         {/* Requests Per Minute */}
         <div className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-4 backdrop-blur-md relative overflow-hidden group hover:border-emerald-500/40 transition">
           <div className="flex items-center justify-between text-neutral-400 mb-2">
-            <span className="text-xs font-medium uppercase tracking-wider">RPM (Traffic)</span>
+            <span className="text-xs font-medium uppercase tracking-wider" title="Rolling 60-second request rate">
+              RPM (Traffic)
+            </span>
             <Activity className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
             {rpm}
           </div>
           <div className="text-[11px] text-neutral-400 mt-1">
-            Total {totalRequests} requests served
+            <span className="text-emerald-400 font-semibold">{rpmUser}</span> user RPM (60s rolling)
+            <div className="text-[10px] text-neutral-500 mt-0.5">
+              Proc: {processRequests} • Lifetime: {lifetimeRequests}
+            </div>
           </div>
         </div>
 
         {/* Latency */}
         <div className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-4 backdrop-blur-md relative overflow-hidden group hover:border-emerald-500/40 transition">
           <div className="flex items-center justify-between text-neutral-400 mb-2">
-            <span className="text-xs font-medium uppercase tracking-wider">Avg Latency</span>
+            <span className="text-xs font-medium uppercase tracking-wider" title="Monotonic request duration (excluding background polling)">
+              Avg Latency
+            </span>
             <Zap className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
             {avgLatency}<span className="text-sm font-normal text-neutral-400 ml-1">ms</span>
           </div>
           <div className="text-[11px] text-neutral-400 mt-1">
-            Across recent 200 requests
+            <span className="text-emerald-400 font-semibold">p95: {p95Latency}ms</span> • p50: {p50Latency}ms
+            <div className="text-[10px] text-neutral-500 mt-0.5">
+              {latencySamples} recent sample{latencySamples !== 1 ? 's' : ''}
+            </div>
           </div>
         </div>
 
         {/* Error Rate */}
         <div className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-4 backdrop-blur-md relative overflow-hidden group hover:border-emerald-500/40 transition">
           <div className="flex items-center justify-between text-neutral-400 mb-2">
-            <span className="text-xs font-medium uppercase tracking-wider">Error Rate</span>
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span className="text-xs font-medium uppercase tracking-wider" title="Server errors (5xx) vs client errors (4xx)">
+              Error Rate
+            </span>
+            <ShieldCheck className={`w-4 h-4 ${serverErrors > 0 ? 'text-amber-400' : 'text-emerald-400'}`} />
           </div>
-          <div className="text-2xl md:text-3xl font-extrabold tracking-tight text-emerald-400">
-            {errorPct}%
+          <div className={`text-2xl md:text-3xl font-extrabold tracking-tight ${serverErrors > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+            {serverErrorPct}% <span className="text-xs font-normal text-neutral-400">5xx</span>
           </div>
           <div className="text-[11px] text-neutral-400 mt-1">
-            {errorCount} errors recorded
+            <span className="text-red-400 font-medium">{serverErrors} 5xx</span> • <span className="text-amber-400 font-medium">{clientErrors} 4xx</span>
+            <div className="text-[10px] text-neutral-500 mt-0.5">
+              {eligibleTotal} eligible request{eligibleTotal !== 1 ? 's' : ''} ({totalErrorPct}% all)
+            </div>
           </div>
         </div>
       </div>
@@ -121,7 +163,7 @@ export default function AdminOverview({ metrics, health, onNavigate }) {
               </span>
             </div>
             <div className="text-sm text-neutral-300 font-medium">
-              Ping Latency: <span className="text-emerald-400 font-bold">{pingLatency} ms</span>
+              Ping Latency: <span className="text-emerald-400 font-bold">{pingLatency}</span>
             </div>
             <p className="text-xs text-neutral-400 mt-1">
               Connection readyState: <span className="text-emerald-400 font-medium">{readyStateText}</span>
@@ -151,7 +193,7 @@ export default function AdminOverview({ metrics, health, onNavigate }) {
               Uptime: <span className="text-emerald-400 font-bold">{formatUptime(uptimeSeconds)}</span>
             </div>
             <p className="text-xs text-neutral-400 mt-1">
-              Memory: {health?.server?.memoryUsage?.heapUsedMB ?? 34} MB used / {health?.server?.memoryUsage?.heapTotalMB ?? 48} MB heap
+              Memory: {health?.server?.memoryUsage?.heapUsedMB ?? 0} MB used / {health?.server?.memoryUsage?.heapTotalMB ?? 0} MB heap
             </p>
           </div>
           <button 
@@ -175,10 +217,10 @@ export default function AdminOverview({ metrics, health, onNavigate }) {
               </span>
             </div>
             <div className="text-sm text-neutral-300 font-medium">
-              API Hits: <span className="text-white font-bold">{metrics?.youtubeStats?.apiHits ?? 12}</span> | Scraper: <span className="text-white font-bold">{metrics?.youtubeStats?.scraperHits ?? 28}</span>
+              API Hits: <span className="text-white font-bold">{metrics?.youtubeStats?.apiHits ?? 0}</span> | Fallback: <span className="text-white font-bold">{metrics?.youtubeStats?.fallbackHits ?? 0}</span>
             </div>
             <p className="text-xs text-neutral-400 mt-1">
-              Fallback Hits: {metrics?.youtubeStats?.fallbackHits ?? 0} | Quota errors: {metrics?.youtubeStats?.quotaErrors ?? 0}
+              Curated Hits: {metrics?.youtubeStats?.curatedFallbackHits ?? 0} | Quota errors: {metrics?.youtubeStats?.quotaErrors ?? 0}
             </p>
           </div>
           <button 

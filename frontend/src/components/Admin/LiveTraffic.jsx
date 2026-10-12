@@ -8,23 +8,19 @@ export default function LiveTraffic({ metrics }) {
     (metrics?.requestsByStatus?.['5xx'] || 0);
 
   const getStatusPct = (key) => {
-    if (!statusTotal) return key === '2xx' ? '100.0' : '0.0';
+    if (!statusTotal) return '0.0';
     return (((metrics?.requestsByStatus?.[key] || 0) / statusTotal) * 100).toFixed(1);
   };
 
-  const rpm = metrics?.requestsPerMinute ?? 4;
-  const totalRequests = metrics?.requestsTotal ?? 142;
-  const avgLatency = (metrics?.avgLatencyMs && metrics.avgLatencyMs > 0) ? metrics.avgLatencyMs : 24;
-  const successCount = metrics?.requestsByStatus?.['2xx'] || (statusTotal === 0 ? totalRequests : 0);
+  const rpm = metrics?.requestsPerMinute ?? 0;
+  const rpmUser = metrics?.requestsPerMinuteUser ?? 0;
+  const processRequests = metrics?.requestsTotal ?? 0;
+  const lifetimeRequests = metrics?.requestsLifetimeTotal ?? processRequests;
+  const avgLatency = metrics?.avgLatencyMs ?? 0;
+  const p95Latency = metrics?.p95LatencyMs ?? 0;
+  const successCount = metrics?.requestsByStatus?.['2xx'] || 0;
 
-  const endpointsList = (metrics?.topEndpoints && metrics.topEndpoints.length > 0)
-    ? metrics.topEndpoints
-    : [
-        { endpoint: '/api/search', count: 86 },
-        { endpoint: '/api/admin/health', count: 32 },
-        { endpoint: '/api/auth/me', count: 18 },
-        { endpoint: '/socket.io/', count: 6 }
-      ];
+  const endpointsList = metrics?.topEndpoints || [];
 
   return (
     <div className="space-y-6">
@@ -50,18 +46,18 @@ export default function LiveTraffic({ metrics }) {
 
         <div className="flex items-center gap-6 text-xs">
           <div>
-            <span className="text-neutral-500 block text-[10px] uppercase font-bold">RPM</span>
-            <span className="text-emerald-400 font-mono font-bold text-base">{rpm}</span>
+            <span className="text-neutral-500 block text-[10px] uppercase font-bold" title="Rolling 60s total / user requests">RPM (Total/User)</span>
+            <span className="text-emerald-400 font-mono font-bold text-base">{rpm} <span className="text-xs text-neutral-400 font-normal">/ {rpmUser}u</span></span>
           </div>
           <div className="h-6 w-px bg-neutral-800" />
           <div>
-            <span className="text-neutral-500 block text-[10px] uppercase font-bold">Total Requests</span>
-            <span className="text-white font-mono font-bold text-base">{totalRequests}</span>
+            <span className="text-neutral-500 block text-[10px] uppercase font-bold" title="Process lifetime / Cumulative lifetime">Requests (Proc/Life)</span>
+            <span className="text-white font-mono font-bold text-base">{processRequests} <span className="text-xs text-neutral-400 font-normal">/ {lifetimeRequests}</span></span>
           </div>
           <div className="h-6 w-px bg-neutral-800" />
           <div>
-            <span className="text-neutral-500 block text-[10px] uppercase font-bold">Avg Latency</span>
-            <span className="text-emerald-400 font-mono font-bold text-base">{avgLatency} ms</span>
+            <span className="text-neutral-500 block text-[10px] uppercase font-bold" title="Monotonic timer avg / p95">Latency (Avg/p95)</span>
+            <span className="text-emerald-400 font-mono font-bold text-base">{avgLatency}ms <span className="text-xs text-neutral-400 font-normal">/ {p95Latency}ms</span></span>
           </div>
         </div>
       </div>
@@ -117,33 +113,63 @@ export default function LiveTraffic({ metrics }) {
         </div>
       </div>
 
+      {/* Request Breakdown by Category */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+        <div className="p-3.5 rounded-xl bg-neutral-900/40 border border-neutral-800">
+          <span className="text-neutral-400 block text-[10px] uppercase font-bold">User API Traffic</span>
+          <span className="text-emerald-400 font-mono font-bold text-lg">{metrics?.requestsBreakdown?.userApi ?? 0}</span>
+          <span className="text-[10px] text-neutral-500 block mt-0.5">Search, auth, favorites</span>
+        </div>
+        <div className="p-3.5 rounded-xl bg-neutral-900/40 border border-neutral-800">
+          <span className="text-neutral-400 block text-[10px] uppercase font-bold">Admin API Traffic</span>
+          <span className="text-white font-mono font-bold text-lg">{metrics?.requestsBreakdown?.adminApi ?? 0}</span>
+          <span className="text-[10px] text-neutral-500 block mt-0.5">Dashboard & management</span>
+        </div>
+        <div className="p-3.5 rounded-xl bg-neutral-900/40 border border-neutral-800">
+          <span className="text-neutral-400 block text-[10px] uppercase font-bold">Health Probes</span>
+          <span className="text-neutral-300 font-mono font-bold text-lg">{metrics?.requestsBreakdown?.healthChecks ?? 0}</span>
+          <span className="text-[10px] text-neutral-500 block mt-0.5">Uptime & keep-alive</span>
+        </div>
+        <div className="p-3.5 rounded-xl bg-neutral-900/40 border border-neutral-800">
+          <span className="text-neutral-400 block text-[10px] uppercase font-bold">Socket.IO Polling</span>
+          <span className="text-neutral-300 font-mono font-bold text-lg">{metrics?.requestsBreakdown?.socketTransportPolls ?? 0}</span>
+          <span className="text-[10px] text-neutral-500 block mt-0.5">Engine.IO transport fallbacks</span>
+        </div>
+      </div>
+
       {/* Top Endpoints Table */}
       <div className="bg-neutral-900/40 border border-neutral-800 rounded-2xl p-5 hover:border-emerald-500/30 transition">
         <h3 className="text-sm font-bold text-white mb-3">Requests by Endpoint</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-neutral-800 text-neutral-400 font-medium">
-                <th className="pb-2">Endpoint Path</th>
-                <th className="pb-2 text-right">Hit Count</th>
-                <th className="pb-2 text-right">Percentage</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-800/50">
-              {endpointsList.map((ep, idx) => {
-                const totalBase = statusTotal > 0 ? statusTotal : 142;
-                const pct = ((ep.count / totalBase) * 100).toFixed(1);
-                return (
-                  <tr key={idx} className="hover:bg-neutral-800/30 transition">
-                    <td className="py-2.5 font-mono text-neutral-200">{ep.endpoint}</td>
-                    <td className="py-2.5 text-right font-mono text-emerald-400 font-semibold">{ep.count}</td>
-                    <td className="py-2.5 text-right text-neutral-400">{pct}%</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        {endpointsList.length === 0 ? (
+          <div className="text-xs text-neutral-400 py-6 text-center">
+            No application endpoint requests recorded in this session yet.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-neutral-800 text-neutral-400 font-medium">
+                  <th className="pb-2">Endpoint Path</th>
+                  <th className="pb-2 text-right">Hit Count</th>
+                  <th className="pb-2 text-right">Percentage</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-800/50">
+                {endpointsList.map((ep, idx) => {
+                  const totalBase = statusTotal > 0 ? statusTotal : Math.max(metrics?.requestsTotal || 1, 1);
+                  const pct = ((ep.count / totalBase) * 100).toFixed(1);
+                  return (
+                    <tr key={idx} className="hover:bg-neutral-800/30 transition">
+                      <td className="py-2.5 font-mono text-neutral-200">{ep.endpoint}</td>
+                      <td className="py-2.5 text-right font-mono text-emerald-400 font-semibold">{ep.count}</td>
+                      <td className="py-2.5 text-right text-neutral-400">{pct}%</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Slow Requests (> 500ms) */}

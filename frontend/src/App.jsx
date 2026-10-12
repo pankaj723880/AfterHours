@@ -6,7 +6,20 @@ import AdminDashboard from './components/Admin/AdminDashboard';
 import { io } from 'socket.io-client';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:5000' : 'https://afterhours-cxsi.onrender.com');
+
+export const getOrCreateSessionId = () => {
+  if (typeof window === 'undefined') return 'sid_ssr';
+  let sid = localStorage.getItem('afterhours_session_id');
+  if (!sid) {
+    sid = 'sid_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now().toString(36);
+    localStorage.setItem('afterhours_session_id', sid);
+  }
+  return sid;
+};
+
 const socket = io(BACKEND_URL, {
+  auth: { sessionId: getOrCreateSessionId() },
+  query: { sessionId: getOrCreateSessionId() },
   transports: ['polling', 'websocket'],
   withCredentials: true,
   reconnectionAttempts: 5,
@@ -24,7 +37,10 @@ const fetchFromBackend = async (query) => {
   const timeoutId = setTimeout(() => controller.abort(), 35000);
   try {
     const res = await fetch(`${BACKEND_URL}/api/youtube/search?q=${encodeURIComponent(query)}`, {
-      signal: controller.signal
+      signal: controller.signal,
+      headers: {
+        'X-Session-ID': getOrCreateSessionId()
+      }
     });
     clearTimeout(timeoutId);
     if (!res.ok) {

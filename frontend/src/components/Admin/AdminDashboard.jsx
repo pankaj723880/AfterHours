@@ -79,9 +79,12 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
       fetchInitialMetrics();
       fetchHealthDiagnostics();
 
+      const sid = (typeof window !== 'undefined' && localStorage.getItem('afterhours_session_id')) || ('sid_' + Date.now());
+
       // Setup Authenticated Socket.IO connection for live traffic stream
       const adminSocket = io(backendUrl, {
-        auth: { token },
+        auth: { token, sessionId: sid },
+        query: { sessionId: sid },
         transports: ['websocket', 'polling'],
         reconnectionAttempts: 5,
         reconnectionDelay: 1000

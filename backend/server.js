@@ -64,9 +64,10 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Live Request Tracking Middleware for Admin Observability
 app.use((req, res, next) => {
-  const start = Date.now();
+  const start = process.hrtime.bigint();
   res.on('finish', () => {
-    const duration = Date.now() - start;
+    const end = process.hrtime.bigint();
+    const durationMs = Number(end - start) / 1e6;
     const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown')
       .toString()
       .split(',')[0]
@@ -75,7 +76,7 @@ app.use((req, res, next) => {
       method: req.method,
       path: req.originalUrl || req.url,
       status: res.statusCode,
-      duration,
+      durationMs,
       ip
     });
   });
@@ -148,6 +149,7 @@ mongoose.connect(MONGODB_URI, {
     isMongoConnected = true;
     console.log('[MongoDB] Connected successfully');
     seedDefaultAdmin();
+    metricsService.initPersistence();
   })
   .catch((err) => {
     isMongoConnected = false;
@@ -158,6 +160,7 @@ mongoose.connection.on('connected', () => {
   isMongoConnected = true;
   console.log('[MongoDB] Connection established');
   seedDefaultAdmin();
+  metricsService.initPersistence();
 });
 
 mongoose.connection.on('error', (err) => {
@@ -190,24 +193,37 @@ app.get('/health', (req, res) => {
 });
 
 // Socket.io for Real-time Active Users & Admin Streams
-let realActiveUsers = 0;
 let simulatedBase = 742;
 
 io.on('connection', (socket) => {
-  realActiveUsers++;
-  metricsService.updateSocketCount(realActiveUsers, Array.from(activeUserSocketMap.values()));
-  io.emit('active_users', simulatedBase + realActiveUsers * 3);
+  const sessionId = socket.handshake.auth?.sessionId || 
+    socket.handshake.query?.sessionId || 
+    socket.handshake.headers?.['x-session-id'];
+  const ip = (socket.handshake.headers?.['x-forwarded-for'] || socket.conn?.remoteAddress || 'unknown')
+    .toString().split(',')[0].trim();
+  const userAgent = socket.handshake.headers?.['user-agent'] || 'unknown';
+
+  metricsService.registerVisitorConnection({
+    socketId: socket.id,
+    sessionId,
+    user: socket.user,
+    ip,
+    userAgent
+  });
+
+  const snapshot = metricsService.getSnapshot();
+  io.emit('active_users', simulatedBase + snapshot.activeVisitors * 3);
 
   // If newly connected socket is admin, send immediate snapshot
   if (socket.user && socket.user.role === 'admin') {
-    socket.emit('admin_live_metrics', metricsService.getSnapshot());
+    socket.emit('admin_live_metrics', snapshot);
   }
 
   socket.on('disconnect', () => {
-    realActiveUsers = Math.max(0, realActiveUsers - 1);
+    metricsService.handleVisitorDisconnect(socket.id);
     activeUserSocketMap.delete(socket.id);
-    metricsService.updateSocketCount(realActiveUsers, Array.from(activeUserSocketMap.values()));
-    io.emit('active_users', simulatedBase + realActiveUsers * 3);
+    const updatedSnap = metricsService.getSnapshot();
+    io.emit('active_users', simulatedBase + updatedSnap.activeVisitors * 3);
   });
 });
 
@@ -215,7 +231,8 @@ io.on('connection', (socket) => {
 setInterval(() => {
   const change = Math.floor(Math.random() * 8) - 3;
   simulatedBase = Math.max(500, simulatedBase + change);
-  io.emit('active_users', simulatedBase + realActiveUsers * 3);
+  const snap = metricsService.getSnapshot();
+  io.emit('active_users', simulatedBase + snap.activeVisitors * 3);
 }, 3000);
 
 // Push live metrics to authorized admin room only
