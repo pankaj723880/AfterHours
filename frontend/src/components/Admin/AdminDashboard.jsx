@@ -19,8 +19,10 @@ import UserManagement from './UserManagement';
 import ServerHealth from './ServerHealth';
 import MusicAnalytics from './MusicAnalytics';
 import AuditLogs from './AuditLogs';
+import { safeParseJsonResponse } from '../../utils/errorHandler';
 
 export default function AdminDashboard({ user, token, backendUrl, onExit, onOpenAuth, showToast }) {
+  const cleanBackendUrl = (backendUrl || '').trim().replace(/\/+$/, '');
   const [activeSubTab, setActiveSubTab] = useState('overview');
   const [metrics, setMetrics] = useState(null);
   const [health, setHealth] = useState(null);
@@ -43,14 +45,15 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
     if (!token || !isAdmin) return;
     setIsHealthLoading(true);
     try {
-      const res = await fetch(`${backendUrl}/api/admin/health`, {
+      const res = await fetch(`${cleanBackendUrl}/api/admin/health`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Health fetch failed');
-      setHealth(data);
+      const parsed = await safeParseJsonResponse(res, 'Health fetch failed');
+      if (parsed.ok && parsed.data) {
+        setHealth(parsed.data);
+      }
     } catch (err) {
       console.warn('[Admin Health]:', err.message);
     } finally {
@@ -61,14 +64,15 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
   const fetchInitialMetrics = async () => {
     if (!token || !isAdmin) return;
     try {
-      const res = await fetch(`${backendUrl}/api/admin/metrics`, {
+      const res = await fetch(`${cleanBackendUrl}/api/admin/metrics`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Metrics fetch failed');
-      setMetrics(data);
+      const parsed = await safeParseJsonResponse(res, 'Metrics fetch failed');
+      if (parsed.ok && parsed.data) {
+        setMetrics(parsed.data);
+      }
     } catch (err) {
       console.warn('[Admin Metrics]:', err.message);
     }
@@ -82,7 +86,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
       const sid = (typeof window !== 'undefined' && localStorage.getItem('afterhours_session_id')) || ('sid_' + Date.now());
 
       // Setup Authenticated Socket.IO connection for live traffic stream
-      const adminSocket = io(backendUrl, {
+      const adminSocket = io(cleanBackendUrl, {
         auth: { token, sessionId: sid },
         query: { sessionId: sid },
         transports: ['websocket', 'polling'],
@@ -108,7 +112,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
         adminSocket.disconnect();
       };
     }
-  }, [isAdmin, token, backendUrl]);
+  }, [isAdmin, token, cleanBackendUrl]);
 
   // If not admin, show Access Denied
   if (!isAdmin) {
@@ -246,7 +250,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
           {activeSubTab === 'users' && (
             <UserManagement 
               token={token} 
-              backendUrl={backendUrl} 
+              backendUrl={cleanBackendUrl} 
               currentUser={user}
               showToast={showToast} 
             />
@@ -264,7 +268,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
           {activeSubTab === 'music' && (
             <MusicAnalytics 
               token={token} 
-              backendUrl={backendUrl}
+              backendUrl={cleanBackendUrl}
               showToast={showToast}
             />
           )}
@@ -272,7 +276,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
           {activeSubTab === 'audit' && (
             <AuditLogs 
               token={token} 
-              backendUrl={backendUrl}
+              backendUrl={cleanBackendUrl}
               showToast={showToast}
             />
           )}

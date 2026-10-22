@@ -2,10 +2,17 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import { Reorder, useDragControls } from 'framer-motion';
 import AdminDashboard from './components/Admin/AdminDashboard';
+import { safeParseJsonResponse } from './utils/errorHandler';
 
 import { io } from 'socket.io-client';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:5000' : 'https://afterhours-cxsi.onrender.com');
+const rawBackendUrl = import.meta.env.VITE_BACKEND_URL || (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:5000' : 'https://afterhours-zvic.onrender.com');
+const BACKEND_URL = (rawBackendUrl || '').trim().replace(/\/+$/, '');
+
+export const getApiUrl = (endpoint = '') => {
+  const cleanEndpoint = endpoint.replace(/^\/+/, '/');
+  return `${BACKEND_URL}${cleanEndpoint.startsWith('/') ? cleanEndpoint : `/${cleanEndpoint}`}`;
+};
 
 export const getOrCreateSessionId = () => {
   if (typeof window === 'undefined') return 'sid_ssr';
@@ -36,18 +43,18 @@ const fetchFromBackend = async (query) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 35000);
   try {
-    const res = await fetch(`${BACKEND_URL}/api/youtube/search?q=${encodeURIComponent(query)}`, {
+    const res = await fetch(getApiUrl(`/api/youtube/search?q=${encodeURIComponent(query)}`), {
       signal: controller.signal,
       headers: {
         'X-Session-ID': getOrCreateSessionId()
       }
     });
     clearTimeout(timeoutId);
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || 'Backend search failed');
+    const parsed = await safeParseJsonResponse(res, 'Backend search failed');
+    if (!parsed.ok) {
+      throw new Error(parsed.error);
     }
-    return await res.json();
+    return parsed.data || { items: [] };
   } catch (err) {
     clearTimeout(timeoutId);
     console.warn("Backend fetch notice:", err.message);
@@ -1431,10 +1438,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   useEffect(() => {
     if (authToken) {
-      fetch(`${BACKEND_URL}/api/auth/me`, {
+      fetch(getApiUrl('/api/auth/me'), {
         headers: { 'Authorization': `Bearer ${authToken}` }
       })
-        .then(res => res.ok ? res.json() : null)
+        .then(async (res) => {
+          const parsed = await safeParseJsonResponse(res, 'Token validation failed');
+          return parsed.ok ? parsed.data : null;
+        })
         .then(data => {
           if (data && data.user) {
             setUser(prev => ({ ...(prev || {}), ...data.user }));
@@ -1450,12 +1460,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       else if (u === 'pankajsss7238@gmail.com') pass = 'Ps207800@@#';
 
       if (pass) {
-        fetch(`${BACKEND_URL}/api/auth/login`, {
+        fetch(getApiUrl('/api/auth/login'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username: u, password: pass })
         })
-          .then(res => res.ok ? res.json() : null)
+          .then(async (res) => {
+            const parsed = await safeParseJsonResponse(res, 'Auto-login failed');
+            return parsed.ok ? parsed.data : null;
+          })
           .then(data => {
             if (data && data.token) {
               setAuthToken(data.token);
@@ -1519,11 +1532,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     let isMounted = true;
     const hydrateUserData = async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/api/user/${id}`, {
+        const res = await fetch(getApiUrl(`/api/user/${id}`), {
           headers: { 'Accept': 'application/json' }
         });
-        if (res.ok) {
-          const data = await res.json();
+        const parsed = await safeParseJsonResponse(res, 'User hydration failed');
+        if (parsed.ok && parsed.data) {
+          const data = parsed.data;
           if (!isMounted) return;
 
           // Merge without losing local offline edits or remote favourites
@@ -1614,7 +1628,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       isSyncingRef.current = true;
 
       try {
-        const res = await fetch(`${BACKEND_URL}/api/user/${id}/sync`, {
+        const res = await fetch(getApiUrl(`/api/user/${id}/sync`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: payloadStr
@@ -1670,7 +1684,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   // Keep-alive ping every 10 minutes to prevent Render cold starts
   useEffect(() => {
-    const ping = () => fetch(`${BACKEND_URL}/health`, { method: 'GET' }).catch(() => {});
+    const ping = () => fetch(getApiUrl('/health'), { method: 'GET' }).catch(() => {});
     ping(); // ping once on mount
     const keepAlive = setInterval(ping, 10 * 60 * 1000); // every 10 min
     return () => clearInterval(keepAlive);
@@ -1680,13 +1694,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     try {
       setAuthLoading(true);
       setAuthError('');
-      const res = await fetch(`${BACKEND_URL}/api/auth/google`, {
+      const res = await fetch(getApiUrl('/api/auth/google'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: credentialResponse.credential })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Google Auth failed');
+      const parsed = await safeParseJsonResponse(res, 'Google Auth failed');
+      if (!parsed.ok) throw new Error(parsed.error);
+      const data = parsed.data;
+      if (!data || !data.user) {
+        throw new Error('Invalid user profile received from Google Authentication.');
+      }
       
       const loggedInUser = {
         username: data.user.username,
@@ -1772,10 +1790,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
     setIsLoading(true);
     try {
-      const response = await fetch(`${BACKEND_URL}/api/youtube/search?limit=1&q=` + encodeURIComponent(query));
-      const data = await response.json();
-      if (data.items && data.items.length > 0) {
-        const item = data.items[0];
+      const response = await fetch(getApiUrl(`/api/youtube/search?limit=1&q=${encodeURIComponent(query)}`));
+      const parsed = await safeParseJsonResponse(response, 'Failed to fetch trending song');
+      if (parsed.ok && parsed.data && Array.isArray(parsed.data.items) && parsed.data.items.length > 0) {
+        const item = parsed.data.items[0];
         const formattedSong = {
           id: item.id.videoId || item.id,
           videoId: item.id.videoId || item.id,
@@ -1787,7 +1805,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         playSong(formattedSong);
       }
     } catch (error) {
-      console.error("Error playing trending:", error);
+      console.warn("Error playing trending:", error.message);
     } finally {
       setIsLoading(false);
     }
@@ -1806,13 +1824,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     setAuthError('');
     try {
       const endpoint = isLoginMode ? '/api/auth/login' : '/api/auth/register';
-      const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+      const res = await fetch(getApiUrl(endpoint), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(authForm)
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Authentication failed');
+      const parsed = await safeParseJsonResponse(res, isLoginMode ? 'Login failed' : 'Registration failed');
+      if (!parsed.ok) throw new Error(parsed.error);
+      const data = parsed.data;
+      if (!data) throw new Error('Invalid authentication response from server.');
       
       const loggedInUser = {
         username: authForm.username,
@@ -1866,6 +1886,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         }
       }
     } catch (err) {
+      console.warn('[Auth Request Notice]', { isLoginMode, error: err.message });
       setAuthError(err.message);
     } finally {
       setAuthLoading(false);
@@ -2021,7 +2042,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     setIsPlaying(true);
 
     try {
-      fetch(`${BACKEND_URL}/api/admin/telemetry/event`, {
+      fetch(getApiUrl('/api/admin/telemetry/event'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'play_start', trackId: song?.id, title: song?.title })

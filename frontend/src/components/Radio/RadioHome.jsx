@@ -25,14 +25,16 @@ export const RadioHome = () => {
     try {
       // Replace with your actual station fetch API endpoint/function
       const response = await fetch('/api/station/live-stream'); 
-      if (!response.ok) {
-        throw { status: response.status, message: 'Failed to fetch radio tracks' };
+      const ct = response.headers.get('content-type') || '';
+      let tracks = null;
+      if (ct.includes('application/json')) {
+        tracks = await response.json().catch(() => null);
+      } else {
+        await response.text().catch(() => '');
       }
 
-      const tracks = await response.json();
-
-      if (!tracks || tracks.length === 0) {
-        throw new Error('No tracks returned for this station');
+      if (!response.ok || !tracks || tracks.length === 0) {
+        throw { status: response.status, message: 'Failed to fetch radio tracks' };
       }
 
       // Save valid tracks to temporary cache with 24-hr TTL

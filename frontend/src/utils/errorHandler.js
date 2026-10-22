@@ -37,3 +37,36 @@ export const sanitizeErrorMessage = (error) => {
     retryable: true,
   };
 };
+
+/**
+ * Safely parses response JSON, avoiding SyntaxError on HTML or non-JSON payloads.
+ * Returns { ok, status, data, error }
+ */
+export const safeParseJsonResponse = async (res, defaultErrorMessage = 'Request failed') => {
+  if (!res) return { ok: false, status: 0, data: null, error: 'No response received' };
+
+  const contentType = res.headers.get('content-type') || '';
+  let data = null;
+  if (contentType.includes('application/json')) {
+    data = await res.json().catch(() => null);
+  } else {
+    await res.text().catch(() => '');
+  }
+
+  if (!res.ok) {
+    if (res.status === 502 || res.status === 503) {
+      return { ok: false, status: res.status, data, error: 'Backend server is waking up. Please retry in a few seconds.' };
+    }
+    if (res.status === 404) {
+      return { ok: false, status: res.status, data, error: 'Requested service endpoint was not found (HTTP 404).' };
+    }
+    const message = (data && (data.error || data.message)) || `${defaultErrorMessage} (HTTP ${res.status})`;
+    return { ok: false, status: res.status, data, error: message };
+  }
+
+  if (data === null) {
+    return { ok: false, status: res.status, data: null, error: 'Unexpected non-JSON response from server.' };
+  }
+
+  return { ok: true, status: res.status, data, error: null };
+};

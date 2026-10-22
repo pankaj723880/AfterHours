@@ -54,13 +54,27 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Session-ID'],
   optionsSuccessStatus: 204
 }));
 
 // Generous payload limit so sync never throws 413 or truncates
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Normalize redundant slashes in URL pathname to prevent 404s from client URL misconfigurations (e.g. //health, //api/...)
+app.use((req, res, next) => {
+  const normalize = (urlStr) => {
+    if (!urlStr) return urlStr;
+    const queryIndex = urlStr.indexOf('?');
+    const path = queryIndex !== -1 ? urlStr.slice(0, queryIndex) : urlStr;
+    const search = queryIndex !== -1 ? urlStr.slice(queryIndex) : '';
+    return path.replace(/\/+/g, '/') + search;
+  };
+  if (req.url && req.url.includes('//')) req.url = normalize(req.url);
+  if (req.originalUrl && req.originalUrl.includes('//')) req.originalUrl = normalize(req.originalUrl);
+  next();
+});
 
 // Live Request Tracking Middleware for Admin Observability
 app.use((req, res, next) => {
@@ -177,12 +191,12 @@ const isDatabaseReady = () => {
   return mongoose.connection.readyState === 1;
 };
 
-// Health check endpoints for Render
+// Health check endpoints for Render & API monitors
 app.get('/', (req, res) => {
   res.send('AfterHours API is running');
 });
 
-app.get('/health', (req, res) => {
+app.get(['/health', '/api/health'], (req, res) => {
   const ready = isDatabaseReady();
   res.json({
     status: 'ok',
@@ -297,7 +311,7 @@ const seedDefaultAdmin = async () => {
 };
 
 // Auth Routes with Database Availability Guards
-app.post('/api/auth/register', async (req, res) => {
+app.post(['/api/auth/register', '/auth/register'], async (req, res) => {
   if (!isDatabaseReady()) {
     return res.status(503).json({ error: 'Database service is temporarily unavailable. Please try again shortly.', retryable: true });
   }
@@ -342,7 +356,7 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post(['/api/auth/login', '/auth/login'], async (req, res) => {
   if (!isDatabaseReady()) {
     return res.status(503).json({ error: 'Database service is temporarily unavailable. Please try again shortly.', retryable: true });
   }
@@ -353,8 +367,14 @@ app.post('/api/auth/login', async (req, res) => {
     }
     const cleanUsername = username.trim().toLowerCase();
     const cleanPassword = typeof password === 'string' ? password.trim() : password;
-    console.log(`[Auth Login Attempt]: username="${cleanUsername}", password length=${cleanPassword.length}`);
-    const user = await User.findOne({ username: cleanUsername, password: cleanPassword }).maxTimeMS(4000);
+    console.log(`[Auth Login Attempt]: username="${cleanUsername}", password length=${cleanPassword ? cleanPassword.length : 0}`);
+    const user = await User.findOne({ 
+      username: cleanUsername,
+      $or: [
+        { password: cleanPassword },
+        { password: password }
+      ]
+    }).maxTimeMS(4000);
     if (!user) {
       console.warn(`[Auth Login Failed]: username="${cleanUsername}" - user not found or password mismatch`);
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -393,7 +413,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-app.get('/api/auth/me', authenticateToken, async (req, res) => {
+app.get(['/api/auth/me', '/auth/me'], authenticateToken, async (req, res) => {
   try {
     const user = req.user;
     res.json({
@@ -414,7 +434,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/auth/google', async (req, res) => {
+app.post(['/api/auth/google', '/auth/google'], async (req, res) => {
   if (!isDatabaseReady()) {
     return res.status(503).json({ error: 'Database service is temporarily unavailable. Please try again shortly.', retryable: true });
   }
@@ -499,7 +519,7 @@ app.post('/api/auth/google', async (req, res) => {
 });
 
 // User Data Sync
-app.get('/api/user/:id', async (req, res) => {
+app.get(['/api/user/:id', '/user/:id'], async (req, res) => {
   if (!isDatabaseReady()) {
     return res.status(503).json({ error: 'Database service is temporarily unavailable. Please retry shortly.', retryable: true });
   }
@@ -521,7 +541,7 @@ app.get('/api/user/:id', async (req, res) => {
   }
 });
 
-app.post('/api/user/:id/sync', async (req, res) => {
+app.post(['/api/user/:id/sync', '/user/:id/sync'], async (req, res) => {
   if (!isDatabaseReady()) {
     return res.status(503).json({ error: 'Database service is temporarily unavailable. Please retry shortly.', retryable: true });
   }
@@ -632,6 +652,15 @@ const getCuratedFallback = (queryStr) => {
   return null;
 };
 
+const sanitizeApiKey = (key) => {
+  if (typeof key !== 'string') return '';
+  let clean = key.trim().replace(/^['"]|['"]$/g, '');
+  if (clean.startsWith('AIzaSy') && clean.length > 39) {
+    clean = clean.slice(0, 39);
+  }
+  return clean;
+};
+
 const getYoutubeApiKeys = () => {
   return [
     process.env.YOUTUBE_KEY_1 || process.env.VITE_YOUTUBE_KEY_1,
@@ -641,7 +670,9 @@ const getYoutubeApiKeys = () => {
     process.env.YOUTUBE_KEY_5 || process.env.VITE_YOUTUBE_KEY_5,
     process.env.YOUTUBE_KEY_6 || process.env.VITE_YOUTUBE_KEY_6,
     process.env.YOUTUBE_API_KEY,
-  ].filter(Boolean);
+  ]
+    .map(sanitizeApiKey)
+    .filter(Boolean);
 };
 
 let currentApiKeyIndex = 0;
@@ -652,7 +683,7 @@ const rotateApiKey = () => {
   }
 };
 
-app.get('/api/youtube/search', async (req, res) => {
+app.get(['/api/youtube/search', '/api/search', '/search'], async (req, res) => {
   const { q } = req.query;
   if (!q || !q.toString().trim()) {
     return res.json({ items: [] });
@@ -714,12 +745,12 @@ app.get('/api/youtube/search', async (req, res) => {
       } catch (apiErr) {
         const status = apiErr.response?.status;
         const errMsg = apiErr.response?.data?.error?.message || apiErr.message;
-        console.warn(`[YouTube API] Key attempt failed (${status}):`, errMsg);
+        console.warn(`[YouTube API Upstream] Key attempt failed (${status}):`, errMsg);
 
-        if (status === 400 || errMsg.includes('API key not valid')) {
+        if (status === 400 || (errMsg && errMsg.includes('API key not valid'))) {
           deadApiKeys.set(apiKey, { reason: 'invalid', time: Date.now() });
           metricsService.recordYouTube('invalid_key');
-        } else if (status === 403 || errMsg.includes('quota')) {
+        } else if (status === 403 || (errMsg && errMsg.includes('quota'))) {
           deadApiKeys.set(apiKey, { reason: 'quota', time: Date.now() });
           metricsService.recordYouTube('quota');
         }
@@ -776,7 +807,7 @@ app.get('/api/youtube/search', async (req, res) => {
 });
 
 // Stream endpoint - safe placeholder, playback is handled client-side via YouTube IFrame API
-app.get('/api/stream/:videoId', (req, res) => {
+app.get(['/api/stream/:videoId', '/stream/:videoId'], (req, res) => {
   res.status(200).json({
     status: 'ok',
     message: 'Stream playback handled client-side via YouTube IFrame API'

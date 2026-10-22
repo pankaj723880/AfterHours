@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldCheck, RefreshCw, ChevronLeft, ChevronRight, Filter, Eye } from 'lucide-react';
+import { safeParseJsonResponse } from '../../utils/errorHandler';
 
 export default function AuditLogs({ token, backendUrl, showToast }) {
+  const cleanBase = (backendUrl || '').trim().replace(/\/+$/, '');
   const [logs, setLogs] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -20,13 +22,14 @@ export default function AuditLogs({ token, backendUrl, showToast }) {
       });
       if (actionFilter) queryParams.set('action', actionFilter);
 
-      const res = await fetch(`${backendUrl}/api/admin/audit-logs?${queryParams.toString()}`, {
+      const res = await fetch(`${cleanBase}/api/admin/audit-logs?${queryParams.toString()}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to fetch audit logs');
+      const parsed = await safeParseJsonResponse(res, 'Failed to fetch audit logs');
+      if (!parsed.ok) throw new Error(parsed.error);
+      const data = parsed.data || {};
 
       setLogs(data.logs || []);
       setTotal(data.total || 0);

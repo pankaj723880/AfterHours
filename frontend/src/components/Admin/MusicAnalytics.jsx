@@ -1,21 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { Music2, Search, Heart, ListMusic, Play, AlertCircle, RefreshCw } from 'lucide-react';
+import { safeParseJsonResponse } from '../../utils/errorHandler';
 
 export default function MusicAnalytics({ token, backendUrl, showToast }) {
+  const cleanBase = (backendUrl || '').trim().replace(/\/+$/, '');
   const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const fetchAnalytics = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${backendUrl}/api/admin/music-analytics`, {
+      const res = await fetch(`${cleanBase}/api/admin/music-analytics`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Failed to load music analytics');
-      setData(json);
+      const parsed = await safeParseJsonResponse(res, 'Failed to load music analytics');
+      if (!parsed.ok) throw new Error(parsed.error);
+      setData(parsed.data);
     } catch (err) {
       showToast?.(err.message, 'error');
     } finally {

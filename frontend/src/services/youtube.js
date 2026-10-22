@@ -1,9 +1,21 @@
 
+const sanitizeApiKey = (key) => {
+  if (typeof key !== 'string') return '';
+  let clean = key.trim().replace(/^['"]|['"]$/g, '');
+  if (clean.startsWith('AIzaSy') && clean.length > 39) {
+    clean = clean.slice(0, 39);
+  }
+  return clean;
+};
+
 const YOUTUBE_API_KEYS = [
   import.meta.env.VITE_YOUTUBE_KEY_1,
   import.meta.env.VITE_YOUTUBE_KEY_2,
   import.meta.env.VITE_YOUTUBE_KEY_3,
-].filter(Boolean);
+  import.meta.env.VITE_YOUTUBE_KEY_4,
+  import.meta.env.VITE_YOUTUBE_KEY_5,
+  import.meta.env.VITE_YOUTUBE_KEY_6,
+].map(sanitizeApiKey).filter(Boolean);
 
 let currentApiKeyIndex = parseInt(localStorage.getItem('yt_key_index') || '0', 10);
 
@@ -28,9 +40,12 @@ export const fetchWithKeyRotation = async (urlGenerator) => {
     const url = urlGenerator(apiKey);
     try {
       const res = await fetch(url);
-      const data = await res.json();
-
-      if (data.error && (data.error.code === 403 || data.error.message?.includes('quota') || data.error.errors?.[0]?.reason === 'quotaExceeded')) {
+      const ct = res.headers.get('content-type') || '';
+      let data = null;
+      if (ct.includes('application/json')) {
+        data = await res.json().catch(() => null);
+      }
+      if (!res.ok || !data || data.error) {
         rotateApiKey();
         attempts++;
         continue;

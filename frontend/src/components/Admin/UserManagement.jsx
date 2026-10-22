@@ -14,8 +14,10 @@ import {
   AlertTriangle,
   Info
 } from 'lucide-react';
+import { safeParseJsonResponse } from '../../utils/errorHandler';
 
 export default function UserManagement({ token, backendUrl, currentUser, showToast }) {
+  const cleanBase = (backendUrl || '').trim().replace(/\/+$/, '');
   const [users, setUsers] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -49,13 +51,14 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
       if (roleFilter) queryParams.set('role', roleFilter);
       if (statusFilter) queryParams.set('status', statusFilter);
 
-      const res = await fetch(`${backendUrl}/api/admin/users?${queryParams.toString()}`, {
+      const res = await fetch(`${cleanBase}/api/admin/users?${queryParams.toString()}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to fetch users');
+      const parsed = await safeParseJsonResponse(res, 'Failed to fetch users');
+      if (!parsed.ok) throw new Error(parsed.error);
+      const data = parsed.data || {};
 
       setUsers(data.users || []);
       setTotal(data.total || 0);
@@ -89,7 +92,7 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
     if (!selectedUser) return;
     setIsSaving(true);
     try {
-      const res = await fetch(`${backendUrl}/api/admin/users/${selectedUser.id}`, {
+      const res = await fetch(`${cleanBase}/api/admin/users/${selectedUser.id}`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -100,8 +103,8 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
           status: newStatus
         })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to update user');
+      const parsed = await safeParseJsonResponse(res, 'Failed to update user');
+      if (!parsed.ok) throw new Error(parsed.error);
 
       showToast?.('User updated successfully', 'success');
       setIsEditModalOpen(false);
@@ -118,14 +121,14 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
     if (!deactivateTarget) return;
     setIsSaving(true);
     try {
-      const res = await fetch(`${backendUrl}/api/admin/users/${deactivateTarget.id}`, {
+      const res = await fetch(`${cleanBase}/api/admin/users/${deactivateTarget.id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to deactivate user');
+      const parsed = await safeParseJsonResponse(res, 'Failed to deactivate user');
+      if (!parsed.ok) throw new Error(parsed.error);
 
       showToast?.('User successfully deactivated', 'success');
       setDeactivateTarget(null);
