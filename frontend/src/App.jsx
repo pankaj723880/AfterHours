@@ -42,14 +42,28 @@ socket.on('connect_error', (err) => {
 
 const fetchFromBackend = async (query) => {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 35000);
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
   try {
-    const res = await fetch(getApiUrl(`/api/youtube/search?q=${encodeURIComponent(query)}`), {
-      signal: controller.signal,
-      headers: {
-        'X-Session-ID': getOrCreateSessionId()
+    let res;
+    try {
+      res = await fetch(getApiUrl(`/api/youtube/search?q=${encodeURIComponent(query)}`), {
+        signal: controller.signal,
+        headers: {
+          'X-Session-ID': getOrCreateSessionId()
+        }
+      });
+    } catch (localErr) {
+      if (!BACKEND_URL.includes('onrender.com')) {
+        res = await fetch(`https://afterhours-zvic.onrender.com/api/youtube/search?q=${encodeURIComponent(query)}`, {
+          signal: controller.signal,
+          headers: {
+            'X-Session-ID': getOrCreateSessionId()
+          }
+        });
+      } else {
+        throw localErr;
       }
-    });
+    }
     clearTimeout(timeoutId);
     const parsed = await safeParseJsonResponse(res, 'Backend search failed');
     if (!parsed.ok) {
@@ -1349,17 +1363,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const currentCount = stationVisibleCounts[activeTab] || 50;
     const targetCount = currentCount + 10;
 
-    // Immediately increment count
+    // Immediately increment visible count so tracks already in songs appear instantly
     setStationVisibleCounts(prev => ({ ...prev, [activeTab]: targetCount }));
 
-    // If approaching or exceeding currently loaded songs, fetch more from backend
+    // If approaching or exceeding currently loaded songs, fetch more or generate curated extension
     if (targetCount >= songs.length) {
       setIsLoadingMoreStation(true);
-      try {
-        const station = SPECIAL_STATIONS[activeTab];
-        const page = (stationPageRef.current[activeTab] || 1) + 1;
-        stationPageRef.current[activeTab] = page;
+      const station = SPECIAL_STATIONS[activeTab];
+      const page = (stationPageRef.current[activeTab] || 1) + 1;
+      stationPageRef.current[activeTab] = page;
 
+      try {
         const queryMap = {
           barber: [
             "best 90s bollywood superhit romantic songs alka yagnik udit narayan",
@@ -1408,9 +1422,47 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             }));
             return merged;
           });
+        } else {
+          // Curated station pool fallback
+          const curatedKey = activeTab === 'barber' ? 'saloon' : (activeTab === 'truck' ? 'horn' : (activeTab === 'pauwa' ? 'theka' : null));
+          const baseList = (curatedKey && CURATED_STATION_TRACKS[curatedKey]) || [];
+          if (baseList.length > 0) {
+            const startIdx = ((page - 2) * 10) % baseList.length;
+            const extraBatch = baseList.slice(startIdx, startIdx + 10).map((t, idx) => ({
+              ...t,
+              id: `${t.id}_ext_${page}_${idx}`,
+              title: `${t.title} (Live Set)`
+            }));
+            setSongs(prev => {
+              const merged = [...prev, ...extraBatch];
+              setStationCache(c => ({
+                ...c,
+                [activeTab]: { tracks: merged }
+              }));
+              return merged;
+            });
+          }
         }
       } catch (err) {
-        console.warn("Could not fetch extra tracks on load more:", err.message);
+        console.warn("Could not fetch extra tracks on load more, using curated fallback:", err.message);
+        const curatedKey = activeTab === 'barber' ? 'saloon' : (activeTab === 'truck' ? 'horn' : (activeTab === 'pauwa' ? 'theka' : null));
+        const baseList = (curatedKey && CURATED_STATION_TRACKS[curatedKey]) || [];
+        if (baseList.length > 0) {
+          const startIdx = ((page - 2) * 10) % baseList.length;
+          const extraBatch = baseList.slice(startIdx, startIdx + 10).map((t, idx) => ({
+            ...t,
+            id: `${t.id}_ext_${page}_${idx}`,
+            title: `${t.title} (Radio Mix)`
+          }));
+          setSongs(prev => {
+            const merged = [...prev, ...extraBatch];
+            setStationCache(c => ({
+              ...c,
+              [activeTab]: { tracks: merged }
+            }));
+            return merged;
+          });
+        }
       } finally {
         setIsLoadingMoreStation(false);
       }
@@ -2467,6 +2519,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const station = SPECIAL_STATIONS[stationKey];
     if (!station) return;
 
+    if (stationCache[stationKey]?.tracks?.length > 0) {
+      const cachedTracks = stationCache[stationKey].tracks || [];
+      setSongs(cachedTracks);
+      if (autoPlayIfEmpty && !currentSong && cachedTracks.length > 0) {
+        const randomTrack = cachedTracks[Math.floor(Math.random() * cachedTracks.length)];
+        playSong(randomTrack);
+      }
+      return;
+    }
+
     const curatedKey = stationKey === 'barber' ? 'saloon' : (stationKey === 'truck' ? 'horn' : (stationKey === 'pauwa' ? 'theka' : null));
     if (curatedKey && CURATED_STATION_TRACKS && CURATED_STATION_TRACKS[curatedKey]) {
       const curatedList = CURATED_STATION_TRACKS[curatedKey];
@@ -2477,16 +2539,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }));
       if (autoPlayIfEmpty && !currentSong && curatedList.length > 0) {
         const randomTrack = curatedList[Math.floor(Math.random() * Math.min(curatedList.length, 50))];
-        playSong(randomTrack);
-      }
-      return;
-    }
-
-    if (stationCache[stationKey]?.tracks?.length > 0) {
-      const cachedTracks = stationCache[stationKey].tracks || [];
-      setSongs(cachedTracks);
-      if (autoPlayIfEmpty && !currentSong && cachedTracks.length > 0) {
-        const randomTrack = cachedTracks[Math.floor(Math.random() * cachedTracks.length)];
         playSong(randomTrack);
       }
       return;
@@ -3260,7 +3312,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       onClick={() => setSearchVisibleCount(prev => prev + 10)}
                       className="px-6 py-3 rounded-2xl bg-neutral-800 hover:bg-neutral-700 text-xs font-bold text-amber-400 border border-neutral-700 transition shadow-xl"
                     >
-                      Show More Songs (+10)
+                      Show More Songs
                     </button>
                   </div>
                 )}
