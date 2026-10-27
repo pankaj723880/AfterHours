@@ -12,9 +12,9 @@ export const SPECIAL_STATIONS = {
   },
   barber: {
     id: "barber",
-    title: "डीलक्स सैलून (Deluxe Salon)",
-    subtitle: "Classic 90s, 2000s Bollywood Hits & Retro Salon Evergreen Songs",
-    badge: "💈 Nai Ki Dukaan • Vintage Barbershop & Drink Aesthetic",
+    title: "Saloon FM",
+    subtitle: "Iconic 90s & 2000s Bollywood Melodies, Golden Era Romance & Nostalgic Radio Hits",
+    badge: "💈 Saloon FM • 90s/2000s Nostalgia Radio",
     bgImages: [
       "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=1600&auto=format&fit=crop",
       "https://images.unsplash.com/photo-1599351431202-1e0f0137899a?q=80&w=1600&auto=format&fit=crop"
@@ -23,9 +23,9 @@ export const SPECIAL_STATIONS = {
   },
   truck: {
     id: "truck",
-    title: "Truck Pe Music (MAHAUL SET)",
-    subtitle: "Highway Dhaba Hits, Sunset Vibes, Bhojpuri, Altaf Raja & Punjabi Beats",
-    badge: "🚛 Highway Truck Driver Vibe • Live Audio",
+    title: "Horn Ok Please",
+    subtitle: "High-Bass Highway Tracks, Rustic Punjabi Folk/Dhol Beats & Dhabha Anthems",
+    badge: "🚛 Horn Ok Please • Highway Dhaba Vibe",
     bgImages: [
       "https://images.unsplash.com/photo-1519003722824-194d4455a60c?q=80&w=1600&auto=format&fit=crop",
       "https://images.unsplash.com/photo-1508873696983-2df5c92063c7?q=80&w=1600&auto=format&fit=crop"
@@ -34,9 +34,9 @@ export const SPECIAL_STATIONS = {
   },
   pauwa: {
     id: "pauwa",
-    title: "Pauwa Party",
-    subtitle: "Desi Peg Bangers, Yo Yo Honey Singh, Badshah, Sidhu & Local Desi Beats",
-    badge: "🍾 Desi Daru & Celebration Mix",
+    title: "Theka Session",
+    subtitle: "Late-Night Party Anthems, High-Energy Drinking Bangers & Desi Hip-Hop",
+    badge: "🍾 Theka Session • Desi Beats & Party Anthems",
     bgImages: [
       "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=1600&auto=format&fit=crop"
     ],

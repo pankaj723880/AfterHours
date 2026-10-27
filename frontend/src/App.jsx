@@ -3,6 +3,7 @@ import { GoogleLogin } from '@react-oauth/google';
 import { Reorder, useDragControls } from 'framer-motion';
 import AdminDashboard from './components/Admin/AdminDashboard';
 import { safeParseJsonResponse } from './utils/errorHandler';
+import { CURATED_STATION_TRACKS } from './constants/curatedPlaylists';
 
 import { io } from 'socket.io-client';
 
@@ -130,9 +131,9 @@ const DisclaimerFooter = React.memo(() => (
 const SPECIAL_STATIONS = {
   barber: {
     id: "barber",
-    title: "डीलक्स सैलून (Deluxe Salon)",
-    subtitle: "Classic 90s, 2000s Bollywood Hits & Retro Salon Evergreen Songs",
-    badge: "💈 Nai Ki Dukaan • Vintage Barbershop & Drink Aesthetic",
+    title: "Saloon FM",
+    subtitle: "Iconic 90s & 2000s Bollywood Melodies, Golden Era Romance & Nostalgic Radio Hits",
+    badge: "💈 Saloon FM • 90s/2000s Nostalgia Radio",
     bgImages: [
       "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=1600&auto=format&fit=crop",
       "https://images.unsplash.com/photo-1599351431202-1e0f0137899a?q=80&w=1600&auto=format&fit=crop"
@@ -141,9 +142,9 @@ const SPECIAL_STATIONS = {
   },
   truck: {
     id: "truck",
-    title: "Truck Pe Music (MAHAUL SET)",
-    subtitle: "Highway Dhaba Hits, Sunset Vibes, Bhojpuri, Altaf Raja & Punjabi Beats",
-    badge: "🚛 Highway Truck Driver Vibe • Live Audio",
+    title: "Horn Ok Please",
+    subtitle: "High-Bass Highway Tracks, Rustic Punjabi Folk/Dhol Beats & Dhabha Anthems",
+    badge: "🚛 Horn Ok Please • Highway Dhaba Vibe",
     bgImages: [
       "https://images.unsplash.com/photo-1519003722824-194d4455a60c?q=80&w=1600&auto=format&fit=crop",
       "https://images.unsplash.com/photo-1508873696983-2df5c92063c7?q=80&w=1600&auto=format&fit=crop"
@@ -152,9 +153,9 @@ const SPECIAL_STATIONS = {
   },
   pauwa: {
     id: "pauwa",
-    title: "Pauwa Party",
-    subtitle: "Desi Peg Bangers, Yo Yo Honey Singh, Badshah, Sidhu & Local Desi Beats",
-    badge: "🍾 Desi Daru & Celebration Mix",
+    title: "Theka Session",
+    subtitle: "Late-Night Party Anthems, High-Energy Drinking Bangers & Desi Hip-Hop",
+    badge: "🍾 Theka Session • Desi Beats & Party Anthems",
     bgImages: [
       "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=1600&auto=format&fit=crop"
     ],
@@ -1339,6 +1340,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [songs, setSongs] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
   const [searchVisibleCount, setSearchVisibleCount] = useState(10);
+  const [stationVisibleCounts, setStationVisibleCounts] = useState({ barber: 50, truck: 50, pauwa: 50 });
+  const stationVisibleCount = stationVisibleCounts[activeTab] || 50;
+  const handleLoadMoreStationSongs = useCallback(() => {
+    setStationVisibleCounts(prev => ({
+      ...prev,
+      [activeTab]: (prev[activeTab] || 50) + 10
+    }));
+  }, [activeTab]);
   const [queue, setQueue] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('afterhours_queue')) || [];
@@ -2128,7 +2137,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     if ('mediaSession' in navigator && currentSong) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: currentSong.title,
-        artist: currentSong.channel || "MAHAUL SET",
+        artist: currentSong.channel || "Loopra",
         album: "Live Music Stream",
         artwork: [
           { src: currentSong.thumbnail, sizes: '96x96', type: 'image/jpeg' },
@@ -2388,71 +2397,45 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   const loadStationSongs = useCallback(async (stationKey, autoPlayIfEmpty = false) => {
     const station = SPECIAL_STATIONS[stationKey];
-    if (!station || station.queries.length === 0) return;
+    if (!station) return;
 
-    if (stationKey === 'pauwa') {
-      if (stationCache[stationKey]) {
-        const party = stationCache[stationKey].party || [];
-        const heartbreak = stationCache[stationKey].heartbreak || [];
-        if (party.length > 0 || heartbreak.length > 0) {
-          setPartyTracks(party);
-          setHeartbreakTracks(heartbreak);
-          if (autoPlayIfEmpty && !currentSong && party.length > 0) playSong(party[0]);
-          return;
-        }
+    const curatedKey = stationKey === 'barber' ? 'saloon' : (stationKey === 'truck' ? 'horn' : (stationKey === 'pauwa' ? 'theka' : null));
+    if (curatedKey && CURATED_STATION_TRACKS && CURATED_STATION_TRACKS[curatedKey]) {
+      const curatedList = CURATED_STATION_TRACKS[curatedKey];
+      setSongs(curatedList);
+      setStationCache(prev => ({
+        ...prev,
+        [stationKey]: { tracks: curatedList }
+      }));
+      if (autoPlayIfEmpty && !currentSong && curatedList.length > 0) {
+        const randomTrack = curatedList[Math.floor(Math.random() * Math.min(curatedList.length, 50))];
+        playSong(randomTrack);
       }
-    } else if (stationCache[stationKey]) {
+      return;
+    }
+
+    if (stationCache[stationKey]?.tracks?.length > 0) {
       const cachedTracks = stationCache[stationKey].tracks || [];
-      if (cachedTracks.length > 0) {
-        setSongs(cachedTracks);
-        if (autoPlayIfEmpty && !currentSong && cachedTracks.length > 0) {
-          const randomTrack = cachedTracks[Math.floor(Math.random() * cachedTracks.length)];
-          playSong(randomTrack);
-        }
-        return;
+      setSongs(cachedTracks);
+      if (autoPlayIfEmpty && !currentSong && cachedTracks.length > 0) {
+        const randomTrack = cachedTracks[Math.floor(Math.random() * cachedTracks.length)];
+        playSong(randomTrack);
       }
+      return;
     }
 
     setStationLoading(true);
 
     try {
-      if (stationKey === 'pauwa') {
-        const [partyData, sadData] = await Promise.all([
-          fetchFromBackend(station.queries[0]).catch(() => ({})),
-          fetchFromBackend(station.queries[1]).catch(() => ({}))
-        ]);
-
-        const fetchedParty = partyData.items ? partyData.items.map(item => ({
-          id: item.id.videoId || item.id,
-          title: item.snippet.title.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&"),
-          channel: item.snippet.channelTitle,
-          thumbnail: getCleanThumbnail(item, item.id.videoId || item.id),
-        })) : [];
-
-        const fetchedSad = sadData.items ? sadData.items.map(item => ({
-          id: item.id.videoId || item.id,
-          title: item.snippet.title.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&"),
-          channel: item.snippet.channelTitle,
-          thumbnail: getCleanThumbnail(item, item.id.videoId || item.id),
-        })) : [];
-
-        setPartyTracks(fetchedParty);
-        setHeartbreakTracks(fetchedSad);
-
-        setStationCache(prev => ({ 
-          ...prev, 
-          [stationKey]: { party: fetchedParty, heartbreak: fetchedSad } 
-        }));
-
-        if (autoPlayIfEmpty && fetchedParty.length > 0 && !currentSong) playSong(fetchedParty[0]);
-      } else {
-        const query = station.queries[0];
+      const query = station.queries?.[0];
+      if (query) {
         const data = await fetchFromBackend(query);
 
         const fetchedTracks = data.items ? data.items.map(item => ({
           id: item.id.videoId || item.id,
           title: item.snippet.title.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&"),
           channel: item.snippet.channelTitle,
+          artist: item.snippet.channelTitle,
           thumbnail: getCleanThumbnail(item, item.id.videoId || item.id),
         })) : [];
 
@@ -2813,10 +2796,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               
               {!isSidebarCollapsed && (
                 <>
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-700 via-amber-600 to-amber-500 flex items-center justify-center shadow-xl border border-amber-500/35 shrink-0">
-                    <Icon name="radio" className="w-6 h-6 text-white" />
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-600 via-orange-500 to-amber-400 p-1 flex items-center justify-center shadow-xl border border-amber-500/35 shrink-0 overflow-hidden">
+                    <img src="/favicon.svg" alt="Loopra" className="w-full h-full object-contain" />
                   </div>
-                  <h1 className="text-lg font-display font-extrabold tracking-tight tracking-wider text-white whitespace-nowrap">MAHAUL SET</h1>
+                  <h1 className="text-lg font-display font-extrabold tracking-tight tracking-wider text-white whitespace-nowrap">LOOPRA</h1>
                 </>
               )}
             </div>
@@ -2860,44 +2843,44 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
             <button
               onClick={() => handleStationSelect('barber')}
-              title="Barber Shop (सैलून)"
+              title="Saloon FM"
               className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'justify-between px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
                 activeTab === 'barber' ? 'bg-red-600/25 text-red-200 border border-red-500/50 shadow-lg shadow-red-950/50' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
               }`}
             >
               <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
                 <Icon name="scissors" className="w-5 h-5 shrink-0 text-red-400" />
-                {!isSidebarCollapsed && <span className="whitespace-nowrap">Barber Shop (सैलून)</span>}
+                {!isSidebarCollapsed && <span className="whitespace-nowrap">Saloon FM</span>}
               </div>
-              {!isSidebarCollapsed && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 font-bold shrink-0">DRINK BG</span>}
+              {!isSidebarCollapsed && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 font-bold shrink-0">SALOON FM</span>}
             </button>
 
             <button
               onClick={() => handleStationSelect('truck')}
-              title="Truck Pe Music"
+              title="Horn Ok Please"
               className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'justify-between px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
                 activeTab === 'truck' ? 'bg-amber-600/25 text-amber-200 border border-amber-500/50 shadow-lg shadow-amber-950/50' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
               }`}
             >
               <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
                 <Icon name="truck" className="w-5 h-5 shrink-0 text-amber-400" />
-                {!isSidebarCollapsed && <span className="whitespace-nowrap">Truck Pe Music</span>}
+                {!isSidebarCollapsed && <span className="whitespace-nowrap">Horn Ok Please</span>}
               </div>
-              {!isSidebarCollapsed && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold shrink-0">TRUCK BG</span>}
+              {!isSidebarCollapsed && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold shrink-0">HORN OK</span>}
             </button>
 
             <button
               onClick={() => handleStationSelect('pauwa')}
-              title="Pauwa Party"
+              title="Theka Session"
               className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'justify-between px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
                 activeTab === 'pauwa' ? 'bg-amber-600/25 text-emerald-200 border border-orange-500/50 shadow-lg shadow-amber-950/50' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
               }`}
             >
               <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
                 <Icon name="beer" className="w-5 h-5 shrink-0 text-orange-400" />
-                {!isSidebarCollapsed && <span className="whitespace-nowrap">Pauwa Party</span>}
+                {!isSidebarCollapsed && <span className="whitespace-nowrap">Theka Session</span>}
               </div>
-              {!isSidebarCollapsed && <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/20 text-amber-300 font-bold shrink-0">DUAL LIST</span>}
+              {!isSidebarCollapsed && <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/20 text-amber-300 font-bold shrink-0">THEKA</span>}
             </button>
 
             {!isSidebarCollapsed ? (
@@ -2998,10 +2981,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               <Icon name={isSidebarOpen ? "close" : "menu"} className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
             </button>
             <div className="flex md:hidden items-center gap-1.5 sm:gap-2">
-              <div className="w-5 h-5 sm:w-7 sm:h-7 rounded-xl bg-gradient-to-tr from-amber-700 via-amber-600 to-amber-500 flex items-center justify-center shadow-md">
-                <Icon name="radio" className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
+              <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-xl bg-gradient-to-tr from-amber-600 via-orange-500 to-amber-400 p-0.5 flex items-center justify-center shadow-md overflow-hidden">
+                <img src="/favicon.svg" alt="Loopra" className="w-full h-full object-contain" />
               </div>
-              <h1 className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white">MAHAUL SET</h1>
+              <h1 className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white">LOOPRA</h1>
             </div>
 
             {/* Desktop Clock */}
@@ -3281,168 +3264,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
         )}
 
-        {activeTab === 'pauwa' && currentStation && (
-          <div className="max-w-5xl mx-auto space-y-8 relative z-10">
-            <div className="p-8 rounded-3xl border border-neutral-700/50 relative overflow-hidden shadow-2xl backdrop-blur-md bg-neutral-900/40">
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
-                <div className="space-y-3">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full border border-orange-500/40 bg-neutral-900/80 backdrop-blur-xl text-amber-300 shadow-sm">
-                    <span className="w-2 h-2 rounded-full bg-orange-400 animate-ping" />
-                    {currentStation.badge}
-                  </span>
-                  <h1 className="text-3xl md:text-5xl font-extrabold text-white tracking-tight drop-shadow-lg">{currentStation.title}</h1>
-                  <p className="text-xs md:text-sm text-neutral-200 max-w-xl font-medium drop-shadow">{currentStation.subtitle}</p>
-                </div>
-              </div>
-            </div>
-
-            {stationLoading && (
-              <div className="text-center py-6">
-                <span className="text-xs text-orange-400 animate-pulse flex items-center justify-center gap-2">
-                  <Icon name="sparkles" className="w-4 h-4 animate-spin shrink-0" /> Loading Party & Heartbreak tracks...
-                </span>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between px-1 pb-1 border-b border-orange-500/30">
-                  <h3 className="text-md font-extrabold text-amber-300 flex items-center gap-2">
-                    <Icon name="beer" className="w-4 h-4 text-orange-400 shrink-0" />
-                    <span>🎉 Party Songs</span>
-                  </h3>
-                  <span className="text-[10px] text-neutral-400 font-mono">{partyTracks.length} tracks</span>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2">
-                  {partyTracks.map((track, i) => {
-                    const isCurrent = currentSong?.id === track.id;
-                    const isMenuOpen = openMenuId === `${track.id}-${i}`;
-                    return (
-                      <div
-                        key={track.id + i}
-                        onClick={() => playSong(track)}
-                        className={`p-3 rounded-2xl border flex items-center justify-between cursor-pointer transition backdrop-blur-md relative ${
-                          isMenuOpen ? 'z-30' : 'z-auto'
-                        } ${
-                          isCurrent
-                            ? 'bg-neutral-900/90 border-orange-500/80 shadow-xl'
-                            : 'bg-neutral-900/50 border-neutral-800/70 hover:bg-neutral-900 active:scale-[0.98]/80'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className="text-[10px] font-mono text-neutral-500 w-5 text-center">{i + 1}</span>
-                          <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-10 h-10 rounded-2xl object-cover shrink-0 shadow-md" onError={(e) => handleImageError(e, track.title, track.id)} />
-                          <div className="min-w-0">
-                            <h4 className={`font-bold text-xs truncate ${isCurrent ? 'text-orange-400' : 'text-white'}`}>
-                              {track.title}
-                            </h4>
-                            <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
-                          </div>
-                        </div>
-
-                        <div className={`flex items-center gap-2 shrink-0 relative ${isMenuOpen ? 'z-40' : ''}`}>
-                          <button onClick={(e) => handleOpenVideo(track, e)} className="p-1.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition flex items-center shrink-0" title="See Video">
-                            <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
-                          </button>
-                          
-                          <button 
-                            onClick={(e) => { 
-                              e.stopPropagation(); 
-                              setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); 
-                            }} 
-                            className="p-1 text-neutral-500 hover:text-white transition shrink-0"
-                          >
-                            <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
-                          </button>
-
-                          {isMenuOpen && (
-                            <div className="absolute right-0 top-full mt-1.5 w-44 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
-                              {currentSong?.id !== track.id && (
-                                <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
-                              )}
-                              <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
-                              <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between px-1 pb-1 border-b border-pink-500/30">
-                  <h3 className="text-md font-extrabold text-pink-300 flex items-center gap-2">
-                    <Icon name="heart" className="w-4 h-4 text-pink-400 shrink-0" />
-                    <span>💔 Heartbreak Songs</span>
-                  </h3>
-                  <span className="text-[10px] text-neutral-400 font-mono">{heartbreakTracks.length} tracks</span>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2">
-                  {heartbreakTracks.map((track, i) => {
-                    const isCurrent = currentSong?.id === track.id;
-                    const isMenuOpen = openMenuId === `${track.id}-${i}`;
-                    return (
-                      <div
-                        key={track.id + i}
-                        onClick={() => playSong(track)}
-                        className={`p-3 rounded-2xl border flex items-center justify-between cursor-pointer transition backdrop-blur-md relative ${
-                          isMenuOpen ? 'z-30' : 'z-auto'
-                        } ${
-                          isCurrent
-                            ? 'bg-neutral-900/90 border-pink-500/80 shadow-xl'
-                            : 'bg-neutral-900/50 border-neutral-800/70 hover:bg-neutral-900 active:scale-[0.98]/80'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className="text-[10px] font-mono text-neutral-500 w-5 text-center">{i + 1}</span>
-                          <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-10 h-10 rounded-2xl object-cover shrink-0 shadow-md" onError={(e) => handleImageError(e, track.title, track.id)} />
-                          <div className="min-w-0">
-                            <h4 className={`font-bold text-xs truncate ${isCurrent ? 'text-pink-400' : 'text-white'}`}>
-                              {track.title}
-                            </h4>
-                            <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
-                          </div>
-                        </div>
-
-                        <div className={`flex items-center gap-2 shrink-0 relative ${isMenuOpen ? 'z-40' : ''}`}>
-                          <button onClick={(e) => handleOpenVideo(track, e)} className="p-1.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition flex items-center shrink-0" title="See Video">
-                            <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
-                          </button>
-                          
-                          <button 
-                            onClick={(e) => { 
-                              e.stopPropagation(); 
-                              setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); 
-                            }} 
-                            className="p-1 text-neutral-500 hover:text-white transition shrink-0"
-                          >
-                            <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
-                          </button>
-
-                          {isMenuOpen && (
-                            <div className="absolute right-0 top-full mt-1.5 w-44 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
-                              {currentSong?.id !== track.id && (
-                                <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
-                              )}
-                              <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
-                              <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <DisclaimerFooter />
-          </div>
-        )}
 
                         {activeTab === 'home' && (
                     <div className="max-w-7xl mx-auto px-4 md:px-8 pt-8 space-y-12">
@@ -3538,7 +3359,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
         )}
 
-        {['barber', 'truck'].includes(activeTab) && currentStation && (
+        {['barber', 'truck', 'pauwa'].includes(activeTab) && currentStation && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
             <div className="p-8 rounded-3xl border border-neutral-700/50 relative overflow-hidden shadow-2xl backdrop-blur-md bg-neutral-900/40">
               <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
@@ -3560,62 +3381,81 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 </span>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-2">
-                {songs.map((track, i) => {
-                  const isCurrent = currentSong?.id === track.id;
-                  const isMenuOpen = openMenuId === `${track.id}-${i}`;
-                  return (
-                    <div
-                      key={track.id + i}
-                      onClick={() => playSong(track)}
-                      className={`p-3.5 rounded-2xl border flex items-center justify-between cursor-pointer transition backdrop-blur-md relative ${
-                        isMenuOpen ? 'z-30' : 'z-auto'
-                      } ${
-                        isCurrent
-                          ? 'bg-neutral-900/90 border-amber-500/80 shadow-xl'
-                          : 'bg-neutral-900/50 border-neutral-800/70 hover:bg-neutral-900 active:scale-[0.98]/80'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3.5 min-w-0">
-                        <span className="text-xs font-mono text-neutral-400 w-6 text-center">{i + 1}</span>
-                        <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0 shadow-md" onError={(e) => handleImageError(e, track.title, track.id)} />
-                        <div className="min-w-0">
-                          <h4 className={`font-bold text-xs truncate ${isCurrent ? 'text-amber-400' : 'text-white'}`}>
-                            {track.title}
-                          </h4>
-                          <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
+              <>
+                {songs.length > 0 && (
+                  <div className="flex items-center justify-between px-2 text-xs text-neutral-400 font-medium">
+                    <span>Showing {Math.min(stationVisibleCount, songs.length)} of {songs.length} curated tracks</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 gap-2">
+                  {songs.slice(0, stationVisibleCount).map((track, i) => {
+                    const isCurrent = currentSong?.id === track.id;
+                    const isMenuOpen = openMenuId === `${track.id}-${i}`;
+                    return (
+                      <div
+                        key={track.id + '-' + i}
+                        onClick={() => playSong(track)}
+                        className={`p-3.5 rounded-2xl border flex items-center justify-between cursor-pointer transition backdrop-blur-md relative ${
+                          isMenuOpen ? 'z-30' : 'z-auto'
+                        } ${
+                          isCurrent
+                            ? 'bg-neutral-900/90 border-amber-500/80 shadow-xl'
+                            : 'bg-neutral-900/50 border-neutral-800/70 hover:bg-neutral-900 active:scale-[0.98]/80'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          <span className="text-xs font-mono text-neutral-400 w-6 text-center">{i + 1}</span>
+                          <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0 shadow-md" onError={(e) => handleImageError(e, track.title, track.id)} />
+                          <div className="min-w-0">
+                            <h4 className={`font-bold text-xs truncate ${isCurrent ? 'text-amber-400' : 'text-white'}`}>
+                              {track.title}
+                            </h4>
+                            <p className="text-[10px] text-neutral-400 truncate">{track.channel || track.artist}</p>
+                          </div>
+                        </div>
+
+                        <div className={`flex items-center gap-2 shrink-0 relative ${isMenuOpen ? 'z-40' : ''}`}>
+                          <button onClick={(e) => handleOpenVideo(track, e)} className="p-1.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition flex items-center shrink-0" title="See Video">
+                            <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
+                          </button>
+                          
+                          <button 
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); 
+                            }} 
+                            className="p-1 text-neutral-500 hover:text-white transition shrink-0"
+                          >
+                            <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
+                          </button>
+
+                          {isMenuOpen && (
+                            <div className="absolute right-0 top-full mt-1.5 w-44 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
+                              {currentSong?.id !== track.id && (
+                                <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
+                              )}
+                              <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                              <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                            </div>
+                          )}
                         </div>
                       </div>
+                    );
+                  })}
+                </div>
 
-                      <div className={`flex items-center gap-2 shrink-0 relative ${isMenuOpen ? 'z-40' : ''}`}>
-                        <button onClick={(e) => handleOpenVideo(track, e)} className="p-1.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition flex items-center shrink-0" title="See Video">
-                          <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
-                        </button>
-                        
-                        <button 
-                          onClick={(e) => { 
-                            e.stopPropagation(); 
-                            setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); 
-                          }} 
-                          className="p-1 text-neutral-500 hover:text-white transition shrink-0"
-                        >
-                          <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
-                        </button>
-
-                        {isMenuOpen && (
-                          <div className="absolute right-0 top-full mt-1.5 w-44 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
-                            {currentSong?.id !== track.id && (
-                              <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
-                            )}
-                            <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
-                            <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                {stationVisibleCount < songs.length && (
+                  <div className="text-center pt-6 pb-4">
+                    <button
+                      onClick={handleLoadMoreStationSongs}
+                      className="px-6 py-3 rounded-2xl bg-neutral-800 hover:bg-neutral-700 active:scale-[0.98] text-xs font-bold text-amber-400 border border-neutral-700 transition shadow-xl cursor-pointer"
+                    >
+                      Load More Songs (+10)
+                    </button>
+                  </div>
+                )}
+              </>
             )}
 
             <DisclaimerFooter />

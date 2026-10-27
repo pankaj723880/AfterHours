@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Music2, Search, Heart, ListMusic, Play, AlertCircle, RefreshCw } from 'lucide-react';
+import { Music2, Search, Heart, ListMusic, Play, AlertCircle, RefreshCw, ShieldCheck } from 'lucide-react';
 import { safeParseJsonResponse } from '../../utils/errorHandler';
 
 export default function MusicAnalytics({ token, backendUrl, showToast }) {
@@ -81,7 +81,7 @@ export default function MusicAnalytics({ token, backendUrl, showToast }) {
         <div className="bg-neutral-900/40 border border-neutral-800 rounded-2xl p-4 hover:border-emerald-500/30 transition">
           <div className="flex items-center justify-between text-neutral-400 mb-2">
             <span className="text-xs font-medium uppercase tracking-wider">Play Errors</span>
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <AlertCircle className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl font-extrabold text-emerald-400">
             {summary.playErrors ?? 0}
