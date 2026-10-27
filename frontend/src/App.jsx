@@ -4,6 +4,10 @@ import { Reorder, useDragControls } from 'framer-motion';
 import AdminDashboard from './components/Admin/AdminDashboard';
 import { safeParseJsonResponse } from './utils/errorHandler';
 import { CURATED_STATION_TRACKS } from './constants/curatedPlaylists';
+import HomeSearchBar from './components/Search/HomeSearchBar';
+import Turntable3D from './components/Player/Turntable3D';
+import AudioSpectrumVisualizer from './components/Player/AudioSpectrumVisualizer';
+import StudioLoungeAtmosphere from './components/Player/StudioLoungeAtmosphere';
 
 import { io } from 'socket.io-client';
 
@@ -436,17 +440,17 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove })
       whileDrag={{
         scale: 1.03,
         zIndex: 60,
-        boxShadow: "0 20px 35px -5px rgba(0, 0, 0, 0.6), 0 0 20px rgba(245, 158, 11, 0.25)",
-        backgroundColor: "rgba(38, 38, 38, 0.95)",
-        borderColor: "rgba(245, 158, 11, 0.6)",
+        boxShadow: "0 25px 40px -5px rgba(0, 0, 0, 0.8), 0 0 25px rgba(245, 158, 11, 0.4)",
+        backgroundColor: "rgba(24, 24, 27, 0.95)",
+        borderColor: "rgba(245, 158, 11, 0.7)",
         cursor: "grabbing"
       }}
-      className={`group flex items-center gap-3.5 p-3 rounded-2xl cursor-pointer select-none relative transition-colors duration-200 border ${
+      className={`group flex items-center gap-3.5 p-3.5 rounded-2xl cursor-pointer select-none relative transition-all duration-300 border backdrop-blur-xl ${
         isHolding
-          ? 'bg-amber-500/15 border-amber-500/50 shadow-lg'
+          ? 'bg-amber-500/20 border-amber-500/60 shadow-[0_0_25px_rgba(245,158,11,0.3)] scale-[1.02]'
           : isCurrent
-          ? 'bg-amber-500/10 border-amber-500/25'
-          : 'bg-neutral-900/60 hover:bg-neutral-800/60 border-neutral-800/80 hover:border-neutral-700/80'
+          ? 'bg-gradient-to-r from-amber-500/20 via-orange-500/10 to-neutral-900/60 border-amber-500/60 shadow-[0_0_25px_rgba(245,158,11,0.2)]'
+          : 'bg-neutral-900/40 hover:bg-neutral-800/60 border-neutral-800/80 hover:border-amber-500/40 hover:shadow-[0_8px_30px_rgba(0,0,0,0.6)] hover:-translate-y-0.5'
       }`}
       onClick={handleClick}
     >
@@ -456,13 +460,13 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove })
           didDragRef.current = true;
           dragControls.start(e);
         }}
-        className="touch-none p-2 -ml-1 text-neutral-500 hover:text-amber-400 group-hover:text-neutral-300 transition-colors cursor-grab active:cursor-grabbing shrink-0"
+        className="touch-none p-2 -ml-1 text-neutral-500 hover:text-amber-400 group-hover:text-amber-300 transition-colors cursor-grab active:cursor-grabbing shrink-0"
         title="Slide grip to rearrange"
       >
         <Icon name="grip" className="w-4 h-4 sm:w-5 sm:h-5 pointer-events-none" />
       </div>
 
-      <div className="relative w-12 h-12 rounded-xl overflow-hidden shrink-0 shadow-md">
+      <div className="relative w-12 h-12 rounded-xl overflow-hidden shrink-0 shadow-md border border-white/5">
         <img
           src={getCleanThumbnail(track)}
           alt={track.title || ""}
@@ -471,18 +475,27 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove })
         />
         <div
           className={`absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 ${
-            isCurrent ? 'opacity-100' : ''
+            isCurrent ? 'opacity-100 bg-amber-950/40' : ''
           } pointer-events-none`}
         >
-          <Icon name={isCurrent && isPlaying ? "pause" : "play"} className="w-5 h-5 text-white" />
+          <Icon name={isCurrent && isPlaying ? "pause" : "play"} className="w-5 h-5 text-amber-400 drop-shadow" />
         </div>
       </div>
 
       <div className="flex-1 min-w-0 pointer-events-none">
-        <h4 className={`font-medium text-sm truncate ${isCurrent ? 'text-amber-500' : 'text-white'}`}>
-          {track.title}
-        </h4>
-        <p className="text-xs text-neutral-400 truncate">{track.channel}</p>
+        <div className="flex items-center gap-2">
+          <h4 className={`font-semibold text-sm truncate ${isCurrent ? 'text-amber-400' : 'text-white group-hover:text-amber-200'} transition-colors`}>
+            {track.title}
+          </h4>
+          {isCurrent && isPlaying && (
+            <div className="flex items-end gap-0.5 h-3 shrink-0" title="Now Playing">
+              <span className="w-0.5 h-3 bg-amber-400 rounded-full animate-pulse" />
+              <span className="w-0.5 h-2 bg-amber-400 rounded-full animate-[pulse_0.7s_infinite_0.2s]" />
+              <span className="w-0.5 h-3.5 bg-amber-400 rounded-full animate-[pulse_0.5s_infinite_0.4s]" />
+            </div>
+          )}
+        </div>
+        <p className="text-xs text-neutral-400 truncate mt-0.5">{track.channel}</p>
       </div>
 
       {track.duration && (
@@ -1111,23 +1124,14 @@ const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlled
 };
 export default function App() {
   const [activeTab, setActiveTab] = useState(() => {
-    if (typeof window !== 'undefined' && window.location.pathname === '/admin') {
-      return 'admin';
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      const params = new URLSearchParams(window.location.search);
+      if (path === '/admin') return 'admin';
+      if (path === '/discover' || params.get('q')) return 'discover';
     }
     return 'home';
   });
-
-  useEffect(() => {
-    const handlePopState = () => {
-      if (window.location.pathname === '/admin') {
-        setActiveTab('admin');
-      } else if (activeTab === 'admin') {
-        setActiveTab('home');
-      }
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [activeTab]);
 
   useEffect(() => {
     const handleClickOutsideMenu = () => setOpenMenuId(null);
@@ -1350,7 +1354,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [videoModalSong, setVideoModalSong] = useState(null);
   const [isPipActive, setIsPipActive] = useState(false);
 
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const q = new URLSearchParams(window.location.search).get('q');
+      if (q) return q.trim();
+    }
+    return '';
+  });
   const [songs, setSongs] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
   const [searchVisibleCount, setSearchVisibleCount] = useState(10);
@@ -1942,9 +1952,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
 
   const handleArtistClick = (artistName) => {
-    setSearchQuery(artistName);
+    const trimmed = (artistName || '').trim();
+    if (!trimmed) return;
+    setSearchQuery(trimmed);
     handleStationSelect('discover');
-    fetchYouTubeMusic(artistName);
+    window.history.pushState({ tab: 'discover', q: trimmed }, '', `/discover?q=${encodeURIComponent(trimmed)}`);
+    fetchYouTubeMusic(trimmed);
   };
 
   const handleAuth = async (e) => {
@@ -2594,6 +2607,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     setCurrentBgIndex(0);
     setIsSidebarOpen(false);
 
+    // Sync browser URL
+    if (stationKey === 'discover') {
+      const q = searchQuery.trim();
+      const url = q ? `/discover?q=${encodeURIComponent(q)}` : '/discover';
+      window.history.pushState({ tab: 'discover', q }, '', url);
+    } else if (stationKey === 'admin') {
+      window.history.pushState({ tab: 'admin' }, '', '/admin');
+    } else if (stationKey === 'home') {
+      window.history.pushState({ tab: 'home' }, '', '/');
+    }
+
     if (videoModalSong) {
       setIsPipActive(true);
     }
@@ -2625,6 +2649,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         }
         setActiveTab(prevTab);
         setCurrentBgIndex(0);
+
+        if (prevTab === 'home') {
+          window.history.pushState({ tab: 'home' }, '', '/');
+        } else if (prevTab === 'discover') {
+          const q = searchQuery.trim();
+          const url = q ? `/discover?q=${encodeURIComponent(q)}` : '/discover';
+          window.history.pushState({ tab: 'discover', q }, '', url);
+        } else if (prevTab === 'admin') {
+          window.history.pushState({ tab: 'admin' }, '', '/admin');
+        }
+
         setTimeout(() => {
           if (mainScrollRef.current && scrollPositions.current[prevTab] !== undefined) {
             mainScrollRef.current.scrollTop = scrollPositions.current[prevTab];
@@ -2806,15 +2841,64 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   };
 
   const handleSearchSubmit = (e) => {
-    e.preventDefault();
-    if (searchQuery.trim()) fetchYouTubeMusic(searchQuery);
+    if (e && e.preventDefault) e.preventDefault();
+    const trimmed = searchQuery.trim();
+    if (!trimmed) return;
+    window.history.pushState({ tab: 'discover', q: trimmed }, '', `/discover?q=${encodeURIComponent(trimmed)}`);
+    fetchYouTubeMusic(trimmed);
   };
+
+  const handleSearchFromHome = (queryText) => {
+    const trimmed = (queryText || '').trim();
+    if (!trimmed) return;
+    setSearchQuery(trimmed);
+    setActiveTab('discover');
+    window.history.pushState({ tab: 'discover', q: trimmed }, '', `/discover?q=${encodeURIComponent(trimmed)}`);
+    fetchYouTubeMusic(trimmed);
+  };
+
+  const initialSearchExecutedRef = useRef(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const q = (params.get('q') || '').trim();
+    if (!initialSearchExecutedRef.current && q) {
+      initialSearchExecutedRef.current = true;
+      fetchYouTubeMusic(q);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (typeof window === 'undefined') return;
+      const path = window.location.pathname;
+      const params = new URLSearchParams(window.location.search);
+      const q = (params.get('q') || '').trim();
+
+      if (path === '/admin') {
+        setActiveTab('admin');
+      } else if (path === '/discover' || q) {
+        setActiveTab('discover');
+        if (q) {
+          setSearchQuery(q);
+          fetchYouTubeMusic(q);
+        } else {
+          setSearchQuery('');
+        }
+      } else if (path === '/' || path === '') {
+        setActiveTab('home');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   const currentStation = SPECIAL_STATIONS[activeTab];
   const currentBgImage = currentStation?.bgImages?.[currentBgIndex] || currentStation?.bgImages?.[0];
 
   return (
     <div className="h-[100dvh] bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative overflow-hidden">
+      <StudioLoungeAtmosphere isPlaying={isPlaying} />
       
       <link rel="preconnect" href="https://i.ytimg.com" />
       <link rel="preconnect" href="https://www.youtube.com" />
@@ -3214,13 +3298,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
         {activeTab === 'discover' && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
-            <div className="p-8 rounded-3xl border border-neutral-800 bg-neutral-900/60 backdrop-blur-xl shadow-2xl">
-              <h2 className="text-2xl font-display font-extrabold tracking-tight text-white mb-2">Discover & Search Tracks</h2>
-              <p className="text-xs text-neutral-400 mb-6">Type a query to load audio tracks. Results display only after searching.</p>
+            <div className="p-6 sm:p-8 rounded-3xl border border-amber-500/25 bg-neutral-900/80 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_25px_rgba(245,158,11,0.08)]">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_#f59e0b] animate-pulse" />
+                <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">Discover & Search Tracks</h2>
+              </div>
+              <p className="text-xs text-neutral-400 mb-6">Type a song, artist, or album to stream music in 3D audio space.</p>
               
               <form onSubmit={handleSearchSubmit} className="flex gap-2">
                 <div className="relative flex-1">
-                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-400">
+                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-amber-400/80">
                     <Icon name="search" className="w-4 h-4" />
                   </span>
                   <input
@@ -3228,15 +3315,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search song, artist, or album..."
-                    className="w-full pl-10 pr-4 py-3 rounded-2xl bg-neutral-900/50 backdrop-blur-lg border border-neutral-700 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500 transition"
+                    className="w-full pl-10 pr-4 py-3 rounded-2xl bg-neutral-950/60 backdrop-blur-xl border border-neutral-700/80 focus:border-amber-500 text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-1 focus:ring-amber-500/50 transition shadow-inner"
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="px-6 py-3 rounded-2xl bg-amber-600 hover:bg-amber-500 font-bold text-xs text-white transition shadow-lg shadow-amber-950/50 flex items-center gap-2 shrink-0"
+                  className="px-6 py-3 rounded-2xl amber-glow-btn text-neutral-950 font-bold text-xs transition shadow-lg shadow-orange-950/50 flex items-center gap-2 shrink-0 cursor-pointer border border-amber-300/40"
                 >
-                  {isLoading ? <Icon name="sparkles" className="w-4 h-4 animate-spin shrink-0" /> : <Icon name="search" className="w-4 h-4 shrink-0" />}
+                  {isLoading ? <Icon name="sparkles" className="w-4 h-4 animate-spin shrink-0 text-neutral-950" /> : <Icon name="search" className="w-4 h-4 shrink-0 text-neutral-950" />}
                   <span>Search</span>
                 </button>
               </form>
@@ -3245,11 +3332,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             {searchResults.length > 0 && (
               <div className="space-y-3">
                 <div className="flex justify-between items-center px-1">
-                  <h3 className="text-lg font-display font-extrabold tracking-tight text-white">Search Results</h3>
-                  <span className="text-xs text-neutral-400">Showing {Math.min(searchVisibleCount, searchResults.length)} of {searchResults.length} songs</span>
+                  <h3 className="text-lg font-display font-extrabold tracking-tight text-white flex items-center gap-2">
+                    <span className="text-amber-500">⚡</span>
+                    Search Results
+                  </h3>
+                  <span className="text-xs text-neutral-400 font-mono">Showing {Math.min(searchVisibleCount, searchResults.length)} of {searchResults.length} songs</span>
                 </div>
 
-                <div className="grid grid-cols-1 gap-2">
+                <div className="grid grid-cols-1 gap-2.5">
                   {searchResults.slice(0, searchVisibleCount).map((track, i) => {
                     const isCurrent = currentSong?.id === track.id;
                     const isMenuOpen = openMenuId === `${track.id}-${i}`;
@@ -3257,12 +3347,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       <div
                         key={track.id + i}
                         onClick={() => playSong(track)}
-                        className={`p-3.5 rounded-2xl border flex items-center justify-between cursor-pointer transition backdrop-blur-md relative ${
+                        className={`p-3.5 rounded-2xl border flex items-center justify-between cursor-pointer transition-all duration-200 backdrop-blur-xl relative hover:-translate-y-0.5 ${
                           isMenuOpen ? 'z-30' : 'z-auto'
                         } ${
                           isCurrent
-                            ? 'bg-neutral-900/90 border-amber-500/80 shadow-xl'
-                            : 'bg-neutral-900/50 border-neutral-800/70 hover:bg-neutral-900 active:scale-[0.98]/80'
+                            ? 'bg-gradient-to-r from-amber-500/20 via-orange-500/10 to-neutral-900/70 border-amber-500/80 shadow-[0_0_25px_rgba(245,158,11,0.25)]'
+                            : 'bg-neutral-900/40 border-neutral-800/80 hover:bg-neutral-850 hover:border-amber-500/40 hover:shadow-[0_8px_30px_rgba(0,0,0,0.6)]'
                         }`}
                       >
                         <div className="flex items-center gap-3.5 min-w-0">
@@ -3377,7 +3467,83 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
 
                         {activeTab === 'home' && (
-                    <div className="max-w-7xl mx-auto px-4 md:px-8 pt-8 space-y-12">
+                    <div className="max-w-7xl mx-auto px-4 md:px-8 pt-4 md:pt-6 space-y-10">
+            {/* Prominent 3D Home Search Bar */}
+            <HomeSearchBar 
+              onSearch={handleSearchFromHome}
+              initialQuery={searchQuery}
+            />
+
+            {/* Featured 3D Turntable Lounge Showcase */}
+            <div className="relative rounded-3xl p-6 sm:p-8 bg-gradient-to-r from-neutral-900/90 via-neutral-900/70 to-neutral-950/90 border border-amber-500/25 shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_30px_rgba(245,158,11,0.1)] backdrop-blur-2xl overflow-hidden mb-6">
+              <div className="absolute top-0 right-1/4 w-72 h-72 rounded-full bg-amber-500/10 blur-[80px] pointer-events-none" />
+              <div className="absolute bottom-0 left-1/4 w-72 h-72 rounded-full bg-orange-500/10 blur-[80px] pointer-events-none" />
+
+              <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-8">
+                {/* 3D Turntable Platter */}
+                <div className="flex-1 flex flex-col items-center justify-center">
+                  <Turntable3D 
+                    currentSong={currentSong || (trendingSongs?.[0] || TRENDING_SONGS[0])}
+                    isPlaying={isPlaying}
+                    onTogglePlay={currentSong ? togglePlayPause : () => handlePlayTrending((trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs)}
+                    size="compact"
+                  />
+                  <AudioSpectrumVisualizer 
+                    isPlaying={isPlaying} 
+                    barCount={32}
+                    height={36}
+                    className="w-full max-w-xs mt-3"
+                  />
+                </div>
+
+                {/* Lounge Info & Tactile Controls */}
+                <div className="flex-1 flex flex-col items-center lg:items-start text-center lg:text-left space-y-4 max-w-lg">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-mono font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                    {isPlaying ? 'NOW SPINNING ON VINYL' : 'LOOPRA 3D VINYL LOUNGE'}
+                  </div>
+
+                  <div>
+                    <h2 className="text-xl sm:text-2xl md:text-3xl font-display font-extrabold text-white tracking-tight line-clamp-1">
+                      {currentSong ? currentSong.title : 'High-Fidelity Retro & Modern Lounge'}
+                    </h2>
+                    <p className="text-xs sm:text-sm text-amber-400 font-medium mt-1">
+                      {currentSong ? currentSong.channel : 'Drop the needle on curated trending hits, nostalgia stations, or search any track.'}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-4 pt-2">
+                    {currentSong ? (
+                      <>
+                        <button 
+                          onClick={togglePlayPause}
+                          className="px-6 py-3 rounded-2xl amber-glow-btn text-neutral-950 font-bold text-xs sm:text-sm flex items-center gap-2 shadow-xl shadow-orange-950/50 cursor-pointer"
+                        >
+                          <Icon name={isPlaying ? "pause" : "play"} className="w-5 h-5 fill-current" />
+                          <span>{isPlaying ? 'Pause' : 'Resume'}</span>
+                        </button>
+                        <button 
+                          onClick={() => setShowQueuePanel(true)}
+                          className="px-5 py-3 rounded-2xl bg-neutral-800/80 hover:bg-neutral-700/80 text-white font-medium text-xs sm:text-sm border border-neutral-700/70 transition flex items-center gap-2 shadow-md cursor-pointer"
+                        >
+                          <Icon name="list" className="w-4 h-4 text-amber-400" />
+                          <span>View Full Queue ({queue.length})</span>
+                        </button>
+                      </>
+                    ) : (
+                      <button 
+                        onClick={() => handlePlayTrending((trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs)}
+                        className="px-6 py-3 rounded-2xl amber-glow-btn text-neutral-950 font-bold text-xs sm:text-sm flex items-center gap-2 shadow-xl shadow-orange-950/50 cursor-pointer"
+                      >
+                        <Icon name="play" className="w-5 h-5 fill-current" />
+                        <span>Spin Trending Hits</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <ScrollableRow
               title="Trending songs"
               subtitle="The most played hits right now"
@@ -3824,11 +3990,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       </div>
 
       {currentSong && (
-        <footer className={`fixed bottom-0 right-0 z-40 bg-neutral-900/95 backdrop-blur-2xl border-t border-neutral-800/80 transition-all duration-300 shadow-2xl left-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'} ${isPlayerMinimized ? 'p-2' : 'p-3 md:p-4'}`}>
+        <footer className={`fixed bottom-0 right-0 z-40 bg-neutral-950/90 backdrop-blur-2xl border-t border-amber-500/20 transition-all duration-300 shadow-[0_-10px_35px_rgba(0,0,0,0.8),0_0_20px_rgba(245,158,11,0.06)] left-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'} ${isPlayerMinimized ? 'p-2' : 'p-3 md:p-4'}`}>
           <div className="absolute -top-3.5 right-6 z-50 shrink-0">
             <button
               onClick={() => setIsPlayerMinimized(!isPlayerMinimized)}
-              className="px-3 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-amber-400 text-[10px] font-bold shadow-lg flex items-center gap-1 transition shrink-0 cursor-pointer"
+              className="px-3 py-1 rounded-full bg-neutral-900/90 hover:bg-neutral-800 border border-amber-500/30 text-amber-400 text-[10px] font-bold shadow-lg flex items-center gap-1 transition shrink-0 cursor-pointer"
             >
               <Icon name={isPlayerMinimized ? "chevronUp" : "chevronDown"} className="w-3.5 h-3.5 shrink-0" />
               <span>{isPlayerMinimized ? "Expand Player" : "Minimize"}</span>
@@ -3837,9 +4003,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3 w-full md:w-1/4 min-w-0">
-              <img src={getCleanThumbnail(currentSong)} alt={currentSong.title || ""} className={`rounded-2xl object-cover shrink-0 shadow-md transition-all duration-300 ${isPlayerMinimized ? 'w-8 h-8' : 'w-12 h-12'}`} onError={(e) => handleImageError(e, currentSong.title, currentSong.id)} />
+              <div className="relative group shrink-0">
+                <img src={getCleanThumbnail(currentSong)} alt={currentSong.title || ""} className={`rounded-xl object-cover shrink-0 shadow-md transition-all duration-300 ${isPlayerMinimized ? 'w-8 h-8' : 'w-12 h-12'} border border-amber-500/30`} onError={(e) => handleImageError(e, currentSong.title, currentSong.id)} />
+                {isPlaying && (
+                  <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-gradient-to-tr from-amber-500 to-orange-500 text-neutral-950 flex items-center justify-center text-[9px] font-bold animate-spin-slow shadow-md border border-neutral-950">
+                    💿
+                  </div>
+                )}
+              </div>
               <div className="min-w-0 flex-1">
-                <h4 className="font-bold text-xs text-white truncate">{currentSong.title}</h4>
+                <h4 className="font-bold text-xs text-white truncate group-hover:text-amber-300 transition-colors">{currentSong.title}</h4>
                 <p className="text-[10px] text-amber-400 truncate">{currentSong.channel}</p>
               </div>
               {!isPlayerMinimized && (
@@ -3869,8 +4042,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   <button onClick={handlePrevSong} className="text-neutral-300 hover:text-white transition" title="Previous Track">
                     <Icon name="skipPrev" className="w-5 h-5 shrink-0" />
                   </button>
-                  <button onClick={togglePlayPause} className="w-10 h-10 rounded-full bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white flex items-center justify-center shadow-lg transition shrink-0">
-                    <Icon name={isPlaying ? "pause" : "play"} className="w-5 h-5 shrink-0" />
+                  <button onClick={togglePlayPause} className="w-11 h-11 rounded-full amber-glow-btn text-neutral-950 flex items-center justify-center font-bold shadow-[0_0_20px_rgba(245,158,11,0.4)] hover:shadow-[0_0_28px_rgba(245,158,11,0.6)] active:scale-95 transition-all shrink-0 cursor-pointer border border-amber-300/40" title={isPlaying ? "Pause" : "Play"}>
+                    <Icon name={isPlaying ? "pause" : "play"} className="w-5 h-5 fill-current" />
                   </button>
                   <button onClick={handleNextSong} className="text-neutral-300 hover:text-white transition" title="Next Track">
                     <Icon name="skipNext" className="w-5 h-5 shrink-0" />
@@ -3976,15 +4149,21 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           <div className={`${mobileQueueTab === 'player' ? 'flex' : 'hidden'} md:flex w-full md:w-1/2 p-4 sm:p-6 md:p-8 flex-col justify-start md:justify-center items-center bg-gradient-to-br from-neutral-900 to-neutral-950 border-r border-neutral-800/50 overflow-y-auto hide-scrollbar flex-1 md:flex-initial`}>
             {currentSong ? (
               <div className="w-full max-w-sm flex flex-col items-center pt-3 sm:pt-6 md:pt-2 pb-6">
-                {/* Artwork */}
-                <div className="relative w-44 h-44 sm:w-56 sm:h-56 md:w-64 md:h-64 aspect-square mb-4 shadow-2xl rounded-3xl overflow-hidden group border border-neutral-800/80 shrink-0">
-                  <img 
-                    src={getCleanThumbnail(currentSong)} 
-                    alt={currentSong.title} 
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
-                    onError={(e) => handleImageError(e, currentSong.title, currentSong.id)} 
+                {/* 3D Illuminated Virtual Turntable */}
+                <div className="relative mb-3 flex flex-col items-center justify-center">
+                  <Turntable3D 
+                    currentSong={currentSong} 
+                    isPlaying={isPlaying} 
+                    onTogglePlay={togglePlayPause} 
+                    size="large"
                   />
-                  <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors duration-500"></div>
+                  {/* Audio Spectrum Visualizer */}
+                  <AudioSpectrumVisualizer 
+                    isPlaying={isPlaying} 
+                    barCount={32}
+                    height={38}
+                    className="w-full max-w-xs mt-2" 
+                  />
                 </div>
 
                 {/* Song Meta & Actions */}
@@ -4023,7 +4202,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} currentSongId={currentSong?.id} />
                 </div>
 
-                {/* Main Playback Controls */}
+                {/* Main Playback Controls with Tactile 3D Buttons */}
                 <div className="flex items-center justify-center gap-6 w-full mb-3">
                   <button 
                     onClick={() => setIsShuffle(!isShuffle)} 
@@ -4035,7 +4214,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   
                   <button 
                     onClick={handlePrevSong} 
-                    className="p-2 text-neutral-300 hover:text-white hover:scale-110 active:scale-95 transition" 
+                    className="p-3 rounded-full bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/60 text-neutral-200 hover:text-white hover:scale-110 active:scale-95 transition-all shadow-md" 
                     title="Previous Track"
                   >
                     <Icon name="skipPrev" className="w-6 h-6" />
@@ -4043,15 +4222,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   
                   <button 
                     onClick={togglePlayPause} 
-                    className="w-12 h-12 sm:w-13 sm:h-13 rounded-full bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/30 text-white flex items-center justify-center shadow-xl transition"
+                    className="w-14 h-14 sm:w-16 sm:h-16 rounded-full amber-glow-btn text-neutral-950 flex items-center justify-center font-bold shadow-[0_0_30px_rgba(245,158,11,0.5)] hover:shadow-[0_0_45px_rgba(245,158,11,0.7)] hover:scale-105 active:scale-95 transition-all cursor-pointer border border-amber-300/40"
                     title={isPlaying ? "Pause" : "Play"}
                   >
-                    <Icon name={isPlaying ? "pause" : "play"} className="w-6 h-6" />
+                    <Icon name={isPlaying ? "pause" : "play"} className="w-7 h-7 fill-current" />
                   </button>
                   
                   <button 
                     onClick={handleNextSong} 
-                    className="p-2 text-neutral-300 hover:text-white hover:scale-110 active:scale-95 transition" 
+                    className="p-3 rounded-full bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/60 text-neutral-200 hover:text-white hover:scale-110 active:scale-95 transition-all shadow-md" 
                     title="Next Track"
                   >
                     <Icon name="skipNext" className="w-6 h-6" />
