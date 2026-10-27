@@ -1342,12 +1342,80 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [searchVisibleCount, setSearchVisibleCount] = useState(10);
   const [stationVisibleCounts, setStationVisibleCounts] = useState({ barber: 50, truck: 50, pauwa: 50 });
   const stationVisibleCount = stationVisibleCounts[activeTab] || 50;
-  const handleLoadMoreStationSongs = useCallback(() => {
-    setStationVisibleCounts(prev => ({
-      ...prev,
-      [activeTab]: (prev[activeTab] || 50) + 10
-    }));
-  }, [activeTab]);
+  const [isLoadingMoreStation, setIsLoadingMoreStation] = useState(false);
+  const stationPageRef = useRef({ barber: 1, truck: 1, pauwa: 1 });
+
+  const handleLoadMoreStationSongs = useCallback(async () => {
+    const currentCount = stationVisibleCounts[activeTab] || 50;
+    const targetCount = currentCount + 10;
+
+    // Immediately increment count
+    setStationVisibleCounts(prev => ({ ...prev, [activeTab]: targetCount }));
+
+    // If approaching or exceeding currently loaded songs, fetch more from backend
+    if (targetCount >= songs.length) {
+      setIsLoadingMoreStation(true);
+      try {
+        const station = SPECIAL_STATIONS[activeTab];
+        const page = (stationPageRef.current[activeTab] || 1) + 1;
+        stationPageRef.current[activeTab] = page;
+
+        const queryMap = {
+          barber: [
+            "best 90s bollywood superhit romantic songs alka yagnik udit narayan",
+            "kumar sanu alka yagnik romantic evergreen songs 90s",
+            "sonu nigam 2000s nostalgic bollywood hits",
+            "90s bollywood classic melody songs"
+          ],
+          truck: [
+            "punjabi highway dhabha truck high bass songs",
+            "altaf raja superhit songs hindi",
+            "diljit dosanjh sidhu moose wala punjabi hits",
+            "daler mehndi sukhbir superhit dance songs"
+          ],
+          pauwa: [
+            "desi party drinking songs yo yo honey singh badshah",
+            "late night party banger songs desi hip hop",
+            "ap dhillon karan aujla party hits",
+            "punjabi peg daru party anthems"
+          ]
+        };
+
+        const queryList = queryMap[activeTab] || station?.queries || ["bollywood hits"];
+        const selectedQuery = queryList[(page - 2) % queryList.length];
+
+        const data = await fetchFromBackend(selectedQuery);
+        if (data?.items?.length > 0) {
+          const newTracks = data.items.map(item => ({
+            id: item.id.videoId || item.id,
+            youtubeId: item.id.videoId || item.id,
+            title: item.snippet.title.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&"),
+            channel: item.snippet.channelTitle,
+            artist: item.snippet.channelTitle,
+            duration: "4:00",
+            url: `https://www.youtube.com/watch?v=${item.id.videoId || item.id}`,
+            coverArt: getCleanThumbnail(item, item.id.videoId || item.id),
+            thumbnail: getCleanThumbnail(item, item.id.videoId || item.id),
+          }));
+
+          setSongs(prev => {
+            const existingIds = new Set(prev.map(s => s.id));
+            const filtered = newTracks.filter(t => !existingIds.has(t.id));
+            const merged = [...prev, ...filtered];
+            setStationCache(c => ({
+              ...c,
+              [activeTab]: { tracks: merged }
+            }));
+            return merged;
+          });
+        }
+      } catch (err) {
+        console.warn("Could not fetch extra tracks on load more:", err.message);
+      } finally {
+        setIsLoadingMoreStation(false);
+      }
+    }
+  }, [activeTab, songs, stationVisibleCounts]);
   const [queue, setQueue] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('afterhours_queue')) || [];
@@ -2844,43 +2912,34 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             <button
               onClick={() => handleStationSelect('barber')}
               title="Saloon FM"
-              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'justify-between px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
+              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
                 activeTab === 'barber' ? 'bg-red-600/25 text-red-200 border border-red-500/50 shadow-lg shadow-red-950/50' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
               }`}
             >
-              <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
-                <Icon name="scissors" className="w-5 h-5 shrink-0 text-red-400" />
-                {!isSidebarCollapsed && <span className="whitespace-nowrap">Saloon FM</span>}
-              </div>
-              {!isSidebarCollapsed && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 font-bold shrink-0">SALOON FM</span>}
+              <Icon name="scissors" className="w-5 h-5 shrink-0 text-red-400" />
+              {!isSidebarCollapsed && <span className="whitespace-nowrap">Saloon FM</span>}
             </button>
 
             <button
               onClick={() => handleStationSelect('truck')}
               title="Horn Ok Please"
-              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'justify-between px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
+              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
                 activeTab === 'truck' ? 'bg-amber-600/25 text-amber-200 border border-amber-500/50 shadow-lg shadow-amber-950/50' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
               }`}
             >
-              <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
-                <Icon name="truck" className="w-5 h-5 shrink-0 text-amber-400" />
-                {!isSidebarCollapsed && <span className="whitespace-nowrap">Horn Ok Please</span>}
-              </div>
-              {!isSidebarCollapsed && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold shrink-0">HORN OK</span>}
+              <Icon name="truck" className="w-5 h-5 shrink-0 text-amber-400" />
+              {!isSidebarCollapsed && <span className="whitespace-nowrap">Horn Ok Please</span>}
             </button>
 
             <button
               onClick={() => handleStationSelect('pauwa')}
               title="Theka Session"
-              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'justify-between px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
+              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
                 activeTab === 'pauwa' ? 'bg-amber-600/25 text-emerald-200 border border-orange-500/50 shadow-lg shadow-amber-950/50' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
               }`}
             >
-              <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
-                <Icon name="beer" className="w-5 h-5 shrink-0 text-orange-400" />
-                {!isSidebarCollapsed && <span className="whitespace-nowrap">Theka Session</span>}
-              </div>
-              {!isSidebarCollapsed && <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/20 text-amber-300 font-bold shrink-0">THEKA</span>}
+              <Icon name="beer" className="w-5 h-5 shrink-0 text-orange-400" />
+              {!isSidebarCollapsed && <span className="whitespace-nowrap">Theka Session</span>}
             </button>
 
             {!isSidebarCollapsed ? (
@@ -3445,13 +3504,21 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   })}
                 </div>
 
-                {stationVisibleCount < songs.length && (
+                {songs.length > 0 && (
                   <div className="text-center pt-6 pb-4">
                     <button
                       onClick={handleLoadMoreStationSongs}
-                      className="px-6 py-3 rounded-2xl bg-neutral-800 hover:bg-neutral-700 active:scale-[0.98] text-xs font-bold text-amber-400 border border-neutral-700 transition shadow-xl cursor-pointer"
+                      disabled={isLoadingMoreStation}
+                      className="px-6 py-3 rounded-2xl bg-neutral-800 hover:bg-neutral-700 active:scale-[0.98] text-xs font-bold text-amber-400 border border-neutral-700 transition shadow-xl cursor-pointer inline-flex items-center justify-center gap-2"
                     >
-                      Load More Songs (+10)
+                      {isLoadingMoreStation ? (
+                        <>
+                          <Icon name="sparkles" className="w-3.5 h-3.5 animate-spin" />
+                          <span>Loading more songs...</span>
+                        </>
+                      ) : (
+                        <span>Load More Songs</span>
+                      )}
                     </button>
                   </div>
                 )}
