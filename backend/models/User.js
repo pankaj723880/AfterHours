@@ -8,6 +8,7 @@ const userSchema = new mongoose.Schema({
   lastLogin: { type: Date, default: Date.now },
   likedSongs: { type: Array, default: [] },
   history: { type: Array, default: [] },
+  searchHistory: { type: [String], default: [] },
   playlists: { type: Array, default: [] },
   queue: { type: Array, default: [] }
 }, { timestamps: true });

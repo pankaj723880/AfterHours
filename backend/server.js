@@ -349,6 +349,7 @@ app.post(['/api/auth/register', '/auth/register'], async (req, res) => {
       status: 'active',
       likedSongs: [],
       history: [],
+      searchHistory: [],
       playlists: [],
       queue: []
     });
@@ -420,6 +421,7 @@ app.post(['/api/auth/login', '/auth/login'], async (req, res) => {
         status: user.status,
         likedSongs: user.likedSongs,
         history: user.history,
+        searchHistory: user.searchHistory || [],
         playlists: user.playlists,
         queue: user.queue
       }
@@ -442,6 +444,7 @@ app.get(['/api/auth/me', '/auth/me'], authenticateToken, async (req, res) => {
         status: user.status,
         likedSongs: user.likedSongs,
         history: user.history,
+        searchHistory: user.searchHistory || [],
         playlists: user.playlists,
         queue: user.queue
       }
@@ -523,6 +526,7 @@ app.post(['/api/auth/google', '/auth/google'], async (req, res) => {
         status: user.status,
         likedSongs: user.likedSongs,
         history: user.history,
+        searchHistory: user.searchHistory || [],
         playlists: user.playlists,
         queue: user.queue
       },
@@ -549,6 +553,7 @@ app.get(['/api/user/:id', '/user/:id'], async (req, res) => {
     res.json({
       likedSongs: user.likedSongs || [],
       history: user.history || [],
+      searchHistory: user.searchHistory || [],
       playlists: user.playlists || [],
       queue: user.queue || []
     });
@@ -566,10 +571,11 @@ app.post(['/api/user/:id/sync', '/user/:id/sync'], async (req, res) => {
     return res.status(400).json({ error: 'Invalid user ID format' });
   }
   try {
-    const { likedSongs, history, playlists, queue } = req.body || {};
+    const { likedSongs, history, searchHistory, playlists, queue } = req.body || {};
     const update = {};
     if (Array.isArray(likedSongs)) update.likedSongs = likedSongs.slice(0, 500);
     if (Array.isArray(history)) update.history = history.slice(0, 100);
+    if (Array.isArray(searchHistory)) update.searchHistory = searchHistory.slice(0, 50);
     if (Array.isArray(playlists)) update.playlists = playlists.slice(0, 100);
     if (Array.isArray(queue)) update.queue = queue.slice(0, 200);
 

@@ -2102,6 +2102,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         setHistory(sanitizeList(userHistory));
         localStorage.setItem('history_songs', JSON.stringify(sanitizeList(userHistory)));
 
+        if (Array.isArray(data.user.searchHistory) && data.user.searchHistory.length > 0) {
+          localStorage.setItem(`afterhours_recent_searches_${loggedInUser.userId}`, JSON.stringify(data.user.searchHistory.slice(0, 10)));
+        }
+
         const userPlaylists = data.user.playlists || [];
         setPlaylists(sanitizeList(userPlaylists));
         localStorage.setItem('playlists', JSON.stringify(sanitizeList(userPlaylists)));
@@ -3421,28 +3425,21 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </div>
               <p className="text-xs text-neutral-400 mb-6">Type a song, artist, or album to stream music in 3D audio space.</p>
               
-              <form onSubmit={handleSearchSubmit} className="flex gap-2">
-                <div className="relative flex-1">
-                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-amber-400/80">
-                    <Icon name="search" className="w-4 h-4" />
-                  </span>
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search song, artist, or album..."
-                    className="w-full pl-10 pr-4 py-3 rounded-2xl bg-neutral-950/60 backdrop-blur-xl border border-neutral-700/80 focus:border-amber-500 text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-1 focus:ring-amber-500/50 transition shadow-inner"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="px-6 py-3 rounded-2xl amber-glow-btn text-neutral-950 font-bold text-xs transition shadow-lg shadow-orange-950/50 flex items-center gap-2 shrink-0 cursor-pointer border border-amber-300/40"
-                >
-                  {isLoading ? <Icon name="sparkles" className="w-4 h-4 animate-spin shrink-0 text-neutral-950" /> : <Icon name="search" className="w-4 h-4 shrink-0 text-neutral-950" />}
-                  <span>Search</span>
-                </button>
-              </form>
+              <HomeSearchBar
+                onSearch={(queryText) => {
+                  const trimmed = (queryText || '').trim();
+                  if (!trimmed) return;
+                  setSearchQuery(trimmed);
+                  fetchYouTubeMusic(trimmed);
+                }}
+                onSelectSong={playSong}
+                initialQuery={searchQuery}
+                placeholder={cmsConfig?.searchPage?.placeholder || "Search song, artist, or album..."}
+                showQuickTags={false}
+                user={user}
+                token={authToken}
+                backendUrl={BACKEND_URL}
+              />
             </div>
 
             {searchResults.length > 0 && (
@@ -3601,9 +3598,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             {/* Prominent 3D Home Search Bar */}
             <HomeSearchBar 
               onSearch={handleSearchFromHome}
+              onSelectSong={playSong}
               initialQuery={searchQuery}
               placeholder={cmsConfig?.searchPage?.placeholder || "Search songs, artists, albums..."}
               suggestions={cmsConfig?.searchPage?.quickTags}
+              showQuickTags={true}
+              user={user}
+              token={authToken}
+              backendUrl={BACKEND_URL}
             />
 
             {/* Mobile Compact Horizontal Player (< md) */}
