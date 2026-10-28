@@ -3470,8 +3470,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               
               {!isSidebarCollapsed && (
                 <>
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-600 via-orange-500 to-amber-400 p-1 flex items-center justify-center shadow-xl border border-amber-500/35 shrink-0 overflow-hidden">
-                    <img src={cmsConfig?.branding?.logoUrl || "/favicon.svg"} alt={cmsConfig?.branding?.siteName || "Loopra"} className="w-full h-full object-contain" />
+                  <div className="w-10 h-10 rounded-2xl bg-neutral-900/80 border border-amber-500/30 p-1 flex items-center justify-center shadow-xl shrink-0 overflow-hidden">
+                    <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Loopra"} className="w-full h-full object-contain" />
                   </div>
                   <h1 className="text-lg font-display font-extrabold tracking-tight tracking-wider text-white whitespace-nowrap">{cmsConfig?.branding?.siteName || 'LOOPRA'}</h1>
                 </>
@@ -3664,10 +3664,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               <Icon name={isSidebarOpen ? "close" : "menu"} className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
             </button>
             <div className="flex md:hidden items-center gap-1.5 sm:gap-2">
-              <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-xl bg-gradient-to-tr from-amber-600 via-orange-500 to-amber-400 p-0.5 flex items-center justify-center shadow-md overflow-hidden">
-                <img src="/favicon.svg" alt="Loopra" className="w-full h-full object-contain" />
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow-md overflow-hidden">
+                <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Loopra"} className="w-full h-full object-contain" />
               </div>
-              <h1 className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white">LOOPRA</h1>
+              <h1 className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white">{cmsConfig?.branding?.siteName || "LOOPRA"}</h1>
             </div>
 
             {/* Desktop Clock */}

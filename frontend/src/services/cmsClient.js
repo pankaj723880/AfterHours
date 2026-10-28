@@ -3,8 +3,8 @@ export const DEFAULT_CMS_CONFIG = {
   branding: {
     siteName: 'Loopra',
     tagline: 'AfterHours Mehfil Music',
-    logoUrl: '',
-    faviconUrl: '',
+    logoUrl: '/loopra-logo.png',
+    faviconUrl: '/loopra-logo.png',
     description: 'Endless retro Hindi, Bollywood nostalgia, and high-energy desi soundtracks without subscriptions.'
   },
   theme: {

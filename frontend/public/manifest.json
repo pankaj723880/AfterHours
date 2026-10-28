@@ -3,9 +3,9 @@
   "name": "Loopra - Retro & High-Vibe Radio",
   "icons": [
     {
-      "src": "/favicon.png",
+      "src": "/loopra-logo.png",
       "type": "image/png",
-      "sizes": "64x64"
+      "sizes": "1254x1254"
     },
     {
       "src": "/icon-192.png",

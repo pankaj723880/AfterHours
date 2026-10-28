@@ -35,7 +35,7 @@ export default function Turntable3D({
     setTilt({ x: 12, y: -6 });
   };
 
-  const displayImage = thumbnail || currentSong?.thumbnail || currentSong?.image || '/favicon.svg';
+  const displayImage = thumbnail || currentSong?.thumbnail || currentSong?.image || '/loopra-logo.png';
 
   const sizeClass = {
     compact: 'w-48 h-48 min-[360px]:w-56 min-[360px]:h-56 sm:w-64 sm:h-64',
