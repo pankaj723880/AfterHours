@@ -10,7 +10,8 @@ const SUGGESTIONS = [
   'Anuv Jain'
 ];
 
-export default function HomeSearchBar({ onSearch, initialQuery = '' }) {
+export default function HomeSearchBar({ onSearch, initialQuery = '', placeholder = "Search songs, artists, albums...", suggestions }) {
+  const activeSuggestions = (Array.isArray(suggestions) && suggestions.length > 0) ? suggestions : SUGGESTIONS;
   const [query, setQuery] = useState(initialQuery);
   const [isFocused, setIsFocused] = useState(false);
 
@@ -45,8 +46,8 @@ export default function HomeSearchBar({ onSearch, initialQuery = '' }) {
       <div 
         className={`relative rounded-3xl p-1.5 transition-all duration-300 ${
           isFocused 
-            ? 'bg-gradient-to-r from-amber-500/40 via-orange-500/50 to-amber-600/40 shadow-[0_0_35px_rgba(245,158,11,0.3)] ring-1 ring-amber-500/50' 
-            : 'bg-gradient-to-r from-white/10 via-amber-500/15 to-white/5 shadow-2xl hover:shadow-[0_0_25px_rgba(245,158,11,0.2)]'
+            ? 'bg-gradient-to-r from-amber-500/40 via-orange-500/50 to-amber-600/40 shadow-[0_0_35px_rgba(var(--accent-rgb,245,158,11),0.35)] ring-1 ring-amber-500/50' 
+            : 'bg-gradient-to-r from-white/10 via-amber-500/15 to-white/5 shadow-2xl hover:shadow-[0_0_25px_rgba(var(--accent-rgb,245,158,11),0.2)]'
         }`}
       >
         <form 
@@ -67,7 +68,7 @@ export default function HomeSearchBar({ onSearch, initialQuery = '' }) {
             onChange={(e) => setQuery(e.target.value)}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            placeholder="Search songs, artists, albums..."
+            placeholder={placeholder}
             className="w-full bg-transparent text-white placeholder-neutral-400 text-sm sm:text-base font-medium focus:outline-none min-w-0 pr-2 selection:bg-amber-500 selection:text-neutral-950"
             aria-label="Search songs, artists, albums"
           />
@@ -109,7 +110,7 @@ export default function HomeSearchBar({ onSearch, initialQuery = '' }) {
           <span className="text-amber-500">⚡</span> Quick:
         </span>
         <div className="flex items-center gap-1.5 shrink-0">
-          {SUGGESTIONS.map((tag) => (
+          {activeSuggestions.map((tag) => (
             <button
               key={tag}
               onClick={() => handleSuggestionClick(tag)}

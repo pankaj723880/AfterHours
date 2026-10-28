@@ -24,6 +24,38 @@
 
     <!-- Browser Address Bar Theme Color (Matches your Dark App Theme) -->
     <meta name="theme-color" content="#121212" />
+
+    <!-- Immediate Theme Application to prevent layout/color flash on load -->
+    <script>
+      (function() {
+        try {
+          var raw = localStorage.getItem('afterhours_applied_theme') || localStorage.getItem('afterhours_cms_public_config');
+          if (raw) {
+            var data = JSON.parse(raw);
+            var theme = data.theme || data;
+            if (theme && theme.accentColor) {
+              var hex = theme.accentColor.replace('#', '').trim();
+              if (hex.length === 3) hex = hex.split('').map(function(c) { return c + c; }).join('');
+              var num = parseInt(hex, 16);
+              if (!isNaN(num)) {
+                var r = (num >> 16) & 255;
+                var g = (num >> 8) & 255;
+                var b = num & 255;
+                document.documentElement.style.setProperty('--accent-color', theme.accentColor);
+                document.documentElement.style.setProperty('--accent-rgb', r + ', ' + g + ', ' + b);
+              }
+            }
+            if (theme && theme.themeMode) {
+              document.documentElement.setAttribute('data-theme', theme.themeMode);
+            }
+            if (theme && theme.glassmorphism === false) {
+              document.documentElement.classList.add('no-glass');
+              document.documentElement.style.setProperty('--glass-blur', '0px');
+            }
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

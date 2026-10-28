@@ -12,6 +12,19 @@ import AuditLog from './models/AuditLog.js';
 import { generateToken, verifyToken, authenticateToken, requireAdmin } from './middleware/auth.js';
 import { metricsService } from './services/metrics.js';
 import adminRoutes from './routes/admin.js';
+import cmsRoutes from './routes/cms.js';
+import adminCmsRoutes from './routes/adminCms.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+import { cmsService } from './services/cmsService.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const uploadsDir = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 // Prevent unhandled rejections and exceptions from crashing the server
 process.on('uncaughtException', (err) => {
@@ -61,6 +74,7 @@ app.use(cors({
 // Generous payload limit so sync never throws 413 or truncates
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use('/uploads', express.static(uploadsDir));
 
 // Normalize redundant slashes in URL pathname to prevent 404s from client URL misconfigurations (e.g. //health, //api/...)
 app.use((req, res, next) => {
@@ -113,8 +127,9 @@ const io = new Server(server, {
   transports: ['polling', 'websocket'],
   allowEIO3: true,
   pingTimeout: 30000,
-  pingInterval: 25000
 });
+
+app.set('io', io);
 
 io.engine.on('connection_error', (err) => {
   console.warn('[Socket.io] Engine connection notice:', err.req?.url, err.code, err.message);
@@ -164,6 +179,7 @@ mongoose.connect(MONGODB_URI, {
     console.log('[MongoDB] Connected successfully');
     seedDefaultAdmin();
     metricsService.initPersistence();
+    cmsService.initDefaults();
   })
   .catch((err) => {
     isMongoConnected = false;
@@ -175,6 +191,7 @@ mongoose.connection.on('connected', () => {
   console.log('[MongoDB] Connection established');
   seedDefaultAdmin();
   metricsService.initPersistence();
+  cmsService.initDefaults();
 });
 
 mongoose.connection.on('error', (err) => {
@@ -575,6 +592,10 @@ app.post(['/api/user/:id/sync', '/user/:id/sync'], async (req, res) => {
 
 // Mount Protected Admin Routes
 app.use('/api/admin', adminRoutes);
+app.use('/api/admin/cms', adminCmsRoutes);
+
+// Mount Public CMS Routes
+app.use(['/api/cms', '/cms'], cmsRoutes);
 
 // YouTube API Search with In-Memory Caching & Rotating Keys
 const searchCache = new Map();

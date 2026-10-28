@@ -8,6 +8,11 @@ import HomeSearchBar from './components/Search/HomeSearchBar';
 import Turntable3D from './components/Player/Turntable3D';
 import AudioSpectrumVisualizer from './components/Player/AudioSpectrumVisualizer';
 import StudioLoungeAtmosphere from './components/Player/StudioLoungeAtmosphere';
+import CmsAnnouncementBar from './components/Common/CmsAnnouncementBar';
+import CmsHeroBanner from './components/Common/CmsHeroBanner';
+import CmsMaintenanceOverlay from './components/Common/CmsMaintenanceOverlay';
+import CmsCuratedCollectionsRow from './components/Common/CmsCuratedCollectionsRow';
+import { getCachedCmsConfig, fetchPublicCmsConfig, applyThemeToDom, normalizeCmsConfig } from './services/cmsClient';
 
 import { io } from 'socket.io-client';
 
@@ -131,20 +136,30 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
   );
 };
 
-const DisclaimerFooter = React.memo(() => (
-  <div className="mt-8 pt-6 border-t border-neutral-800 text-neutral-400 text-xs space-y-2 leading-relaxed">
-    <p>
-      Audio plays through YouTube’s embedded player. Nothing is hosted on this site, and all rights stay with the labels, composers and performers. Song credits are put together from film soundtrack listings.
-    </p>
-    <p>
-      If you hold rights to anything here and want it taken off, email{' '}
-      <a href="mailto:pankajsss7238@gmail.com" className="text-amber-400 underline font-medium hover:text-amber-300">
-        pankajsss7238@gmail.com
-      </a>{' '}
-      and it comes down.
-    </p>
-  </div>
-));
+const DisclaimerFooter = React.memo(({ footer }) => {
+  const disclaimer = footer?.disclaimerText || "Audio plays through YouTube’s embedded player. Nothing is hosted on this site, and all rights stay with the labels, composers and performers. Song credits are put together from film soundtrack listings.";
+  const takedown = footer?.takedownText || "If you hold rights to anything here and want it taken off, email";
+  const email = footer?.contactEmail || footer?.takedownEmail || 'pankajsss7238@gmail.com';
+  const copyright = footer?.copyright || footer?.copyrightText;
+
+  return (
+    <div className="mt-8 pt-6 border-t border-neutral-800 text-neutral-400 text-xs space-y-2 leading-relaxed">
+      <p>{disclaimer}</p>
+      <p>
+        {takedown}{' '}
+        <a href={`mailto:${email}`} className="text-amber-400 underline font-medium hover:text-amber-300">
+          {email}
+        </a>{' '}
+        and it comes down.
+      </p>
+      {copyright && (
+        <p className="text-[11px] text-neutral-500 pt-1">
+          {copyright}
+        </p>
+      )}
+    </div>
+  );
+});
 
 const SPECIAL_STATIONS = {
   barber: {
@@ -440,16 +455,16 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove })
       whileDrag={{
         scale: 1.03,
         zIndex: 60,
-        boxShadow: "0 25px 40px -5px rgba(0, 0, 0, 0.8), 0 0 25px rgba(245, 158, 11, 0.4)",
+        boxShadow: "0 25px 40px -5px rgba(0, 0, 0, 0.8), 0 0 25px rgba(var(--accent-rgb,245,158,11),0.4)",
         backgroundColor: "rgba(24, 24, 27, 0.95)",
-        borderColor: "rgba(245, 158, 11, 0.7)",
+        borderColor: "rgba(var(--accent-rgb,245,158,11),0.7)",
         cursor: "grabbing"
       }}
       className={`group flex items-center gap-3.5 p-3.5 rounded-2xl cursor-pointer select-none relative transition-all duration-300 border backdrop-blur-xl ${
         isHolding
-          ? 'bg-amber-500/20 border-amber-500/60 shadow-[0_0_25px_rgba(245,158,11,0.3)] scale-[1.02]'
+          ? 'bg-amber-500/20 border-amber-500/60 shadow-[0_0_25px_rgba(var(--accent-rgb,245,158,11),0.3)] scale-[1.02]'
           : isCurrent
-          ? 'bg-gradient-to-r from-amber-500/20 via-orange-500/10 to-neutral-900/60 border-amber-500/60 shadow-[0_0_25px_rgba(245,158,11,0.2)]'
+          ? 'bg-gradient-to-r from-amber-500/20 via-orange-500/10 to-neutral-900/60 border-amber-500/60 shadow-[0_0_25px_rgba(var(--accent-rgb,245,158,11),0.2)]'
           : 'bg-neutral-900/40 hover:bg-neutral-800/60 border-neutral-800/80 hover:border-amber-500/40 hover:shadow-[0_8px_30px_rgba(0,0,0,0.6)] hover:-translate-y-0.5'
       }`}
       onClick={handleClick}
@@ -1133,6 +1148,88 @@ export default function App() {
     return 'home';
   });
 
+  const [cmsConfig, setCmsConfig] = useState(() => {
+    const cached = getCachedCmsConfig();
+    applyThemeToDom(cached.theme, false);
+    return cached;
+  });
+
+  useEffect(() => {
+    fetchPublicCmsConfig(BACKEND_URL).then(cfg => {
+      if (cfg) {
+        const normalized = normalizeCmsConfig(cfg);
+        setCmsConfig(normalized);
+        applyThemeToDom(normalized.theme, true);
+      }
+    });
+
+    const handleConfigUpdate = (data) => {
+      if (data?.config) {
+        const normalized = normalizeCmsConfig(data.config);
+        setCmsConfig(normalized);
+        try {
+          localStorage.setItem('afterhours_cms_public_config', JSON.stringify(normalized));
+        } catch (e) {}
+        applyThemeToDom(normalized.theme, true);
+      } else {
+        fetchPublicCmsConfig(BACKEND_URL).then(cfg => {
+          if (cfg) {
+            const normalized = normalizeCmsConfig(cfg);
+            setCmsConfig(normalized);
+            applyThemeToDom(normalized.theme, true);
+          }
+        });
+      }
+    };
+
+    socket.on('cms_config_updated', handleConfigUpdate);
+    return () => {
+      socket.off('cms_config_updated', handleConfigUpdate);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (cmsConfig?.branding?.siteName) {
+      const siteTagline = cmsConfig.branding.tagline || cmsConfig.branding.siteTagline;
+      document.title = siteTagline
+        ? `${cmsConfig.branding.siteName} — ${siteTagline}`
+        : `${cmsConfig.branding.siteName} — Streaming Lounge`;
+    }
+    if (cmsConfig?.branding?.faviconUrl) {
+      let link = document.querySelector("link[rel*='icon']");
+      if (!link) {
+        link = document.createElement('link');
+        link.type = 'image/x-icon';
+        link.rel = 'shortcut icon';
+        document.getElementsByTagName('head')[0].appendChild(link);
+      }
+      link.href = cmsConfig.branding.faviconUrl;
+    }
+    if (cmsConfig?.theme) {
+      applyThemeToDom(cmsConfig.theme);
+    }
+  }, [cmsConfig?.branding, cmsConfig?.theme]);
+
+  const stationsMap = React.useMemo(() => {
+    const base = { ...SPECIAL_STATIONS };
+    if (Array.isArray(cmsConfig?.stations)) {
+      cmsConfig.stations.forEach(s => {
+        if (s && s.id && base[s.id]) {
+          base[s.id] = {
+            ...base[s.id],
+            title: s.title || s.name || base[s.id].title,
+            subtitle: s.subtitle || s.description || base[s.id].subtitle,
+            badge: s.badge || base[s.id].badge,
+            bgImages: (s.artwork || s.artworkUrl || s.bgImages?.length) 
+              ? [s.artwork || s.artworkUrl || s.bgImages[0]].filter(Boolean) 
+              : base[s.id].bgImages
+          };
+        }
+      });
+    }
+    return base;
+  }, [cmsConfig?.stations]);
+
   useEffect(() => {
     const handleClickOutsideMenu = () => setOpenMenuId(null);
     document.addEventListener('click', handleClickOutsideMenu);
@@ -1379,7 +1476,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     // If approaching or exceeding currently loaded songs, fetch more or generate curated extension
     if (targetCount >= songs.length) {
       setIsLoadingMoreStation(true);
-      const station = SPECIAL_STATIONS[activeTab];
+      const station = stationsMap[activeTab] || SPECIAL_STATIONS[activeTab];
       const page = (stationPageRef.current[activeTab] || 1) + 1;
       stationPageRef.current[activeTab] = page;
 
@@ -1521,6 +1618,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     setDraggedItemIndex(null);
   };
   const [mobileQueueTab, setMobileQueueTab] = useState('player');
+  const handleOpenExpandedPlayer = (tab = 'player') => {
+    setMobileQueueTab(tab);
+    setShowQueuePanel(true);
+  };
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [searchError, setSearchError] = useState("");
@@ -2192,12 +2293,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     } catch (e) {}
 
     if (['home', 'barber', 'truck', 'pauwa'].includes(activeTab)) {
-      const station = SPECIAL_STATIONS[activeTab];
+      const station = stationsMap[activeTab] || SPECIAL_STATIONS[activeTab];
       if (station && station.bgImages && station.bgImages.length > 0) {
         setCurrentBgIndex(prev => (prev + 1) % station.bgImages.length);
       }
     }
-  }, [activeTab, currentSong]);
+  }, [activeTab, currentSong, stationsMap]);
 
   const handleNextSong = useCallback(() => {
     if (!queue || queue.length === 0) return;
@@ -2529,7 +2630,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   // Player progress interval is extracted to PlayerProgress component
 
   const loadStationSongs = useCallback(async (stationKey, autoPlayIfEmpty = false) => {
-    const station = SPECIAL_STATIONS[stationKey];
+    const station = stationsMap[stationKey] || SPECIAL_STATIONS[stationKey];
     if (!station) return;
 
     if (stationCache[stationKey]?.tracks?.length > 0) {
@@ -2893,12 +2994,24 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  const currentStation = SPECIAL_STATIONS[activeTab];
+  const currentStation = stationsMap[activeTab] || SPECIAL_STATIONS[activeTab];
   const currentBgImage = currentStation?.bgImages?.[currentBgIndex] || currentStation?.bgImages?.[0];
 
   return (
     <div className="h-[100dvh] bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative overflow-hidden">
-      <StudioLoungeAtmosphere isPlaying={isPlaying} />
+      {/* CMS Maintenance Overlay with Admin Bypass */}
+      <CmsMaintenanceOverlay
+        maintenance={cmsConfig?.maintenance}
+        branding={cmsConfig?.branding}
+        isAdmin={user?.role === 'admin'}
+        onOpenAdmin={() => {
+          setActiveTab('admin');
+          window.history.pushState(null, '', '/admin');
+        }}
+        onOpenAuth={openAuthModal}
+      />
+
+      <StudioLoungeAtmosphere isPlaying={isPlaying} theme={cmsConfig?.theme} />
       
       <link rel="preconnect" href="https://i.ytimg.com" />
       <link rel="preconnect" href="https://www.youtube.com" />
@@ -3001,9 +3114,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               {!isSidebarCollapsed && (
                 <>
                   <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-600 via-orange-500 to-amber-400 p-1 flex items-center justify-center shadow-xl border border-amber-500/35 shrink-0 overflow-hidden">
-                    <img src="/favicon.svg" alt="Loopra" className="w-full h-full object-contain" />
+                    <img src={cmsConfig?.branding?.logoUrl || "/favicon.svg"} alt={cmsConfig?.branding?.siteName || "Loopra"} className="w-full h-full object-contain" />
                   </div>
-                  <h1 className="text-lg font-display font-extrabold tracking-tight tracking-wider text-white whitespace-nowrap">LOOPRA</h1>
+                  <h1 className="text-lg font-display font-extrabold tracking-tight tracking-wider text-white whitespace-nowrap">{cmsConfig?.branding?.siteName || 'LOOPRA'}</h1>
                 </>
               )}
             </div>
@@ -3047,35 +3160,35 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
             <button
               onClick={() => handleStationSelect('barber')}
-              title="Saloon FM"
+              title={stationsMap?.barber?.title || "Saloon FM"}
               className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
                 activeTab === 'barber' ? 'bg-red-600/25 text-red-200 border border-red-500/50 shadow-lg shadow-red-950/50' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
               }`}
             >
               <Icon name="scissors" className="w-5 h-5 shrink-0 text-red-400" />
-              {!isSidebarCollapsed && <span className="whitespace-nowrap">Saloon FM</span>}
+              {!isSidebarCollapsed && <span className="whitespace-nowrap">{stationsMap?.barber?.title || "Saloon FM"}</span>}
             </button>
 
             <button
               onClick={() => handleStationSelect('truck')}
-              title="Horn Ok Please"
+              title={stationsMap?.truck?.title || "Horn Ok Please"}
               className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
                 activeTab === 'truck' ? 'bg-amber-600/25 text-amber-200 border border-amber-500/50 shadow-lg shadow-amber-950/50' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
               }`}
             >
               <Icon name="truck" className="w-5 h-5 shrink-0 text-amber-400" />
-              {!isSidebarCollapsed && <span className="whitespace-nowrap">Horn Ok Please</span>}
+              {!isSidebarCollapsed && <span className="whitespace-nowrap">{stationsMap?.truck?.title || "Horn Ok Please"}</span>}
             </button>
 
             <button
               onClick={() => handleStationSelect('pauwa')}
-              title="Theka Session"
+              title={stationsMap?.pauwa?.title || "Theka Session"}
               className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
                 activeTab === 'pauwa' ? 'bg-amber-600/25 text-emerald-200 border border-orange-500/50 shadow-lg shadow-amber-950/50' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
               }`}
             >
               <Icon name="beer" className="w-5 h-5 shrink-0 text-orange-400" />
-              {!isSidebarCollapsed && <span className="whitespace-nowrap">Theka Session</span>}
+              {!isSidebarCollapsed && <span className="whitespace-nowrap">{stationsMap?.pauwa?.title || "Theka Session"}</span>}
             </button>
 
             {!isSidebarCollapsed ? (
@@ -3258,7 +3371,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
         </header>
 
-        <main className={`flex-1 h-full min-h-0 overflow-y-auto p-4 md:p-8 bg-neutral-950 relative w-full transition-all duration-300 ${isPlayerMinimized ? 'pb-24' : 'pb-64'}`}>
+        {/* Site-wide CMS Announcement Bar */}
+        <CmsAnnouncementBar announcement={cmsConfig?.announcement} />
+
+        <main className={`flex-1 h-full min-h-0 overflow-y-auto p-4 md:p-8 bg-neutral-950 relative w-full transition-all duration-300 ${currentSong ? 'pb-24 md:pb-28' : 'pb-8'}`}>
           {currentStation && currentBgImage && (
             <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden transition-all duration-700">
               <img 
@@ -3298,9 +3414,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
         {activeTab === 'discover' && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
-            <div className="p-6 sm:p-8 rounded-3xl border border-amber-500/25 bg-neutral-900/80 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_25px_rgba(245,158,11,0.08)]">
+            <div className="p-6 sm:p-8 rounded-3xl border border-amber-500/25 bg-neutral-900/80 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_25px_rgba(var(--accent-rgb,245,158,11),0.08)]">
               <div className="flex items-center gap-2 mb-2">
-                <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_#f59e0b] animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_var(--accent-color,#f59e0b)] animate-pulse" />
                 <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">Discover & Search Tracks</h2>
               </div>
               <p className="text-xs text-neutral-400 mb-6">Type a song, artist, or album to stream music in 3D audio space.</p>
@@ -3351,7 +3467,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                           isMenuOpen ? 'z-30' : 'z-auto'
                         } ${
                           isCurrent
-                            ? 'bg-gradient-to-r from-amber-500/20 via-orange-500/10 to-neutral-900/70 border-amber-500/80 shadow-[0_0_25px_rgba(245,158,11,0.25)]'
+                            ? 'bg-gradient-to-r from-amber-500/20 via-orange-500/10 to-neutral-900/70 border-amber-500/80 shadow-[0_0_25px_rgba(var(--accent-rgb,245,158,11),0.25)]'
                             : 'bg-neutral-900/40 border-neutral-800/80 hover:bg-neutral-850 hover:border-amber-500/40 hover:shadow-[0_8px_30px_rgba(0,0,0,0.6)]'
                         }`}
                       >
@@ -3461,21 +3577,125 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </div>
             )}
 
-            <DisclaimerFooter />
+            <DisclaimerFooter footer={cmsConfig?.footer} />
           </div>
         )}
 
 
-                        {activeTab === 'home' && (
-                    <div className="max-w-7xl mx-auto px-4 md:px-8 pt-4 md:pt-6 space-y-10">
+        {activeTab === 'home' && (
+          <div className="max-w-7xl mx-auto px-4 md:px-8 pt-4 md:pt-6 space-y-10">
+            {/* Promotional Hero Banner if configured in CMS */}
+            <CmsHeroBanner 
+              banner={cmsConfig?.banner} 
+              onActionClick={(url) => {
+                if (url?.startsWith('/station/')) {
+                  handleStationSelect(url.replace('/station/', ''));
+                } else if (url === '/discover') {
+                  handleStationSelect('discover');
+                } else if (url?.startsWith('http')) {
+                  window.open(url, '_blank', 'noopener,noreferrer');
+                }
+              }}
+            />
+
             {/* Prominent 3D Home Search Bar */}
             <HomeSearchBar 
               onSearch={handleSearchFromHome}
               initialQuery={searchQuery}
+              placeholder={cmsConfig?.searchPage?.placeholder || "Search songs, artists, albums..."}
+              suggestions={cmsConfig?.searchPage?.quickTags}
             />
 
-            {/* Featured 3D Turntable Lounge Showcase */}
-            <div className="relative rounded-3xl p-6 sm:p-8 bg-gradient-to-r from-neutral-900/90 via-neutral-900/70 to-neutral-950/90 border border-amber-500/25 shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_30px_rgba(245,158,11,0.1)] backdrop-blur-2xl overflow-hidden mb-6">
+            {/* Mobile Compact Horizontal Player (< md) */}
+            <div 
+              onClick={() => handleOpenExpandedPlayer('player')}
+              className="md:hidden relative rounded-2xl p-3 bg-gradient-to-r from-neutral-900/95 via-neutral-900/85 to-neutral-950/95 border border-amber-500/25 shadow-[0_10px_25px_rgba(0,0,0,0.6),0_0_15px_rgba(var(--accent-rgb,245,158,11),0.06)] backdrop-blur-xl mb-4 cursor-pointer active:scale-[0.99] transition-transform select-none"
+            >
+              <div className="flex items-center justify-between gap-3">
+                {/* Left: Album Thumbnail with 3D Vinyl Aesthetic */}
+                <div className="relative shrink-0 flex items-center">
+                  <div className={`w-12 h-12 rounded-full absolute -right-2 top-0 bg-neutral-950 border border-amber-500/40 shadow-inner flex items-center justify-center transition-transform ${isPlaying ? 'animate-[spin_4s_linear_infinite]' : ''}`}>
+                    <div className="w-4 h-4 rounded-full bg-amber-500/30 border border-amber-400/50 flex items-center justify-center">
+                      <div className="w-1.5 h-1.5 rounded-full bg-neutral-900" />
+                    </div>
+                  </div>
+                  <div className="relative w-12 h-12 rounded-xl overflow-hidden shadow-md border border-amber-500/40 z-10 bg-neutral-900">
+                    <img 
+                      src={getCleanThumbnail(currentSong || (trendingSongs?.[0] || TRENDING_SONGS[0]))} 
+                      alt={(currentSong || (trendingSongs?.[0] || TRENDING_SONGS[0]))?.title || ""} 
+                      className="w-full h-full object-cover"
+                      onError={(e) => handleImageError(e, (currentSong || (trendingSongs?.[0] || TRENDING_SONGS[0]))?.title, (currentSong || (trendingSongs?.[0] || TRENDING_SONGS[0]))?.id)}
+                    />
+                  </div>
+                </div>
+
+                {/* Center: Song info & vinyl tag */}
+                <div className="min-w-0 flex-1 ml-1">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                    <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-amber-400 truncate">
+                      {isPlaying ? 'Now Spinning' : 'Loopra 3D Vinyl'}
+                    </span>
+                  </div>
+                  <h3 className="font-bold text-xs sm:text-sm text-white truncate leading-tight">
+                    {(currentSong || (trendingSongs?.[0] || TRENDING_SONGS[0]))?.title}
+                  </h3>
+                  <p className="text-[11px] text-neutral-400 truncate mt-0.5">
+                    {(currentSong || (trendingSongs?.[0] || TRENDING_SONGS[0]))?.channel}
+                  </p>
+                </div>
+
+                {/* Right: Compact playback controls */}
+                <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (currentSong) {
+                        togglePlayPause();
+                      } else {
+                        handlePlayTrending((trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs);
+                      }
+                    }}
+                    className="w-10 h-10 rounded-full amber-glow-btn text-neutral-950 flex items-center justify-center font-bold shadow-md cursor-pointer border border-amber-300/40 active:scale-95 transition"
+                    title={isPlaying ? "Pause" : "Play"}
+                    aria-label={isPlaying ? "Pause playback" : "Start playback"}
+                  >
+                    <Icon name={isPlaying ? "pause" : "play"} className="w-4 h-4 fill-current translate-x-0.5" />
+                  </button>
+
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (currentSong) {
+                        handleNextSong();
+                      } else {
+                        handlePlayTrending((trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs);
+                      }
+                    }}
+                    className="p-2 text-neutral-400 hover:text-white transition active:scale-90"
+                    title="Next Track"
+                    aria-label="Next Track"
+                  >
+                    <Icon name="skipNext" className="w-4 h-4" />
+                  </button>
+
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenExpandedPlayer('queue');
+                    }}
+                    className="p-2 text-neutral-400 hover:text-amber-400 transition active:scale-90"
+                    title="View Queue"
+                    aria-label="View Queue"
+                  >
+                    <Icon name="list" className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Featured 3D Turntable Lounge Showcase for Desktop (>= md) */}
+            <div className="hidden md:block relative rounded-3xl p-6 sm:p-8 bg-gradient-to-r from-neutral-900/90 via-neutral-900/70 to-neutral-950/90 border border-amber-500/25 shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_30px_rgba(var(--accent-rgb,245,158,11),0.1)] backdrop-blur-2xl overflow-hidden mb-6">
               <div className="absolute top-0 right-1/4 w-72 h-72 rounded-full bg-amber-500/10 blur-[80px] pointer-events-none" />
               <div className="absolute bottom-0 left-1/4 w-72 h-72 rounded-full bg-orange-500/10 blur-[80px] pointer-events-none" />
 
@@ -3523,7 +3743,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                           <span>{isPlaying ? 'Pause' : 'Resume'}</span>
                         </button>
                         <button 
-                          onClick={() => setShowQueuePanel(true)}
+                          onClick={() => handleOpenExpandedPlayer('queue')}
                           className="px-5 py-3 rounded-2xl bg-neutral-800/80 hover:bg-neutral-700/80 text-white font-medium text-xs sm:text-sm border border-neutral-700/70 transition flex items-center gap-2 shadow-md cursor-pointer"
                         >
                           <Icon name="list" className="w-4 h-4 text-amber-400" />
@@ -3544,95 +3764,149 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </div>
             </div>
 
-            <ScrollableRow
-              title="Trending songs"
-              subtitle="The most played hits right now"
-              items={trendingSongs}
-              fallbackItems={TRENDING_SONGS}
-              showAll={showAllTrending}
-              setShowAll={setShowAllTrending}
-              renderItem={(song) => (
-                <div onClick={() => handlePlayTrending(song.query || song.title, song, trendingSongs)} className="group cursor-pointer">
-                  <div className="relative mb-2 md:mb-3">
-                    <img src={getCleanThumbnail(song)} alt={song.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => handleImageError(e, song.title, song.id)} />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
-                      <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
-                        <Icon name="play" className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-neutral-950 translate-x-[1px] md:translate-x-[2px]" />
-                      </div>
-                    </div>
-                  </div>
-                  <h3 className="text-xs md:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{song.title}</h3>
-                  <p className="text-[11px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1">{song.artist}</p>
-                </div>
-              )}
-            />
+            {/* Dynamic Homepage Sections from CMS Configuration */}
+            {(() => {
+              const sections = (cmsConfig?.sections && cmsConfig.sections.length > 0)
+                ? cmsConfig.sections
+                : [
+                    { id: 'trending', title: 'Trending songs', subtitle: 'The most played hits right now', enabled: true, order: 1 },
+                    { id: 'curated', title: 'Curated Featured Collections', subtitle: 'Handpicked mixes, nostalgia sets, and soundtracks curated by our editors', enabled: true, order: 2 },
+                    { id: 'artists', title: 'Popular artists', subtitle: 'Find your favorite singers', enabled: true, order: 3 },
+                    { id: 'albums', title: 'Popular albums and singles', subtitle: 'Latest releases', enabled: true, order: 4 },
+                    { id: 'radio', title: 'Popular radio', subtitle: 'Live streams 24/7', enabled: true, order: 5 }
+                  ];
 
-            <ScrollableRow
-              title="Popular artists"
-              subtitle="Find your favorite singers"
-              items={POPULAR_ARTISTS}
-              showAll={showAllArtists}
-              setShowAll={setShowAllArtists}
-              renderItem={(artist) => (
-                <div onClick={() => handleArtistClick(artist.name)} className="group cursor-pointer flex flex-col items-center">
-                  <div className="relative mb-2 md:mb-3 w-full aspect-square rounded-full overflow-hidden shadow-lg border-2 border-transparent group-hover:border-amber-500 transition-all duration-300">
-                    <img src={artist.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(artist.name)}&background=1e1e1e&color=f59e0b&size=300`} alt={artist.name} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" onError={(e) => handleImageError(e, artist.name)} />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
-                      <Icon name="search" className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-white drop-shadow-md transform scale-90 group-hover:scale-100 transition" />
-                    </div>
-                  </div>
-                  <h3 className="text-xs md:text-sm font-bold text-white truncate w-full text-center group-hover:text-amber-400 transition">{artist.name}</h3>
-                  <p className="text-[10px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1 w-full text-center">{artist.role}</p>
-                </div>
-              )}
-            />
+              const sortedSections = [...sections]
+                .filter(s => s && s.enabled !== false)
+                .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
 
-            <ScrollableRow
-              title="Popular albums and singles"
-              subtitle="Latest releases"
-              items={popularAlbums}
-              fallbackItems={POPULAR_ALBUMS}
-              showAll={showAllAlbums}
-              setShowAll={setShowAllAlbums}
-              renderItem={(album) => (
-                <div onClick={() => handlePlayTrending(album.query || album.title, album, popularAlbums)} className="group cursor-pointer">
-                  <div className="relative mb-2 md:mb-3">
-                    <img src={getCleanThumbnail(album)} alt={album.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => handleImageError(e, album.title, album.id)} />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
-                      <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
-                        <Icon name="play" className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-neutral-950 translate-x-[1px] md:translate-x-[2px]" />
-                      </div>
-                    </div>
-                  </div>
-                  <h3 className="text-xs md:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{album.title}</h3>
-                  <p className="text-[11px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1">{album.artist}</p>
-                </div>
-              )}
-            />
+              return sortedSections.map(sec => {
+                switch (sec.id) {
+                  case 'trending':
+                    return (
+                      <ScrollableRow
+                        key="sec-trending"
+                        title={sec.title || "Trending songs"}
+                        subtitle={sec.subtitle || "The most played hits right now"}
+                        items={trendingSongs}
+                        fallbackItems={TRENDING_SONGS}
+                        showAll={showAllTrending}
+                        setShowAll={setShowAllTrending}
+                        renderItem={(song) => (
+                          <div onClick={() => handlePlayTrending(song.query || song.title, song, trendingSongs)} className="group cursor-pointer">
+                            <div className="relative mb-2 md:mb-3">
+                              <img src={getCleanThumbnail(song)} alt={song.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => handleImageError(e, song.title, song.id)} />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
+                                <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
+                                  <Icon name="play" className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-neutral-950 translate-x-[1px] md:translate-x-[2px]" />
+                                </div>
+                              </div>
+                            </div>
+                            <h3 className="text-xs md:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{song.title}</h3>
+                            <p className="text-[11px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1">{song.artist}</p>
+                          </div>
+                        )}
+                      />
+                    );
 
-            <ScrollableRow
-              title="Popular radio"
-              subtitle="Live streams 24/7"
-              items={popularRadio}
-              fallbackItems={POPULAR_RADIO}
-              showAll={showAllRadio}
-              setShowAll={setShowAllRadio}
-              renderItem={(radio) => (
-                <div onClick={() => handlePlayTrending(radio.query || radio.title, radio, popularRadio)} className="group cursor-pointer">
-                  <div className="relative mb-2 md:mb-3">
-                    <img src={getCleanThumbnail(radio)} alt={radio.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => handleImageError(e, radio.title, radio.id)} />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
-                      <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
-                        <Icon name="play" className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-neutral-950 translate-x-[1px] md:translate-x-[2px]" />
-                      </div>
-                    </div>
-                  </div>
-                  <h3 className="text-xs md:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{radio.title}</h3>
-                  <p className="text-[11px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1">{radio.artist}</p>
-                </div>
-              )}
-            />
+                  case 'curated':
+                    return (
+                      <CmsCuratedCollectionsRow
+                        key="sec-curated"
+                        backendUrl={BACKEND_URL}
+                        title={sec.title || "Curated Featured Collections"}
+                        subtitle={sec.subtitle || "Handpicked mixes, nostalgia sets, and soundtracks curated by our editors"}
+                        onPlayTrack={(track, collectionTracks) => {
+                          handlePlayTrending(track.title || track.name, track, collectionTracks);
+                        }}
+                      />
+                    );
 
+                  case 'artists':
+                    return (
+                      <ScrollableRow
+                        key="sec-artists"
+                        title={sec.title || "Popular artists"}
+                        subtitle={sec.subtitle || "Find your favorite singers"}
+                        items={POPULAR_ARTISTS}
+                        showAll={showAllArtists}
+                        setShowAll={setShowAllArtists}
+                        renderItem={(artist) => (
+                          <div onClick={() => handleArtistClick(artist.name)} className="group cursor-pointer flex flex-col items-center">
+                            <div className="relative mb-2 md:mb-3 w-full aspect-square rounded-full overflow-hidden shadow-lg border-2 border-transparent group-hover:border-amber-500 transition-all duration-300">
+                              <img src={artist.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(artist.name)}&background=1e1e1e&color=f59e0b&size=300`} alt={artist.name} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" onError={(e) => handleImageError(e, artist.name)} />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                                <Icon name="search" className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-white drop-shadow-md transform scale-90 group-hover:scale-100 transition" />
+                              </div>
+                            </div>
+                            <h3 className="text-xs md:text-sm font-bold text-white truncate w-full text-center group-hover:text-amber-400 transition">{artist.name}</h3>
+                            <p className="text-[10px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1 w-full text-center">{artist.role}</p>
+                          </div>
+                        )}
+                      />
+                    );
+
+                  case 'albums':
+                    return (
+                      <ScrollableRow
+                        key="sec-albums"
+                        title={sec.title || "Popular albums and singles"}
+                        subtitle={sec.subtitle || "Latest releases"}
+                        items={popularAlbums}
+                        fallbackItems={POPULAR_ALBUMS}
+                        showAll={showAllAlbums}
+                        setShowAll={setShowAllAlbums}
+                        renderItem={(album) => (
+                          <div onClick={() => handlePlayTrending(album.query || album.title, album, popularAlbums)} className="group cursor-pointer">
+                            <div className="relative mb-2 md:mb-3">
+                              <img src={getCleanThumbnail(album)} alt={album.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => handleImageError(e, album.title, album.id)} />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
+                                <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
+                                  <Icon name="play" className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-neutral-950 translate-x-[1px] md:translate-x-[2px]" />
+                                </div>
+                              </div>
+                            </div>
+                            <h3 className="text-xs md:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{album.title}</h3>
+                            <p className="text-[11px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1">{album.artist}</p>
+                          </div>
+                        )}
+                      />
+                    );
+
+                  case 'radio':
+                    return (
+                      <ScrollableRow
+                        key="sec-radio"
+                        title={sec.title || "Popular radio"}
+                        subtitle={sec.subtitle || "Live streams 24/7"}
+                        items={popularRadio}
+                        fallbackItems={POPULAR_RADIO}
+                        showAll={showAllRadio}
+                        setShowAll={setShowAllRadio}
+                        renderItem={(radio) => (
+                          <div onClick={() => handlePlayTrending(radio.query || radio.title, radio, popularRadio)} className="group cursor-pointer">
+                            <div className="relative mb-2 md:mb-3">
+                              <img src={getCleanThumbnail(radio)} alt={radio.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => handleImageError(e, radio.title, radio.id)} />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
+                                <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
+                                  <Icon name="play" className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-neutral-950 translate-x-[1px] md:translate-x-[2px]" />
+                                </div>
+                              </div>
+                            </div>
+                            <h3 className="text-xs md:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{radio.title}</h3>
+                            <p className="text-[11px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1">{radio.artist}</p>
+                          </div>
+                        )}
+                      />
+                    );
+
+                  default:
+                    return null;
+                }
+              });
+            })()}
+
+            <DisclaimerFooter footer={cmsConfig?.footer} />
           </div>
         )}
 
@@ -3743,7 +4017,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </>
             )}
 
-            <DisclaimerFooter />
+            <DisclaimerFooter footer={cmsConfig?.footer} />
           </div>
         )}
 
@@ -3800,7 +4074,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 })
               )}
             </div>
-            <DisclaimerFooter />
+            <DisclaimerFooter footer={cmsConfig?.footer} />
           </div>
         )}
 
@@ -3859,7 +4133,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 })
               )}
             </div>
-            <DisclaimerFooter />
+            <DisclaimerFooter footer={cmsConfig?.footer} />
           </div>
         )}
         {activeTab === 'playlists' && (
@@ -3980,9 +4254,27 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               onExit={() => {
                 setActiveTab('home');
                 window.history.pushState(null, '', '/');
+                // Revert any uncommitted live draft preview back to published config
+                const published = getCachedCmsConfig();
+                setCmsConfig(published);
+                applyThemeToDom(published.theme, true);
+                fetchPublicCmsConfig(BACKEND_URL).then(cfg => {
+                  if (cfg) {
+                    const normalized = normalizeCmsConfig(cfg);
+                    setCmsConfig(normalized);
+                    applyThemeToDom(normalized.theme, true);
+                  }
+                });
               }}
               onOpenAuth={openAuthModal}
               showToast={showToast}
+              onPreviewConfig={(previewConfig) => {
+                if (previewConfig) {
+                  const normalized = normalizeCmsConfig(previewConfig);
+                  setCmsConfig(normalized);
+                  applyThemeToDom(normalized.theme, false);
+                }
+              }}
             />
           </div>
         )}
@@ -3990,21 +4282,54 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       </div>
 
       {currentSong && (
-        <footer className={`fixed bottom-0 right-0 z-40 bg-neutral-950/90 backdrop-blur-2xl border-t border-amber-500/20 transition-all duration-300 shadow-[0_-10px_35px_rgba(0,0,0,0.8),0_0_20px_rgba(245,158,11,0.06)] left-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'} ${isPlayerMinimized ? 'p-2' : 'p-3 md:p-4'}`}>
-          <div className="absolute -top-3.5 right-6 z-50 shrink-0">
+        <footer 
+          onClick={() => handleOpenExpandedPlayer('player')}
+          role="region"
+          aria-label="Audio player mini bar"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              if (e.target === e.currentTarget) {
+                e.preventDefault();
+                handleOpenExpandedPlayer('player');
+              }
+            }
+          }}
+          className={`fixed bottom-0 right-0 z-40 bg-neutral-950/95 backdrop-blur-2xl border-t border-amber-500/20 transition-all duration-300 shadow-[0_-10px_35px_rgba(0,0,0,0.8),0_0_20px_rgba(var(--accent-rgb,245,158,11),0.06)] left-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'} ${showQueuePanel ? 'hidden' : 'block'} cursor-pointer select-none pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 px-3 md:py-3 md:px-6`}
+        >
+          {/* Quick Expand Pill for Mobile Accessibility */}
+          <div className="md:hidden absolute -top-3.5 right-4 z-50 shrink-0 pointer-events-auto">
             <button
-              onClick={() => setIsPlayerMinimized(!isPlayerMinimized)}
-              className="px-3 py-1 rounded-full bg-neutral-900/90 hover:bg-neutral-800 border border-amber-500/30 text-amber-400 text-[10px] font-bold shadow-lg flex items-center gap-1 transition shrink-0 cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenExpandedPlayer('player');
+              }}
+              className="px-2.5 py-0.5 rounded-full bg-neutral-900/95 hover:bg-neutral-800 border border-amber-500/40 text-amber-400 text-[10px] font-bold shadow-lg flex items-center gap-1 transition shrink-0 cursor-pointer"
+              title="Expand Player"
+              aria-label="Expand Player"
             >
-              <Icon name={isPlayerMinimized ? "chevronUp" : "chevronDown"} className="w-3.5 h-3.5 shrink-0" />
-              <span>{isPlayerMinimized ? "Expand Player" : "Minimize"}</span>
+              <Icon name="chevronUp" className="w-3.5 h-3.5 shrink-0" />
+              <span>Expand Player</span>
             </button>
           </div>
 
-          <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3 w-full md:w-1/4 min-w-0">
+          {/* Desktop Full 3-Section Footer (>= md) */}
+          <div className="hidden md:flex max-w-7xl mx-auto items-center justify-between gap-4">
+            {/* Left: Metadata & Secondary Actions */}
+            <div 
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenExpandedPlayer('player');
+              }}
+              className="flex items-center gap-3 w-1/4 min-w-0 cursor-pointer group"
+            >
               <div className="relative group shrink-0">
-                <img src={getCleanThumbnail(currentSong)} alt={currentSong.title || ""} className={`rounded-xl object-cover shrink-0 shadow-md transition-all duration-300 ${isPlayerMinimized ? 'w-8 h-8' : 'w-12 h-12'} border border-amber-500/30`} onError={(e) => handleImageError(e, currentSong.title, currentSong.id)} />
+                <img 
+                  src={getCleanThumbnail(currentSong)} 
+                  alt={currentSong.title || ""} 
+                  className="rounded-xl object-cover shrink-0 shadow-md transition-all duration-300 w-12 h-12 border border-amber-500/30 group-hover:border-amber-400" 
+                  onError={(e) => handleImageError(e, currentSong.title, currentSong.id)} 
+                />
                 {isPlaying && (
                   <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-gradient-to-tr from-amber-500 to-orange-500 text-neutral-950 flex items-center justify-center text-[9px] font-bold animate-spin-slow shadow-md border border-neutral-950">
                     💿
@@ -4015,113 +4340,171 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 <h4 className="font-bold text-xs text-white truncate group-hover:text-amber-300 transition-colors">{currentSong.title}</h4>
                 <p className="text-[10px] text-amber-400 truncate">{currentSong.channel}</p>
               </div>
-              {!isPlayerMinimized && (
-                <div className="flex items-center gap-1 shrink-0 ml-2">
-                  <button onClick={(e) => handleOpenVideo(currentSong, e)} className="text-amber-400 hover:text-amber-300 transition p-1 shrink-0" title="Watch Video">
-                    <Icon name="video" className="w-4 h-4 shrink-0" />
-                  </button>
-                  <button onClick={(e) => handleAddToPlaylistClick(currentSong, e)} className="text-neutral-500 hover:text-amber-500 transition p-1 shrink-0" title="Add to Playlist">
-                    <Icon name="plus" className="w-4 h-4 shrink-0" />
-                  </button>
-                  <button onClick={() => setShowQueuePanel(!showQueuePanel)} className="text-neutral-500 hover:text-amber-500 transition p-1 shrink-0" title="View Queue">
-                    <Icon name="list" className="w-4 h-4 shrink-0" />
-                  </button>
-                  <button onClick={(e) => { e.stopPropagation(); toggleLike(currentSong); }} className="text-neutral-500 hover:text-pink-500 transition p-1 shrink-0" title="Like">
-                    <Icon name={likedSongs.some(s => s.id === currentSong.id) ? "heart" : "heartOutline"} className="w-4 h-4 text-pink-500 shrink-0" />
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {!isPlayerMinimized && (
-              <div className="flex flex-col items-center w-full md:w-2/4 gap-1.5 animate-fadeIn">
-                <div className="flex items-center gap-4 shrink-0">
-                  <button onClick={() => setIsShuffle(!isShuffle)} className={`transition ${isShuffle ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} title={isShuffle ? "Shuffle On" : "Shuffle Off"}>
-                    <Icon name="shuffle" className="w-4 h-4 shrink-0" />
-                  </button>
-                  <button onClick={handlePrevSong} className="text-neutral-300 hover:text-white transition" title="Previous Track">
-                    <Icon name="skipPrev" className="w-5 h-5 shrink-0" />
-                  </button>
-                  <button onClick={togglePlayPause} className="w-11 h-11 rounded-full amber-glow-btn text-neutral-950 flex items-center justify-center font-bold shadow-[0_0_20px_rgba(245,158,11,0.4)] hover:shadow-[0_0_28px_rgba(245,158,11,0.6)] active:scale-95 transition-all shrink-0 cursor-pointer border border-amber-300/40" title={isPlaying ? "Pause" : "Play"}>
-                    <Icon name={isPlaying ? "pause" : "play"} className="w-5 h-5 fill-current" />
-                  </button>
-                  <button onClick={handleNextSong} className="text-neutral-300 hover:text-white transition" title="Next Track">
-                    <Icon name="skipNext" className="w-5 h-5 shrink-0" />
-                  </button>
-                  <button 
-                    onClick={toggleRepeatMode} 
-                    className={`relative transition ${isRepeat ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} 
-                    title={isRepeat === 'one' ? 'Repeat One' : isRepeat === 'all' ? 'Repeat All' : 'Repeat Off'}
-                  >
-                    <Icon name="repeat" className="w-4 h-4 shrink-0" />
-                    {isRepeat === 'one' && (
-                      <span className="absolute -top-1 -right-1 text-[8px] font-bold bg-amber-500 text-white rounded-full w-3 h-3 flex items-center justify-center">1</span>
-                    )}
-                  </button>
-                </div>
-
-                <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} currentSongId={currentSong?.id} />
-              </div>
-            )}
-
-            {isPlayerMinimized && (
-              <div className="flex items-center gap-2.5 shrink-0">
-                <button onClick={(e) => handleOpenVideo(currentSong, e)} className="text-amber-400 hover:text-amber-300 transition p-1 shrink-0" title="Watch Video">
+              <div className="flex items-center gap-1 shrink-0 ml-2" onClick={(e) => e.stopPropagation()}>
+                <button onClick={(e) => handleOpenVideo(currentSong, e)} className="text-amber-400 hover:text-amber-300 transition p-1 shrink-0 cursor-pointer" title="Watch Video">
                   <Icon name="video" className="w-4 h-4 shrink-0" />
                 </button>
-                <button onClick={handlePrevSong} className="text-neutral-300 hover:text-white transition shrink-0" title="Previous Track">
-                  <Icon name="skipPrev" className="w-4 h-4 shrink-0" />
+                <button onClick={(e) => handleAddToPlaylistClick(currentSong, e)} className="text-neutral-500 hover:text-amber-500 transition p-1 shrink-0 cursor-pointer" title="Add to Playlist">
+                  <Icon name="plus" className="w-4 h-4 shrink-0" />
                 </button>
-                <button onClick={togglePlayPause} className="w-8 h-8 rounded-full bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white flex items-center justify-center shadow-md transition shrink-0">
-                  <Icon name={isPlaying ? "pause" : "play"} className="w-4 h-4 shrink-0" />
+                <button onClick={(e) => { e.stopPropagation(); handleOpenExpandedPlayer('queue'); }} className="text-neutral-500 hover:text-amber-500 transition p-1 shrink-0 cursor-pointer" title="View Queue">
+                  <Icon name="list" className="w-4 h-4 shrink-0" />
                 </button>
-                <button onClick={handleNextSong} className="text-neutral-300 hover:text-white transition shrink-0" title="Next Track">
-                  <Icon name="skipNext" className="w-4 h-4 shrink-0" />
+                <button onClick={(e) => { e.stopPropagation(); toggleLike(currentSong); }} className="text-neutral-500 hover:text-pink-500 transition p-1 shrink-0 cursor-pointer" title="Like">
+                  <Icon name={likedSongs.some(s => s.id === currentSong.id) ? "heart" : "heartOutline"} className="w-4 h-4 text-pink-500 shrink-0" />
                 </button>
               </div>
-            )}
+            </div>
 
-            <div className="hidden md:flex items-center justify-end w-1/4 gap-2 shrink-0">
-              {!isPlayerMinimized && (
-                <>
-                  <button
-                    onClick={(e) => handleOpenVideo(currentSong, e)}
-                    className="px-3 py-1.5 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 transition flex items-center gap-1.5 text-xs font-bold shrink-0"
-                  >
-                    <Icon name="video" className="w-4 h-4 shrink-0" />
-                    
-                  </button>
+            {/* Middle: Controls & Scrubber */}
+            <div className="flex flex-col items-center w-2/4 gap-1.5 animate-fadeIn" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-4 shrink-0">
+                <button onClick={() => setIsShuffle(!isShuffle)} className={`transition cursor-pointer ${isShuffle ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} title={isShuffle ? "Shuffle On" : "Shuffle Off"}>
+                  <Icon name="shuffle" className="w-4 h-4 shrink-0" />
+                </button>
+                <button onClick={handlePrevSong} className="text-neutral-300 hover:text-white transition cursor-pointer" title="Previous Track">
+                  <Icon name="skipPrev" className="w-5 h-5 shrink-0" />
+                </button>
+                <button onClick={togglePlayPause} className="w-11 h-11 rounded-full amber-glow-btn text-neutral-950 flex items-center justify-center font-bold shadow-[0_0_20px_rgba(var(--accent-rgb,245,158,11),0.4)] hover:shadow-[0_0_28px_rgba(var(--accent-rgb,245,158,11),0.6)] active:scale-95 transition-all shrink-0 cursor-pointer border border-amber-300/40" title={isPlaying ? "Pause" : "Play"}>
+                  <Icon name={isPlaying ? "pause" : "play"} className="w-5 h-5 fill-current" />
+                </button>
+                <button onClick={handleNextSong} className="text-neutral-300 hover:text-white transition cursor-pointer" title="Next Track">
+                  <Icon name="skipNext" className="w-5 h-5 shrink-0" />
+                </button>
+                <button 
+                  onClick={toggleRepeatMode} 
+                  className={`relative transition cursor-pointer ${isRepeat ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} 
+                  title={isRepeat === 'one' ? 'Repeat One' : isRepeat === 'all' ? 'Repeat All' : 'Repeat Off'}
+                >
+                  <Icon name="repeat" className="w-4 h-4 shrink-0" />
+                  {isRepeat === 'one' && (
+                    <span className="absolute -top-1 -right-1 text-[8px] font-bold bg-amber-500 text-white rounded-full w-3 h-3 flex items-center justify-center">1</span>
+                  )}
+                </button>
+              </div>
 
-                  <Icon name="volume" className="w-4 h-4 text-neutral-400 ml-2 shrink-0" />
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={volume}
-                    onChange={handleVolumeChange}
-                    className="w-20 h-1 bg-neutral-800 rounded-xl appearance-none cursor-pointer accent-amber-500 shrink-0"
-                  />
-                </>
-              )}
+              <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} currentSongId={currentSong?.id} />
+            </div>
+
+            {/* Right: Actions & Volume */}
+            <div className="flex items-center justify-end w-1/4 gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={(e) => handleOpenVideo(currentSong, e)}
+                className="px-3 py-1.5 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 transition flex items-center gap-1.5 text-xs font-bold shrink-0 cursor-pointer"
+                title="Watch Video"
+              >
+                <Icon name="video" className="w-4 h-4 shrink-0" />
+              </button>
+
+              <Icon name="volume" className="w-4 h-4 text-neutral-400 ml-2 shrink-0" />
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={volume}
+                onChange={handleVolumeChange}
+                className="w-20 h-1 bg-neutral-800 rounded-xl appearance-none cursor-pointer accent-amber-500 shrink-0"
+              />
+            </div>
+          </div>
+
+          {/* Mobile Sleek Single-Row Mini-Player (< md) */}
+          <div className="md:hidden flex items-center justify-between gap-3 w-full">
+            {/* Left: Thumbnail & Song Info */}
+            <div 
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenExpandedPlayer('player');
+              }}
+              className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
+            >
+              <div className="relative shrink-0">
+                <img 
+                  src={getCleanThumbnail(currentSong)} 
+                  alt={currentSong.title || ""} 
+                  className="rounded-xl object-cover shrink-0 shadow-md w-11 h-11 border border-amber-500/30" 
+                  onError={(e) => handleImageError(e, currentSong.title, currentSong.id)} 
+                />
+                {isPlaying && (
+                  <div className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-gradient-to-tr from-amber-500 to-orange-500 text-neutral-950 flex items-center justify-center text-[8px] font-bold animate-spin-slow shadow-md border border-neutral-950">
+                    💿
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <h4 className="font-bold text-xs text-white truncate leading-tight">{currentSong.title}</h4>
+                <p className="text-[10px] text-amber-400 truncate mt-0.5">{currentSong.channel}</p>
+              </div>
+            </div>
+
+            {/* Right: Compact Controls */}
+            <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenExpandedPlayer('queue');
+                }} 
+                className="text-neutral-400 hover:text-amber-400 transition p-2 shrink-0 cursor-pointer" 
+                title="View Queue"
+                aria-label="View Queue"
+              >
+                <Icon name="list" className="w-4 h-4 shrink-0" />
+              </button>
+
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePrevSong();
+                }} 
+                className="text-neutral-300 hover:text-white transition p-1.5 shrink-0 cursor-pointer hidden min-[360px]:block" 
+                title="Previous Track"
+                aria-label="Previous Track"
+              >
+                <Icon name="skipPrev" className="w-4 h-4 shrink-0" />
+              </button>
+
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  togglePlayPause();
+                }} 
+                className="w-9 h-9 rounded-full amber-glow-btn text-neutral-950 flex items-center justify-center shadow-md active:scale-95 transition shrink-0 cursor-pointer border border-amber-300/40" 
+                title={isPlaying ? "Pause" : "Play"}
+                aria-label={isPlaying ? "Pause" : "Play"}
+              >
+                <Icon name={isPlaying ? "pause" : "play"} className="w-4 h-4 fill-current translate-x-0.5" />
+              </button>
+
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleNextSong();
+                }} 
+                className="text-neutral-300 hover:text-white transition p-1.5 shrink-0 cursor-pointer" 
+                title="Next Track"
+                aria-label="Next Track"
+              >
+                <Icon name="skipNext" className="w-4 h-4 shrink-0" />
+              </button>
             </div>
           </div>
         </footer>
       )}
 
       {showQueuePanel && (
-        <div className={`fixed top-14 md:top-16 inset-x-0 bottom-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'} z-40 bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn pb-24 md:pb-0`}>
+        <div className={`fixed top-14 md:top-16 inset-x-0 bottom-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'} z-50 bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn pb-[env(safe-area-inset-bottom,0px)]`}>
           {/* Mobile Tab Header with Segmented Switcher & Close Button */}
-          <div className="md:hidden flex items-center justify-between px-4 py-2 border-b border-neutral-800/80 bg-neutral-900/95 backdrop-blur-xl shrink-0 z-50">
-            <div className="flex bg-neutral-800/90 p-1 rounded-2xl gap-1 border border-neutral-700/60 shadow-inner">
+          <div className="md:hidden flex items-center justify-between px-3 py-1.5 border-b border-neutral-800/80 bg-neutral-900/95 backdrop-blur-xl shrink-0 z-50">
+            <div className="flex bg-neutral-800/90 p-0.5 rounded-xl gap-1 border border-neutral-700/60 shadow-inner">
               <button 
                 onClick={() => setMobileQueueTab('player')}
-                className={`px-3.5 py-1 rounded-xl text-xs font-semibold transition ${mobileQueueTab === 'player' ? 'bg-amber-500 text-white shadow-md' : 'text-neutral-400 hover:text-white'}`}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${mobileQueueTab === 'player' ? 'bg-amber-500 text-neutral-950 font-bold shadow' : 'text-neutral-400 hover:text-white'}`}
               >
                 Now Playing
               </button>
               <button 
                 onClick={() => setMobileQueueTab('queue')}
-                className={`px-3.5 py-1 rounded-xl text-xs font-semibold transition ${mobileQueueTab === 'queue' ? 'bg-amber-500 text-white shadow-md' : 'text-neutral-400 hover:text-white'}`}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${mobileQueueTab === 'queue' ? 'bg-amber-500 text-neutral-950 font-bold shadow' : 'text-neutral-400 hover:text-white'}`}
               >
                 Up Next ({queue.length})
               </button>
@@ -4130,9 +4513,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             <button 
               onClick={() => setShowQueuePanel(false)} 
               className="text-neutral-400 hover:text-white bg-neutral-800/90 hover:bg-neutral-700 p-1.5 rounded-full border border-neutral-700/60 shadow-md cursor-pointer transition shrink-0"
-              title="Close"
+              title="Close Player"
+              aria-label="Close Player"
             >
-              <Icon name="close" className="w-5 h-5" />
+              <Icon name="close" className="w-4 h-4" />
             </button>
           </div>
 
@@ -4146,67 +4530,67 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </button>
 
           {/* Player Column (Full on Mobile when 'player' tab is active; 50% on Desktop) */}
-          <div className={`${mobileQueueTab === 'player' ? 'flex' : 'hidden'} md:flex w-full md:w-1/2 p-4 sm:p-6 md:p-8 flex-col justify-start md:justify-center items-center bg-gradient-to-br from-neutral-900 to-neutral-950 border-r border-neutral-800/50 overflow-y-auto hide-scrollbar flex-1 md:flex-initial`}>
+          <div className={`${mobileQueueTab === 'player' ? 'flex' : 'hidden'} md:flex w-full md:w-1/2 p-2 sm:p-5 md:p-8 flex-col justify-between md:justify-center items-center bg-gradient-to-br from-neutral-900 to-neutral-950 border-r border-neutral-800/50 overflow-hidden flex-1 md:flex-initial h-full max-h-full`}>
             {currentSong ? (
-              <div className="w-full max-w-sm flex flex-col items-center pt-3 sm:pt-6 md:pt-2 pb-6">
+              <div className="w-full max-w-sm flex-1 flex flex-col items-center justify-between py-1 sm:py-2 min-h-0">
                 {/* 3D Illuminated Virtual Turntable */}
-                <div className="relative mb-3 flex flex-col items-center justify-center">
+                <div className="relative flex flex-col items-center justify-center shrink min-h-0 my-auto">
                   <Turntable3D 
                     currentSong={currentSong} 
                     isPlaying={isPlaying} 
                     onTogglePlay={togglePlayPause} 
-                    size="large"
+                    size="responsive"
                   />
                   {/* Audio Spectrum Visualizer */}
                   <AudioSpectrumVisualizer 
                     isPlaying={isPlaying} 
-                    barCount={32}
-                    height={38}
-                    className="w-full max-w-xs mt-2" 
+                    barCount={28}
+                    height={20}
+                    className="w-full max-w-[200px] sm:max-w-xs mt-1 shrink-0" 
                   />
                 </div>
 
                 {/* Song Meta & Actions */}
-                <div className="w-full text-center space-y-1 mb-3">
-                  <h2 className="text-lg sm:text-xl md:text-2xl font-display font-bold text-white line-clamp-1 leading-tight">{currentSong.title}</h2>
-                  <p className="text-xs sm:text-sm text-amber-500 font-medium truncate">{currentSong.channel}</p>
+                <div className="w-full text-center space-y-0.5 sm:space-y-1 shrink-0 my-1">
+                  <h2 className="text-sm sm:text-base md:text-xl font-display font-bold text-white line-clamp-1 leading-snug px-2">{currentSong.title}</h2>
+                  <p className="text-[11px] sm:text-xs text-amber-500 font-medium truncate px-4">{currentSong.channel}</p>
                   
                   {/* Secondary buttons */}
-                  <div className="flex items-center justify-center gap-3 pt-1.5">
+                  <div className="flex items-center justify-center gap-3 pt-0.5">
                     <button 
                       onClick={(e) => { e.stopPropagation(); toggleLike(currentSong); }} 
-                      className="p-2 rounded-full bg-neutral-800/60 hover:bg-neutral-800 text-neutral-400 hover:text-pink-500 transition shadow" 
+                      className="p-1.5 sm:p-2 rounded-full bg-neutral-800/70 hover:bg-neutral-800 text-neutral-400 hover:text-pink-500 transition shadow" 
                       title={likedSongs.some(s => s.id === currentSong.id) ? "Remove from Favourite" : "Add to Favourite"}
                     >
-                      <Icon name={likedSongs.some(s => s.id === currentSong.id) ? "heart" : "heartOutline"} className="w-4 h-4 text-pink-500" />
+                      <Icon name={likedSongs.some(s => s.id === currentSong.id) ? "heart" : "heartOutline"} className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-pink-500" />
                     </button>
                     <button 
                       onClick={(e) => handleAddToPlaylistClick(currentSong, e)} 
-                      className="p-2 rounded-full bg-neutral-800/60 hover:bg-neutral-800 text-neutral-400 hover:text-amber-400 transition shadow" 
+                      className="p-1.5 sm:p-2 rounded-full bg-neutral-800/70 hover:bg-neutral-800 text-neutral-400 hover:text-amber-400 transition shadow" 
                       title="Add to Playlist"
                     >
-                      <Icon name="plus" className="w-4 h-4" />
+                      <Icon name="plus" className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     </button>
                     <button 
                       onClick={(e) => handleOpenVideo(currentSong, e)} 
-                      className="p-2 rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 transition shadow" 
+                      className="p-1.5 sm:p-2 rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 transition shadow" 
                       title="Watch Video"
                     >
-                      <Icon name="video" className="w-4 h-4" />
+                      <Icon name="video" className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     </button>
                   </div>
                 </div>
 
                 {/* Progress Bar */}
-                <div className="w-full mb-3 px-1">
+                <div className="w-full px-2 shrink-0 my-1">
                   <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} currentSongId={currentSong?.id} />
                 </div>
 
                 {/* Main Playback Controls with Tactile 3D Buttons */}
-                <div className="flex items-center justify-center gap-6 w-full mb-3">
+                <div className="flex items-center justify-center gap-4 sm:gap-6 w-full shrink-0 my-1">
                   <button 
                     onClick={() => setIsShuffle(!isShuffle)} 
-                    className={`p-2 transition ${isShuffle ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} 
+                    className={`p-1.5 transition ${isShuffle ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} 
                     title={isShuffle ? "Shuffle On" : "Shuffle Off"}
                   >
                     <Icon name="shuffle" className="w-4 h-4" />
@@ -4214,43 +4598,43 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   
                   <button 
                     onClick={handlePrevSong} 
-                    className="p-3 rounded-full bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/60 text-neutral-200 hover:text-white hover:scale-110 active:scale-95 transition-all shadow-md" 
+                    className="p-2 sm:p-3 rounded-full bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/60 text-neutral-200 hover:text-white hover:scale-110 active:scale-95 transition-all shadow-md" 
                     title="Previous Track"
                   >
-                    <Icon name="skipPrev" className="w-6 h-6" />
+                    <Icon name="skipPrev" className="w-5 h-5 sm:w-6 sm:h-6" />
                   </button>
                   
                   <button 
                     onClick={togglePlayPause} 
-                    className="w-14 h-14 sm:w-16 sm:h-16 rounded-full amber-glow-btn text-neutral-950 flex items-center justify-center font-bold shadow-[0_0_30px_rgba(245,158,11,0.5)] hover:shadow-[0_0_45px_rgba(245,158,11,0.7)] hover:scale-105 active:scale-95 transition-all cursor-pointer border border-amber-300/40"
+                    className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-full amber-glow-btn text-neutral-950 flex items-center justify-center font-bold shadow-[0_0_25px_rgba(var(--accent-rgb,245,158,11),0.5)] hover:shadow-[0_0_35px_rgba(var(--accent-rgb,245,158,11),0.7)] hover:scale-105 active:scale-95 transition-all cursor-pointer border border-amber-300/40"
                     title={isPlaying ? "Pause" : "Play"}
                   >
-                    <Icon name={isPlaying ? "pause" : "play"} className="w-7 h-7 fill-current" />
+                    <Icon name={isPlaying ? "pause" : "play"} className="w-6 h-6 sm:w-7 sm:h-7 fill-current" />
                   </button>
                   
                   <button 
                     onClick={handleNextSong} 
-                    className="p-3 rounded-full bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/60 text-neutral-200 hover:text-white hover:scale-110 active:scale-95 transition-all shadow-md" 
+                    className="p-2 sm:p-3 rounded-full bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/60 text-neutral-200 hover:text-white hover:scale-110 active:scale-95 transition-all shadow-md" 
                     title="Next Track"
                   >
-                    <Icon name="skipNext" className="w-6 h-6" />
+                    <Icon name="skipNext" className="w-5 h-5 sm:w-6 sm:h-6" />
                   </button>
                   
                   <button 
                     onClick={toggleRepeatMode} 
-                    className={`relative p-2 transition ${isRepeat ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} 
+                    className={`relative p-1.5 transition ${isRepeat ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} 
                     title={isRepeat === 'one' ? 'Repeat One' : isRepeat === 'all' ? 'Repeat All' : 'Repeat Off'}
                   >
                     <Icon name="repeat" className="w-4 h-4" />
                     {isRepeat === 'one' && (
-                      <span className="absolute top-1 right-1 text-[8px] font-bold bg-amber-500 text-white rounded-full w-3 h-3 flex items-center justify-center">1</span>
+                      <span className="absolute top-0.5 right-0.5 text-[8px] font-bold bg-amber-500 text-white rounded-full w-3 h-3 flex items-center justify-center">1</span>
                     )}
                   </button>
                 </div>
 
                 {/* Volume Slider */}
-                <div className="flex items-center gap-3 w-full max-w-xs justify-center px-4 py-1.5 rounded-2xl bg-neutral-900/50 border border-neutral-800/50 mb-3">
-                  <Icon name="volume" className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                <div className="flex items-center gap-2.5 w-full max-w-[240px] justify-center px-3 py-1 rounded-xl bg-neutral-900/60 border border-neutral-800/60 shrink-0 my-0.5">
+                  <Icon name="volume" className="w-3 h-3 text-neutral-400 shrink-0" />
                   <input
                     type="range"
                     min="0"
@@ -4259,17 +4643,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     onChange={handleVolumeChange}
                     className="flex-1 h-1 bg-neutral-800 rounded-xl appearance-none cursor-pointer accent-amber-500"
                   />
-                  <span className="text-[10px] font-mono text-neutral-400 w-7 text-right">{volume}%</span>
+                  <span className="text-[9px] font-mono text-neutral-400 w-6 text-right">{volume}%</span>
                 </div>
-
-                {/* Switch to Up Next on Mobile */}
-                <button
-                  onClick={() => setMobileQueueTab('queue')}
-                  className="md:hidden mt-2 flex items-center gap-2 px-4 py-2 rounded-2xl bg-neutral-800/80 hover:bg-neutral-700 text-xs text-amber-400 font-semibold border border-neutral-700/60 shadow-md transition"
-                >
-                  <Icon name="list" className="w-4 h-4" />
-                  <span>View Up Next Queue ({queue.length})</span>
-                </button>
               </div>
             ) : (
               <div className="text-neutral-500 text-lg flex flex-col items-center gap-3 py-16">
@@ -4278,6 +4653,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </div>
             )}
           </div>
+
 
           {/* Up Next Column (Full on Mobile when 'queue' tab is active; 50% on Desktop) */}
           <div className={`${mobileQueueTab === 'queue' ? 'flex' : 'hidden'} md:flex w-full md:w-1/2 flex-col bg-neutral-900/30 backdrop-blur-3xl overflow-y-auto hide-scrollbar pb-32 flex-1 md:flex-initial`}>

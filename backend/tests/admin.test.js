@@ -172,6 +172,118 @@ async function runTests() {
     assert(musicAnalytics.status === 200, 'Admin retrieves aggregated music analytics (200 OK)');
     assert(typeof musicAnalytics.data?.summary?.totalRegisteredUsers === 'number', 'Summary contains totalRegisteredUsers');
 
+    // Test 11: Public CMS Config Access
+    const publicConfig = await request({ path: '/api/cms/public-config', method: 'GET' });
+    assert(publicConfig.status === 200, 'Public config accessible without authentication (200 OK)');
+    assert(publicConfig.data?.branding?.siteName === 'Loopra', 'Public config returns site branding (Loopra)');
+    assert(Array.isArray(publicConfig.data?.sections), 'Public config contains home sections');
+    assert(Array.isArray(publicConfig.data?.stations), 'Public config contains radio stations');
+
+    // Test 12: Anonymous Access to Admin CMS Blocked
+    const anonCms = await request({ path: '/api/admin/cms/config', method: 'GET' });
+    assert(anonCms.status === 401, 'Anonymous request to /api/admin/cms/config returns 401 Unauthorized');
+
+    // Test 13: Normal User Access to Admin CMS Forbidden
+    const normalCms = await request({
+      path: '/api/admin/cms/config',
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${userToken}` }
+    });
+    assert(normalCms.status === 403, 'Normal user denied /api/admin/cms/config with 403 Forbidden');
+
+    // Test 14: Admin CMS Config Read & Draft Save
+    const adminCmsConfig = await request({
+      path: '/api/admin/cms/config',
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    assert(adminCmsConfig.status === 200, 'Admin reads CMS config with 200 OK');
+
+    const testTagline = 'Automated Test Tagline ' + Date.now();
+    const draftUpdate = await request({
+      path: '/api/admin/cms/config/draft',
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    }, {
+      branding: {
+        ...adminCmsConfig.data?.draft?.branding,
+        tagline: testTagline
+      }
+    });
+    assert(draftUpdate.status === 200, 'Admin successfully saves draft CMS config');
+
+    // Verify live site is NOT changed until published
+    const publicCheckBeforePublish = await request({ path: '/api/cms/public-config', method: 'GET' });
+    assert(publicCheckBeforePublish.data?.branding?.tagline !== testTagline, 'Draft changes do NOT appear on public config before publishing');
+
+    // Test 15: Admin Publishes CMS Configuration
+    const publishRes = await request({
+      path: '/api/admin/cms/config/publish',
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    }, { summary: 'Automated test publication' });
+    assert(publishRes.status === 200, 'Admin publishes CMS config to live website');
+
+    const publicCheckAfterPublish = await request({ path: '/api/cms/public-config', method: 'GET' });
+    assert(publicCheckAfterPublish.data?.branding?.tagline === testTagline, 'Published changes immediately appear on public config');
+
+    // Test 16: Curated Collections CRUD
+    const createCollection = await request({
+      path: '/api/admin/cms/curated',
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    }, {
+      name: 'Test Curated Mix ' + Date.now(),
+      category: 'featured',
+      description: 'Test description for curated mix',
+      isPublished: true,
+      isFeaturedOnHome: true
+    });
+    assert(createCollection.status === 201, 'Admin creates new curated collection (201 Created)');
+    const createdColId = createCollection.data?.collection?._id;
+
+    // Add track to collection
+    const addTrack = await request({
+      path: `/api/admin/cms/curated/${createdColId}/tracks`,
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    }, {
+      videoId: 'testVid12345',
+      title: 'Automated Test Song',
+      artist: 'Test Artist',
+      duration: '3:45'
+    });
+    assert(addTrack.status === 201, 'Admin adds track to curated collection');
+
+    // Cleanup test collection
+    const delCollection = await request({
+      path: `/api/admin/cms/curated/${createdColId}`,
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    assert(delCollection.status === 200, 'Admin deletes curated collection');
+
+    // Test 17: Media Upload & Deletion
+    const uploadMedia = await request({
+      path: '/api/admin/cms/media/upload',
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    }, {
+      name: 'Test Logo Image',
+      mimeType: 'image/png',
+      dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      category: 'logo'
+    });
+    assert(uploadMedia.status === 201, 'Admin uploads valid media asset');
+    const mediaId = uploadMedia.data?.asset?.id;
+
+    const delMedia = await request({
+      path: `/api/admin/cms/media/${mediaId}`,
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    assert(delMedia.status === 200, 'Admin deletes media asset');
+
     console.log(`\n=== TEST SUITE COMPLETED: ${passed} PASSED, ${failed} FAILED ===`);
     process.exit(failed > 0 ? 1 : 0);
   } catch (err) {

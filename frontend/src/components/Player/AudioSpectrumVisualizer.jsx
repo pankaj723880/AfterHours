@@ -39,12 +39,16 @@ export default function AudioSpectrumVisualizer({
       const totalSpacing = (totalBars - 1) * barSpacing;
       const barWidth = Math.max(2, (width - totalSpacing) / totalBars);
 
-      // Create rich amber-to-orange gradient
+      // Create rich dynamic accent gradient
+      const rootStyle = getComputedStyle(document.documentElement);
+      const accentDark = rootStyle.getPropertyValue('--accent-color-dark').trim() || '#d97706';
+      const accent = rootStyle.getPropertyValue('--accent-color').trim() || '#f59e0b';
+      const accentLight = rootStyle.getPropertyValue('--accent-color-light').trim() || '#fcd34d';
+
       const gradient = ctx.createLinearGradient(0, h, 0, 0);
-      gradient.addColorStop(0, '#d97706'); // amber-600
-      gradient.addColorStop(0.5, '#f59e0b'); // amber-500
-      gradient.addColorStop(0.85, '#f97316'); // orange-500
-      gradient.addColorStop(1, '#fde68a'); // amber-200
+      gradient.addColorStop(0, accentDark);
+      gradient.addColorStop(0.5, accent);
+      gradient.addColorStop(1, accentLight);
 
       barsRef.current.forEach((bar, i) => {
         if (isPlaying) {
@@ -88,7 +92,7 @@ export default function AudioSpectrumVisualizer({
 
         // Draw peak dot if playing
         if (isPlaying && bar.peak > 6) {
-          ctx.fillStyle = '#fde68a';
+          ctx.fillStyle = accentLight;
           ctx.fillRect(x, Math.max(0, h - bar.peak - 2), barWidth, 1.5);
         }
       });
@@ -111,7 +115,7 @@ export default function AudioSpectrumVisualizer({
         ref={canvasRef} 
         width={320} 
         height={height} 
-        className="w-full max-w-sm h-full pointer-events-none drop-shadow-[0_0_12px_rgba(245,158,11,0.35)]" 
+        className="w-full max-w-sm h-full pointer-events-none drop-shadow-[0_0_12px_rgba(var(--accent-rgb,245,158,11),0.35)]" 
       />
     </div>
   );
