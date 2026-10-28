@@ -22,7 +22,8 @@ import {
   Sliders,
   Sparkles,
   X,
-  AlertCircle
+  AlertCircle,
+  Menu
 } from 'lucide-react';
 import AccessDenied from './AccessDenied';
 import AdminOverview from './AdminOverview';
@@ -59,6 +60,31 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
   // Media Picker Modal State
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [mediaPickerCallback, setMediaPickerCallback] = useState(null);
+
+  // Mobile drawer state
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  // Lock background scroll when mobile sidebar drawer is open
+  useEffect(() => {
+    if (isMobileSidebarOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isMobileSidebarOpen]);
+
+  // Close mobile sidebar on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isMobileSidebarOpen) {
+        setIsMobileSidebarOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMobileSidebarOpen]);
 
   const isAdmin = Boolean(
     (user && user.role === 'admin') ||
@@ -343,75 +369,151 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
   ];
 
   const isCmsTab = activeSubTab.startsWith('cms_');
+  const isAuthError = Boolean(
+    cmsError && (
+      cmsError.toLowerCase().includes('unauthorized') ||
+      cmsError.toLowerCase().includes('token') ||
+      cmsError.toLowerCase().includes('forbidden') ||
+      cmsError.toLowerCase().includes('expired')
+    )
+  );
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans">
       {/* Top Navbar */}
-      <header className="sticky top-0 z-40 bg-neutral-950/85 backdrop-blur-xl border-b border-neutral-800/80 px-4 sm:px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onExit}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-semibold border border-neutral-800 transition cursor-pointer"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Back to Music</span>
-          </button>
+      <header className="sticky top-0 z-40 bg-neutral-950/90 backdrop-blur-xl border-b border-neutral-800/80 px-3 sm:px-6 py-2.5">
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            {/* Hamburger button on mobile */}
+            <button
+              type="button"
+              onClick={() => setIsMobileSidebarOpen(prev => !prev)}
+              aria-label="Toggle navigation menu"
+              className="md:hidden p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 transition cursor-pointer shrink-0"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
 
-          <div className="h-5 w-px bg-neutral-800" />
+            <button
+              onClick={onExit}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-semibold border border-neutral-800 transition cursor-pointer shrink-0"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Back to Music</span>
+            </button>
 
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50" />
-            <h1 className="text-sm sm:text-base font-extrabold text-white tracking-tight">
-              Loopra <span className="text-amber-400 font-semibold text-xs ml-1 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full uppercase">Dynamic CMS</span>
-            </h1>
+            <div className="hidden sm:block h-5 w-px bg-neutral-800 shrink-0" />
+
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50 shrink-0" />
+              <h1 className="text-sm sm:text-base font-extrabold text-white tracking-tight truncate">
+                Loopra <span className="hidden sm:inline-block text-amber-400 font-semibold text-xs ml-1 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full uppercase">Dynamic CMS</span>
+              </h1>
+            </div>
+          </div>
+
+          {/* Quick CMS Action Controls in Header */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {isCmsTab && (
+              <div className="flex items-center gap-1.5 sm:gap-2 sm:border-r sm:border-neutral-800 sm:pr-3">
+                <button
+                  type="button"
+                  disabled={isSavingDraft}
+                  onClick={handleSaveDraft}
+                  title="Save Draft"
+                  className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-200 text-xs font-semibold border border-neutral-700 transition cursor-pointer disabled:opacity-50 shrink-0"
+                >
+                  <Save className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden sm:inline">{isSavingDraft ? 'Saving...' : 'Save Draft'}</span>
+                  <span className="sm:hidden">{isSavingDraft ? '...' : 'Draft'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isPublishingLive}
+                  onClick={() => handlePublishLive('Published via dashboard bar')}
+                  title="Publish Live"
+                  className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 font-bold text-xs shadow-md shadow-amber-500/20 transition cursor-pointer disabled:opacity-50 shrink-0"
+                >
+                  <UploadCloud className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden sm:inline">{isPublishingLive ? 'Publishing...' : 'Publish Live'}</span>
+                  <span className="sm:hidden">{isPublishingLive ? '...' : 'Publish'}</span>
+                </button>
+              </div>
+            )}
+
+            {/* Real-time Socket status indicator (desktop only) */}
+            <div className="hidden md:flex items-center gap-1.5 text-xs text-neutral-400 bg-neutral-900 border border-neutral-800 px-2.5 py-1 rounded-full shrink-0">
+              <span className={`w-2 h-2 rounded-full ${isSocketConnected ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-400'}`} />
+              <span className="text-[11px] font-mono text-emerald-400">{isSocketConnected ? 'Real-Time Sync' : 'Operational'}</span>
+            </div>
+
+            {/* User badge (desktop only) */}
+            <div className="hidden md:flex items-center gap-2 text-xs bg-neutral-900 border border-neutral-800 px-3 py-1 rounded-full shrink-0">
+              <ShieldCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span className="font-semibold text-neutral-200 truncate max-w-[120px] sm:max-w-[200px]">
+                {user.username}
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Quick CMS Action Controls in Header */}
-        <div className="flex items-center gap-3">
-          {isCmsTab && (
-            <div className="flex items-center gap-2 border-r border-neutral-800 pr-3">
-              <button
-                type="button"
-                disabled={isSavingDraft}
-                onClick={handleSaveDraft}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-200 text-xs font-semibold border border-neutral-700 transition cursor-pointer disabled:opacity-50"
-              >
-                <Save className="w-3.5 h-3.5" />
-                <span>{isSavingDraft ? 'Saving...' : 'Save Draft'}</span>
-              </button>
-
-              <button
-                type="button"
-                disabled={isPublishingLive}
-                onClick={() => handlePublishLive('Published via dashboard bar')}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 font-bold text-xs shadow-md shadow-amber-500/20 transition cursor-pointer disabled:opacity-50"
-              >
-                <UploadCloud className="w-3.5 h-3.5" />
-                <span>{isPublishingLive ? 'Publishing...' : 'Publish Live'}</span>
-              </button>
-            </div>
-          )}
-
-          {/* Real-time Socket status indicator */}
-          <div className="flex items-center gap-1.5 text-xs text-neutral-400 bg-neutral-900 border border-neutral-800 px-2.5 py-1 rounded-full">
-            <span className={`w-2 h-2 rounded-full ${isSocketConnected ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-400'}`} />
-            <span className="text-[11px] font-mono text-emerald-400">{isSocketConnected ? 'Real-Time Sync' : 'Operational'}</span>
-          </div>
-
-          <div className="flex items-center gap-2 text-xs bg-neutral-900 border border-neutral-800 px-3 py-1 rounded-full">
-            <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-            <span className="font-semibold text-neutral-200 truncate max-w-[120px] sm:max-w-[200px]">
-              {user.username}
+        {/* Mobile secondary status row (md:hidden) */}
+        <div className="md:hidden mt-2 pt-2 border-t border-neutral-800/60 flex items-center justify-between text-[11px] text-neutral-400 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-2">
+            <span className="text-neutral-500 shrink-0">Section:</span>
+            <span className="text-amber-400 font-semibold truncate">
+              {[...cmsNavItems, ...operationsNavItems].find(i => i.id === activeSubTab)?.label || activeSubTab}
             </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1">
+              <span className={`w-1.5 h-1.5 rounded-full ${isSocketConnected ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-400'}`} />
+              <span className="text-[10px] font-mono text-emerald-400">{isSocketConnected ? 'Live' : 'Ready'}</span>
+            </div>
+            <span className="text-neutral-700">|</span>
+            <span className="text-neutral-300 font-mono text-[10px] truncate max-w-[100px]">{user?.username}</span>
           </div>
         </div>
       </header>
 
       {/* Main Layout Container */}
-      <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col md:flex-row gap-6">
-        {/* Navigation Sidebar */}
-        <aside className="w-full md:w-60 shrink-0 space-y-5">
+      <div className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 flex flex-col md:flex-row gap-4 sm:gap-6 min-w-0">
+        {/* Mobile Drawer Backdrop */}
+        {isMobileSidebarOpen && (
+          <div
+            role="presentation"
+            aria-hidden="true"
+            onClick={() => setIsMobileSidebarOpen(false)}
+            className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm transition-opacity md:hidden"
+          />
+        )}
+
+        {/* Navigation Sidebar (Slide-in Drawer on Mobile, Column on Desktop) */}
+        <aside
+          className={`
+            fixed inset-y-0 left-0 z-[60] w-[min(85vw,300px)] bg-neutral-950/98 border-r border-neutral-800 p-4 overflow-y-auto transform transition-transform duration-300 ease-in-out
+            ${isMobileSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
+            md:translate-x-0 md:static md:inset-auto md:z-auto md:w-60 md:max-w-none md:bg-transparent md:border-0 md:p-0 md:overflow-visible md:transition-none md:shrink-0
+            space-y-5
+          `}
+        >
+          {/* Mobile Drawer Header with Close Button */}
+          <div className="flex md:hidden items-center justify-between pb-3 mb-2 border-b border-neutral-800">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50" />
+              <span className="text-xs font-bold uppercase tracking-wider text-neutral-200">Admin Navigation</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsMobileSidebarOpen(false)}
+              aria-label="Close navigation drawer"
+              className="p-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
           {/* Group 1: CMS Content Management */}
           <div className="space-y-1">
             <div className="text-[10px] uppercase font-bold text-amber-500 tracking-wider px-3 mb-2 flex items-center gap-1.5">
@@ -424,7 +526,10 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               return (
                 <button
                   key={item.id}
-                  onClick={() => setActiveSubTab(item.id)}
+                  onClick={() => {
+                    setActiveSubTab(item.id);
+                    setIsMobileSidebarOpen(false);
+                  }}
                   className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
                     isActive
                       ? 'bg-amber-500 text-neutral-950 font-bold shadow-lg shadow-amber-500/20'
@@ -460,7 +565,10 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               return (
                 <button
                   key={item.id}
-                  onClick={() => setActiveSubTab(item.id)}
+                  onClick={() => {
+                    setActiveSubTab(item.id);
+                    setIsMobileSidebarOpen(false);
+                  }}
                   className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
                     isActive
                       ? 'bg-emerald-500 text-neutral-950 font-bold shadow-lg shadow-emerald-500/20'
@@ -485,21 +593,32 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
         </aside>
 
         {/* Content Area */}
-        <main className="flex-1 min-w-0">
+        <main className="flex-1 min-w-0 pb-12 md:pb-8">
           {/* CMS Loading / Error Notices */}
           {cmsError && (
-            <div className="mb-5 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-between gap-3 text-rose-300 text-xs">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                <span>{cmsError}</span>
+            <div className="mb-5 p-3.5 sm:p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-rose-300 text-xs">
+              <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5 sm:mt-0" />
+                <span className="break-words min-w-0 leading-relaxed">{cmsError}</span>
               </div>
-              <button
-                type="button"
-                onClick={fetchCmsConfig}
-                className="px-3 py-1 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 rounded-xl font-semibold text-rose-200 transition cursor-pointer"
-              >
-                Retry
-              </button>
+              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                {isAuthError && onOpenAuth && (
+                  <button
+                    type="button"
+                    onClick={onOpenAuth}
+                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold rounded-xl transition cursor-pointer shadow-sm text-xs"
+                  >
+                    Re-authenticate
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={fetchCmsConfig}
+                  className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 rounded-xl font-semibold text-rose-200 transition cursor-pointer text-xs"
+                >
+                  Retry
+                </button>
+              </div>
             </div>
           )}
 

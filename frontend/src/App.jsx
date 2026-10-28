@@ -49,13 +49,18 @@ socket.on('connect_error', (err) => {
   console.warn('[Socket.io] Real-time connection notice:', err.message);
 });
 
-const fetchFromBackend = async (query) => {
+const fetchFromBackend = async (query, options = {}) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 20000);
   try {
     let res;
+    const { limit, pageToken } = options;
+    let path = `/api/youtube/search?q=${encodeURIComponent(query)}`;
+    if (limit) path += `&limit=${encodeURIComponent(limit)}`;
+    if (pageToken) path += `&pageToken=${encodeURIComponent(pageToken)}`;
+
     try {
-      res = await fetch(getApiUrl(`/api/youtube/search?q=${encodeURIComponent(query)}`), {
+      res = await fetch(getApiUrl(path), {
         signal: controller.signal,
         headers: {
           'X-Session-ID': getOrCreateSessionId()
@@ -63,7 +68,7 @@ const fetchFromBackend = async (query) => {
       });
     } catch (localErr) {
       if (!BACKEND_URL.includes('onrender.com')) {
-        res = await fetch(`https://afterhours-zvic.onrender.com/api/youtube/search?q=${encodeURIComponent(query)}`, {
+        res = await fetch(`https://afterhours-zvic.onrender.com${path}`, {
           signal: controller.signal,
           headers: {
             'X-Session-ID': getOrCreateSessionId()
@@ -1144,6 +1149,9 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       if (path === '/admin') return 'admin';
       if (path === '/discover' || params.get('q')) return 'discover';
+      if (['/library', '/history', '/playlists', '/barber', '/truck', '/pauwa'].includes(path)) {
+        return path.replace('/', '');
+      }
     }
     return 'home';
   });
@@ -1461,6 +1469,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [songs, setSongs] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
   const [searchVisibleCount, setSearchVisibleCount] = useState(10);
+  const [searchNextPageToken, setSearchNextPageToken] = useState(null);
+  const [hasMoreSearchResults, setHasMoreSearchResults] = useState(false);
+  const [isLoadingMoreSearch, setIsLoadingMoreSearch] = useState(false);
+  const [searchLoadMoreError, setSearchLoadMoreError] = useState('');
+  const activeSearchQueryRef = useRef('');
+  const searchRequestIdRef = useRef(0);
   const [stationVisibleCounts, setStationVisibleCounts] = useState({ barber: 50, truck: 50, pauwa: 50 });
   const stationVisibleCount = stationVisibleCounts[activeTab] || 50;
   const [isLoadingMoreStation, setIsLoadingMoreStation] = useState(false);
@@ -1618,6 +1632,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     setDraggedItemIndex(null);
   };
   const [mobileQueueTab, setMobileQueueTab] = useState('player');
+  const [isMiniPlayerExpanded, setIsMiniPlayerExpanded] = useState(false);
+  const isBottomPlayerVisible = Boolean(currentSong && activeTab !== 'home');
   const handleOpenExpandedPlayer = (tab = 'player') => {
     setMobileQueueTab(tab);
     setShowQueuePanel(true);
@@ -2019,8 +2035,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const query = typeof queryOrTitle === 'string' ? queryOrTitle : (itemObj?.query || itemObj?.title || '');
     if (!query) return;
 
-    if (searchCache[query] && searchCache[query].length > 0) {
-      const cached = searchCache[query][0];
+    const cachedEntry = searchCache[query];
+    const cachedList = Array.isArray(cachedEntry) ? cachedEntry : cachedEntry?.items;
+    if (cachedList && cachedList.length > 0) {
+      const cached = cachedList[0];
       const cachedId = cached?.id || cached?.videoId;
       if (cachedId) {
         playSong(toFormattedSong(cached, cachedId));
@@ -2721,6 +2739,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       window.history.pushState({ tab: 'admin' }, '', '/admin');
     } else if (stationKey === 'home') {
       window.history.pushState({ tab: 'home' }, '', '/');
+
     }
 
     if (videoModalSong) {
@@ -2757,6 +2776,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
         if (prevTab === 'home') {
           window.history.pushState({ tab: 'home' }, '', '/');
+
         } else if (prevTab === 'discover') {
           const q = searchQuery.trim();
           const url = q ? `/discover?q=${encodeURIComponent(q)}` : '/discover';
@@ -2907,41 +2927,156 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const trimmedQuery = q.trim().toLowerCase();
     if (!trimmedQuery) return;
 
+    const currentReqId = ++searchRequestIdRef.current;
+    activeSearchQueryRef.current = trimmedQuery;
     setHasSearched(true);
     setSearchError('');
+    setSearchLoadMoreError('');
+    setIsLoadingMoreSearch(false);
 
-    if (searchCache[trimmedQuery]) {
-      const cachedSongs = searchCache[trimmedQuery];
-      setSearchResults(cachedSongs);
-      setSearchVisibleCount(10);
+    // If cache already has modern format with pagination token
+    const cachedEntry = searchCache[trimmedQuery];
+    if (cachedEntry && !Array.isArray(cachedEntry) && Array.isArray(cachedEntry.items) && cachedEntry.items.length > 0) {
+      setSearchResults(cachedEntry.items);
+      setSearchVisibleCount(cachedEntry.items.length);
+      setSearchNextPageToken(cachedEntry.nextPageToken || null);
+      setHasMoreSearchResults(Boolean(cachedEntry.nextPageToken));
       return;
     }
 
     if (isLoading) return;
     setIsLoading(true);
     try {
-      const data = await fetchFromBackend(trimmedQuery + " official video original");
+      const data = await fetchFromBackend(trimmedQuery + " official video original", { limit: 10 });
 
-      if (data && data.items && data.items.length > 0) {
-        const fetchedTracks = data.items.map(item => ({
-          id: item.id?.videoId || item.id,
-          title: item.snippet?.title ? item.snippet.title.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&") : 'Untitled',
-          channel: item.snippet?.channelTitle || 'Unknown Artist',
-          thumbnail: getCleanThumbnail(item, item.id?.videoId || item.id),
-        }));
+      if (currentReqId !== searchRequestIdRef.current) return;
 
-        setSearchResults(fetchedTracks);
-        setSearchVisibleCount(10);
-        setSearchCache(prev => ({ ...prev, [trimmedQuery]: fetchedTracks }));
+      if (data && Array.isArray(data.items) && data.items.length > 0) {
+        const fetchedTracks = data.items.map(item => {
+          const vid = item.id?.videoId || (typeof item.id === 'string' ? item.id : null) || item.videoId;
+          return {
+            id: vid,
+            videoId: vid,
+            title: item.snippet?.title ? item.snippet.title.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&") : 'Untitled',
+            channel: item.snippet?.channelTitle || 'Unknown Artist',
+            artist: item.snippet?.channelTitle || 'Unknown Artist',
+            thumbnail: getCleanThumbnail(item, vid),
+          };
+        }).filter(t => t.id && typeof t.id === 'string' && t.id.length >= 5);
+
+        // Deduplicate using stable YouTube ID
+        const seen = new Set();
+        const uniqueTracks = fetchedTracks.filter(t => {
+          if (seen.has(t.id)) return false;
+          seen.add(t.id);
+          return true;
+        });
+
+        const nextToken = data.nextPageToken || null;
+        setSearchResults(uniqueTracks);
+        setSearchVisibleCount(uniqueTracks.length);
+        setSearchNextPageToken(nextToken);
+        setHasMoreSearchResults(Boolean(nextToken));
+
+        if (uniqueTracks.length > 0) {
+          setSearchCache(prev => ({
+            ...prev,
+            [trimmedQuery]: {
+              items: uniqueTracks,
+              nextPageToken: nextToken
+            }
+          }));
+        }
       } else {
         setSearchResults([]);
+        setSearchVisibleCount(0);
+        setSearchNextPageToken(null);
+        setHasMoreSearchResults(false);
       }
     } catch (err) {
-      console.warn("[Search Error]:", err.message);
-      setSearchError(err.message || 'Unable to connect to search service. Please try again.');
-      setSearchResults([]);
+      if (currentReqId === searchRequestIdRef.current) {
+        console.warn("[Search Error]:", err.message);
+        setSearchError(err.message || 'Unable to connect to search service. Please try again.');
+        setSearchResults([]);
+        setSearchVisibleCount(0);
+        setSearchNextPageToken(null);
+        setHasMoreSearchResults(false);
+      }
     } finally {
-      setIsLoading(false);
+      if (currentReqId === searchRequestIdRef.current) {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  const handleLoadMoreSearchResults = async () => {
+    if (isLoadingMoreSearch || isLoading) return;
+    const currentToken = searchNextPageToken;
+    const currentQuery = activeSearchQueryRef.current || searchQuery.trim().toLowerCase();
+    if (!currentQuery) return;
+    if (!currentToken) {
+      setHasMoreSearchResults(false);
+      return;
+    }
+
+    setIsLoadingMoreSearch(true);
+    setSearchLoadMoreError('');
+
+    try {
+      const data = await fetchFromBackend(currentQuery + " official video original", {
+        limit: 10,
+        pageToken: currentToken
+      });
+
+      // If active search query changed while this request was in flight, ignore
+      if (activeSearchQueryRef.current !== currentQuery) return;
+
+      const rawItems = Array.isArray(data?.items) ? data.items : [];
+      const fetchedTracks = rawItems.map(item => {
+        const vid = item.id?.videoId || (typeof item.id === 'string' ? item.id : null) || item.videoId;
+        return {
+          id: vid,
+          videoId: vid,
+          title: item.snippet?.title ? item.snippet.title.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&") : 'Untitled',
+          channel: item.snippet?.channelTitle || 'Unknown Artist',
+          artist: item.snippet?.channelTitle || 'Unknown Artist',
+          thumbnail: getCleanThumbnail(item, vid),
+        };
+      }).filter(t => t.id && typeof t.id === 'string' && t.id.length >= 5);
+
+      const nextToken = data.nextPageToken || null;
+
+      if (fetchedTracks.length === 0) {
+        // Empty batch unexpectedly returned: stop pagination loop safely
+        setSearchNextPageToken(null);
+        setHasMoreSearchResults(false);
+      } else {
+        setSearchResults(prev => {
+          const existingIds = new Set(prev.map(t => t.id || t.videoId).filter(Boolean));
+          const newUnique = fetchedTracks.filter(t => !existingIds.has(t.id));
+          const updated = [...prev, ...newUnique];
+          setSearchVisibleCount(updated.length);
+
+          // Update cache with accumulated results and latest continuation token
+          setSearchCache(cachePrev => ({
+            ...cachePrev,
+            [currentQuery]: {
+              items: updated,
+              nextPageToken: nextToken
+            }
+          }));
+
+          return updated;
+        });
+
+        setSearchNextPageToken(nextToken);
+        setHasMoreSearchResults(Boolean(nextToken));
+      }
+    } catch (err) {
+      console.warn("[Load More Search Error]:", err.message);
+      setSearchLoadMoreError(err.message || 'Failed to load more songs. Tap to retry.');
+    } finally {
+      setIsLoadingMoreSearch(false);
     }
   };
 
@@ -2990,6 +3125,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         } else {
           setSearchQuery('');
         }
+      } else if (['/library', '/history', '/playlists', '/barber', '/truck', '/pauwa'].includes(path)) {
+        setActiveTab(path.replace('/', ''));
       } else if (path === '/' || path === '') {
         setActiveTab('home');
       }
@@ -3378,7 +3515,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         {/* Site-wide CMS Announcement Bar */}
         <CmsAnnouncementBar announcement={cmsConfig?.announcement} />
 
-        <main className={`flex-1 h-full min-h-0 overflow-y-auto px-2.5 py-3 sm:px-4 sm:py-4 md:p-8 bg-neutral-950 box-border relative w-full transition-all duration-300 ${currentSong ? 'pb-24 md:pb-28' : 'pb-8'}`}>
+        <main className={`flex-1 h-full min-h-0 overflow-y-auto px-2.5 py-3 sm:px-4 sm:py-4 md:p-8 bg-neutral-950 box-border relative w-full transition-all duration-300 ${isBottomPlayerVisible ? 'pb-24 md:pb-28' : 'pb-8'}`}>
           {currentStation && currentBgImage && (
             <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden transition-all duration-700">
               <img 
@@ -3449,16 +3586,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     <span className="text-amber-500">⚡</span>
                     Search Results
                   </h3>
-                  <span className="text-xs text-neutral-400 font-mono">Showing {Math.min(searchVisibleCount, searchResults.length)} of {searchResults.length} songs</span>
+                  <span className="text-xs text-neutral-400 font-mono">Showing {searchResults.length} {searchResults.length === 1 ? 'song' : 'songs'}</span>
                 </div>
 
                 <div className="grid grid-cols-1 gap-2.5">
-                  {searchResults.slice(0, searchVisibleCount).map((track, i) => {
+                  {searchResults.map((track, i) => {
                     const isCurrent = currentSong?.id === track.id;
                     const isMenuOpen = openMenuId === `${track.id}-${i}`;
                     return (
                       <div
-                        key={track.id + i}
+                        key={`${track.id}-${i}`}
                         onClick={() => playSong(track)}
                         className={`p-3.5 rounded-2xl border flex items-center justify-between cursor-pointer transition-all duration-200 backdrop-blur-xl relative hover:-translate-y-0.5 ${
                           isMenuOpen ? 'z-30' : 'z-auto'
@@ -3509,16 +3646,52 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   })}
                 </div>
 
-                {searchVisibleCount < searchResults.length && (
-                  <div className="text-center pt-6 pb-4">
+                {/* Pagination Controls */}
+                <div className="text-center pt-6 pb-4 space-y-2">
+                  {searchLoadMoreError && (
+                    <div className="text-xs text-rose-400 bg-rose-950/40 border border-rose-800/60 rounded-xl px-4 py-2 inline-block max-w-md">
+                      <span>{searchLoadMoreError}</span>
+                    </div>
+                  )}
+
+                  {isLoadingMoreSearch ? (
                     <button
-                      onClick={() => setSearchVisibleCount(prev => prev + 10)}
-                      className="px-6 py-3 rounded-2xl bg-neutral-800 hover:bg-neutral-700 text-xs font-bold text-amber-400 border border-neutral-700 transition shadow-xl"
+                      type="button"
+                      disabled
+                      className="px-6 py-3 rounded-2xl bg-neutral-800 text-xs font-bold text-amber-400/70 border border-neutral-700/60 shadow-xl inline-flex items-center justify-center gap-2 cursor-not-allowed opacity-80"
                     >
-                      Show More Songs
+                      <Icon name="sparkles" className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                      <span>Loading...</span>
                     </button>
-                  </div>
-                )}
+                  ) : searchLoadMoreError ? (
+                    <button
+                      type="button"
+                      onClick={handleLoadMoreSearchResults}
+                      className="px-6 py-3 rounded-2xl bg-neutral-800 hover:bg-neutral-700 active:scale-[0.98] text-xs font-bold text-amber-400 border border-rose-500/50 hover:border-amber-500/60 transition shadow-xl cursor-pointer inline-flex items-center justify-center gap-2"
+                    >
+                      <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Retry</span>
+                    </button>
+                  ) : hasMoreSearchResults ? (
+                    <button
+                      type="button"
+                      onClick={handleLoadMoreSearchResults}
+                      className="px-6 py-3 rounded-2xl bg-neutral-800 hover:bg-neutral-700 active:scale-[0.98] text-xs font-bold text-amber-400 border border-neutral-700 hover:border-amber-500/50 transition shadow-xl cursor-pointer inline-flex items-center justify-center gap-2"
+                    >
+                      <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Load More</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      className="px-6 py-3 rounded-2xl bg-neutral-900/60 text-xs font-medium text-neutral-500 border border-neutral-800/80 cursor-default inline-flex items-center justify-center gap-2"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-neutral-600" />
+                      <span>End of results</span>
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -3610,8 +3783,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
             {/* Mobile Compact Horizontal Player (< md) */}
             <div 
-              onClick={() => handleOpenExpandedPlayer('player')}
-              className="md:hidden relative rounded-2xl p-2.5 sm:p-3 bg-gradient-to-r from-neutral-900/95 via-neutral-900/85 to-neutral-950/95 border border-amber-500/25 shadow-[0_10px_25px_rgba(0,0,0,0.6),0_0_15px_rgba(var(--accent-rgb,245,158,11),0.06)] backdrop-blur-xl mb-3 sm:mb-4 cursor-pointer active:scale-[0.99] transition-transform select-none w-full min-w-0"
+              className="md:hidden relative rounded-2xl p-2.5 sm:p-3 bg-gradient-to-r from-neutral-900/95 via-neutral-900/85 to-neutral-950/95 border border-amber-500/25 shadow-[0_10px_25px_rgba(0,0,0,0.6),0_0_15px_rgba(var(--accent-rgb,245,158,11),0.06)] backdrop-blur-xl mb-3 sm:mb-4 select-none w-full min-w-0"
             >
               <div className="flex items-center justify-between gap-3">
                 {/* Left: Album Thumbnail with 3D Vinyl Aesthetic */}
@@ -4283,48 +4455,39 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       </main>
       </div>
 
-      {currentSong && (
+      {isBottomPlayerVisible && (
         <footer 
-          onClick={() => handleOpenExpandedPlayer('player')}
           role="region"
           aria-label="Audio player mini bar"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              if (e.target === e.currentTarget) {
-                e.preventDefault();
-                handleOpenExpandedPlayer('player');
-              }
-            }
-          }}
-          className={`fixed bottom-0 right-0 z-40 bg-neutral-950/95 backdrop-blur-2xl border-t border-amber-500/20 transition-all duration-300 shadow-[0_-10px_35px_rgba(0,0,0,0.8),0_0_20px_rgba(var(--accent-rgb,245,158,11),0.06)] left-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'} ${showQueuePanel ? 'hidden' : 'block'} cursor-pointer select-none pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 px-3 md:py-3 md:px-6`}
+          className={`fixed z-40 transition-all duration-300 ease-in-out select-none ${showQueuePanel ? 'hidden' : 'block'}
+            bottom-[max(0.5rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2
+            rounded-2xl border border-amber-500/30 bg-neutral-950/95 backdrop-blur-2xl
+            shadow-[0_10px_35px_rgba(0,0,0,0.8),0_0_20px_rgba(var(--accent-rgb,245,158,11),0.06)]
+            py-2 px-3
+            ${isMiniPlayerExpanded ? 'w-[calc(100%-1rem)] max-w-xl' : 'w-[calc(100%-2rem)] max-w-[280px]'}
+            md:bottom-0 md:right-0 md:translate-x-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'}
+            md:w-auto md:max-w-none md:rounded-none md:border-t md:border-x-0 md:border-b-0 md:border-amber-500/20 md:bg-neutral-950/95 md:py-3 md:px-6 md:shadow-[0_-10px_35px_rgba(0,0,0,0.8),0_0_20px_rgba(var(--accent-rgb,245,158,11),0.06)]`}
         >
           {/* Quick Expand Pill for Mobile Accessibility */}
-          <div className="md:hidden absolute -top-3.5 right-4 z-50 shrink-0 pointer-events-auto">
+          <div className="md:hidden absolute -top-3.5 right-3 z-50 shrink-0 pointer-events-auto">
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                handleOpenExpandedPlayer('player');
+                setIsMiniPlayerExpanded(prev => !prev);
               }}
-              className="px-2.5 py-0.5 rounded-full bg-neutral-900/95 hover:bg-neutral-800 border border-amber-500/40 text-amber-400 text-[10px] font-bold shadow-lg flex items-center gap-1 transition shrink-0 cursor-pointer"
-              title="Expand Player"
-              aria-label="Expand Player"
+              className="px-2.5 py-0.5 rounded-full bg-neutral-900/95 hover:bg-neutral-800 border border-amber-500/40 text-amber-400 text-[10px] font-bold shadow-lg flex items-center gap-1 transition shrink-0 cursor-pointer select-none active:scale-95"
+              title={isMiniPlayerExpanded ? "Collapse Player" : "Expand Player"}
+              aria-label={isMiniPlayerExpanded ? "Expand Player - Collapse" : "Expand Player"}
             >
-              <Icon name="chevronUp" className="w-3.5 h-3.5 shrink-0" />
-              <span>Expand Player</span>
+              <Icon name={isMiniPlayerExpanded ? "chevronDown" : "chevronUp"} className="w-3.5 h-3.5 shrink-0" />
+              <span>{isMiniPlayerExpanded ? "Collapse" : "Expand Player"}</span>
             </button>
           </div>
 
           {/* Desktop Full 3-Section Footer (>= md) */}
           <div className="hidden md:flex max-w-7xl mx-auto items-center justify-between gap-4">
             {/* Left: Metadata & Secondary Actions */}
-            <div 
-              onClick={(e) => {
-                e.stopPropagation();
-                handleOpenExpandedPlayer('player');
-              }}
-              className="flex items-center gap-3 w-1/4 min-w-0 cursor-pointer group"
-            >
+            <div className="flex items-center gap-3 w-1/4 min-w-0 select-none">
               <div className="relative group shrink-0">
                 <img 
                   src={getCleanThumbnail(currentSong)} 
@@ -4411,20 +4574,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
 
           {/* Mobile Sleek Single-Row Mini-Player (< md) */}
-          <div className="md:hidden flex items-center justify-between gap-2 sm:gap-3 w-full">
+          <div className="md:hidden flex items-center justify-between gap-2 w-full min-w-0">
             {/* Left: Thumbnail & Song Info */}
-            <div 
-              onClick={(e) => {
-                e.stopPropagation();
-                handleOpenExpandedPlayer('player');
-              }}
-              className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
-            >
+            <div className="flex items-center gap-2.5 min-w-0 flex-1 select-none">
               <div className="relative shrink-0">
                 <img 
                   src={getCleanThumbnail(currentSong)} 
                   alt={currentSong.title || ""} 
-                  className="rounded-xl object-cover shrink-0 shadow-md w-11 h-11 border border-amber-500/30" 
+                  className="rounded-xl object-cover shrink-0 shadow-md w-10 h-10 border border-amber-500/30" 
                   onError={(e) => handleImageError(e, currentSong.title, currentSong.id)} 
                 />
                 {isPlaying && (
@@ -4439,31 +4596,35 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </div>
             </div>
 
-            {/* Right: Compact Controls */}
+            {/* Right: Compact vs Expanded Controls */}
             <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleOpenExpandedPlayer('queue');
-                }} 
-                className="text-neutral-400 hover:text-amber-400 transition p-2 shrink-0 cursor-pointer" 
-                title="View Queue"
-                aria-label="View Queue"
-              >
-                <Icon name="list" className="w-4 h-4 shrink-0" />
-              </button>
+              {isMiniPlayerExpanded && (
+                <>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenExpandedPlayer('queue');
+                    }} 
+                    className="text-neutral-400 hover:text-amber-400 transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
+                    title="View Queue"
+                    aria-label="View Queue"
+                  >
+                    <Icon name="list" className="w-4 h-4 shrink-0" />
+                  </button>
 
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handlePrevSong();
-                }} 
-                className="text-neutral-300 hover:text-white transition p-1.5 shrink-0 cursor-pointer hidden min-[360px]:block" 
-                title="Previous Track"
-                aria-label="Previous Track"
-              >
-                <Icon name="skipPrev" className="w-4 h-4 shrink-0" />
-              </button>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handlePrevSong();
+                    }} 
+                    className="text-neutral-300 hover:text-white transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
+                    title="Previous Track"
+                    aria-label="Previous Track"
+                  >
+                    <Icon name="skipPrev" className="w-4 h-4 shrink-0" />
+                  </button>
+                </>
+              )}
 
               <button 
                 onClick={(e) => {
@@ -4477,17 +4638,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 <Icon name={isPlaying ? "pause" : "play"} className="w-4 h-4 fill-current translate-x-0.5" />
               </button>
 
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleNextSong();
-                }} 
-                className="text-neutral-300 hover:text-white transition p-1.5 shrink-0 cursor-pointer" 
-                title="Next Track"
-                aria-label="Next Track"
-              >
-                <Icon name="skipNext" className="w-4 h-4 shrink-0" />
-              </button>
+              {isMiniPlayerExpanded && (
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleNextSong();
+                  }} 
+                  className="text-neutral-300 hover:text-white transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
+                  title="Next Track"
+                  aria-label="Next Track"
+                >
+                  <Icon name="skipNext" className="w-4 h-4 shrink-0" />
+                </button>
+              )}
             </div>
           </div>
         </footer>
@@ -4859,7 +5022,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       )}
 
       {toastMessage && (
-        <div className="fixed bottom-24 md:bottom-28 left-1/2 -translate-x-1/2 z-[9999] px-4 py-2.5 rounded-2xl bg-neutral-900/95 text-white text-xs border border-amber-500/40 shadow-2xl backdrop-blur-xl flex items-center gap-2 animate-fadeIn pointer-events-none">
+        <div className={`fixed ${isBottomPlayerVisible ? 'bottom-24 md:bottom-28' : 'bottom-8'} left-1/2 -translate-x-1/2 z-[9999] px-4 py-2.5 rounded-2xl bg-neutral-900/95 text-white text-xs border border-amber-500/40 shadow-2xl backdrop-blur-xl flex items-center gap-2 animate-fadeIn pointer-events-none`}>
           <Icon name="sparkles" className="w-4 h-4 text-amber-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>

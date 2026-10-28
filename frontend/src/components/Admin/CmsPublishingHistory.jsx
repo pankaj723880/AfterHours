@@ -107,7 +107,7 @@ export default function CmsPublishingHistory({
           <p className="text-xs text-neutral-400 mt-1 max-w-xl">
             Save changes in draft safely. When ready, publish live to update all connected listeners immediately without a code deploy.
           </p>
-          <div className="flex items-center gap-4 text-[11px] text-neutral-500 mt-3 font-mono">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-[11px] text-neutral-500 mt-3 font-mono">
             <span>Last published: {publishedMeta?.publishedAt ? new Date(publishedMeta.publishedAt).toLocaleString() : 'System default'}</span>
             <span>•</span>
             <span>By: {publishedMeta?.lastModifiedBy || 'system'}</span>

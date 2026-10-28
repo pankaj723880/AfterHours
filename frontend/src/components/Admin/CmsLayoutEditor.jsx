@@ -435,9 +435,9 @@ export default function CmsLayoutEditor({
         </div>
       )}
 
-      {/* In-page Action Bar */}
+      {/* In-page Action Footer (Non-floating to prevent covering inputs) */}
       {(onSaveDraft || onPublishLive) && (
-        <div className="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-neutral-900/95 border border-neutral-700/80 shadow-2xl backdrop-blur-xl">
+        <div className="mt-8 pt-5 border-t border-neutral-800 flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-neutral-900/60 border border-neutral-800">
           <div className="text-xs text-neutral-400">
             Editing <span className="font-semibold text-white capitalize">{activeTab}</span> in Draft
           </div>
@@ -447,7 +447,7 @@ export default function CmsLayoutEditor({
                 type="button"
                 disabled={isSavingDraft}
                 onClick={onSaveDraft}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-semibold border border-neutral-600 transition cursor-pointer disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-semibold border border-neutral-700 transition cursor-pointer disabled:opacity-50"
               >
                 <span>{isSavingDraft ? 'Saving Draft...' : 'Save Draft'}</span>
               </button>
@@ -457,7 +457,7 @@ export default function CmsLayoutEditor({
                 type="button"
                 disabled={isPublishingLive}
                 onClick={onPublishLive}
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold transition shadow-md shadow-amber-500/20 cursor-pointer disabled:opacity-50"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold transition shadow-md shadow-amber-500/20 cursor-pointer disabled:opacity-50"
               >
                 <span>{isPublishingLive ? 'Publishing...' : 'Publish Live'}</span>
               </button>

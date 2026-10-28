@@ -711,21 +711,25 @@ const rotateApiKey = () => {
 };
 
 app.get(['/api/youtube/search', '/api/search', '/search'], async (req, res) => {
-  const { q } = req.query;
+  const { q, pageToken } = req.query;
   if (!q || !q.toString().trim()) {
-    return res.json({ items: [] });
+    return res.json({ items: [], nextPageToken: null });
   }
 
   const queryStr = q.toString().trim();
-  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 15, 1), 50);
-  const cacheKey = `${queryStr.toLowerCase()}_${limit}`;
+  const pageTokenStr = (pageToken || req.query.continuation || '').toString().trim();
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 50);
+  const cacheKey = `${queryStr.toLowerCase()}_${limit}_${pageTokenStr}`;
 
   // Record search term in music metrics
   metricsService.recordMusicEvent({ type: 'search', query: queryStr });
 
   const cached = getCachedSearch(cacheKey);
   if (cached) {
-    return res.json({ items: cached });
+    if (Array.isArray(cached)) {
+      return res.json({ items: cached, nextPageToken: null });
+    }
+    return res.json(cached);
   }
 
   // 1. Try YouTube Data API v3 with active, non-dead rotating keys
@@ -733,22 +737,28 @@ app.get(['/api/youtube/search', '/api/search', '/search'], async (req, res) => {
   const activeKeys = allKeys.filter(k => !isKeyDead(k));
 
   if (activeKeys.length > 0) {
-    let attempts = 0;
-    while (attempts < activeKeys.length) {
-      const apiKey = activeKeys[currentApiKeyIndex % activeKeys.length];
+    for (let i = 0; i < activeKeys.length; i++) {
+      const apiKeyIndex = (currentApiKeyIndex + i) % activeKeys.length;
+      const apiKey = activeKeys[apiKeyIndex];
       try {
+        const params = {
+          part: 'snippet',
+          type: 'video',
+          maxResults: limit,
+          q: queryStr,
+          key: apiKey
+        };
+        if (pageTokenStr) {
+          params.pageToken = pageTokenStr;
+        }
+
         const response = await axios.get('https://www.googleapis.com/youtube/v3/search', {
-          params: {
-            part: 'snippet',
-            type: 'video',
-            maxResults: limit,
-            q: queryStr,
-            key: apiKey
-          },
+          params,
           timeout: 5000
         });
 
-        if (response.data && Array.isArray(response.data.items) && response.data.items.length > 0) {
+        if (response.data && Array.isArray(response.data.items)) {
+          currentApiKeyIndex = apiKeyIndex;
           const items = response.data.items.map(item => {
             const videoId = item.id?.videoId || item.id;
             return {
@@ -766,8 +776,13 @@ app.get(['/api/youtube/search', '/api/search', '/search'], async (req, res) => {
           });
 
           metricsService.recordYouTube('api');
-          setCachedSearch(cacheKey, items);
-          return res.json({ items });
+          const resultPayload = {
+            items,
+            nextPageToken: response.data.nextPageToken || null,
+            pageInfo: response.data.pageInfo || null
+          };
+          setCachedSearch(cacheKey, resultPayload);
+          return res.json(resultPayload);
         }
       } catch (apiErr) {
         const status = apiErr.response?.status;
@@ -781,11 +796,18 @@ app.get(['/api/youtube/search', '/api/search', '/search'], async (req, res) => {
           deadApiKeys.set(apiKey, { reason: 'quota', time: Date.now() });
           metricsService.recordYouTube('quota');
         }
-
-        rotateApiKey();
-        attempts++;
       }
     }
+  }
+
+  // If a continuation token was requested, but all YouTube API keys failed or were exhausted,
+  // do NOT fallback to page 1 scrapers. Return error so frontend can retry.
+  if (pageTokenStr) {
+    return res.status(503).json({
+      error: 'Search pagination service temporarily unavailable. Please retry.',
+      items: [],
+      nextPageToken: null
+    });
   }
 
   // 2. Pure JS yt-search fallback if official keys are exhausted, rate-limited, or unconfigured
@@ -815,8 +837,9 @@ app.get(['/api/youtube/search', '/api/search', '/search'], async (req, res) => {
       }));
 
       metricsService.recordYouTube('scraper');
-      setCachedSearch(cacheKey, items);
-      return res.json({ items });
+      const resultPayload = { items, nextPageToken: null };
+      setCachedSearch(cacheKey, resultPayload);
+      return res.json(resultPayload);
     }
   } catch (err) {
     console.error('[YouTube Search Notice]:', err.message);
@@ -826,11 +849,12 @@ app.get(['/api/youtube/search', '/api/search', '/search'], async (req, res) => {
   const fallback = getCuratedFallback(queryStr);
   if (fallback) {
     metricsService.recordYouTube('fallback');
-    setCachedSearch(cacheKey, fallback);
-    return res.json({ items: fallback });
+    const resultPayload = { items: fallback, nextPageToken: null };
+    setCachedSearch(cacheKey, resultPayload);
+    return res.json(resultPayload);
   }
 
-  return res.json({ items: [] });
+  return res.json({ items: [], nextPageToken: null });
 });
 
 // Stream endpoint - safe placeholder, playback is handled client-side via YouTube IFrame API
