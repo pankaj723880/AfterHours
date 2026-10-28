@@ -31,17 +31,17 @@ function generateAcousticWav(durationSeconds = 15, baseFreq = 440) {
 
   // Generate a soothing, musical pentatonic progression with smooth envelope
   // Frequencies for a warm pentatonic vibe (A4, C5, D5, E5, G5)
-  const notes = [baseFreq, baseFreq * (6/5), baseFreq * (4/3), baseFreq * (3/2), baseFreq * (9/5)];
-  
+  const notes = [baseFreq, baseFreq * (6 / 5), baseFreq * (4 / 3), baseFreq * (3 / 2), baseFreq * (9 / 5)];
+
   for (let i = 0; i < totalSamples; i++) {
     const t = i / sampleRate;
     const noteIdx = Math.floor(t * 1.5) % notes.length;
     const freq = notes[noteIdx];
-    
+
     // Envelope (fade-in & fade-out per note)
     const notePhase = (t * 1.5) % 1.0;
     const env = Math.sin(Math.PI * notePhase);
-    
+
     // Gentle warm acoustic tone (fundamental + 2nd harmonic)
     const sampleVal = (Math.sin(2 * Math.PI * freq * t) * 0.7 + Math.sin(2 * Math.PI * freq * 2 * t) * 0.3) * env * 0.6;
     const intSample = Math.max(-32768, Math.min(32767, Math.floor(sampleVal * 32767)));
@@ -98,7 +98,7 @@ export async function seedDefaultLicensedTracks() {
       if (!exists) {
         const audioBuffer = generateAcousticWav(15, trackData.trackId.includes('01') ? 440 : 523.25);
         audioBufferCache.set(trackData.trackId, audioBuffer);
-        
+
         await OfflineTrackLicense.create({
           ...trackData,
           audioSizeBytes: audioBuffer.length,
