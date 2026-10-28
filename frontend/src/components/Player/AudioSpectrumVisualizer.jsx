@@ -110,12 +110,16 @@ export default function AudioSpectrumVisualizer({
   }, [isPlaying]);
 
   return (
-    <div className={`relative flex items-center justify-center ${className}`}>
+    <div 
+      className={`relative flex items-center justify-center overflow-hidden shrink-0 ${className}`}
+      style={{ height: `${height}px`, minHeight: `${height}px` }}
+    >
       <canvas 
         ref={canvasRef} 
         width={320} 
         height={height} 
-        className="w-full max-w-sm h-full pointer-events-none drop-shadow-[0_0_12px_rgba(var(--accent-rgb,245,158,11),0.35)]" 
+        style={{ height: `${height}px`, maxHeight: `${height}px` }}
+        className="w-full max-w-sm pointer-events-none drop-shadow-[0_0_12px_rgba(var(--accent-rgb,245,158,11),0.35)]" 
       />
     </div>
   );

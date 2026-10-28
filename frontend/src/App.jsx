@@ -4851,56 +4851,63 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </button>
 
           {/* Player Column (Full on Mobile when 'player' tab is active; 50% on Desktop) */}
-          <div className={`${mobileQueueTab === 'player' ? 'flex' : 'hidden'} md:flex w-full md:w-1/2 p-2 sm:p-5 md:p-8 flex-col justify-between md:justify-center items-center bg-gradient-to-br from-neutral-900 to-neutral-950 border-r border-neutral-800/50 overflow-hidden flex-1 md:flex-initial h-full max-h-full`}>
+          <div className={`${mobileQueueTab === 'player' ? 'flex' : 'hidden'} md:flex w-full md:w-1/2 p-2 sm:p-4 md:p-6 flex-col justify-between items-center bg-gradient-to-br from-neutral-900 to-neutral-950 border-r border-neutral-800/50 overflow-y-auto overflow-x-hidden flex-1 md:flex-initial h-full max-h-full`}>
             {currentSong ? (
               <div className="w-full max-w-sm flex-1 flex flex-col items-center justify-between py-1 sm:py-2 min-h-0">
-                {/* 3D Illuminated Virtual Turntable */}
-                <div className="relative flex flex-col items-center justify-center shrink min-h-0 my-auto">
+                {/* 1. 3D Illuminated Virtual Turntable Section */}
+                <div className="w-full flex items-center justify-center shrink min-h-0 pt-1 pb-1">
                   <Turntable3D 
                     currentSong={currentSong} 
                     isPlaying={isPlaying} 
                     onTogglePlay={togglePlayPause} 
                     size="responsive"
                   />
-                  {/* Audio Spectrum Visualizer */}
+                </div>
+
+                {/* 2. Animated Audio Spectrum Equalizer Section (Directly below vinyl, separated layout) */}
+                <div className="w-full flex items-center justify-center shrink-0 mb-4 sm:mb-5">
                   <AudioSpectrumVisualizer 
                     isPlaying={isPlaying} 
                     barCount={28}
-                    height={20}
-                    className="w-full max-w-[200px] sm:max-w-xs mt-1 shrink-0" 
+                    height={24}
+                    className="w-full max-w-[200px] sm:max-w-xs" 
                   />
                 </div>
 
-                {/* Song Meta & Actions */}
-                <div className="w-full text-center space-y-0.5 sm:space-y-1 shrink-0 my-1">
-                  <h2 className="text-sm sm:text-base md:text-xl font-display font-bold text-white line-clamp-1 leading-snug px-2">{currentSong.title}</h2>
-                  <p className="text-[11px] sm:text-xs text-amber-500 font-medium truncate px-4">{currentSong.channel}</p>
-                  
-                  {/* Secondary buttons */}
-                  <div className="flex items-center justify-center gap-3 pt-0.5">
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); toggleLike(currentSong); }} 
-                      className="p-1.5 sm:p-2 rounded-full bg-neutral-800/70 hover:bg-neutral-800 text-neutral-400 hover:text-pink-500 transition shadow" 
-                      title={likedSongs.some(s => s.id === currentSong.id) ? "Remove from Favourite" : "Add to Favourite"}
-                    >
-                      <Icon name={likedSongs.some(s => s.id === currentSong.id) ? "heart" : "heartOutline"} className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-pink-500" />
-                    </button>
-                    <button 
-                      onClick={(e) => handleAddToPlaylistClick(currentSong, e)} 
-                      className="p-1.5 sm:p-2 rounded-full bg-neutral-800/70 hover:bg-neutral-800 text-neutral-400 hover:text-amber-400 transition shadow" 
-                      title="Add to Playlist"
-                    >
-                      <Icon name="plus" className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    </button>
-                    <button 
-                      onClick={(e) => handleOpenVideo(currentSong, e)} 
-                      className="p-1.5 sm:p-2 rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 transition shadow" 
-                      title="Watch Video"
-                    >
-                      <Icon name="video" className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    </button>
-                    <DownloadTrackButton track={currentSong} variant="icon" showToast={showToast} />
-                  </div>
+                {/* 3. Song Information Section (Title & Artist with guaranteed 16-24px vertical spacing) */}
+                <div className="w-full text-center space-y-1 shrink-0 px-2 mb-2">
+                  <h2 className="text-base sm:text-lg md:text-xl font-display font-bold text-white line-clamp-2 leading-snug">
+                    {currentSong.title}
+                  </h2>
+                  <p className="text-xs sm:text-sm text-amber-500 font-medium truncate max-w-full">
+                    {currentSong.channel || currentSong.artist}
+                  </p>
+                </div>
+
+                {/* 4. Action Buttons Section (Favorites, Playlist, Video, Download) */}
+                <div className="flex items-center justify-center gap-3 shrink-0 mb-2">
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); toggleLike(currentSong); }} 
+                    className="p-1.5 sm:p-2 rounded-full bg-neutral-800/70 hover:bg-neutral-800 text-neutral-400 hover:text-pink-500 transition shadow" 
+                    title={likedSongs.some(s => s.id === currentSong.id) ? "Remove from Favourite" : "Add to Favourite"}
+                  >
+                    <Icon name={likedSongs.some(s => s.id === currentSong.id) ? "heart" : "heartOutline"} className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-pink-500" />
+                  </button>
+                  <button 
+                    onClick={(e) => handleAddToPlaylistClick(currentSong, e)} 
+                    className="p-1.5 sm:p-2 rounded-full bg-neutral-800/70 hover:bg-neutral-800 text-neutral-400 hover:text-amber-400 transition shadow" 
+                    title="Add to Playlist"
+                  >
+                    <Icon name="plus" className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  </button>
+                  <button 
+                    onClick={(e) => handleOpenVideo(currentSong, e)} 
+                    className="p-1.5 sm:p-2 rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 transition shadow" 
+                    title="Watch Video"
+                  >
+                    <Icon name="video" className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  </button>
+                  <DownloadTrackButton track={currentSong} variant="icon" showToast={showToast} />
                 </div>
 
                 {/* Progress Bar */}

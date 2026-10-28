@@ -39,7 +39,7 @@ export default function Turntable3D({
 
   const sizeClass = {
     compact: 'w-48 h-48 min-[360px]:w-56 min-[360px]:h-56 sm:w-64 sm:h-64',
-    responsive: 'w-36 h-36 min-[380px]:w-44 min-[380px]:h-44 sm:w-60 sm:h-60 md:w-80 md:h-80 lg:w-96 lg:h-96',
+    responsive: 'w-36 h-36 min-[380px]:w-44 min-[380px]:h-44 sm:w-52 sm:h-52 md:w-64 md:h-64 lg:w-72 lg:h-72 max-h-[35vh] max-w-[35vh] aspect-square',
     large: 'w-40 h-40 min-[380px]:w-48 min-[380px]:h-48 sm:w-64 sm:h-64 md:w-80 md:h-80 lg:w-96 lg:h-96',
   }[size] || 'w-40 h-40 min-[380px]:w-48 min-[380px]:h-48 sm:w-64 sm:h-64 md:w-80 md:h-80 lg:w-96 lg:h-96';
 
@@ -64,7 +64,7 @@ export default function Turntable3D({
       >
         {/* Soft Ambient Floor Shadow & Amber Underglow */}
         <div 
-          className="absolute -bottom-6 w-[88%] h-12 rounded-[50%] blur-xl transition-all duration-700 pointer-events-none"
+          className="absolute -bottom-3 sm:-bottom-4 w-[88%] h-8 sm:h-10 rounded-[50%] blur-lg transition-all duration-700 pointer-events-none"
           style={{
             background: isPlaying 
               ? 'radial-gradient(ellipse at center, rgba(var(--accent-rgb, 245, 158, 11), 0.45) 0%, rgba(var(--accent-rgb, 245, 158, 11), 0.2) 40%, rgba(0,0,0,0.8) 75%)' 
