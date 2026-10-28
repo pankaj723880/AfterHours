@@ -1374,8 +1374,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     return sanitizeList(u ? JSON.parse(localStorage.getItem('history_songs') || '[]') : []);
   });
   const [playlists, setPlaylists] = useState(() => {
-    const u = JSON.parse(localStorage.getItem('afterhours_user') || 'null');
-    return sanitizeList(u ? JSON.parse(localStorage.getItem('playlists') || '[]') : []);
+    try {
+      const u = JSON.parse(localStorage.getItem('afterhours_user') || 'null');
+      const saved = u ? localStorage.getItem('playlists') : (localStorage.getItem('guest_playlists') || localStorage.getItem('playlists'));
+      return sanitizeList(saved ? JSON.parse(saved) : []);
+    } catch (e) {
+      return [];
+    }
   });
   const [selectedPlaylistForView, setSelectedPlaylistForView] = useState(null);
   const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
@@ -1640,7 +1645,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   };
   const [mobileQueueTab, setMobileQueueTab] = useState('player');
   const [isMiniPlayerExpanded, setIsMiniPlayerExpanded] = useState(false);
-  const isBottomPlayerVisible = Boolean(currentSong && activeTab !== 'home');
+  const [isHomeScrolled, setIsHomeScrolled] = useState(false);
+  const isBottomPlayerVisible = Boolean(currentSong && (activeTab !== 'home' || isHomeScrolled));
   const handleOpenExpandedPlayer = (tab = 'player') => {
     setMobileQueueTab(tab);
     setShowQueuePanel(true);
@@ -2247,7 +2253,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   useEffect(() => { if (user) { localStorage.setItem('liked_songs', JSON.stringify(likedSongs)); } else { localStorage.removeItem('liked_songs'); } }, [likedSongs, user]);
   useEffect(() => { if (user) { localStorage.setItem('history_songs', JSON.stringify(history)); } else { localStorage.removeItem('history_songs'); } }, [history, user]);
-  useEffect(() => { if (user) { localStorage.setItem('playlists', JSON.stringify(playlists)); } else { localStorage.removeItem('playlists'); } }, [playlists, user]);
+  useEffect(() => { 
+    try {
+      if (user) { 
+        localStorage.setItem('playlists', JSON.stringify(playlists)); 
+      } else { 
+        localStorage.setItem('guest_playlists', JSON.stringify(playlists)); 
+      } 
+    } catch (e) {}
+  }, [playlists, user]);
   useEffect(() => localStorage.setItem('youtube_search_cache', JSON.stringify(searchCache)), [searchCache]);
   useEffect(() => localStorage.setItem('youtube_station_cache', JSON.stringify(stationCache)), [stationCache]);
 
@@ -2310,20 +2324,29 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   }, []);
   const handleOpenVideo = (song, e) => {
     if (e) e.stopPropagation();
-    if (!song) return;
+    if (!song) {
+      showToast('No track selected');
+      return;
+    }
+    const vidId = song.id || song.videoId;
+    if (!vidId || typeof vidId !== 'string' || vidId.length < 5) {
+      showToast('Video is currently unavailable for this track');
+      return;
+    }
     if (playerRef.current && typeof playerRef.current.pauseVideo === 'function') {
       try { playerRef.current.pauseVideo(); } catch (err) {}
     }
     setIsPlaying(false);
     setIsPipActive(false);
-    if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function' && currentSong?.id === song.id) {
+    const isMatchingCurrent = currentSong && (currentSong.id === vidId || currentSong.videoId === vidId);
+    if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function' && isMatchingCurrent) {
       try {
         const t = playerRef.current.getCurrentTime();
-        setVideoModalSong({ ...song, startAt: t });
+        setVideoModalSong({ ...song, id: vidId, videoId: vidId, startAt: t });
         return;
       } catch (err) {}
     }
-    setVideoModalSong(song);
+    setVideoModalSong({ ...song, id: vidId, videoId: vidId });
   };
 
   const playSong = useCallback((song) => {
@@ -3016,12 +3039,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     showToast('Removed from queue');
   };
 
+  const isSongLiked = useCallback((song) => {
+    if (!song) return false;
+    const songId = song.id || song.videoId;
+    return likedSongs.some(s => s.id === songId || (s.videoId && s.videoId === songId) || (song.videoId && s.id === song.videoId));
+  }, [likedSongs]);
+
   const toggleLike = (song) => {
+    if (!song) return;
     if (!user) { openAuthModal(); return; }
+    const songId = song.id || song.videoId;
     setLikedSongs(prev => {
-      const isAlreadyLiked = prev.some(s => s.id === song.id);
+      const isAlreadyLiked = prev.some(s => s.id === songId || (s.videoId && s.videoId === songId) || (song.videoId && s.id === song.videoId));
       showToast(isAlreadyLiked ? 'Removed from favourites' : 'Added to favourites');
-      return isAlreadyLiked ? prev.filter(s => s.id !== song.id) : [song, ...prev];
+      const normalizedSong = { ...song, id: songId, videoId: songId };
+      return isAlreadyLiked 
+        ? prev.filter(s => s.id !== songId && (!s.videoId || s.videoId !== songId) && (!song.videoId || s.id !== song.videoId)) 
+        : [normalizedSong, ...prev];
     });
   };
 
@@ -3034,12 +3068,25 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const handleCreatePlaylist = (e) => {
     e?.preventDefault();
     if (!newPlaylistName.trim()) return;
+    const songToAdd = selectedSongForPlaylist ? {
+      ...selectedSongForPlaylist,
+      id: selectedSongForPlaylist.id || selectedSongForPlaylist.videoId,
+      videoId: selectedSongForPlaylist.videoId || selectedSongForPlaylist.id
+    } : null;
     const newPlaylist = {
       id: Date.now().toString(),
       name: newPlaylistName.trim(),
-      songs: selectedSongForPlaylist ? [selectedSongForPlaylist] : []
+      songs: songToAdd ? [songToAdd] : []
     };
-    setPlaylists([...playlists, newPlaylist]);
+    const updatedPlaylists = [...playlists, newPlaylist];
+    setPlaylists(updatedPlaylists);
+    try {
+      if (user) {
+        localStorage.setItem('playlists', JSON.stringify(updatedPlaylists));
+      } else {
+        localStorage.setItem('guest_playlists', JSON.stringify(updatedPlaylists));
+      }
+    } catch (e) {}
     showToast(`Created playlist "${newPlaylistName.trim()}"`);
     setNewPlaylistName('');
     if (selectedSongForPlaylist) {
@@ -3050,16 +3097,38 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   const handleAddSongToExistingPlaylist = (playlistId) => {
     if (!selectedSongForPlaylist) return;
-    setPlaylists(prev => prev.map(pl => {
+    const songToAdd = {
+      ...selectedSongForPlaylist,
+      id: selectedSongForPlaylist.id || selectedSongForPlaylist.videoId,
+      videoId: selectedSongForPlaylist.videoId || selectedSongForPlaylist.id
+    };
+    let added = false;
+    let targetName = 'playlist';
+    const updatedPlaylists = playlists.map(pl => {
       if (pl.id === playlistId) {
-        if (!pl.songs.some(s => s.id === selectedSongForPlaylist.id)) {
-          showToast(`Added to "${pl.name}"`);
-          return { ...pl, songs: [...pl.songs, selectedSongForPlaylist] };
+        targetName = pl.name;
+        const exists = pl.songs.some(s => (s.id || s.videoId) === (songToAdd.id || songToAdd.videoId));
+        if (!exists) {
+          added = true;
+          return { ...pl, songs: [...pl.songs, songToAdd] };
         }
-        showToast('Track already in playlist');
       }
       return pl;
-    }));
+    });
+
+    if (added) {
+      setPlaylists(updatedPlaylists);
+      try {
+        if (user) {
+          localStorage.setItem('playlists', JSON.stringify(updatedPlaylists));
+        } else {
+          localStorage.setItem('guest_playlists', JSON.stringify(updatedPlaylists));
+        }
+      } catch (e) {}
+      showToast(`Added to "${targetName}"`);
+    } else {
+      showToast('Track already in playlist');
+    }
     setIsPlaylistModalOpen(false);
     setSelectedSongForPlaylist(null);
   };
@@ -3679,7 +3748,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         {/* Site-wide CMS Announcement Bar */}
         <CmsAnnouncementBar announcement={cmsConfig?.announcement} />
 
-        <main className={`flex-1 h-full min-h-0 overflow-y-auto px-2.5 py-3 sm:px-4 sm:py-4 md:p-8 bg-neutral-950 box-border relative w-full transition-all duration-300 ${isBottomPlayerVisible ? 'pb-24 md:pb-28' : 'pb-8'}`}>
+        <main ref={mainScrollRef} onScroll={(e) => { if (activeTab === 'home') setIsHomeScrolled(e.currentTarget.scrollTop > 320); }} className={`flex-1 h-full min-h-0 overflow-y-auto px-2.5 py-3 sm:px-4 sm:py-4 md:p-8 bg-neutral-950 box-border relative w-full transition-all duration-300 ${isBottomPlayerVisible ? 'pb-24 md:pb-28' : 'pb-8'}`}>
           {currentStation && currentBgImage && (
             <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden transition-all duration-700">
               <img 
@@ -4011,6 +4080,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                           aria-label="Next Track"
                         >
                           <Icon name="skipNext" className="w-5 h-5 text-neutral-300" />
+                        </button>
+
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenExpandedPlayer('player');
+                          }}
+                          className="px-4 sm:px-5 py-2.5 sm:py-3 min-h-[48px] sm:min-h-[52px] rounded-2xl bg-neutral-800/90 hover:bg-neutral-700 active:scale-95 text-neutral-200 hover:text-white font-semibold text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-2 shadow-lg cursor-pointer shrink-0"
+                          title="Open Expanded Now Playing"
+                          aria-label="Open Expanded Now Playing"
+                        >
+                          <Icon name="expand" className="w-4 h-4 text-amber-400 shrink-0" />
+                          <span>Now Playing</span>
                         </button>
 
                         <button 
@@ -4614,28 +4696,33 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         <footer 
           role="region"
           aria-label="Audio player mini bar"
+          onClick={() => handleOpenExpandedPlayer('player')}
           className={`fixed z-40 transition-all duration-300 ease-in-out select-none ${showQueuePanel ? 'hidden' : 'block'}
             bottom-[max(0.5rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2
-            rounded-2xl border border-amber-500/30 bg-neutral-950/95 backdrop-blur-2xl
+            rounded-2xl border border-amber-500/30 hover:border-amber-500/50 bg-neutral-950/95 backdrop-blur-2xl
             shadow-[0_10px_35px_rgba(0,0,0,0.8),0_0_20px_rgba(var(--accent-rgb,245,158,11),0.06)]
-            py-2 px-3
-            ${isMiniPlayerExpanded ? 'w-[calc(100%-1rem)] max-w-xl' : 'w-[calc(100%-2rem)] max-w-[280px]'}
+            py-2 px-3 cursor-pointer
+            w-[calc(100%-1rem)] max-w-xl
             md:bottom-0 md:right-0 md:translate-x-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'}
             md:w-auto md:max-w-none md:rounded-none md:border-t md:border-x-0 md:border-b-0 md:border-amber-500/20 md:bg-neutral-950/95 md:py-3 md:px-6 md:shadow-[0_-10px_35px_rgba(0,0,0,0.8),0_0_20px_rgba(var(--accent-rgb,245,158,11),0.06)]`}
         >
-          {/* Quick Expand Pill for Mobile Accessibility */}
+          {/* Quick Expand/Collapse Pill for Mobile */}
           <div className="md:hidden absolute -top-3.5 right-3 z-50 shrink-0 pointer-events-auto">
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                setIsMiniPlayerExpanded(prev => !prev);
+                if (showQueuePanel) {
+                  setShowQueuePanel(false);
+                } else {
+                  handleOpenExpandedPlayer('player');
+                }
               }}
               className="px-2.5 py-0.5 rounded-full bg-neutral-900/95 hover:bg-neutral-800 border border-amber-500/40 text-amber-400 text-[10px] font-bold shadow-lg flex items-center gap-1 transition shrink-0 cursor-pointer select-none active:scale-95"
-              title={isMiniPlayerExpanded ? "Collapse Player" : "Expand Player"}
-              aria-label={isMiniPlayerExpanded ? "Expand Player - Collapse" : "Expand Player"}
+              title={showQueuePanel ? "Collapse Player" : "Expand Now Playing"}
+              aria-label={showQueuePanel ? "Collapse Player" : "Expand Now Playing"}
             >
-              <Icon name={isMiniPlayerExpanded ? "chevronDown" : "chevronUp"} className="w-3.5 h-3.5 shrink-0" />
-              <span>{isMiniPlayerExpanded ? "Collapse" : "Expand Player"}</span>
+              <Icon name={showQueuePanel ? "chevronDown" : "chevronUp"} className="w-3.5 h-3.5 shrink-0" />
+              <span>{showQueuePanel ? "Collapse" : "Expand"}</span>
             </button>
           </div>
 
@@ -4726,6 +4813,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 onChange={handleVolumeChange}
                 className="w-20 h-1 bg-neutral-800 rounded-xl appearance-none cursor-pointer accent-amber-500 shrink-0"
               />
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (showQueuePanel) {
+                    setShowQueuePanel(false);
+                  } else {
+                    handleOpenExpandedPlayer('player');
+                  }
+                }}
+                className="p-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-amber-400 border border-neutral-700/60 transition shrink-0 cursor-pointer flex items-center gap-1 text-xs active:scale-95 ml-1"
+                title={showQueuePanel ? "Collapse Player" : "Expand Now Playing"}
+                aria-label={showQueuePanel ? "Collapse Player" : "Expand Now Playing"}
+              >
+                <Icon name={showQueuePanel ? "chevronDown" : "chevronUp"} className="w-4 h-4 shrink-0" />
+                <span className="hidden lg:inline text-[11px] font-medium">{showQueuePanel ? 'Collapse' : 'Expand'}</span>
+              </button>
             </div>
           </div>
 
@@ -4752,35 +4856,31 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </div>
             </div>
 
-            {/* Right: Compact vs Expanded Controls */}
+            {/* Right: Touch Playback Controls */}
             <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-              {isMiniPlayerExpanded && (
-                <>
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleOpenExpandedPlayer('queue');
-                    }} 
-                    className="text-neutral-400 hover:text-amber-400 transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
-                    title="View Queue"
-                    aria-label="View Queue"
-                  >
-                    <Icon name="list" className="w-4 h-4 shrink-0" />
-                  </button>
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenExpandedPlayer('queue');
+                }} 
+                className="text-neutral-400 hover:text-amber-400 transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
+                title="View Queue"
+                aria-label="View Queue"
+              >
+                <Icon name="list" className="w-4 h-4 shrink-0" />
+              </button>
 
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handlePrevSong();
-                    }} 
-                    className="text-neutral-300 hover:text-white transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
-                    title="Previous Track"
-                    aria-label="Previous Track"
-                  >
-                    <Icon name="skipPrev" className="w-4 h-4 shrink-0" />
-                  </button>
-                </>
-              )}
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePrevSong();
+                }} 
+                className="text-neutral-300 hover:text-white transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
+                title="Previous Track"
+                aria-label="Previous Track"
+              >
+                <Icon name="skipPrev" className="w-4 h-4 shrink-0" />
+              </button>
 
               <button 
                 onClick={(e) => {
@@ -4794,19 +4894,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 <Icon name={isPlaying ? "pause" : "play"} className="w-4 h-4 fill-current translate-x-0.5" />
               </button>
 
-              {isMiniPlayerExpanded && (
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleNextSong();
-                  }} 
-                  className="text-neutral-300 hover:text-white transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
-                  title="Next Track"
-                  aria-label="Next Track"
-                >
-                  <Icon name="skipNext" className="w-4 h-4 shrink-0" />
-                </button>
-              )}
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleNextSong();
+                }} 
+                className="text-neutral-300 hover:text-white transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
+                title="Next Track"
+                aria-label="Next Track"
+              >
+                <Icon name="skipNext" className="w-4 h-4 shrink-0" />
+              </button>
             </div>
           </div>
         </footer>
@@ -4833,21 +4931,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
             <button 
               onClick={() => setShowQueuePanel(false)} 
-              className="text-neutral-400 hover:text-white bg-neutral-800/90 hover:bg-neutral-700 p-1.5 rounded-full border border-neutral-700/60 shadow-md cursor-pointer transition shrink-0"
-              title="Close Player"
-              aria-label="Close Player"
+              className="text-neutral-400 hover:text-white bg-neutral-800/90 hover:bg-neutral-700 p-1.5 rounded-full border border-neutral-700/60 shadow-md cursor-pointer transition shrink-0 flex items-center justify-center"
+              title="Collapse Player"
+              aria-label="Collapse Player"
             >
-              <Icon name="close" className="w-4 h-4" />
+              <Icon name="chevronDown" className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Desktop Close Button */}
+          {/* Desktop Collapse Button */}
           <button 
             onClick={() => setShowQueuePanel(false)} 
-            className="hidden md:flex absolute top-4 right-4 text-neutral-400 hover:text-white z-50 bg-neutral-900/80 hover:bg-neutral-800 p-2 rounded-full backdrop-blur-md border border-neutral-700/60 shadow-lg cursor-pointer transition"
-            title="Close"
+            className="hidden md:flex items-center gap-1.5 absolute top-4 right-4 text-neutral-400 hover:text-white z-50 bg-neutral-900/80 hover:bg-neutral-800 px-3.5 py-1.5 rounded-full backdrop-blur-md border border-neutral-700/60 shadow-lg cursor-pointer transition text-xs font-semibold"
+            title="Collapse Player"
+            aria-label="Collapse Player"
           >
-            <Icon name="close" className="w-6 h-6" />
+            <Icon name="chevronDown" className="w-4 h-4" />
+            <span>Collapse</span>
           </button>
 
           {/* Player Column (Full on Mobile when 'player' tab is active; 50% on Desktop) */}
@@ -4884,31 +4984,71 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   </p>
                 </div>
 
-                {/* 4. Action Buttons Section (Favorites, Playlist, Video, Download) */}
-                <div className="flex items-center justify-center gap-3 shrink-0 mb-2">
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); toggleLike(currentSong); }} 
-                    className="p-1.5 sm:p-2 rounded-full bg-neutral-800/70 hover:bg-neutral-800 text-neutral-400 hover:text-pink-500 transition shadow" 
-                    title={likedSongs.some(s => s.id === currentSong.id) ? "Remove from Favourite" : "Add to Favourite"}
-                  >
-                    <Icon name={likedSongs.some(s => s.id === currentSong.id) ? "heart" : "heartOutline"} className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-pink-500" />
-                  </button>
-                  <button 
-                    onClick={(e) => handleAddToPlaylistClick(currentSong, e)} 
-                    className="p-1.5 sm:p-2 rounded-full bg-neutral-800/70 hover:bg-neutral-800 text-neutral-400 hover:text-amber-400 transition shadow" 
-                    title="Add to Playlist"
-                  >
-                    <Icon name="plus" className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  </button>
-                  <button 
-                    onClick={(e) => handleOpenVideo(currentSong, e)} 
-                    className="p-1.5 sm:p-2 rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 transition shadow" 
-                    title="Watch Video"
-                  >
-                    <Icon name="video" className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  </button>
-                  <DownloadTrackButton track={currentSong} variant="icon" showToast={showToast} />
-                </div>
+                {/* 4. Expanded Player Action Bar: Add to Favorites, Add to Playlist, Video */}
+                {(() => {
+                  const isFav = isSongLiked(currentSong);
+                  const hasVid = Boolean(currentSong && (currentSong.id || currentSong.videoId));
+                  return (
+                    <div className="flex items-center justify-center gap-2 sm:gap-2.5 shrink-0 mb-3 w-full max-w-sm px-1">
+                      {/* 1. Add to Favorites */}
+                      <button 
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          toggleLike(currentSong); 
+                        }} 
+                        className={`flex-1 min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-3 py-2 rounded-2xl border transition-all duration-200 flex items-center justify-center gap-1.5 text-xs font-semibold shadow-md active:scale-95 cursor-pointer select-none ${
+                          isFav 
+                            ? 'bg-pink-500/15 border-pink-500/50 text-pink-400 shadow-[0_0_15px_rgba(236,72,153,0.2)] hover:bg-pink-500/25' 
+                            : 'bg-neutral-800/80 hover:bg-neutral-700/80 border-neutral-700/70 text-neutral-300 hover:text-white'
+                        }`}
+                        title={isFav ? "Remove from Favorites" : "Add to Favorites"}
+                        aria-label={isFav ? "Remove from Favorites" : "Add to Favorites"}
+                        aria-pressed={isFav}
+                      >
+                        <Icon 
+                          name={isFav ? "heart" : "heartOutline"} 
+                          className={`w-4 h-4 shrink-0 transition-transform ${isFav ? 'text-pink-500 fill-current scale-110' : 'text-neutral-400'}`} 
+                        />
+                        <span className="truncate">{isFav ? 'Favorited' : 'Favorite'}</span>
+                      </button>
+
+                      {/* 2. Add to Playlist */}
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAddToPlaylistClick(currentSong, e);
+                        }} 
+                        className="flex-1 min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-3 py-2 rounded-2xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 hover:border-amber-500/40 transition-all duration-200 flex items-center justify-center gap-1.5 text-xs font-semibold shadow-md active:scale-95 cursor-pointer select-none"
+                        title="Add to Playlist"
+                        aria-label="Add to Playlist"
+                      >
+                        <Icon name="plus" className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span className="truncate">Playlist</span>
+                      </button>
+
+                      {/* 3. Video */}
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenVideo(currentSong, e);
+                        }} 
+                        className={`flex-1 min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-3 py-2 rounded-2xl border transition-all duration-200 flex items-center justify-center gap-1.5 text-xs font-semibold shadow-md active:scale-95 cursor-pointer select-none ${
+                          hasVid
+                            ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-300 hover:text-amber-200 shadow-[0_0_15px_rgba(var(--accent-rgb,245,158,11),0.15)]'
+                            : 'bg-neutral-800/40 border-neutral-800 text-neutral-500 cursor-not-allowed opacity-60'
+                        }`}
+                        title={hasVid ? "Watch Video" : "Video Unavailable"}
+                        aria-label={hasVid ? "Watch Video" : "Video Unavailable"}
+                      >
+                        <Icon name="video" className={`w-4 h-4 shrink-0 ${hasVid ? 'text-amber-400' : 'text-neutral-500'}`} />
+                        <span className="truncate">Video</span>
+                      </button>
+
+                      {/* Offline Download button */}
+                      <DownloadTrackButton track={currentSong} variant="icon" showToast={showToast} />
+                    </div>
+                  );
+                })()}
 
                 {/* Progress Bar */}
                 <div className="w-full px-2 shrink-0 my-1">
@@ -5132,7 +5272,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-neutral-950/80 backdrop-blur-md" onClick={() => { setIsPlaylistModalOpen(false); setSelectedSongForPlaylist(null); }}></div>
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-sm relative z-10 p-6 shadow-2xl animate-scaleIn">
-            <h2 className="text-xl font-bold text-white mb-4">Add to Playlist</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-white">Add to Playlist</h2>
+              <button 
+                onClick={() => { setIsPlaylistModalOpen(false); setSelectedSongForPlaylist(null); }}
+                className="text-neutral-400 hover:text-white p-1 rounded-lg hover:bg-neutral-800 transition"
+                title="Close"
+              >
+                <Icon name="close" className="w-5 h-5" />
+              </button>
+            </div>
             {selectedSongForPlaylist && (
               <div className="flex items-center gap-3 mb-6 p-3 rounded-2xl bg-neutral-800/50">
                 <img src={getCleanThumbnail(selectedSongForPlaylist)} className="w-10 h-10 rounded object-cover" alt={selectedSongForPlaylist.title || ""} onError={(e) => handleImageError(e, selectedSongForPlaylist.title, selectedSongForPlaylist.id)} />
