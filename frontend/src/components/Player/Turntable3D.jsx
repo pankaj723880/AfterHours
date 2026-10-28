@@ -38,7 +38,7 @@ export default function Turntable3D({
   const displayImage = thumbnail || currentSong?.thumbnail || currentSong?.image || '/favicon.svg';
 
   const sizeClass = {
-    compact: 'w-56 h-56 sm:w-64 sm:h-64',
+    compact: 'w-48 h-48 min-[360px]:w-56 min-[360px]:h-56 sm:w-64 sm:h-64',
     responsive: 'w-36 h-36 min-[380px]:w-44 min-[380px]:h-44 sm:w-60 sm:h-60 md:w-80 md:h-80 lg:w-96 lg:h-96',
     large: 'w-40 h-40 min-[380px]:w-48 min-[380px]:h-48 sm:w-64 sm:h-64 md:w-80 md:h-80 lg:w-96 lg:h-96',
   }[size] || 'w-40 h-40 min-[380px]:w-48 min-[380px]:h-48 sm:w-64 sm:h-64 md:w-80 md:h-80 lg:w-96 lg:h-96';
@@ -223,7 +223,7 @@ export default function Turntable3D({
           {/* Interactive Play/Pause Holographic Overlay on Hover */}
           <div 
             onClick={onTogglePlay}
-            className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-300 bg-black/30 rounded-[32px] cursor-pointer"
+            className="absolute inset-0 hidden sm:flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-300 bg-black/30 rounded-[32px] cursor-pointer"
           >
             <div className="p-3 rounded-full bg-amber-500/90 hover:bg-amber-400 text-neutral-950 shadow-2xl transform scale-90 hover:scale-100 active:scale-95 transition-all">
               {isPlaying ? (

@@ -13,11 +13,16 @@ import CmsHeroBanner from './components/Common/CmsHeroBanner';
 import CmsMaintenanceOverlay from './components/Common/CmsMaintenanceOverlay';
 import CmsCuratedCollectionsRow from './components/Common/CmsCuratedCollectionsRow';
 import { getCachedCmsConfig, fetchPublicCmsConfig, applyThemeToDom, normalizeCmsConfig } from './services/cmsClient';
+import { offlineEligibilityService } from './services/offlineEligibilityService';
+import { offlineStorageService } from './services/offlineStorageService';
+import DownloadTrackButton from './components/Offline/DownloadTrackButton';
+import OfflineLibraryView from './components/Offline/OfflineLibraryView';
 
 import { io } from 'socket.io-client';
 
 const rawBackendUrl = import.meta.env.VITE_BACKEND_URL || (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:5000' : 'https://afterhours-zvic.onrender.com');
 const BACKEND_URL = (rawBackendUrl || '').trim().replace(/\/+$/, '');
+offlineEligibilityService.setBackendUrl(BACKEND_URL);
 
 export const getApiUrl = (endpoint = '') => {
   const cleanEndpoint = endpoint.replace(/^\/+/, '/');
@@ -523,6 +528,8 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove })
           {track.duration}
         </span>
       )}
+
+      <DownloadTrackButton track={track} variant="icon" />
 
       <button
         onClick={(e) => {
@@ -1149,7 +1156,7 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       if (path === '/admin') return 'admin';
       if (path === '/discover' || params.get('q')) return 'discover';
-      if (['/library', '/history', '/playlists', '/barber', '/truck', '/pauwa'].includes(path)) {
+      if (['/library', '/history', '/playlists', '/downloads', '/barber', '/truck', '/pauwa'].includes(path)) {
         return path.replace('/', '');
       }
     }
@@ -2192,6 +2199,47 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const isRepeatRef = useRef(isRepeat);
   const handleNextSongRef = useRef(null);
 
+  const offlineAudioRef = useRef(null);
+  const activeObjectUrlRef = useRef(null);
+  const [offlineCount, setOfflineCount] = useState(0);
+
+  useEffect(() => {
+    const refreshOfflineCount = () => {
+      offlineStorageService.getAllTracks().then(t => setOfflineCount(t.length)).catch(() => {});
+    };
+    refreshOfflineCount();
+    const unsub = offlineStorageService.subscribe(refreshOfflineCount);
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (activeObjectUrlRef.current) {
+        try { URL.revokeObjectURL(activeObjectUrlRef.current); } catch (e) {}
+      }
+      if (offlineAudioRef.current) {
+        try {
+          offlineAudioRef.current.pause();
+          offlineAudioRef.current.src = '';
+        } catch (e) {}
+      }
+    };
+  }, []);
+
+  // Queue tracks across UI for automatic background batch eligibility verification
+  useEffect(() => {
+    const ids = [];
+    if (currentSong?.id) ids.push(currentSong.id);
+    if (Array.isArray(songs)) songs.forEach(s => s?.id && ids.push(s.id));
+    if (Array.isArray(trendingSongs)) trendingSongs.forEach(s => s?.id && ids.push(s.id));
+    if (Array.isArray(queue)) queue.forEach(s => s?.id && ids.push(s.id));
+    if (Array.isArray(likedSongs)) likedSongs.forEach(s => s?.id && ids.push(s.id));
+    if (Array.isArray(history)) history.forEach(s => s?.id && ids.push(s.id));
+    if (ids.length > 0) {
+      offlineEligibilityService.queueEligibilityCheck(ids);
+    }
+  }, [songs, trendingSongs, queue, likedSongs, history, currentSong]);
+
   useEffect(() => {
     isRepeatRef.current = isRepeat;
   }, [isRepeat]);
@@ -2613,41 +2661,138 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       } catch (e) {}
     }
 
-    if (playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
-      try {
-        if (isFirstMount) {
-          if (typeof playerRef.current.cueVideoById === 'function') {
-            playerRef.current.cueVideoById({
-              videoId: currentSong.id,
-              startSeconds: savedSeekTime
-            });
-          } else {
-            playerRef.current.loadVideoById({ videoId: currentSong.id, startSeconds: savedSeekTime });
+    // Check if track is downloaded in IndexedDB for genuine offline playback
+    offlineStorageService.getTrack(currentSong.id).then((storedRecord) => {
+      if (storedRecord && storedRecord.audioBlob) {
+        // Pause YouTube player if active
+        try {
+          if (playerRef.current && typeof playerRef.current.pauseVideo === 'function' && !playerRef.current.isOffline) {
             playerRef.current.pauseVideo();
           }
-          setIsPlaying(false);
-        } else {
-          playerRef.current.loadVideoById({ videoId: currentSong.id });
-          playerRef.current.playVideo();
-          setIsPlaying(true);
+        } catch (e) {}
+
+        if (activeObjectUrlRef.current) {
+          try { URL.revokeObjectURL(activeObjectUrlRef.current); } catch (e) {}
+          activeObjectUrlRef.current = null;
         }
+
+        const objectUrl = URL.createObjectURL(storedRecord.audioBlob);
+        activeObjectUrlRef.current = objectUrl;
+
+        if (!offlineAudioRef.current) {
+          offlineAudioRef.current = new Audio();
+        }
+
+        const audio = offlineAudioRef.current;
+        audio.src = objectUrl;
+        audio.volume = volume / 100;
+        if (savedSeekTime > 0) {
+          audio.currentTime = savedSeekTime;
+        }
+
+        audio.onplay = () => {
+          setIsPlaying(true);
+          isInitialMountRef.current = false;
+        };
+        audio.onpause = () => setIsPlaying(false);
+        audio.onended = () => {
+          const currentRepeat = isRepeatRef.current;
+          if (currentRepeat === 'one' || currentRepeat === true) {
+            audio.currentTime = 0;
+            audio.play().catch(() => {});
+          } else {
+            handleNextSongRef.current?.();
+          }
+        };
+
+        // Create player adapter for PlayerProgress, Turntable3D, and controls
+        playerRef.current = {
+          isOffline: true,
+          getCurrentTime: () => offlineAudioRef.current ? offlineAudioRef.current.currentTime : 0,
+          getDuration: () => offlineAudioRef.current ? (offlineAudioRef.current.duration || 0) : 0,
+          seekTo: (sec) => { if (offlineAudioRef.current) offlineAudioRef.current.currentTime = sec; },
+          playVideo: () => offlineAudioRef.current?.play(),
+          pauseVideo: () => offlineAudioRef.current?.pause(),
+          stopVideo: () => {
+            if (offlineAudioRef.current) {
+              offlineAudioRef.current.pause();
+              offlineAudioRef.current.currentTime = 0;
+            }
+          },
+          setVolume: (vol) => { if (offlineAudioRef.current) offlineAudioRef.current.volume = vol / 100; },
+          destroy: () => {
+            if (offlineAudioRef.current) {
+              offlineAudioRef.current.pause();
+              offlineAudioRef.current.src = '';
+            }
+          }
+        };
+
         loadedVideoIdRef.current = currentSong.id;
-      } catch (err) {
-        initPlayerInstance(currentSong.id, !isFirstMount, savedSeekTime);
-        loadedVideoIdRef.current = currentSong.id;
+
+        if (!isFirstMount) {
+          audio.play().catch(e => console.warn('Offline audio play error:', e));
+          setIsPlaying(true);
+        } else {
+          setIsPlaying(false);
+        }
+        return;
       }
-    } else if (window.YT && window.YT.Player) {
-      initPlayerInstance(currentSong.id, !isFirstMount, savedSeekTime);
-      loadedVideoIdRef.current = currentSong.id;
-    } else {
-      window.onYouTubeIframeAPIReady = () => {
+
+      // Online YouTube Playback
+      if (offlineAudioRef.current) {
+        try {
+          offlineAudioRef.current.pause();
+          offlineAudioRef.current.src = '';
+        } catch (e) {}
+      }
+      if (activeObjectUrlRef.current) {
+        try { URL.revokeObjectURL(activeObjectUrlRef.current); } catch (e) {}
+        activeObjectUrlRef.current = null;
+      }
+
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        showToast('You are offline. Only songs stored in your Downloads library can play without internet.', 'warning');
+        setIsPlaying(false);
+        return;
+      }
+
+      if (playerRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline) {
+        try {
+          if (isFirstMount) {
+            if (typeof playerRef.current.cueVideoById === 'function') {
+              playerRef.current.cueVideoById({
+                videoId: currentSong.id,
+                startSeconds: savedSeekTime
+              });
+            } else {
+              playerRef.current.loadVideoById({ videoId: currentSong.id, startSeconds: savedSeekTime });
+              playerRef.current.pauseVideo();
+            }
+            setIsPlaying(false);
+          } else {
+            playerRef.current.loadVideoById({ videoId: currentSong.id });
+            playerRef.current.playVideo();
+            setIsPlaying(true);
+          }
+          loadedVideoIdRef.current = currentSong.id;
+        } catch (err) {
+          initPlayerInstance(currentSong.id, !isFirstMount, savedSeekTime);
+          loadedVideoIdRef.current = currentSong.id;
+        }
+      } else if (window.YT && window.YT.Player) {
         initPlayerInstance(currentSong.id, !isFirstMount, savedSeekTime);
         loadedVideoIdRef.current = currentSong.id;
-      };
-    }
+      } else {
+        window.onYouTubeIframeAPIReady = () => {
+          initPlayerInstance(currentSong.id, !isFirstMount, savedSeekTime);
+          loadedVideoIdRef.current = currentSong.id;
+        };
+      }
+    });
 
     setHistory(prev => [currentSong, ...prev.filter(s => s.id !== currentSong.id)].slice(0, 50));
-  }, [currentSong, initPlayerInstance]);
+  }, [currentSong, initPlayerInstance, volume, showToast]);
 
   // Player progress interval is extracted to PlayerProgress component
 
@@ -2739,7 +2884,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       window.history.pushState({ tab: 'admin' }, '', '/admin');
     } else if (stationKey === 'home') {
       window.history.pushState({ tab: 'home' }, '', '/');
-
+    } else {
+      window.history.pushState({ tab: stationKey }, '', `/${stationKey}`);
     }
 
     if (videoModalSong) {
@@ -3125,7 +3271,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         } else {
           setSearchQuery('');
         }
-      } else if (['/library', '/history', '/playlists', '/barber', '/truck', '/pauwa'].includes(path)) {
+      } else if (['/library', '/history', '/playlists', '/downloads', '/barber', '/truck', '/pauwa'].includes(path)) {
         setActiveTab(path.replace('/', ''));
       } else if (path === '/' || path === '') {
         setActiveTab('home');
@@ -3368,6 +3514,24 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             >
               <Icon name="list" className="w-5 h-5 shrink-0 text-amber-400" />
               {!isSidebarCollapsed && <span className="whitespace-nowrap">Playlists</span>}
+            </button>
+
+            <button
+              onClick={() => handleStationSelect('downloads')}
+              title="Downloads & Offline Library"
+              className={`w-full flex items-center justify-between ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
+                activeTab === 'downloads' ? 'bg-amber-600/20 text-white border border-amber-500/30' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
+              }`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <Icon name="download" className="w-5 h-5 shrink-0 text-emerald-400" />
+                {!isSidebarCollapsed && <span className="whitespace-nowrap">Downloads</span>}
+              </div>
+              {!isSidebarCollapsed && offlineCount > 0 && (
+                <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
+                  {offlineCount}
+                </span>
+              )}
             </button>
 
             {isAdmin && (
@@ -3638,6 +3802,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                               )}
                               <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
                               <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                              <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
                             </div>
                           )}
                         </div>
@@ -3781,101 +3946,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               backendUrl={BACKEND_URL}
             />
 
-            {/* Mobile Compact Horizontal Player (< md) */}
-            <div 
-              className="md:hidden relative rounded-2xl p-2.5 sm:p-3 bg-gradient-to-r from-neutral-900/95 via-neutral-900/85 to-neutral-950/95 border border-amber-500/25 shadow-[0_10px_25px_rgba(0,0,0,0.6),0_0_15px_rgba(var(--accent-rgb,245,158,11),0.06)] backdrop-blur-xl mb-3 sm:mb-4 select-none w-full min-w-0"
-            >
-              <div className="flex items-center justify-between gap-3">
-                {/* Left: Album Thumbnail with 3D Vinyl Aesthetic */}
-                <div className="relative shrink-0 flex items-center">
-                  <div className={`w-12 h-12 rounded-full absolute -right-2 top-0 bg-neutral-950 border border-amber-500/40 shadow-inner flex items-center justify-center transition-transform ${isPlaying ? 'animate-[spin_4s_linear_infinite]' : ''}`}>
-                    <div className="w-4 h-4 rounded-full bg-amber-500/30 border border-amber-400/50 flex items-center justify-center">
-                      <div className="w-1.5 h-1.5 rounded-full bg-neutral-900" />
-                    </div>
-                  </div>
-                  <div className="relative w-12 h-12 rounded-xl overflow-hidden shadow-md border border-amber-500/40 z-10 bg-neutral-900">
-                    <img 
-                      src={getCleanThumbnail(currentSong || (trendingSongs?.[0] || TRENDING_SONGS[0]))} 
-                      alt={(currentSong || (trendingSongs?.[0] || TRENDING_SONGS[0]))?.title || ""} 
-                      className="w-full h-full object-cover"
-                      onError={(e) => handleImageError(e, (currentSong || (trendingSongs?.[0] || TRENDING_SONGS[0]))?.title, (currentSong || (trendingSongs?.[0] || TRENDING_SONGS[0]))?.id)}
-                    />
-                  </div>
-                </div>
-
-                {/* Center: Song info & vinyl tag */}
-                <div className="min-w-0 flex-1 ml-1">
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                    <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-amber-400 truncate">
-                      {isPlaying ? 'Now Spinning' : 'Loopra 3D Vinyl'}
-                    </span>
-                  </div>
-                  <h3 className="font-bold text-xs sm:text-sm text-white truncate leading-tight">
-                    {(currentSong || (trendingSongs?.[0] || TRENDING_SONGS[0]))?.title}
-                  </h3>
-                  <p className="text-[11px] text-neutral-400 truncate mt-0.5">
-                    {(currentSong || (trendingSongs?.[0] || TRENDING_SONGS[0]))?.channel}
-                  </p>
-                </div>
-
-                {/* Right: Compact playback controls */}
-                <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (currentSong) {
-                        togglePlayPause();
-                      } else {
-                        handlePlayTrending((trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs);
-                      }
-                    }}
-                    className="w-10 h-10 rounded-full amber-glow-btn text-neutral-950 flex items-center justify-center font-bold shadow-md cursor-pointer border border-amber-300/40 active:scale-95 transition"
-                    title={isPlaying ? "Pause" : "Play"}
-                    aria-label={isPlaying ? "Pause playback" : "Start playback"}
-                  >
-                    <Icon name={isPlaying ? "pause" : "play"} className="w-4 h-4 fill-current translate-x-0.5" />
-                  </button>
-
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (currentSong) {
-                        handleNextSong();
-                      } else {
-                        handlePlayTrending((trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs);
-                      }
-                    }}
-                    className="p-2 text-neutral-400 hover:text-white transition active:scale-90"
-                    title="Next Track"
-                    aria-label="Next Track"
-                  >
-                    <Icon name="skipNext" className="w-4 h-4" />
-                  </button>
-
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleOpenExpandedPlayer('queue');
-                    }}
-                    className="p-2 text-neutral-400 hover:text-amber-400 transition active:scale-90"
-                    title="View Queue"
-                    aria-label="View Queue"
-                  >
-                    <Icon name="list" className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Featured 3D Turntable Lounge Showcase for Desktop (>= md) */}
-            <div className="hidden md:block relative rounded-3xl p-6 sm:p-8 bg-gradient-to-r from-neutral-900/90 via-neutral-900/70 to-neutral-950/90 border border-amber-500/25 shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_30px_rgba(var(--accent-rgb,245,158,11),0.1)] backdrop-blur-2xl overflow-hidden mb-6">
+            {/* Featured 3D Turntable Lounge Showcase for Mobile & Desktop */}
+            <div className="relative rounded-2xl sm:rounded-3xl p-3.5 sm:p-6 md:p-8 bg-gradient-to-r from-neutral-900/95 via-neutral-900/80 to-neutral-950/95 border border-amber-500/25 shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_30px_rgba(var(--accent-rgb,245,158,11),0.1)] backdrop-blur-2xl overflow-hidden mb-4 sm:mb-6 select-none w-full min-w-0">
               <div className="absolute top-0 right-1/4 w-72 h-72 rounded-full bg-amber-500/10 blur-[80px] pointer-events-none" />
               <div className="absolute bottom-0 left-1/4 w-72 h-72 rounded-full bg-orange-500/10 blur-[80px] pointer-events-none" />
 
-              <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-8">
+              <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-4 sm:gap-6 lg:gap-8 w-full min-w-0">
                 {/* 3D Turntable Platter */}
-                <div className="flex-1 flex flex-col items-center justify-center">
+                <div className="flex flex-col items-center justify-center shrink-0 w-full lg:w-auto">
                   <Turntable3D 
                     currentSong={currentSong || (trendingSongs?.[0] || TRENDING_SONGS[0])}
                     isPlaying={isPlaying}
@@ -3885,53 +3963,109 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   <AudioSpectrumVisualizer 
                     isPlaying={isPlaying} 
                     barCount={32}
-                    height={36}
-                    className="w-full max-w-xs mt-3"
+                    height={32}
+                    className="w-full max-w-[190px] min-[360px]:max-w-[220px] sm:max-w-xs mt-2 sm:mt-3"
                   />
                 </div>
 
                 {/* Lounge Info & Tactile Controls */}
-                <div className="flex-1 flex flex-col items-center lg:items-start text-center lg:text-left space-y-4 max-w-lg">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-mono font-semibold">
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                    {isPlaying ? 'NOW SPINNING ON VINYL' : 'LOOPRA 3D VINYL LOUNGE'}
+                <div className="flex-1 flex flex-col items-center lg:items-start text-center lg:text-left space-y-2.5 sm:space-y-4 w-full max-w-lg min-w-0">
+                  <div className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] sm:text-xs font-mono font-semibold">
+                    <span className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${isPlaying ? 'bg-amber-400 shadow-[0_0_8px_var(--accent-color,#f59e0b)] animate-pulse' : 'bg-neutral-500'}`} />
+                    <span>{isPlaying ? 'NOW SPINNING ON VINYL' : 'LOOPRA 3D VINYL LOUNGE'}</span>
                   </div>
 
-                  <div>
-                    <h2 className="text-xl sm:text-2xl md:text-3xl font-display font-extrabold text-white tracking-tight line-clamp-1">
-                      {currentSong ? currentSong.title : 'High-Fidelity Retro & Modern Lounge'}
+                  <div className="w-full min-w-0 px-1 sm:px-0">
+                    <h2 className="text-base sm:text-2xl md:text-3xl font-display font-extrabold text-white tracking-tight line-clamp-2 leading-snug">
+                      {currentSong ? currentSong.title : ((trendingSongs?.[0] || TRENDING_SONGS[0])?.title || 'High-Fidelity Retro & Modern Lounge')}
                     </h2>
-                    <p className="text-xs sm:text-sm text-amber-400 font-medium mt-1">
-                      {currentSong ? currentSong.channel : 'Drop the needle on curated trending hits, nostalgia stations, or search any track.'}
+                    <p className="text-xs sm:text-sm text-amber-400/90 font-medium mt-0.5 sm:mt-1 truncate max-w-full">
+                      {currentSong ? (currentSong.artist || currentSong.channel) : ((trendingSongs?.[0] || TRENDING_SONGS[0])?.channel || 'Drop the needle on curated trending hits, nostalgia stations, or search any track.')}
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-4 pt-2">
+                  {/* Tactile Control Buttons Container */}
+                  <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2 sm:gap-3.5 pt-1 sm:pt-2 w-full" onClick={(e) => e.stopPropagation()}>
                     {currentSong ? (
                       <>
                         <button 
-                          onClick={togglePlayPause}
-                          className="px-6 py-3 rounded-2xl amber-glow-btn text-neutral-950 font-bold text-xs sm:text-sm flex items-center gap-2 shadow-xl shadow-orange-950/50 cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            togglePlayPause();
+                          }}
+                          className="px-5 sm:px-6 py-2.5 sm:py-3 min-h-[48px] sm:min-h-[52px] rounded-2xl amber-glow-btn text-neutral-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xl shadow-orange-950/50 cursor-pointer active:scale-95 transition-all"
+                          title={isPlaying ? "Pause" : "Play"}
+                          aria-label={isPlaying ? "Pause playback" : "Resume playback"}
                         >
                           <Icon name={isPlaying ? "pause" : "play"} className="w-5 h-5 fill-current" />
                           <span>{isPlaying ? 'Pause' : 'Resume'}</span>
                         </button>
+
                         <button 
-                          onClick={() => handleOpenExpandedPlayer('queue')}
-                          className="px-5 py-3 rounded-2xl bg-neutral-800/80 hover:bg-neutral-700/80 text-white font-medium text-xs sm:text-sm border border-neutral-700/70 transition flex items-center gap-2 shadow-md cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleNextSong();
+                          }}
+                          className="w-12 h-12 sm:w-13 sm:h-13 min-h-[48px] sm:min-h-[52px] rounded-2xl bg-neutral-800/90 hover:bg-neutral-700 active:scale-95 text-neutral-200 hover:text-white border border-neutral-700/80 transition shadow-lg flex items-center justify-center cursor-pointer shrink-0"
+                          title="Next Track"
+                          aria-label="Next Track"
                         >
-                          <Icon name="list" className="w-4 h-4 text-amber-400" />
-                          <span>View Full Queue ({queue.length})</span>
+                          <Icon name="skipNext" className="w-5 h-5 text-neutral-300" />
+                        </button>
+
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenExpandedPlayer('queue');
+                          }}
+                          className="px-4 sm:px-5 py-2.5 sm:py-3 min-h-[48px] sm:min-h-[52px] rounded-2xl bg-neutral-800/90 hover:bg-neutral-700 active:scale-95 text-neutral-200 hover:text-white font-semibold text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-2 shadow-lg cursor-pointer shrink-0"
+                          title="View Queue"
+                          aria-label="View Queue"
+                        >
+                          <Icon name="list" className="w-4 h-4 text-amber-400 shrink-0" />
+                          <span>Queue ({queue.length})</span>
                         </button>
                       </>
                     ) : (
-                      <button 
-                        onClick={() => handlePlayTrending((trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs)}
-                        className="px-6 py-3 rounded-2xl amber-glow-btn text-neutral-950 font-bold text-xs sm:text-sm flex items-center gap-2 shadow-xl shadow-orange-950/50 cursor-pointer"
-                      >
-                        <Icon name="play" className="w-5 h-5 fill-current" />
-                        <span>Spin Trending Hits</span>
-                      </button>
+                      <>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePlayTrending((trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs);
+                          }}
+                          className="px-5 sm:px-6 py-2.5 sm:py-3 min-h-[48px] sm:min-h-[52px] rounded-2xl amber-glow-btn text-neutral-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xl shadow-orange-950/50 cursor-pointer active:scale-95 transition-all"
+                          title="Spin Trending Hit"
+                          aria-label="Spin Trending Hit"
+                        >
+                          <Icon name="play" className="w-5 h-5 fill-current" />
+                          <span>Spin Trending Hit</span>
+                        </button>
+
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePlayTrending((trendingSongs?.[1] || trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[1] || trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs);
+                          }}
+                          className="w-12 h-12 sm:w-13 sm:h-13 min-h-[48px] sm:min-h-[52px] rounded-2xl bg-neutral-800/90 hover:bg-neutral-700 active:scale-95 text-neutral-200 hover:text-white border border-neutral-700/80 transition shadow-lg flex items-center justify-center cursor-pointer shrink-0"
+                          title="Next Track"
+                          aria-label="Next Track"
+                        >
+                          <Icon name="skipNext" className="w-5 h-5 text-neutral-300" />
+                        </button>
+
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenExpandedPlayer('queue');
+                          }}
+                          className="px-4 sm:px-5 py-2.5 sm:py-3 min-h-[48px] sm:min-h-[52px] rounded-2xl bg-neutral-800/90 hover:bg-neutral-700 active:scale-95 text-neutral-200 hover:text-white font-semibold text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-2 shadow-lg cursor-pointer shrink-0"
+                          title="View Queue"
+                          aria-label="View Queue"
+                        >
+                          <Icon name="list" className="w-4 h-4 text-amber-400 shrink-0" />
+                          <span>Queue ({queue.length})</span>
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -4162,6 +4296,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                               )}
                               <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
                               <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                              <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
                             </div>
                           )}
                         </div>
@@ -4298,6 +4433,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                               <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
                               <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
                               <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                              <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
                             </div>
                           )}
                         </div>
@@ -4406,6 +4542,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                                 )}
                                 <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
                                 <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                                <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
                               </div>
                             )}
                           </div>
@@ -4416,6 +4553,24 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 </div>
               </>
             )}
+          </div>
+        )}
+
+        {activeTab === 'downloads' && (
+          <div className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+            <OfflineLibraryView
+              onPlayTrack={(track, list) => {
+                playSong(track, list || [track]);
+              }}
+              currentSong={currentSong}
+              isPlaying={isPlaying}
+              showToast={showToast}
+              onExploreAuthorizedTracks={() => {
+                setActiveTab('home');
+                window.history.pushState(null, '', '/');
+              }}
+            />
+            <DisclaimerFooter footer={cmsConfig?.footer} />
           </div>
         )}
 
@@ -4518,6 +4673,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 <button onClick={(e) => { e.stopPropagation(); toggleLike(currentSong); }} className="text-neutral-500 hover:text-pink-500 transition p-1 shrink-0 cursor-pointer" title="Like">
                   <Icon name={likedSongs.some(s => s.id === currentSong.id) ? "heart" : "heartOutline"} className="w-4 h-4 text-pink-500 shrink-0" />
                 </button>
+                <DownloadTrackButton track={currentSong} variant="icon" showToast={showToast} />
               </div>
             </div>
 
@@ -4743,6 +4899,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     >
                       <Icon name="video" className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     </button>
+                    <DownloadTrackButton track={currentSong} variant="icon" showToast={showToast} />
                   </div>
                 </div>
 

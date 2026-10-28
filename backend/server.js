@@ -14,6 +14,8 @@ import { metricsService } from './services/metrics.js';
 import adminRoutes from './routes/admin.js';
 import cmsRoutes from './routes/cms.js';
 import adminCmsRoutes from './routes/adminCms.js';
+import offlineRoutes from './routes/offline.js';
+import { seedDefaultLicensedTracks } from './services/offlineLicenseService.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -192,6 +194,7 @@ mongoose.connection.on('connected', () => {
   seedDefaultAdmin();
   metricsService.initPersistence();
   cmsService.initDefaults();
+  seedDefaultLicensedTracks();
 });
 
 mongoose.connection.on('error', (err) => {
@@ -602,6 +605,9 @@ app.use('/api/admin/cms', adminCmsRoutes);
 
 // Mount Public CMS Routes
 app.use(['/api/cms', '/cms'], cmsRoutes);
+
+// Mount Offline Licensing & Authorized Audio Download Routes
+app.use(['/api/offline', '/offline'], offlineRoutes);
 
 // YouTube API Search with In-Memory Caching & Rotating Keys
 const searchCache = new Map();
