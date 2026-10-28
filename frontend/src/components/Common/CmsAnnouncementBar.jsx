@@ -26,7 +26,7 @@ export default function CmsAnnouncementBar({ announcement }) {
   const icon = typeIcons[announcement.type] || typeIcons.info;
 
   return (
-    <div className={`w-full py-2 px-4 border-b backdrop-blur-xl flex items-center justify-between gap-3 text-xs z-30 transition-all ${styleClass}`}>
+    <div className={`w-full py-1.5 sm:py-2 px-2.5 sm:px-4 border-b backdrop-blur-xl flex items-center justify-between gap-2 sm:gap-3 text-xs z-30 transition-all ${styleClass}`}>
       <div className="flex items-center gap-2 max-w-5xl mx-auto flex-1 justify-center text-center">
         {icon}
         <span className="font-medium">{announcement.message}</span>

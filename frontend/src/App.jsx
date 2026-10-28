@@ -1095,22 +1095,22 @@ const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlled
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-end justify-between mb-4">
-        <div>
-          {title && <h2 className="text-lg md:text-2xl font-display font-extrabold text-white tracking-tight">{title}</h2>}
-          {subtitle && <p className="text-neutral-400 mt-0.5 md:mt-1 text-xs md:text-sm font-medium">{subtitle}</p>}
+    <div className="space-y-3 sm:space-y-4 w-full min-w-0">
+      <div className="flex items-end justify-between mb-2.5 sm:mb-4">
+        <div className="min-w-0 pr-2">
+          {title && <h2 className="text-base sm:text-lg md:text-2xl font-display font-extrabold text-white tracking-tight truncate">{title}</h2>}
+          {subtitle && <p className="text-neutral-400 mt-0.5 md:mt-1 text-xs md:text-sm font-medium line-clamp-1">{subtitle}</p>}
         </div>
         <button 
           onClick={() => setShowAll(!showAll)}
-          className="text-xs font-bold uppercase tracking-wider text-amber-500 hover:text-amber-400 transition-colors"
+          className="text-xs font-bold uppercase tracking-wider text-amber-500 hover:text-amber-400 transition-colors shrink-0"
         >
           {showAll ? 'Show Less' : 'View All'}
         </button>
       </div>
 
       {showAll ? (
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 sm:gap-4 md:gap-6">
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 sm:gap-4 md:gap-6 w-full min-w-0">
           {rowItems.map((item, i) => (
             <React.Fragment key={i}>
               {renderItem(item, i, true)}
@@ -1118,18 +1118,18 @@ const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlled
           ))}
         </div>
       ) : (
-        <div className="relative group/carousel">
-          <button onClick={() => scroll('left')} className="absolute left-0 top-1/2 -translate-y-1/2 -ml-4 w-8 h-8 md:w-10 md:h-10 bg-neutral-800/80 rounded-full flex items-center justify-center text-white opacity-0 group-hover/carousel:opacity-100 transition-opacity z-10 hover:bg-neutral-700 shadow-xl border border-neutral-700">
+        <div className="relative group/carousel w-full min-w-0">
+          <button onClick={() => scroll('left')} className="hidden md:flex absolute left-0 top-1/2 -translate-y-1/2 -ml-4 w-8 h-8 md:w-10 md:h-10 bg-neutral-800/80 rounded-full items-center justify-center text-white opacity-0 group-hover/carousel:opacity-100 transition-opacity z-10 hover:bg-neutral-700 shadow-xl border border-neutral-700">
             <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
           </button>
-          <div ref={scrollRef} className="flex gap-3 sm:gap-4 md:gap-6 overflow-x-auto pb-4 hide-scrollbar scroll-smooth">
+          <div ref={scrollRef} className="flex gap-2.5 sm:gap-4 md:gap-6 overflow-x-auto pb-3 sm:pb-4 hide-scrollbar scroll-smooth w-full min-w-0">
             {rowItems.map((item, i) => (
-              <div key={i} className="w-24 sm:w-36 md:w-48 shrink-0">
+              <div key={i} className="w-[104px] sm:w-36 md:w-48 shrink-0">
                 {renderItem(item, i, false)}
               </div>
             ))}
           </div>
-          <button onClick={() => scroll('right')} className="absolute right-0 top-1/2 -translate-y-1/2 -mr-4 w-8 h-8 md:w-10 md:h-10 bg-neutral-800/80 rounded-full flex items-center justify-center text-white opacity-0 group-hover/carousel:opacity-100 transition-opacity z-10 hover:bg-neutral-700 shadow-xl border border-neutral-700">
+          <button onClick={() => scroll('right')} className="hidden md:flex absolute right-0 top-1/2 -translate-y-1/2 -mr-4 w-8 h-8 md:w-10 md:h-10 bg-neutral-800/80 rounded-full items-center justify-center text-white opacity-0 group-hover/carousel:opacity-100 transition-opacity z-10 hover:bg-neutral-700 shadow-xl border border-neutral-700">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
           </button>
         </div>
@@ -3278,7 +3278,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
       <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 relative overflow-hidden">
         {/* Unified Top Navbar for both Mobile and Desktop */}
-        <header className="relative z-40 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-4 md:px-8 py-3 h-14 md:h-16 flex items-center justify-between shrink-0 w-full">
+        <header className="relative z-40 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-2.5 sm:px-4 md:px-8 py-2.5 sm:py-3 h-14 md:h-16 flex items-center justify-between shrink-0 w-full box-border">
           {/* LEFT: Mobile Menu & Logo | Desktop Clock */}
           <div className="flex items-center gap-2 sm:gap-3">
             <button
@@ -3374,7 +3374,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         {/* Site-wide CMS Announcement Bar */}
         <CmsAnnouncementBar announcement={cmsConfig?.announcement} />
 
-        <main className={`flex-1 h-full min-h-0 overflow-y-auto p-4 md:p-8 bg-neutral-950 relative w-full transition-all duration-300 ${currentSong ? 'pb-24 md:pb-28' : 'pb-8'}`}>
+        <main className={`flex-1 h-full min-h-0 overflow-y-auto px-2.5 py-3 sm:px-4 sm:py-4 md:p-8 bg-neutral-950 box-border relative w-full transition-all duration-300 ${currentSong ? 'pb-24 md:pb-28' : 'pb-8'}`}>
           {currentStation && currentBgImage && (
             <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden transition-all duration-700">
               <img 
@@ -3389,7 +3389,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           )}
 
           {showMobileTip && (
-            <div className="md:hidden relative z-30 mb-4 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 backdrop-blur-md flex items-start justify-between gap-2 text-xs text-amber-200">
+            <div className="md:hidden relative z-30 mb-3 sm:mb-4 p-2.5 sm:p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 backdrop-blur-md flex items-start justify-between gap-2 text-xs text-amber-200 w-full min-w-0">
               <div className="flex items-start gap-2">
                 <Icon name="info" className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <p>
@@ -3414,7 +3414,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
         {activeTab === 'discover' && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
-            <div className="p-6 sm:p-8 rounded-3xl border border-amber-500/25 bg-neutral-900/80 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_25px_rgba(var(--accent-rgb,245,158,11),0.08)]">
+            <div className="p-3.5 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl border border-amber-500/25 bg-neutral-900/80 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_25px_rgba(var(--accent-rgb,245,158,11),0.08)] w-full min-w-0">
               <div className="flex items-center gap-2 mb-2">
                 <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_var(--accent-color,#f59e0b)] animate-pulse" />
                 <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">Discover & Search Tracks</h2>
@@ -3583,7 +3583,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
 
         {activeTab === 'home' && (
-          <div className="max-w-7xl mx-auto px-4 md:px-8 pt-4 md:pt-6 space-y-10">
+          <div className="max-w-7xl mx-auto px-0 md:px-4 pt-1 md:pt-6 space-y-6 md:space-y-10 w-full min-w-0">
             {/* Promotional Hero Banner if configured in CMS */}
             <CmsHeroBanner 
               banner={cmsConfig?.banner} 
@@ -3609,7 +3609,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             {/* Mobile Compact Horizontal Player (< md) */}
             <div 
               onClick={() => handleOpenExpandedPlayer('player')}
-              className="md:hidden relative rounded-2xl p-3 bg-gradient-to-r from-neutral-900/95 via-neutral-900/85 to-neutral-950/95 border border-amber-500/25 shadow-[0_10px_25px_rgba(0,0,0,0.6),0_0_15px_rgba(var(--accent-rgb,245,158,11),0.06)] backdrop-blur-xl mb-4 cursor-pointer active:scale-[0.99] transition-transform select-none"
+              className="md:hidden relative rounded-2xl p-2.5 sm:p-3 bg-gradient-to-r from-neutral-900/95 via-neutral-900/85 to-neutral-950/95 border border-amber-500/25 shadow-[0_10px_25px_rgba(0,0,0,0.6),0_0_15px_rgba(var(--accent-rgb,245,158,11),0.06)] backdrop-blur-xl mb-3 sm:mb-4 cursor-pointer active:scale-[0.99] transition-transform select-none w-full min-w-0"
             >
               <div className="flex items-center justify-between gap-3">
                 {/* Left: Album Thumbnail with 3D Vinyl Aesthetic */}
@@ -3912,7 +3912,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
         {['barber', 'truck', 'pauwa'].includes(activeTab) && currentStation && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
-            <div className="p-8 rounded-3xl border border-neutral-700/50 relative overflow-hidden shadow-2xl backdrop-blur-md bg-neutral-900/40">
+            <div className="p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl border border-neutral-700/50 relative overflow-hidden shadow-2xl backdrop-blur-md bg-neutral-900/40 w-full min-w-0">
               <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
                 <div className="space-y-3">
                   <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full border border-amber-500/40 bg-neutral-900/80 backdrop-blur-xl text-amber-300 shadow-sm">
@@ -4409,7 +4409,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
 
           {/* Mobile Sleek Single-Row Mini-Player (< md) */}
-          <div className="md:hidden flex items-center justify-between gap-3 w-full">
+          <div className="md:hidden flex items-center justify-between gap-2 sm:gap-3 w-full">
             {/* Left: Thumbnail & Song Info */}
             <div 
               onClick={(e) => {

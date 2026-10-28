@@ -42,9 +42,17 @@
   --color-amber-950: color-mix(in srgb, var(--accent-color, #f59e0b) 18%, black);
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 html {
   scroll-behavior: smooth;
   background-color: #09090b;
+  width: 100%;
+  max-width: 100%;
 }
 
 body {
@@ -52,7 +60,17 @@ body {
   -moz-osx-font-smoothing: grayscale;
   background-color: #09090b;
   color: #f4f4f5;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
   overflow-x: hidden;
+}
+
+#root {
+  width: 100%;
+  max-width: 100%;
+  min-height: 100%;
 }
 
 ::selection {

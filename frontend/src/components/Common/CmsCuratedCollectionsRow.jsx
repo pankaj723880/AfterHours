@@ -81,23 +81,23 @@ export default function CmsCuratedCollectionsRow({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4 w-full min-w-0">
       {/* Row Header */}
       <div className="flex items-end justify-between">
-        <div>
+        <div className="min-w-0 pr-2">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-500" />
-            <h2 className="text-lg md:text-xl font-display font-extrabold text-white tracking-tight">
+            <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+            <h2 className="text-base sm:text-lg md:text-xl font-display font-extrabold text-white tracking-tight truncate">
               {title}
             </h2>
           </div>
-          <p className="text-xs text-neutral-400 mt-1">
+          <p className="text-xs text-neutral-400 mt-0.5 sm:mt-1 line-clamp-1">
             {subtitle}
           </p>
         </div>
 
         {/* Scroll Arrows */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             onClick={() => scroll('left')}
             className="p-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 transition"
@@ -118,7 +118,7 @@ export default function CmsCuratedCollectionsRow({
       {/* Horizontal Carousel */}
       <div
         ref={scrollRef}
-        className="flex gap-4 overflow-x-auto pb-4 scrollbar-none snap-x snap-mandatory"
+        className="flex gap-2.5 sm:gap-4 overflow-x-auto pb-3 sm:pb-4 scrollbar-none snap-x snap-mandatory w-full min-w-0"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {collections.map((col) => {
@@ -127,7 +127,7 @@ export default function CmsCuratedCollectionsRow({
             <div
               key={col.id || col.slug}
               onClick={() => handleCollectionClick(col)}
-              className="group snap-start shrink-0 w-44 sm:w-52 p-3.5 rounded-2xl bg-neutral-900/60 hover:bg-neutral-900 border border-neutral-800 hover:border-amber-500/40 transition-all duration-300 cursor-pointer shadow-lg backdrop-blur-md flex flex-col justify-between"
+              className="group snap-start shrink-0 w-36 sm:w-52 p-2.5 sm:p-3.5 rounded-2xl bg-neutral-900/60 hover:bg-neutral-900 border border-neutral-800 hover:border-amber-500/40 transition-all duration-300 cursor-pointer shadow-lg backdrop-blur-md flex flex-col justify-between"
             >
               <div className="relative aspect-square rounded-xl overflow-hidden mb-3 bg-neutral-950">
                 <img
