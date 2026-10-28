@@ -2322,6 +2322,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
     }
   }, []);
+  const handleCloseVideo = useCallback(() => {
+    setVideoModalSong(null);
+    setIsPipActive(false);
+  }, []);
+
   const handleOpenVideo = (song, e) => {
     if (e) e.stopPropagation();
     if (!song) {
@@ -2333,27 +2338,28 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       showToast('Video is currently unavailable for this track');
       return;
     }
-    if (playerRef.current && typeof playerRef.current.pauseVideo === 'function') {
-      try { playerRef.current.pauseVideo(); } catch (err) {}
-    }
-    setIsPlaying(false);
-    setIsPipActive(false);
+
+    const songWithId = { ...song, id: vidId, videoId: vidId };
     const isMatchingCurrent = currentSong && (currentSong.id === vidId || currentSong.videoId === vidId);
-    if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function' && isMatchingCurrent) {
+
+    setVideoModalSong(songWithId);
+    setIsPipActive(false);
+
+    if (!isMatchingCurrent) {
+      playSong(songWithId);
+    } else if (!playerRef.current) {
+      let savedSeek = 0;
       try {
-        const t = playerRef.current.getCurrentTime();
-        setVideoModalSong({ ...song, id: vidId, videoId: vidId, startAt: t });
-        return;
+        savedSeek = parseFloat(localStorage.getItem('afterhours_current_time') || '0') || 0;
       } catch (err) {}
+      initPlayerInstance(vidId, isPlaying, savedSeek);
     }
-    setVideoModalSong({ ...song, id: vidId, videoId: vidId });
   };
 
   const playSong = useCallback((song) => {
     if (!song) return;
     isInitialMountRef.current = false;
-    setVideoModalSong(null);
-    setIsPipActive(false);
+    setVideoModalSong(prev => (prev ? song : null));
     if (silentAudioRef.current) {
       silentAudioRef.current.play().catch(() => {});
     }
@@ -2600,8 +2606,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       host: 'https://www.youtube.com',
       playerVars: { 
         autoplay: shouldAutoPlay ? 1 : 0, 
-        controls: 0, 
-        disablekb: 1, 
+        controls: 1, 
+        disablekb: 0, 
         modestbranding: 1,
         enablejsapi: 1,
         playsinline: 1,
@@ -2976,10 +2982,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       return;
     }
     isInitialMountRef.current = false;
-    if (videoModalSong) {
-      setVideoModalSong(null);
-      setIsPipActive(false);
-    }
     if (isPlaying) {
       playerRef.current?.pauseVideo?.();
       if (silentAudioRef.current) silentAudioRef.current.pause();
@@ -3378,72 +3380,71 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" 
       />
       
-      <div ref={ytContainerRef} className="fixed top-0 left-0 w-1 h-1 opacity-0 pointer-events-none -z-50 overflow-hidden">
-        <div id="yt-player-instance"></div>
-      </div>
-
-      {videoModalSong && (
-        <div 
-          className={
-            isPipActive
-              ? "fixed bottom-24 right-4 z-[9999] w-72 sm:w-80 bg-neutral-900 border border-neutral-700 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 animate-fadeIn"
-              : "fixed top-14 md:top-16 inset-x-0 bottom-0 z-[9999] bg-neutral-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn"
+      {/* Persistent Single-Engine YouTube Player & Video Mode Presentation */}
+      <div 
+        onClick={(e) => {
+          if (videoModalSong && !isPipActive && e.target === e.currentTarget) {
+            handleCloseVideo();
           }
-        >
-          <div className={`w-full bg-neutral-900 ${isPipActive ? '' : 'max-w-4xl border border-neutral-800 rounded-3xl'} overflow-hidden shadow-2xl relative flex flex-col`}>
-            <div className="p-3 bg-neutral-900/90 border-b border-neutral-800 flex items-center justify-between gap-2 overflow-visible">
-              <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
-                <Icon name="video" className="w-4 h-4 text-amber-400 shrink-0" />
-                <h3 className="font-bold text-xs text-white truncate">{videoModalSong.title}</h3>
-              </div>
-              
-              <div className="flex items-center gap-1.5 shrink-0 z-10">
-                <button
-                  onClick={() => setIsPipActive(!isPipActive)}
-                  className="p-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition shrink-0 inline-flex items-center justify-center"
-                  title={isPipActive ? "Expand Fullscreen" : "Minimize to PiP"}
-                >
-                  <Icon name={isPipActive ? "expand" : "collapse"} className="w-4 h-4 shrink-0" />
-                </button>
-                <button
-                  onClick={() => { setVideoModalSong(null); setIsPipActive(false); if(playerRef.current?.playVideo) playerRef.current.playVideo(); }}
-                  className="p-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition shrink-0 inline-flex items-center justify-center"
-                  title="Close Video (Audio continues in background)"
-                >
-                  <Icon name="close" className="w-4 h-4 shrink-0" />
-                </button>
-              </div>
+        }}
+        className={
+          !videoModalSong
+            ? "fixed top-0 left-0 w-1 h-1 opacity-0 pointer-events-none -z-50 overflow-hidden"
+            : isPipActive
+              ? "fixed bottom-24 right-4 z-[9999] w-72 max-w-[calc(100vw-2rem)] sm:w-80 bg-neutral-900 border border-neutral-700 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 opacity-100 pointer-events-auto"
+              : "fixed top-14 md:top-16 inset-x-0 bottom-0 z-[9999] bg-neutral-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 transition-all duration-300 opacity-100 pointer-events-auto"
+        }
+      >
+        <div className={
+          !videoModalSong
+            ? "w-full h-full"
+            : `w-full bg-neutral-900 ${isPipActive ? '' : 'max-w-4xl border border-neutral-800 rounded-3xl'} overflow-hidden shadow-2xl relative flex flex-col`
+        }>
+          {/* Header Bar */}
+          <div className={videoModalSong ? "p-3 bg-neutral-900/90 border-b border-neutral-800 flex items-center justify-between gap-2 overflow-visible" : "hidden"}>
+            <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
+              <Icon name="video" className="w-4 h-4 text-amber-400 shrink-0" />
+              <h3 className="font-bold text-xs text-white truncate">{videoModalSong?.title || currentSong?.title || ''}</h3>
             </div>
             
-            <div className="relative w-full aspect-video bg-neutral-950">
-              <iframe
-                className="w-full h-full"
-                src={`https://www.youtube.com/embed/${videoModalSong.id}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}&widget_referrer=${encodeURIComponent(window.location.origin)}${videoModalSong.startAt ? '&start='+Math.floor(videoModalSong.startAt) : ''}`}
-                title={videoModalSong.title}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              ></iframe>
+            <div className="flex items-center gap-1.5 shrink-0 z-10">
+              <button
+                onClick={() => setIsPipActive(!isPipActive)}
+                className="p-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition shrink-0 inline-flex items-center justify-center cursor-pointer"
+                title={isPipActive ? "Expand Fullscreen" : "Minimize to PiP"}
+              >
+                <Icon name={isPipActive ? "expand" : "collapse"} className="w-4 h-4 shrink-0" />
+              </button>
+              <button
+                onClick={handleCloseVideo}
+                className="p-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition shrink-0 inline-flex items-center justify-center cursor-pointer"
+                title="Switch to Music Mode (Audio continues in background)"
+              >
+                <Icon name="close" className="w-4 h-4 shrink-0" />
+              </button>
             </div>
+          </div>
+          
+          {/* Video Player Frame Container (Persistent DOM - Never unmounted) */}
+          <div className={videoModalSong ? "relative w-full aspect-video bg-neutral-950" : "w-full h-full"}>
+            <div ref={ytContainerRef} className="w-full h-full">
+              <div id="yt-player-instance"></div>
+            </div>
+          </div>
 
-            {!isPipActive && (
-              <div className="p-4 bg-neutral-900 flex items-center justify-between gap-4">
-                <span className="text-xs text-neutral-400 truncate flex-1 min-w-0">{videoModalSong.channel}</span>
-                <button
-                  onClick={() => {
-                    playSong(videoModalSong);
-                    setVideoModalSong(null);
-                    setIsPipActive(false);
-                  }}
-                  className="px-4 py-2 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white font-medium tracking-wide text-xs flex items-center gap-1.5 transition shrink-0 shadow-md cursor-pointer"
-                >
-                  <Icon name="play" className="w-4 h-4 shrink-0" />
-                  <span>Listen Background Audio</span>
-                </button>
-              </div>
-            )}
+          {/* Footer Bar */}
+          <div className={videoModalSong && !isPipActive ? "p-4 bg-neutral-900 flex items-center justify-between gap-4" : "hidden"}>
+            <span className="text-xs text-neutral-400 truncate flex-1 min-w-0">{videoModalSong?.channel || currentSong?.channel || ''}</span>
+            <button
+              onClick={handleCloseVideo}
+              className="px-4 py-2 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white font-medium tracking-wide text-xs flex items-center gap-1.5 transition shrink-0 shadow-md cursor-pointer"
+            >
+              <Icon name="music" className="w-4 h-4 shrink-0" />
+              <span>Switch to Music Mode</span>
+            </button>
           </div>
         </div>
-      )}
+      </div>
 
       {isSidebarOpen && (
         <div 
@@ -3803,7 +3804,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   fetchYouTubeMusic(trimmed);
                 }}
                 onSelectSong={playSong}
-                initialQuery={searchQuery}
                 placeholder={cmsConfig?.searchPage?.placeholder || "Search song, artist, or album..."}
                 showQuickTags={false}
                 user={user}
@@ -4006,7 +4006,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             <HomeSearchBar 
               onSearch={handleSearchFromHome}
               onSelectSong={playSong}
-              initialQuery={searchQuery}
               placeholder={cmsConfig?.searchPage?.placeholder || "Search songs, artists, albums..."}
               suggestions={cmsConfig?.searchPage?.quickTags}
               showQuickTags={true}
@@ -4748,8 +4747,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 <p className="text-[10px] text-amber-400 truncate">{currentSong.channel}</p>
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-2" onClick={(e) => e.stopPropagation()}>
-                <button onClick={(e) => handleOpenVideo(currentSong, e)} className="text-amber-400 hover:text-amber-300 transition p-1 shrink-0 cursor-pointer" title="Watch Video">
-                  <Icon name="video" className="w-4 h-4 shrink-0" />
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (videoModalSong) {
+                      handleCloseVideo();
+                    } else {
+                      handleOpenVideo(currentSong, e);
+                    }
+                  }} 
+                  className="text-amber-400 hover:text-amber-300 transition p-1 shrink-0 cursor-pointer" 
+                  title={videoModalSong ? "Switch to Music Mode" : "Watch Video"}
+                >
+                  <Icon name={videoModalSong ? "music" : "video"} className="w-4 h-4 shrink-0" />
                 </button>
                 <button onClick={(e) => handleAddToPlaylistClick(currentSong, e)} className="text-neutral-500 hover:text-amber-500 transition p-1 shrink-0 cursor-pointer" title="Add to Playlist">
                   <Icon name="plus" className="w-4 h-4 shrink-0" />
@@ -4797,11 +4807,22 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             {/* Right: Actions & Volume */}
             <div className="flex items-center justify-end w-1/4 gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
               <button
-                onClick={(e) => handleOpenVideo(currentSong, e)}
-                className="px-3 py-1.5 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 transition flex items-center gap-1.5 text-xs font-bold shrink-0 cursor-pointer"
-                title="Watch Video"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (videoModalSong) {
+                    handleCloseVideo();
+                  } else {
+                    handleOpenVideo(currentSong, e);
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-2xl border transition flex items-center gap-1.5 text-xs font-bold shrink-0 cursor-pointer ${
+                  videoModalSong
+                    ? 'bg-amber-500 text-neutral-950 border-amber-400'
+                    : 'bg-amber-500/20 hover:bg-amber-500/30 border-amber-500/30 text-amber-300'
+                }`}
+                title={videoModalSong ? "Switch to Music Mode" : "Watch Video"}
               >
-                <Icon name="video" className="w-4 h-4 shrink-0" />
+                <Icon name={videoModalSong ? "music" : "video"} className="w-4 h-4 shrink-0" />
               </button>
 
               <Icon name="volume" className="w-4 h-4 text-neutral-400 ml-2 shrink-0" />
@@ -5026,22 +5047,28 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         <span className="truncate">Playlist</span>
                       </button>
 
-                      {/* 3. Video */}
+                      {/* 3. Video / Music Mode Toggle */}
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleOpenVideo(currentSong, e);
+                          if (videoModalSong) {
+                            handleCloseVideo();
+                          } else {
+                            handleOpenVideo(currentSong, e);
+                          }
                         }} 
                         className={`flex-1 min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-3 py-2 rounded-2xl border transition-all duration-200 flex items-center justify-center gap-1.5 text-xs font-semibold shadow-md active:scale-95 cursor-pointer select-none ${
                           hasVid
-                            ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-300 hover:text-amber-200 shadow-[0_0_15px_rgba(var(--accent-rgb,245,158,11),0.15)]'
+                            ? videoModalSong
+                              ? 'bg-amber-500 text-neutral-950 border-amber-400 shadow-[0_0_20px_rgba(var(--accent-rgb,245,158,11),0.4)]'
+                              : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-300 hover:text-amber-200 shadow-[0_0_15px_rgba(var(--accent-rgb,245,158,11),0.15)]'
                             : 'bg-neutral-800/40 border-neutral-800 text-neutral-500 cursor-not-allowed opacity-60'
                         }`}
-                        title={hasVid ? "Watch Video" : "Video Unavailable"}
-                        aria-label={hasVid ? "Watch Video" : "Video Unavailable"}
+                        title={hasVid ? (videoModalSong ? "Switch to Music Mode" : "Watch Video") : "Video Unavailable"}
+                        aria-label={hasVid ? (videoModalSong ? "Switch to Music Mode" : "Watch Video") : "Video Unavailable"}
                       >
-                        <Icon name="video" className={`w-4 h-4 shrink-0 ${hasVid ? 'text-amber-400' : 'text-neutral-500'}`} />
-                        <span className="truncate">Video</span>
+                        <Icon name={videoModalSong ? "music" : "video"} className={`w-4 h-4 shrink-0 ${hasVid ? (videoModalSong ? 'text-neutral-950' : 'text-amber-400') : 'text-neutral-500'}`} />
+                        <span className="truncate">{videoModalSong ? "Music Mode" : "Video Mode"}</span>
                       </button>
 
                       {/* Offline Download button */}

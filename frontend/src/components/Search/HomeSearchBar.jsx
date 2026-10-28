@@ -38,7 +38,7 @@ export default function HomeSearchBar({
   backendUrl = ''
 }) {
   const activeSuggestions = (Array.isArray(suggestions) && suggestions.length > 0) ? suggestions : SUGGESTIONS;
-  const [query, setQuery] = useState(initialQuery);
+  const [query, setQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [suggestionsList, setSuggestionsList] = useState([]);
@@ -58,13 +58,6 @@ export default function HomeSearchBar({
     const list = getRecentSearches(currentUserId);
     setRecentSearches(list);
   }, [currentUserId]);
-
-  // Sync initial query prop changes
-  useEffect(() => {
-    if (initialQuery !== undefined) {
-      setQuery(initialQuery);
-    }
-  }, [initialQuery]);
 
   // Live autocomplete search with debouncing & request cancellation
   useEffect(() => {
@@ -158,7 +151,7 @@ export default function HomeSearchBar({
     if (!trimmed) return;
     const updated = saveRecentSearch(trimmed, currentUserId, { token, backendUrl });
     setRecentSearches(updated);
-    setQuery(trimmed);
+    setQuery('');
     setIsOpen(false);
     setSelectedIndex(-1);
     if (onSearch) {
@@ -171,7 +164,7 @@ export default function HomeSearchBar({
     // Persist song title into search history
     const updated = saveRecentSearch(song.title, currentUserId, { token, backendUrl });
     setRecentSearches(updated);
-    setQuery(song.title);
+    setQuery('');
     setIsOpen(false);
     setSelectedIndex(-1);
 
@@ -205,6 +198,7 @@ export default function HomeSearchBar({
 
     const updated = saveRecentSearch(trimmed, currentUserId, { token, backendUrl });
     setRecentSearches(updated);
+    setQuery('');
     setIsOpen(false);
     setSelectedIndex(-1);
 
@@ -297,6 +291,10 @@ export default function HomeSearchBar({
             ref={inputRef}
             type="text"
             role="combobox"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck="false"
             aria-expanded={showDropdown}
             aria-haspopup="listbox"
             aria-autocomplete="list"
