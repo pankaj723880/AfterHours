@@ -2719,8 +2719,38 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       localStorage.setItem('afterhours_current_time', '0');
     } catch (e) {}
 
+    // Explicitly pause and clean up previous radio or offline audio to avoid audio overlap
+    if (radioAudioRef.current) {
+      try {
+        radioAudioRef.current.pause();
+        radioAudioRef.current.removeAttribute('src');
+        radioAudioRef.current.load();
+      } catch (e) {}
+    }
+    if (offlineAudioRef.current) {
+      try {
+        offlineAudioRef.current.pause();
+        offlineAudioRef.current.src = '';
+      } catch (e) {}
+    }
+    if (hlsRef.current) {
+      try { hlsRef.current.destroy(); } catch (e) {}
+      hlsRef.current = null;
+    }
+
     if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
       try { playerRef.current.stopVideo(); } catch (e) {}
+    }
+
+    // Direct synchronous YouTube iframe invocation if player exists and is online
+    const targetVideoId = song.id || song.videoId;
+    if (playerRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline && !song?.isRadio && targetVideoId) {
+      try {
+        playerRef.current.loadVideoById({ videoId: targetVideoId });
+        const p = playerRef.current.playVideo();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+        loadedVideoIdRef.current = targetVideoId;
+      } catch (err) {}
     }
 
     setCurrentSong(song);

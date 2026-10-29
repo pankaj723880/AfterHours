@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getCleanThumbnail } from '../../utils/storage';
-import { filterSingleSongs } from '../../services/songFilter';
+import { filterSingleSongs, normalizeTrack } from '../../services/songFilter';
 
 export default function DiscoverSwipe({
   onPlaySong,
@@ -41,7 +41,9 @@ export default function DiscoverSwipe({
     likedSongs,
     onPlaySong,
     onTogglePlay,
-    onToggleLike
+    onToggleLike,
+    currentSong,
+    isPlaying
   });
 
   const currentCard = deck[currentIndex];
@@ -61,9 +63,11 @@ export default function DiscoverSwipe({
       likedSongs,
       onPlaySong,
       onTogglePlay,
-      onToggleLike
+      onToggleLike,
+      currentSong,
+      isPlaying
     };
-  }, [deck, currentIndex, currentCard, isCurrentCardPlaying, likedSongs, onPlaySong, onTogglePlay, onToggleLike]);
+  }, [deck, currentIndex, currentCard, isCurrentCardPlaying, likedSongs, onPlaySong, onTogglePlay, onToggleLike, currentSong, isPlaying]);
 
   // Component lifecycle: manage mount status and clean up timers
   useEffect(() => {
@@ -79,7 +83,7 @@ export default function DiscoverSwipe({
 
   /**
    * Loads discovery tracks once on mount.
-   * Never resets currentIndex or deck on prop updates.
+   * If a song is currently playing, ensures deck matches the active song.
    */
   const loadDiscoveryTracks = useCallback(async () => {
     if (!isMountedRef.current) return;
@@ -104,8 +108,22 @@ export default function DiscoverSwipe({
         const tracksToUse = fresh.length > 0 ? fresh : sourceTracks;
         tracksToUse.forEach(t => seenIdsRef.current.add(t.id || t.videoId));
 
+        // If a song is currently playing, align initial card to playing song
+        let initialIndex = 0;
+        const liveSong = stateRef.current?.currentSong;
+        if (liveSong && (liveSong.id || liveSong.videoId)) {
+          const liveId = liveSong.id || liveSong.videoId;
+          const matchIdx = tracksToUse.findIndex(t => (t.id || t.videoId) === liveId);
+          if (matchIdx > 0) {
+            initialIndex = matchIdx;
+          } else if (matchIdx === -1 && stateRef.current?.isPlaying) {
+            tracksToUse.unshift(liveSong);
+            initialIndex = 0;
+          }
+        }
+
         setDeck(tracksToUse);
-        setCurrentIndex(0);
+        setCurrentIndex(initialIndex);
       }
     } catch (err) {
       if (isMountedRef.current && showToast) {
@@ -140,11 +158,19 @@ export default function DiscoverSwipe({
   }, [isCurrentCardPlaying]);
 
   /**
-   * Requests playback of the selected track exactly once.
-   * Never triggers automatic retries or recursive track skipping.
+   * Requests playback of the selected track directly through the existing global player.
+   * Executed synchronously during the user's swipe interaction so autoplay restrictions do not block it.
    */
   const triggerAutoplay = useCallback((track) => {
-    if (!track || !isMountedRef.current || typeof onPlaySong !== 'function') return;
+    if (!track || !isMountedRef.current) return;
+    const playFn = stateRef.current?.onPlaySong || onPlaySong;
+    if (typeof playFn !== 'function') return;
+
+    const normalizedTrack = normalizeTrack(track) || {
+      ...track,
+      id: track.id || track.videoId,
+      videoId: track.videoId || track.id
+    };
 
     const requestId = ++playRequestIdRef.current;
     setIsBuffering(true);
@@ -153,10 +179,11 @@ export default function DiscoverSwipe({
 
     if (bufferingTimerRef.current) {
       clearTimeout(bufferingTimerRef.current);
+      bufferingTimerRef.current = null;
     }
 
     try {
-      onPlaySong(track);
+      playFn(normalizedTrack);
     } catch (err) {
       console.warn('[DiscoverSwipe] Playback invocation error:', err);
       if (isMountedRef.current) {
@@ -166,23 +193,29 @@ export default function DiscoverSwipe({
       return;
     }
 
-    // Passive safety timeout: if browser autoplay is restricted, clear spinner after 5s
+    // Passive safety timeout: if browser autoplay is restricted, clear spinner after 6s
     // Crucially: DOES NOT auto-skip to any other song.
     bufferingTimerRef.current = setTimeout(() => {
       if (isMountedRef.current && requestId === playRequestIdRef.current) {
-        const activeId = currentSong?.id || currentSong?.videoId;
-        const targetId = track.id || track.videoId;
-        if (activeId !== targetId || !isPlaying) {
+        const liveCurrentSong = stateRef.current?.currentSong;
+        const liveIsPlaying = stateRef.current?.isPlaying;
+        const activeId = liveCurrentSong?.id || liveCurrentSong?.videoId;
+        const targetId = normalizedTrack.id || normalizedTrack.videoId;
+        if (activeId === targetId && liveIsPlaying) {
+          setIsBuffering(false);
+          setAutoplayBlocked(false);
+        } else {
           setIsBuffering(false);
           setAutoplayBlocked(true);
         }
       }
-    }, 5000);
-  }, [onPlaySong, currentSong, isPlaying]);
+    }, 6000);
+  }, [onPlaySong]);
 
   /**
    * Explicit track advancement: selects exactly ONE new song.
    * Completely locks out concurrent input until the transition settles safely.
+   * Starts playing the newly swiped song IMMEDIATELY within the user's gesture.
    */
   const handleSwipeAction = useCallback((direction) => {
     const now = Date.now();
@@ -215,19 +248,35 @@ export default function DiscoverSwipe({
     }
 
     const nextIndex = activeIdx + 1;
-    const nextSong = currentDeck[nextIndex];
+    const rawNextSong = currentDeck[nextIndex];
 
-    // Settle transition after visual fly-out animation (200ms)
+    if (!rawNextSong) {
+      // Reached the end of the deck
+      setTimeout(() => {
+        if (!isMountedRef.current) return;
+        setCurrentIndex(nextIndex);
+        setSwipeAnimation(null);
+        setDragOffset({ x: 0, y: 0 });
+        isTransitioningRef.current = false;
+      }, 200);
+      return;
+    }
+
+    const nextSong = normalizeTrack(rawNextSong) || {
+      ...rawNextSong,
+      id: rawNextSong.id || rawNextSong.videoId,
+      videoId: rawNextSong.videoId || rawNextSong.id
+    };
+
+    // 1. Immediately initiate playback of the next song directly from the user's gesture
+    triggerAutoplay(nextSong);
+
+    // 2. Settle transition after visual fly-out animation (200ms)
     setTimeout(() => {
       if (!isMountedRef.current) return;
       setCurrentIndex(nextIndex);
       setSwipeAnimation(null);
       setDragOffset({ x: 0, y: 0 });
-
-      // Request playback of the newly visible song exactly once
-      if (nextSong) {
-        triggerAutoplay(nextSong);
-      }
 
       // Release transition lock after UI update has fully rendered
       setTimeout(() => {
@@ -254,7 +303,12 @@ export default function DiscoverSwipe({
     setDragOffset({ x: 0, y: 0 });
 
     const prevIndex = activeIdx - 1;
-    const prevSong = currentDeck[prevIndex];
+    const rawPrevSong = currentDeck[prevIndex];
+    const prevSong = rawPrevSong ? (normalizeTrack(rawPrevSong) || {
+      ...rawPrevSong,
+      id: rawPrevSong.id || rawPrevSong.videoId,
+      videoId: rawPrevSong.videoId || rawPrevSong.id
+    }) : null;
 
     setCurrentIndex(prevIndex);
     if (prevSong) {
@@ -276,12 +330,18 @@ export default function DiscoverSwipe({
     const { currentCard: activeCard, isCurrentCardPlaying: isPlayingNow, onTogglePlay: toggleHandler } = stateRef.current;
     if (!activeCard) return;
 
+    const targetSong = normalizeTrack(activeCard) || {
+      ...activeCard,
+      id: activeCard.id || activeCard.videoId,
+      videoId: activeCard.videoId || activeCard.id
+    };
+
     if (isPlayingNow) {
       if (typeof toggleHandler === 'function') {
         toggleHandler();
       }
     } else {
-      triggerAutoplay(activeCard);
+      triggerAutoplay(targetSong);
     }
   }, [triggerAutoplay]);
 
