@@ -70,7 +70,7 @@ async function runTests() {
     const json = JSON.parse(res.data);
     assert.strictEqual(json.success, true, 'Expected success: true');
     assert(Array.isArray(json.stations), 'Expected stations array');
-    assert(json.stations.length >= 10, 'Expected at least 10 curated stations');
+    assert(json.stations.length >= 8, 'Expected at least 8 verified playable stations');
   });
 
   // 2. Priority Stations Exist
@@ -83,6 +83,7 @@ async function runTests() {
     assert(stationIds.includes('air-fm-gold'), 'Must contain FM Gold');
     assert(stationIds.includes('air-fm-rainbow'), 'Must contain FM Rainbow');
     assert(stationIds.includes('air-raagam'), 'Must contain AIR Raagam');
+    assert(stationIds.includes('air-national'), 'Must contain AIR National Channel');
   });
 
   // 3. Metadata Structure
@@ -99,22 +100,21 @@ async function runTests() {
       assert(station.officialSource, `Station must have officialSource: ${station.id}`);
       assert(station.officialWebsite?.startsWith('http'), `Station must have officialWebsite: ${station.id}`);
       assert(typeof station.isPlayable === 'boolean', `isPlayable must be boolean: ${station.id}`);
+      assert.strictEqual(station.isPlayable, true, `All catalogue stations must be verified playable: ${station.id}`);
+      assert(station.streamUrl, `All catalogue stations must have active streamUrl: ${station.id}`);
       assert(station.verificationStatus, `Station must have verificationStatus: ${station.id}`);
     }
   });
 
-  // 4. Private Stations Permission Handling
-  await test('Private stations are classified as official website only (non-embeddable)', async () => {
+  // 4. Non-playable Stations Removal Verification
+  await test('Non-working/unembeddable private stations are excluded from user-facing catalogue', async () => {
     const res = await get('/api/radio/stations');
     const json = JSON.parse(res.data);
-    const privateStationIds = ['radio-mirchi', 'red-fm', 'big-fm', 'fever-fm', 'radio-nasha', 'radiocity-hindi'];
+    const excludedIds = ['radio-mirchi', 'red-fm', 'big-fm', 'fever-fm', 'radio-nasha', 'radiocity-hindi'];
     
-    for (const id of privateStationIds) {
+    for (const id of excludedIds) {
       const station = json.stations.find(s => s.id === id);
-      assert(station, `Private station ${id} must exist in catalogue`);
-      assert.strictEqual(station.isPlayable, false, `${id} must have isPlayable=false`);
-      assert(station.officialWebsite?.startsWith('http'), `${id} must have valid official website URL`);
-      assert(station.unplayableReason, `${id} must include clear explanation why direct embedding is restricted`);
+      assert(!station, `Non-embeddable station ${id} must not be present in playable catalogue`);
     }
   });
 
