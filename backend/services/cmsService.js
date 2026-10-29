@@ -277,7 +277,7 @@ export const normalizeNavigationList = (rawNav) => {
       let group = existing.group;
       if (['barber', 'truck', 'pauwa'].includes(item.id)) group = 'stations';
       else if (['mood', 'timemachine', 'activity', 'swipe'].includes(item.id)) group = 'discovery';
-      else if (['library', 'history', 'playlists', 'stats', 'equalizer', 'profile'].includes(item.id)) group = 'collection';
+      else if (['library', 'history', 'playlists', 'stats', 'profile'].includes(item.id)) group = 'collection';
       else if (['home', 'discover', 'radio'].includes(item.id)) group = 'main';
 
       let label = item.label || existing.label;

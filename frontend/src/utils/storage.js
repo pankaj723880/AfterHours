@@ -1,3 +1,8 @@
+try {
+  if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+    localStorage.removeItem('afterhours_equalizer_settings');
+  }
+} catch (_) {}
 const STORAGE_KEYS = {
   LIKED_SONGS: 'afterhours_liked_songs',
   PLAYLISTS: 'afterhours_playlists',
@@ -5,7 +10,8 @@ const STORAGE_KEYS = {
   SEARCH_CACHE: 'afterhours_search_cache',
   STATION_CACHE: 'afterhours_station_cache',
   PREFERENCES: 'afterhours_preferences',
-  EQUALIZER: 'afterhours_equalizer_settings',
+  CROSSFADE_DURATION: 'afterhours_crossfade_duration',
+  GAPLESS_ENABLED: 'afterhours_gapless_enabled',
 };
 
 const LEGACY_KEYS = {

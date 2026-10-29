@@ -18,10 +18,9 @@ import { offlineStorageService } from './services/offlineStorageService';
 import DownloadTrackButton from './components/Offline/DownloadTrackButton';
 import OfflineLibraryView from './components/Offline/OfflineLibraryView';
 import OfflineEligibleExploreView from './components/Offline/OfflineEligibleExploreView';
-import EqualizerModal from './components/Player/EqualizerModal';
-import { audioEqualizerService } from './services/audioEqualizerService';
 import LyricsModal from './components/Player/LyricsModal';
 import SleepTimerModal from './components/Player/SleepTimerModal';
+import PlayerSettingsModal from './components/Player/PlayerSettingsModal';
 import ListeningStatsModal from './components/Stats/ListeningStatsModal';
 import UserProfileModal from './components/Profile/UserProfileModal';
 import DiscoverSwipe from './components/Discover/DiscoverSwipe';
@@ -154,13 +153,14 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
     user: <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="currentColor" />,
     grip: <path d="M9 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6-16a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" fill="currentColor" />,
     shield: <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z" fill="currentColor" />,
-    sliders: <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" fill="currentColor" />,
     mic: <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" fill="currentColor" />,
     timer: <path d="M15 1H9v2h6V1zm-4 13h2V8h-2v6zm8.03-6.61l1.42-1.42c-.43-.51-.9-.99-1.41-1.41l-1.42 1.42C16.07 4.74 14.12 4 12 4c-4.97 0-9 4.03-9 9s4.02 9 9 9 9-4.03 9-9c0-2.12-.74-4.07-1.97-5.61zM12 20c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" fill="currentColor" />,
     volumeMute: <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" fill="currentColor" />,
     share: <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z" fill="currentColor" />,
     flame: <path d="M13.5 1.5s0 3.5-3 5.5C8.5 8.5 7 11 7 14c0 3.87 3.13 7 7 7s7-3.13 7-7c0-4-3-8.5-7.5-12.5zm0 17.5c-2.21 0-4-1.79-4-4 0-1.8 1.05-3.32 2.5-4.04.38 1.64 1.83 2.87 3.5 2.87 2.02 0 3.66-1.64 3.66-3.66 0-.3-.04-.59-.11-.87 1.49 1.49 2.45 3.5 2.45 5.7 0 2.21-1.79 4-4 4z" fill="currentColor" />,
-    swipe: <path d="M9 11.24V7.5a2.5 2.5 0 0 1 5 0v3.74c1.21-.81 2-2.18 2-3.74a4.5 4.5 0 0 0-9 0c0 1.56.79 2.93 2 3.74zm9.84 4.63l-4.54-2.26A2.01 2.01 0 0 0 13.4 13.5H13v-6a1 1 0 0 0-2 0v10.59l-3.29-.69a1.002 1.002 0 0 0-1.04.42l-.58.88 5.13 5.17c.56.56 1.33.87 2.12.87h6.66c1.53 0 2.8-1.15 2.97-2.67l.55-4.99a2.01 2.01 0 0 0-.68-1.85z" fill="currentColor" />
+    swipe: <path d="M9 11.24V7.5a2.5 2.5 0 0 1 5 0v3.74c1.21-.81 2-2.18 2-3.74a4.5 4.5 0 0 0-9 0c0 1.56.79 2.93 2 3.74zm9.84 4.63l-4.54-2.26A2.01 2.01 0 0 0 13.4 13.5H13v-6a1 1 0 0 0-2 0v10.59l-3.29-.69a1.002 1.002 0 0 0-1.04.42l-.58.88 5.13 5.17c.56.56 1.33.87 2.12.87h6.66c1.53 0 2.8-1.15 2.97-2.67l.55-4.99a2.01 2.01 0 0 0-.68-1.85z" fill="currentColor" />,
+    settings: <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" fill="currentColor" />,
+    sliders: <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" fill="currentColor" />
   };
   return (
     <svg className={className} viewBox="0 0 24 24" {...props}>
@@ -1791,7 +1791,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   };
 
   // Loopra Platform Upgrade States:
-  const [isEqualizerOpen, setIsEqualizerOpen] = useState(false);
   const [isLyricsOpen, setIsLyricsOpen] = useState(false);
   const [isSleepTimerOpen, setIsSleepTimerOpen] = useState(false);
   const [isCanvasOpen, setIsCanvasOpen] = useState(false);
@@ -1804,6 +1803,41 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [isMuted, setIsMuted] = useState(false);
   const [historyPageLimit, setHistoryPageLimit] = useState(15);
   const activeListeningDurationRef = useRef(0);
+  const [isPlayerSettingsOpen, setIsPlayerSettingsOpen] = useState(false);
+  const [crossfadeDuration, setCrossfadeDuration] = useState(() => {
+    try {
+      return Number(localStorage.getItem(STORAGE_KEYS.CROSSFADE_DURATION)) || 0;
+    } catch (_) {
+      return 0;
+    }
+  });
+  const [isGaplessEnabled, setIsGaplessEnabled] = useState(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.GAPLESS_ENABLED) === 'true';
+    } catch (_) {
+      return false;
+    }
+  });
+
+  const handleSetCrossfadeDuration = (duration) => {
+    setCrossfadeDuration(duration);
+    try {
+      localStorage.setItem(STORAGE_KEYS.CROSSFADE_DURATION, duration.toString());
+    } catch (_) {}
+    showToast(duration > 0 ? `Crossfade set to ${duration}s` : 'Crossfade disabled');
+  };
+
+  const handleToggleGapless = () => {
+    setIsGaplessEnabled((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(STORAGE_KEYS.GAPLESS_ENABLED, next.toString());
+      } catch (_) {}
+      showToast(next ? 'Gapless playback enabled' : 'Gapless playback disabled');
+      return next;
+    });
+  };
+
   const hasLoggedListenForCurrentSongRef = useRef(false);
 
   // Close account dropdown on outside click or Escape key
@@ -3215,7 +3249,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         }
 
         const audio = offlineAudioRef.current;
-        audioEqualizerService.attachToAudioElement(audio);
         audio.src = objectUrl;
         audio.volume = volume / 100;
         if (savedSeekTime > 0) {
@@ -3225,14 +3258,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         audio.onplay = () => {
           setIsPlaying(true);
           isInitialMountRef.current = false;
-          audioEqualizerService.resume();
         };
         audio.onpause = () => setIsPlaying(false);
+        audio.ontimeupdate = () => {
+          if (crossfadeDuration > 0 && audio.duration > 0) {
+            const remaining = audio.duration - audio.currentTime;
+            if (remaining <= crossfadeDuration && remaining > 0) {
+              const fadeRatio = Math.max(0, remaining / crossfadeDuration);
+              audio.volume = (volume / 100) * fadeRatio;
+            } else if (remaining > crossfadeDuration && audio.volume !== volume / 100) {
+              audio.volume = volume / 100;
+            }
+          }
+        };
         audio.onended = () => {
           const currentRepeat = isRepeatRef.current;
           if (currentRepeat === 'one' || currentRepeat === true) {
             audio.currentTime = 0;
-            audioEqualizerService.resume();
             audio.play().catch(() => {});
           } else {
             handleNextSongRef.current?.();
@@ -3246,7 +3288,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           getDuration: () => offlineAudioRef.current ? (offlineAudioRef.current.duration || 0) : 0,
           seekTo: (sec) => { if (offlineAudioRef.current) offlineAudioRef.current.currentTime = sec; },
           playVideo: () => {
-            audioEqualizerService.resume();
             if (!offlineAudioRef.current) return Promise.resolve();
             const p = offlineAudioRef.current.play();
             if (p && typeof p.catch === 'function') {
@@ -5008,19 +5049,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                           <Icon name="list" className="w-4 h-4 text-amber-400 shrink-0" />
                           <span>Queue ({queue.length})</span>
                         </button>
-
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setIsEqualizerOpen(true);
-                          }}
-                          className="px-4 sm:px-5 py-2.5 sm:py-3 min-h-[48px] sm:min-h-[52px] rounded-2xl bg-neutral-800/90 hover:bg-neutral-700 active:scale-95 text-neutral-200 hover:text-white font-semibold text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-2 shadow-lg cursor-pointer shrink-0"
-                          title="10-Band Graphic Equalizer"
-                          aria-label="Open 10-Band Graphic Equalizer"
-                        >
-                          <Icon name="sliders" className="w-4 h-4 text-amber-400 shrink-0" />
-                          <span>Equalizer</span>
-                        </button>
                       </>
                     ) : (
                       <>
@@ -5061,19 +5089,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                           <Icon name="list" className="w-4 h-4 text-amber-400 shrink-0" />
                           <span>Queue ({queue.length})</span>
                         </button>
-
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setIsEqualizerOpen(true);
-                          }}
-                          className="px-4 sm:px-5 py-2.5 sm:py-3 min-h-[48px] sm:min-h-[52px] rounded-2xl bg-neutral-800/90 hover:bg-neutral-700 active:scale-95 text-neutral-200 hover:text-white font-semibold text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-2 shadow-lg cursor-pointer shrink-0"
-                          title="10-Band Graphic Equalizer"
-                          aria-label="Open 10-Band Graphic Equalizer"
-                        >
-                          <Icon name="sliders" className="w-4 h-4 text-amber-400 shrink-0" />
-                          <span>Equalizer</span>
-                        </button>
                       </>
                     )}
                   </div>
@@ -5081,11 +5096,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </div>
             </div>
 
-            {/* Smart Personalized Recommendations Row */}
+            {/* Smart Personalized Recommendations Hub */}
             <RecommendedRow
               likedSongs={likedSongs}
               history={history}
-              availableTracks={[...(trendingSongs || []), ...(TRENDING_SONGS || [])]}
+              availableTracks={[...(trendingSongs || []), ...(TRENDING_SONGS || []), ...(POPULAR_ALBUMS || []), ...(POPULAR_RADIO || [])]}
               onPlaySong={playSong}
               currentSong={currentSong}
               isPlaying={isPlaying}
@@ -5893,20 +5908,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 <Icon name={videoModalSong ? "music" : "video"} className="w-4 h-4 shrink-0" />
               </button>
 
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsEqualizerOpen(true);
-                }}
-                className="p-1.5 px-2.5 rounded-2xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/60 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1.5 text-xs font-semibold shrink-0 cursor-pointer active:scale-95"
-                title="10-Band Graphic Equalizer"
-                aria-label="Open 10-Band Equalizer"
-              >
-                <Icon name="sliders" className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden xl:inline text-[11px]">EQ</span>
-              </button>
-
               <Icon name="volume" className="w-4 h-4 text-neutral-400 ml-2 shrink-0" />
               <input
                 type="range"
@@ -5980,19 +5981,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     aria-label="View Queue"
                   >
                     <Icon name="list" className="w-4 h-4 shrink-0" />
-                  </button>
-
-                  <button 
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsEqualizerOpen(true);
-                    }} 
-                    className="text-neutral-400 hover:text-amber-400 transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
-                    title="10-Band Graphic Equalizer"
-                    aria-label="Open Equalizer"
-                  >
-                    <Icon name="sliders" className="w-4 h-4 shrink-0 text-amber-400" />
                   </button>
 
                   <button 
@@ -6137,7 +6125,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   />
                 </div>
 
-                {/* 2. Animated Audio Spectrum Equalizer Section (Directly below vinyl, separated layout) */}
+                {/* 2. Animated Audio Spectrum Visualizer Section (Directly below vinyl, separated layout) */}
                 <div className="w-full flex items-center justify-center shrink-0 mb-4 sm:mb-5">
                   <AudioSpectrumVisualizer 
                     isPlaying={isPlaying} 
@@ -6242,16 +6230,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   </button>
 
                   <button
-                    onClick={(e) => { e.stopPropagation(); setIsEqualizerOpen(true); }}
-                    className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer"
-                    title="10-Band Equalizer"
-                    aria-label="10-Band Equalizer"
-                  >
-                    <Icon name="sliders" className="w-3.5 h-3.5 text-amber-400" />
-                    <span className="hidden sm:inline">EQ</span>
-                  </button>
-
-                  <button
                     onClick={(e) => { e.stopPropagation(); setIsLyricsOpen(true); }}
                     className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer"
                     title="Synchronized Lyrics"
@@ -6305,6 +6283,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     aria-label="Share Track"
                   >
                     <Icon name="share" className="w-3.5 h-3.5 text-amber-400" />
+                  </button>
+
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setIsPlayerSettingsOpen(true); }}
+                    className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer"
+                    title="Audio & Player Settings (Crossfade, Sleep Timer, Gapless)"
+                    aria-label="Audio & Player Settings"
+                  >
+                    <Icon name="sliders" className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="hidden sm:inline">Settings</span>
                   </button>
                 </div>
 
@@ -6649,13 +6637,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         />
       )}
 
-      <EqualizerModal 
-        isOpen={isEqualizerOpen} 
-        onClose={() => setIsEqualizerOpen(false)} 
-        isOfflineSource={Boolean(playerRef.current?.isOffline)} 
-        audioElement={offlineAudioRef.current} 
-      />
-
       <LyricsModal 
         isOpen={isLyricsOpen} 
         onClose={() => setIsLyricsOpen(false)} 
@@ -6675,6 +6656,32 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           setSleepTimerRemaining(null);
           showToast('Sleep timer cancelled');
         }} 
+      />
+
+      <PlayerSettingsModal
+        isOpen={isPlayerSettingsOpen}
+        onClose={() => setIsPlayerSettingsOpen(false)}
+        currentSong={currentSong}
+        sleepTimerRemaining={sleepTimerRemaining}
+        onSetSleepTimer={(mins) => {
+          setSleepTimerRemaining(mins * 60);
+          showToast(`Sleep timer set for ${mins} minutes`);
+        }}
+        onCancelSleepTimer={() => {
+          setSleepTimerRemaining(null);
+          showToast('Sleep timer cancelled');
+        }}
+        crossfadeDuration={crossfadeDuration}
+        onSetCrossfadeDuration={handleSetCrossfadeDuration}
+        isGaplessEnabled={isGaplessEnabled}
+        onToggleGapless={handleToggleGapless}
+        playbackSpeed={playbackSpeed}
+        onSetPlaybackSpeed={(speed) => {
+          setPlaybackSpeed(speed);
+          if (playerRef.current && typeof playerRef.current.setPlaybackRate === 'function') {
+            playerRef.current.setPlaybackRate(speed);
+          }
+        }}
       />
 
       <ListeningStatsModal 

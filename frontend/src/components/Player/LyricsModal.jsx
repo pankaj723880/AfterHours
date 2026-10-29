@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { fetchLyrics } from '../../services/lyricsService';
+import { fetchLyrics, cleanTitleForLyrics } from '../../services/lyricsService';
 
 export default function LyricsModal({
   isOpen,
@@ -11,6 +11,8 @@ export default function LyricsModal({
   const [isLoading, setIsLoading] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [customSearch, setCustomSearch] = useState('');
+  const [showSearchInput, setShowSearchInput] = useState(false);
   const activeLineRef = useRef(null);
   const scrollContainerRef = useRef(null);
 
@@ -30,31 +32,41 @@ export default function LyricsModal({
     return () => clearInterval(interval);
   }, [isOpen, playerRef]);
 
-  // Load lyrics when song changes
-  useEffect(() => {
-    if (!isOpen || !currentSong) return;
-
-    let isMounted = true;
+  const loadLyrics = (customQuery = null, force = false) => {
+    if (!currentSong) return;
     setIsLoading(true);
     setLyricsData(null);
 
-    fetchLyrics(currentSong)
+    fetchLyrics(currentSong, customQuery, force)
       .then((data) => {
-        if (isMounted) {
-          setLyricsData(data);
-          setIsLoading(false);
-        }
+        setLyricsData(data);
+        setIsLoading(false);
       })
       .catch(() => {
-        if (isMounted) {
-          setIsLoading(false);
-        }
+        setIsLoading(false);
       });
+  };
 
-    return () => { isMounted = false; };
-  }, [isOpen, currentSong]);
+  // Load lyrics on initial open or song change
+  useEffect(() => {
+    if (!isOpen || !currentSong) return;
+    setShowSearchInput(false);
+    setCustomSearch('');
+    loadLyrics(null, false);
+  }, [isOpen, currentSong?.id, currentSong?.videoId]);
 
-  // Auto-scroll active line into view
+  // Keyboard shortcut: Escape to close
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  // Auto-scroll active line into view smoothly
   useEffect(() => {
     if (activeLineRef.current && scrollContainerRef.current) {
       activeLineRef.current.scrollIntoView({
@@ -77,6 +89,13 @@ export default function LyricsModal({
       }
     }
   }
+
+  const handleCustomSearchSubmit = (e) => {
+    e.preventDefault();
+    if (customSearch.trim()) {
+      loadLyrics(customSearch.trim(), true);
+    }
+  };
 
   return (
     <div
@@ -103,10 +122,10 @@ export default function LyricsModal({
               <h3 className="font-bold text-sm sm:text-base text-white truncate">
                 {currentSong?.title || 'Lyrics'}
               </h3>
-              <p className="text-xs text-amber-400 truncate">
-                {currentSong?.channel || currentSong?.artist || 'Unknown Artist'}
+              <p className="text-xs text-amber-400 truncate flex items-center gap-2">
+                <span>{currentSong?.channel || currentSong?.artist || 'Unknown Artist'}</span>
                 {lyricsData && (
-                  <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-400 font-mono">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300 font-mono border border-neutral-700/60">
                     {lyricsData.isSynced ? '✨ Synchronized' : '📄 Plain Text'}
                   </span>
                 )}
@@ -116,9 +135,22 @@ export default function LyricsModal({
 
           <div className="flex items-center gap-1.5 shrink-0">
             <button
+              onClick={() => setShowSearchInput(!showSearchInput)}
+              className={`p-2 rounded-xl transition cursor-pointer text-xs flex items-center gap-1 ${
+                showSearchInput
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white'
+              }`}
+              title="Search manually"
+              aria-label="Search manually"
+            >
+              <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+            </button>
+            <button
               onClick={() => setIsFullscreen(!isFullscreen)}
               className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition cursor-pointer"
               title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+              aria-label="Toggle Fullscreen"
             >
               <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
                 {isFullscreen ? (
@@ -138,6 +170,25 @@ export default function LyricsModal({
           </div>
         </div>
 
+        {/* Search Refinement Bar */}
+        {showSearchInput && (
+          <form onSubmit={handleCustomSearchSubmit} className="p-3 bg-neutral-950/60 border-b border-neutral-800 flex gap-2">
+            <input
+              type="text"
+              value={customSearch}
+              onChange={(e) => setCustomSearch(e.target.value)}
+              placeholder={`Search lyrics (e.g. "${cleanTitleForLyrics(currentSong?.title)}")`}
+              className="flex-1 px-3 py-1.5 bg-neutral-900 border border-neutral-700 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500"
+            />
+            <button
+              type="submit"
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs rounded-xl transition cursor-pointer"
+            >
+              Search
+            </button>
+          </form>
+        )}
+
         {/* Lyrics Scroll Body */}
         <div
           ref={scrollContainerRef}
@@ -146,15 +197,36 @@ export default function LyricsModal({
           {isLoading ? (
             <div className="h-full flex flex-col items-center justify-center py-20 text-neutral-400 space-y-3">
               <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
-              <p className="text-xs">Finding lyrics for this song...</p>
+              <p className="text-xs">Fetching verified lyrics from registry...</p>
             </div>
           ) : !lyricsData ? (
-            <div className="h-full flex flex-col items-center justify-center py-20 text-neutral-400 space-y-3">
+            <div className="h-full flex flex-col items-center justify-center py-16 text-neutral-400 space-y-4">
               <span className="text-4xl">🎵</span>
-              <p className="text-sm font-semibold text-neutral-300">No lyrics found for this track</p>
-              <p className="text-xs text-neutral-500 max-w-sm">
-                Lyrics are sourced via legitimate open song registries. Unofficial remixes or live bootlegs may not have verified text.
-              </p>
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-neutral-200">No lyrics found for this track</p>
+                <p className="text-xs text-neutral-500 max-w-sm mx-auto">
+                  Lyrics are queried via the free open LRCLIB catalogue. Live sets or unofficial remixes might need refined search terms.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  onClick={() => loadLyrics(null, true)}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-md shadow-amber-500/20"
+                >
+                  <span>🔄</span>
+                  <span>Retry Fetch</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowSearchInput(true);
+                    setCustomSearch(cleanTitleForLyrics(currentSong?.title));
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-semibold text-xs border border-neutral-700 transition cursor-pointer"
+                >
+                  Search Manually
+                </button>
+              </div>
             </div>
           ) : lyricsData.isSynced && lyricsData.syncedLines.length > 0 ? (
             <div className="space-y-4 py-8">
@@ -194,7 +266,10 @@ export default function LyricsModal({
         {/* Footer info & attribution */}
         <div className="p-3 bg-neutral-900/90 border-t border-neutral-800/80 flex items-center justify-between text-[11px] text-neutral-500 shrink-0 px-4">
           <span>Tap any line to jump playback</span>
-          <span>Source: LRCLIB Open Lyrics Registry</span>
+          <span className="flex items-center gap-1">
+            <span>Source:</span>
+            <span className="text-neutral-400 font-medium">{lyricsData?.source || 'LRCLIB Registry'}</span>
+          </span>
         </div>
       </div>
     </div>

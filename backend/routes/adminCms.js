@@ -864,7 +864,7 @@ router.post('/stations', async (req, res) => {
       return res.status(400).json({ error: 'A valid URL-safe station slug is required (at least 2 lowercase alphanumeric characters)', message: 'A valid URL-safe station slug is required' });
     }
 
-    const reservedRoutes = ['home', 'discover', 'mood', 'timemachine', 'activity', 'swipe', 'library', 'history', 'playlists', 'stats', 'equalizer', 'profile', 'admin', 'auth'];
+    const reservedRoutes = ['home', 'discover', 'mood', 'timemachine', 'activity', 'swipe', 'library', 'history', 'playlists', 'stats', 'profile', 'admin', 'auth'];
     if (reservedRoutes.includes(cleanSlug)) {
       return res.status(400).json({ error: `The slug "${cleanSlug}" is reserved by core application routes`, message: `The slug "${cleanSlug}" is reserved by core application routes` });
     }
@@ -1252,8 +1252,7 @@ router.post('/navigation/reset', async (req, res) => {
       { id: 'history', label: 'History', enabled: true, order: 11, isCore: true, icon: 'history', badge: '', group: 'collection', route: '/history' },
       { id: 'playlists', label: 'Playlists', enabled: true, order: 12, isCore: true, icon: 'list', badge: '', group: 'collection', route: '/playlists' },
       { id: 'stats', label: 'Recap & Stats', enabled: true, order: 13, isCore: false, icon: 'sparkles', badge: '', group: 'collection', route: '/stats' },
-      { id: 'equalizer', label: 'Equalizer', enabled: true, order: 14, isCore: false, icon: 'sliders', badge: '10-Band', group: 'collection', route: '/equalizer' },
-      { id: 'profile', label: 'My Profile', enabled: true, order: 15, isCore: false, icon: 'user', badge: '', group: 'collection', route: '/profile' }
+      { id: 'profile', label: 'My Profile', enabled: true, order: 14, isCore: false, icon: 'user', badge: '', group: 'collection', route: '/profile' }
     ];
 
     await cmsService.saveDraft({ navigation: defaultNav }, req.user);

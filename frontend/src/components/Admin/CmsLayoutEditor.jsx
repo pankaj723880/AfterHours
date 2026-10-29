@@ -669,7 +669,7 @@ export default function CmsLayoutEditor({
                         <option value="library">📚 Library (Liked Songs)</option>
                         <option value="history">⏱️ History</option>
                         <option value="list">📋 Playlists</option>
-                        <option value="sliders">🎛️ Sliders (Equalizer)</option>
+                        <option value="sliders">🎛️ Sliders</option>
                         <option value="user">👤 User Profile</option>
                         <option value="shield">🛡️ Shield (Admin)</option>
                         <option value="music">🎵 Music Note</option>
@@ -687,7 +687,7 @@ export default function CmsLayoutEditor({
                       className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-white outline-none focus:border-amber-500/80 font-mono"
                     />
                     <div className="flex flex-wrap gap-1 mt-1.5">
-                      {['/', '/discover', '/mood', '/timemachine', '/activity', '/swipe', '/library', '/history', '/playlists', '/stats', '/equalizer', '/profile'].map(r => (
+                      {['/', '/discover', '/mood', '/timemachine', '/activity', '/swipe', '/library', '/history', '/playlists', '/stats', '/profile'].map(r => (
                         <button
                           key={r}
                           type="button"
