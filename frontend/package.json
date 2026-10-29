@@ -16,6 +16,7 @@
     "@tanstack/react-query": "^5.101.4",
     "@types/three": "^0.185.4",
     "framer-motion": "^13.1.0",
+    "hls.js": "^1.7.4",
     "lucide-react": "^1.31.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

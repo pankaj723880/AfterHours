@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Camera, Upload, Loader2, Check, X, AlertCircle, Trash2 } from 'lucide-react';
-import { getApiUrl } from '../../App';
+import { getApiUrl } from '../../utils/apiUrl';
 
 const GENRE_OPTIONS = [
   '90s Bollywood',

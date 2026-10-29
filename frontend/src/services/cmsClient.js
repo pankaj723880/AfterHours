@@ -107,7 +107,8 @@ export const DEFAULT_CMS_CONFIG = {
   navigation: [
     { id: 'home', label: 'Home', enabled: true, order: 1, isCore: true, icon: 'home', badge: '', group: 'main', route: '/' },
     { id: 'discover', label: 'Discover & Search', enabled: true, order: 2, isCore: true, icon: 'discover', badge: '', group: 'main', route: '/discover' },
-    { id: 'mood', label: 'Mood-to-Music AI', enabled: true, order: 3, isCore: false, icon: 'sparkles', badge: 'AI', group: 'discovery', route: '/mood' },
+    { id: 'radio', label: 'Indian Live Radio', enabled: true, order: 3, isCore: false, icon: 'radio', badge: 'Live', group: 'main', route: '/radio' },
+    { id: 'mood', label: 'Mood-to-Music AI', enabled: true, order: 4, isCore: false, icon: 'sparkles', badge: 'AI', group: 'discovery', route: '/mood' },
     { id: 'timemachine', label: 'Time Machine Radio', enabled: true, order: 4, isCore: false, icon: 'radio', badge: 'Retro', group: 'discovery', route: '/timemachine' },
     { id: 'activity', label: 'Listening Activity', enabled: true, order: 5, isCore: false, icon: 'flame', badge: '', group: 'discovery', route: '/activity' },
     { id: 'swipe', label: 'Discover Swipe', enabled: true, order: 6, isCore: false, icon: 'swipe', badge: '', group: 'discovery', route: '/swipe' },
@@ -225,7 +226,7 @@ export const normalizeNavigationList = (rawNav) => {
       if (['barber', 'truck', 'pauwa'].includes(item.id)) group = 'stations';
       else if (['mood', 'timemachine', 'activity', 'swipe'].includes(item.id)) group = 'discovery';
       else if (['library', 'history', 'playlists', 'stats'].includes(item.id)) group = 'collection';
-      else if (['home', 'discover'].includes(item.id)) group = 'main';
+      else if (['home', 'discover', 'radio'].includes(item.id)) group = 'main';
 
       let label = item.label || existing.label;
       if (item.id === 'library' && (label === 'Liked Songs' || !label)) label = 'Liked Songs Collection';

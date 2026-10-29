@@ -31,29 +31,17 @@ import { listeningStatsService } from './services/listeningStatsService';
 import MoodToMusicSection from './components/Mood/MoodToMusicSection';
 import LoopraCanvas from './components/Player/LoopraCanvas';
 import TimeMachineRadio from './components/Radio/TimeMachineRadio';
+import IndianRadioView from './components/Radio/IndianRadioView';
+import Hls from 'hls.js';
 import ActivityFeed from './components/Activity/ActivityFeed';
 import MobileBottomNav from './components/Navigation/MobileBottomNav';
 
 import { io } from 'socket.io-client';
+import { BACKEND_URL, getApiUrl } from './utils/apiUrl';
 
-const isLocalhost = typeof window !== 'undefined' && (
-  window.location.hostname === 'localhost' || 
-  window.location.hostname === '127.0.0.1' || 
-  window.location.hostname === '0.0.0.0' ||
-  window.location.hostname.endsWith('.local')
-);
-const rawBackendUrl = isLocalhost
-  ? (import.meta.env.VITE_LOCAL_BACKEND_URL || 'http://localhost:5000')
-  : (import.meta.env.VITE_BACKEND_URL || 'https://afterhours-zvic.onrender.com');
-const BACKEND_URL = (rawBackendUrl || '').trim().replace(/\/+$/, '');
 offlineEligibilityService.setBackendUrl(BACKEND_URL);
 
-export const getApiUrl = (endpoint = '') => {
-  const cleanEndpoint = endpoint.replace(/^\/+/, '/');
-  return `${BACKEND_URL}${cleanEndpoint.startsWith('/') ? cleanEndpoint : `/${cleanEndpoint}`}`;
-};
-
-export const getOrCreateSessionId = () => {
+const getOrCreateSessionId = () => {
   if (typeof window === 'undefined') return 'sid_ssr';
   let sid = localStorage.getItem('afterhours_session_id');
   if (!sid) {
@@ -371,7 +359,7 @@ const handleImageError = (e, fallbackTitle, explicitId) => {
   target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1e1e1e&color=f59e0b&size=300`;
 };
 
-const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId }) => {
+const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId, isRadio = false }) => {
   const [currentTime, setCurrentTime] = useState(() => {
     try {
       const savedSong = JSON.parse(localStorage.getItem('afterhours_current_song') || 'null');
@@ -441,6 +429,17 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
     } catch (e) {}
     if (onSeek) onSeek(seekTime);
   };
+
+  if (isRadio) {
+    return (
+      <div className="w-full flex items-center justify-center gap-2 text-[10px] font-medium text-amber-400 py-0.5 select-none">
+        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+        <span className="tracking-widest font-bold uppercase text-amber-300">● LIVE INDIAN RADIO</span>
+        <span className="text-neutral-600">•</span>
+        <span className="text-neutral-400">Continuous Official Broadcast</span>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full flex items-center gap-2 text-[10px] font-mono text-neutral-400">
@@ -1256,8 +1255,8 @@ export default function App() {
       if (path === '/admin') return 'admin';
       if (path === '/discover' || params.get('q')) return 'discover';
       if (path === '/downloads/explore' || path === '/downloads-explore') return 'downloads';
-      if (['/library', '/history', '/playlists', '/downloads', '/barber', '/truck', '/pauwa', '/mood', '/timemachine', '/activity'].includes(path)) {
-        return path.replace('/', '');
+      if (['/library', '/history', '/playlists', '/downloads', '/barber', '/truck', '/pauwa', '/mood', '/timemachine', '/activity', '/radio', '/indian-radio'].includes(path)) {
+        return path === '/indian-radio' ? 'radio' : path.replace('/', '');
       }
     }
     return 'home';
@@ -2489,6 +2488,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const activeObjectUrlRef = useRef(null);
   const [offlineCount, setOfflineCount] = useState(0);
 
+  const radioAudioRef = useRef(null);
+  const hlsRef = useRef(null);
+
   useEffect(() => {
     const refreshOfflineCount = () => {
       offlineStorageService.getAllTracks().then(t => setOfflineCount(t.length)).catch(() => {});
@@ -2507,6 +2509,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         try {
           offlineAudioRef.current.pause();
           offlineAudioRef.current.src = '';
+        } catch (e) {}
+      }
+      if (radioAudioRef.current) {
+        try {
+          radioAudioRef.current.pause();
+          radioAudioRef.current.src = '';
+        } catch (e) {}
+      }
+      if (hlsRef.current) {
+        try {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
         } catch (e) {}
       }
     };
@@ -2646,7 +2660,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
     if (currentSong?.id === song.id) {
       if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
-        playerRef.current.playVideo();
+        try {
+          const p = playerRef.current.playVideo();
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+        } catch (e) {}
       }
       setIsPlaying(true);
       return;
@@ -2714,7 +2731,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
       currentTimeRef.current = 0;
       if (!isPlaying) {
-        playerRef.current?.playVideo?.();
+        try {
+          const p = playerRef.current?.playVideo?.();
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+        } catch (e) {}
         setIsPlaying(true);
       }
       return;
@@ -2773,7 +2793,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       try {
         navigator.mediaSession.setActionHandler('play', () => {
           if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
-          playerRef.current?.playVideo?.();
+          try {
+            const p = playerRef.current?.playVideo?.();
+            if (p && typeof p.catch === 'function') p.catch(() => {});
+          } catch (e) {}
           setIsPlaying(true);
         });
 
@@ -2936,7 +2959,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             const currentRepeat = isRepeatRef.current;
             if (currentRepeat === 'one' || currentRepeat === true) {
               playerRef.current?.seekTo?.(0, true);
-              playerRef.current?.playVideo?.();
+              try {
+          const p = playerRef.current?.playVideo?.();
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+        } catch (e) {}
             } else {
               handleNextSongRef.current?.();
             }
@@ -2982,6 +3008,168 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       try {
         savedSeekTime = parseFloat(localStorage.getItem('afterhours_current_time') || '0') || 0;
       } catch (e) {}
+    }
+
+    // Live Indian Radio Stream Playback
+    if (currentSong?.isRadio) {
+      if (offlineAudioRef.current) {
+        try {
+          offlineAudioRef.current.pause();
+          offlineAudioRef.current.src = '';
+        } catch (e) {}
+      }
+      if (activeObjectUrlRef.current) {
+        try { URL.revokeObjectURL(activeObjectUrlRef.current); } catch (e) {}
+        activeObjectUrlRef.current = null;
+      }
+      if (playerRef.current && typeof playerRef.current.pauseVideo === 'function' && !playerRef.current.isRadio) {
+        try { playerRef.current.pauseVideo(); } catch (e) {}
+      }
+
+      if (!radioAudioRef.current) {
+        radioAudioRef.current = new Audio();
+        radioAudioRef.current.preload = 'auto';
+      }
+
+      const radioAudio = radioAudioRef.current;
+      radioAudio.volume = volume / 100;
+      audioEqualizerService.attachToAudioElement(radioAudio);
+
+      radioAudio.onplay = () => {
+        setIsPlaying(true);
+        isInitialMountRef.current = false;
+        audioEqualizerService.resume();
+      };
+      radioAudio.onpause = () => setIsPlaying(false);
+      radioAudio.onerror = (e) => {
+        console.warn('[IndianRadio] Playback error on station stream:', e);
+        setIsPlaying(false);
+        showToast('Live radio stream temporarily unavailable. Reconnecting...', 'error');
+      };
+
+      const resolvedStreamUrl = currentSong.streamUrl?.startsWith('http')
+        ? currentSong.streamUrl
+        : getApiUrl(currentSong.streamUrl);
+
+      if (hlsRef.current) {
+        try { hlsRef.current.destroy(); } catch (e) {}
+        hlsRef.current = null;
+      }
+
+      if (currentSong.streamFormat === 'hls' && Hls.isSupported()) {
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: true,
+          backBufferLength: 30
+        });
+        hlsRef.current = hls;
+        hls.loadSource(resolvedStreamUrl);
+        hls.attachMedia(radioAudio);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (!isFirstMount) {
+            const p = radioAudio.play();
+            if (p && typeof p.catch === 'function') {
+              p.catch(err => {
+                if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
+                  console.warn('[IndianRadio] HLS autoplay blocked:', err);
+                }
+              });
+            }
+          }
+        });
+        hls.on(Hls.Events.ERROR, (event, data) => {
+          if (data.fatal) {
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                hls.startLoad();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                hls.recoverMediaError();
+                break;
+              default:
+                hls.destroy();
+                hlsRef.current = null;
+                break;
+            }
+          }
+        });
+      } else {
+        radioAudio.src = resolvedStreamUrl;
+        if (!isFirstMount) {
+          const p = radioAudio.play();
+          if (p && typeof p.catch === 'function') {
+            p.catch(err => {
+              if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
+                console.warn('[IndianRadio] Direct play error:', err);
+              }
+            });
+          }
+        }
+      }
+
+      playerRef.current = {
+        isRadio: true,
+        getCurrentTime: () => 0,
+        getDuration: () => 0,
+        seekTo: () => {},
+        playVideo: () => {
+          audioEqualizerService.resume();
+          if (!radioAudioRef.current) return Promise.resolve();
+          const p = radioAudioRef.current.play();
+          if (p && typeof p.catch === 'function') {
+            p.catch(err => {
+              if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
+                console.warn('[IndianRadio] playVideo error:', err);
+              }
+            });
+          }
+          return p;
+        },
+        pauseVideo: () => {
+          if (radioAudioRef.current) {
+            try { radioAudioRef.current.pause(); } catch (e) {}
+          }
+        },
+        stopVideo: () => {
+          if (radioAudioRef.current) {
+            try { radioAudioRef.current.pause(); } catch (e) {}
+            try {
+              radioAudioRef.current.removeAttribute('src');
+              radioAudioRef.current.load();
+            } catch (e) {}
+          }
+          if (hlsRef.current) {
+            try { hlsRef.current.destroy(); } catch (e) {}
+            hlsRef.current = null;
+          }
+        },
+        setVolume: (vol) => {
+          if (radioAudioRef.current) radioAudioRef.current.volume = vol / 100;
+        },
+        mute: () => {
+          if (radioAudioRef.current) radioAudioRef.current.muted = true;
+        },
+        unMute: () => {
+          if (radioAudioRef.current) radioAudioRef.current.muted = false;
+        },
+        destroy: () => {
+          if (radioAudioRef.current) {
+            try { radioAudioRef.current.pause(); } catch (e) {}
+            try {
+              radioAudioRef.current.removeAttribute('src');
+              radioAudioRef.current.load();
+            } catch (e) {}
+          }
+          if (hlsRef.current) {
+            try { hlsRef.current.destroy(); } catch (e) {}
+            hlsRef.current = null;
+          }
+        }
+      };
+
+      loadedVideoIdRef.current = currentSong.id;
+      setHistory(prev => [currentSong, ...prev.filter(s => s.id !== currentSong.id)].slice(0, 50));
+      return;
     }
 
     // Check if track is downloaded in IndexedDB for genuine offline playback
@@ -3039,9 +3227,22 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           seekTo: (sec) => { if (offlineAudioRef.current) offlineAudioRef.current.currentTime = sec; },
           playVideo: () => {
             audioEqualizerService.resume();
-            return offlineAudioRef.current?.play();
+            if (!offlineAudioRef.current) return Promise.resolve();
+            const p = offlineAudioRef.current.play();
+            if (p && typeof p.catch === 'function') {
+              p.catch(err => {
+                if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
+                  console.warn('Offline audio play error:', err);
+                }
+              });
+            }
+            return p;
           },
-          pauseVideo: () => offlineAudioRef.current?.pause(),
+          pauseVideo: () => {
+            if (offlineAudioRef.current) {
+              try { offlineAudioRef.current.pause(); } catch (e) {}
+            }
+          },
           stopVideo: () => {
             if (offlineAudioRef.current) {
               offlineAudioRef.current.pause();
@@ -3073,6 +3274,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         try {
           offlineAudioRef.current.pause();
           offlineAudioRef.current.src = '';
+        } catch (e) {}
+      }
+      if (radioAudioRef.current) {
+        try {
+          radioAudioRef.current.pause();
+          radioAudioRef.current.src = '';
+        } catch (e) {}
+      }
+      if (hlsRef.current) {
+        try {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
         } catch (e) {}
       }
       if (activeObjectUrlRef.current) {
@@ -3328,7 +3541,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             playerRef.current.seekTo(savedSeek, true);
           }
         } catch (e) {}
-        playerRef.current?.playVideo?.();
+        try {
+          const p = playerRef.current?.playVideo?.();
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+        } catch (e) {}
       }
       if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
       setIsPlaying(true);
@@ -3714,8 +3930,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       } else if (path === '/downloads/explore' || path === '/downloads-explore') {
         setActiveTab('downloads');
         setOfflineSubView('explore');
-      } else if (['/library', '/history', '/playlists', '/downloads', '/barber', '/truck', '/pauwa'].includes(path)) {
-        setActiveTab(path.replace('/', ''));
+      } else if (['/library', '/history', '/playlists', '/downloads', '/barber', '/truck', '/pauwa', '/mood', '/timemachine', '/activity', '/radio', '/indian-radio'].includes(path)) {
+        setActiveTab(path === '/indian-radio' ? 'radio' : path.replace('/', ''));
         if (path === '/downloads') {
           setOfflineSubView('library');
         }
@@ -3973,6 +4189,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               const defaultNav = [
                 { id: 'home', label: 'Home', icon: 'home', group: 'main' },
                 { id: 'discover', label: 'Discover & Search', icon: 'discover', group: 'main' },
+                { id: 'radio', label: 'Indian Live Radio', icon: 'radio', badge: 'Live', group: 'main' },
                 { id: 'mood', label: 'Mood-to-Music AI', icon: 'sparkles', badge: 'AI', group: 'discovery' },
                 { id: 'timemachine', label: 'Time Machine Radio', icon: 'radio', badge: 'Retro', group: 'discovery' },
                 { id: 'activity', label: 'Listening Activity', icon: 'flame', group: 'discovery' },
@@ -3987,7 +4204,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               ];
 
               const canonicalGroup = (id, rawGroup) => {
-                if (['home', 'discover'].includes(id)) return 'main';
+                if (['home', 'discover', 'radio'].includes(id)) return 'main';
                 if (['mood', 'timemachine', 'activity', 'swipe'].includes(id)) return 'discovery';
                 if (['barber', 'truck', 'pauwa'].includes(id)) return 'stations';
                 if (['library', 'history', 'playlists', 'stats'].includes(id)) return 'collection';
@@ -5438,6 +5655,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
         )}
 
+        {(activeTab === 'radio' || activeTab === 'indian-radio') && (
+          <div className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+            <IndianRadioView
+              currentSong={currentSong}
+              isPlaying={isPlaying}
+              onPlayStation={playSong}
+              onTogglePlay={togglePlayPause}
+              apiBase={BACKEND_URL}
+            />
+            <DisclaimerFooter footer={cmsConfig?.footer} />
+          </div>
+        )}
+
         {activeTab === 'timemachine' && (
           <div className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
             <TimeMachineRadio
@@ -5617,7 +5847,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 </button>
               </div>
 
-              <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} currentSongId={currentSong?.id} />
+              <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} currentSongId={currentSong?.id} isRadio={Boolean(currentSong?.isRadio)} />
             </div>
 
             {/* Right: Actions & Volume */}
@@ -6059,7 +6289,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
                 {/* Progress Bar */}
                 <div className="w-full px-2 shrink-0 my-1">
-                  <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} currentSongId={currentSong?.id} />
+                  <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} currentSongId={currentSong?.id} isRadio={Boolean(currentSong?.isRadio)} />
                 </div>
 
                 {/* Main Playback Controls with Tactile 3D Buttons */}

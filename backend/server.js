@@ -25,6 +25,7 @@ import { createRateLimiter } from './middleware/rateLimiter.js';
 import profileRoutes from './routes/profile.js';
 import activityRoutes from './routes/activity.js';
 import moodRoutes from './routes/mood.js';
+import radioRoutes from './routes/radio.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -715,6 +716,9 @@ app.use(['/api/activity', '/activity'], activityRoutes);
 
 // Mount Mood-to-Music AI Recommendation Engine
 app.use(['/api/mood', '/mood'], moodRoutes);
+
+// Mount Verified Real Indian Radio Streaming Routes
+app.use(['/api/radio', '/radio'], radioRoutes);
 
 // YouTube API Search with In-Memory Caching & Rotating Keys
 const searchCache = new Map();
