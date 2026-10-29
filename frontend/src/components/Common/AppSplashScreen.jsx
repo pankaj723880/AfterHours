@@ -7,7 +7,7 @@ import * as THREE from 'three';
  * one branch curves in front (+Z) and the opposite branch curves behind (-Z).
  */
 class InfinityCurve3D extends THREE.Curve {
-  constructor(scaleX = 2.0, scaleY = 1.05, heightZ = 0.65) {
+  constructor(scaleX = 2.05, scaleY = 1.05, heightZ = 0.65) {
     super();
     this.scaleX = scaleX;
     this.scaleY = scaleY;
@@ -46,6 +46,7 @@ export default function AppSplashScreen({
 }) {
   const [shouldRender, setShouldRender] = useState(true);
   const [isFadingOut, setIsFadingOut] = useState(false);
+  const [isInfinityVisible, setIsInfinityVisible] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [hasWebGL, setHasWebGL] = useState(true);
 
@@ -71,11 +72,22 @@ export default function AppSplashScreen({
     };
   }, []);
 
+  // Choreographed Logo-to-Infinity emergence:
+  // Phase 1 (0ms - 450ms): Official Loopra logo is clearly presented against obsidian background
+  // Phase 2 (450ms+): 3D metallic infinity loop unfurls seamlessly around the centered logo
+  useEffect(() => {
+    const emergeTimer = setTimeout(() => {
+      setIsInfinityVisible(true);
+    }, 450);
+
+    return () => clearTimeout(emergeTimer);
+  }, []);
+
   // Handle initialization completion & graceful fade-out transition
   useEffect(() => {
     if (!isAppReady) return;
 
-    // Trigger smooth fade-out
+    // Trigger smooth fade-out exit transition
     setIsFadingOut(true);
 
     const fadeTimer = setTimeout(() => {
@@ -83,7 +95,7 @@ export default function AppSplashScreen({
       if (typeof onFinished === 'function') {
         onFinished();
       }
-    }, 550);
+    }, 600);
 
     return () => clearTimeout(fadeTimer);
   }, [isAppReady, onFinished]);
@@ -127,10 +139,13 @@ export default function AppSplashScreen({
       roughness: 0.18,
       clearcoat: 1.0,
       clearcoatRoughness: 0.1,
-      reflectivity: 0.95
+      reflectivity: 0.95,
+      transparent: true,
+      opacity: 0.95
     });
 
     const infinityMesh = new THREE.Mesh(geometry, material);
+    infinityMesh.scale.set(0.75, 0.75, 0.75);
     scene.add(infinityMesh);
 
     // Lighting setup: realistic highlights and reflections
@@ -166,10 +181,16 @@ export default function AppSplashScreen({
       infinityMesh.rotation.x = Math.sin(elapsed * 0.7) * 0.18 + 0.12;
       infinityMesh.rotation.z = Math.cos(elapsed * 0.5) * 0.1;
 
+      // Dynamic emergence ramp: mesh smoothly scales from 0.75 to 1.0 around the centered logo
+      const emergeProgress = Math.min(1.0, Math.max(0, (elapsed - 0.4) / 0.9));
+      const easeOut = 1 - Math.pow(1 - emergeProgress, 3);
+      const meshScale = 0.75 + 0.25 * easeOut;
+      infinityMesh.scale.set(meshScale, meshScale, meshScale);
+
       // Flowing energy pulsation along the infinity path
       const pulse = Math.sin(elapsed * 2.2);
-      material.emissiveIntensity = 0.35 + 0.22 * pulse;
-      centerGlowLight.intensity = 2.2 + 0.7 * pulse;
+      material.emissiveIntensity = (0.35 + 0.22 * pulse) * easeOut;
+      centerGlowLight.intensity = (2.2 + 0.7 * pulse) * easeOut;
 
       renderer.render(scene, camera);
       animationFrameRef.current = requestAnimationFrame(animate);
@@ -212,7 +233,7 @@ export default function AppSplashScreen({
       role="status"
       aria-live="polite"
       aria-label="Loading Loopra"
-      className={`fixed inset-0 z-[99999] bg-[#09090b] flex flex-col items-center justify-center select-none overflow-hidden transition-all duration-500 ease-out ${
+      className={`fixed inset-0 z-[99999] bg-[#09090b] flex flex-col items-center justify-center select-none overflow-hidden transition-all duration-600 ease-out ${
         isFadingOut
           ? 'opacity-0 scale-105 pointer-events-none'
           : 'opacity-100 scale-100 pointer-events-auto'
@@ -227,50 +248,57 @@ export default function AppSplashScreen({
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[340px] sm:w-[500px] h-[340px] sm:h-[500px] bg-gradient-to-tr from-amber-500/15 via-orange-500/10 to-transparent rounded-full blur-[80px] pointer-events-none animate-pulse-slow" />
       </div>
 
-      {/* Main Centered 3D Composition */}
+      {/* Main Centered Composition */}
       <div className="relative flex flex-col items-center justify-center px-4 max-w-sm w-full z-10">
         {/* 3D Infinity Canvas Container with Centered Logo */}
         <div className="relative w-72 sm:w-88 h-48 sm:h-56 flex items-center justify-center">
-          {/* WebGL 3D Infinity Loop Mount */}
-          {hasWebGL && !prefersReducedMotion ? (
-            <div
-              ref={mountRef}
-              className="absolute inset-0 w-full h-full flex items-center justify-center pointer-events-none"
-            />
-          ) : (
-            /* Accessible reduced-motion / non-WebGL fallback: elegant dual-loop gold glow */
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <svg
-                viewBox="0 0 240 120"
-                className="w-56 h-28 text-amber-500 drop-shadow-[0_0_25px_rgba(245,158,11,0.45)]"
-                fill="none"
-              >
-                <path
-                  d="M60 20 C25 20 15 45 15 60 C15 75 25 100 60 100 C95 100 125 60 145 60 C165 60 195 100 215 100 C235 100 245 75 245 60 C245 45 235 20 200 20 C165 20 135 60 115 60 C95 60 65 20 60 20 Z"
-                  stroke="url(#fallbackGrad)"
-                  strokeWidth="14"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <defs>
-                  <linearGradient id="fallbackGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#fbbf24" />
-                    <stop offset="50%" stopColor="#f59e0b" />
-                    <stop offset="100%" stopColor="#ea580c" />
-                  </linearGradient>
-                </defs>
-              </svg>
-            </div>
-          )}
+          {/* Smooth emergence wrapper for the 3D infinity loop / fallback */}
+          <div
+            className={`absolute inset-0 w-full h-full flex items-center justify-center pointer-events-none transition-all duration-1000 ease-out ${
+              isInfinityVisible
+                ? 'opacity-100 scale-100 filter-none'
+                : 'opacity-0 scale-75 blur-sm'
+            }`}
+          >
+            {hasWebGL && !prefersReducedMotion ? (
+              <div
+                ref={mountRef}
+                className="w-full h-full flex items-center justify-center pointer-events-none"
+              />
+            ) : (
+              /* Accessible reduced-motion / non-WebGL fallback: elegant dual-loop gold glow */
+              <div className="w-full h-full flex items-center justify-center pointer-events-none">
+                <svg
+                  viewBox="0 0 240 120"
+                  className="w-56 h-28 text-amber-500 drop-shadow-[0_0_25px_rgba(245,158,11,0.45)]"
+                  fill="none"
+                >
+                  <path
+                    d="M60 20 C25 20 15 45 15 60 C15 75 25 100 60 100 C95 100 125 60 145 60 C165 60 195 100 215 100 C235 100 245 75 245 60 C245 45 235 20 200 20 C165 20 135 60 115 60 C95 60 65 20 60 20 Z"
+                    stroke="url(#fallbackGrad)"
+                    strokeWidth="14"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <defs>
+                    <linearGradient id="fallbackGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#fbbf24" />
+                      <stop offset="50%" stopColor="#f59e0b" />
+                      <stop offset="100%" stopColor="#ea580c" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+              </div>
+            )}
+          </div>
 
-          {/* Centered Loopra Logo Asset */}
+          {/* Centered Loopra Logo Asset - perfectly stationary and sharp in loop nexus */}
           <div className="relative z-10 w-20 h-20 sm:w-24 sm:h-24 rounded-2xl p-1 flex items-center justify-center drop-shadow-[0_4px_30px_rgba(245,158,11,0.5)]">
             <img
               src={logoUrl}
               alt={siteName}
-              className="w-full h-full object-contain pointer-events-none select-none transition duration-300"
+              className="w-full h-full object-contain pointer-events-none select-none transition-transform duration-500"
               onError={(e) => {
-                // Fallback to favicon if logo path has network issue
                 if (e.target.src !== '/loopra-logo.png') {
                   e.target.src = '/loopra-logo.png';
                 }
@@ -297,4 +325,3 @@ export default function AppSplashScreen({
     </div>
   );
 }
-

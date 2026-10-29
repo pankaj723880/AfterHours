@@ -1287,31 +1287,53 @@ export default function App() {
 
   const [isAppInitialized, setIsAppInitialized] = useState(false);
   const [showSplashScreen, setShowSplashScreen] = useState(true);
+  const startupStartTimeRef = useRef(Date.now());
+  const startupCompletedRef = useRef(false);
 
   useEffect(() => {
-    // Graceful startup timer: ensure 3D infinity entry plays smoothly, guaranteed exit
-    const minSplashTimer = setTimeout(() => {
-      setIsAppInitialized(true);
-    }, 900);
+    let isMounted = true;
+    let minSplashTimer = null;
+    const MIN_SPLASH_DURATION_MS = 3000;
+    const MAX_SAFETY_DURATION_MS = 6500;
 
-    const maxSafetyTimer = setTimeout(() => {
-      setIsAppInitialized(true);
-    }, 3200);
-
-    return () => {
-      clearTimeout(minSplashTimer);
-      clearTimeout(maxSafetyTimer);
-    };
-  }, []);
-
-  useEffect(() => {
-    fetchPublicCmsConfig(BACKEND_URL).then(cfg => {
-      if (cfg) {
-        const normalized = normalizeCmsConfig(cfg);
-        setCmsConfig(normalized);
-        applyThemeToDom(normalized.theme, true);
+    const finalizeStartup = () => {
+      if (startupCompletedRef.current) return;
+      startupCompletedRef.current = true;
+      if (isMounted) {
+        setIsAppInitialized(true);
       }
-    });
+    };
+
+    const onInitializationAttemptFinished = () => {
+      const elapsed = Date.now() - startupStartTimeRef.current;
+      const remainingTime = Math.max(0, MIN_SPLASH_DURATION_MS - elapsed);
+      if (remainingTime > 0) {
+        minSplashTimer = setTimeout(finalizeStartup, remainingTime);
+      } else {
+        finalizeStartup();
+      }
+    };
+
+    fetchPublicCmsConfig(BACKEND_URL)
+      .then(cfg => {
+        if (!isMounted) return;
+        if (cfg) {
+          const normalized = normalizeCmsConfig(cfg);
+          setCmsConfig(normalized);
+          applyThemeToDom(normalized.theme, true);
+        }
+      })
+      .catch(err => {
+        console.warn('[Startup] CMS config notice:', err?.message);
+      })
+      .finally(() => {
+        onInitializationAttemptFinished();
+      });
+
+    // Hard safety timeout: guaranteed exit if network hangs indefinitely
+    const maxSafetyTimer = setTimeout(() => {
+      finalizeStartup();
+    }, MAX_SAFETY_DURATION_MS);
 
     const handleConfigUpdate = (data) => {
       if (data?.config) {
@@ -1323,7 +1345,7 @@ export default function App() {
         applyThemeToDom(normalized.theme, true);
       } else {
         fetchPublicCmsConfig(BACKEND_URL).then(cfg => {
-          if (cfg) {
+          if (cfg && isMounted) {
             const normalized = normalizeCmsConfig(cfg);
             setCmsConfig(normalized);
             applyThemeToDom(normalized.theme, true);
@@ -1334,6 +1356,9 @@ export default function App() {
 
     socket.on('cms_config_updated', handleConfigUpdate);
     return () => {
+      isMounted = false;
+      if (minSplashTimer) clearTimeout(minSplashTimer);
+      clearTimeout(maxSafetyTimer);
       socket.off('cms_config_updated', handleConfigUpdate);
     };
   }, []);
