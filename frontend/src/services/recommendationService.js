@@ -332,3 +332,11 @@ export function generateCategorizedRecommendations({
 
   return result;
 }
+
+export default {
+  getTrackId,
+  extractArtist,
+  generateRecommendations,
+  generateCategorizedRecommendations
+};
+

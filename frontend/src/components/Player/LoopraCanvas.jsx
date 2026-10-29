@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { getCleanThumbnail } from '../../utils/storage';
 
 const CANVAS_MODES = [
   { id: 'vinyl', label: '3D Vinyl Studio', icon: '💿' },
   { id: 'aurora', label: 'Ambient Aurora', icon: '🌌' },
-  { id: 'equalizer', label: 'Retro Equalizer', icon: '📊' },
+  { id: 'harmonicBars', label: 'Harmonic Bars', icon: '📊' },
   { id: 'waveform', label: 'Waveform Flow', icon: '🌊' },
   { id: 'cinematic', label: 'Minimal Cinematic', icon: '✨' }
 ];
@@ -16,20 +17,31 @@ export default function LoopraCanvas({
   onTogglePlay,
   onNextTrack,
   onPrevTrack,
+  onNext,
+  onPrev,
   volume,
   onVolumeChange,
-  playerRef
+  playerRef,
+  onSeek
 }) {
   const [mode, setMode] = useState('aurora');
   const [effectsEnabled, setEffectsEnabled] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(180);
+  const [duration, setDuration] = useState(0);
+  const [isSeeking, setIsSeeking] = useState(false);
 
   const canvasRef = useRef(null);
   const animFrameId = useRef(null);
   const containerRef = useRef(null);
   const isHiddenRef = useRef(false);
+
+  // Normalize previous / next handlers across both naming conventions
+  const handleNext = onNext || onNextTrack;
+  const handlePrev = onPrev || onPrevTrack;
+
+  const isRadio = Boolean(currentSong?.isRadio);
+  const songId = currentSong?.id || currentSong?.videoId;
 
   // Check reduced-motion preference
   useEffect(() => {
@@ -41,21 +53,83 @@ export default function LoopraCanvas({
     }
   }, []);
 
-  // Sync playback time and duration
+  // Reset progress and query fresh duration when song changes
   useEffect(() => {
-    if (!isOpen) return;
-    const interval = setInterval(() => {
-      if (playerRef?.current && typeof playerRef.current.getCurrentTime === 'function') {
+    if (!isOpen || !currentSong) return;
+    setIsSeeking(false);
+    setCurrentTime(0);
+    setDuration(0);
+
+    if (isRadio) return;
+
+    // Give the player a short moment to initialize new track duration
+    const timer = setTimeout(() => {
+      if (playerRef?.current) {
         try {
-          const t = playerRef.current.getCurrentTime() || 0;
-          const d = playerRef.current.getDuration() || 180;
-          setCurrentTime(t);
-          if (d > 0) setDuration(d);
+          if (typeof playerRef.current.getDuration === 'function') {
+            const d = playerRef.current.getDuration();
+            if (typeof d === 'number' && !isNaN(d) && d > 0) {
+              setDuration(d);
+            }
+          }
+          if (typeof playerRef.current.getCurrentTime === 'function') {
+            const t = playerRef.current.getCurrentTime();
+            if (typeof t === 'number' && !isNaN(t) && t >= 0) {
+              setCurrentTime(t);
+            }
+          }
         } catch (e) {}
       }
-    }, 500);
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, songId, isRadio, playerRef]);
+
+  // Synchronize playback time and duration continuously
+  useEffect(() => {
+    if (!isOpen || isRadio) return;
+
+    const interval = setInterval(() => {
+      if (playerRef?.current && !isSeeking) {
+        try {
+          if (typeof playerRef.current.getCurrentTime === 'function') {
+            const t = playerRef.current.getCurrentTime();
+            if (typeof t === 'number' && !isNaN(t) && t >= 0) {
+              setCurrentTime(t);
+            }
+          }
+          if (typeof playerRef.current.getDuration === 'function') {
+            const d = playerRef.current.getDuration();
+            if (typeof d === 'number' && !isNaN(d) && d > 0) {
+              setDuration(d);
+            }
+          }
+        } catch (e) {}
+      }
+    }, 300);
+
     return () => clearInterval(interval);
-  }, [isOpen, playerRef]);
+  }, [isOpen, isSeeking, isRadio, playerRef]);
+
+  // Handle Seeking
+  const handleSeekChange = (e) => {
+    const newTime = parseFloat(e.target.value);
+    setCurrentTime(newTime);
+  };
+
+  const handleSeekCommit = (e) => {
+    setIsSeeking(false);
+    const seekTime = parseFloat(e.target.value);
+    setCurrentTime(seekTime);
+    if (onSeek) {
+      onSeek(seekTime);
+    }
+    if (playerRef?.current && typeof playerRef.current.seekTo === 'function') {
+      try {
+        playerRef.current.seekTo(seekTime, true);
+      } catch (err) {}
+    }
+  };
 
   // Page visibility listener: pause render when page is hidden
   useEffect(() => {
@@ -65,6 +139,17 @@ export default function LoopraCanvas({
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, []);
+
+  // Keyboard shortcut: Escape to close
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   // Fullscreen toggle
   const toggleFullscreen = useCallback(() => {
@@ -80,6 +165,7 @@ export default function LoopraCanvas({
 
   // Format seconds to mm:ss
   const formatTime = (sec) => {
+    if (typeof sec !== 'number' || isNaN(sec) || sec < 0) return '0:00';
     const m = Math.floor(sec / 60);
     const s = Math.floor(sec % 60);
     return `${m}:${s < 10 ? '0' : ''}${s}`;
@@ -90,8 +176,8 @@ export default function LoopraCanvas({
     if (!isOpen || !canvasRef.current || !effectsEnabled) return;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
-    let width = (canvas.width = canvas.parentElement.clientWidth);
-    let height = (canvas.height = canvas.parentElement.clientHeight);
+    let width = (canvas.width = canvas.parentElement?.clientWidth || window.innerWidth);
+    let height = (canvas.height = canvas.parentElement?.clientHeight || window.innerHeight);
 
     let frame = 0;
     const particles = Array.from({ length: 45 }, () => ({
@@ -158,8 +244,8 @@ export default function LoopraCanvas({
           ctx.fill();
         });
         ctx.globalAlpha = 1;
-      } else if (mode === 'equalizer') {
-        // Mode 2: Equalizer Bars
+      } else if (mode === 'harmonicBars') {
+        // Mode 2: Harmonic Bars Visualizer
         const barCount = Math.min(Math.floor(width / 24), 36);
         const barWidth = (width * 0.8) / barCount;
         const startX = width * 0.1;
@@ -241,6 +327,8 @@ export default function LoopraCanvas({
 
   if (!isOpen || !currentSong) return null;
 
+  const artworkSrc = getCleanThumbnail(currentSong, songId);
+
   return (
     <div
       ref={containerRef}
@@ -257,7 +345,7 @@ export default function LoopraCanvas({
         <div className="flex items-center gap-3">
           <button
             onClick={onClose}
-            className="p-2 rounded-xl bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700/60 transition active:scale-95 cursor-pointer"
+            className="p-2 px-3 rounded-xl bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700/60 transition active:scale-95 cursor-pointer text-xs font-semibold"
             title="Exit Canvas"
           >
             ← Back
@@ -338,8 +426,8 @@ export default function LoopraCanvas({
 
               {/* Center Artwork Label */}
               <img
-                src={currentSong.thumbnail}
-                alt={currentSong.title}
+                src={artworkSrc}
+                alt={currentSong.title || 'Track Art'}
                 className="w-28 h-28 sm:w-36 sm:h-36 rounded-full object-cover shadow-2xl border-2 border-amber-500/40"
               />
             </div>
@@ -348,10 +436,10 @@ export default function LoopraCanvas({
           {/* Song Metadata */}
           <div className="text-center mt-6 space-y-1.5 w-full px-4">
             <h2 className="text-lg sm:text-2xl font-display font-extrabold text-white tracking-tight line-clamp-1">
-              {currentSong.title}
+              {currentSong.title || 'Unknown Title'}
             </h2>
             <p className="text-xs sm:text-sm text-amber-400 font-semibold truncate">
-              {currentSong.channel || currentSong.artist}
+              {currentSong.channel || currentSong.artist || 'Unknown Artist'}
             </p>
           </div>
         </div>
@@ -359,17 +447,39 @@ export default function LoopraCanvas({
 
       {/* Bottom Floating Playback Controls Bar */}
       <footer className="relative z-20 w-full max-w-2xl mx-auto p-4 sm:p-6 backdrop-blur-2xl bg-neutral-900/85 rounded-3xl border border-neutral-800/80 shadow-2xl space-y-3 mb-2 sm:mb-6">
-        {/* Scrubber Progress */}
-        <div className="flex items-center gap-3 text-xs font-mono text-neutral-400">
-          <span className="w-10 text-right">{formatTime(currentTime)}</span>
-          <div className="flex-1 relative h-1.5 bg-neutral-800 rounded-full overflow-hidden cursor-pointer">
-            <div
-              className="absolute top-0 bottom-0 left-0 bg-gradient-to-r from-amber-500 to-orange-500 rounded-full"
-              style={{ width: `${Math.min(100, (currentTime / (duration || 180)) * 100)}%` }}
-            />
+        {/* Scrubber Progress or Live Radio Indicator */}
+        {isRadio ? (
+          <div className="w-full flex items-center justify-center gap-2 py-1 text-xs font-mono text-amber-400 select-none">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+            <span className="font-bold tracking-wider uppercase">● LIVE BROADCAST</span>
+            <span className="text-neutral-500">•</span>
+            <span className="text-neutral-400 text-[11px]">Continuous Indian Stream</span>
           </div>
-          <span className="w-10 text-left">{formatTime(duration)}</span>
-        </div>
+        ) : (
+          <div className="flex items-center gap-3 text-xs font-mono text-neutral-400 select-none">
+            <span className="w-10 text-right">{formatTime(currentTime)}</span>
+            <div className="flex-1 relative flex items-center">
+              <input
+                type="range"
+                min="0"
+                max={duration > 0 ? duration : 100}
+                step="0.5"
+                value={currentTime}
+                disabled={duration <= 0}
+                onChange={handleSeekChange}
+                onMouseDown={() => setIsSeeking(true)}
+                onTouchStart={() => setIsSeeking(true)}
+                onMouseUp={handleSeekCommit}
+                onTouchEnd={handleSeekCommit}
+                aria-label="Seek track"
+                className="w-full h-1.5 bg-neutral-800 rounded-full appearance-none cursor-pointer accent-amber-500 focus:outline-none disabled:opacity-50"
+              />
+            </div>
+            <span className="w-10 text-left">
+              {duration > 0 ? formatTime(duration) : '--:--'}
+            </span>
+          </div>
+        )}
 
         {/* Tactile Control Buttons */}
         <div className="flex items-center justify-between gap-4">
@@ -388,27 +498,42 @@ export default function LoopraCanvas({
 
           <div className="flex items-center justify-center gap-4 flex-1">
             <button
-              onClick={onPrevTrack}
-              className="p-2.5 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition active:scale-95 cursor-pointer"
-              title="Previous Track"
+              onClick={handlePrev}
+              className="p-3 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition active:scale-95 cursor-pointer shadow-md"
+              title="Previous Track (Restarts if > 3s)"
+              aria-label="Previous Track"
             >
-              ⏮
+              <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
+              </svg>
             </button>
 
             <button
               onClick={onTogglePlay}
               className="w-14 h-14 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-neutral-950 font-bold text-lg flex items-center justify-center shadow-[0_0_25px_rgba(245,158,11,0.5)] hover:scale-105 active:scale-95 transition cursor-pointer"
               title={isPlaying ? "Pause" : "Play"}
+              aria-label={isPlaying ? "Pause" : "Play"}
             >
-              {isPlaying ? '⏸' : '▶'}
+              {isPlaying ? (
+                <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
+                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                </svg>
+              ) : (
+                <svg className="w-6 h-6 fill-current ml-0.5" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+              )}
             </button>
 
             <button
-              onClick={onNextTrack}
-              className="p-2.5 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition active:scale-95 cursor-pointer"
+              onClick={handleNext}
+              className="p-3 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition active:scale-95 cursor-pointer shadow-md"
               title="Next Track"
+              aria-label="Next Track"
             >
-              ⏭
+              <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+              </svg>
             </button>
           </div>
 
@@ -421,6 +546,7 @@ export default function LoopraCanvas({
               max="100"
               value={volume || 80}
               onChange={onVolumeChange}
+              aria-label="Volume slider"
               className="w-20 h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
             />
           </div>
@@ -428,7 +554,7 @@ export default function LoopraCanvas({
 
         {/* Audio Transparency Disclaimer */}
         <p className="text-[10px] text-center text-neutral-500 font-mono">
-          Visual Mode: Harmonic Canvas (Simulated Rhythm — YouTube iframe audio is sandboxed)
+          Visual Mode: Harmonic Canvas (Rhythmic Simulation — YouTube iframe audio is sandboxed by browser security)
         </p>
       </footer>
     </div>

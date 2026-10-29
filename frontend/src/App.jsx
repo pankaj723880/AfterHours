@@ -2739,23 +2739,52 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   }, [activeTab, currentSong, stationsMap, authToken]);
 
   const handleNextSong = useCallback(() => {
-    if (!queue || queue.length === 0) return;
-    if (isShuffle) {
-      const randomIndex = Math.floor(Math.random() * queue.length);
-      playSong(queue[randomIndex]);
+    const effectiveQueue = (queue && queue.length > 0)
+      ? queue
+      : (trendingSongs && trendingSongs.length > 0 ? trendingSongs : TRENDING_SONGS);
+    if (!effectiveQueue || effectiveQueue.length === 0) return;
+
+    if (isRepeat === 'one') {
+      if (playerRef.current && typeof playerRef.current.seekTo === 'function') {
+        playerRef.current.seekTo(0, true);
+      }
+      currentTimeRef.current = 0;
+      if (!isPlaying) {
+        try {
+          const p = playerRef.current?.playVideo?.();
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+        } catch (e) {}
+        setIsPlaying(true);
+      }
       return;
     }
-    const currentIndex = queue.findIndex(s => s.id === currentSong?.id);
-    const nextIdx = (currentIndex + 1) % queue.length;
-    playSong(queue[nextIdx]);
-  }, [queue, isShuffle, currentSong, playSong]);
+
+    if (isShuffle) {
+      const randomIndex = Math.floor(Math.random() * effectiveQueue.length);
+      playSong(effectiveQueue[randomIndex]);
+      return;
+    }
+
+    const currentId = currentSong?.id || currentSong?.videoId;
+    const currentIndex = effectiveQueue.findIndex(s => (s.id || s.videoId) === currentId);
+    if (currentIndex === -1) {
+      playSong(effectiveQueue[0]);
+      return;
+    }
+
+    const nextIdx = (currentIndex + 1) % effectiveQueue.length;
+    playSong(effectiveQueue[nextIdx]);
+  }, [queue, trendingSongs, isShuffle, isRepeat, currentSong, isPlaying, playSong]);
 
   useEffect(() => {
     handleNextSongRef.current = handleNextSong;
   }, [handleNextSong]);
 
   const handlePrevSong = useCallback(() => {
-    if (!queue || queue.length === 0) return;
+    const effectiveQueue = (queue && queue.length > 0)
+      ? queue
+      : (trendingSongs && trendingSongs.length > 0 ? trendingSongs : TRENDING_SONGS);
+    if (!effectiveQueue || effectiveQueue.length === 0) return;
 
     let currentPos = currentTimeRef.current;
     if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
@@ -2783,20 +2812,21 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
 
     if (isShuffle) {
-      const randomIndex = Math.floor(Math.random() * queue.length);
-      playSong(queue[randomIndex]);
+      const randomIndex = Math.floor(Math.random() * effectiveQueue.length);
+      playSong(effectiveQueue[randomIndex]);
       return;
     }
 
-    const currentIndex = queue.findIndex(s => s.id === currentSong?.id);
+    const currentId = currentSong?.id || currentSong?.videoId;
+    const currentIndex = effectiveQueue.findIndex(s => (s.id || s.videoId) === currentId);
     if (currentIndex === -1) {
-      playSong(queue[0]);
+      playSong(effectiveQueue[0]);
       return;
     }
 
-    const prevIdx = currentIndex > 0 ? currentIndex - 1 : queue.length - 1;
-    playSong(queue[prevIdx]);
-  }, [queue, currentSong, isPlaying, isShuffle, playSong]);
+    const prevIdx = currentIndex > 0 ? currentIndex - 1 : effectiveQueue.length - 1;
+    playSong(effectiveQueue[prevIdx]);
+  }, [queue, trendingSongs, currentSong, isPlaying, isShuffle, playSong]);
 
   const toggleRepeatMode = () => {
     if (isRepeat === false || isRepeat === 'off') {
@@ -6627,6 +6657,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           onTogglePlay={togglePlayPause}
           onNext={handleNextSong}
           onPrev={handlePrevSong}
+          onNextTrack={handleNextSong}
+          onPrevTrack={handlePrevSong}
           currentTime={currentTimeRef.current}
           duration={durationRef.current}
           onSeek={handleSeek}
@@ -6634,6 +6666,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           onVolumeChange={handleVolumeChange}
           isMuted={isMuted}
           onToggleMute={handleToggleMute}
+          playerRef={playerRef}
         />
       )}
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { generateCategorizedRecommendations } from '../../services/recommendationService';
+import { generateCategorizedRecommendations } from '../../services/recommendationService.js';
 import { getCleanThumbnail } from '../../utils/storage';
 
 export default function RecommendedRow({
