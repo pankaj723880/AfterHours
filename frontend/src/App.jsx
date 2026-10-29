@@ -76,7 +76,13 @@ socket.on('connect_error', (err) => {
 
 const fetchFromBackend = async (query, options = {}) => {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  const timeoutId = setTimeout(() => {
+    try {
+      controller.abort(new Error('Backend request timed out after 20s'));
+    } catch (_) {
+      controller.abort();
+    }
+  }, 20000);
   try {
     let res;
     const { limit, pageToken } = options;
@@ -111,7 +117,9 @@ const fetchFromBackend = async (query, options = {}) => {
     return parsed.data || { items: [] };
   } catch (err) {
     clearTimeout(timeoutId);
-    console.warn("Backend fetch notice:", err.message);
+    if (err?.name !== 'AbortError') {
+      console.warn("Backend fetch notice:", err.message);
+    }
     throw err;
   }
 };
@@ -1496,7 +1504,9 @@ export default function App() {
           }
         }
       } catch (e) {
-        console.warn(`[Dynamic Content] Notice fetching ${storageKey}:`, e.message);
+        if (e?.name !== 'AbortError') {
+          console.warn(`[Dynamic Content] Notice fetching ${storageKey}:`, e.message);
+        }
       }
     };
 
