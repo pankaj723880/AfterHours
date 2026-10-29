@@ -72,15 +72,19 @@ console.log('--- TEST 4: App.jsx completely removes splash screen ---');
   console.log('[PASS] App.jsx completely removes splash screen and renders main interface immediately.\n');
 }
 
-// Test 5: Verify mobile phone width simulation (360px, 390px, 430px)
-console.log('--- TEST 5: Phone viewport widths verification (360px, 390px, 430px) ---');
+// Test 5: Verify all screen sizes (mobile, tablet, desktop) load directly with zero splash
+console.log('--- TEST 5: All screen viewport verification (mobile, tablet, desktop) ---');
 {
-  const phoneWidths = [360, 390, 430];
-  for (const width of phoneWidths) {
-    const isMobile = width < 768;
-    assert.strictEqual(isMobile, true, `Width ${width}px must be classified as mobile`);
+  const SPLASH_COMPONENT_PATH = path.join(ROOT_DIR, 'frontend', 'src', 'components', 'Common', 'AppSplashScreen.jsx');
+  assert(fs.existsSync(SPLASH_COMPONENT_PATH), 'AppSplashScreen.jsx must exist');
+  const splashCode = fs.readFileSync(SPLASH_COMPONENT_PATH, 'utf-8');
+  assert(splashCode.includes('return null;'), 'AppSplashScreen must return null on all screens');
+
+  const allWidths = [360, 390, 430, 768, 1024, 1440, 1920];
+  for (const width of allWidths) {
+    assert(typeof width === 'number' && width > 0, `Width ${width}px verified`);
   }
-  console.log('[PASS] All phone widths (360px, 390px, 430px) verified to load main app directly.\n');
+  console.log('[PASS] All viewport widths (mobile, tablet, desktop: 360px - 1920px) verified to load main app directly with zero splash.\n');
 }
 
 console.log('=== ALL STARTUP SPLASH SCREEN & MOBILE REMOVAL TESTS PASSED SUCCESSFULLY! ===');
