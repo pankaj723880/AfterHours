@@ -141,6 +141,7 @@ export class MetricsService {
     this.requestTimestamps = []; // rolling 60s timestamps for RPM: { time, isUser }
     this.recentErrors = []; // max 50 sanitized errors
     this.slowRequests = []; // max 20 requests > 500ms (excluding socket.io polls)
+    this.failedLogins = []; // max 50 privacy-conscious failed logins without sensitive credentials
 
     // YouTube API & Fallback Resolver Metrics
     this.youtubeStats = {
@@ -262,6 +263,21 @@ export class MetricsService {
     while (this.requestTimestamps.length > 0 && this.requestTimestamps[0].time < oneMinuteAgo) {
       this.requestTimestamps.shift();
     }
+  }
+
+  recordFailedLogin({ ip, username, userAgent, reason = 'invalid_credentials' }) {
+    this.failedLogins.unshift({
+      timestamp: new Date().toISOString(),
+      ip: (ip || 'unknown').toString().replace(/:\d+$/, ''),
+      username: (username || '').slice(0, 50),
+      userAgent: (userAgent || 'unknown').slice(0, 100),
+      reason
+    });
+    if (this.failedLogins.length > 50) this.failedLogins.pop();
+  }
+
+  getFailedLogins() {
+    return this.failedLogins;
   }
 
   recordError({ method, path, status, message, ip }) {
@@ -428,6 +444,8 @@ export class MetricsService {
       topEndpoints,
       slowRequests: this.slowRequests.slice(0, 10),
       recentErrors: this.recentErrors.slice(0, 15),
+      failedLogins: this.failedLogins.slice(0, 15),
+      failedLoginsCount: this.failedLogins.length,
 
       // YouTube & Music Subsystems
       youtubeStats: {

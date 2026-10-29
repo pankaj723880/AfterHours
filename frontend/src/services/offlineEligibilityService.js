@@ -44,6 +44,25 @@ class OfflineEligibilityService {
   }
 
   /**
+   * Register verified track licenses returned directly from the authorized tracks endpoint
+   */
+  registerEligibleTrack(track) {
+    if (!track || !track.id) return;
+    this.cache.set(track.id, {
+      eligible: Boolean(track.offlineEligible),
+      license: track.license || null,
+      reason: 'Verified by offline licensing catalog.',
+      checkedAt: Date.now()
+    });
+  }
+
+  registerEligibleTracks(tracks = []) {
+    if (!Array.isArray(tracks)) return;
+    tracks.forEach(t => this.registerEligibleTrack(t));
+    this.notifyListeners();
+  }
+
+  /**
    * Queue track IDs for batch verification
    */
   queueEligibilityCheck(trackIds = []) {

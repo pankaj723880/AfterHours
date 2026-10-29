@@ -1,7 +1,7 @@
 export const DEFAULT_CMS_CONFIG = {
   version: 1,
   branding: {
-    siteName: 'Loopra',
+    siteName: '',
     tagline: 'AfterHours Mehfil Music',
     logoUrl: '/loopra-logo.png',
     faviconUrl: '/loopra-logo.png',
@@ -50,13 +50,18 @@ export const DEFAULT_CMS_CONFIG = {
       subtitle: 'Iconic 90s & 2000s Bollywood Melodies, Golden Era Romance & Nostalgic Radio Hits',
       badge: '💈 Saloon FM • 90s/2000s Nostalgia Radio',
       artwork: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=1600&auto=format&fit=crop',
+      icon: 'scissors',
+      accentColor: '#ef4444',
+      category: '90s Bollywood',
+      language: 'Hindi',
       enabled: true,
       order: 1,
       bgImages: [
         'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=1600&auto=format&fit=crop',
         'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?q=80&w=1600&auto=format&fit=crop'
       ],
-      queries: ['90s bollywood hit songs kumar sanu Alka Yagnik']
+      queries: ['90s bollywood hit songs kumar sanu Alka Yagnik'],
+      tracks: []
     },
     {
       id: 'truck',
@@ -64,13 +69,18 @@ export const DEFAULT_CMS_CONFIG = {
       subtitle: 'High-Bass Highway Tracks, Rustic Punjabi Folk/Dhol Beats & Dhabha Anthems',
       badge: '🚛 Horn Ok Please • Highway Dhaba Vibe',
       artwork: 'https://images.unsplash.com/photo-1519003722824-194d4455a60c?q=80&w=1600&auto=format&fit=crop',
+      icon: 'truck',
+      accentColor: '#f59e0b',
+      category: 'Road Trips',
+      language: 'Hindi & Punjabi',
       enabled: true,
       order: 2,
       bgImages: [
         'https://images.unsplash.com/photo-1519003722824-194d4455a60c?q=80&w=1600&auto=format&fit=crop',
         'https://images.unsplash.com/photo-1508873696983-2df5c92063c7?q=80&w=1600&auto=format&fit=crop'
       ],
-      queries: ['altaf raja best songs hindi highway dhaba hits']
+      queries: ['altaf raja best songs hindi highway dhaba hits'],
+      tracks: []
     },
     {
       id: 'pauwa',
@@ -78,6 +88,10 @@ export const DEFAULT_CMS_CONFIG = {
       subtitle: 'Late-Night Party Anthems, High-Energy Drinking Bangers & Desi Hip-Hop',
       badge: '🍾 Theka Session • Desi Beats & Party Anthems',
       artwork: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=1600&auto=format&fit=crop',
+      icon: 'beer',
+      accentColor: '#10b981',
+      category: 'Party Hits',
+      language: 'Desi Punjabi & Hindi',
       enabled: true,
       order: 3,
       bgImages: [
@@ -86,18 +100,24 @@ export const DEFAULT_CMS_CONFIG = {
       queries: [
         'punjabi daru peg songs party hits yo yo honey singh badshah',
         'altaf raja sad songs dard bhare geet wine heartbreak'
-      ]
+      ],
+      tracks: []
     }
   ],
   navigation: [
-    { id: 'home', label: 'Home', enabled: true, order: 1, isCore: true, icon: 'home', badge: '' },
-    { id: 'discover', label: 'Discover & Search', enabled: true, order: 2, isCore: true, icon: 'discover', badge: '' },
-    { id: 'barber', label: 'Saloon FM', enabled: true, order: 3, isCore: false, icon: 'scissors', badge: '90s' },
-    { id: 'truck', label: 'Horn Ok Please', enabled: true, order: 4, isCore: false, icon: 'truck', badge: 'Dhaba' },
-    { id: 'pauwa', label: 'Theka Session', enabled: true, order: 5, isCore: false, icon: 'beer', badge: 'Desi' },
-    { id: 'library', label: 'Favourites', enabled: true, order: 6, isCore: true, icon: 'heart', badge: '' },
-    { id: 'history', label: 'History', enabled: true, order: 7, isCore: true, icon: 'history', badge: '' },
-    { id: 'playlists', label: 'Playlists', enabled: true, order: 8, isCore: true, icon: 'list', badge: '' }
+    { id: 'home', label: 'Home', enabled: true, order: 1, isCore: true, icon: 'home', badge: '', group: 'main', route: '/' },
+    { id: 'discover', label: 'Discover & Search', enabled: true, order: 2, isCore: true, icon: 'discover', badge: '', group: 'main', route: '/discover' },
+    { id: 'mood', label: 'Mood-to-Music AI', enabled: true, order: 3, isCore: false, icon: 'sparkles', badge: 'AI', group: 'discovery', route: '/mood' },
+    { id: 'timemachine', label: 'Time Machine Radio', enabled: true, order: 4, isCore: false, icon: 'radio', badge: 'Retro', group: 'discovery', route: '/timemachine' },
+    { id: 'activity', label: 'Listening Activity', enabled: true, order: 5, isCore: false, icon: 'flame', badge: '', group: 'discovery', route: '/activity' },
+    { id: 'swipe', label: 'Discover Swipe', enabled: true, order: 6, isCore: false, icon: 'swipe', badge: '', group: 'discovery', route: '/swipe' },
+    { id: 'barber', label: 'Saloon FM', enabled: true, order: 7, isCore: false, icon: 'scissors', badge: '90s', group: 'stations', route: '/station/barber' },
+    { id: 'truck', label: 'Horn Ok Please', enabled: true, order: 8, isCore: false, icon: 'truck', badge: 'Dhaba', group: 'stations', route: '/station/truck' },
+    { id: 'pauwa', label: 'Theka Session', enabled: true, order: 9, isCore: false, icon: 'beer', badge: 'Desi', group: 'stations', route: '/station/pauwa' },
+    { id: 'library', label: 'Liked Songs Collection', enabled: true, order: 10, isCore: true, icon: 'library', badge: '', group: 'collection', route: '/library' },
+    { id: 'history', label: 'Listening History', enabled: true, order: 11, isCore: true, icon: 'history', badge: '', group: 'collection', route: '/history' },
+    { id: 'playlists', label: 'Playlists', enabled: true, order: 12, isCore: true, icon: 'list', badge: '', group: 'collection', route: '/playlists' },
+    { id: 'stats', label: 'Recap & Stats', enabled: true, order: 13, isCore: false, icon: 'sparkles', badge: '', group: 'collection', route: '/stats' }
   ],
   playerDefaults: {
     defaultVolume: 80,
@@ -116,7 +136,122 @@ export const DEFAULT_CMS_CONFIG = {
     disclaimerText: 'Audio plays through YouTube embedded player API. Loopra does not host copyrighted files directly.',
     infoPages: []
   },
+  timeMachineEras: [
+    {
+      id: '1970s',
+      title: 'Golden Retro Classics',
+      decade: '1970s',
+      subtitle: 'Kishore Kumar, RD Burman, Mohammed Rafi, Lata Mangeshkar & 70s Disco',
+      description: 'Step into the golden vinyl era of analogue warmth, timeless melodies, and iconic orchestra arrangements.',
+      badge: '📻 1970s Vinyl Era',
+      artwork: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop',
+      enabled: true,
+      order: 1,
+      genres: ['Retro Bollywood', 'Disco', 'Classical Melody', 'Acoustic Folk'],
+      queries: ['1970s hindi golden hits kishore kumar rd burman rafi', '70s retro bollywood classic disco melodies']
+    },
+    {
+      id: '1980s',
+      title: 'Cassette Era & Synth Beats',
+      decade: '1980s',
+      subtitle: 'Bappi Lahiri, Asha Bhosle, 80s Ghazals, Pop Anthems & Groovy Disco',
+      description: 'The golden age of cassette tapes, synthesizer hooks, and soulful late-night ghazals.',
+      badge: '📼 1980s Cassette Gold',
+      artwork: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?q=80&w=800&auto=format&fit=crop',
+      enabled: true,
+      order: 2,
+      genres: ['Synth Pop', 'Disco Beats', 'Ghazals', 'Romantic Duets'],
+      queries: ['1980s bollywood disco hits bappi lahiri asha bhosle', '80s pop synth cassette classics hindi']
+    },
+    {
+      id: '1990s',
+      title: '90s Romantic Bollywood',
+      decade: '1990s',
+      subtitle: 'Kumar Sanu, Alka Yagnik, Udit Narayan, 90s Indipop & Euphoria',
+      description: 'The quintessential era of timeless romance, melodious violins, monsoon ballads, and early Indipop waves.',
+      badge: '💫 1990s Pure Romance',
+      artwork: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?q=80&w=800&auto=format&fit=crop',
+      enabled: true,
+      order: 3,
+      genres: ['90s Romance', 'Monsoon Melodies', 'Indipop', 'Dholak Beats'],
+      queries: ['1990s romantic bollywood hits kumar sanu alka yagnik', '90s iconic hindi songs udit narayan']
+    },
+    {
+      id: '2000s',
+      title: 'Millennium Pop & Y2K Hits',
+      decade: '2000s',
+      subtitle: 'KK, Sonu Nigam, Shreya Ghoshal, Sunidhi Chauhan & 2000s Rock-Pop',
+      description: 'Unforgettable college rock anthems, soulful acoustic guitars, and legendary Bollywood millennium blockbusters.',
+      badge: '💿 2000s Millennium Pop',
+      artwork: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=800&auto=format&fit=crop',
+      enabled: true,
+      order: 4,
+      genres: ['College Rock', 'Pop Rock', 'Romantic Ballads', 'Club Remixes'],
+      queries: ['2000s bollywood hits kk sonu nigam mohit chauhan', 'y2k bollywood party hits 2000s pop']
+    },
+    {
+      id: '2010s',
+      title: 'Modern Streaming & Indie Renaissance',
+      decade: '2010s',
+      subtitle: 'Arijit Singh, Amit Trivedi, Desi Hip-Hop, Coke Studio & Indie Melodies',
+      description: 'The renaissance of independent singer-songwriters, acoustic folk melodies, and soulful anthems.',
+      badge: '⚡ 2010s Indie Wave',
+      artwork: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop',
+      enabled: true,
+      order: 5,
+      genres: ['Indie Folk', 'Soulful Acoustics', 'Desi Hip-Hop', 'EDM Fusion'],
+      queries: ['2010s arijit singh hits amit trivedi prateek kuhad', '2010s hindi indie pop acoustic hits']
+    }
+  ],
   featuredCollections: []
+};
+
+export const normalizeNavigationList = (rawNav) => {
+  const defaults = DEFAULT_CMS_CONFIG.navigation;
+  const input = Array.isArray(rawNav) ? rawNav : [];
+  const map = new Map();
+
+  defaults.forEach((item, index) => {
+    map.set(item.id, { ...item, order: index + 1 });
+  });
+
+  input.forEach(item => {
+    if (!item || !item.id) return;
+    if (item.id === 'profile' || item.id === 'equalizer') return;
+
+    const existing = map.get(item.id);
+    if (existing) {
+      let group = existing.group;
+      if (['barber', 'truck', 'pauwa'].includes(item.id)) group = 'stations';
+      else if (['mood', 'timemachine', 'activity', 'swipe'].includes(item.id)) group = 'discovery';
+      else if (['library', 'history', 'playlists', 'stats'].includes(item.id)) group = 'collection';
+      else if (['home', 'discover'].includes(item.id)) group = 'main';
+
+      let label = item.label || existing.label;
+      if (item.id === 'library' && (label === 'Liked Songs' || !label)) label = 'Liked Songs Collection';
+      if (item.id === 'history' && (label === 'History' || !label)) label = 'Listening History';
+
+      map.set(item.id, {
+        ...existing,
+        ...item,
+        group,
+        label,
+        enabled: item.enabled !== false
+      });
+    } else {
+      let group = item.group || 'main';
+      if (item.route?.startsWith('/station/') || group === 'stations') group = 'stations';
+      map.set(item.id, {
+        ...item,
+        group,
+        enabled: item.enabled !== false
+      });
+    }
+  });
+
+  return Array.from(map.values())
+    .filter(n => n.id !== 'profile')
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
 };
 
 export const normalizeCmsConfig = (raw) => {
@@ -130,7 +265,7 @@ export const normalizeCmsConfig = (raw) => {
   return {
     version: typeof raw.version === 'number' ? raw.version : DEFAULT_CMS_CONFIG.version,
     branding: {
-      siteName: raw.branding?.siteName ?? DEFAULT_CMS_CONFIG.branding.siteName,
+      siteName: typeof raw.branding?.siteName === 'string' ? raw.branding.siteName : (DEFAULT_CMS_CONFIG.branding.siteName || ''),
       tagline: raw.branding?.tagline ?? DEFAULT_CMS_CONFIG.branding.tagline,
       logoUrl: raw.branding?.logoUrl ?? DEFAULT_CMS_CONFIG.branding.logoUrl,
       faviconUrl: raw.branding?.faviconUrl ?? DEFAULT_CMS_CONFIG.branding.faviconUrl,
@@ -176,8 +311,9 @@ export const normalizeCmsConfig = (raw) => {
       allowedRoles: Array.isArray(raw.maintenance?.allowedRoles) ? raw.maintenance.allowedRoles : DEFAULT_CMS_CONFIG.maintenance.allowedRoles
     },
     sections: Array.isArray(raw.sections) && raw.sections.length > 0 ? raw.sections : DEFAULT_CMS_CONFIG.sections,
-    stations: Array.isArray(raw.stations) && raw.stations.length > 0 ? raw.stations : DEFAULT_CMS_CONFIG.stations,
-    navigation: Array.isArray(raw.navigation) && raw.navigation.length > 0 ? raw.navigation : DEFAULT_CMS_CONFIG.navigation,
+    stations: Array.isArray(raw.stations) ? raw.stations : DEFAULT_CMS_CONFIG.stations,
+    timeMachineEras: Array.isArray(raw.timeMachineEras) ? raw.timeMachineEras : DEFAULT_CMS_CONFIG.timeMachineEras,
+    navigation: normalizeNavigationList(raw.navigation),
     playerDefaults: {
       defaultVolume: typeof raw.playerDefaults?.defaultVolume === 'number' ? raw.playerDefaults.defaultVolume : DEFAULT_CMS_CONFIG.playerDefaults.defaultVolume,
       autoPlayNext: typeof raw.playerDefaults?.autoPlayNext === 'boolean' ? raw.playerDefaults.autoPlayNext : DEFAULT_CMS_CONFIG.playerDefaults.autoPlayNext,

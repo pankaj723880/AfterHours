@@ -175,7 +175,7 @@ async function runTests() {
     // Test 11: Public CMS Config Access
     const publicConfig = await request({ path: '/api/cms/public-config', method: 'GET' });
     assert(publicConfig.status === 200, 'Public config accessible without authentication (200 OK)');
-    assert(publicConfig.data?.branding?.siteName === 'Loopra', 'Public config returns site branding (Loopra)');
+    assert(typeof publicConfig.data?.branding?.siteName === 'string', 'Public config returns site branding');
     assert(Array.isArray(publicConfig.data?.sections), 'Public config contains home sections');
     assert(Array.isArray(publicConfig.data?.stations), 'Public config contains radio stations');
 

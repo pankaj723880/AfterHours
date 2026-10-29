@@ -17,10 +17,34 @@ import { offlineEligibilityService } from './services/offlineEligibilityService'
 import { offlineStorageService } from './services/offlineStorageService';
 import DownloadTrackButton from './components/Offline/DownloadTrackButton';
 import OfflineLibraryView from './components/Offline/OfflineLibraryView';
+import OfflineEligibleExploreView from './components/Offline/OfflineEligibleExploreView';
+import EqualizerModal from './components/Player/EqualizerModal';
+import { audioEqualizerService } from './services/audioEqualizerService';
+import LyricsModal from './components/Player/LyricsModal';
+import SleepTimerModal from './components/Player/SleepTimerModal';
+import ListeningStatsModal from './components/Stats/ListeningStatsModal';
+import UserProfileModal from './components/Profile/UserProfileModal';
+import DiscoverSwipe from './components/Discover/DiscoverSwipe';
+import RecommendedRow from './components/Common/RecommendedRow';
+import ContinueListeningBanner from './components/Common/ContinueListeningBanner';
+import { listeningStatsService } from './services/listeningStatsService';
+import MoodToMusicSection from './components/Mood/MoodToMusicSection';
+import LoopraCanvas from './components/Player/LoopraCanvas';
+import TimeMachineRadio from './components/Radio/TimeMachineRadio';
+import ActivityFeed from './components/Activity/ActivityFeed';
+import MobileBottomNav from './components/Navigation/MobileBottomNav';
 
 import { io } from 'socket.io-client';
 
-const rawBackendUrl = import.meta.env.VITE_BACKEND_URL || (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:5000' : 'https://afterhours-zvic.onrender.com');
+const isLocalhost = typeof window !== 'undefined' && (
+  window.location.hostname === 'localhost' || 
+  window.location.hostname === '127.0.0.1' || 
+  window.location.hostname === '0.0.0.0' ||
+  window.location.hostname.endsWith('.local')
+);
+const rawBackendUrl = isLocalhost
+  ? (import.meta.env.VITE_LOCAL_BACKEND_URL || 'http://localhost:5000')
+  : (import.meta.env.VITE_BACKEND_URL || 'https://afterhours-zvic.onrender.com');
 const BACKEND_URL = (rawBackendUrl || '').trim().replace(/\/+$/, '');
 offlineEligibilityService.setBackendUrl(BACKEND_URL);
 
@@ -137,7 +161,14 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
     moreVertical: <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" fill="currentColor" />,
     user: <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="currentColor" />,
     grip: <path d="M9 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6-16a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" fill="currentColor" />,
-    shield: <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z" fill="currentColor" />
+    shield: <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z" fill="currentColor" />,
+    sliders: <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" fill="currentColor" />,
+    mic: <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" fill="currentColor" />,
+    timer: <path d="M15 1H9v2h6V1zm-4 13h2V8h-2v6zm8.03-6.61l1.42-1.42c-.43-.51-.9-.99-1.41-1.41l-1.42 1.42C16.07 4.74 14.12 4 12 4c-4.97 0-9 4.03-9 9s4.02 9 9 9 9-4.03 9-9c0-2.12-.74-4.07-1.97-5.61zM12 20c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" fill="currentColor" />,
+    volumeMute: <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" fill="currentColor" />,
+    share: <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z" fill="currentColor" />,
+    flame: <path d="M13.5 1.5s0 3.5-3 5.5C8.5 8.5 7 11 7 14c0 3.87 3.13 7 7 7s7-3.13 7-7c0-4-3-8.5-7.5-12.5zm0 17.5c-2.21 0-4-1.79-4-4 0-1.8 1.05-3.32 2.5-4.04.38 1.64 1.83 2.87 3.5 2.87 2.02 0 3.66-1.64 3.66-3.66 0-.3-.04-.59-.11-.87 1.49 1.49 2.45 3.5 2.45 5.7 0 2.21-1.79 4-4 4z" fill="currentColor" />,
+    swipe: <path d="M9 11.24V7.5a2.5 2.5 0 0 1 5 0v3.74c1.21-.81 2-2.18 2-3.74a4.5 4.5 0 0 0-9 0c0 1.56.79 2.93 2 3.74zm9.84 4.63l-4.54-2.26A2.01 2.01 0 0 0 13.4 13.5H13v-6a1 1 0 0 0-2 0v10.59l-3.29-.69a1.002 1.002 0 0 0-1.04.42l-.58.88 5.13 5.17c.56.56 1.33.87 2.12.87h6.66c1.53 0 2.8-1.15 2.97-2.67l.55-4.99a2.01 2.01 0 0 0-.68-1.85z" fill="currentColor" />
   };
   return (
     <svg className={className} viewBox="0 0 24 24" {...props}>
@@ -206,6 +237,44 @@ const SPECIAL_STATIONS = {
       "punjabi daru peg songs party hits yo yo honey singh badshah",
       "altaf raja sad songs dard bhare geet wine heartbreak"
     ]
+  },
+  romance: {
+    id: "romance",
+    title: "Pehla Nasha",
+    subtitle: "Golden 90s Romance, Monsoon Melodies, Udit Narayan & Alka Yagnik Duets",
+    badge: "💖 Pehla Nasha • 90s Golden Romance",
+    bgImages: [
+      "https://images.unsplash.com/photo-1518895949257-7621c3c786d7?q=80&w=1600&auto=format&fit=crop"
+    ],
+    queries: ["90s romantic bollywood songs udit narayan alka yagnik kumar sanu"]
+  },
+  sad_songs: {
+    id: "sad_songs",
+    title: "Dard-E-Dil",
+    subtitle: "Heartbreak Ghazals, Nostalgic Sentimental Melodies & Midnight Broken Chords",
+    badge: "💔 Dard-E-Dil • Late Night Melancholy",
+    bgImages: [
+      "https://images.unsplash.com/photo-1516589178581-6cd7833ae3b2?q=80&w=1600&auto=format&fit=crop"
+    ],
+    queries: ["dard bhare nagme sad songs hindi bollywood 90s jagjit singh ghazals"]
+  },
+  chill: {
+    id: "chill",
+    title: "Mehfil Lounge",
+    subtitle: "Acoustic Unplugged, Lo-Fi Desi Chills, Soft Sitar & Sufi Midnight Vibe",
+    badge: "☕ Mehfil Lounge • Acoustic & Lo-Fi Chill",
+    bgImages: [
+      "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=1600&auto=format&fit=crop"
+    ],
+    queries: ["bollywood acoustic unplugged lofi hindi chill sufi songs"]
+  },
+  swipe: {
+    id: "swipe",
+    title: "Discover Swipe",
+    subtitle: "Swipe right to like, swipe left to skip through music recommendations",
+    badge: "🔥 Discover Swipe",
+    bgImages: [],
+    queries: []
   },
   discover: {
     id: "discover",
@@ -393,7 +462,7 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
   );
 });
 
-const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove }) => {
+const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove, canMoveUp, canMoveDown, onMoveUp, onMoveDown }) => {
   const dragControls = useDragControls();
   const [isHolding, setIsHolding] = useState(false);
   const holdTimerRef = useRef(null);
@@ -528,6 +597,36 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove })
           {track.duration}
         </span>
       )}
+
+      {/* Accessible Keyboard & Touch Reorder Controls */}
+      <div className="flex items-center gap-0.5 shrink-0 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+        {onMoveUp && canMoveUp && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveUp();
+            }}
+            className="p-1 rounded-md text-neutral-400 hover:text-amber-400 hover:bg-neutral-800 transition cursor-pointer"
+            title="Move track up"
+            aria-label="Move track up"
+          >
+            <Icon name="chevronUp" className="w-3.5 h-3.5" />
+          </button>
+        )}
+        {onMoveDown && canMoveDown && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveDown();
+            }}
+            className="p-1 rounded-md text-neutral-400 hover:text-amber-400 hover:bg-neutral-800 transition cursor-pointer"
+            title="Move track down"
+            aria-label="Move track down"
+          >
+            <Icon name="chevronDown" className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
 
       <DownloadTrackButton track={track} variant="icon" />
 
@@ -1156,11 +1255,22 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       if (path === '/admin') return 'admin';
       if (path === '/discover' || params.get('q')) return 'discover';
-      if (['/library', '/history', '/playlists', '/downloads', '/barber', '/truck', '/pauwa'].includes(path)) {
+      if (path === '/downloads/explore' || path === '/downloads-explore') return 'downloads';
+      if (['/library', '/history', '/playlists', '/downloads', '/barber', '/truck', '/pauwa', '/mood', '/timemachine', '/activity'].includes(path)) {
         return path.replace('/', '');
       }
     }
     return 'home';
+  });
+
+  const [offlineSubView, setOfflineSubView] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      if (path === '/downloads/explore' || path === '/downloads-explore') {
+        return 'explore';
+      }
+    }
+    return 'library';
   });
 
   const [cmsConfig, setCmsConfig] = useState(() => {
@@ -1204,22 +1314,37 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (cmsConfig?.branding?.siteName) {
-      const siteTagline = cmsConfig.branding.tagline || cmsConfig.branding.siteTagline;
-      document.title = siteTagline
-        ? `${cmsConfig.branding.siteName} — ${siteTagline}`
-        : `${cmsConfig.branding.siteName} — Streaming Lounge`;
+    const rawSiteName = cmsConfig?.branding?.siteName;
+    const siteName = typeof rawSiteName === 'string' ? rawSiteName.trim() : '';
+    const siteTagline = (cmsConfig?.branding?.tagline || cmsConfig?.branding?.siteTagline || '').trim();
+
+    if (siteName && siteTagline) {
+      document.title = `${siteName} — ${siteTagline}`;
+    } else if (siteName) {
+      document.title = `${siteName} — Streaming Lounge`;
+    } else if (siteTagline) {
+      document.title = siteTagline;
+    } else {
+      document.title = 'Music Lounge';
     }
-    if (cmsConfig?.branding?.faviconUrl) {
+
+    const faviconUrl = cmsConfig?.branding?.faviconUrl || '/loopra-logo.png';
+    const iconLinks = document.querySelectorAll("link[rel*='icon'], link[rel='apple-touch-icon']");
+    if (iconLinks && iconLinks.length > 0) {
+      iconLinks.forEach(link => {
+        link.href = faviconUrl;
+      });
+    } else {
       let link = document.querySelector("link[rel*='icon']");
       if (!link) {
         link = document.createElement('link');
-        link.type = 'image/x-icon';
-        link.rel = 'shortcut icon';
+        link.type = 'image/png';
+        link.rel = 'icon';
         document.getElementsByTagName('head')[0].appendChild(link);
       }
-      link.href = cmsConfig.branding.faviconUrl;
+      link.href = faviconUrl;
     }
+
     if (cmsConfig?.theme) {
       applyThemeToDom(cmsConfig.theme);
     }
@@ -1229,17 +1354,26 @@ export default function App() {
     const base = { ...SPECIAL_STATIONS };
     if (Array.isArray(cmsConfig?.stations)) {
       cmsConfig.stations.forEach(s => {
-        if (s && s.id && base[s.id]) {
-          base[s.id] = {
-            ...base[s.id],
-            title: s.title || s.name || base[s.id].title,
-            subtitle: s.subtitle || s.description || base[s.id].subtitle,
-            badge: s.badge || base[s.id].badge,
-            bgImages: (s.artwork || s.artworkUrl || s.bgImages?.length) 
-              ? [s.artwork || s.artworkUrl || s.bgImages[0]].filter(Boolean) 
-              : base[s.id].bgImages
-          };
-        }
+        if (!s || !s.id) return;
+        const existing = base[s.id] || {};
+        const artwork = s.artwork || s.artworkUrl || (s.bgImages?.length ? s.bgImages[0] : null);
+        base[s.id] = {
+          ...existing,
+          id: s.id,
+          title: s.title || s.name || existing.title || s.id,
+          subtitle: s.subtitle || s.description || existing.subtitle || '',
+          badge: s.badge || existing.badge || 'LIVE RADIO',
+          icon: s.icon || existing.icon || 'radio',
+          accentColor: s.accentColor || existing.accentColor || '#f59e0b',
+          category: s.category || existing.category || 'Nostalgia',
+          language: s.language || existing.language || 'Hindi',
+          queries: Array.isArray(s.queries) && s.queries.length > 0 ? s.queries : (existing.queries || [s.name || s.title || s.id]),
+          tracks: Array.isArray(s.tracks) ? s.tracks : (existing.tracks || []),
+          bgImages: artwork ? [artwork] : (existing.bgImages || [
+            'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=1600&q=80'
+          ]),
+          isActive: s.isActive !== false && s.enabled !== false
+        };
       });
     }
     return base;
@@ -1646,11 +1780,50 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [mobileQueueTab, setMobileQueueTab] = useState('player');
   const [isMiniPlayerExpanded, setIsMiniPlayerExpanded] = useState(false);
   const [isHomeScrolled, setIsHomeScrolled] = useState(false);
-  const isBottomPlayerVisible = Boolean(currentSong && (activeTab !== 'home' || isHomeScrolled));
+  // Route-aware mini-player visibility: Hidden on Home page so featured 3D player is solitary
+  const isBottomPlayerVisible = Boolean(currentSong && activeTab !== 'home');
   const handleOpenExpandedPlayer = (tab = 'player') => {
     setMobileQueueTab(tab);
     setShowQueuePanel(true);
   };
+
+  // Loopra Platform Upgrade States:
+  const [isEqualizerOpen, setIsEqualizerOpen] = useState(false);
+  const [isLyricsOpen, setIsLyricsOpen] = useState(false);
+  const [isSleepTimerOpen, setIsSleepTimerOpen] = useState(false);
+  const [isCanvasOpen, setIsCanvasOpen] = useState(false);
+  const [sleepTimerRemaining, setSleepTimerRemaining] = useState(null); // seconds
+  const [isStatsOpen, setIsStatsOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef(null);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
+  const [historyPageLimit, setHistoryPageLimit] = useState(15);
+  const activeListeningDurationRef = useRef(0);
+  const hasLoggedListenForCurrentSongRef = useRef(false);
+
+  // Close account dropdown on outside click or Escape key
+  useEffect(() => {
+    if (!isAccountMenuOpen) return;
+    const handleClickOutside = (e) => {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target)) {
+        setIsAccountMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setIsAccountMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isAccountMenuOpen]);
+
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [searchError, setSearchError] = useState("");
@@ -1664,6 +1837,68 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       setToastMessage(null);
     }, duration);
   }, []);
+
+  // Sleep Timer countdown loop
+  useEffect(() => {
+    if (sleepTimerRemaining === null || sleepTimerRemaining <= 0) return;
+    const interval = setInterval(() => {
+      setSleepTimerRemaining(prev => {
+        if (prev === null) return null;
+        if (prev <= 1) {
+          clearInterval(interval);
+          if (playerRef.current && typeof playerRef.current.pauseVideo === 'function') {
+            try { playerRef.current.pauseVideo(); } catch (e) {}
+          }
+          setIsPlaying(false);
+          showToast('Sleep timer reached. Music paused.');
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [sleepTimerRemaining, showToast]);
+
+  const handleCyclePlaybackSpeed = () => {
+    const speeds = [0.75, 1, 1.25, 1.5, 2];
+    const currentIndex = speeds.indexOf(playbackSpeed);
+    const nextSpeed = speeds[(currentIndex + 1) % speeds.length];
+    setPlaybackSpeed(nextSpeed);
+    try {
+      if (playerRef.current?.setPlaybackRate) {
+        playerRef.current.setPlaybackRate(nextSpeed);
+      }
+    } catch (e) {}
+    showToast(`Playback speed: ${nextSpeed}x`);
+  };
+
+  const handleToggleMute = () => {
+    setIsMuted(prev => {
+      const next = !prev;
+      try {
+        if (next) {
+          playerRef.current?.mute?.();
+        } else {
+          playerRef.current?.unMute?.();
+        }
+      } catch (e) {}
+      return next;
+    });
+  };
+
+  const handleShareTrack = (track = currentSong) => {
+    if (!track) return;
+    const shareUrl = `${window.location.origin}?track=${encodeURIComponent(track.id || track.videoId || '')}`;
+    const shareTitle = `${track.title} - Loopra`;
+    const shareText = `Listen to "${track.title}" by ${track.channel || track.artist || 'Loopra'} on Loopra!`;
+    if (navigator.share) {
+      navigator.share({ title: shareTitle, text: shareText, url: shareUrl }).catch(() => {});
+    } else {
+      navigator.clipboard?.writeText(shareUrl);
+      showToast('Track link copied to clipboard!');
+    }
+  };
+
 
   const [clockString, setClockString] = useState("");
   const [activeUsersCount, setActiveUsersCount] = useState(742);
@@ -1752,6 +1987,51 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
     }
   }, [authToken, user]);
+
+  // Meaningful listening tracker (threshold >= 30s)
+  useEffect(() => {
+    activeListeningDurationRef.current = 0;
+    hasLoggedListenForCurrentSongRef.current = false;
+  }, [currentSong?.id]);
+
+  useEffect(() => {
+    if (!isPlaying || !currentSong) return;
+    const interval = setInterval(() => {
+      activeListeningDurationRef.current += 1;
+      // Increment aggregate listening time
+      listeningStatsService.recordListeningTime(1);
+
+      // Once user listens for at least 30 seconds, record as a valid play and broadcast activity
+      if (activeListeningDurationRef.current >= 30 && !hasLoggedListenForCurrentSongRef.current) {
+        hasLoggedListenForCurrentSongRef.current = true;
+        listeningStatsService.recordPlay(currentSong, activeListeningDurationRef.current);
+
+        // Social Listening Activity Feed logging (only for genuine 30s+ plays)
+        if (authToken) {
+          try {
+            fetch(getApiUrl('/api/activity/log'), {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+              },
+              body: JSON.stringify({
+                type: 'listen',
+                track: {
+                  id: currentSong?.id || currentSong?.videoId,
+                  videoId: currentSong?.id || currentSong?.videoId,
+                  title: currentSong?.title || 'Unknown Track',
+                  artist: currentSong?.artist || currentSong?.channel || 'Unknown Artist',
+                  albumArt: getCleanThumbnail(currentSong)
+                }
+              })
+            }).catch(() => {});
+          } catch (e) {}
+        }
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isPlaying, currentSong, authToken]);
 
   const openAuthModal = useCallback(() => {
     if (isPlaying) {
@@ -2397,7 +2677,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         setCurrentBgIndex(prev => (prev + 1) % station.bgImages.length);
       }
     }
-  }, [activeTab, currentSong, stationsMap]);
+  }, [activeTab, currentSong, stationsMap, authToken]);
 
   const handleNextSong = useCallback(() => {
     if (!queue || queue.length === 0) return;
@@ -2467,40 +2747,54 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   };
 
   useEffect(() => {
-    if ('mediaSession' in navigator && currentSong) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: currentSong.title,
-        artist: currentSong.channel || "Loopra",
-        album: "Live Music Stream",
-        artwork: [
-          { src: currentSong.thumbnail, sizes: '96x96', type: 'image/jpeg' },
-          { src: currentSong.thumbnail, sizes: '128x128', type: 'image/jpeg' },
-          { src: currentSong.thumbnail, sizes: '192x192', type: 'image/jpeg' },
-          { src: currentSong.thumbnail, sizes: '512x512', type: 'image/jpeg' },
-        ]
-      });
+    if (typeof window !== 'undefined' && 'mediaSession' in navigator && currentSong) {
+      try {
+        const rawArtwork = currentSong.thumbnail || currentSong.image || '/loopra-logo.png';
+        const artworkUrl = typeof rawArtwork === 'string' && rawArtwork.trim() ? rawArtwork.trim() : '/loopra-logo.png';
+        const absoluteArtworkUrl = artworkUrl.startsWith('http') || artworkUrl.startsWith('blob:')
+          ? artworkUrl
+          : `${window.location.origin}${artworkUrl.startsWith('/') ? '' : '/'}${artworkUrl}`;
 
-      navigator.mediaSession.setActionHandler('play', () => {
-        if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
-        playerRef.current?.playVideo?.();
-        setIsPlaying(true);
-      });
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: currentSong.title || 'Playing Track',
+          artist: currentSong.artist || currentSong.channel || cmsConfig?.branding?.siteName || "Loopra",
+          album: currentSong.album || "Live Music Stream",
+          artwork: absoluteArtworkUrl ? [
+            { src: absoluteArtworkUrl, sizes: '96x96', type: 'image/png' },
+            { src: absoluteArtworkUrl, sizes: '128x128', type: 'image/png' },
+            { src: absoluteArtworkUrl, sizes: '192x192', type: 'image/png' },
+            { src: absoluteArtworkUrl, sizes: '512x512', type: 'image/png' },
+          ] : []
+        });
+      } catch (err) {
+        console.warn('[MediaSession] Error setting metadata:', err);
+      }
 
-      navigator.mediaSession.setActionHandler('pause', () => {
-        playerRef.current?.pauseVideo?.();
-        if (silentAudioRef.current) silentAudioRef.current.pause();
-        setIsPlaying(false);
-      });
+      try {
+        navigator.mediaSession.setActionHandler('play', () => {
+          if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
+          playerRef.current?.playVideo?.();
+          setIsPlaying(true);
+        });
 
-      navigator.mediaSession.setActionHandler('previoustrack', handlePrevSong);
-      navigator.mediaSession.setActionHandler('nexttrack', handleNextSong);
+        navigator.mediaSession.setActionHandler('pause', () => {
+          playerRef.current?.pauseVideo?.();
+          if (silentAudioRef.current) silentAudioRef.current.pause();
+          setIsPlaying(false);
+        });
 
-      navigator.mediaSession.setActionHandler('seekto', (details) => {
-        if (details.seekTime !== undefined && playerRef.current?.seekTo) {
-          playerRef.current.seekTo(details.seekTime, true);
-          currentTimeRef.current = details.seekTime;
-        }
-      });
+        navigator.mediaSession.setActionHandler('previoustrack', handlePrevSong);
+        navigator.mediaSession.setActionHandler('nexttrack', handleNextSong);
+
+        navigator.mediaSession.setActionHandler('seekto', (details) => {
+          if (details.seekTime !== undefined && playerRef.current?.seekTo) {
+            playerRef.current.seekTo(details.seekTime, true);
+            currentTimeRef.current = details.seekTime;
+          }
+        });
+      } catch (handlerErr) {
+        console.warn('[MediaSession] Error registering handlers:', handlerErr);
+      }
     }
   }, [currentSong, handlePrevSong, handleNextSong]);
 
@@ -2713,6 +3007,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         }
 
         const audio = offlineAudioRef.current;
+        audioEqualizerService.attachToAudioElement(audio);
         audio.src = objectUrl;
         audio.volume = volume / 100;
         if (savedSeekTime > 0) {
@@ -2722,12 +3017,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         audio.onplay = () => {
           setIsPlaying(true);
           isInitialMountRef.current = false;
+          audioEqualizerService.resume();
         };
         audio.onpause = () => setIsPlaying(false);
         audio.onended = () => {
           const currentRepeat = isRepeatRef.current;
           if (currentRepeat === 'one' || currentRepeat === true) {
             audio.currentTime = 0;
+            audioEqualizerService.resume();
             audio.play().catch(() => {});
           } else {
             handleNextSongRef.current?.();
@@ -2740,7 +3037,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           getCurrentTime: () => offlineAudioRef.current ? offlineAudioRef.current.currentTime : 0,
           getDuration: () => offlineAudioRef.current ? (offlineAudioRef.current.duration || 0) : 0,
           seekTo: (sec) => { if (offlineAudioRef.current) offlineAudioRef.current.currentTime = sec; },
-          playVideo: () => offlineAudioRef.current?.play(),
+          playVideo: () => {
+            audioEqualizerService.resume();
+            return offlineAudioRef.current?.play();
+          },
           pauseVideo: () => offlineAudioRef.current?.pause(),
           stopVideo: () => {
             if (offlineAudioRef.current) {
@@ -2839,6 +3139,30 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       return;
     }
 
+    if (Array.isArray(station.tracks) && station.tracks.length > 0) {
+      const stationTracks = station.tracks.filter(t => !t.isHidden).map(t => ({
+        id: t.id || t.videoId,
+        youtubeId: t.videoId || t.id,
+        title: t.title || 'Untitled Track',
+        artist: t.artist || 'Unknown Artist',
+        album: t.album || station.title,
+        duration: t.duration || '3:30',
+        thumbnail: t.thumbnail || station.bgImages?.[0] || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=400&q=80',
+        url: t.url || `https://www.youtube.com/watch?v=${t.videoId || t.id}`
+      }));
+      if (stationTracks.length > 0) {
+        setSongs(stationTracks);
+        setStationCache(prev => ({
+          ...prev,
+          [stationKey]: { tracks: stationTracks }
+        }));
+        if (autoPlayIfEmpty && !currentSong) {
+          playSong(stationTracks[0]);
+        }
+        return;
+      }
+    }
+
     const curatedKey = stationKey === 'barber' ? 'saloon' : (stationKey === 'truck' ? 'horn' : (stationKey === 'pauwa' ? 'theka' : null));
     if (curatedKey && CURATED_STATION_TRACKS && CURATED_STATION_TRACKS[curatedKey]) {
       const curatedList = CURATED_STATION_TRACKS[curatedKey];
@@ -2901,6 +3225,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       return [...prev, activeTab];
     });
     setActiveTab(stationKey);
+    if (stationKey === 'downloads') {
+      setOfflineSubView('library');
+    }
     setCurrentBgIndex(0);
     setIsSidebarOpen(false);
 
@@ -3055,6 +3382,29 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       const isAlreadyLiked = prev.some(s => s.id === songId || (s.videoId && s.videoId === songId) || (song.videoId && s.id === song.videoId));
       showToast(isAlreadyLiked ? 'Removed from favourites' : 'Added to favourites');
       const normalizedSong = { ...song, id: songId, videoId: songId };
+
+      if (!isAlreadyLiked && authToken) {
+        try {
+          fetch(getApiUrl('/api/activity/log'), {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({
+              type: 'like',
+              track: {
+                id: songId,
+                videoId: songId,
+                title: song?.title || 'Unknown Track',
+                artist: song?.artist || song?.channel || 'Unknown Artist',
+                albumArt: getCleanThumbnail(song)
+              }
+            })
+          }).catch(() => {});
+        } catch (e) {}
+      }
+
       return isAlreadyLiked 
         ? prev.filter(s => s.id !== songId && (!s.videoId || s.videoId !== songId) && (!song.videoId || s.id !== song.videoId)) 
         : [normalizedSong, ...prev];
@@ -3089,6 +3439,25 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         localStorage.setItem('guest_playlists', JSON.stringify(updatedPlaylists));
       }
     } catch (e) {}
+
+    if (authToken) {
+      try {
+        fetch(getApiUrl('/api/activity/log'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            type: 'playlist_create',
+            playlist: {
+              id: newPlaylist.id,
+              name: newPlaylist.name
+            }
+          })
+        }).catch(() => {});
+      } catch (e) {}
+    }
     showToast(`Created playlist "${newPlaylistName.trim()}"`);
     setNewPlaylistName('');
     if (selectedSongForPlaylist) {
@@ -3342,8 +3711,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         } else {
           setSearchQuery('');
         }
+      } else if (path === '/downloads/explore' || path === '/downloads-explore') {
+        setActiveTab('downloads');
+        setOfflineSubView('explore');
       } else if (['/library', '/history', '/playlists', '/downloads', '/barber', '/truck', '/pauwa'].includes(path)) {
         setActiveTab(path.replace('/', ''));
+        if (path === '/downloads') {
+          setOfflineSubView('library');
+        }
       } else if (path === '/' || path === '') {
         setActiveTab('home');
       }
@@ -3355,19 +3730,124 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const currentStation = stationsMap[activeTab] || SPECIAL_STATIONS[activeTab];
   const currentBgImage = currentStation?.bgImages?.[currentBgIndex] || currentStation?.bgImages?.[0];
 
+  const isMaintenanceActive = Boolean(cmsConfig?.maintenance?.enabled);
+  const isBlockedByMaintenance = isMaintenanceActive && !isAdmin;
+
+  if (isBlockedByMaintenance) {
+    return (
+      <div className="h-[100dvh] bg-neutral-950 text-neutral-100 font-sans antialiased relative overflow-hidden">
+        <CmsMaintenanceOverlay
+          maintenance={cmsConfig?.maintenance}
+          branding={cmsConfig?.branding}
+          isAdmin={isAdmin}
+          onOpenAdmin={() => {
+            setActiveTab('admin');
+            window.history.pushState(null, '', '/admin');
+          }}
+          onOpenAuth={openAuthModal}
+        />
+
+        {showAuthModal && (
+          <div 
+            className="fixed inset-0 z-[110] bg-neutral-950/85 backdrop-blur-md flex items-center justify-center p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) closeAuthModal(false); }}
+          >
+            <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 md:p-8 w-full max-w-sm relative shadow-2xl">
+              <button onClick={() => closeAuthModal(false)} className="absolute top-4 right-4 text-neutral-500 hover:text-white transition">
+                <Icon name="close" className="w-6 h-6" />
+              </button>
+              <h2 className="text-2xl font-display font-extrabold tracking-tight text-white mb-2 text-center">
+                Administrator Sign In
+              </h2>
+              <p className="text-xs text-neutral-400 mb-6 text-center">
+                Sign in with authorized administrator credentials to manage the platform and bypass maintenance mode.
+              </p>
+              
+              {authError && (
+                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-2xl text-center">
+                  {authError}
+                </div>
+              )}
+              
+              <form onSubmit={handleAuth} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-neutral-400 mb-1.5">Admin Username</label>
+                  <input
+                    type="text"
+                    required
+                    autoComplete="username"
+                    value={authForm.username}
+                    onChange={(e) => setAuthForm({...authForm, username: e.target.value})}
+                    className="w-full px-4 py-3 rounded-2xl bg-neutral-900/50 backdrop-blur-lg border border-neutral-800 text-white text-sm focus:outline-none focus:border-amber-500 transition"
+                    placeholder="Enter admin username"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-neutral-400 mb-1.5">Admin Password</label>
+                  <input
+                    type="password"
+                    required
+                    autoComplete="current-password"
+                    value={authForm.password}
+                    onChange={(e) => setAuthForm({...authForm, password: e.target.value})}
+                    className="w-full px-4 py-3 rounded-2xl bg-neutral-900/50 backdrop-blur-lg border border-neutral-800 text-white text-sm focus:outline-none focus:border-amber-500 transition"
+                    placeholder="Enter admin password"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={authLoading}
+                  className="w-full py-3.5 mt-2 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white font-medium tracking-wide text-sm transition shadow-lg flex items-center justify-center disabled:opacity-50 cursor-pointer"
+                >
+                  {authLoading ? <Icon name="sparkles" className="w-5 h-5 animate-spin" /> : "Log In as Admin"}
+                </button>
+              </form>
+              
+              <div className="mt-6 flex items-center justify-center gap-4">
+                 <div className="h-px bg-neutral-800 flex-1"></div>
+                 <span className="text-xs text-neutral-500 font-medium">OR</span>
+                 <div className="h-px bg-neutral-800 flex-1"></div>
+              </div>
+              <div className="mt-6 flex justify-center">
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={() => setAuthError('Google Sign-In origin not authorized by client ID. Please use username and password login above.')}
+                  theme="filled_black"
+                  shape="rectangular"
+                  text="continue_with"
+                  size="large"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="h-[100dvh] bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative overflow-hidden">
-      {/* CMS Maintenance Overlay with Admin Bypass */}
-      <CmsMaintenanceOverlay
-        maintenance={cmsConfig?.maintenance}
-        branding={cmsConfig?.branding}
-        isAdmin={user?.role === 'admin'}
-        onOpenAdmin={() => {
-          setActiveTab('admin');
-          window.history.pushState(null, '', '/admin');
-        }}
-        onOpenAuth={openAuthModal}
-      />
+      {/* Admin Maintenance Bypass Banner */}
+      {isMaintenanceActive && isAdmin && (
+        <div className="fixed top-0 left-0 right-0 z-[90] bg-amber-500/20 backdrop-blur-md border-b border-amber-500/40 px-4 py-2 flex items-center justify-between text-xs text-amber-200 font-medium shadow-lg">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+            </span>
+            <span><strong>Maintenance Mode Active</strong> — Public access is blocked. You have administrator bypass privileges.</span>
+          </div>
+          <button
+            onClick={() => {
+              setActiveTab('admin');
+              window.history.pushState(null, '', '/admin');
+            }}
+            className="text-[11px] uppercase tracking-wider bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold px-2.5 py-1 rounded-lg transition shrink-0 cursor-pointer"
+          >
+            Manage in CMS
+          </button>
+        </div>
+      )}
 
       <StudioLoungeAtmosphere isPlaying={isPlaying} theme={cmsConfig?.theme} />
       
@@ -3471,9 +3951,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               {!isSidebarCollapsed && (
                 <>
                   <div className="w-10 h-10 rounded-2xl bg-neutral-900/80 border border-amber-500/30 p-1 flex items-center justify-center shadow-xl shrink-0 overflow-hidden">
-                    <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Loopra"} className="w-full h-full object-contain" />
+                    <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
                   </div>
-                  <h1 className="text-lg font-display font-extrabold tracking-tight tracking-wider text-white whitespace-nowrap">{cmsConfig?.branding?.siteName || 'LOOPRA'}</h1>
+                  {cmsConfig?.branding?.siteName ? (
+                    <h1 className="text-lg font-display font-extrabold tracking-tight tracking-wider text-white whitespace-nowrap">{cmsConfig.branding.siteName}</h1>
+                  ) : null}
                 </>
               )}
             </div>
@@ -3487,131 +3969,164 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
 
           <nav className="space-y-2">
-            <button
-              onClick={() => handleStationSelect('home')}
-              title="Home"
-              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
-                activeTab === 'home' ? 'bg-amber-600/20 text-white border border-amber-500/30' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
-              }`}
-            >
-              <Icon name="home" className="w-5 h-5 shrink-0 text-amber-400" />
-              {!isSidebarCollapsed && <span className="whitespace-nowrap">Home</span>}
-            </button>
+            {(() => {
+              const defaultNav = [
+                { id: 'home', label: 'Home', icon: 'home', group: 'main' },
+                { id: 'discover', label: 'Discover & Search', icon: 'discover', group: 'main' },
+                { id: 'mood', label: 'Mood-to-Music AI', icon: 'sparkles', badge: 'AI', group: 'discovery' },
+                { id: 'timemachine', label: 'Time Machine Radio', icon: 'radio', badge: 'Retro', group: 'discovery' },
+                { id: 'activity', label: 'Listening Activity', icon: 'flame', group: 'discovery' },
+                { id: 'swipe', label: 'Discover Swipe', icon: 'swipe', group: 'discovery' },
+                { id: 'barber', label: stationsMap?.barber?.title || 'Saloon FM', icon: 'scissors', badge: '90s', group: 'stations' },
+                { id: 'truck', label: stationsMap?.truck?.title || 'Horn Ok Please', icon: 'truck', badge: 'Dhaba', group: 'stations' },
+                { id: 'pauwa', label: stationsMap?.pauwa?.title || 'Theka Session', icon: 'beer', badge: 'Desi', group: 'stations' },
+                { id: 'library', label: 'Liked Songs Collection', icon: 'library', group: 'collection' },
+                { id: 'history', label: 'Listening History', icon: 'history', group: 'collection' },
+                { id: 'playlists', label: 'Playlists', icon: 'list', group: 'collection' },
+                { id: 'stats', label: 'Recap & Stats', icon: 'sparkles', group: 'collection' }
+              ];
 
-            <button
-              onClick={() => handleStationSelect('discover')}
-              title="Discover & Search"
-              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
-                activeTab === 'discover' ? 'bg-amber-600/20 text-white border border-amber-500/30' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
-              }`}
-            >
-              <Icon name="discover" className="w-5 h-5 shrink-0 text-amber-400" />
-              {!isSidebarCollapsed && <span className="whitespace-nowrap">Discover & Search</span>}
-            </button>
+              const canonicalGroup = (id, rawGroup) => {
+                if (['home', 'discover'].includes(id)) return 'main';
+                if (['mood', 'timemachine', 'activity', 'swipe'].includes(id)) return 'discovery';
+                if (['barber', 'truck', 'pauwa'].includes(id)) return 'stations';
+                if (['library', 'history', 'playlists', 'stats'].includes(id)) return 'collection';
+                return rawGroup || 'main';
+              };
 
-            {!isSidebarCollapsed ? (
-              <div className="pt-4 pb-1 px-3">
-                <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest whitespace-nowrap">Nostalgia Stations</p>
-              </div>
-            ) : <div className="h-4 border-b border-neutral-800/50 mb-4" />}
+              // Base nav from cmsConfig or defaultNav, strictly filtering out 'profile' and 'equalizer'
+              const rawNav = (Array.isArray(cmsConfig?.navigation) && cmsConfig.navigation.length > 0)
+                ? cmsConfig.navigation.filter(item => item && item.enabled !== false && item.id !== 'profile' && item.id !== 'equalizer')
+                : defaultNav;
 
-            <button
-              onClick={() => handleStationSelect('barber')}
-              title={stationsMap?.barber?.title || "Saloon FM"}
-              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
-                activeTab === 'barber' ? 'bg-red-600/25 text-red-200 border border-red-500/50 shadow-lg shadow-red-950/50' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
-              }`}
-            >
-              <Icon name="scissors" className="w-5 h-5 shrink-0 text-red-400" />
-              {!isSidebarCollapsed && <span className="whitespace-nowrap">{stationsMap?.barber?.title || "Saloon FM"}</span>}
-            </button>
+              // Build a map seeded with defaults so missing categories are always restored
+              const navMap = new Map();
+              defaultNav.forEach(def => {
+                navMap.set(def.id, { ...def });
+              });
 
-            <button
-              onClick={() => handleStationSelect('truck')}
-              title={stationsMap?.truck?.title || "Horn Ok Please"}
-              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
-                activeTab === 'truck' ? 'bg-amber-600/25 text-amber-200 border border-amber-500/50 shadow-lg shadow-amber-950/50' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
-              }`}
-            >
-              <Icon name="truck" className="w-5 h-5 shrink-0 text-amber-400" />
-              {!isSidebarCollapsed && <span className="whitespace-nowrap">{stationsMap?.truck?.title || "Horn Ok Please"}</span>}
-            </button>
+              rawNav.forEach(item => {
+                if (!item || !item.id || item.id === 'profile' || item.id === 'equalizer') return;
+                const existing = navMap.get(item.id);
+                const group = canonicalGroup(item.id, item.group || existing?.group);
+                navMap.set(item.id, {
+                  ...(existing || {}),
+                  ...item,
+                  group
+                });
+              });
 
-            <button
-              onClick={() => handleStationSelect('pauwa')}
-              title={stationsMap?.pauwa?.title || "Theka Session"}
-              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
-                activeTab === 'pauwa' ? 'bg-amber-600/25 text-emerald-200 border border-orange-500/50 shadow-lg shadow-amber-950/50' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
-              }`}
-            >
-              <Icon name="beer" className="w-5 h-5 shrink-0 text-orange-400" />
-              {!isSidebarCollapsed && <span className="whitespace-nowrap">{stationsMap?.pauwa?.title || "Theka Session"}</span>}
-            </button>
+              // Discover any custom stations configured in cmsConfig.stations that aren't already in navigation
+              const extraStations = (Array.isArray(cmsConfig?.stations) ? cmsConfig.stations : [])
+                .filter(st => st && st.id && !navMap.has(st.id) && st.isActive !== false && st.enabled !== false)
+                .map(st => ({
+                  id: st.id,
+                  label: st.title || st.name || st.id,
+                  icon: st.icon || 'radio',
+                  badge: st.badge,
+                  group: 'stations',
+                  route: `/${st.id}`
+                }));
 
-            {!isSidebarCollapsed ? (
-              <div className="pt-4 pb-1 px-3">
-                <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest whitespace-nowrap">Your Collection</p>
-              </div>
-            ) : <div className="h-4 border-b border-neutral-800/50 mb-4" />}
+              extraStations.forEach(st => {
+                navMap.set(st.id, st);
+              });
 
-            <button
-              onClick={() => handleStationSelect('library')}
-              title="Liked Songs"
-              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
-                activeTab === 'library' ? 'bg-amber-600/20 text-white border border-amber-500/30' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
-              }`}
-            >
-              <Icon name="library" className="w-5 h-5 shrink-0 text-neutral-400" />
-              {!isSidebarCollapsed && <span className="whitespace-nowrap">Liked Songs</span>}
-            </button>
+              const allItems = Array.from(navMap.values());
+              const groups = [
+                { key: 'main', title: null },
+                { key: 'discovery', title: 'AI & DISCOVERY' },
+                { key: 'stations', title: 'NOSTALGIA STATIONS' },
+                { key: 'collection', title: 'YOUR COLLECTION' }
+              ];
 
-            <button
-              onClick={() => handleStationSelect('history')}
-              title="History"
-              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
-                activeTab === 'history' ? 'bg-amber-600/20 text-white border border-amber-500/30' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
-              }`}
-            >
-              <Icon name="history" className="w-5 h-5 shrink-0 text-pink-400" />
-              {!isSidebarCollapsed && <span className="whitespace-nowrap">History</span>}
-            </button>
-            <button
-              onClick={() => { handleStationSelect('playlists'); setSelectedPlaylistForView(null); }}
-              title="Playlists"
-              className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
-                activeTab === 'playlists' ? 'bg-amber-600/20 text-white border border-amber-500/30' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
-              }`}
-            >
-              <Icon name="list" className="w-5 h-5 shrink-0 text-amber-400" />
-              {!isSidebarCollapsed && <span className="whitespace-nowrap">Playlists</span>}
-            </button>
+              return groups.map(grp => {
+                const groupItems = allItems.filter(item => {
+                  if (item.id === 'profile') return false;
+                  return (item.group || 'main') === grp.key;
+                });
 
-            <button
-              onClick={() => handleStationSelect('downloads')}
-              title="Downloads & Offline Library"
-              className={`w-full flex items-center justify-between ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-medium text-xs transition ${
-                activeTab === 'downloads' ? 'bg-amber-600/20 text-white border border-amber-500/30' : 'text-neutral-400 hover:bg-neutral-800 active:scale-[0.98]/50'
-              }`}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <Icon name="download" className="w-5 h-5 shrink-0 text-emerald-400" />
-                {!isSidebarCollapsed && <span className="whitespace-nowrap">Downloads</span>}
-              </div>
-              {!isSidebarCollapsed && offlineCount > 0 && (
-                <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
-                  {offlineCount}
-                </span>
-              )}
-            </button>
+                if (groupItems.length === 0) return null;
 
-            {isAdmin && (
+                return (
+                  <div key={grp.key} className="space-y-1">
+                    {grp.title && (
+                      !isSidebarCollapsed ? (
+                        <div className="pt-3 pb-1 px-3">
+                          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest whitespace-nowrap">
+                            {grp.title}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="h-4 border-b border-neutral-800/50 mb-2" />
+                      )
+                    )}
+
+                    {groupItems.map(item => {
+                      const itemKey = item.id || item.route?.replace(/^\//, '');
+                      const isActive = item.id === 'stats'
+                        ? isStatsOpen
+                        : (activeTab === item.id || activeTab === itemKey);
+
+                      // Display label: if it's a station, use station's updated title if available; format collections
+                      let displayLabel = stationsMap?.[item.id]?.title || item.label;
+                      if (item.id === 'library' && (displayLabel === 'Liked Songs' || !displayLabel)) {
+                        displayLabel = 'Liked Songs Collection';
+                      } else if (item.id === 'history' && (displayLabel === 'History' || !displayLabel)) {
+                        displayLabel = 'Listening History';
+                      }
+
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => {
+                            if (item.id === 'stats') {
+                              setIsStatsOpen(true);
+                            } else if (item.id === 'playlists') {
+                              handleStationSelect('playlists');
+                              setSelectedPlaylistForView(null);
+                            } else if (item.id === 'admin') {
+                              handleStationSelect('admin');
+                              window.history.pushState({ tab: 'admin' }, '', '/admin');
+                            } else {
+                              handleStationSelect(item.id);
+                            }
+                            setIsSidebarOpen(false);
+                          }}
+                          title={displayLabel}
+                          className={`w-full flex items-center ${
+                            isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'
+                          } rounded-2xl font-medium text-xs transition cursor-pointer ${
+                            isActive
+                              ? 'bg-amber-600/25 text-amber-200 border border-amber-500/50 shadow-lg shadow-amber-950/50'
+                              : 'text-neutral-400 hover:bg-neutral-800 hover:text-white active:scale-[0.98]/50'
+                          }`}
+                        >
+                          <Icon name={item.icon || 'music'} className="w-5 h-5 shrink-0 text-amber-400" />
+                          {!isSidebarCollapsed && (
+                            <span className="whitespace-nowrap truncate">{displayLabel}</span>
+                          )}
+                          {!isSidebarCollapsed && item.badge && (
+                            <span className="ml-auto text-[9px] font-bold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded-full border border-amber-500/20 shrink-0">
+                              {item.badge}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              });
+            })()}
+
+            {isAdmin && !cmsConfig?.navigation?.some(n => n.id === 'admin' && n.enabled !== false) && (
               <button
                 onClick={() => {
                   handleStationSelect('admin');
-                  window.history.pushState(null, '', '/admin');
+                  window.history.pushState({ tab: 'admin' }, '', '/admin');
                 }}
                 title="Admin Dashboard"
-                className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-semibold text-xs transition ${
+                className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-semibold text-xs transition cursor-pointer ${
                   activeTab === 'admin' ? 'bg-amber-500 text-neutral-950 font-bold shadow-lg shadow-amber-500/30' : 'text-amber-400 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20'
                 }`}
               >
@@ -3619,7 +4134,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 {!isSidebarCollapsed && <span className="whitespace-nowrap">Admin Dashboard</span>}
               </button>
             )}
-            
+
             {/* Mobile Auth Button in Sidebar */}
             <div className="md:hidden pt-4 pb-1 border-t border-neutral-800 mt-4">
               {user ? (
@@ -3665,9 +4180,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             </button>
             <div className="flex md:hidden items-center gap-1.5 sm:gap-2">
               <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow-md overflow-hidden">
-                <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Loopra"} className="w-full h-full object-contain" />
+                <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
               </div>
-              <h1 className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white">{cmsConfig?.branding?.siteName || "LOOPRA"}</h1>
+              {cmsConfig?.branding?.siteName ? (
+                <h1 className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white">{cmsConfig.branding.siteName}</h1>
+              ) : null}
             </div>
 
             {/* Desktop Clock */}
@@ -3699,32 +4216,133 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             </button>
             
             {user ? (
-              <>
+              <div className="flex items-center gap-2 relative" ref={accountMenuRef}>
                 {isAdmin && (
                   <button
                     onClick={() => {
                       setActiveTab('admin');
-                      window.history.pushState(null, '', '/admin');
+                      window.history.pushState({ tab: 'admin' }, '', '/admin');
                     }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-semibold tracking-wide text-xs border border-amber-500/40 shadow-lg transition shrink-0"
-                    title="Admin Dashboard"
+                    aria-label="Open Admin Dashboard"
+                    title="Open Admin Dashboard"
+                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/40 hover:border-amber-400 shadow-md shadow-amber-950/40 hover:shadow-amber-500/20 active:scale-95 transition-all shrink-0 cursor-pointer"
                   >
-                    <Icon name="shield" className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <span className="hidden sm:inline">Admin</span>
+                    <Icon name="shield" className="w-4 h-4 text-amber-400" />
                   </button>
                 )}
+
+                {/* Compact Profile Avatar Button */}
                 <button
-                  onClick={logout}
-                  className="flex items-center gap-2 pr-2.5 pl-1 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0 border border-neutral-700"
-                  title="Logout"
+                  type="button"
+                  onClick={() => setIsAccountMenuOpen(prev => !prev)}
+                  aria-label="User Account Menu"
+                  aria-expanded={isAccountMenuOpen}
+                  title={user.displayName || user.username || "Account"}
+                  className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center relative overflow-hidden transition-all cursor-pointer focus:outline-none ${
+                    isAccountMenuOpen
+                      ? 'ring-2 ring-amber-400 border-transparent shadow-lg shadow-amber-500/20'
+                      : 'border border-amber-500/40 hover:border-amber-400 hover:ring-2 hover:ring-amber-400/40'
+                  }`}
                 >
-                <div className="w-6 h-6 rounded-full bg-neutral-950 text-white flex items-center justify-center font-extrabold uppercase text-xs border border-neutral-700">
-                  {user.username ? user.username.charAt(0).toUpperCase() : 'U'}
-                </div>
-                <span className="hidden sm:inline">Logout</span>
-              </button>
-            </>
-          ) : (
+                  {user.avatarUrl ? (
+                    <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-amber-500 to-amber-600 text-neutral-950 font-extrabold text-xs sm:text-sm flex items-center justify-center shadow-inner">
+                      {(user.username || user.email || 'U').charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                </button>
+
+                {/* Account Dropdown Menu */}
+                {isAccountMenuOpen && (
+                  <div
+                    role="menu"
+                    className="absolute right-0 top-full mt-2 w-64 bg-neutral-900/95 backdrop-blur-2xl border border-neutral-700/80 rounded-2xl shadow-2xl p-2 z-50 text-neutral-200 animate-in fade-in zoom-in-95 duration-150 origin-top-right space-y-1"
+                  >
+                    {/* User Info Header */}
+                    <div className="px-3 py-2.5 bg-neutral-950/60 rounded-xl border border-neutral-800/80 mb-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-white truncate">
+                          {user.displayName || user.username || 'User'}
+                        </span>
+                        <span className={`text-[10px] uppercase font-mono font-bold px-2 py-0.5 rounded-full border ${
+                          isAdmin 
+                            ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' 
+                            : 'bg-neutral-800 text-neutral-300 border-neutral-700'
+                        }`}>
+                          {isAdmin ? 'Admin' : 'Member'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 truncate mt-0.5 font-mono">
+                        {user.email || user.username}
+                      </p>
+                    </div>
+
+                    {/* Navigation Links */}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setIsProfileOpen(true);
+                        setIsAccountMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800/80 transition cursor-pointer text-left"
+                    >
+                      <Icon name="user" className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>My Profile</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setIsStatsOpen(true);
+                        setIsAccountMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800/80 transition cursor-pointer text-left"
+                    >
+                      <Icon name="sparkles" className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>Listening Recap & Stats</span>
+                    </button>
+
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setActiveTab('admin');
+                          window.history.pushState({ tab: 'admin' }, '', '/admin');
+                          setIsAccountMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-amber-300 hover:bg-amber-500/10 transition cursor-pointer text-left border border-amber-500/20"
+                      >
+                        <Icon name="shield" className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span>Admin Dashboard</span>
+                      </button>
+                    )}
+
+                    {/* Divider */}
+                    <div className="h-px bg-neutral-800 my-1" />
+
+                    {/* Logout Button */}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        logout();
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition cursor-pointer text-left"
+                    >
+                      <svg className="w-4 h-4 text-red-400 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                      </svg>
+                      <span>Log Out</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
               <button
                 onClick={() => {
                   if (isPlaying) {
@@ -3749,7 +4367,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         {/* Site-wide CMS Announcement Bar */}
         <CmsAnnouncementBar announcement={cmsConfig?.announcement} />
 
-        <main ref={mainScrollRef} onScroll={(e) => { if (activeTab === 'home') setIsHomeScrolled(e.currentTarget.scrollTop > 320); }} className={`flex-1 h-full min-h-0 overflow-y-auto px-2.5 py-3 sm:px-4 sm:py-4 md:p-8 bg-neutral-950 box-border relative w-full transition-all duration-300 ${isBottomPlayerVisible ? 'pb-24 md:pb-28' : 'pb-8'}`}>
+        <main ref={mainScrollRef} onScroll={(e) => { if (activeTab === 'home') setIsHomeScrolled(e.currentTarget.scrollTop > 320); }} className={`flex-1 h-full min-h-0 overflow-y-auto px-2.5 py-3 sm:px-4 sm:py-4 md:p-8 bg-neutral-950 box-border relative w-full transition-all duration-300 ${isBottomPlayerVisible ? 'pb-44 md:pb-28' : 'pb-24 md:pb-8'}`}>
           {currentStation && currentBgImage && (
             <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden transition-all duration-700">
               <img 
@@ -3804,6 +4422,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   fetchYouTubeMusic(trimmed);
                 }}
                 onSelectSong={playSong}
+                onPlaySong={playSong}
                 placeholder={cmsConfig?.searchPage?.placeholder || "Search song, artist, or album..."}
                 showQuickTags={false}
                 user={user}
@@ -3985,6 +4604,25 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
         )}
 
+        {activeTab === 'swipe' && (
+          <div className="max-w-2xl mx-auto space-y-6 relative z-10 py-2 sm:py-4">
+            <DiscoverSwipe
+              onPlaySong={playSong}
+              currentSong={currentSong}
+              isPlaying={isPlaying}
+              likedSongs={likedSongs}
+              onToggleLike={toggleLike}
+              showToast={showToast}
+              fetchTracks={async () => {
+                const pool = [...(trendingSongs || []), ...(TRENDING_SONGS || [])];
+                return pool.sort(() => 0.5 - Math.random());
+              }}
+            />
+            <DisclaimerFooter footer={cmsConfig?.footer} />
+          </div>
+        )}
+
+
 
         {activeTab === 'home' && (
           <div className="max-w-7xl mx-auto px-0 md:px-4 pt-1 md:pt-6 space-y-6 md:space-y-10 w-full min-w-0">
@@ -4002,10 +4640,35 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               }}
             />
 
+            {/* Continue Listening Banner (Resume unfinished audio >5s) */}
+            {(() => {
+              const savedSongRaw = localStorage.getItem('afterhours_current_song');
+              const savedTimeRaw = parseFloat(localStorage.getItem('afterhours_current_time') || '0');
+              const savedDurRaw = parseFloat(localStorage.getItem('afterhours_duration') || '0');
+              if (savedSongRaw && savedTimeRaw > 5 && (!savedDurRaw || savedTimeRaw / savedDurRaw < 0.95)) {
+                try {
+                  const saved = JSON.parse(savedSongRaw);
+                  return (
+                    <ContinueListeningBanner
+                      savedSong={saved}
+                      savedTime={savedTimeRaw}
+                      onResume={() => playSong(saved, savedTimeRaw)}
+                      onDismiss={() => {
+                        localStorage.removeItem('afterhours_current_song');
+                        localStorage.removeItem('afterhours_current_time');
+                      }}
+                    />
+                  );
+                } catch (e) {}
+              }
+              return null;
+            })()}
+
             {/* Prominent 3D Home Search Bar */}
             <HomeSearchBar 
               onSearch={handleSearchFromHome}
               onSelectSong={playSong}
+              onPlaySong={playSong}
               placeholder={cmsConfig?.searchPage?.placeholder || "Search songs, artists, albums..."}
               suggestions={cmsConfig?.searchPage?.quickTags}
               showQuickTags={true}
@@ -4106,6 +4769,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                           <Icon name="list" className="w-4 h-4 text-amber-400 shrink-0" />
                           <span>Queue ({queue.length})</span>
                         </button>
+
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsEqualizerOpen(true);
+                          }}
+                          className="px-4 sm:px-5 py-2.5 sm:py-3 min-h-[48px] sm:min-h-[52px] rounded-2xl bg-neutral-800/90 hover:bg-neutral-700 active:scale-95 text-neutral-200 hover:text-white font-semibold text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-2 shadow-lg cursor-pointer shrink-0"
+                          title="10-Band Graphic Equalizer"
+                          aria-label="Open 10-Band Graphic Equalizer"
+                        >
+                          <Icon name="sliders" className="w-4 h-4 text-amber-400 shrink-0" />
+                          <span>Equalizer</span>
+                        </button>
                       </>
                     ) : (
                       <>
@@ -4146,12 +4822,36 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                           <Icon name="list" className="w-4 h-4 text-amber-400 shrink-0" />
                           <span>Queue ({queue.length})</span>
                         </button>
+
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsEqualizerOpen(true);
+                          }}
+                          className="px-4 sm:px-5 py-2.5 sm:py-3 min-h-[48px] sm:min-h-[52px] rounded-2xl bg-neutral-800/90 hover:bg-neutral-700 active:scale-95 text-neutral-200 hover:text-white font-semibold text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-2 shadow-lg cursor-pointer shrink-0"
+                          title="10-Band Graphic Equalizer"
+                          aria-label="Open 10-Band Graphic Equalizer"
+                        >
+                          <Icon name="sliders" className="w-4 h-4 text-amber-400 shrink-0" />
+                          <span>Equalizer</span>
+                        </button>
                       </>
                     )}
                   </div>
                 </div>
               </div>
             </div>
+
+            {/* Smart Personalized Recommendations Row */}
+            <RecommendedRow
+              likedSongs={likedSongs}
+              history={history}
+              availableTracks={[...(trendingSongs || []), ...(TRENDING_SONGS || [])]}
+              onPlaySong={playSong}
+              currentSong={currentSong}
+              isPlaying={isPlaying}
+              onOpenVideo={handleOpenVideo}
+            />
 
             {/* Dynamic Homepage Sections from CMS Configuration */}
             {(() => {
@@ -4299,7 +4999,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
         )}
 
-        {['barber', 'truck', 'pauwa'].includes(activeTab) && currentStation && (
+        {Boolean(currentStation && activeTab !== 'home') && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
             <div className="p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl border border-neutral-700/50 relative overflow-hidden shadow-2xl backdrop-blur-md bg-neutral-900/40 w-full min-w-0">
               <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
@@ -4470,24 +5170,41 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
         {activeTab === 'history' && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">Listening History</h2>
-              {history.length > 0 && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">Listening History</h2>
+                <p className="text-xs text-neutral-400 mt-0.5">Your recently played tracks and listening log</p>
+              </div>
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={clearHistory}
-                  className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 transition"
-                  title="Clear Listening History"
+                  onClick={() => setIsStatsOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-semibold transition shadow-sm cursor-pointer active:scale-95"
+                  title="View Weekly Recap & Statistics"
                 >
-                  <Icon name="trash" className="w-3.5 h-3.5" />
-                  <span>Clear History</span>
+                  <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Weekly Recap & Stats</span>
                 </button>
-              )}
+                {history.length > 0 && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm("Are you sure you want to clear your entire listening history?")) {
+                        clearHistory();
+                      }
+                    }}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-2xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs transition cursor-pointer active:scale-95"
+                    title="Clear Listening History"
+                  >
+                    <Icon name="trash" className="w-3.5 h-3.5" />
+                    <span>Clear All</span>
+                  </button>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-1 gap-2">
               {history.length === 0 ? (
                 <p className="text-xs text-neutral-500">No history available.</p>
               ) : (
-                history.map((track, i) => {
+                history.slice(0, historyPageLimit).map((track, i) => {
                   const isMenuOpen = openMenuId === `${track.id}-${i}`;
                   return (
                     <div key={track.id + i} onClick={() => playSong(track)} className={`p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition relative ${isMenuOpen ? 'z-30' : 'z-auto'}`}>
@@ -4495,25 +5212,36 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => handleImageError(e, track.title, track.id)} />
                         <div className="min-w-0">
                           <h4 className="font-bold text-xs text-white truncate">{track.title}</h4>
-                          <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
+                          <p className="text-[10px] text-neutral-400 truncate">{track.channel || track.artist}</p>
                         </div>
                       </div>
                       <div className={`flex items-center gap-1.5 relative ${isMenuOpen ? 'z-40' : ''}`}>
                         <button
                           onClick={(e) => handleOpenVideo(track, e)}
-                          className="p-1.5 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center text-[10px] shrink-0"
+                          className="p-1.5 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center text-[10px] shrink-0 cursor-pointer"
                         >
                           <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
                         </button>
                         <div className="relative">
-                          <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); }} className="p-1.5 rounded-2xl hover:bg-white/10 text-neutral-400 transition flex items-center shrink-0">
+                          <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); }} className="p-1.5 rounded-2xl hover:bg-white/10 text-neutral-400 transition flex items-center shrink-0 cursor-pointer">
                             <Icon name="moreVertical" className="w-4 h-4 shrink-0" />
                           </button>
                           {isMenuOpen && (
-                            <div className="absolute right-0 top-full mt-1.5 w-44 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
+                            <div className="absolute right-0 top-full mt-1.5 w-48 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
                               <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
                               <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
                               <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setHistory(prev => prev.filter((_, idx) => idx !== i));
+                                  setOpenMenuId(null);
+                                  showToast("Removed from history");
+                                }}
+                                className="w-full text-left px-4 py-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-neutral-800 transition"
+                              >
+                                Remove from History
+                              </button>
                               <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
                             </div>
                           )}
@@ -4524,9 +5252,22 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 })
               )}
             </div>
+
+            {history.length > historyPageLimit && (
+              <div className="text-center pt-2">
+                <button
+                  onClick={() => setHistoryPageLimit(prev => prev + 15)}
+                  className="px-5 py-2.5 rounded-2xl bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-amber-300 border border-neutral-700/80 transition cursor-pointer"
+                >
+                  Load More History ({history.length - historyPageLimit} remaining)
+                </button>
+              </div>
+            )}
+
             <DisclaimerFooter footer={cmsConfig?.footer} />
           </div>
         )}
+
         {activeTab === 'playlists' && (
           <div className="max-w-4xl mx-auto space-y-6 relative z-10">
             {!selectedPlaylistForView ? (
@@ -4639,17 +5380,92 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
         {activeTab === 'downloads' && (
           <div className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
-            <OfflineLibraryView
-              onPlayTrack={(track, list) => {
-                playSong(track, list || [track]);
-              }}
+            {offlineSubView === 'explore' ? (
+              <OfflineEligibleExploreView
+                onBack={() => {
+                  setOfflineSubView('library');
+                  window.history.pushState(null, '', '/downloads');
+                }}
+                onPlayTrack={(track, list) => {
+                  playSong(track, list || [track]);
+                }}
+                currentSong={currentSong}
+                isPlaying={isPlaying}
+                showToast={showToast}
+                backendUrl={BACKEND_URL}
+              />
+            ) : (
+              <OfflineLibraryView
+                onPlayTrack={(track, list) => {
+                  playSong(track, list || [track]);
+                }}
+                currentSong={currentSong}
+                isPlaying={isPlaying}
+                showToast={showToast}
+                onExploreAuthorizedTracks={() => {
+                  setOfflineSubView('explore');
+                  window.history.pushState(null, '', '/downloads/explore');
+                }}
+              />
+            )}
+            <DisclaimerFooter footer={cmsConfig?.footer} />
+          </div>
+        )}
+
+        {activeTab === 'mood' && (
+          <div className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+            <MoodToMusicSection
+              onPlaySong={playSong}
+              onAddToQueue={(track) => addToQueue(track)}
+              onToggleFavorite={toggleLike}
+              favorites={likedSongs}
               currentSong={currentSong}
               isPlaying={isPlaying}
-              showToast={showToast}
-              onExploreAuthorizedTracks={() => {
-                setActiveTab('home');
-                window.history.pushState(null, '', '/');
+              user={user}
+              token={authToken}
+              backendUrl={BACKEND_URL}
+              onSavePlaylist={(name, playlistTracks) => {
+                const newPlaylist = {
+                  id: Date.now().toString(),
+                  name,
+                  songs: playlistTracks
+                };
+                setPlaylists(prev => [...prev, newPlaylist]);
+                showToast(`Saved mood playlist "${name}" (${playlistTracks.length} tracks)`);
               }}
+            />
+            <DisclaimerFooter footer={cmsConfig?.footer} />
+          </div>
+        )}
+
+        {activeTab === 'timemachine' && (
+          <div className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+            <TimeMachineRadio
+              cmsConfig={cmsConfig}
+              onPlaySong={playSong}
+              onAddToQueue={(track) => addToQueue(track)}
+              onToggleFavorite={toggleLike}
+              favorites={likedSongs}
+              currentSong={currentSong}
+              isPlaying={isPlaying}
+              backendUrl={BACKEND_URL}
+            />
+            <DisclaimerFooter footer={cmsConfig?.footer} />
+          </div>
+        )}
+
+        {activeTab === 'activity' && (
+          <div className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+            <ActivityFeed
+              user={user}
+              token={authToken}
+              onPlaySong={playSong}
+              onAddToQueue={(track) => addToQueue(track)}
+              onToggleFavorite={toggleLike}
+              favorites={likedSongs}
+              currentSong={currentSong}
+              isPlaying={isPlaying}
+              backendUrl={BACKEND_URL}
             />
             <DisclaimerFooter footer={cmsConfig?.footer} />
           </div>
@@ -4696,39 +5512,39 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           role="region"
           aria-label="Audio player mini bar"
           onClick={() => handleOpenExpandedPlayer('player')}
-          className={`fixed z-40 transition-all duration-300 ease-in-out select-none ${showQueuePanel ? 'hidden' : 'block'}
-            bottom-[max(0.5rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2
+          className={`fixed z-40 transition-all duration-300 ease-in-out select-none cursor-pointer ${showQueuePanel ? 'hidden' : 'block'}
+            bottom-[calc(3.75rem+max(0.5rem,env(safe-area-inset-bottom)))] left-1/2 -translate-x-1/2
             rounded-2xl border border-amber-500/30 hover:border-amber-500/50 bg-neutral-950/95 backdrop-blur-2xl
             shadow-[0_10px_35px_rgba(0,0,0,0.8),0_0_20px_rgba(var(--accent-rgb,245,158,11),0.06)]
-            py-2 px-3 cursor-pointer
-            w-[calc(100%-1rem)] max-w-xl
+            py-2 px-3
+            ${isMiniPlayerExpanded ? 'w-[calc(100%-1rem)] max-w-xl' : 'w-[calc(100%-1.75rem)] max-w-sm sm:max-w-md'}
             md:bottom-0 md:right-0 md:translate-x-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'}
             md:w-auto md:max-w-none md:rounded-none md:border-t md:border-x-0 md:border-b-0 md:border-amber-500/20 md:bg-neutral-950/95 md:py-3 md:px-6 md:shadow-[0_-10px_35px_rgba(0,0,0,0.8),0_0_20px_rgba(var(--accent-rgb,245,158,11),0.06)]`}
         >
-          {/* Quick Expand/Collapse Pill for Mobile */}
+          {/* Quick Horizontal Expand/Collapse Pill for Mobile */}
           <div className="md:hidden absolute -top-3.5 right-3 z-50 shrink-0 pointer-events-auto">
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                if (showQueuePanel) {
-                  setShowQueuePanel(false);
-                } else {
-                  handleOpenExpandedPlayer('player');
-                }
+                setIsMiniPlayerExpanded(prev => !prev);
               }}
               className="px-2.5 py-0.5 rounded-full bg-neutral-900/95 hover:bg-neutral-800 border border-amber-500/40 text-amber-400 text-[10px] font-bold shadow-lg flex items-center gap-1 transition shrink-0 cursor-pointer select-none active:scale-95"
-              title={showQueuePanel ? "Collapse Player" : "Expand Now Playing"}
-              aria-label={showQueuePanel ? "Collapse Player" : "Expand Now Playing"}
+              title={isMiniPlayerExpanded ? "Collapse mini-player width" : "Expand mini-player horizontally"}
+              aria-label={isMiniPlayerExpanded ? "Collapse mini-player width" : "Expand mini-player horizontally"}
             >
-              <Icon name={showQueuePanel ? "chevronDown" : "chevronUp"} className="w-3.5 h-3.5 shrink-0" />
-              <span>{showQueuePanel ? "Collapse" : "Expand"}</span>
+              <Icon name={isMiniPlayerExpanded ? "collapse" : "expand"} className="w-3.5 h-3.5 shrink-0" />
+              <span>{isMiniPlayerExpanded ? "Compact" : "Expand Player"}</span>
             </button>
           </div>
 
           {/* Desktop Full 3-Section Footer (>= md) */}
           <div className="hidden md:flex max-w-7xl mx-auto items-center justify-between gap-4">
             {/* Left: Metadata & Secondary Actions */}
-            <div className="flex items-center gap-3 w-1/4 min-w-0 select-none">
+            <div 
+              className="flex items-center gap-3 w-1/4 min-w-0 select-none cursor-pointer"
+              onClick={() => handleOpenExpandedPlayer('player')}
+              title="Expand Now Playing"
+            >
               <div className="relative group shrink-0">
                 <img 
                   src={getCleanThumbnail(currentSong)} 
@@ -4825,6 +5641,20 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 <Icon name={videoModalSong ? "music" : "video"} className="w-4 h-4 shrink-0" />
               </button>
 
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsEqualizerOpen(true);
+                }}
+                className="p-1.5 px-2.5 rounded-2xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/60 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1.5 text-xs font-semibold shrink-0 cursor-pointer active:scale-95"
+                title="10-Band Graphic Equalizer"
+                aria-label="Open 10-Band Equalizer"
+              >
+                <Icon name="sliders" className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden xl:inline text-[11px]">EQ</span>
+              </button>
+
               <Icon name="volume" className="w-4 h-4 text-neutral-400 ml-2 shrink-0" />
               <input
                 type="range"
@@ -4855,9 +5685,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
 
           {/* Mobile Sleek Single-Row Mini-Player (< md) */}
-          <div className="md:hidden flex items-center justify-between gap-2 w-full min-w-0">
+          <div 
+            className="md:hidden flex items-center justify-between gap-2 w-full min-w-0 cursor-pointer"
+            onClick={() => handleOpenExpandedPlayer('player')}
+          >
             {/* Left: Thumbnail & Song Info */}
-            <div className="flex items-center gap-2.5 min-w-0 flex-1 select-none">
+            <div 
+              className="flex items-center gap-2.5 min-w-0 flex-1 select-none"
+              title="Expand Now Playing"
+            >
               <div className="relative shrink-0">
                 <img 
                   src={getCleanThumbnail(currentSong)} 
@@ -4879,30 +5715,49 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
             {/* Right: Touch Playback Controls */}
             <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleOpenExpandedPlayer('queue');
-                }} 
-                className="text-neutral-400 hover:text-amber-400 transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
-                title="View Queue"
-                aria-label="View Queue"
-              >
-                <Icon name="list" className="w-4 h-4 shrink-0" />
-              </button>
+              {/* Extra controls revealed horizontally when isMiniPlayerExpanded is true */}
+              {isMiniPlayerExpanded && (
+                <>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenExpandedPlayer('queue');
+                    }} 
+                    className="text-neutral-400 hover:text-amber-400 transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
+                    title="View Queue"
+                    aria-label="View Queue"
+                  >
+                    <Icon name="list" className="w-4 h-4 shrink-0" />
+                  </button>
 
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handlePrevSong();
-                }} 
-                className="text-neutral-300 hover:text-white transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
-                title="Previous Track"
-                aria-label="Previous Track"
-              >
-                <Icon name="skipPrev" className="w-4 h-4 shrink-0" />
-              </button>
+                  <button 
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsEqualizerOpen(true);
+                    }} 
+                    className="text-neutral-400 hover:text-amber-400 transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
+                    title="10-Band Graphic Equalizer"
+                    aria-label="Open Equalizer"
+                  >
+                    <Icon name="sliders" className="w-4 h-4 shrink-0 text-amber-400" />
+                  </button>
 
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handlePrevSong();
+                    }} 
+                    className="text-neutral-300 hover:text-white transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
+                    title="Previous Track"
+                    aria-label="Previous Track"
+                  >
+                    <Icon name="skipPrev" className="w-4 h-4 shrink-0" />
+                  </button>
+                </>
+              )}
+
+              {/* Play / Pause is always accessible */}
               <button 
                 onClick={(e) => {
                   e.stopPropagation();
@@ -4915,21 +5770,66 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 <Icon name={isPlaying ? "pause" : "play"} className="w-4 h-4 fill-current translate-x-0.5" />
               </button>
 
-              <button 
+              {/* Next button revealed horizontally when isMiniPlayerExpanded is true */}
+              {isMiniPlayerExpanded && (
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleNextSong();
+                  }} 
+                  className="text-neutral-300 hover:text-white transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
+                  title="Next Track"
+                  aria-label="Next Track"
+                >
+                  <Icon name="skipNext" className="w-4 h-4 shrink-0" />
+                </button>
+              )}
+
+              {/* Designated Fullscreen Player Open Button */}
+              <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleNextSong();
-                }} 
-                className="text-neutral-300 hover:text-white transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
-                title="Next Track"
-                aria-label="Next Track"
+                  handleOpenExpandedPlayer('player');
+                }}
+                className="p-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-amber-400 border border-neutral-700/60 transition shrink-0 cursor-pointer flex items-center justify-center active:scale-90"
+                title="Open Fullscreen Player"
+                aria-label="Open Fullscreen Player"
               >
-                <Icon name="skipNext" className="w-4 h-4 shrink-0" />
+                <Icon name="expand" className="w-4 h-4 shrink-0 text-amber-400" />
               </button>
             </div>
           </div>
         </footer>
       )}
+
+      {/* Mobile Persistent Bottom Navigation Bar (< md) */}
+      <MobileBottomNav 
+        activeTab={activeTab}
+        isProfileOpen={isProfileOpen}
+        onNavigate={(tab) => {
+          setIsProfileOpen(false);
+          handleStationSelect(tab);
+        }}
+        onOpenPlaylists={() => {
+          setIsProfileOpen(false);
+          handleStationSelect('playlists');
+          setSelectedPlaylistForView(null);
+        }}
+        onOpenProfile={() => {
+          if (user) {
+            setIsProfileOpen(true);
+          } else {
+            if (isPlaying) {
+              togglePlayPause();
+            }
+            openAuthModal();
+          }
+          setIsSidebarOpen(false);
+        }}
+        user={user}
+        isVisible={!showQueuePanel}
+      />
+
 
       {showQueuePanel && (
         <div className={`fixed top-14 md:top-16 inset-x-0 bottom-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'} z-50 bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn pb-[env(safe-area-inset-bottom,0px)]`}>
@@ -5077,6 +5977,86 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   );
                 })()}
 
+                {/* Secondary Action Row: Canvas, EQ, Lyrics, Sleep Timer, Speed, Mute, Share */}
+                <div className="flex items-center justify-center gap-1.5 sm:gap-2 shrink-0 mb-2 w-full max-w-sm px-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setIsCanvasOpen(true); }}
+                    className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 border border-amber-500/40 text-amber-300 transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer"
+                    title="Loopra Canvas Visualizer"
+                    aria-label="Loopra Canvas Visualizer"
+                  >
+                    <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="hidden sm:inline">Canvas</span>
+                  </button>
+
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setIsEqualizerOpen(true); }}
+                    className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer"
+                    title="10-Band Equalizer"
+                    aria-label="10-Band Equalizer"
+                  >
+                    <Icon name="sliders" className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="hidden sm:inline">EQ</span>
+                  </button>
+
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setIsLyricsOpen(true); }}
+                    className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer"
+                    title="Synchronized Lyrics"
+                    aria-label="Synchronized Lyrics"
+                  >
+                    <Icon name="mic" className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="hidden sm:inline">Lyrics</span>
+                  </button>
+
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setIsSleepTimerOpen(true); }}
+                    className={`relative p-2 sm:px-2.5 sm:py-1.5 rounded-xl border transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer ${
+                      sleepTimerRemaining ? 'bg-amber-500/20 border-amber-500/60 text-amber-300' : 'bg-neutral-800/80 hover:bg-neutral-700/80 border-neutral-700/70 text-neutral-300 hover:text-amber-400'
+                    }`}
+                    title={sleepTimerRemaining ? `Timer active: ${Math.ceil(sleepTimerRemaining / 60)}m left` : "Set Sleep Timer"}
+                    aria-label="Set Sleep Timer"
+                  >
+                    <Icon name="timer" className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="hidden sm:inline">
+                      {sleepTimerRemaining ? `${Math.ceil(sleepTimerRemaining / 60)}m` : 'Timer'}
+                    </span>
+                    {sleepTimerRemaining && (
+                      <span className="sm:hidden absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                    )}
+                  </button>
+
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleCyclePlaybackSpeed(); }}
+                    className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1 text-xs font-mono font-semibold shadow-sm active:scale-95 cursor-pointer"
+                    title={`Playback speed: ${playbackSpeed}x. Click to change.`}
+                    aria-label="Playback speed"
+                  >
+                    <span>{playbackSpeed}x</span>
+                  </button>
+
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleToggleMute(); }}
+                    className={`p-2 sm:px-2.5 sm:py-1.5 rounded-xl border transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer ${
+                      isMuted ? 'bg-red-500/20 border-red-500/50 text-red-400' : 'bg-neutral-800/80 hover:bg-neutral-700/80 border-neutral-700/70 text-neutral-300 hover:text-amber-400'
+                    }`}
+                    title={isMuted ? "Unmute" : "Mute"}
+                    aria-label={isMuted ? "Unmute" : "Mute"}
+                  >
+                    <Icon name={isMuted ? "volumeMute" : "volume"} className="w-3.5 h-3.5" />
+                  </button>
+
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleShareTrack(currentSong); }}
+                    className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer"
+                    title="Share Track"
+                    aria-label="Share Track"
+                  >
+                    <Icon name="share" className="w-3.5 h-3.5 text-amber-400" />
+                  </button>
+                </div>
+
+
                 {/* Progress Bar */}
                 <div className="w-full px-2 shrink-0 my-1">
                   <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} currentSongId={currentSong?.id} />
@@ -5174,6 +6154,21 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     Tap & hold to slide
                   </span>
                   <span className="text-xs font-medium bg-neutral-800 text-neutral-400 px-3 py-1 rounded-full">{queue.length} tracks</span>
+                  {queue.length > 0 && (
+                    <button
+                      onClick={() => {
+                        if (window.confirm("Clear all tracks from your playback queue?")) {
+                          setQueue([]);
+                          showToast("Playback queue cleared");
+                        }
+                      }}
+                      className="text-xs text-neutral-400 hover:text-red-400 px-2.5 py-1 rounded-full bg-neutral-800/90 hover:bg-neutral-800 border border-neutral-700/60 transition cursor-pointer"
+                      title="Clear Queue"
+                      aria-label="Clear Queue"
+                    >
+                      Clear
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -5185,7 +6180,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               )}
               
               <Reorder.Group axis="y" values={queue} onReorder={setQueue} layoutScroll className="space-y-2.5">
-                {queue.map((track) => {
+                {queue.map((track, idx) => {
                   const isCurrent = currentSong?.id === track.id;
                   return (
                     <QueueItem
@@ -5195,9 +6190,30 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       isPlaying={isPlaying}
                       onPlay={playSong}
                       onRemove={removeFromQueue}
+                      canMoveUp={idx > 0}
+                      canMoveDown={idx < queue.length - 1}
+                      onMoveUp={() => {
+                        if (idx <= 0) return;
+                        setQueue(prev => {
+                          const copy = [...prev];
+                          const item = copy.splice(idx, 1)[0];
+                          copy.splice(idx - 1, 0, item);
+                          return copy;
+                        });
+                      }}
+                      onMoveDown={() => {
+                        if (idx >= queue.length - 1) return;
+                        setQueue(prev => {
+                          const copy = [...prev];
+                          const item = copy.splice(idx, 1)[0];
+                          copy.splice(idx + 1, 0, item);
+                          return copy;
+                        });
+                      }}
                     />
                   );
                 })}
+
                 {queue.length === 0 && (
                   <div className="text-center py-12">
                     <Icon name="music" className="w-12 h-12 text-neutral-700 mx-auto mb-4" />
@@ -5361,8 +6377,78 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         </div>
       )}
 
+      {/* Upgraded Feature Modals */}
+      {isCanvasOpen && (
+        <LoopraCanvas
+          isOpen={isCanvasOpen}
+          onClose={() => setIsCanvasOpen(false)}
+          currentSong={currentSong}
+          isPlaying={isPlaying}
+          onTogglePlay={togglePlayPause}
+          onNext={handleNextSong}
+          onPrev={handlePrevSong}
+          currentTime={currentTimeRef.current}
+          duration={durationRef.current}
+          onSeek={handleSeek}
+          volume={volume}
+          onVolumeChange={handleVolumeChange}
+          isMuted={isMuted}
+          onToggleMute={handleToggleMute}
+        />
+      )}
+
+      <EqualizerModal 
+        isOpen={isEqualizerOpen} 
+        onClose={() => setIsEqualizerOpen(false)} 
+        isOfflineSource={Boolean(playerRef.current?.isOffline)} 
+        audioElement={offlineAudioRef.current} 
+      />
+
+      <LyricsModal 
+        isOpen={isLyricsOpen} 
+        onClose={() => setIsLyricsOpen(false)} 
+        currentSong={currentSong} 
+        playerRef={playerRef} 
+      />
+
+      <SleepTimerModal 
+        isOpen={isSleepTimerOpen} 
+        onClose={() => setIsSleepTimerOpen(false)} 
+        activeTimerRemaining={sleepTimerRemaining} 
+        onSetTimer={(mins) => {
+          setSleepTimerRemaining(mins * 60);
+          showToast(`Sleep timer set for ${mins} minutes`);
+        }} 
+        onCancelTimer={() => {
+          setSleepTimerRemaining(null);
+          showToast('Sleep timer cancelled');
+        }} 
+      />
+
+      <ListeningStatsModal 
+        isOpen={isStatsOpen} 
+        onClose={() => setIsStatsOpen(false)} 
+        showToast={showToast} 
+      />
+
+      <UserProfileModal 
+        isOpen={isProfileOpen} 
+        onClose={() => setIsProfileOpen(false)} 
+        currentUser={user} 
+        onUserUpdated={(updated) => {
+          setUser(prev => {
+            const merged = { ...(prev || {}), ...updated };
+            try {
+              localStorage.setItem('afterhours_user', JSON.stringify(merged));
+            } catch (_) {}
+            return merged;
+          });
+        }} 
+        showToast={showToast} 
+      />
+
       {toastMessage && (
-        <div className={`fixed ${isBottomPlayerVisible ? 'bottom-24 md:bottom-28' : 'bottom-8'} left-1/2 -translate-x-1/2 z-[9999] px-4 py-2.5 rounded-2xl bg-neutral-900/95 text-white text-xs border border-amber-500/40 shadow-2xl backdrop-blur-xl flex items-center gap-2 animate-fadeIn pointer-events-none`}>
+        <div className={`fixed ${isBottomPlayerVisible ? 'bottom-36 md:bottom-28' : 'bottom-20 md:bottom-8'} left-1/2 -translate-x-1/2 z-[9999] px-4 py-2.5 rounded-2xl bg-neutral-900/95 text-white text-xs border border-amber-500/40 shadow-2xl backdrop-blur-xl flex items-center gap-2 animate-fadeIn pointer-events-none`}>
           <Icon name="sparkles" className="w-4 h-4 text-amber-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>

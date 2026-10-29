@@ -20,9 +20,13 @@ export default function DownloadTrackButton({
   useEffect(() => {
     if (!trackId) return;
 
+    if (track?.license && track.offlineEligible && !offlineEligibilityService.hasChecked(trackId)) {
+      offlineEligibilityService.registerEligibleTrack(track);
+    }
+
     // Check cached eligibility or queue check
-    setIsEligible(offlineEligibilityService.isEligible(trackId));
-    if (!offlineEligibilityService.hasChecked(trackId)) {
+    setIsEligible(offlineEligibilityService.isEligible(trackId) || Boolean(track?.offlineEligible && track?.license));
+    if (!offlineEligibilityService.hasChecked(trackId) && !track?.license) {
       offlineEligibilityService.queueEligibilityCheck([trackId]);
     }
 
@@ -66,7 +70,7 @@ export default function DownloadTrackButton({
     setErrorMsg('');
     setDownloadProgress(0);
 
-    const license = offlineEligibilityService.getLicense(trackId);
+    const license = offlineEligibilityService.getLicense(trackId) || track?.license;
 
     try {
       await offlineStorageService.downloadAndStoreTrack(track, license, (percent) => {

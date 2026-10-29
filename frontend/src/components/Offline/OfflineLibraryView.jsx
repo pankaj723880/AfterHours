@@ -111,6 +111,16 @@ export default function OfflineLibraryView({
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
+          <button
+            type="button"
+            onClick={onExploreAuthorizedTracks}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-amber-400 hover:text-amber-300 border border-neutral-800 hover:border-amber-500/30 text-xs font-semibold transition cursor-pointer"
+            title="Discover tracks with verified offline distribution rights"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Explore Eligible Music</span>
+          </button>
+
           {tracks.length > 0 && (
             <>
               <button

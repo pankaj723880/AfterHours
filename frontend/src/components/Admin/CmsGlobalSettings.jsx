@@ -12,7 +12,12 @@ import {
   Sparkles,
   Layers,
   Sliders,
-  ExternalLink
+  ExternalLink,
+  Plus,
+  Trash2,
+  Edit3,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import { normalizeCmsConfig, hexToRgb } from '../../services/cmsClient';
 
@@ -104,7 +109,7 @@ function ThemeLivePreview({ theme, branding }) {
               style={{ backgroundColor: accentColor, boxShadow: `0 0 10px ${accentColor}` }} 
             />
             <span className="text-xs font-extrabold text-white tracking-wide uppercase">
-              {branding?.siteName || 'Loopra'} Live Preview
+              {branding?.siteName ? `${branding.siteName} Live Preview` : 'Live Preview'}
             </span>
           </div>
           <div className="flex items-center gap-1.5">
@@ -216,6 +221,104 @@ export default function CmsGlobalSettings({
   const maintenance = safeDraft.maintenance;
   const searchPage = safeDraft.searchPage;
   const footer = safeDraft.footer;
+  const infoPages = footer.infoPages || [];
+
+  // Info Pages Modal State
+  const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
+  const [editingIndex, setEditingIndex] = useState(null);
+  const [infoTitle, setInfoTitle] = useState('');
+  const [infoSlug, setInfoSlug] = useState('');
+  const [infoContent, setInfoContent] = useState('');
+
+  const openInfoModal = (idx = null) => {
+    if (idx !== null && infoPages[idx]) {
+      setEditingIndex(idx);
+      setInfoTitle(infoPages[idx].title || '');
+      setInfoSlug(infoPages[idx].slug || '');
+      setInfoContent(infoPages[idx].content || '');
+    } else {
+      setEditingIndex(null);
+      setInfoTitle('');
+      setInfoSlug('');
+      setInfoContent('');
+    }
+    setIsInfoModalOpen(true);
+  };
+
+  const handleSaveInfoPage = (e) => {
+    e.preventDefault();
+    if (!infoTitle.trim()) {
+      showToast?.('Page title is required', 'error');
+      return;
+    }
+
+    const cleanSlug = (infoSlug || infoTitle)
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+    const newPage = {
+      title: infoTitle.trim(),
+      slug: cleanSlug,
+      content: infoContent.trim()
+    };
+
+    onUpdateDraft(prev => {
+      const base = normalizeCmsConfig(prev || draft);
+      const currentPages = [...(base.footer?.infoPages || [])];
+      if (editingIndex !== null) {
+        currentPages[editingIndex] = newPage;
+      } else {
+        currentPages.push(newPage);
+      }
+      return {
+        ...base,
+        footer: {
+          ...(base.footer || {}),
+          infoPages: currentPages
+        }
+      };
+    });
+
+    setIsInfoModalOpen(false);
+    showToast?.(editingIndex !== null ? 'Information page updated' : 'Information page created', 'success');
+  };
+
+  const handleDeleteInfoPage = (idx) => {
+    if (!window.confirm(`Delete page "${infoPages[idx]?.title || 'Untitled'}"?`)) return;
+    onUpdateDraft(prev => {
+      const base = normalizeCmsConfig(prev || draft);
+      const currentPages = (base.footer?.infoPages || []).filter((_, i) => i !== idx);
+      return {
+        ...base,
+        footer: {
+          ...(base.footer || {}),
+          infoPages: currentPages
+        }
+      };
+    });
+    showToast?.('Page deleted from footer draft', 'success');
+  };
+
+  const handleMoveInfoPage = (idx, direction) => {
+    const target = idx + direction;
+    if (target < 0 || target >= infoPages.length) return;
+    onUpdateDraft(prev => {
+      const base = normalizeCmsConfig(prev || draft);
+      const currentPages = [...(base.footer?.infoPages || [])];
+      const temp = currentPages[idx];
+      currentPages[idx] = currentPages[target];
+      currentPages[target] = temp;
+      return {
+        ...base,
+        footer: {
+          ...(base.footer || {}),
+          infoPages: currentPages
+        }
+      };
+    });
+  };
 
   const handleFieldChange = (section, field, value) => {
     onUpdateDraft(prev => {
@@ -293,7 +396,7 @@ export default function CmsGlobalSettings({
                 type="text"
                 value={branding.siteName || ''}
                 onChange={(e) => handleFieldChange('branding', 'siteName', e.target.value)}
-                placeholder="Loopra"
+                placeholder="Leave blank or enter name"
                 className="w-full bg-neutral-950 border border-neutral-800 focus:border-amber-500/80 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none transition"
               />
               <span className="text-[10px] text-neutral-500 mt-1 block">Displayed in header, browser tab title, and copyright.</span>
@@ -697,7 +800,7 @@ export default function CmsGlobalSettings({
                 type="text"
                 value={maintenance.title || ''}
                 onChange={(e) => handleFieldChange('maintenance', 'title', e.target.value)}
-                placeholder="Loopra Under Scheduled Maintenance"
+                placeholder="Scheduled Maintenance (or custom title)"
                 className="w-full bg-neutral-950 border border-neutral-800 focus:border-rose-500/80 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none transition"
               />
             </div>
@@ -711,6 +814,26 @@ export default function CmsGlobalSettings({
                 placeholder="We are currently tuning our audio nodes. Audio service will resume shortly."
                 className="w-full bg-neutral-950 border border-neutral-800 focus:border-rose-500/80 rounded-xl p-3 text-xs text-white focus:outline-none transition resize-none"
               />
+            </div>
+
+            <div className="pt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-neutral-800/80">
+              <span className="text-[11px] text-neutral-400">
+                {maintenance.enabled
+                  ? '⚠️ Maintenance mode will be ACTIVE once published (non-admins blocked).'
+                  : '✅ Maintenance mode will be INACTIVE once published (normal public access).'
+                }
+              </span>
+              <button
+                type="button"
+                onClick={onPublishLive}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 ${
+                  maintenance.enabled
+                    ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-lg shadow-rose-500/20'
+                    : 'bg-amber-500 hover:bg-amber-400 text-neutral-950 shadow-lg shadow-amber-500/20'
+                }`}
+              >
+                <span>Publish Maintenance Changes Live</span>
+              </button>
             </div>
           </div>
         </div>
@@ -824,6 +947,181 @@ export default function CmsGlobalSettings({
               />
             </div>
           </div>
+
+          {/* Dynamic Information & Policy Pages (CRUD) */}
+          <div className="pt-6 border-t border-neutral-800/80 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-amber-400" />
+                  Custom Information Pages ({infoPages.length})
+                </h4>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Manage static content pages like Privacy Policy, Terms of Service, DMCA Guidelines, and About Us.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => openInfoModal(null)}
+                className="self-start sm:self-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs transition shadow-md shadow-amber-500/20 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Info Page</span>
+              </button>
+            </div>
+
+            {infoPages.length === 0 ? (
+              <div className="p-6 rounded-xl border border-dashed border-neutral-800 text-center text-xs text-neutral-500 bg-neutral-950/30">
+                No custom information pages defined yet. Click "Add Info Page" to create Terms, Privacy, or FAQ pages.
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {infoPages.map((page, idx) => (
+                  <div
+                    key={page.slug || idx}
+                    className="p-3.5 rounded-xl bg-neutral-950/60 border border-neutral-800 flex items-center justify-between gap-3 hover:border-neutral-700 transition"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-white">{page.title}</span>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-neutral-800 text-amber-400 border border-neutral-700">
+                          /{page.slug}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 line-clamp-1 mt-1 font-mono">
+                        {page.content ? page.content.slice(0, 100) : 'No content written'}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleMoveInfoPage(idx, -1)}
+                        disabled={idx === 0}
+                        className="p-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 text-neutral-300 transition cursor-pointer"
+                        title="Move Up"
+                      >
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleMoveInfoPage(idx, 1)}
+                        disabled={idx === infoPages.length - 1}
+                        className="p-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 text-neutral-300 transition cursor-pointer"
+                        title="Move Down"
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openInfoModal(idx)}
+                        className="p-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-amber-400 transition cursor-pointer ml-1"
+                        title="Edit Page"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteInfoPage(idx)}
+                        className="p-1 rounded-lg bg-neutral-800 hover:bg-rose-950/40 text-neutral-400 hover:text-rose-400 transition cursor-pointer"
+                        title="Delete Page"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Info Page Edit / Create Modal */}
+          {isInfoModalOpen && (
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+                <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-amber-400" />
+                    {editingIndex !== null ? 'Edit Information Page' : 'Create Information Page'}
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setIsInfoModalOpen(false)}
+                    className="text-neutral-400 hover:text-white text-xs font-semibold"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveInfoPage} className="space-y-3.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                      Page Title *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Terms of Service or Privacy Policy"
+                      value={infoTitle}
+                      onChange={(e) => {
+                        setInfoTitle(e.target.value);
+                        if (editingIndex === null && !infoSlug) {
+                          setInfoSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''));
+                        }
+                      }}
+                      className="w-full bg-neutral-950 border border-neutral-800 focus:border-amber-500 rounded-xl px-3 py-2 text-xs text-white outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                      URL Slug *
+                    </label>
+                    <div className="flex items-center bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs focus-within:border-amber-500">
+                      <span className="text-neutral-500 font-mono mr-1">/</span>
+                      <input
+                        type="text"
+                        required
+                        placeholder="terms-of-service"
+                        value={infoSlug}
+                        onChange={(e) => setInfoSlug(e.target.value)}
+                        className="w-full bg-transparent text-white outline-none font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                      Page Content (Markdown / Text)
+                    </label>
+                    <textarea
+                      rows={8}
+                      placeholder="Enter policy details, disclaimers, or user guidance..."
+                      value={infoContent}
+                      onChange={(e) => setInfoContent(e.target.value)}
+                      className="w-full bg-neutral-950 border border-neutral-800 focus:border-amber-500 rounded-xl p-3 text-xs text-white outline-none resize-none font-sans"
+                    />
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsInfoModalOpen(false)}
+                      className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-semibold py-2 rounded-xl text-xs transition cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold py-2 rounded-xl text-xs transition shadow-md shadow-amber-500/20 cursor-pointer"
+                    >
+                      {editingIndex !== null ? 'Save Changes' : 'Create Page'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

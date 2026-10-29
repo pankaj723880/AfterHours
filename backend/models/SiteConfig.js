@@ -5,7 +5,7 @@ const siteConfigSchema = new mongoose.Schema({
   version: { type: Number, default: 1 },
   
   branding: {
-    siteName: { type: String, default: 'Loopra' },
+    siteName: { type: String, default: '' },
     tagline: { type: String, default: 'AfterHours Mehfil Music' },
     logoUrl: { type: String, default: '/loopra-logo.png' },
     faviconUrl: { type: String, default: '/loopra-logo.png' },
@@ -69,10 +69,37 @@ const siteConfigSchema = new mongoose.Schema({
     subtitle: { type: String, default: '' },
     badge: { type: String, default: '' },
     artwork: { type: String, default: '' },
+    icon: { type: String, default: 'radio' },
+    accentColor: { type: String, default: '#f59e0b' },
+    category: { type: String, default: 'Nostalgia Radio' },
+    language: { type: String, default: 'Hindi' },
     enabled: { type: Boolean, default: true },
     order: { type: Number, default: 0 },
     bgImages: { type: [String], default: [] },
-    queries: { type: [String], default: [] }
+    queries: { type: [String], default: [] },
+    tracks: [{
+      id: { type: String },
+      videoId: { type: String },
+      title: { type: String },
+      artist: { type: String },
+      album: { type: String, default: '' },
+      thumbnail: { type: String, default: '' },
+      duration: { type: String, default: '' },
+      url: { type: String, default: '' },
+      isHidden: { type: Boolean, default: false }
+    }]
+  }],
+
+  timeMachineEras: [{
+    id: { type: String, required: true },
+    title: { type: String, required: true },
+    decade: { type: String, required: true },
+    description: { type: String, default: '' },
+    artwork: { type: String, default: '' },
+    enabled: { type: Boolean, default: true },
+    order: { type: Number, default: 0 },
+    queries: { type: [String], default: [] },
+    genres: { type: [String], default: [] }
   }],
 
   navigation: [{
@@ -82,7 +109,10 @@ const siteConfigSchema = new mongoose.Schema({
     order: { type: Number, default: 0 },
     isCore: { type: Boolean, default: false },
     badge: { type: String, default: '' },
-    icon: { type: String, default: '' }
+    icon: { type: String, default: '' },
+    group: { type: String, default: 'main' },
+    description: { type: String, default: '' },
+    route: { type: String, default: '' }
   }],
 
   playerDefaults: {

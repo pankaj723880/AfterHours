@@ -32,6 +32,7 @@ import UserManagement from './UserManagement';
 import ServerHealth from './ServerHealth';
 import MusicAnalytics from './MusicAnalytics';
 import AuditLogs from './AuditLogs';
+import ActivityModeration from './ActivityModeration';
 import CmsGlobalSettings from './CmsGlobalSettings';
 import CmsLayoutEditor from './CmsLayoutEditor';
 import CmsMusicManager from './CmsMusicManager';
@@ -363,6 +364,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'traffic', label: 'Live Traffic', icon: Activity, badge: isSocketConnected ? 'LIVE' : null },
     { id: 'users', label: 'Users & Roles', icon: Users },
+    { id: 'activity', label: 'Activity Moderation', icon: Activity },
     { id: 'health', label: 'API & Diagnostics', icon: Server },
     { id: 'music', label: 'Music Analytics', icon: Music2 },
     { id: 'audit', label: 'Audit Logs', icon: ShieldCheck }
@@ -407,7 +409,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
             <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50 shrink-0" />
               <h1 className="text-sm sm:text-base font-extrabold text-white tracking-tight truncate">
-                Loopra <span className="hidden sm:inline-block text-amber-400 font-semibold text-xs ml-1 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full uppercase">Dynamic CMS</span>
+                {cmsDraft?.branding?.siteName ? `${cmsDraft.branding.siteName} ` : ''}<span className="hidden sm:inline-block text-amber-400 font-semibold text-xs ml-1 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full uppercase">Dynamic CMS</span>
               </h1>
             </div>
           </div>
@@ -715,6 +717,14 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               backendUrl={cleanBackendUrl} 
               currentUser={user}
               showToast={showToast} 
+            />
+          )}
+
+          {activeSubTab === 'activity' && (
+            <ActivityModeration 
+              token={token} 
+              backendUrl={cleanBackendUrl}
+              showToast={showToast}
             />
           )}
 

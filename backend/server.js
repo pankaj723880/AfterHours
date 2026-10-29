@@ -20,6 +20,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { cmsService } from './services/cmsService.js';
+import { maintenanceMiddleware } from './middleware/maintenance.js';
+import { createRateLimiter } from './middleware/rateLimiter.js';
+import profileRoutes from './routes/profile.js';
+import activityRoutes from './routes/activity.js';
+import moodRoutes from './routes/mood.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,10 +36,25 @@ if (!fs.existsSync(uploadsDir)) {
 // Prevent unhandled rejections and exceptions from crashing the server
 process.on('uncaughtException', (err) => {
   console.error('[CRITICAL] Uncaught Exception:', err.message, err.stack);
+  try { fs.appendFileSync(path.join(__dirname, 'server_error.log'), `[uncaughtException] ${err.stack || err.message}\n`); } catch(e){}
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('[CRITICAL] Unhandled Rejection at:', promise, 'reason:', reason);
+  try { fs.appendFileSync(path.join(__dirname, 'server_error.log'), `[unhandledRejection] ${reason?.stack || reason}\n`); } catch(e){}
+});
+
+process.on('exit', (code) => {
+  console.log('[PROCESS EXIT EVENT] code:', code);
+  try { fs.appendFileSync(path.join(__dirname, 'server_error.log'), `[exit] code=${code} at ${new Date().toISOString()}\n`); } catch(e){}
+});
+process.on('SIGINT', () => {
+  console.log('[PROCESS SIGNAL] SIGINT');
+  try { fs.appendFileSync(path.join(__dirname, 'server_error.log'), `[SIGINT] at ${new Date().toISOString()}\n`); } catch(e){}
+});
+process.on('SIGTERM', () => {
+  console.log('[PROCESS SIGNAL] SIGTERM');
+  try { fs.appendFileSync(path.join(__dirname, 'server_error.log'), `[SIGTERM] at ${new Date().toISOString()}\n`); } catch(e){}
 });
 
 dotenv.config();
@@ -72,6 +92,12 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Session-ID'],
   optionsSuccessStatus: 204
 }));
+
+// Set Cross-Origin-Opener-Policy header to permit Google Sign-In popups and postMessage communication
+app.use((req, res, next) => {
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  next();
+});
 
 // Generous payload limit so sync never throws 413 or truncates
 app.use(express.json({ limit: '10mb' }));
@@ -211,6 +237,9 @@ const isDatabaseReady = () => {
   return mongoose.connection.readyState === 1;
 };
 
+// Global Maintenance Mode Guard
+app.use(maintenanceMiddleware);
+
 // Health check endpoints for Render & API monitors
 app.get('/', (req, res) => {
   res.send('AfterHours API is running');
@@ -330,10 +359,32 @@ const seedDefaultAdmin = async () => {
   }
 };
 
+// Rate Limiting Instances
+const authLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: 'Too many authentication attempts. Please wait a minute and try again.'
+});
+
+const searchLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: 'Too many search requests. Please wait a moment.'
+});
+
 // Auth Routes with Database Availability Guards
-app.post(['/api/auth/register', '/auth/register'], async (req, res) => {
+app.post(['/api/auth/register', '/auth/register'], authLimiter, async (req, res) => {
   if (!isDatabaseReady()) {
     return res.status(503).json({ error: 'Database service is temporarily unavailable. Please try again shortly.', retryable: true });
+  }
+  const maintenance = await cmsService.getMaintenanceConfig();
+  if (maintenance?.enabled) {
+    return res.status(503).json({
+      error: 'Registration is temporarily unavailable due to scheduled maintenance.',
+      maintenance: true,
+      title: maintenance.title,
+      message: maintenance.message
+    });
   }
   try {
     const { username, password } = req.body;
@@ -367,6 +418,8 @@ app.post(['/api/auth/register', '/auth/register'], async (req, res) => {
         id: user._id,
         userId: user._id,
         username: user.username,
+        displayName: user.displayName || user.username,
+        avatarUrl: user.avatarUrl || '',
         role: user.role,
         status: user.status
       }
@@ -377,10 +430,11 @@ app.post(['/api/auth/register', '/auth/register'], async (req, res) => {
   }
 });
 
-app.post(['/api/auth/login', '/auth/login'], async (req, res) => {
+app.post(['/api/auth/login', '/auth/login'], authLimiter, async (req, res) => {
   if (!isDatabaseReady()) {
     return res.status(503).json({ error: 'Database service is temporarily unavailable. Please try again shortly.', retryable: true });
   }
+  const clientIp = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').toString().split(',')[0].trim();
   try {
     const { username, password } = req.body;
     if (!username || !password) {
@@ -398,14 +452,42 @@ app.post(['/api/auth/login', '/auth/login'], async (req, res) => {
     }).maxTimeMS(4000);
     if (!user) {
       console.warn(`[Auth Login Failed]: username="${cleanUsername}" - user not found or password mismatch`);
+      metricsService.recordFailedLogin({
+        ip: clientIp,
+        username: cleanUsername,
+        userAgent: req.headers['user-agent'],
+        reason: 'invalid_credentials'
+      });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     if (user.status === 'suspended') {
+      metricsService.recordFailedLogin({
+        ip: clientIp,
+        username: cleanUsername,
+        userAgent: req.headers['user-agent'],
+        reason: 'account_suspended'
+      });
       return res.status(403).json({ error: 'Account has been suspended. Please contact support.' });
     }
     if (user.status === 'deactivated') {
+      metricsService.recordFailedLogin({
+        ip: clientIp,
+        username: cleanUsername,
+        userAgent: req.headers['user-agent'],
+        reason: 'account_deactivated'
+      });
       return res.status(403).json({ error: 'Account is deactivated.' });
+    }
+
+    const maintenance = await cmsService.getMaintenanceConfig();
+    if (maintenance?.enabled && user.role !== 'admin') {
+      return res.status(503).json({
+        error: 'System is currently undergoing scheduled maintenance. Only authorized administrators can log in at this time.',
+        maintenance: true,
+        title: maintenance.title,
+        message: maintenance.message
+      });
     }
 
     user.lastLogin = new Date();
@@ -420,6 +502,8 @@ app.post(['/api/auth/login', '/auth/login'], async (req, res) => {
         id: user._id,
         userId: user._id,
         username: user.username,
+        displayName: user.displayName || user.username,
+        avatarUrl: user.avatarUrl || '',
         role: user.role,
         status: user.status,
         likedSongs: user.likedSongs,
@@ -443,6 +527,8 @@ app.get(['/api/auth/me', '/auth/me'], authenticateToken, async (req, res) => {
         id: user._id,
         userId: user._id,
         username: user.username,
+        displayName: user.displayName || user.username,
+        avatarUrl: user.avatarUrl || '',
         role: user.role,
         status: user.status,
         likedSongs: user.likedSongs,
@@ -515,6 +601,16 @@ app.post(['/api/auth/google', '/auth/google'], async (req, res) => {
       return res.status(403).json({ error: 'Account is deactivated.' });
     }
 
+    const maintenance = await cmsService.getMaintenanceConfig();
+    if (maintenance?.enabled && user.role !== 'admin') {
+      return res.status(503).json({
+        error: 'System is currently undergoing scheduled maintenance. Only authorized administrators can log in at this time.',
+        maintenance: true,
+        title: maintenance.title,
+        message: maintenance.message
+      });
+    }
+
     const appToken = generateToken(user);
 
     res.json({
@@ -525,6 +621,8 @@ app.post(['/api/auth/google', '/auth/google'], async (req, res) => {
         id: user._id,
         userId: user._id,
         username: user.username,
+        displayName: user.displayName || user.username,
+        avatarUrl: user.avatarUrl || '',
         role: user.role,
         status: user.status,
         likedSongs: user.likedSongs,
@@ -608,6 +706,15 @@ app.use(['/api/cms', '/cms'], cmsRoutes);
 
 // Mount Offline Licensing & Authorized Audio Download Routes
 app.use(['/api/offline', '/offline'], offlineRoutes);
+
+// Mount Profile & Social Features (Public Profiles, Follows, Collaborative Playlists)
+app.use(['/api/user', '/user'], profileRoutes);
+
+// Mount Social Listening Activity Feed
+app.use(['/api/activity', '/activity'], activityRoutes);
+
+// Mount Mood-to-Music AI Recommendation Engine
+app.use(['/api/mood', '/mood'], moodRoutes);
 
 // YouTube API Search with In-Memory Caching & Rotating Keys
 const searchCache = new Map();
@@ -716,7 +823,7 @@ const rotateApiKey = () => {
   }
 };
 
-app.get(['/api/youtube/search', '/api/search', '/search'], async (req, res) => {
+app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async (req, res) => {
   const { q, pageToken } = req.query;
   if (!q || !q.toString().trim()) {
     return res.json({ items: [], nextPageToken: null });
@@ -895,6 +1002,12 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
+server.on('error', (err) => {
+  console.error('[HTTP Server Error]:', err.message, err.stack);
+});
+server.on('close', () => {
+  console.warn('[HTTP Server Notice]: Server closed');
+});
 server.listen(PORT, () => {
   console.log(`[AfterHours Backend] Server running on port ${PORT}`);
 });

@@ -10,7 +10,17 @@ const userSchema = new mongoose.Schema({
   history: { type: Array, default: [] },
   searchHistory: { type: [String], default: [] },
   playlists: { type: Array, default: [] },
-  queue: { type: Array, default: [] }
+  queue: { type: Array, default: [] },
+  
+  // Profile & Social Extensions
+  displayName: { type: String, default: '', trim: true, maxlength: 60 },
+  avatarUrl: { type: String, default: '', trim: true },
+  bio: { type: String, default: '', trim: true, maxlength: 300 },
+  favoriteGenres: { type: [String], default: [] },
+  isPublic: { type: Boolean, default: true },
+  shareListeningActivity: { type: Boolean, default: false },
+  followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
 }, { timestamps: true });
 
 userSchema.index({ createdAt: -1 });

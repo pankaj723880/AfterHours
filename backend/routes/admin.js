@@ -2,6 +2,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import AuditLog from '../models/AuditLog.js';
+import Activity from '../models/Activity.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { metricsService } from '../services/metrics.js';
 
@@ -165,6 +166,12 @@ router.get('/users/:id', authenticateToken, requireAdmin, async (req, res) => {
     res.json({
       id: user._id.toString(),
       username: user.username,
+      displayName: user.displayName || '',
+      avatarUrl: user.avatarUrl || '',
+      bio: user.bio || '',
+      isPublic: user.isPublic !== undefined ? user.isPublic : true,
+      shareListeningActivity: Boolean(user.shareListeningActivity),
+      favoriteGenres: user.favoriteGenres || [],
       role: user.role || 'user',
       status: user.status || 'active',
       createdAt: user.createdAt,
@@ -174,10 +181,116 @@ router.get('/users/:id', authenticateToken, requireAdmin, async (req, res) => {
         historyCount: (user.history || []).length,
         playlistsCount: (user.playlists || []).length
       },
+      playlists: (user.playlists || []).map(p => ({
+        id: p._id || p.id,
+        name: p.name || 'Untitled Playlist',
+        tracksCount: (p.tracks || p.songs || []).length
+      })),
+      recentLikedSample: (user.likedSongs || []).slice(0, 5),
+      recentHistorySample: (user.history || []).slice(0, 5),
       auditHistory: userAuditLogs
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to retrieve user: ' + err.message });
+  }
+});
+
+// 4b. Update User Profile (Admin direct management)
+router.patch('/users/:id/profile', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+
+    const targetUser = await User.findById(req.params.id);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const { displayName, avatarUrl, bio, isPublic, shareListeningActivity, favoriteGenres } = req.body;
+    const updates = {};
+    const changes = {};
+
+    if (displayName !== undefined) {
+      const cleanName = String(displayName).trim().slice(0, 60);
+      updates.displayName = cleanName;
+      changes.displayName = { from: targetUser.displayName, to: cleanName };
+    }
+
+    if (avatarUrl !== undefined) {
+      const cleanAvatar = String(avatarUrl).trim().slice(0, 500);
+      updates.avatarUrl = cleanAvatar;
+      changes.avatarUrl = { from: targetUser.avatarUrl, to: cleanAvatar };
+    }
+
+    if (bio !== undefined) {
+      const cleanBio = String(bio).trim().slice(0, 300);
+      updates.bio = cleanBio;
+      changes.bio = { from: targetUser.bio, to: cleanBio };
+    }
+
+    if (typeof isPublic === 'boolean') {
+      updates.isPublic = isPublic;
+      changes.isPublic = { from: targetUser.isPublic, to: isPublic };
+    }
+
+    if (typeof shareListeningActivity === 'boolean') {
+      updates.shareListeningActivity = shareListeningActivity;
+      changes.shareListeningActivity = { from: targetUser.shareListeningActivity, to: shareListeningActivity };
+    }
+
+    if (Array.isArray(favoriteGenres)) {
+      updates.favoriteGenres = favoriteGenres.map(g => String(g).trim()).filter(Boolean).slice(0, 15);
+      changes.favoriteGenres = { count: updates.favoriteGenres.length };
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No valid profile fields provided for update' });
+    }
+
+    Object.assign(targetUser, updates);
+    await targetUser.save();
+
+    // Cascade privacy updates to Activity collection if privacy flags changed
+    if (updates.isPublic !== undefined || updates.shareListeningActivity !== undefined) {
+      const makePublic = (targetUser.isPublic && targetUser.shareListeningActivity);
+      await Activity.updateMany(
+        { userId: targetUser._id },
+        { $set: { isPublic: makePublic, displayName: targetUser.displayName, avatarUrl: targetUser.avatarUrl } }
+      );
+    } else if (updates.displayName !== undefined || updates.avatarUrl !== undefined) {
+      await Activity.updateMany(
+        { userId: targetUser._id },
+        { $set: { displayName: targetUser.displayName, avatarUrl: targetUser.avatarUrl } }
+      );
+    }
+
+    await AuditLog.create({
+      adminId: req.user._id.toString(),
+      adminUsername: req.user.username,
+      action: 'USER_PROFILE_UPDATE',
+      targetId: targetUser._id.toString(),
+      targetUsername: targetUser.username,
+      details: changes,
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.json({
+      message: 'User profile updated successfully',
+      user: {
+        id: targetUser._id.toString(),
+        username: targetUser.username,
+        displayName: targetUser.displayName,
+        avatarUrl: targetUser.avatarUrl,
+        bio: targetUser.bio,
+        isPublic: targetUser.isPublic,
+        shareListeningActivity: targetUser.shareListeningActivity,
+        favoriteGenres: targetUser.favoriteGenres
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update user profile: ' + err.message });
   }
 });
 
@@ -332,6 +445,71 @@ router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) =>
   }
 });
 
+// 6b. Hard / Permanent User Deletion (with Cascade and Strict Safeguards)
+router.delete('/users/:id/permanent', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+
+    const currentAdminId = (req.user._id || req.user.id || req.user.userId)?.toString();
+    if (currentAdminId && currentAdminId === req.params.id) {
+      return res.status(400).json({
+        error: 'Action prohibited: Administrators cannot permanently delete their own account.'
+      });
+    }
+
+    const targetUser = await User.findById(req.params.id);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Safeguard: Cannot permanently delete the last active administrator
+    if (targetUser.role === 'admin') {
+      const activeAdminsCount = await User.countDocuments({
+        role: 'admin',
+        status: 'active',
+        _id: { $ne: targetUser._id }
+      });
+
+      if (activeAdminsCount === 0) {
+        return res.status(400).json({
+          error: 'Action prohibited: Cannot delete the last remaining active administrator.'
+        });
+      }
+    }
+
+    // Cascade: Clean up user activities
+    const deletedActivities = await Activity.deleteMany({ userId: targetUser._id });
+
+    // Hard delete user record
+    await User.findByIdAndDelete(targetUser._id);
+
+    // Record in AuditLog
+    await AuditLog.create({
+      adminId: req.user._id ? req.user._id.toString() : currentAdminId,
+      adminUsername: req.user.username,
+      action: 'USER_DELETE_PERMANENT',
+      targetId: targetUser._id.toString(),
+      targetUsername: targetUser.username,
+      details: {
+        reason: 'Hard deleted via admin dashboard',
+        cascadedActivitiesRemoved: deletedActivities.deletedCount || 0
+      },
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.json({
+      success: true,
+      message: 'User permanently deleted and associated data cleaned up',
+      userId: targetUser._id.toString()
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to permanently delete user: ' + err.message });
+  }
+});
+
 // 7. Audit Logs (Paginated, Append-Only)
 router.get('/audit-logs', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -434,7 +612,20 @@ router.get('/music-analytics', authenticateToken, requireAdmin, async (req, res)
   }
 });
 
-// 9. Public / Client Telemetry Endpoint for Observability
+// 9. Failed-Login Security Monitoring (Admin only)
+router.get('/security/failed-logins', authenticateToken, requireAdmin, (req, res) => {
+  try {
+    const failedLogins = metricsService.getFailedLogins();
+    res.json({
+      count: failedLogins.length,
+      failedLogins
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve login security events: ' + err.message });
+  }
+});
+
+// 10. Public / Client Telemetry Endpoint for Observability
 router.post('/telemetry/event', (req, res) => {
   try {
     const { type, query, trackId, title } = req.body || {};
@@ -449,6 +640,103 @@ router.post('/telemetry/event', (req, res) => {
     res.status(204).end();
   } catch (err) {
     res.status(400).json({ error: 'Invalid telemetry event' });
+  }
+});
+
+// 11. Activity Feed Moderation List (Admin only)
+router.get('/activities', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const skip = (page - 1) * limit;
+
+    const query = {};
+    if (req.query.type && ['listen', 'like', 'playlist_create', 'playlist_update'].includes(req.query.type)) {
+      query.type = req.query.type;
+    }
+    if (req.query.username && req.query.username.trim()) {
+      const cleanUsername = req.query.username.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.username = { $regex: cleanUsername, $options: 'i' };
+    }
+    if (req.query.search && req.query.search.trim()) {
+      const cleanSearch = req.query.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.$or = [
+        { 'track.title': { $regex: cleanSearch, $options: 'i' } },
+        { 'track.artist': { $regex: cleanSearch, $options: 'i' } },
+        { 'playlist.name': { $regex: cleanSearch, $options: 'i' } },
+        { username: { $regex: cleanSearch, $options: 'i' } }
+      ];
+    }
+
+    const [activities, total] = await Promise.all([
+      Activity.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Activity.countDocuments(query)
+    ]);
+
+    res.json({
+      success: true,
+      activities: activities.map(a => ({
+        id: a._id.toString(),
+        userId: a.userId ? a.userId.toString() : null,
+        username: a.username,
+        displayName: a.displayName || a.username,
+        avatarUrl: a.avatarUrl || '',
+        type: a.type,
+        track: a.track,
+        playlist: a.playlist,
+        isPublic: a.isPublic,
+        createdAt: a.createdAt,
+        updatedAt: a.updatedAt
+      })),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve activities: ' + err.message });
+  }
+});
+
+// 12. Delete / Moderate User Activity (Admin only)
+router.delete('/activities/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid activity ID format' });
+    }
+
+    const activity = await Activity.findById(req.params.id);
+    if (!activity) {
+      return res.status(404).json({ error: 'Activity not found' });
+    }
+
+    await Activity.findByIdAndDelete(req.params.id);
+
+    await AuditLog.create({
+      adminId: (req.user._id || req.user.id || req.user.userId)?.toString(),
+      adminUsername: req.user.username,
+      action: 'ACTIVITY_MODERATE_DELETE',
+      targetId: activity._id.toString(),
+      targetUsername: activity.username,
+      details: {
+        activityType: activity.type,
+        trackTitle: activity.track?.title || activity.playlist?.name || 'N/A'
+      },
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.json({
+      success: true,
+      message: 'Activity removed successfully',
+      id: req.params.id
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete activity: ' + err.message });
   }
 });
 

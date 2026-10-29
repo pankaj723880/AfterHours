@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import VoiceSearchButton from './VoiceSearchButton';
 import {
   getRecentSearches,
   saveRecentSearch,
@@ -29,6 +30,7 @@ const decodeHtml = (str = '') => {
 export default function HomeSearchBar({
   onSearch,
   onSelectSong,
+  onPlaySong,
   initialQuery = '',
   placeholder = "Search songs, artists, albums...",
   suggestions,
@@ -330,6 +332,27 @@ export default function HomeSearchBar({
               </svg>
             </button>
           )}
+
+          {/* Voice Search Mic Button */}
+          <VoiceSearchButton
+            className="mr-1 sm:mr-2"
+            onTranscriptChange={(text) => {
+              setQuery(text);
+              setIsOpen(true);
+            }}
+            onSearch={(speechQuery) => {
+              setQuery(speechQuery);
+              handleSelectRecentQuery(speechQuery);
+            }}
+            onPlaySong={(speechQuery) => {
+              setQuery(speechQuery);
+              if (onPlaySong) {
+                onPlaySong(speechQuery);
+              } else {
+                handleSelectRecentQuery(speechQuery);
+              }
+            }}
+          />
 
           {/* Search Action Button */}
           <button

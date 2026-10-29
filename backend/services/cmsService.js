@@ -89,13 +89,18 @@ export const getDefaultSiteConfig = () => ({
       subtitle: 'Iconic 90s & 2000s Bollywood Melodies, Golden Era Romance & Nostalgic Radio Hits',
       badge: '💈 Saloon FM • 90s/2000s Nostalgia Radio',
       artwork: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=1600&auto=format&fit=crop',
+      icon: 'scissors',
+      accentColor: '#ef4444',
+      category: '90s Bollywood',
+      language: 'Hindi',
       enabled: true,
       order: 1,
       bgImages: [
         'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=1600&auto=format&fit=crop',
         'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?q=80&w=1600&auto=format&fit=crop'
       ],
-      queries: ['90s bollywood hit songs kumar sanu Alka Yagnik']
+      queries: ['90s bollywood hit songs kumar sanu Alka Yagnik'],
+      tracks: []
     },
     {
       id: 'truck',
@@ -103,13 +108,18 @@ export const getDefaultSiteConfig = () => ({
       subtitle: 'High-Bass Highway Tracks, Rustic Punjabi Folk/Dhol Beats & Dhabha Anthems',
       badge: '🚛 Horn Ok Please • Highway Dhaba Vibe',
       artwork: 'https://images.unsplash.com/photo-1519003722824-194d4455a60c?q=80&w=1600&auto=format&fit=crop',
+      icon: 'truck',
+      accentColor: '#f59e0b',
+      category: 'Road Trips',
+      language: 'Hindi & Punjabi',
       enabled: true,
       order: 2,
       bgImages: [
         'https://images.unsplash.com/photo-1519003722824-194d4455a60c?q=80&w=1600&auto=format&fit=crop',
         'https://images.unsplash.com/photo-1508873696983-2df5c92063c7?q=80&w=1600&auto=format&fit=crop'
       ],
-      queries: ['altaf raja best songs hindi highway dhaba hits']
+      queries: ['altaf raja best songs hindi highway dhaba hits'],
+      tracks: []
     },
     {
       id: 'pauwa',
@@ -117,6 +127,10 @@ export const getDefaultSiteConfig = () => ({
       subtitle: 'Late-Night Party Anthems, High-Energy Drinking Bangers & Desi Hip-Hop',
       badge: '🍾 Theka Session • Desi Beats & Party Anthems',
       artwork: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=1600&auto=format&fit=crop',
+      icon: 'beer',
+      accentColor: '#10b981',
+      category: 'Party Hits',
+      language: 'Desi Punjabi & Hindi',
       enabled: true,
       order: 3,
       bgImages: [
@@ -125,18 +139,91 @@ export const getDefaultSiteConfig = () => ({
       queries: [
         'punjabi daru peg songs party hits yo yo honey singh badshah',
         'altaf raja sad songs dard bhare geet wine heartbreak'
-      ]
+      ],
+      tracks: []
+    }
+  ],
+  timeMachineEras: [
+    {
+      id: '1970s',
+      title: 'Golden Retro Classics',
+      decade: '1970s',
+      subtitle: 'Kishore Kumar, RD Burman, Mohammed Rafi, Lata Mangeshkar & 70s Disco',
+      description: 'Step into the golden vinyl era of analogue warmth, timeless melodies, and iconic orchestra arrangements.',
+      badge: '📻 1970s Vinyl Era',
+      artwork: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop',
+      enabled: true,
+      order: 1,
+      genres: ['Retro Bollywood', 'Disco', 'Classical Melody', 'Acoustic Folk'],
+      queries: ['1970s hindi golden hits kishore kumar rd burman rafi', '70s retro bollywood classic disco melodies']
+    },
+    {
+      id: '1980s',
+      title: 'Cassette Era & Synth Beats',
+      decade: '1980s',
+      subtitle: 'Bappi Lahiri, Asha Bhosle, 80s Ghazals, Pop Anthems & Groovy Disco',
+      description: 'The golden age of cassette tapes, synthesizer hooks, and soulful late-night ghazals.',
+      badge: '📼 1980s Cassette Gold',
+      artwork: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?q=80&w=800&auto=format&fit=crop',
+      enabled: true,
+      order: 2,
+      genres: ['Synth Pop', 'Disco Beats', 'Ghazals', 'Romantic Duets'],
+      queries: ['1980s bollywood disco hits bappi lahiri asha bhosle', '80s pop synth cassette classics hindi']
+    },
+    {
+      id: '1990s',
+      title: '90s Romantic Bollywood',
+      decade: '1990s',
+      subtitle: 'Kumar Sanu, Alka Yagnik, Udit Narayan, 90s Indipop & Euphoria',
+      description: 'The quintessential era of timeless romance, melodious violins, monsoon ballads, and early Indipop waves.',
+      badge: '💫 1990s Pure Romance',
+      artwork: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?q=80&w=800&auto=format&fit=crop',
+      enabled: true,
+      order: 3,
+      genres: ['90s Romance', 'Monsoon Melodies', 'Indipop', 'Dholak Beats'],
+      queries: ['1990s romantic bollywood hits kumar sanu alka yagnik', '90s iconic hindi songs udit narayan']
+    },
+    {
+      id: '2000s',
+      title: 'Millennium Pop & Y2K Hits',
+      decade: '2000s',
+      subtitle: 'KK, Sonu Nigam, Shreya Ghoshal, Sunidhi Chauhan & 2000s Rock-Pop',
+      description: 'Unforgettable college rock anthems, soulful acoustic guitars, and legendary Bollywood millennium blockbusters.',
+      badge: '💿 2000s Millennium Pop',
+      artwork: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=800&auto=format&fit=crop',
+      enabled: true,
+      order: 4,
+      genres: ['2000s Pop', 'College Rock', 'Soulful Ballads', 'Bhangra Pop'],
+      queries: ['2000s bollywood superhits kk sonu nigam shreya ghoshal', '2000s pop bangers hindi nostalgia']
+    },
+    {
+      id: '2010s',
+      title: 'Modern Desi Chartbusters',
+      decade: '2010s',
+      subtitle: 'Arijit Singh, Mohit Chauhan, Atif Aslam, Yo Yo Honey Singh & Pritam',
+      description: 'Heart-wrenching acoustic ballads, EDM-infused party anthems, and modern indie melodies.',
+      badge: '🔥 2010s Era Anthems',
+      artwork: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=800&auto=format&fit=crop',
+      enabled: true,
+      order: 5,
+      genres: ['Modern Acoustic', 'EDM Fusion', 'Desi Hip-Hop', 'Sufi Rock'],
+      queries: ['2010s best bollywood songs arijit singh mohit chauhan atif aslam', '2010s desi hits playlist']
     }
   ],
   navigation: [
-    { id: 'home', label: 'Home', enabled: true, order: 1, isCore: true, icon: 'home', badge: '' },
-    { id: 'discover', label: 'Search', enabled: true, order: 2, isCore: true, icon: 'search', badge: '' },
-    { id: 'barber', label: 'Saloon FM', enabled: true, order: 3, isCore: false, icon: 'scissors', badge: '90s' },
-    { id: 'truck', label: 'Horn Ok Please', enabled: true, order: 4, isCore: false, icon: 'truck', badge: 'Dhaba' },
-    { id: 'pauwa', label: 'Theka Session', enabled: true, order: 5, isCore: false, icon: 'beer', badge: 'Desi' },
-    { id: 'library', label: 'Favourites', enabled: true, order: 6, isCore: true, icon: 'heart', badge: '' },
-    { id: 'history', label: 'History', enabled: true, order: 7, isCore: true, icon: 'history', badge: '' },
-    { id: 'playlists', label: 'Playlists', enabled: true, order: 8, isCore: true, icon: 'list', badge: '' }
+    { id: 'home', label: 'Home', enabled: true, order: 1, isCore: true, icon: 'home', badge: '', group: 'main', route: '/' },
+    { id: 'discover', label: 'Discover & Search', enabled: true, order: 2, isCore: true, icon: 'discover', badge: '', group: 'main', route: '/discover' },
+    { id: 'mood', label: 'Mood-to-Music AI', enabled: true, order: 3, isCore: false, icon: 'sparkles', badge: 'AI', group: 'discovery', route: '/mood' },
+    { id: 'timemachine', label: 'Time Machine Radio', enabled: true, order: 4, isCore: false, icon: 'radio', badge: 'Retro', group: 'discovery', route: '/timemachine' },
+    { id: 'activity', label: 'Listening Activity', enabled: true, order: 5, isCore: false, icon: 'flame', badge: '', group: 'discovery', route: '/activity' },
+    { id: 'swipe', label: 'Discover Swipe', enabled: true, order: 6, isCore: false, icon: 'swipe', badge: '', group: 'discovery', route: '/swipe' },
+    { id: 'barber', label: 'Saloon FM', enabled: true, order: 7, isCore: false, icon: 'scissors', badge: '90s', group: 'stations', route: '/station/barber' },
+    { id: 'truck', label: 'Horn Ok Please', enabled: true, order: 8, isCore: false, icon: 'truck', badge: 'Dhaba', group: 'stations', route: '/station/truck' },
+    { id: 'pauwa', label: 'Theka Session', enabled: true, order: 9, isCore: false, icon: 'beer', badge: 'Desi', group: 'stations', route: '/station/pauwa' },
+    { id: 'library', label: 'Liked Songs Collection', enabled: true, order: 10, isCore: true, icon: 'library', badge: '', group: 'collection', route: '/library' },
+    { id: 'history', label: 'Listening History', enabled: true, order: 11, isCore: true, icon: 'history', badge: '', group: 'collection', route: '/history' },
+    { id: 'playlists', label: 'Playlists', enabled: true, order: 12, isCore: true, icon: 'list', badge: '', group: 'collection', route: '/playlists' },
+    { id: 'stats', label: 'Recap & Stats', enabled: true, order: 13, isCore: false, icon: 'sparkles', badge: '', group: 'collection', route: '/stats' }
   ],
   playerDefaults: {
     defaultVolume: 80,
@@ -168,6 +255,54 @@ export const getDefaultSiteConfig = () => ({
   }
 });
 
+export const STANDARD_NAVIGATION = getDefaultSiteConfig().navigation;
+
+export const normalizeNavigationList = (rawNav) => {
+  const defaults = getDefaultSiteConfig().navigation;
+  const input = Array.isArray(rawNav) ? rawNav : [];
+  const map = new Map();
+
+  // Seed default canonical items
+  defaults.forEach((item, index) => {
+    map.set(item.id, { ...item, order: index + 1 });
+  });
+
+  // Apply customizations from input
+  input.forEach(item => {
+    if (!item || !item.id) return;
+
+    const existing = map.get(item.id);
+    if (existing) {
+      let group = existing.group;
+      if (['barber', 'truck', 'pauwa'].includes(item.id)) group = 'stations';
+      else if (['mood', 'timemachine', 'activity', 'swipe'].includes(item.id)) group = 'discovery';
+      else if (['library', 'history', 'playlists', 'stats', 'equalizer', 'profile'].includes(item.id)) group = 'collection';
+      else if (['home', 'discover'].includes(item.id)) group = 'main';
+
+      let label = item.label || existing.label;
+
+      map.set(item.id, {
+        ...existing,
+        ...item,
+        group,
+        label,
+        enabled: item.enabled !== false
+      });
+    } else {
+      let group = item.group || 'main';
+      if (item.route?.startsWith('/station/') || group === 'stations') group = 'stations';
+      map.set(item.id, {
+        ...item,
+        group,
+        enabled: item.enabled !== false
+      });
+    }
+  });
+
+  return Array.from(map.values())
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+};
+
 let publicConfigCache = null;
 let publicConfigCacheTime = 0;
 const CACHE_TTL_MS = 30000; // 30s cache
@@ -182,7 +317,28 @@ export const cmsService = {
   // Initialize DB with defaults if not present
   async initDefaults() {
     try {
-      let published = await SiteConfig.findOne({ configType: 'published' });
+      // 1. Deduplicate published/draft configs if any redundant documents exist
+      const publishedDocs = await SiteConfig.find({ configType: 'published' }).sort({ version: -1, updatedAt: -1 });
+      if (publishedDocs.length > 1) {
+        const keepId = publishedDocs[0]._id;
+        await SiteConfig.deleteMany({ configType: 'published', _id: { $ne: keepId } });
+        console.log('[CMS Service] Pruned redundant duplicate published SiteConfigs');
+      }
+
+      const draftDocs = await SiteConfig.find({ configType: 'draft' }).sort({ version: -1, updatedAt: -1 });
+      if (draftDocs.length > 1) {
+        const keepId = draftDocs[0]._id;
+        await SiteConfig.deleteMany({ configType: 'draft', _id: { $ne: keepId } });
+        console.log('[CMS Service] Pruned redundant duplicate draft SiteConfigs');
+      }
+
+      try {
+        await SiteConfig.syncIndexes();
+      } catch (idxErr) {
+        console.warn('[CMS Service] Index sync notice:', idxErr.message);
+      }
+
+      let published = await SiteConfig.findOne({ configType: 'published' }).sort({ version: -1, updatedAt: -1 });
       if (!published) {
         const defaults = getDefaultSiteConfig();
         published = await SiteConfig.create({
@@ -193,9 +349,12 @@ export const cmsService = {
           publishedAt: new Date()
         });
         console.log('[CMS Service] Initialized default published SiteConfig');
+      } else {
+        const normalizedNav = normalizeNavigationList(published.navigation);
+        await SiteConfig.updateOne({ _id: published._id }, { $set: { navigation: normalizedNav } });
       }
 
-      let draft = await SiteConfig.findOne({ configType: 'draft' });
+      let draft = await SiteConfig.findOne({ configType: 'draft' }).sort({ version: -1, updatedAt: -1 });
       if (!draft) {
         const defaults = getDefaultSiteConfig();
         draft = await SiteConfig.create({
@@ -205,6 +364,9 @@ export const cmsService = {
           lastModifiedBy: 'system'
         });
         console.log('[CMS Service] Initialized default draft SiteConfig');
+      } else {
+        const normalizedNav = normalizeNavigationList(draft.navigation);
+        await SiteConfig.updateOne({ _id: draft._id }, { $set: { navigation: normalizedNav } });
       }
 
       // Seed curated collections if empty
@@ -313,7 +475,7 @@ export const cmsService = {
     }
 
     try {
-      let config = await SiteConfig.findOne({ configType: 'published' }).lean();
+      let config = await SiteConfig.findOne({ configType: 'published' }).sort({ version: -1, updatedAt: -1 }).lean();
       const defaults = getDefaultSiteConfig();
       if (!config) {
         config = defaults;
@@ -336,9 +498,21 @@ export const cmsService = {
         particles: typeof rawTheme.particles === 'boolean' ? rawTheme.particles : defaults.theme.particles
       };
 
+      const rawBranding = (config.branding && typeof config.branding === 'object') ? config.branding : {};
+      const safeBranding = {
+        ...defaults.branding,
+        ...rawBranding,
+        // If siteName is an empty string, preserve it as empty string so "Loopra" is not silently restored
+        siteName: typeof rawBranding.siteName === 'string' ? rawBranding.siteName : (defaults.branding.siteName || ''),
+        tagline: typeof rawBranding.tagline === 'string' ? rawBranding.tagline : defaults.branding.tagline,
+        logoUrl: typeof rawBranding.logoUrl === 'string' ? rawBranding.logoUrl : defaults.branding.logoUrl,
+        faviconUrl: typeof rawBranding.faviconUrl === 'string' ? rawBranding.faviconUrl : defaults.branding.faviconUrl,
+        description: typeof rawBranding.description === 'string' ? rawBranding.description : defaults.branding.description
+      };
+
       const publicData = {
         version: config.version || 1,
-        branding: { ...defaults.branding, ...(config.branding || {}) },
+        branding: safeBranding,
         theme: safeTheme,
         announcement: { ...defaults.announcement, ...(config.announcement || {}) },
         banner: { ...defaults.banner, ...(config.banner || {}) },
@@ -349,7 +523,10 @@ export const cmsService = {
         stations: (config.stations || defaults.stations)
           .filter(st => st && st.enabled)
           .sort((a, b) => (a.order || 0) - (b.order || 0)),
-        navigation: (config.navigation || defaults.navigation)
+        timeMachineEras: (config.timeMachineEras || defaults.timeMachineEras || [])
+          .filter(e => e && e.enabled)
+          .sort((a, b) => (a.order || 0) - (b.order || 0)),
+        navigation: normalizeNavigationList(config.navigation || defaults.navigation)
           .filter(n => n && (n.enabled || n.isCore))
           .sort((a, b) => (a.order || 0) - (b.order || 0)),
         playerDefaults: { ...defaults.playerDefaults, ...(config.playerDefaults || {}) },
@@ -376,12 +553,80 @@ export const cmsService = {
     }
   },
 
+  // Get current active maintenance configuration
+  async getMaintenanceConfig() {
+    try {
+      const pub = await this.getPublicConfig();
+      return pub?.maintenance || { enabled: false, title: '', message: '', allowedRoles: ['admin'] };
+    } catch (err) {
+      return { enabled: false, title: '', message: '', allowedRoles: ['admin'] };
+    }
+  },
+
+  // Update maintenance mode directly (updates published & draft, invalidates cache)
+  async updateMaintenance({ enabled, title, message }, adminUser) {
+    const defaults = getDefaultSiteConfig();
+    const published = await SiteConfig.findOne({ configType: 'published' }).sort({ version: -1, updatedAt: -1 });
+    const draft = await SiteConfig.findOne({ configType: 'draft' }).sort({ version: -1, updatedAt: -1 });
+
+    const newMaintenance = {
+      ...(published?.maintenance || defaults.maintenance),
+      enabled: typeof enabled === 'boolean' ? enabled : Boolean(published?.maintenance?.enabled),
+      title: typeof title === 'string' ? title : (published?.maintenance?.title || defaults.maintenance.title),
+      message: typeof message === 'string' ? message : (published?.maintenance?.message || defaults.maintenance.message),
+      allowedRoles: ['admin']
+    };
+
+    const nextVersion = ((published?.version || 1) + 1);
+
+    const updatedPublished = await SiteConfig.findOneAndUpdate(
+      { configType: 'published' },
+      {
+        $set: {
+          maintenance: newMaintenance,
+          version: nextVersion,
+          lastModifiedBy: adminUser?.username || 'admin',
+          publishedAt: new Date()
+        }
+      },
+      { upsert: true, returnDocument: 'after' }
+    );
+
+    if (draft) {
+      await SiteConfig.updateOne(
+        { configType: 'draft' },
+        {
+          $set: {
+            maintenance: newMaintenance,
+            version: nextVersion,
+            lastModifiedBy: adminUser?.username || 'admin'
+          }
+        }
+      );
+    }
+
+    try {
+      await ContentVersion.create({
+        versionNumber: nextVersion,
+        contentType: 'SITE_CONFIG',
+        snapshot: updatedPublished.toObject ? updatedPublished.toObject() : updatedPublished,
+        publishedBy: adminUser?.username || 'admin',
+        changeSummary: `Emergency maintenance mode ${newMaintenance.enabled ? 'ENABLED' : 'DISABLED'} by admin`
+      });
+    } catch (verErr) {
+      console.warn('[CMS Service] Version snapshot notice:', verErr.message);
+    }
+
+    this.invalidateCache();
+    return updatedPublished;
+  },
+
   // Get full draft config for Admin CMS
   async getDraftConfig() {
     const defaults = getDefaultSiteConfig();
-    let draft = await SiteConfig.findOne({ configType: 'draft' }).lean();
+    let draft = await SiteConfig.findOne({ configType: 'draft' }).sort({ version: -1, updatedAt: -1 }).lean();
     if (!draft) {
-      const published = await SiteConfig.findOne({ configType: 'published' }).lean();
+      const published = await SiteConfig.findOne({ configType: 'published' }).sort({ version: -1, updatedAt: -1 }).lean();
       if (published) {
         const { _id, configType, ...rest } = published;
         draft = await SiteConfig.create({
@@ -394,10 +639,21 @@ export const cmsService = {
       }
     }
 
+    const rawDraftBranding = (draft.branding && typeof draft.branding === 'object') ? draft.branding : {};
+    const draftBranding = {
+      ...defaults.branding,
+      ...rawDraftBranding,
+      siteName: typeof rawDraftBranding.siteName === 'string' ? rawDraftBranding.siteName : (defaults.branding.siteName || ''),
+      tagline: typeof rawDraftBranding.tagline === 'string' ? rawDraftBranding.tagline : defaults.branding.tagline,
+      logoUrl: typeof rawDraftBranding.logoUrl === 'string' ? rawDraftBranding.logoUrl : defaults.branding.logoUrl,
+      faviconUrl: typeof rawDraftBranding.faviconUrl === 'string' ? rawDraftBranding.faviconUrl : defaults.branding.faviconUrl,
+      description: typeof rawDraftBranding.description === 'string' ? rawDraftBranding.description : defaults.branding.description
+    };
+
     return {
       ...defaults,
       ...draft,
-      branding: { ...defaults.branding, ...(draft.branding || {}) },
+      branding: draftBranding,
       theme: { ...defaults.theme, ...(draft.theme || {}) },
       announcement: { ...defaults.announcement, ...(draft.announcement || {}) },
       banner: { ...defaults.banner, ...(draft.banner || {}) },
@@ -406,7 +662,8 @@ export const cmsService = {
       footer: { ...defaults.footer, ...(draft.footer || {}) },
       sections: Array.isArray(draft.sections) && draft.sections.length > 0 ? draft.sections : defaults.sections,
       stations: Array.isArray(draft.stations) && draft.stations.length > 0 ? draft.stations : defaults.stations,
-      navigation: Array.isArray(draft.navigation) && draft.navigation.length > 0 ? draft.navigation : defaults.navigation,
+      timeMachineEras: Array.isArray(draft.timeMachineEras) && draft.timeMachineEras.length > 0 ? draft.timeMachineEras : defaults.timeMachineEras,
+      navigation: normalizeNavigationList(Array.isArray(draft.navigation) && draft.navigation.length > 0 ? draft.navigation : defaults.navigation),
       playerDefaults: { ...defaults.playerDefaults, ...(draft.playerDefaults || {}) }
     };
   },
@@ -414,7 +671,7 @@ export const cmsService = {
   // Save changes to Draft without publishing to live website
   async saveDraft(data, adminUser) {
     const defaults = getDefaultSiteConfig();
-    const existingDraft = await SiteConfig.findOne({ configType: 'draft' }).lean() || {};
+    const existingDraft = await SiteConfig.findOne({ configType: 'draft' }).sort({ version: -1, updatedAt: -1 }).lean() || {};
     const safeData = (data && typeof data === 'object') ? data : {};
 
     const incomingTheme = (safeData.theme && typeof safeData.theme === 'object') ? safeData.theme : {};
@@ -438,15 +695,32 @@ export const cmsService = {
         : (typeof existingTheme.particles === 'boolean' ? existingTheme.particles : defaults.theme.particles)
     };
 
+    const incomingBranding = (safeData.branding && typeof safeData.branding === 'object') ? safeData.branding : {};
+    const existingBranding = (existingDraft.branding && typeof existingDraft.branding === 'object') ? existingDraft.branding : defaults.branding;
+
+    const mergedBranding = {
+      ...defaults.branding,
+      ...existingBranding,
+      ...incomingBranding,
+      siteName: typeof incomingBranding.siteName === 'string'
+        ? incomingBranding.siteName
+        : (typeof existingBranding.siteName === 'string' ? existingBranding.siteName : (defaults.branding.siteName || '')),
+      tagline: typeof incomingBranding.tagline === 'string' ? incomingBranding.tagline : existingBranding.tagline,
+      logoUrl: typeof incomingBranding.logoUrl === 'string' ? incomingBranding.logoUrl : existingBranding.logoUrl,
+      faviconUrl: typeof incomingBranding.faviconUrl === 'string' ? incomingBranding.faviconUrl : existingBranding.faviconUrl,
+      description: typeof incomingBranding.description === 'string' ? incomingBranding.description : existingBranding.description
+    };
+
     const updatePayload = {
-      branding: { ...defaults.branding, ...(existingDraft.branding || {}), ...(safeData.branding || {}) },
+      branding: mergedBranding,
       theme: mergedTheme,
       announcement: { ...defaults.announcement, ...(existingDraft.announcement || {}), ...(safeData.announcement || {}) },
       banner: { ...defaults.banner, ...(existingDraft.banner || {}), ...(safeData.banner || {}) },
       maintenance: { ...defaults.maintenance, ...(existingDraft.maintenance || {}), ...(safeData.maintenance || {}) },
       sections: Array.isArray(safeData.sections) && safeData.sections.length > 0 ? safeData.sections : (existingDraft.sections || defaults.sections),
-      stations: Array.isArray(safeData.stations) && safeData.stations.length > 0 ? safeData.stations : (existingDraft.stations || defaults.stations),
-      navigation: Array.isArray(safeData.navigation) && safeData.navigation.length > 0 ? safeData.navigation : (existingDraft.navigation || defaults.navigation),
+      stations: Array.isArray(safeData.stations) ? safeData.stations : (existingDraft.stations || defaults.stations),
+      timeMachineEras: Array.isArray(safeData.timeMachineEras) ? safeData.timeMachineEras : (existingDraft.timeMachineEras || defaults.timeMachineEras),
+      navigation: normalizeNavigationList(Array.isArray(safeData.navigation) ? safeData.navigation : (existingDraft.navigation || defaults.navigation)),
       playerDefaults: { ...defaults.playerDefaults, ...(existingDraft.playerDefaults || {}), ...(safeData.playerDefaults || {}) },
       searchPage: { ...defaults.searchPage, ...(existingDraft.searchPage || {}), ...(safeData.searchPage || {}) },
       footer: { ...defaults.footer, ...(existingDraft.footer || {}), ...(safeData.footer || {}) },
@@ -464,7 +738,7 @@ export const cmsService = {
 
   // Publish Draft to Live Website & save version snapshot
   async publish(adminUser, changeSummary = 'Published CMS update') {
-    let draft = await SiteConfig.findOne({ configType: 'draft' }).lean();
+    let draft = await SiteConfig.findOne({ configType: 'draft' }).sort({ version: -1, updatedAt: -1 }).lean();
     if (!draft) {
       draft = await this.getDraftConfig();
     }

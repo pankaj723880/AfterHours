@@ -33,6 +33,17 @@ router.get('/public-config', async (req, res) => {
   }
 });
 
+// Get public maintenance status
+router.get('/maintenance-status', async (req, res) => {
+  try {
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    const maintenance = await cmsService.getMaintenanceConfig();
+    res.json(maintenance);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch maintenance status: ' + err.message });
+  }
+});
+
 // Get public published curated collections
 router.get('/curated', async (req, res) => {
   try {

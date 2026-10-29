@@ -119,6 +119,42 @@ router.post('/config/publish', async (req, res) => {
   }
 });
 
+// Quick Maintenance Mode Toggle & Configuration
+router.post('/maintenance', async (req, res) => {
+  try {
+    const { enabled, title, message } = req.body;
+    const published = await cmsService.updateMaintenance({ enabled, title, message }, req.user);
+    const publicConfig = await cmsService.getPublicConfig();
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('cms_config_updated', {
+        version: published.version,
+        publishedAt: published.publishedAt,
+        publishedBy: req.user.username,
+        config: publicConfig
+      });
+    }
+
+    await AuditLog.create({
+      adminId: req.user._id.toString(),
+      adminUsername: req.user.username,
+      action: 'CMS_MAINTENANCE_TOGGLE',
+      details: { enabled, title, message, version: published.version },
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.json({
+      message: `Maintenance mode ${published.maintenance?.enabled ? 'enabled' : 'disabled'} successfully`,
+      maintenance: published.maintenance,
+      version: published.version
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update maintenance mode: ' + err.message });
+  }
+});
+
 // ==========================================
 // 2. REVISION HISTORY & 1-CLICK ROLLBACK
 // ==========================================
@@ -776,6 +812,467 @@ router.delete('/media/:id', async (req, res) => {
     res.json({ message: 'Media asset deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete media asset: ' + err.message });
+  }
+});
+
+// ==========================================
+// 5. NOSTALGIA STATIONS MANAGEMENT (CRUD)
+// ==========================================
+
+// Get All Stations in Draft
+router.get('/stations', async (req, res) => {
+  try {
+    const draft = await cmsService.getDraftConfig();
+    const stations = (draft.stations || []).sort((a, b) => (a.order || 0) - (b.order || 0));
+    res.json({ stations });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch stations: ' + err.message });
+  }
+});
+
+// Create New Nostalgia Station
+router.post('/stations', async (req, res) => {
+  try {
+    const title = req.body.title || req.body.name;
+    const subtitle = req.body.subtitle || req.body.description;
+    const {
+      id,
+      slug,
+      badge,
+      artwork,
+      icon,
+      accentColor,
+      category,
+      language,
+      enabled,
+      queries,
+      tracks
+    } = req.body;
+
+    if (!title || typeof title !== 'string' || !title.trim()) {
+      return res.status(400).json({ error: 'Station title is required', message: 'Station title is required' });
+    }
+
+    // Slug / ID generation & validation
+    const rawSlug = (id || slug || title).trim().toLowerCase();
+    const cleanSlug = rawSlug
+      .replace(/[^a-z0-9-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+
+    if (!cleanSlug || cleanSlug.length < 2) {
+      return res.status(400).json({ error: 'A valid URL-safe station slug is required (at least 2 lowercase alphanumeric characters)', message: 'A valid URL-safe station slug is required' });
+    }
+
+    const reservedRoutes = ['home', 'discover', 'mood', 'timemachine', 'activity', 'swipe', 'library', 'history', 'playlists', 'stats', 'equalizer', 'profile', 'admin', 'auth'];
+    if (reservedRoutes.includes(cleanSlug)) {
+      return res.status(400).json({ error: `The slug "${cleanSlug}" is reserved by core application routes`, message: `The slug "${cleanSlug}" is reserved by core application routes` });
+    }
+
+    const draft = await cmsService.getDraftConfig();
+    const existingStations = draft.stations || [];
+    if (existingStations.some(s => s.id === cleanSlug)) {
+      return res.status(409).json({ error: `Station with slug "${cleanSlug}" already exists`, message: `Station with slug "${cleanSlug}" already exists` });
+    }
+
+    const newStation = {
+      id: cleanSlug,
+      title: title.trim().slice(0, 80),
+      subtitle: (subtitle || '').trim().slice(0, 300),
+      badge: (badge || '').trim().slice(0, 80),
+      artwork: (artwork || '').trim().slice(0, 500),
+      icon: (icon || 'radio').trim().slice(0, 40),
+      accentColor: (accentColor || '#f59e0b').trim().slice(0, 20),
+      category: (category || 'Nostalgia Radio').trim().slice(0, 60),
+      language: (language || 'Hindi').trim().slice(0, 60),
+      enabled: enabled !== false,
+      order: existingStations.length + 1,
+      bgImages: artwork ? [artwork.trim()] : [],
+      queries: Array.isArray(queries) ? queries.map(q => String(q).trim()).filter(Boolean) : [`${title.trim()} songs`],
+      tracks: Array.isArray(tracks) ? tracks : []
+    };
+
+    const updatedStations = [...existingStations, newStation];
+    await cmsService.saveDraft({ stations: updatedStations }, req.user);
+
+    await AuditLog.create({
+      adminId: req.user._id.toString(),
+      adminUsername: req.user.username,
+      action: 'CMS_STATION_CREATE',
+      targetId: cleanSlug,
+      targetUsername: newStation.title,
+      details: { slug: cleanSlug, category: newStation.category },
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.status(201).json({
+      message: 'Nostalgia Station created in draft',
+      station: newStation
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create station: ' + err.message });
+  }
+});
+
+// Update Nostalgia Station
+router.put('/stations/:id', async (req, res) => {
+  try {
+    const stationId = req.params.id;
+    const draft = await cmsService.getDraftConfig();
+    const existingStations = [...(draft.stations || [])];
+    const index = existingStations.findIndex(s => s.id === stationId);
+
+    if (index === -1) {
+      return res.status(404).json({ error: 'Station not found' });
+    }
+
+    const cur = existingStations[index];
+    const {
+      title,
+      subtitle,
+      badge,
+      artwork,
+      icon,
+      accentColor,
+      category,
+      language,
+      enabled,
+      order,
+      queries,
+      tracks,
+      bgImages
+    } = req.body;
+
+    const updatedStation = {
+      ...cur,
+      title: title !== undefined ? String(title).trim().slice(0, 80) : cur.title,
+      subtitle: subtitle !== undefined ? String(subtitle).trim().slice(0, 300) : cur.subtitle,
+      badge: badge !== undefined ? String(badge).trim().slice(0, 80) : cur.badge,
+      artwork: artwork !== undefined ? String(artwork).trim().slice(0, 500) : cur.artwork,
+      icon: icon !== undefined ? String(icon).trim().slice(0, 40) : cur.icon,
+      accentColor: accentColor !== undefined ? String(accentColor).trim().slice(0, 20) : cur.accentColor,
+      category: category !== undefined ? String(category).trim().slice(0, 60) : cur.category,
+      language: language !== undefined ? String(language).trim().slice(0, 60) : cur.language,
+      enabled: enabled !== undefined ? Boolean(enabled) : cur.enabled,
+      order: order !== undefined ? Number(order) : cur.order,
+      queries: Array.isArray(queries) ? queries.map(q => String(q).trim()).filter(Boolean) : cur.queries,
+      tracks: Array.isArray(tracks) ? tracks : cur.tracks,
+      bgImages: Array.isArray(bgImages) ? bgImages : (artwork ? [artwork.trim()] : cur.bgImages)
+    };
+
+    existingStations[index] = updatedStation;
+    await cmsService.saveDraft({ stations: existingStations }, req.user);
+
+    await AuditLog.create({
+      adminId: req.user._id.toString(),
+      adminUsername: req.user.username,
+      action: 'CMS_STATION_UPDATE',
+      targetId: stationId,
+      targetUsername: updatedStation.title,
+      details: { updatedFields: Object.keys(req.body) },
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.json({
+      message: 'Station updated in draft',
+      station: updatedStation
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update station: ' + err.message });
+  }
+});
+
+// Delete Nostalgia Station
+router.delete('/stations/:id', async (req, res) => {
+  try {
+    const stationId = req.params.id;
+    const draft = await cmsService.getDraftConfig();
+    const existingStations = draft.stations || [];
+    const target = existingStations.find(s => s.id === stationId);
+
+    if (!target) {
+      return res.status(404).json({ error: 'Station not found' });
+    }
+
+    const filteredStations = existingStations.filter(s => s.id !== stationId);
+    await cmsService.saveDraft({ stations: filteredStations }, req.user);
+
+    await AuditLog.create({
+      adminId: req.user._id.toString(),
+      adminUsername: req.user.username,
+      action: 'CMS_STATION_DELETE',
+      targetId: stationId,
+      targetUsername: target.title,
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.json({ message: `Station "${target.title}" removed from draft` });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete station: ' + err.message });
+  }
+});
+
+// Add Track to Station
+router.post('/stations/:id/tracks', async (req, res) => {
+  try {
+    const stationId = req.params.id;
+    const { videoId, title, artist, album, duration, thumbnail, url } = req.body;
+
+    if (!videoId || !title) {
+      return res.status(400).json({ error: 'Track videoId and title are required' });
+    }
+
+    const draft = await cmsService.getDraftConfig();
+    const existingStations = [...(draft.stations || [])];
+    const index = existingStations.findIndex(s => s.id === stationId);
+
+    if (index === -1) {
+      return res.status(404).json({ error: 'Station not found' });
+    }
+
+    const cleanVid = String(videoId).trim();
+    const trackObj = {
+      id: cleanVid,
+      videoId: cleanVid,
+      title: String(title).trim().slice(0, 150),
+      artist: String(artist || 'Unknown Artist').trim().slice(0, 100),
+      album: String(album || '').trim().slice(0, 100),
+      duration: String(duration || '').trim().slice(0, 20),
+      thumbnail: thumbnail ? String(thumbnail).trim() : `https://i.ytimg.com/vi/${cleanVid}/hqdefault.jpg`,
+      url: url ? String(url).trim() : `https://www.youtube.com/watch?v=${cleanVid}`,
+      isHidden: false
+    };
+
+    const currentTracks = Array.isArray(existingStations[index].tracks) ? [...existingStations[index].tracks] : [];
+    if (!currentTracks.some(t => (t.id === cleanVid || t.videoId === cleanVid))) {
+      currentTracks.push(trackObj);
+    }
+
+    existingStations[index].tracks = currentTracks;
+    await cmsService.saveDraft({ stations: existingStations }, req.user);
+
+    res.status(201).json({
+      message: 'Track added to station',
+      track: trackObj,
+      tracks: currentTracks
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to add track: ' + err.message });
+  }
+});
+
+// Remove Track from Station
+router.delete('/stations/:id/tracks/:trackId', async (req, res) => {
+  try {
+    const { id: stationId, trackId } = req.params;
+    const draft = await cmsService.getDraftConfig();
+    const existingStations = [...(draft.stations || [])];
+    const index = existingStations.findIndex(s => s.id === stationId);
+
+    if (index === -1) {
+      return res.status(404).json({ error: 'Station not found' });
+    }
+
+    const currentTracks = Array.isArray(existingStations[index].tracks) ? existingStations[index].tracks : [];
+    existingStations[index].tracks = currentTracks.filter(t => t.id !== trackId && t.videoId !== trackId);
+
+    await cmsService.saveDraft({ stations: existingStations }, req.user);
+    res.json({
+      message: 'Track removed from station',
+      tracks: existingStations[index].tracks
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to remove track: ' + err.message });
+  }
+});
+
+// ==========================================
+// 6. WEBSITE NAVIGATION & SIDEBAR MANAGEMENT
+// ==========================================
+
+// Get All Navigation Items in Draft
+router.get('/navigation', async (req, res) => {
+  try {
+    const draft = await cmsService.getDraftConfig();
+    const navigation = (draft.navigation || []).sort((a, b) => (a.order || 0) - (b.order || 0));
+    res.json({ navigation });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch navigation: ' + err.message });
+  }
+});
+
+// Add Navigation Item
+router.post('/navigation', async (req, res) => {
+  try {
+    const { id, label, icon, badge, group, description, route, enabled } = req.body;
+    if (!label || !id) {
+      return res.status(400).json({ error: 'Label and destination ID are required' });
+    }
+
+    const cleanId = String(id).trim().toLowerCase();
+    const cleanLabel = String(label).trim().slice(0, 40);
+    const cleanGroup = ['main', 'discovery', 'stations', 'collection', 'system'].includes(group) ? group : 'main';
+
+    const draft = await cmsService.getDraftConfig();
+    const existingNav = draft.navigation || [];
+    if (existingNav.some(n => n.id === cleanId)) {
+      return res.status(400).json({ error: `Navigation item "${cleanId}" already exists` });
+    }
+
+    const newItem = {
+      id: cleanId,
+      label: cleanLabel,
+      icon: (icon || 'compass').trim().slice(0, 40),
+      badge: (badge || '').trim().slice(0, 20),
+      group: cleanGroup,
+      description: (description || '').trim().slice(0, 200),
+      route: (route || `/${cleanId}`).trim().slice(0, 100),
+      enabled: enabled !== false,
+      isCore: false,
+      order: existingNav.length + 1
+    };
+
+    const updatedNav = [...existingNav, newItem];
+    await cmsService.saveDraft({ navigation: updatedNav }, req.user);
+
+    await AuditLog.create({
+      adminId: req.user._id.toString(),
+      adminUsername: req.user.username,
+      action: 'CMS_NAV_ADD',
+      targetId: cleanId,
+      targetUsername: cleanLabel,
+      details: { group: cleanGroup, route: newItem.route },
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.status(201).json({
+      message: 'Navigation item added to draft',
+      item: newItem
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to add navigation item: ' + err.message });
+  }
+});
+
+// Update Navigation Item
+router.put('/navigation/:id', async (req, res) => {
+  try {
+    const navId = req.params.id;
+    const draft = await cmsService.getDraftConfig();
+    const existingNav = [...(draft.navigation || [])];
+    const index = existingNav.findIndex(n => n.id === navId);
+
+    if (index === -1) {
+      return res.status(404).json({ error: 'Navigation item not found' });
+    }
+
+    const cur = existingNav[index];
+    const { label, icon, badge, group, description, route, enabled, order } = req.body;
+
+    const updatedItem = {
+      ...cur,
+      label: label !== undefined ? String(label).trim().slice(0, 40) : cur.label,
+      icon: icon !== undefined ? String(icon).trim().slice(0, 40) : cur.icon,
+      badge: badge !== undefined ? String(badge).trim().slice(0, 20) : cur.badge,
+      group: group && ['main', 'discovery', 'stations', 'collection', 'system'].includes(group) ? group : cur.group,
+      description: description !== undefined ? String(description).trim().slice(0, 200) : cur.description,
+      route: route !== undefined ? String(route).trim().slice(0, 100) : cur.route,
+      enabled: enabled !== undefined ? Boolean(enabled) : cur.enabled,
+      order: order !== undefined ? Number(order) : cur.order
+    };
+
+    existingNav[index] = updatedItem;
+    await cmsService.saveDraft({ navigation: existingNav }, req.user);
+
+    res.json({
+      message: 'Navigation item updated in draft',
+      item: updatedItem
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update navigation item: ' + err.message });
+  }
+});
+
+// Delete Navigation Item
+router.delete('/navigation/:id', async (req, res) => {
+  try {
+    const navId = req.params.id;
+    const draft = await cmsService.getDraftConfig();
+    const existingNav = draft.navigation || [];
+    const target = existingNav.find(n => n.id === navId);
+
+    if (!target) {
+      return res.status(404).json({ error: 'Navigation item not found' });
+    }
+
+    if (target.isCore) {
+      return res.status(400).json({
+        error: 'Core navigation items cannot be deleted. You can hide them instead.',
+        message: 'Core navigation items cannot be deleted. You can hide them instead.'
+      });
+    }
+
+    const filteredNav = existingNav.filter(n => n.id !== navId);
+    await cmsService.saveDraft({ navigation: filteredNav }, req.user);
+
+    await AuditLog.create({
+      adminId: req.user._id.toString(),
+      adminUsername: req.user.username,
+      action: 'CMS_NAV_DELETE',
+      targetId: navId,
+      targetUsername: target.label,
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.json({ message: `Navigation item "${target.label}" removed from draft` });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete navigation item: ' + err.message });
+  }
+});
+
+// Reset Navigation Items to System Defaults
+router.post('/navigation/reset', async (req, res) => {
+  try {
+    const defaultNav = [
+      { id: 'home', label: 'Home', enabled: true, order: 1, isCore: true, icon: 'home', badge: '', group: 'main', route: '/' },
+      { id: 'discover', label: 'Discover & Search', enabled: true, order: 2, isCore: true, icon: 'discover', badge: '', group: 'main', route: '/discover' },
+      { id: 'mood', label: 'Mood-to-Music AI', enabled: true, order: 3, isCore: false, icon: 'sparkles', badge: 'AI', group: 'discovery', route: '/mood' },
+      { id: 'timemachine', label: 'Time Machine Radio', enabled: true, order: 4, isCore: false, icon: 'radio', badge: 'Retro', group: 'discovery', route: '/timemachine' },
+      { id: 'activity', label: 'Listening Activity', enabled: true, order: 5, isCore: false, icon: 'flame', badge: '', group: 'discovery', route: '/activity' },
+      { id: 'swipe', label: 'Discover Swipe', enabled: true, order: 6, isCore: false, icon: 'swipe', badge: '', group: 'discovery', route: '/swipe' },
+      { id: 'barber', label: 'Saloon FM', enabled: true, order: 7, isCore: false, icon: 'scissors', badge: '90s', group: 'stations', route: '/station/barber' },
+      { id: 'truck', label: 'Horn Ok Please', enabled: true, order: 8, isCore: false, icon: 'truck', badge: 'Dhaba', group: 'stations', route: '/station/truck' },
+      { id: 'pauwa', label: 'Theka Session', enabled: true, order: 9, isCore: false, icon: 'beer', badge: 'Desi', group: 'stations', route: '/station/pauwa' },
+      { id: 'library', label: 'Liked Songs', enabled: true, order: 10, isCore: true, icon: 'library', badge: '', group: 'collection', route: '/library' },
+      { id: 'history', label: 'History', enabled: true, order: 11, isCore: true, icon: 'history', badge: '', group: 'collection', route: '/history' },
+      { id: 'playlists', label: 'Playlists', enabled: true, order: 12, isCore: true, icon: 'list', badge: '', group: 'collection', route: '/playlists' },
+      { id: 'stats', label: 'Recap & Stats', enabled: true, order: 13, isCore: false, icon: 'sparkles', badge: '', group: 'collection', route: '/stats' },
+      { id: 'equalizer', label: 'Equalizer', enabled: true, order: 14, isCore: false, icon: 'sliders', badge: '10-Band', group: 'collection', route: '/equalizer' },
+      { id: 'profile', label: 'My Profile', enabled: true, order: 15, isCore: false, icon: 'user', badge: '', group: 'collection', route: '/profile' }
+    ];
+
+    await cmsService.saveDraft({ navigation: defaultNav }, req.user);
+
+    await AuditLog.create({
+      adminId: req.user._id.toString(),
+      adminUsername: req.user.username,
+      action: 'CMS_NAV_RESET',
+      details: { summary: 'Reset navigation to system defaults' },
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.json({
+      message: 'Navigation reset to defaults in draft',
+      navigation: defaultNav
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to reset navigation: ' + err.message });
   }
 });
 
