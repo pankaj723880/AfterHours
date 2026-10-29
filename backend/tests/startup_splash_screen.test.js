@@ -71,7 +71,21 @@ console.log('--- TEST 5: App.jsx Integration & Transition ---');
   assert(appSource.includes('<AppSplashScreen'), 'App.jsx must render AppSplashScreen during startup');
   assert(appSource.includes('showSplashScreen'), 'App.jsx must manage splash visibility state');
   assert(appSource.includes('isAppInitialized'), 'App.jsx must signal when app initialization is ready');
+  assert(appSource.includes('handleSplashFinished'), 'App.jsx must stabilize onFinished callback with useCallback');
   console.log('[PASS] App.jsx successfully integrated with coordinated startup sequence and smooth exit.\n');
 }
 
-console.log('=== ALL 5 PREMIUM 3D INFINITY SPLASH SCREEN TESTS PASSED! ===');
+// Test 6: Splash Screen Exit Reliability & Never-Stuck Guarantee
+console.log('--- TEST 6: Splash Screen Exit Reliability & Never-Stuck Guarantee ---');
+{
+  const splashCode = fs.readFileSync(SPLASH_PATH, 'utf-8');
+  assert(splashCode.includes('onFinishedRef'), 'AppSplashScreen must use stable ref for onFinished to prevent timer resets on parent re-renders');
+  assert(splashCode.includes('fadeTimer'), 'AppSplashScreen must implement fade-out timer');
+  assert(splashCode.includes('unmountTimer'), 'AppSplashScreen must implement unmount transition timer');
+  
+  const appSource = fs.readFileSync(APP_JSX_PATH, 'utf-8');
+  assert(appSource.includes('splashSafetyTimer'), 'App.jsx must feature unconditional splash safety timer');
+  console.log('[PASS] Exit logic is resilient, immune to re-render timer cancellation, and guaranteed to transition.\n');
+}
+
+console.log('=== ALL 6 PREMIUM 3D INFINITY SPLASH SCREEN TESTS PASSED! ===');

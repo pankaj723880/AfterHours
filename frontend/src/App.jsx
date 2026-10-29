@@ -1288,6 +1288,18 @@ export default function App() {
   const [isAppInitialized, setIsAppInitialized] = useState(false);
   const [showSplashScreen, setShowSplashScreen] = useState(true);
 
+  const handleSplashFinished = useCallback(() => {
+    setShowSplashScreen(false);
+  }, []);
+
+  // Unconditional safety ceiling: guarantee splash screen is removed within 2.8 seconds
+  useEffect(() => {
+    const splashSafetyTimer = setTimeout(() => {
+      setShowSplashScreen(false);
+    }, 2800);
+    return () => clearTimeout(splashSafetyTimer);
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -4144,7 +4156,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         {showSplashScreen && (
           <AppSplashScreen
             isAppReady={isAppInitialized}
-            onFinished={() => setShowSplashScreen(false)}
+            onFinished={handleSplashFinished}
             branding={cmsConfig?.branding}
           />
         )}
@@ -4243,7 +4255,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       {showSplashScreen && (
         <AppSplashScreen
           isAppReady={isAppInitialized}
-          onFinished={() => setShowSplashScreen(false)}
+          onFinished={handleSplashFinished}
           branding={cmsConfig?.branding}
         />
       )}
