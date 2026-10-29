@@ -17,7 +17,7 @@ export default function ListeningStatsModal({ isOpen, onClose, showToast }) {
   const handleShare = () => {
     const summaryText = weeklyRecap
       ? `🎶 My Loopra Weekly Recap:\n⏱️ ${weeklyRecap.totalHours} hrs listened\n🎵 ${weeklyRecap.distinctTracksCount} distinct tracks\n⭐ Top track: ${weeklyRecap.topTracks[0]?.title || 'Various'}\nCheck out retro Bollywood on Loopra!`
-      : `🎶 Listening on Loopra - Mehfil & Bollywood Nostalgia without ads!`;
+      : `🎶 Listening on Loopra - Music & Bollywood Nostalgia without ads!`;
 
     if (navigator.share) {
       navigator.share({

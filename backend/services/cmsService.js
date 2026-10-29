@@ -6,10 +6,10 @@ import AuditLog from '../models/AuditLog.js';
 export const getDefaultSiteConfig = () => ({
   branding: {
     siteName: 'Loopra',
-    tagline: 'AfterHours Mehfil Music',
+    tagline: '',
     logoUrl: '/loopra-logo.png',
     faviconUrl: '/loopra-logo.png',
-    description: 'Endless retro Hindi, Bollywood nostalgia, and high-energy desi soundtracks without subscriptions.'
+    description: 'Stream music with immersive 3D visuals and rich audio experiences.'
   },
   theme: {
     accentColor: '#f59e0b',

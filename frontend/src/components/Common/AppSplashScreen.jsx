@@ -44,7 +44,10 @@ export default function AppSplashScreen({
   onFinished,
   branding
 }) {
-  const [shouldRender, setShouldRender] = useState(true);
+  // Mobile protection: Never render splash screen on mobile phones/screens (<768px)
+  const isMobileInitial = typeof window !== 'undefined' ? window.innerWidth < 768 : false;
+  const [isMobile, setIsMobile] = useState(isMobileInitial);
+  const [shouldRender, setShouldRender] = useState(!isMobileInitial);
   const [isFadingOut, setIsFadingOut] = useState(false);
   const [isInfinityVisible, setIsInfinityVisible] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
@@ -57,6 +60,19 @@ export default function AppSplashScreen({
   const siteName = branding?.siteName || 'Loopra';
   const siteTagline = branding?.tagline || '';
   const logoUrl = branding?.logoUrl || '/loopra-logo.png';
+
+  // Responsive window resize listener to ensure mobile always suppresses splash
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (mobile) {
+        setShouldRender(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Check reduced motion & WebGL capabilities once on mount
   useEffect(() => {
@@ -226,14 +242,14 @@ export default function AppSplashScreen({
     };
   }, [shouldRender, prefersReducedMotion, hasWebGL]);
 
-  if (!shouldRender) return null;
+  if (isMobile || !shouldRender) return null;
 
   return (
     <div
       role="status"
       aria-live="polite"
       aria-label="Loading Loopra"
-      className={`fixed inset-0 z-[99999] bg-[#09090b] flex flex-col items-center justify-center select-none overflow-hidden transition-all duration-600 ease-out ${
+      className={`fixed inset-0 z-[99999] bg-[#09090b] hidden md:flex flex-col items-center justify-center select-none overflow-hidden transition-all duration-600 ease-out ${
         isFadingOut
           ? 'opacity-0 scale-105 pointer-events-none'
           : 'opacity-100 scale-100 pointer-events-auto'

@@ -408,7 +408,7 @@ export default function CmsGlobalSettings({
                 type="text"
                 value={branding.tagline || ''}
                 onChange={(e) => handleFieldChange('branding', 'tagline', e.target.value)}
-                placeholder="AfterHours Mehfil Music"
+                placeholder="Enter your site tagline"
                 className="w-full bg-neutral-950 border border-neutral-800 focus:border-amber-500/80 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none transition"
               />
               <span className="text-[10px] text-neutral-500 mt-1 block">Subtitle shown next to logo badge.</span>

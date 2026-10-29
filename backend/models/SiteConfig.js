@@ -5,11 +5,11 @@ const siteConfigSchema = new mongoose.Schema({
   version: { type: Number, default: 1 },
   
   branding: {
-    siteName: { type: String, default: '' },
-    tagline: { type: String, default: 'AfterHours Mehfil Music' },
+    siteName: { type: String, default: 'Loopra' },
+    tagline: { type: String, default: '' },
     logoUrl: { type: String, default: '/loopra-logo.png' },
     faviconUrl: { type: String, default: '/loopra-logo.png' },
-    description: { type: String, default: 'Endless retro Hindi, Bollywood nostalgia, and high-energy desi soundtracks without subscriptions.' }
+    description: { type: String, default: 'Stream music with immersive 3D visuals and rich audio experiences.' }
   },
 
   theme: {

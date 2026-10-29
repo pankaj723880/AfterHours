@@ -8,7 +8,6 @@ import HomeSearchBar from './components/Search/HomeSearchBar';
 import Turntable3D from './components/Player/Turntable3D';
 import AudioSpectrumVisualizer from './components/Player/AudioSpectrumVisualizer';
 import StudioLoungeAtmosphere from './components/Player/StudioLoungeAtmosphere';
-import AppSplashScreen from './components/Common/AppSplashScreen';
 import CmsAnnouncementBar from './components/Common/CmsAnnouncementBar';
 import CmsHeroBanner from './components/Common/CmsHeroBanner';
 import CmsMaintenanceOverlay from './components/Common/CmsMaintenanceOverlay';
@@ -1285,34 +1284,8 @@ export default function App() {
     return cached;
   });
 
-  const [isAppInitialized, setIsAppInitialized] = useState(false);
-  const [showSplashScreen, setShowSplashScreen] = useState(true);
-  const startupStartTimeRef = useRef(Date.now());
-  const startupCompletedRef = useRef(false);
-
   useEffect(() => {
     let isMounted = true;
-    let minSplashTimer = null;
-    const MIN_SPLASH_DURATION_MS = 3000;
-    const MAX_SAFETY_DURATION_MS = 6500;
-
-    const finalizeStartup = () => {
-      if (startupCompletedRef.current) return;
-      startupCompletedRef.current = true;
-      if (isMounted) {
-        setIsAppInitialized(true);
-      }
-    };
-
-    const onInitializationAttemptFinished = () => {
-      const elapsed = Date.now() - startupStartTimeRef.current;
-      const remainingTime = Math.max(0, MIN_SPLASH_DURATION_MS - elapsed);
-      if (remainingTime > 0) {
-        minSplashTimer = setTimeout(finalizeStartup, remainingTime);
-      } else {
-        finalizeStartup();
-      }
-    };
 
     fetchPublicCmsConfig(BACKEND_URL)
       .then(cfg => {
@@ -1325,15 +1298,7 @@ export default function App() {
       })
       .catch(err => {
         console.warn('[Startup] CMS config notice:', err?.message);
-      })
-      .finally(() => {
-        onInitializationAttemptFinished();
       });
-
-    // Hard safety timeout: guaranteed exit if network hangs indefinitely
-    const maxSafetyTimer = setTimeout(() => {
-      finalizeStartup();
-    }, MAX_SAFETY_DURATION_MS);
 
     const handleConfigUpdate = (data) => {
       if (data?.config) {
@@ -1357,8 +1322,6 @@ export default function App() {
     socket.on('cms_config_updated', handleConfigUpdate);
     return () => {
       isMounted = false;
-      if (minSplashTimer) clearTimeout(minSplashTimer);
-      clearTimeout(maxSafetyTimer);
       socket.off('cms_config_updated', handleConfigUpdate);
     };
   }, []);
@@ -4161,13 +4124,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   if (isBlockedByMaintenance) {
     return (
       <div className="h-[100dvh] bg-neutral-950 text-neutral-100 font-sans antialiased relative overflow-hidden">
-        {showSplashScreen && (
-          <AppSplashScreen
-            isAppReady={isAppInitialized}
-            onFinished={() => setShowSplashScreen(false)}
-            branding={cmsConfig?.branding}
-          />
-        )}
         <CmsMaintenanceOverlay
           maintenance={cmsConfig?.maintenance}
           branding={cmsConfig?.branding}
@@ -4259,14 +4215,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   return (
     <div className="h-[100dvh] bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative overflow-hidden">
-      {/* Premium 3D Infinity Startup Splash Screen */}
-      {showSplashScreen && (
-        <AppSplashScreen
-          isAppReady={isAppInitialized}
-          onFinished={() => setShowSplashScreen(false)}
-          branding={cmsConfig?.branding}
-        />
-      )}
 
       {/* Admin Maintenance Bypass Banner */}
       {isMaintenanceActive && isAdmin && (

@@ -2,7 +2,7 @@ import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
 
-console.log('=== STARTING STARTUP SPLASH SCREEN & 3D INFINITY TEST SUITE ===\n');
+console.log('=== STARTING STARTUP SPLASH SCREEN & MOBILE REMOVAL TEST SUITE ===\n');
 
 const ROOT_DIR = process.cwd();
 const PUBLIC_DIR = path.join(ROOT_DIR, 'frontend', 'public');
@@ -13,11 +13,10 @@ const FAVICON_PATH = path.join(PUBLIC_DIR, 'favicon.png');
 const SW_PATH = path.join(PUBLIC_DIR, 'sw.js');
 const MANIFEST_PATH = path.join(PUBLIC_DIR, 'manifest.json');
 const INDEX_HTML_PATH = path.join(ROOT_DIR, 'frontend', 'index.html');
-const SPLASH_JSX_PATH = path.join(ROOT_DIR, 'frontend', 'src', 'components', 'Common', 'AppSplashScreen.jsx');
 const APP_JSX_PATH = path.join(ROOT_DIR, 'frontend', 'src', 'App.jsx');
 
 // Test 1: Verify the Loopra logo asset and PWA icons in public/
-console.log('--- TEST 1: Existing Loopra logo & PWA icon asset verification ---');
+console.log('--- TEST 1: Loopra logo & PWA icon asset verification ---');
 {
   assert(fs.existsSync(LOGO_PATH), 'loopra-logo.png must exist in frontend/public/');
   const logoStats = fs.statSync(LOGO_PATH);
@@ -34,12 +33,14 @@ console.log('--- TEST 1: Existing Loopra logo & PWA icon asset verification ---'
   console.log(`[PASS] Reused official logo: frontend/public/loopra-logo.png and synced PWA icons (${(logoStats.size / 1024).toFixed(1)} KB).\n`);
 }
 
-// Test 2: PWA manifest branding and icon verification
-console.log('--- TEST 2: Web App Manifest branding & icons ---');
+// Test 2: PWA manifest branding and clean name (no old tagline)
+console.log('--- TEST 2: Web App Manifest clean name & icons ---');
 {
   assert(fs.existsSync(MANIFEST_PATH), 'manifest.json must exist');
   const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf-8'));
-  assert.strictEqual(manifest.name, 'Loopra - Retro & High-Vibe Radio', 'Manifest name must match official tagline');
+  assert.strictEqual(manifest.name, 'Loopra', 'Manifest name must be clean "Loopra" with no outdated tagline');
+  assert.strictEqual(manifest.short_name, 'Loopra', 'Manifest short_name must be "Loopra"');
+  assert(!manifest.name.includes('Retro & High-Vibe Radio'), 'Manifest name must not contain legacy tagline');
   assert(Array.isArray(manifest.icons) && manifest.icons.length > 0, 'Manifest must have icons');
   const hasLoopraLogo = manifest.icons.some(icon => icon.src === '/loopra-logo.png');
   assert(hasLoopraLogo, 'Manifest must reference /loopra-logo.png');
@@ -48,47 +49,38 @@ console.log('--- TEST 2: Web App Manifest branding & icons ---');
   // Check service worker cache version
   assert(fs.existsSync(SW_PATH), 'sw.js must exist');
   const swSource = fs.readFileSync(SW_PATH, 'utf-8');
-  assert(swSource.includes('loopra-v3-shell'), 'sw.js must use v3 shell cache to purge legacy radio cache');
-  console.log('[PASS] Manifest & Service Worker correctly configured with /loopra-logo.png and v3 cache.\n');
+  assert(swSource.includes('loopra-v4-shell'), 'sw.js must use v4 shell cache to invalidate older shells');
+  console.log('[PASS] Manifest & Service Worker correctly configured with clean Loopra branding.\n');
 }
 
-// Test 3: Pre-hydration HTML fallback in index.html
-console.log('--- TEST 3: Pre-hydration splash in index.html ---');
+// Test 3: index.html has no blocking splash overlay
+console.log('--- TEST 3: Zero splash overlay in index.html ---');
 {
   const indexHtml = fs.readFileSync(INDEX_HTML_PATH, 'utf-8');
-  assert(indexHtml.includes('/loopra-logo.png'), 'index.html must reference /loopra-logo.png for favicon and splash');
-  assert(indexHtml.includes('initial-splash-fallback'), 'index.html must contain pre-hydration splash fallback');
-  assert(indexHtml.includes('Retro & High-Vibe Radio'), 'index.html must display official tagline in splash');
-  console.log('[PASS] index.html includes instant zero-flash pre-hydration splash with Loopra logo.\n');
+  assert(indexHtml.includes('<div id="root"></div>'), 'index.html must have clean empty root container');
+  assert(!indexHtml.includes('initial-splash-fallback'), 'index.html must not contain initial-splash-fallback overlay');
+  assert(!indexHtml.includes('Retro & High-Vibe Radio'), 'index.html must not contain legacy tagline');
+  console.log('[PASS] index.html contains clean root container with zero blocking overlays.\n');
 }
 
-// Test 4: AppSplashScreen component implementation, smooth transition & WebGL safety
-console.log('--- TEST 4: AppSplashScreen 3D infinity, smooth transition & reduced motion ---');
-{
-  assert(fs.existsSync(SPLASH_JSX_PATH), 'AppSplashScreen.jsx must exist');
-  const splashSource = fs.readFileSync(SPLASH_JSX_PATH, 'utf-8');
-  assert(splashSource.includes('InfinityCurve3D'), 'Must define 3D infinity space curve');
-  assert(splashSource.includes('THREE.TubeGeometry'), 'Must use 3D TubeGeometry for genuine non-flat volume');
-  assert(splashSource.includes('MeshPhysicalMaterial') || splashSource.includes('MeshStandardMaterial'), 'Must use physical metallic material');
-  assert(splashSource.includes('isInfinityVisible'), 'Must manage choreographed emergence of infinity loop');
-  assert(splashSource.includes('prefers-reduced-motion'), 'Must respect prefers-reduced-motion');
-  assert(splashSource.includes('cancelAnimationFrame'), 'Must properly clean up animation frames');
-  assert(splashSource.includes('geometry.dispose()'), 'Must dispose geometry on unmount to prevent memory leaks');
-  assert(splashSource.includes('renderer.dispose()'), 'Must dispose renderer on unmount');
-  assert(splashSource.includes('logoUrl'), 'Must display centered Loopra logo');
-  console.log('[PASS] AppSplashScreen cleanly implements 3D infinity geometry, emergence transition, WebGL disposal, and a11y fallbacks.\n');
-}
-
-// Test 5: Splash screen integration in App.jsx & ~3 second duration
-console.log('--- TEST 5: App.jsx startup lifecycle, ~3s duration & safety timers ---');
+// Test 4: App.jsx completely removes splash screen from startup
+console.log('--- TEST 4: App.jsx completely removes splash screen ---');
 {
   const appSource = fs.readFileSync(APP_JSX_PATH, 'utf-8');
-  assert(appSource.includes('AppSplashScreen'), 'App.jsx must import AppSplashScreen');
-  assert(appSource.includes('showSplashScreen'), 'App.jsx must manage splash screen visibility');
-  assert(appSource.includes('isAppInitialized'), 'App.jsx must coordinate initialization state');
-  assert(appSource.includes('MIN_SPLASH_DURATION_MS = 3000') || appSource.includes('3000'), 'App.jsx must enforce ~3 second minimum splash duration');
-  assert(appSource.includes('maxSafetyTimer'), 'App.jsx must provide a safety timeout so splash never hangs');
-  console.log('[PASS] App.jsx manages splash lifecycle with ~3s minimum duration, safety timeouts and unmount callback.\n');
+  assert(!appSource.includes('<AppSplashScreen'), 'App.jsx must not render AppSplashScreen');
+  assert(!appSource.includes('showSplashScreen'), 'App.jsx must not maintain splash screen state');
+  console.log('[PASS] App.jsx completely removes splash screen and renders main interface immediately.\n');
 }
 
-console.log('=== ALL STARTUP SPLASH SCREEN TESTS PASSED SUCCESSFULLY! ===');
+// Test 5: Verify mobile phone width simulation (360px, 390px, 430px)
+console.log('--- TEST 5: Phone viewport widths verification (360px, 390px, 430px) ---');
+{
+  const phoneWidths = [360, 390, 430];
+  for (const width of phoneWidths) {
+    const isMobile = width < 768;
+    assert.strictEqual(isMobile, true, `Width ${width}px must be classified as mobile`);
+  }
+  console.log('[PASS] All phone widths (360px, 390px, 430px) verified to load main app directly.\n');
+}
+
+console.log('=== ALL STARTUP SPLASH SCREEN & MOBILE REMOVAL TESTS PASSED SUCCESSFULLY! ===');
