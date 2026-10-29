@@ -567,6 +567,8 @@ app.post(['/api/auth/google', '/auth/google'], async (req, res) => {
     }
 
     const cleanEmail = email.trim().toLowerCase();
+    const googleName = (payload?.name || '').trim();
+    const googlePicture = (payload?.picture || '').trim();
     let user = await User.findOne({ username: cleanEmail }).maxTimeMS(4000);
     const shouldBeAdmin = isEmailBootstrapAdmin(cleanEmail);
 
@@ -577,6 +579,8 @@ app.post(['/api/auth/google', '/auth/google'], async (req, res) => {
 
       user = new User({
         username: cleanEmail,
+        displayName: googleName || cleanEmail.split('@')[0],
+        avatarUrl: googlePicture || '',
         password: 'google_oauth_user',
         role: makeAdmin ? 'admin' : 'user',
         status: 'active',
@@ -591,6 +595,14 @@ app.post(['/api/auth/google', '/auth/google'], async (req, res) => {
       // If user matched bootstrap admin email in environment, promote to admin
       if (shouldBeAdmin && user.role !== 'admin') {
         user.role = 'admin';
+      }
+      // Populate avatarUrl if empty and available from Google OAuth
+      if (!user.avatarUrl && googlePicture) {
+        user.avatarUrl = googlePicture;
+      }
+      // Populate displayName if default or empty
+      if ((!user.displayName || user.displayName === user.username) && googleName) {
+        user.displayName = googleName;
       }
       user.lastLogin = new Date();
       await user.save();

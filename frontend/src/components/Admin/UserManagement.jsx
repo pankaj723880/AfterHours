@@ -15,6 +15,7 @@ import {
   Info
 } from 'lucide-react';
 import { safeParseJsonResponse } from '../../utils/errorHandler';
+import { getAvatarUrl } from '../../utils/avatar';
 
 export default function UserManagement({ token, backendUrl, currentUser, showToast }) {
   const cleanBase = (backendUrl || '').trim().replace(/\/+$/, '');
@@ -653,8 +654,9 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
                 {/* User Identity Banner */}
                 <div className="flex items-center gap-3 p-3 bg-neutral-950 rounded-2xl border border-neutral-800">
                   <img
-                    src={editAvatarUrl || userDetailsData.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(userDetailsData.username)}&background=10b981&color=000&size=120`}
+                    src={getAvatarUrl(editAvatarUrl || userDetailsData.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(userDetailsData.username)}&background=10b981&color=000&size=120`}
                     alt={userDetailsData.username}
+                    referrerPolicy="no-referrer"
                     className="w-12 h-12 rounded-xl object-cover border border-neutral-800"
                     onError={(e) => { e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(userDetailsData.username)}&background=10b981&color=000`; }}
                   />

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import UserAvatar from '../Common/UserAvatar';
 
 const formatTimeAgo = (dateString) => {
   if (!dateString) return '';
@@ -349,17 +350,15 @@ export default function ActivityFeed({
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2.5">
                     {/* User Avatar */}
-                    {act.avatarUrl ? (
-                      <img
+                    <div className="w-8 h-8 rounded-full overflow-hidden border border-amber-500/30 shrink-0">
+                      <UserAvatar
+                        user={act}
                         src={act.avatarUrl}
                         alt={act.displayName || act.username}
-                        className="w-8 h-8 rounded-full object-cover border border-amber-500/30"
+                        className="w-full h-full object-cover"
+                        fallbackClassName="w-full h-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-xs font-bold text-neutral-950 uppercase"
                       />
-                    ) : (
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-xs font-bold text-neutral-950">
-                        {(act.displayName || act.username || 'U')[0].toUpperCase()}
-                      </div>
-                    )}
+                    </div>
 
                     <div className="text-xs">
                       <span className="font-bold text-white hover:text-amber-400 transition-colors">

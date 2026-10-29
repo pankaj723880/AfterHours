@@ -14,6 +14,7 @@ import {
   Filter
 } from 'lucide-react';
 import { safeParseJsonResponse } from '../../utils/errorHandler';
+import { getAvatarUrl } from '../../utils/avatar';
 
 export default function ActivityModeration({ token, backendUrl, showToast }) {
   const cleanBase = (backendUrl || '').trim().replace(/\/+$/, '');
@@ -222,8 +223,9 @@ export default function ActivityModeration({ token, backendUrl, showToast }) {
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2.5">
                           <img
-                            src={act.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(act.username)}&background=262626&color=f59e0b&size=80`}
+                            src={getAvatarUrl(act.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(act.username)}&background=262626&color=f59e0b&size=80`}
                             alt={act.username}
+                            referrerPolicy="no-referrer"
                             className="w-7 h-7 rounded-full object-cover border border-neutral-800"
                             onError={(e) => { e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(act.username)}&background=262626&color=f59e0b`; }}
                           />

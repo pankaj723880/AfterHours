@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Camera, Upload, Loader2, Check, X, AlertCircle, Trash2 } from 'lucide-react';
 import { getApiUrl } from '../../utils/apiUrl';
+import UserAvatar from '../Common/UserAvatar';
 
 const GENRE_OPTIONS = [
   '90s Bollywood',
@@ -268,11 +269,13 @@ export default function UserProfileModal({
         <div className="p-4 sm:p-5 bg-neutral-900/90 border-b border-neutral-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl overflow-hidden bg-amber-500 text-neutral-950 flex items-center justify-center font-bold text-base shadow-md uppercase shrink-0 border border-amber-400/30">
-              {activeAvatarSrc ? (
-                <img src={activeAvatarSrc} alt="" className="w-full h-full object-cover" />
-              ) : (
-                currentUser.username ? currentUser.username.charAt(0) : 'U'
-              )}
+              <UserAvatar
+                user={currentUser}
+                src={activeAvatarSrc}
+                className="w-full h-full object-cover"
+                fallbackClassName="w-full h-full bg-gradient-to-br from-amber-500 to-amber-600 text-neutral-950 flex items-center justify-center font-bold text-base uppercase"
+                fallbackInitial={currentUser.username ? currentUser.username.charAt(0) : 'U'}
+              />
             </div>
             <div className="min-w-0">
               <h3 className="font-bold text-base text-white truncate">{displayName || currentUser.username}</h3>
@@ -307,13 +310,14 @@ export default function UserProfileModal({
           <div className="p-4 rounded-3xl bg-neutral-950/60 border border-neutral-800/80 flex flex-col sm:flex-row items-center gap-4">
             <div className="relative group shrink-0">
               <div className="w-20 h-20 rounded-2xl overflow-hidden bg-neutral-800 border-2 border-amber-500/40 flex items-center justify-center text-white shadow-lg">
-                {activeAvatarSrc ? (
-                  <img src={activeAvatarSrc} alt="Profile photo" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-amber-500 to-amber-600 text-neutral-950 flex items-center justify-center font-black text-2xl uppercase">
-                    {currentUser.username ? currentUser.username.charAt(0) : 'U'}
-                  </div>
-                )}
+                <UserAvatar
+                  user={currentUser}
+                  src={activeAvatarSrc}
+                  alt="Profile photo"
+                  className="w-full h-full object-cover"
+                  fallbackClassName="w-full h-full bg-gradient-to-br from-amber-500 to-amber-600 text-neutral-950 flex items-center justify-center font-black text-2xl uppercase"
+                  fallbackInitial={currentUser.username ? currentUser.username.charAt(0) : 'U'}
+                />
               </div>
 
               {/* Hidden file input */}

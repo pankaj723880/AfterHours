@@ -24,6 +24,8 @@ import SleepTimerModal from './components/Player/SleepTimerModal';
 import PlayerSettingsModal from './components/Player/PlayerSettingsModal';
 import ListeningStatsModal from './components/Stats/ListeningStatsModal';
 import UserProfileModal from './components/Profile/UserProfileModal';
+import UserAvatar from './components/Common/UserAvatar';
+import { getAvatarUrl } from './utils/avatar';
 import DiscoverSwipe from './components/Discover/DiscoverSwipe';
 import RecommendedRow from './components/Common/RecommendedRow';
 import ContinueListeningBanner from './components/Common/ContinueListeningBanner';
@@ -2338,6 +2340,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       const loggedInUser = {
         username: data.user.username,
         userId: data.user.userId || data.user._id,
+        displayName: data.user.displayName || data.user.username,
+        avatarUrl: data.user.avatarUrl || '',
         role: data.user.role || data.role || 'user',
         status: data.user.status || 'active'
       };
@@ -2471,6 +2475,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       const loggedInUser = {
         username: authForm.username,
         userId: data.userId || (data.user && data.user._id),
+        displayName: (data.user && (data.user.displayName || data.user.username)) || authForm.username,
+        avatarUrl: (data.user && data.user.avatarUrl) || '',
         role: data.role || (data.user && data.user.role) || 'user',
         status: (data.user && data.user.status) || 'active'
       };
@@ -4695,13 +4701,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       : 'border border-amber-500/40 hover:border-amber-400 hover:ring-2 hover:ring-amber-400/40'
                   }`}
                 >
-                  {user.avatarUrl ? (
-                    <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-amber-500 to-amber-600 text-neutral-950 font-extrabold text-xs sm:text-sm flex items-center justify-center shadow-inner">
-                      {(user.username || user.email || 'U').charAt(0).toUpperCase()}
-                    </div>
-                  )}
+                  <UserAvatar
+                    user={user}
+                    className="w-full h-full object-cover"
+                    fallbackClassName="w-full h-full bg-gradient-to-br from-amber-500 to-amber-600 text-neutral-950 font-extrabold text-xs sm:text-sm flex items-center justify-center shadow-inner uppercase select-none"
+                  />
                 </button>
 
                 {/* Account Dropdown Menu */}
