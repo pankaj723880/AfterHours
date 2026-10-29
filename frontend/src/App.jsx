@@ -8,6 +8,7 @@ import HomeSearchBar from './components/Search/HomeSearchBar';
 import Turntable3D from './components/Player/Turntable3D';
 import AudioSpectrumVisualizer from './components/Player/AudioSpectrumVisualizer';
 import StudioLoungeAtmosphere from './components/Player/StudioLoungeAtmosphere';
+import AppSplashScreen from './components/Common/AppSplashScreen';
 import CmsAnnouncementBar from './components/Common/CmsAnnouncementBar';
 import CmsHeroBanner from './components/Common/CmsHeroBanner';
 import CmsMaintenanceOverlay from './components/Common/CmsMaintenanceOverlay';
@@ -1283,6 +1284,25 @@ export default function App() {
     applyThemeToDom(cached.theme, false);
     return cached;
   });
+
+  const [isAppInitialized, setIsAppInitialized] = useState(false);
+  const [showSplashScreen, setShowSplashScreen] = useState(true);
+
+  useEffect(() => {
+    // Graceful startup timer: ensure 3D infinity entry plays smoothly, guaranteed exit
+    const minSplashTimer = setTimeout(() => {
+      setIsAppInitialized(true);
+    }, 900);
+
+    const maxSafetyTimer = setTimeout(() => {
+      setIsAppInitialized(true);
+    }, 3200);
+
+    return () => {
+      clearTimeout(minSplashTimer);
+      clearTimeout(maxSafetyTimer);
+    };
+  }, []);
 
   useEffect(() => {
     fetchPublicCmsConfig(BACKEND_URL).then(cfg => {
@@ -4116,6 +4136,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   if (isBlockedByMaintenance) {
     return (
       <div className="h-[100dvh] bg-neutral-950 text-neutral-100 font-sans antialiased relative overflow-hidden">
+        {showSplashScreen && (
+          <AppSplashScreen
+            isAppReady={isAppInitialized}
+            onFinished={() => setShowSplashScreen(false)}
+            branding={cmsConfig?.branding}
+          />
+        )}
         <CmsMaintenanceOverlay
           maintenance={cmsConfig?.maintenance}
           branding={cmsConfig?.branding}
@@ -4207,6 +4234,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   return (
     <div className="h-[100dvh] bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative overflow-hidden">
+      {/* Premium 3D Infinity Startup Splash Screen */}
+      {showSplashScreen && (
+        <AppSplashScreen
+          isAppReady={isAppInitialized}
+          onFinished={() => setShowSplashScreen(false)}
+          branding={cmsConfig?.branding}
+        />
+      )}
+
       {/* Admin Maintenance Bypass Banner */}
       {isMaintenanceActive && isAdmin && (
         <div className="fixed top-0 left-0 right-0 z-[90] bg-amber-500/20 backdrop-blur-md border-b border-amber-500/40 px-4 py-2 flex items-center justify-between text-xs text-amber-200 font-medium shadow-lg">

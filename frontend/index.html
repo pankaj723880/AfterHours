@@ -56,8 +56,22 @@
       })();
     </script>
   </head>
-  <body>
-    <div id="root"></div>
+  <body style="background-color: #09090b; margin: 0; padding: 0; overflow-x: hidden;">
+    <div id="root">
+      <div id="initial-splash-fallback" style="position: fixed; inset: 0; z-index: 99999; background: #09090b; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'Outfit', 'Inter', -apple-system, sans-serif; user-select: none;">
+        <div style="position: relative; width: 140px; height: 140px; display: flex; align-items: center; justify-content: center;">
+          <div style="position: absolute; inset: -20px; background: radial-gradient(circle, rgba(245, 158, 11, 0.22) 0%, rgba(234, 88, 12, 0.12) 50%, transparent 70%); border-radius: 9999px; filter: blur(24px);"></div>
+          <img src="/loopra-logo.png" alt="Loopra Logo" style="width: 88px; height: 88px; object-fit: contain; position: relative; z-index: 10; filter: drop-shadow(0 0 25px rgba(245,158,11,0.55));" />
+        </div>
+        <div style="margin-top: 20px; text-align: center;">
+          <div style="font-size: 24px; font-weight: 900; letter-spacing: 0.15em; color: #ffffff; text-transform: uppercase;">LOOPRA</div>
+          <div style="font-size: 13px; font-weight: 500; letter-spacing: 0.05em; color: #fbbf24; margin-top: 6px;">Retro & High-Vibe Radio</div>
+        </div>
+        <div style="margin-top: 28px; width: 160px; height: 4px; background: #1c1917; border-radius: 9999px; overflow: hidden; border: 1px solid rgba(245, 158, 11, 0.25);">
+          <div style="width: 60%; height: 100%; background: linear-gradient(90deg, #f59e0b, #ea580c, #fde047); border-radius: 9999px;"></div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
