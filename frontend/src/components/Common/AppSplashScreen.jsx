@@ -55,7 +55,7 @@ export default function AppSplashScreen({
   const rendererRef = useRef(null);
 
   const siteName = branding?.siteName || 'Loopra';
-  const siteTagline = branding?.tagline || 'Retro & High-Vibe Radio';
+  const siteTagline = branding?.tagline || '';
   const logoUrl = branding?.logoUrl || '/loopra-logo.png';
 
   // Check reduced motion & WebGL capabilities once on mount
@@ -312,9 +312,11 @@ export default function AppSplashScreen({
           <h1 className="text-2xl sm:text-3xl font-display font-black tracking-widest text-white drop-shadow-md uppercase">
             {siteName}
           </h1>
-          <p className="text-xs sm:text-sm font-medium text-amber-400/90 tracking-wider">
-            {siteTagline}
-          </p>
+          {siteTagline && (
+            <p className="text-xs sm:text-sm font-medium text-amber-400/90 tracking-wider">
+              {siteTagline}
+            </p>
+          )}
         </div>
 
         {/* Elegant Gold Progress Indicator */}
