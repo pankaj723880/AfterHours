@@ -72,15 +72,15 @@ export default function AppSplashScreen({
     };
   }, []);
 
-  // Coordinated Brand Emergence Animation Sequence:
+  // Coordinated Brand Emergence Animation Sequence (Tuned for <= 2s Total Window):
   // 1. Dark background appears immediately (0ms)
-  // 2. 3D Infinity Loop gently materializes with soft golden glow (120ms)
-  // 3. Loopra logo fades in smoothly over the center of the loop (380ms)
-  // 4. 3D Tagline "INFINITE SOUND. ENDLESS VIBES." fades in with depth at bottom (680ms)
+  // 2. 3D Infinity Loop gently materializes with soft golden glow (70ms)
+  // 3. Loopra logo fades in smoothly over the center of the loop (220ms)
+  // 4. 3D Tagline "INFINITE SOUND. ENDLESS VIBES." fades in with depth at bottom (400ms)
   useEffect(() => {
-    const t1 = setTimeout(() => setIsInfinityVisible(true), 120);
-    const t2 = setTimeout(() => setIsLogoVisible(true), 380);
-    const t3 = setTimeout(() => setIsTaglineVisible(true), 680);
+    const t1 = setTimeout(() => setIsInfinityVisible(true), 70);
+    const t2 = setTimeout(() => setIsLogoVisible(true), 220);
+    const t3 = setTimeout(() => setIsTaglineVisible(true), 400);
 
     return () => {
       clearTimeout(t1);
@@ -89,25 +89,33 @@ export default function AppSplashScreen({
     };
   }, []);
 
-  // Coordinated exit transition once app signals ready with smooth minimum duration
+  // Coordinated exit transition strictly capped at 2.0 seconds maximum
   useEffect(() => {
-    if (!isAppReady) return;
+    let isMounted = true;
+    let finishTimer = null;
 
-    // Provide an elegant minimum presentation so users experience the premium sequence
-    const presentationTimer = setTimeout(() => {
+    const startExit = () => {
+      if (!isMounted) return;
       setIsFadingOut(true);
-
-      const finishTimer = setTimeout(() => {
+      finishTimer = setTimeout(() => {
+        if (!isMounted) return;
         setShouldRender(false);
         if (typeof onFinished === 'function') {
           onFinished();
         }
-      }, 550);
+      }, 400); // 400ms fade transition
+    };
 
-      return () => clearTimeout(finishTimer);
-    }, 2200);
+    // Begin fade-out at 1550ms so total duration is 1550ms + 400ms = 1950ms (strictly <= 2.0s)
+    const presentationTimer = setTimeout(() => {
+      startExit();
+    }, 1550);
 
-    return () => clearTimeout(presentationTimer);
+    return () => {
+      isMounted = false;
+      clearTimeout(presentationTimer);
+      if (finishTimer) clearTimeout(finishTimer);
+    };
   }, [isAppReady, onFinished]);
 
   // Three.js 3D Infinity Loop Setup and Render Loop
@@ -264,7 +272,7 @@ export default function AppSplashScreen({
       role="status"
       aria-live="polite"
       aria-label="Loopra Loading"
-      className={`fixed inset-0 z-[99999] bg-[#09090b] flex flex-col justify-between items-center select-none overflow-hidden transition-all duration-500 ease-out ${
+      className={`fixed inset-0 z-[99999] bg-[#09090b] flex flex-col justify-between items-center select-none overflow-hidden transition-all duration-400 ease-out ${
         isFadingOut
           ? 'opacity-0 scale-[1.02] pointer-events-none'
           : 'opacity-100 scale-100 pointer-events-auto'

@@ -1314,7 +1314,7 @@ export default function App() {
       if (isMounted) {
         setIsAppInitialized(true);
       }
-    }, 1800);
+    }, 1000);
 
     const handleConfigUpdate = (data) => {
       if (data?.config) {
