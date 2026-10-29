@@ -26,6 +26,7 @@ import profileRoutes from './routes/profile.js';
 import activityRoutes from './routes/activity.js';
 import moodRoutes from './routes/mood.js';
 import radioRoutes from './routes/radio.js';
+import { isSingleSong, filterSingleSongs } from './services/songFilter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -761,31 +762,32 @@ const decodeHtml = (str = '') => {
 };
 
 // Curated fallbacks if YouTube scrapers hit 429 rate limit or keys are exhausted
+// Strictly single-song entries only (no jukeboxes, albums, mashups or medleys)
 const FALLBACK_TRENDING = [
-  { id: { videoId: 'Yvl6m9x5ZR0' }, snippet: { title: 'New Trending Love Songs | Best Hindi Romantic Songs Playlist', channelTitle: 'Grow Music', thumbnails: { high: { url: 'https://i.ytimg.com/vi/Yvl6m9x5ZR0/hqdefault.jpg' } } } },
-  { id: { videoId: 'IJJX39HRvlc' }, snippet: { title: 'New Songs 2026 | Mere Humdum | Emraan Hashmi, Rashmika', channelTitle: 'Vatsal Bhoya', thumbnails: { high: { url: 'https://i.ytimg.com/vi/IJJX39HRvlc/hqdefault.jpg' } } } },
-  { id: { videoId: 'RLzC55ai0eo' }, snippet: { title: 'Heeriye | Jasleen Royal ft Arijit Singh | Dulquer Salmaan', channelTitle: 'Jasleen Royal', thumbnails: { high: { url: 'https://i.ytimg.com/vi/RLzC55ai0eo/hqdefault.jpg' } } } },
-  { id: { videoId: 'kRs375-oliY' }, snippet: { title: 'All Instagram Trending Songs 2026 | Taare x Pal Pal x Aarzu', channelTitle: 'HeartBeat Lyrics', thumbnails: { high: { url: 'https://i.ytimg.com/vi/kRs375-oliY/hqdefault.jpg' } } } },
-  { id: { videoId: '41HX_5G6eqQ' }, snippet: { title: 'Barsaat | All Trending Songs Mashup', channelTitle: 'Voxwaves', thumbnails: { high: { url: 'https://i.ytimg.com/vi/41HX_5G6eqQ/hqdefault.jpg' } } } },
-  { id: { videoId: 'WWIfHemqSEA' }, snippet: { title: 'Arijit Singh - Tujhko | Love Song', channelTitle: 'iPop Superhits', thumbnails: { high: { url: 'https://i.ytimg.com/vi/WWIfHemqSEA/hqdefault.jpg' } } } }
+  { id: { videoId: 'RLzC55ai0eo' }, snippet: { title: 'Heeriye (Official Video) - Jasleen Royal ft Arijit Singh', channelTitle: 'Jasleen Royal', thumbnails: { high: { url: 'https://i.ytimg.com/vi/RLzC55ai0eo/hqdefault.jpg' } } } },
+  { id: { videoId: 'WWIfHemqSEA' }, snippet: { title: 'Tujhko - Love Song - Arijit Singh', channelTitle: 'iPop Superhits', thumbnails: { high: { url: 'https://i.ytimg.com/vi/WWIfHemqSEA/hqdefault.jpg' } } } },
+  { id: { videoId: 'IJJX39HRvlc' }, snippet: { title: 'Mere Humdum | New Songs 2026', channelTitle: 'Vatsal Bhoya', thumbnails: { high: { url: 'https://i.ytimg.com/vi/IJJX39HRvlc/hqdefault.jpg' } } } },
+  { id: { videoId: 'BddP6PYo2gs' }, snippet: { title: 'Kesariya (Official Video) - Brahmāstra | Arijit Singh', channelTitle: 'Sony Music India', thumbnails: { high: { url: 'https://i.ytimg.com/vi/BddP6PYo2gs/hqdefault.jpg' } } } },
+  { id: { videoId: 'cIGd8gm_pYE' }, snippet: { title: 'Lover (Official Music Video) - Diljit Dosanjh', channelTitle: 'Speed Records', thumbnails: { high: { url: 'https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg' } } } },
+  { id: { videoId: '2mDCVzruYzQ' }, snippet: { title: 'Tum Hi Ho (Official Video) - Aashiqui 2 | Arijit Singh', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/2mDCVzruYzQ/hqdefault.jpg' } } } }
 ];
 
 const FALLBACK_ALBUMS = [
-  { id: { videoId: 'B61fSzdCzzs' }, snippet: { title: 'Aashiqui 2 | All Best Songs Audio Jukebox', channelTitle: 'Love Mashup', thumbnails: { high: { url: 'https://i.ytimg.com/vi/B61fSzdCzzs/hqdefault.jpg' } } } },
-  { id: { videoId: 'ZdyaixHYviA' }, snippet: { title: 'Yeh Jawaani Hai Deewani Full Songs Jukebox', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/ZdyaixHYviA/hqdefault.jpg' } } } },
-  { id: { videoId: 'SQWDGLnvxF4' }, snippet: { title: 'Sanam Teri Kasam All Songs Jukebox', channelTitle: 'ASIF INDIAN VLOGS', thumbnails: { high: { url: 'https://i.ytimg.com/vi/SQWDGLnvxF4/hqdefault.jpg' } } } },
-  { id: { videoId: 'BDlNjOc3wiQ' }, snippet: { title: 'FULL ALBUM: Kabir Singh | Audio Jukebox', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/BDlNjOc3wiQ/hqdefault.jpg' } } } },
-  { id: { videoId: 'ARtRGkaG_OA' }, snippet: { title: 'Rockstar | Audio Jukebox | A.R. Rahman', channelTitle: 'AmZe Music', thumbnails: { high: { url: 'https://i.ytimg.com/vi/ARtRGkaG_OA/hqdefault.jpg' } } } },
-  { id: { videoId: 'jsgPZVMfJQk' }, snippet: { title: 'ANIMAL (AUDIO JUKEBOX): Ranbir Kapoor', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/jsgPZVMfJQk/hqdefault.jpg' } } } }
+  { id: { videoId: '2mDCVzruYzQ' }, snippet: { title: 'Tum Hi Ho (Official Video) - Aashiqui 2 | Arijit Singh', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/2mDCVzruYzQ/hqdefault.jpg' } } } },
+  { id: { videoId: 'pElvXl3YvY0' }, snippet: { title: 'Ilahi (Full Video Song) - Yeh Jawaani Hai Deewani | Arijit Singh', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/pElvXl3YvY0/hqdefault.jpg' } } } },
+  { id: { videoId: '7ccHMhuE6pA' }, snippet: { title: 'Bekhayali (Official Video) - Kabir Singh | Sachet Tandon', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/7ccHMhuE6pA/hqdefault.jpg' } } } },
+  { id: { videoId: 'f6vYp2r6d5o' }, snippet: { title: 'Satranga (Full Video Song) - ANIMAL | Arijit Singh', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/f6vYp2r6d5o/hqdefault.jpg' } } } },
+  { id: { videoId: 'P9YpfmNc_p4' }, snippet: { title: 'Kun Faya Kun - Rockstar | A.R. Rahman', channelTitle: 'SonyMusicIndiaVEVO', thumbnails: { high: { url: 'https://i.ytimg.com/vi/P9YpfmNc_p4/hqdefault.jpg' } } } },
+  { id: { videoId: 'x_elT6zkqN0' }, snippet: { title: 'Zara Sa (Full Song) - Jannat | KK', channelTitle: 'Sony Music India', thumbnails: { high: { url: 'https://i.ytimg.com/vi/x_elT6zkqN0/hqdefault.jpg' } } } }
 ];
 
 const FALLBACK_RADIO = [
-  { id: { videoId: 'O5gwxm3NxFU' }, snippet: { title: 'Best Of Arijit Singh 2024 Hits Radio Jukebox', channelTitle: 'ABT Lofi Music', thumbnails: { high: { url: 'https://i.ytimg.com/vi/O5gwxm3NxFU/hqdefault.jpg' } } } },
-  { id: { videoId: 'r0c1f6XxRQg' }, snippet: { title: 'Evergreen Hits of KK (Audio Jukebox)', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/r0c1f6XxRQg/hqdefault.jpg' } } } },
-  { id: { videoId: 'dvgZkm1xWPE' }, snippet: { title: 'Shreya Ghoshal Romantic Hits Radio', channelTitle: 'SonyMusicIndiaVEVO', thumbnails: { high: { url: 'https://i.ytimg.com/vi/dvgZkm1xWPE/hqdefault.jpg' } } } },
-  { id: { videoId: 'S6IW8Rj1WqQ' }, snippet: { title: 'Alka Yagnik 90s Melodies Radio', channelTitle: 'Tips Official', thumbnails: { high: { url: 'https://i.ytimg.com/vi/S6IW8Rj1WqQ/hqdefault.jpg' } } } },
-  { id: { videoId: 'cIGd8gm_pYE' }, snippet: { title: 'Diljit Dosanjh Superhits Radio', channelTitle: 'Speed Records', thumbnails: { high: { url: 'https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg' } } } },
-  { id: { videoId: 'P9YpfmNc_p4' }, snippet: { title: 'A.R. Rahman Magical Hits Live Radio', channelTitle: 'SonyMusicIndiaVEVO', thumbnails: { high: { url: 'https://i.ytimg.com/vi/P9YpfmNc_p4/hqdefault.jpg' } } } }
+  { id: { videoId: 'dvgZkm1xWPE' }, snippet: { title: 'Sunn Raha Hai Na Tu (Female) - Aashiqui 2 | Shreya Ghoshal', channelTitle: 'SonyMusicIndiaVEVO', thumbnails: { high: { url: 'https://i.ytimg.com/vi/dvgZkm1xWPE/hqdefault.jpg' } } } },
+  { id: { videoId: 'S6IW8Rj1WqQ' }, snippet: { title: 'Tip Tip Barsa Paani - Mohra | Alka Yagnik, Udit Narayan', channelTitle: 'Tips Official', thumbnails: { high: { url: 'https://i.ytimg.com/vi/S6IW8Rj1WqQ/hqdefault.jpg' } } } },
+  { id: { videoId: 'cIGd8gm_pYE' }, snippet: { title: 'Lover - Diljit Dosanjh', channelTitle: 'Speed Records', thumbnails: { high: { url: 'https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg' } } } },
+  { id: { videoId: 'P9YpfmNc_p4' }, snippet: { title: 'Kun Faya Kun - A.R. Rahman', channelTitle: 'SonyMusicIndiaVEVO', thumbnails: { high: { url: 'https://i.ytimg.com/vi/P9YpfmNc_p4/hqdefault.jpg' } } } },
+  { id: { videoId: 'RLzC55ai0eo' }, snippet: { title: 'Heeriye - Jasleen Royal ft Arijit Singh', channelTitle: 'Jasleen Royal', thumbnails: { high: { url: 'https://i.ytimg.com/vi/RLzC55ai0eo/hqdefault.jpg' } } } },
+  { id: { videoId: 'WWIfHemqSEA' }, snippet: { title: 'Tujhko - Arijit Singh', channelTitle: 'iPop Superhits', thumbnails: { high: { url: 'https://i.ytimg.com/vi/WWIfHemqSEA/hqdefault.jpg' } } } }
 ];
 
 const getCuratedFallback = (queryStr) => {
@@ -858,10 +860,11 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
       const apiKeyIndex = (currentApiKeyIndex + i) % activeKeys.length;
       const apiKey = activeKeys[apiKeyIndex];
       try {
+        const upstreamLimit = Math.min(Math.max(limit * 2, 25), 50);
         const params = {
           part: 'snippet',
           type: 'video',
-          maxResults: limit,
+          maxResults: upstreamLimit,
           q: queryStr,
           key: apiKey
         };
@@ -876,21 +879,30 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
 
         if (response.data && Array.isArray(response.data.items)) {
           currentApiKeyIndex = apiKeyIndex;
-          const items = response.data.items.map(item => {
+          const rawMapped = response.data.items.map(item => {
             const videoId = item.id?.videoId || item.id;
             return {
-              id: { videoId },
-              snippet: {
-                title: decodeHtml(item.snippet?.title || ''),
-                channelTitle: decodeHtml(item.snippet?.channelTitle || 'Unknown'),
-                thumbnails: {
-                  high: { url: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` },
-                  medium: { url: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` },
-                  default: { url: `https://i.ytimg.com/vi/${videoId}/default.jpg` }
-                }
-              }
+              id: videoId,
+              title: decodeHtml(item.snippet?.title || ''),
+              channel: decodeHtml(item.snippet?.channelTitle || 'Unknown'),
+              thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
             };
           });
+
+          const singleSongs = filterSingleSongs(rawMapped);
+          const finalTracks = (singleSongs.length > 0 ? singleSongs : rawMapped).slice(0, limit);
+          const items = finalTracks.map(item => ({
+            id: { videoId: item.id },
+            snippet: {
+              title: item.title,
+              channelTitle: item.channel,
+              thumbnails: {
+                high: { url: `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg` },
+                medium: { url: `https://i.ytimg.com/vi/${item.id}/mqdefault.jpg` },
+                default: { url: `https://i.ytimg.com/vi/${item.id}/default.jpg` }
+              }
+            }
+          }));
 
           metricsService.recordYouTube('api');
           const resultPayload = {
@@ -940,18 +952,23 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
     }
 
     if (videos.length > 0) {
-      const items = videos.slice(0, limit).map(v => ({
-        id: { videoId: v.videoId },
-        snippet: {
-          title: decodeHtml(v.title || ''),
-          channelTitle: decodeHtml(v.author?.name || 'Unknown'),
-          thumbnails: {
-            high: { url: `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg` },
-            medium: { url: `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg` },
-            default: { url: `https://i.ytimg.com/vi/${v.videoId}/default.jpg` }
+      const singleSongs = filterSingleSongs(videos);
+      const chosen = (singleSongs.length > 0 ? singleSongs : videos).slice(0, limit);
+      const items = chosen.map(v => {
+        const videoId = v.id || v.videoId;
+        return {
+          id: { videoId },
+          snippet: {
+            title: decodeHtml(v.title || ''),
+            channelTitle: decodeHtml(v.channel || v.author?.name || 'Unknown'),
+            thumbnails: {
+              high: { url: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` },
+              medium: { url: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` },
+              default: { url: `https://i.ytimg.com/vi/${videoId}/default.jpg` }
+            }
           }
-        }
-      }));
+        };
+      });
 
       metricsService.recordYouTube('scraper');
       const resultPayload = { items, nextPageToken: null };
@@ -965,8 +982,21 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
   // 3. Resilient Curated Fallback if search scraper is rate-limited (e.g. 429) or empty
   const fallback = getCuratedFallback(queryStr);
   if (fallback) {
+    const singleFallback = filterSingleSongs(fallback);
+    const chosen = (singleFallback.length > 0 ? singleFallback : fallback).slice(0, limit).map(t => ({
+      id: { videoId: t.id },
+      snippet: {
+        title: t.title,
+        channelTitle: t.channel,
+        thumbnails: {
+          high: { url: t.thumbnail },
+          medium: { url: t.thumbnail },
+          default: { url: t.thumbnail }
+        }
+      }
+    }));
     metricsService.recordYouTube('fallback');
-    const resultPayload = { items: fallback, nextPageToken: null };
+    const resultPayload = { items: chosen, nextPageToken: null };
     setCachedSearch(cacheKey, resultPayload);
     return res.json(resultPayload);
   }
@@ -980,6 +1010,77 @@ app.get(['/api/stream/:videoId', '/stream/:videoId'], (req, res) => {
     status: 'ok',
     message: 'Stream playback handled client-side via YouTube IFrame API'
   });
+});
+
+// Dedicated 100+ Single-Song Shuffle Pool endpoint
+let cachedShufflePool = [];
+let lastShufflePoolFetch = 0;
+const SHUFFLE_POOL_TTL = 30 * 60 * 1000; // 30 minutes
+
+app.get(['/api/youtube/shuffle-pool', '/api/shuffle/pool', '/api/shuffle-pool'], async (req, res) => {
+  try {
+    const now = Date.now();
+    if (cachedShufflePool.length >= 100 && (now - lastShufflePoolFetch < SHUFFLE_POOL_TTL)) {
+      return res.json({
+        total: cachedShufflePool.length,
+        items: cachedShufflePool,
+        source: 'cache'
+      });
+    }
+
+    const seedQueries = [
+      'arijit singh official song video',
+      'shreya ghoshal romantic song official',
+      'kishore kumar hit songs',
+      'lata mangeshkar melody song',
+      'kumar sanu 90s romantic song',
+      'sonu nigam superhit song',
+      'ar rahman official song video',
+      'diljit dosanjh hit song official',
+      'anuv jain acoustic song',
+      'prateek kuhad official song',
+      'udit narayan romantic song',
+      'alka yagnik melody song',
+      'mohit chauhan songs official',
+      'kk romantic songs official',
+      'atif aslam hit songs official'
+    ];
+
+    const accumulated = [...cachedShufflePool];
+    const seen = new Set(accumulated.map(t => t.id || t.videoId));
+
+    for (const query of seedQueries) {
+      if (accumulated.length >= 120) break;
+      try {
+        const searchResult = await ytSearch({ query, page: 1 });
+        const videos = searchResult?.videos || [];
+        const singleSongs = filterSingleSongs(videos);
+        for (const track of singleSongs) {
+          if (!seen.has(track.id)) {
+            seen.add(track.id);
+            accumulated.push(track);
+          }
+          if (accumulated.length >= 120) break;
+        }
+      } catch (err) {
+        console.warn('[Shuffle Pool Build Notice]:', err.message);
+      }
+    }
+
+    if (accumulated.length > 0) {
+      cachedShufflePool = accumulated;
+      lastShufflePoolFetch = now;
+    }
+
+    return res.json({
+      total: cachedShufflePool.length,
+      items: cachedShufflePool,
+      source: 'live'
+    });
+  } catch (err) {
+    console.error('[Shuffle Pool Error]:', err.message);
+    res.status(500).json({ error: 'Failed to generate shuffle pool', items: [] });
+  }
 });
 
 // Global Express Error Handler ensuring CORS headers are always attached & errors logged

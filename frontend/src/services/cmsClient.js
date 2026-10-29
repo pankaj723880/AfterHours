@@ -251,7 +251,7 @@ export const normalizeNavigationList = (rawNav) => {
   });
 
   return Array.from(map.values())
-    .filter(n => n.id !== 'profile')
+    .filter(n => n.id !== 'profile' && n.id !== 'equalizer')
     .sort((a, b) => (a.order || 0) - (b.order || 0));
 };
 

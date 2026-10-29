@@ -12,7 +12,7 @@ test('Sidebar Categories Restoration - Standard Navigation Requirements', () => 
   // 2. Primary Navigation (main group)
   const mainItems = nav.filter(item => item.group === 'main');
   const mainIds = mainItems.map(i => i.id);
-  assert.deepEqual(mainIds, ['home', 'discover'], 'Primary navigation should only contain Home and Discover & Search');
+  assert.deepEqual(mainIds, ['home', 'discover', 'radio'], 'Primary navigation should contain Home, Discover & Search, and Indian Live Radio');
   assert.equal(mainItems.some(i => ['barber', 'truck', 'pauwa'].includes(i.id)), false, 'Stations must not be in Primary navigation');
 
   // 3. AI & DISCOVERY (discovery group)

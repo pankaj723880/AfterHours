@@ -1,7 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
-import { cmsService } from '../services/cmsService.js';
+import { cmsService, normalizeNavigationList } from '../services/cmsService.js';
 import CuratedCollection from '../models/CuratedCollection.js';
 import MediaAsset from '../models/MediaAsset.js';
 import ContentVersion from '../models/ContentVersion.js';
@@ -1188,8 +1188,33 @@ router.put('/navigation/:id', async (req, res) => {
     existingNav[index] = updatedItem;
     await cmsService.saveDraft({ navigation: existingNav }, req.user);
 
+    // Also synchronize to published config so visibility change takes effect immediately across the website
+    const published = await SiteConfig.findOne({ configType: 'published' }).sort({ version: -1, updatedAt: -1 }).lean();
+    if (published) {
+      const pubNav = (published.navigation || []).map(n => ({ ...n }));
+      const pubIdx = pubNav.findIndex(n => n.id === navId);
+      if (pubIdx !== -1) {
+        pubNav[pubIdx] = { ...pubNav[pubIdx], ...updatedItem, enabled: updatedItem.enabled };
+      } else {
+        pubNav.push(updatedItem);
+      }
+      const normalizedPubNav = normalizeNavigationList(pubNav);
+      await SiteConfig.updateOne(
+        { _id: published._id },
+        { $set: { navigation: normalizedPubNav, lastModifiedBy: req.user?.username || 'admin' } }
+      );
+    }
+    cmsService.invalidateCache();
+
+    // Broadcast updated configuration in real-time
+    const io = req.app.get('io');
+    if (io) {
+      const pubConfig = await cmsService.getPublicConfig();
+      io.emit('cms_config_updated', { config: pubConfig });
+    }
+
     res.json({
-      message: 'Navigation item updated in draft',
+      message: 'Navigation item updated and synchronized',
       item: updatedItem
     });
   } catch (err) {

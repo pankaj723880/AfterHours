@@ -15,6 +15,8 @@
  * - Discover Something New
  */
 
+import { filterSingleSongs } from './songFilter.js';
+
 // In-memory cache for recommendation sessions
 let recommendationCache = {
   key: '',
@@ -99,9 +101,11 @@ export function generateCategorizedRecommendations({
     .sort((a, b) => b[1] - a[1])
     .map(([art]) => art);
 
-  // Available candidate pool (shuffled shallow copy)
-  const candidatePool = Array.isArray(allAvailableTracks)
-    ? [...allAvailableTracks].sort(() => 0.5 - Math.random())
+  // Available candidate pool (filtered strictly for single songs, shuffled)
+  const singleSongCandidates = filterSingleSongs(allAvailableTracks);
+  const poolSource = singleSongCandidates.length > 0 ? singleSongCandidates : allAvailableTracks;
+  const candidatePool = Array.isArray(poolSource)
+    ? [...poolSource].sort(() => 0.5 - Math.random())
     : [];
 
   // ==========================================

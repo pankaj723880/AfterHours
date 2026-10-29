@@ -37,6 +37,8 @@ if (typeof window !== 'undefined') {
 }
 import ActivityFeed from './components/Activity/ActivityFeed';
 import MobileBottomNav from './components/Navigation/MobileBottomNav';
+import shuffleService from './services/shuffleService';
+import { filterSingleSongs, isSingleSong } from './services/songFilter';
 
 import { io } from 'socket.io-client';
 import { BACKEND_URL, getApiUrl } from './utils/apiUrl';
@@ -648,12 +650,12 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove, c
 });
 
 const TRENDING_SONGS = [
-  { id: "Yvl6m9x5ZR0", videoId: "Yvl6m9x5ZR0", title: "New Trending Love Songs", artist: "Grow Music", image: "https://i.ytimg.com/vi/Yvl6m9x5ZR0/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/Yvl6m9x5ZR0/hqdefault.jpg", query: "New Trending Love Songs Grow Music" },
-  { id: "IJJX39HRvlc", videoId: "IJJX39HRvlc", title: "Mere Humdum | New Songs 2026", artist: "Vatsal Bhoya", image: "https://i.ytimg.com/vi/IJJX39HRvlc/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/IJJX39HRvlc/hqdefault.jpg", query: "New Songs 2026 Mere Humdum Vatsal Bhoya" },
   { id: "RLzC55ai0eo", videoId: "RLzC55ai0eo", title: "Heeriye (Official Video)", artist: "Jasleen Royal ft Arijit Singh", image: "https://i.ytimg.com/vi/RLzC55ai0eo/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/RLzC55ai0eo/hqdefault.jpg", query: "Heeriye Jasleen Royal Arijit Singh" },
-  { id: "kRs375-oliY", videoId: "kRs375-oliY", title: "All Instagram Trending Songs 2026", artist: "HeartBeat Lyrics", image: "https://i.ytimg.com/vi/kRs375-oliY/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/kRs375-oliY/hqdefault.jpg", query: "All Instagram Trending Songs 2026 HeartBeat Lyrics" },
-  { id: "41HX_5G6eqQ", videoId: "41HX_5G6eqQ", title: "Barsaat - Trending Mashup", artist: "Voxwaves", image: "https://i.ytimg.com/vi/41HX_5G6eqQ/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/41HX_5G6eqQ/hqdefault.jpg", query: "Barsaat All Trending Songs Mashup Voxwaves" },
-  { id: "WWIfHemqSEA", videoId: "WWIfHemqSEA", title: "Tujhko - Love Song 2026", artist: "Arijit Singh", image: "https://i.ytimg.com/vi/WWIfHemqSEA/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/WWIfHemqSEA/hqdefault.jpg", query: "Arijit Singh Tujhko Love Song iPop Superhits" }
+  { id: "WWIfHemqSEA", videoId: "WWIfHemqSEA", title: "Tujhko - Love Song 2026", artist: "Arijit Singh", image: "https://i.ytimg.com/vi/WWIfHemqSEA/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/WWIfHemqSEA/hqdefault.jpg", query: "Arijit Singh Tujhko Love Song iPop Superhits" },
+  { id: "IJJX39HRvlc", videoId: "IJJX39HRvlc", title: "Mere Humdum | New Songs 2026", artist: "Vatsal Bhoya", image: "https://i.ytimg.com/vi/IJJX39HRvlc/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/IJJX39HRvlc/hqdefault.jpg", query: "New Songs 2026 Mere Humdum Vatsal Bhoya" },
+  { id: "BddP6PYo2gs", videoId: "BddP6PYo2gs", title: "Kesariya (Official Video)", artist: "Arijit Singh, Pritam", image: "https://i.ytimg.com/vi/BddP6PYo2gs/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/BddP6PYo2gs/hqdefault.jpg", query: "Kesariya Arijit Singh Brahmastra" },
+  { id: "cIGd8gm_pYE", videoId: "cIGd8gm_pYE", title: "Lover (Official Music Video)", artist: "Diljit Dosanjh", image: "https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg", query: "Lover Diljit Dosanjh Official Video" },
+  { id: "2mDCVzruYzQ", videoId: "2mDCVzruYzQ", title: "Tum Hi Ho (Official Video)", artist: "Arijit Singh | Mithoon", image: "https://i.ytimg.com/vi/2mDCVzruYzQ/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/2mDCVzruYzQ/hqdefault.jpg", query: "Tum Hi Ho Aashiqui 2 Arijit Singh" }
 ];
 
 const POPULAR_ARTISTS = [
@@ -1444,10 +1446,14 @@ export default function App() {
             };
           }).filter(item => item.id && typeof item.id === 'string' && item.id.length >= 5 && item.title);
 
+          // Strictly filter for individual single songs only
+          const singleSongs = filterSingleSongs(list);
+          const qualifiedList = singleSongs.length >= 3 ? singleSongs : list;
+
           // Only replace state if we have a rich, valid list of at least 3 tracks
-          if (list.length >= 3) {
-            setState(list);
-            try { localStorage.setItem(storageKey, JSON.stringify(list)); } catch (e) {}
+          if (qualifiedList.length >= 3) {
+            setState(qualifiedList);
+            try { localStorage.setItem(storageKey, JSON.stringify(qualifiedList)); } catch (e) {}
           }
         }
       } catch (e) {
@@ -1456,14 +1462,14 @@ export default function App() {
     };
 
     // Stagger section fetches to eliminate concurrent YouTube scraping / 429 rate limit
-    fetchDynamicSection("latest trending hindi hit songs", setTrendingSongs, 'afterhours_trending');
+    fetchDynamicSection("latest trending hindi hit songs official video", setTrendingSongs, 'afterhours_trending');
 
     const albumsTimer = setTimeout(() => {
-      fetchDynamicSection("latest hit bollywood albums audio jukebox", setPopularAlbums, 'afterhours_albums');
+      fetchDynamicSection("latest hit bollywood songs official video", setPopularAlbums, 'afterhours_albums');
     }, 1200);
 
     const radioTimer = setTimeout(() => {
-      fetchDynamicSection("bollywood lofi romantic hits radio jukebox", setPopularRadio, 'afterhours_radio');
+      fetchDynamicSection("bollywood lofi romantic acoustic official songs", setPopularRadio, 'afterhours_radio');
     }, 2400);
 
     return () => {
@@ -2760,6 +2766,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
 
     if (isShuffle) {
+      const nextShuffleTrack = shuffleService.getNextTrack(currentSong?.id);
+      if (nextShuffleTrack) {
+        playSong(nextShuffleTrack);
+        return;
+      }
       const randomIndex = Math.floor(Math.random() * effectiveQueue.length);
       playSong(effectiveQueue[randomIndex]);
       return;
@@ -2812,6 +2823,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
 
     if (isShuffle) {
+      const prevShuffleTrack = shuffleService.getPrevTrack(currentSong?.id);
+      if (prevShuffleTrack) {
+        playSong(prevShuffleTrack);
+        return;
+      }
       const randomIndex = Math.floor(Math.random() * effectiveQueue.length);
       playSong(effectiveQueue[randomIndex]);
       return;
@@ -2827,6 +2843,36 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const prevIdx = currentIndex > 0 ? currentIndex - 1 : effectiveQueue.length - 1;
     playSong(effectiveQueue[prevIdx]);
   }, [queue, trendingSongs, currentSong, isPlaying, isShuffle, playSong]);
+
+  const toggleShuffle = useCallback(() => {
+    setIsShuffle(prev => {
+      const next = !prev;
+      if (next) {
+        const seedPool = [...(queue || []), ...(trendingSongs || []), ...(TRENDING_SONGS || [])];
+        shuffleService.initShufflePool(seedPool).then(() => {
+          shuffleService.reshufflePool(currentSong?.id);
+        }).catch(() => {});
+      }
+      return next;
+    });
+  }, [queue, trendingSongs, currentSong]);
+
+  useEffect(() => {
+    shuffleService.initShufflePool([...(trendingSongs || []), ...(TRENDING_SONGS || [])]).catch(() => {});
+  }, [trendingSongs]);
+
+  const handleFetchDiscoveryTracks = useCallback(async () => {
+    try {
+      await shuffleService.initShufflePool([...(trendingSongs || []), ...(TRENDING_SONGS || [])]);
+      const pool = shuffleService.getShufflePool();
+      if (pool && pool.length > 0) {
+        return [...pool].sort(() => 0.5 - Math.random());
+      }
+      return filterSingleSongs([...(trendingSongs || []), ...(TRENDING_SONGS || [])]);
+    } catch (e) {
+      return filterSingleSongs(TRENDING_SONGS);
+    }
+  }, []);
 
   const toggleRepeatMode = () => {
     if (isRepeat === false || isRepeat === 'off') {
@@ -3042,28 +3088,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         },
         onError: (e) => {
           console.warn("YouTube player playback error code:", e.data);
+          setIsPlaying(false);
           
           if (isInitialMountRef.current) {
-            setIsPlaying(false);
             return;
           }
 
           const isRestricted = (e.data === 150 || e.data === 101);
-          const currentQ = queueRef.current;
-          
-          if (!currentQ || currentQ.length === 0) {
-            const msg = isRestricted 
-              ? "This official video restricts embedding. Please try another song or add a lyric version."
-              : "Playback error encountered.";
-            showToast(msg, 4000);
-            setIsPlaying(false);
-          } else {
-            const msg = isRestricted
-              ? "Playback restricted by video owner. Skipping to next song..."
-              : "Playback error encountered. Skipping to next song...";
-            showToast(msg, 3500);
-            handleNextSongRef.current?.();
-          }
+          const msg = isRestricted 
+            ? "Playback restricted by video owner. Please tap to retry or select another song."
+            : "Playback error encountered. Please tap to retry.";
+          showToast(msg, 4000);
+
+          // CRITICAL SAFETY GUARD:
+          // Never automatically skip to the next track on playback error.
+          // Automatic skipping on error caused infinite high-speed skipping loops (50+ songs/sec)
+          // when multiple tracks were blocked or embedding was restricted.
+          // The current song must remain selected and visible so the user can choose when to retry.
         }
       }
     });
@@ -4304,31 +4345,48 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 return rawGroup || 'main';
               };
 
-              // Base nav from cmsConfig or defaultNav, strictly filtering out 'profile' and 'equalizer'
-              const rawNav = (Array.isArray(cmsConfig?.navigation) && cmsConfig.navigation.length > 0)
-                ? cmsConfig.navigation.filter(item => item && item.enabled !== false && item.id !== 'profile' && item.id !== 'equalizer')
-                : defaultNav;
+              // 1. Collect all explicitly disabled item IDs so defaults never override user choices
+              const disabledIds = new Set();
+              const configuredItems = Array.isArray(cmsConfig?.navigation) ? cmsConfig.navigation : [];
+              configuredItems.forEach(item => {
+                if (item && item.id && item.enabled === false) {
+                  disabledIds.add(item.id);
+                }
+              });
 
-              // Build a map seeded with defaults so missing categories are always restored
+              // 2. Build active navigation map
               const navMap = new Map();
-              defaultNav.forEach(def => {
-                navMap.set(def.id, { ...def });
-              });
 
-              rawNav.forEach(item => {
-                if (!item || !item.id || item.id === 'profile' || item.id === 'equalizer') return;
-                const existing = navMap.get(item.id);
-                const group = canonicalGroup(item.id, item.group || existing?.group);
-                navMap.set(item.id, {
-                  ...(existing || {}),
-                  ...item,
-                  group
+              if (configuredItems.length > 0) {
+                // Admin configuration is present: add configured enabled items
+                configuredItems.forEach(item => {
+                  if (!item || !item.id || item.id === 'profile' || item.id === 'equalizer') return;
+                  if (item.enabled === false || disabledIds.has(item.id)) return;
+                  const group = canonicalGroup(item.id, item.group);
+                  navMap.set(item.id, {
+                    ...item,
+                    group
+                  });
                 });
-              });
+
+                // Check defaultNav for any canonical categories missing from old legacy DB configurations
+                defaultNav.forEach(def => {
+                  if (disabledIds.has(def.id)) return; // Explicitly hidden by admin
+                  if (configuredItems.some(c => c && c.id === def.id)) return; // Already tracked in configuration
+                  navMap.set(def.id, { ...def });
+                });
+              } else {
+                // Fallback to defaultNav if no configuration exists
+                defaultNav.forEach(def => {
+                  if (!disabledIds.has(def.id)) {
+                    navMap.set(def.id, { ...def });
+                  }
+                });
+              }
 
               // Discover any custom stations configured in cmsConfig.stations that aren't already in navigation
               const extraStations = (Array.isArray(cmsConfig?.stations) ? cmsConfig.stations : [])
-                .filter(st => st && st.id && !navMap.has(st.id) && st.isActive !== false && st.enabled !== false)
+                .filter(st => st && st.id && !navMap.has(st.id) && !disabledIds.has(st.id) && st.isActive !== false && st.enabled !== false)
                 .map(st => ({
                   id: st.id,
                   label: st.title || st.name || st.id,
@@ -4342,7 +4400,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 navMap.set(st.id, st);
               });
 
-              const allItems = Array.from(navMap.values());
+              const allItems = Array.from(navMap.values()).filter(item => item && item.enabled !== false && !disabledIds.has(item.id));
               const groups = [
                 { key: 'main', title: null },
                 { key: 'discovery', title: 'AI & DISCOVERY' },
@@ -4918,15 +4976,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           <div className="max-w-2xl mx-auto space-y-6 relative z-10 py-2 sm:py-4">
             <DiscoverSwipe
               onPlaySong={playSong}
+              onTogglePlay={togglePlayPause}
               currentSong={currentSong}
               isPlaying={isPlaying}
               likedSongs={likedSongs}
               onToggleLike={toggleLike}
               showToast={showToast}
-              fetchTracks={async () => {
-                const pool = [...(trendingSongs || []), ...(TRENDING_SONGS || [])];
-                return pool.sort(() => 0.5 - Math.random());
-              }}
+              fetchTracks={handleFetchDiscoveryTracks}
             />
             <DisclaimerFooter footer={cmsConfig?.footer} />
           </div>
@@ -5890,7 +5946,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             {/* Middle: Controls & Scrubber */}
             <div className="flex flex-col items-center w-2/4 gap-1.5 animate-fadeIn" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center gap-4 shrink-0">
-                <button onClick={() => setIsShuffle(!isShuffle)} className={`transition cursor-pointer ${isShuffle ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} title={isShuffle ? "Shuffle On" : "Shuffle Off"}>
+                <button onClick={toggleShuffle} className={`transition cursor-pointer ${isShuffle ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} title={isShuffle ? "Shuffle On" : "Shuffle Off"}>
                   <Icon name="shuffle" className="w-4 h-4 shrink-0" />
                 </button>
                 <button onClick={handlePrevSong} className="text-neutral-300 hover:text-white transition cursor-pointer" title="Previous Track">
@@ -6335,7 +6391,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 {/* Main Playback Controls with Tactile 3D Buttons */}
                 <div className="flex items-center justify-center gap-4 sm:gap-6 w-full shrink-0 my-1">
                   <button 
-                    onClick={() => setIsShuffle(!isShuffle)} 
+                    onClick={toggleShuffle} 
                     className={`p-1.5 transition ${isShuffle ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} 
                     title={isShuffle ? "Shuffle On" : "Shuffle Off"}
                   >

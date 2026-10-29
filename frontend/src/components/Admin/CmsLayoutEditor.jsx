@@ -28,7 +28,9 @@ export default function CmsLayoutEditor({
   onSaveDraft,
   onPublishLive,
   isSavingDraft,
-  isPublishingLive
+  isPublishingLive,
+  token,
+  backendUrl
 }) {
   const [activeTab, setActiveTab] = useState('sections');
 
@@ -90,20 +92,47 @@ export default function CmsLayoutEditor({
   };
 
   // Navigation management
-  const handleToggleNav = (index) => {
+  const handleToggleNav = async (index) => {
     const item = navigation[index];
     if (item?.isCore && item.enabled) {
       if (showToast) showToast('Core navigation items cannot be disabled', 'error');
       return;
     }
+
+    const newEnabled = !item.enabled;
+
+    // 1. Optimistic update of local draft
     onUpdateDraft(prev => {
       const base = normalizeCmsConfig(prev || draft);
       const updated = [...(base.navigation || [])];
       if (updated[index]) {
-        updated[index] = { ...updated[index], enabled: !updated[index].enabled };
+        updated[index] = { ...updated[index], enabled: newEnabled };
       }
       return { ...base, navigation: updated };
     });
+
+    // 2. Persist to backend and sync with live site
+    if (token && item?.id) {
+      try {
+        const cleanUrl = (backendUrl || '').replace(/\/+$/, '');
+        const res = await fetch(`${cleanUrl}/api/admin/cms/navigation/${item.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ enabled: newEnabled })
+        });
+        const parsed = await res.json();
+        if (parsed?.item) {
+          if (showToast) {
+            showToast(`"${item.label || item.id}" is now ${newEnabled ? 'visible in' : 'hidden from'} sidebar`, 'success');
+          }
+        }
+      } catch (err) {
+        console.error('Failed to persist navigation visibility:', err);
+      }
+    }
   };
 
   const handleMoveNav = (index, direction) => {

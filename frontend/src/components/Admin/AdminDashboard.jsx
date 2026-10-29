@@ -653,6 +653,8 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               onPublishLive={() => handlePublishLive('Published from Layout Editor')}
               isSavingDraft={isSavingDraft}
               isPublishingLive={isPublishingLive}
+              token={token}
+              backendUrl={cleanBackendUrl}
             />
           )}
 

@@ -281,6 +281,8 @@ export const normalizeNavigationList = (rawNav) => {
       else if (['home', 'discover', 'radio'].includes(item.id)) group = 'main';
 
       let label = item.label || existing.label;
+      if (item.id === 'library' && (label === 'Liked Songs' || !label)) label = 'Liked Songs Collection';
+      if (item.id === 'history' && (label === 'History' || !label)) label = 'Listening History';
 
       map.set(item.id, {
         ...existing,
@@ -301,6 +303,7 @@ export const normalizeNavigationList = (rawNav) => {
   });
 
   return Array.from(map.values())
+    .filter(n => n.id !== 'profile' && n.id !== 'equalizer')
     .sort((a, b) => (a.order || 0) - (b.order || 0));
 };
 
@@ -528,7 +531,6 @@ export const cmsService = {
           .filter(e => e && e.enabled)
           .sort((a, b) => (a.order || 0) - (b.order || 0)),
         navigation: normalizeNavigationList(config.navigation || defaults.navigation)
-          .filter(n => n && (n.enabled || n.isCore))
           .sort((a, b) => (a.order || 0) - (b.order || 0)),
         playerDefaults: { ...defaults.playerDefaults, ...(config.playerDefaults || {}) },
         searchPage: { ...defaults.searchPage, ...(config.searchPage || {}) },

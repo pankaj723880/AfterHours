@@ -2,6 +2,7 @@ import express from 'express';
 import axios from 'axios';
 import { interpretMoodPrompt } from '../services/moodClassifier.js';
 import ytSearch from 'yt-search';
+import { filterSingleSongs } from '../services/songFilter.js';
 
 const router = express.Router();
 
@@ -73,22 +74,26 @@ router.post('/recommend', async (req, res) => {
       }
     }
 
-    // Deduplicate and format tracks
+    // Filter and format single-song tracks only
+    const singleSongs = filterSingleSongs(rawItems);
+    const chosenItems = singleSongs.length > 0 ? singleSongs : rawItems;
+
     const seenIds = new Set();
     const tracks = [];
 
-    for (const item of rawItems) {
-      const videoId = item.id?.videoId || item.id;
+    for (const item of chosenItems) {
+      const videoId = item.id?.videoId || item.id || item.videoId;
       if (!videoId || seenIds.has(videoId)) continue;
       seenIds.add(videoId);
 
       tracks.push({
         id: videoId,
         videoId,
-        title: decodeHtml(item.snippet?.title || 'Unknown Title'),
-        channel: decodeHtml(item.snippet?.channelTitle || 'Unknown Artist'),
-        artist: decodeHtml(item.snippet?.channelTitle || 'Unknown Artist'),
-        thumbnail: item.snippet?.thumbnails?.high?.url ||
+        title: decodeHtml(item.title || item.snippet?.title || 'Unknown Title'),
+        channel: decodeHtml(item.channel || item.snippet?.channelTitle || 'Unknown Artist'),
+        artist: decodeHtml(item.artist || item.snippet?.channelTitle || 'Unknown Artist'),
+        thumbnail: item.thumbnail ||
+                   item.snippet?.thumbnails?.high?.url ||
                    item.snippet?.thumbnails?.medium?.url ||
                    item.snippet?.thumbnails?.default?.url ||
                    `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
