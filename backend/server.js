@@ -66,17 +66,28 @@ const oauthClient = new OAuth2Client();
 const app = express();
 const server = http.createServer(app);
 
-// Allowed origins for CORS (Production Vercel + Localhost)
+// Helper to parse single or comma-separated origins from environment variables
+const parseOrigins = (val) => {
+  if (!val) return [];
+  return val.split(',').map(s => s.trim().replace(/\/+$/, '')).filter(Boolean);
+};
+
+// Allowed origins for CORS (Both Old & New Production Vercel domains + Localhost)
 const allowedOrigins = [
   'https://after-hours-five-beryl.vercel.app',
-  process.env.CLIENT_URL,
+  'https://loopra1.vercel.app',
+  'https://loopra.vercel.app',
+  ...parseOrigins(process.env.CLIENT_URL),
+  ...parseOrigins(process.env.FRONTEND_URL),
+  ...parseOrigins(process.env.ALLOWED_ORIGINS),
 ].filter(Boolean);
 
 const isOriginAllowed = (origin) => {
   if (!origin) return true; // Allow curl, same-origin, or non-browser server requests
-  if (allowedOrigins.includes(origin)) return true;
-  if (/^https:\/\/after-hours-[a-z0-9-]+\.vercel\.app$/.test(origin)) return true;
-  if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+  const normalizedOrigin = origin.trim().replace(/\/+$/, '');
+  if (allowedOrigins.includes(normalizedOrigin)) return true;
+  if (/^https:\/\/(after-hours|loopra1?)[a-z0-9-]*\.vercel\.app$/.test(normalizedOrigin)) return true;
+  if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(normalizedOrigin)) return true;
   return false;
 };
 
