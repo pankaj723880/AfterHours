@@ -33,11 +33,15 @@ import LoopraCanvas from './components/Player/LoopraCanvas';
 import TimeMachineRadio from './components/Radio/TimeMachineRadio';
 import IndianRadioView from './components/Radio/IndianRadioView';
 import Hls from 'hls.js';
+if (typeof window !== 'undefined') {
+  window.Hls = Hls;
+}
 import ActivityFeed from './components/Activity/ActivityFeed';
 import MobileBottomNav from './components/Navigation/MobileBottomNav';
 
 import { io } from 'socket.io-client';
 import { BACKEND_URL, getApiUrl } from './utils/apiUrl';
+export { BACKEND_URL, getApiUrl };
 
 offlineEligibilityService.setBackendUrl(BACKEND_URL);
 
@@ -2665,7 +2669,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           if (p && typeof p.catch === 'function') p.catch(() => {});
         } catch (e) {}
       }
-      setIsPlaying(true);
+      if (!song?.isRadio) {
+        setIsPlaying(true);
+      }
       return;
     }
 
@@ -2678,7 +2684,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
 
     setCurrentSong(song);
-    setIsPlaying(true);
+    if (!song?.isRadio) {
+      setIsPlaying(true);
+    }
 
     try {
       fetch(getApiUrl('/api/admin/telemetry/event'), {
@@ -3026,39 +3034,68 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         try { playerRef.current.pauseVideo(); } catch (e) {}
       }
 
-      if (!radioAudioRef.current) {
+      // Stop previous radio stream before loading a new station
+      if (hlsRef.current) {
+        try { hlsRef.current.destroy(); } catch (e) {}
+        hlsRef.current = null;
+      }
+      if (radioAudioRef.current) {
+        try {
+          radioAudioRef.current.pause();
+          radioAudioRef.current.removeAttribute('src');
+          radioAudioRef.current.load();
+        } catch (e) {}
+      } else {
         radioAudioRef.current = new Audio();
-        radioAudioRef.current.preload = 'auto';
       }
 
       const radioAudio = radioAudioRef.current;
-      radioAudio.volume = volume / 100;
-      audioEqualizerService.attachToAudioElement(radioAudio);
+      if (typeof window !== 'undefined') {
+        window.__loopraRadioAudio = radioAudio;
+      }
+      radioAudio.preload = 'auto';
+      radioAudio.crossOrigin = 'anonymous';
+      radioAudio.volume = isMuted ? 0 : (volume / 100);
+      radioAudio.muted = isMuted;
 
-      radioAudio.onplay = () => {
+      // Note: Web Audio createMediaElementSource is omitted here to prevent silencing cross-origin live streams.
+      radioAudio.onplaying = () => {
         setIsPlaying(true);
         isInitialMountRef.current = false;
-        audioEqualizerService.resume();
       };
-      radioAudio.onpause = () => setIsPlaying(false);
+      radioAudio.onpause = () => {
+        setIsPlaying(false);
+      };
+      radioAudio.onwaiting = () => {
+        // Stream buffering
+      };
       radioAudio.onerror = (e) => {
         console.warn('[IndianRadio] Playback error on station stream:', e);
         setIsPlaying(false);
         showToast('Live radio stream temporarily unavailable. Reconnecting...', 'error');
       };
 
-      const resolvedStreamUrl = currentSong.streamUrl?.startsWith('http')
-        ? currentSong.streamUrl
-        : getApiUrl(currentSong.streamUrl);
+      const rawStream = currentSong.streamUrl || `/api/radio/stream/${currentSong.id}/playlist.m3u8`;
+      const resolvedStreamUrl = rawStream.startsWith('http')
+        ? rawStream
+        : getApiUrl(rawStream);
 
-      if (hlsRef.current) {
-        try { hlsRef.current.destroy(); } catch (e) {}
-        hlsRef.current = null;
-      }
+      const triggerPlay = () => {
+        if (!isFirstMount) {
+          const p = radioAudio.play();
+          if (p && typeof p.catch === 'function') {
+            p.catch(err => {
+              if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
+                console.warn('[IndianRadio] Autoplay error:', err);
+              }
+            });
+          }
+        }
+      };
 
       if (currentSong.streamFormat === 'hls' && Hls.isSupported()) {
         const hls = new Hls({
-          enableWorker: true,
+          enableWorker: false,
           lowLatencyMode: true,
           backBufferLength: 30
         });
@@ -3066,19 +3103,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         hls.loadSource(resolvedStreamUrl);
         hls.attachMedia(radioAudio);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          if (!isFirstMount) {
-            const p = radioAudio.play();
-            if (p && typeof p.catch === 'function') {
-              p.catch(err => {
-                if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
-                  console.warn('[IndianRadio] HLS autoplay blocked:', err);
-                }
-              });
-            }
-          }
+          triggerPlay();
         });
         hls.on(Hls.Events.ERROR, (event, data) => {
           if (data.fatal) {
+            console.warn('[IndianRadio] HLS Fatal Error:', data.type, data.details);
             switch (data.type) {
               case Hls.ErrorTypes.NETWORK_ERROR:
                 hls.startLoad();
@@ -3089,31 +3118,22 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               default:
                 hls.destroy();
                 hlsRef.current = null;
+                setIsPlaying(false);
                 break;
             }
           }
         });
       } else {
         radioAudio.src = resolvedStreamUrl;
-        if (!isFirstMount) {
-          const p = radioAudio.play();
-          if (p && typeof p.catch === 'function') {
-            p.catch(err => {
-              if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
-                console.warn('[IndianRadio] Direct play error:', err);
-              }
-            });
-          }
-        }
+        triggerPlay();
       }
 
       playerRef.current = {
         isRadio: true,
-        getCurrentTime: () => 0,
+        getCurrentTime: () => radioAudioRef.current ? radioAudioRef.current.currentTime : 0,
         getDuration: () => 0,
         seekTo: () => {},
         playVideo: () => {
-          audioEqualizerService.resume();
           if (!radioAudioRef.current) return Promise.resolve();
           const p = radioAudioRef.current.play();
           if (p && typeof p.catch === 'function') {
@@ -3547,7 +3567,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         } catch (e) {}
       }
       if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
-      setIsPlaying(true);
+      if (!currentSong?.isRadio) {
+        setIsPlaying(true);
+      }
     }
   };
 

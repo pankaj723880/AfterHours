@@ -20,8 +20,6 @@ export const INDIAN_RADIO_STATIONS = [
     artwork: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=600&q=80',
     isPlayable: true,
     streamFormat: 'hls',
-    upstreamBaseUrl: 'https://d3r9rhourdc02u.cloudfront.net/assets/radio/airdelhi07/',
-    upstreamMasterFile: 'air007_Auto.m3u8',
     wavesUpstreamUrl: 'https://d1cvqgmbcpg5yn.cloudfront.net/146ed6ec6dea5a24/146ed6ec6dea5a24.m3u8',
     verificationStatus: 'VERIFIED_ACTIVE',
     verificationDate: '2026-10-29'
@@ -250,10 +248,14 @@ const stationsMap = new Map(INDIAN_RADIO_STATIONS.map(s => [s.id, s]));
 // GET /api/radio/stations - Return verified Indian radio station catalogue
 router.get('/stations', (req, res) => {
   res.set('Cache-Control', 'public, max-age=300');
+  const enrichedStations = INDIAN_RADIO_STATIONS.map(s => ({
+    ...s,
+    streamUrl: s.isPlayable ? `/api/radio/stream/${s.id}/playlist.m3u8` : undefined
+  }));
   res.json({
     success: true,
-    count: INDIAN_RADIO_STATIONS.length,
-    stations: INDIAN_RADIO_STATIONS
+    count: enrichedStations.length,
+    stations: enrichedStations
   });
 });
 
@@ -353,7 +355,16 @@ router.get(['/stream/:stationId', '/stream/:stationId/:file'], (req, res) => {
     return secureProxyRequest(station.upstreamUrl, req, res, true);
   }
 
-  // Handle Cloudfront HLS streams (Vividh Bharati, FM Gold, FM Rainbow, AIR Raagam, etc.)
+  // Handle Waves OTT HLS stream (e.g. AIR Vividh Bharati MPEG-TS stream)
+  if (station.wavesUpstreamUrl) {
+    if (!subPath || subPath === 'playlist.m3u8') {
+      return secureProxyRequest(station.wavesUpstreamUrl, req, res, false);
+    }
+    const baseWavesUrl = 'https://d1cvqgmbcpg5yn.cloudfront.net/146ed6ec6dea5a24/';
+    return secureProxyRequest(baseWavesUrl + subPath, req, res, true);
+  }
+
+  // Handle Cloudfront HLS streams (FM Gold, FM Rainbow, AIR Raagam, etc.)
   if (station.upstreamBaseUrl) {
     if (!subPath || subPath === 'playlist.m3u8') {
       const targetMaster = station.upstreamBaseUrl + station.upstreamMasterFile;
@@ -363,15 +374,6 @@ router.get(['/stream/:stationId', '/stream/:stationId/:file'], (req, res) => {
     const isPlaylist = subPath.endsWith('.m3u8');
     const targetFile = station.upstreamBaseUrl + subPath;
     return secureProxyRequest(targetFile, req, res, !isPlaylist);
-  }
-
-  // Handle Waves OTT HLS stream
-  if (station.wavesUpstreamUrl) {
-    if (!subPath || subPath === 'playlist.m3u8') {
-      return secureProxyRequest(station.wavesUpstreamUrl, req, res, false);
-    }
-    const baseWavesUrl = 'https://d1cvqgmbcpg5yn.cloudfront.net/146ed6ec6dea5a24/';
-    return secureProxyRequest(baseWavesUrl + subPath, req, res, true);
   }
 
   res.status(404).json({ error: 'Unknown stream format' });
