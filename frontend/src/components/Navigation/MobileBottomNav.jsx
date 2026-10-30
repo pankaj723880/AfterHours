@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, Compass, Heart, ListMusic, UserRound } from 'lucide-react';
+import { Home, Compass, Heart, ListMusic, Radio } from 'lucide-react';
 
 /**
  * MobileBottomNav component for Loopra
@@ -10,7 +10,7 @@ import { Home, Compass, Heart, ListMusic, UserRound } from 'lucide-react';
  * 2. Discover (compass icon) -> 'discover'
  * 3. Liked (heart icon) -> 'library'
  * 4. Playlists (list-music icon) -> 'playlists'
- * 5. Profile (user-round icon) -> opens profile modal / auth modal
+ * 5. Radio (radio icon) -> 'radio' (Indian Live Radio)
  */
 export default function MobileBottomNav({
   activeTab,
@@ -69,13 +69,13 @@ export default function MobileBottomNav({
       },
     },
     {
-      id: 'profile',
-      label: 'Profile',
-      icon: UserRound,
-      isActive: Boolean(isProfileOpen),
+      id: 'radio',
+      label: 'Radio',
+      icon: Radio,
+      isActive: (activeTab === 'radio' || activeTab === 'indian-radio') && !isProfileOpen,
       onClick: (e) => {
         e.stopPropagation();
-        onOpenProfile();
+        onNavigate('radio');
       },
     },
   ];

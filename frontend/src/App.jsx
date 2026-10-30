@@ -32,6 +32,7 @@ import ContinueListeningBanner from './components/Common/ContinueListeningBanner
 import { listeningStatsService } from './services/listeningStatsService';
 import MoodToMusicSection from './components/Mood/MoodToMusicSection';
 import PersonalizedRecommendationsSection from './components/Recommendations/PersonalizedRecommendationsSection';
+import LoopraAiCompanion from './components/AiMusicCompanion/LoopraAiCompanion';
 import { recommendationsClient } from './services/recommendationsClient';
 import LoopraCanvas from './components/Player/LoopraCanvas';
 import TimeMachineRadio from './components/Radio/TimeMachineRadio';
@@ -7008,6 +7009,25 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           });
         }} 
         showToast={showToast} 
+      />
+
+      {/* Loopra AI Floating Music Companion & External Song Recognition */}
+      <LoopraAiCompanion
+        backendUrl={BACKEND_URL}
+        authToken={authToken}
+        user={user}
+        currentSong={currentSong}
+        isPlaying={isPlaying}
+        playbackPosition={currentTimeRef.current}
+        duration={durationRef.current}
+        onPlayTrack={(track) => {
+          playSong(track);
+        }}
+        onTogglePlayPause={togglePlayPause}
+        onToggleLike={toggleLike}
+        isLiked={isSongLiked}
+        onAddToPlaylist={handleAddToPlaylistClick}
+        showToast={showToast}
       />
 
       {toastMessage && (

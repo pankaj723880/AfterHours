@@ -17,26 +17,26 @@ describe('Mobile Bottom Navigation Bar Verification', () => {
     const content = fs.readFileSync(bottomNavPath, 'utf8');
 
     // Verify imports from lucide-react
-    assert.match(content, /import\s+\{.*Home.*Compass.*Heart.*ListMusic.*UserRound.*\}\s+from\s+['"]lucide-react['"]/s,
-      'Should import required icons (Home, Compass, Heart, ListMusic, UserRound) from lucide-react');
+    assert.match(content, /import\s+\{.*Home.*Compass.*Heart.*ListMusic.*Radio.*\}\s+from\s+['"]lucide-react['"]/s,
+      'Should import required icons (Home, Compass, Heart, ListMusic, Radio) from lucide-react');
 
     // Check exact order of IDs
     const homeIndex = content.indexOf("id: 'home'");
     const discoverIndex = content.indexOf("id: 'discover'");
     const likedIndex = content.indexOf("id: 'liked'");
     const playlistsIndex = content.indexOf("id: 'playlists'");
-    const profileIndex = content.indexOf("id: 'profile'");
+    const radioIndex = content.indexOf("id: 'radio'");
 
     assert.ok(homeIndex !== -1, 'Must have Home item');
     assert.ok(discoverIndex !== -1, 'Must have Discover item');
     assert.ok(likedIndex !== -1, 'Must have Liked item');
     assert.ok(playlistsIndex !== -1, 'Must have Playlists item');
-    assert.ok(profileIndex !== -1, 'Must have Profile item');
+    assert.ok(radioIndex !== -1, 'Must have Radio item');
 
     assert.ok(homeIndex < discoverIndex, 'Home must precede Discover');
     assert.ok(discoverIndex < likedIndex, 'Discover must precede Liked');
     assert.ok(likedIndex < playlistsIndex, 'Liked must precede Playlists');
-    assert.ok(playlistsIndex < profileIndex, 'Playlists must precede Profile');
+    assert.ok(playlistsIndex < radioIndex, 'Playlists must precede Radio');
   });
 
   it('MobileBottomNav has responsive mobile-only classes and safe-area support', () => {
@@ -69,19 +69,19 @@ describe('Mobile Bottom Navigation Bar Verification', () => {
   it('Mobile sidebar / drawer preserves all secondary destinations', () => {
     const appContent = fs.readFileSync(appPath, 'utf8');
 
-    // Secondary AI & Discovery destinations
-    assert.match(appContent, /handleStationSelect\('mood'\)/, 'Mood-to-Music AI must be preserved');
-    assert.match(appContent, /handleStationSelect\('timemachine'\)/, 'Time Machine Radio must be preserved');
-    assert.match(appContent, /handleStationSelect\('activity'\)/, 'Listening Activity must be preserved');
-    assert.match(appContent, /handleStationSelect\('swipe'\)/, 'Discover Swipe must be preserved');
+    // Secondary AI & Discovery destinations in defaultNav
+    assert.match(appContent, /id:\s*'mood'/, 'Mood-to-Music AI must be preserved');
+    assert.match(appContent, /id:\s*'timemachine'/, 'Time Machine Radio must be preserved');
+    assert.match(appContent, /id:\s*'activity'/, 'Listening Activity must be preserved');
+    assert.match(appContent, /id:\s*'swipe'/, 'Discover Swipe must be preserved');
 
     // Secondary Nostalgia Stations
-    assert.match(appContent, /handleStationSelect\('barber'\)/, 'Saloon FM must be preserved');
-    assert.match(appContent, /handleStationSelect\('truck'\)/, 'Horn Ok Please must be preserved');
-    assert.match(appContent, /handleStationSelect\('pauwa'\)/, 'Theka Session must be preserved');
+    assert.match(appContent, /id:\s*'barber'/, 'Saloon FM must be preserved');
+    assert.match(appContent, /id:\s*'truck'/, 'Horn Ok Please must be preserved');
+    assert.match(appContent, /id:\s*'pauwa'/, 'Theka Session must be preserved');
 
     // Secondary Collection & System
-    assert.match(appContent, /handleStationSelect\('history'\)/, 'History must be preserved');
+    assert.match(appContent, /id:\s*'history'/, 'History must be preserved');
     assert.match(appContent, /setIsStatsOpen\(true\)/, 'Recap & Stats must be preserved');
     assert.match(appContent, /handleStationSelect\('admin'\)/, 'Admin Dashboard must be preserved');
   });
