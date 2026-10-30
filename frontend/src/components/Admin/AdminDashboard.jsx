@@ -24,10 +24,12 @@ import {
   Brain,
   X,
   AlertCircle,
-  Menu
+  Menu,
+  Star
 } from 'lucide-react';
 import AccessDenied from './AccessDenied';
 import AdminOverview from './AdminOverview';
+import AdminReviewsManagement from './AdminReviewsManagement';
 import LiveTraffic from './LiveTraffic';
 import UserManagement from './UserManagement';
 import ServerHealth from './ServerHealth';
@@ -44,7 +46,7 @@ import { safeParseJsonResponse } from '../../utils/errorHandler';
 import { DEFAULT_CMS_CONFIG, getCachedCmsConfig, normalizeCmsConfig, applyThemeToDom } from '../../services/cmsClient';
 import { BACKEND_URL } from '../../utils/apiUrl';
 
-export default function AdminDashboard({ user, token, backendUrl, onExit, onOpenAuth, showToast, onPreviewConfig }) {
+export default function AdminDashboard({ user, token, backendUrl, onExit, onOpenAuth, showToast, onPreviewConfig, onUserUpdated }) {
   const cleanBackendUrl = (backendUrl && backendUrl.trim().startsWith('http'))
     ? backendUrl.trim().replace(/\/+$/, '')
     : BACKEND_URL;
@@ -367,6 +369,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
 
   const operationsNavItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'reviews', label: 'Ratings & Reviews', icon: Star, badge: 'Community' },
     { id: 'ai_learning', label: 'AI Learning Engine', icon: Brain, badge: 'Intelligence' },
     { id: 'traffic', label: 'Live Traffic', icon: Activity, badge: isSocketConnected ? 'LIVE' : null },
     { id: 'users', label: 'Users & Roles', icon: Users },
@@ -718,6 +721,14 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
             />
           )}
 
+          {activeSubTab === 'reviews' && (
+            <AdminReviewsManagement
+              token={token}
+              backendUrl={cleanBackendUrl}
+              showToast={showToast}
+            />
+          )}
+
           {activeSubTab === 'ai_learning' && (
             <AiLearningIntelligence
               token={token}
@@ -736,6 +747,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               backendUrl={cleanBackendUrl} 
               currentUser={user}
               showToast={showToast} 
+              onUserUpdated={onUserUpdated}
             />
           )}
 

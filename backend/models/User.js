@@ -20,7 +20,15 @@ const userSchema = new mongoose.Schema({
   isPublic: { type: Boolean, default: true },
   shareListeningActivity: { type: Boolean, default: false },
   followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
+  following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+
+  // Rating & Review popup status
+  ratingPopupStatus: {
+    hasRated: { type: Boolean, default: false },
+    hasDismissed: { type: Boolean, default: false },
+    lastDismissedAt: { type: Date, default: null },
+    ratedAt: { type: Date, default: null }
+  }
 }, { timestamps: true });
 
 userSchema.index({ createdAt: -1 });

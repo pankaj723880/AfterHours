@@ -143,6 +143,9 @@ router.post('/live-users-config', authenticateToken, requireAdmin, handleSaveLiv
 
 // 3. List Users with Server-Side Pagination, Filtering, & Search
 router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
@@ -178,6 +181,7 @@ router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
 
     const formattedUsers = users.map(u => ({
       id: u._id.toString(),
+      _id: u._id.toString(),
       username: u.username,
       role: u.role || 'user',
       status: u.status || 'active',
@@ -305,45 +309,57 @@ router.patch('/users/:id/profile', authenticateToken, requireAdmin, async (req, 
       return res.status(400).json({ error: 'No valid profile fields provided for update' });
     }
 
-    Object.assign(targetUser, updates);
-    await targetUser.save();
+    const updatedUser = await User.findByIdAndUpdate(
+      targetUser._id,
+      { $set: updates },
+      { returnDocument: 'after' }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: 'User could not be found to apply profile update' });
+    }
 
     // Cascade privacy updates to Activity collection if privacy flags changed
     if (updates.isPublic !== undefined || updates.shareListeningActivity !== undefined) {
-      const makePublic = (targetUser.isPublic && targetUser.shareListeningActivity);
+      const makePublic = (updatedUser.isPublic && updatedUser.shareListeningActivity);
       await Activity.updateMany(
-        { userId: targetUser._id },
-        { $set: { isPublic: makePublic, displayName: targetUser.displayName, avatarUrl: targetUser.avatarUrl } }
-      );
+        { userId: updatedUser._id },
+        { $set: { isPublic: makePublic, displayName: updatedUser.displayName, avatarUrl: updatedUser.avatarUrl } }
+      ).catch(() => {});
     } else if (updates.displayName !== undefined || updates.avatarUrl !== undefined) {
       await Activity.updateMany(
-        { userId: targetUser._id },
-        { $set: { displayName: targetUser.displayName, avatarUrl: targetUser.avatarUrl } }
-      );
+        { userId: updatedUser._id },
+        { $set: { displayName: updatedUser.displayName, avatarUrl: updatedUser.avatarUrl } }
+      ).catch(() => {});
     }
 
-    await AuditLog.create({
-      adminId: req.user._id.toString(),
-      adminUsername: req.user.username,
-      action: 'USER_PROFILE_UPDATE',
-      targetId: targetUser._id.toString(),
-      targetUsername: targetUser.username,
-      details: changes,
-      ip: getClientIp(req),
-      status: 'SUCCESS'
-    });
+    try {
+      await AuditLog.create({
+        adminId: req.user._id.toString(),
+        adminUsername: req.user.username,
+        action: 'USER_PROFILE_UPDATE',
+        targetId: updatedUser._id.toString(),
+        targetUsername: updatedUser.username,
+        details: changes,
+        ip: getClientIp(req),
+        status: 'SUCCESS'
+      });
+    } catch (auditErr) {
+      console.warn('[AuditLog Warning]:', auditErr.message);
+    }
 
     res.json({
       message: 'User profile updated successfully',
       user: {
-        id: targetUser._id.toString(),
-        username: targetUser.username,
-        displayName: targetUser.displayName,
-        avatarUrl: targetUser.avatarUrl,
-        bio: targetUser.bio,
-        isPublic: targetUser.isPublic,
-        shareListeningActivity: targetUser.shareListeningActivity,
-        favoriteGenres: targetUser.favoriteGenres
+        id: updatedUser._id.toString(),
+        _id: updatedUser._id.toString(),
+        username: updatedUser.username,
+        displayName: updatedUser.displayName,
+        avatarUrl: updatedUser.avatarUrl,
+        bio: updatedUser.bio,
+        isPublic: updatedUser.isPublic,
+        shareListeningActivity: updatedUser.shareListeningActivity,
+        favoriteGenres: updatedUser.favoriteGenres
       }
     });
   } catch (err) {
@@ -421,28 +437,41 @@ router.patch('/users/:id', authenticateToken, requireAdmin, async (req, res) => 
       return res.status(400).json({ error: 'No valid fields provided for update' });
     }
 
-    Object.assign(targetUser, updates);
-    await targetUser.save();
+    // Atomic update in MongoDB to ensure persistence without whole-document validation failures
+    const updatedUser = await User.findByIdAndUpdate(
+      targetUser._id,
+      { $set: updates },
+      { returnDocument: 'after', runValidators: true }
+    );
 
-    // Append to AuditLog
-    await AuditLog.create({
-      adminId: req.user._id.toString(),
-      adminUsername: req.user.username,
-      action: 'USER_UPDATE',
-      targetId: targetUser._id.toString(),
-      targetUsername: targetUser.username,
-      details: changes,
-      ip: getClientIp(req),
-      status: 'SUCCESS'
-    });
+    if (!updatedUser) {
+      return res.status(404).json({ error: 'User could not be found to apply update' });
+    }
+
+    // Append to AuditLog safely (do not block update response if audit logging fails)
+    try {
+      await AuditLog.create({
+        adminId: req.user._id.toString(),
+        adminUsername: req.user.username,
+        action: 'USER_UPDATE',
+        targetId: updatedUser._id.toString(),
+        targetUsername: updatedUser.username,
+        details: changes,
+        ip: getClientIp(req),
+        status: 'SUCCESS'
+      });
+    } catch (auditErr) {
+      console.warn('[AuditLog Warning]:', auditErr.message);
+    }
 
     res.json({
       message: 'User updated successfully',
       user: {
-        id: targetUser._id.toString(),
-        username: targetUser.username,
-        role: targetUser.role,
-        status: targetUser.status
+        id: updatedUser._id.toString(),
+        _id: updatedUser._id.toString(),
+        username: updatedUser.username,
+        role: updatedUser.role,
+        status: updatedUser.status
       }
     });
   } catch (err) {

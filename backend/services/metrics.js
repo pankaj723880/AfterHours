@@ -6,8 +6,30 @@ export class VisitorSessionManager {
   constructor(options = {}) {
     this.inactivityTimeoutMs = options.inactivityTimeoutMs || 60000; // 60s of complete inactivity = expired
     this.disconnectGraceMs = options.disconnectGraceMs || 25000; // 25s grace period for reloads/reconnects
-    this.sessions = new Map(); // sessionId -> SessionRecord
-    this.socketToSession = new Map(); // socketId -> sessionId
+    this.authenticatedUsers = new Map(); // userId string -> session record
+    this.anonymousSessions = new Map(); // sessionId string -> session record
+    this.socketMap = new Map(); // socketId -> { type: 'user' | 'anon', id: string, sessionId: string }
+  }
+
+  get sessions() {
+    // Backwards-compatible combined Map for tests/monitoring inspecting .sessions
+    const combined = new Map();
+    for (const [uid, record] of this.authenticatedUsers.entries()) {
+      combined.set(`user_${uid}`, record);
+    }
+    for (const [sid, record] of this.anonymousSessions.entries()) {
+      combined.set(sid, record);
+    }
+    return combined;
+  }
+
+  get socketToSession() {
+    // Backwards-compatible mapping for tests inspecting .socketToSession.size
+    const mapping = new Map();
+    for (const [sockId, info] of this.socketMap.entries()) {
+      mapping.set(sockId, info.sessionId || info.id);
+    }
+    return mapping;
   }
 
   registerConnection({ socketId, sessionId, user, ip = 'unknown', userAgent = 'unknown' }) {
@@ -16,64 +38,151 @@ export class VisitorSessionManager {
       ? sessionId.trim() 
       : `anon_${socketId}`;
 
-    this.socketToSession.set(socketId, effectiveSid);
+    const userId = user ? (user._id?.toString() || user.userId || user.id || null) : null;
 
-    let session = this.sessions.get(effectiveSid);
-    if (!session) {
-      session = {
-        sessionId: effectiveSid,
-        userId: user?._id?.toString() || user?.id || null,
-        username: user?.username || null,
-        role: user?.role || 'guest',
-        isAuthenticated: Boolean(user),
-        socketIds: new Set([socketId]),
-        firstSeen: now,
-        lastSeen: now,
-        ip,
-        userAgent
-      };
-      this.sessions.set(effectiveSid, session);
-    } else {
-      session.socketIds.add(socketId);
-      session.lastSeen = now;
-      session.ip = ip;
-      if (user) {
-        session.userId = user._id?.toString() || user.id || session.userId;
-        session.username = user.username || session.username;
-        session.role = user.role || session.role;
-        session.isAuthenticated = true;
+    // If socket was already registered under a different type or ID, clean it up first
+    if (this.socketMap.has(socketId)) {
+      const prev = this.socketMap.get(socketId);
+      if (prev.type === 'user' && prev.id !== userId) {
+        const prevUser = this.authenticatedUsers.get(prev.id);
+        if (prevUser) {
+          prevUser.socketIds.delete(socketId);
+          if (prevUser.socketIds.size === 0) {
+            this.authenticatedUsers.delete(prev.id);
+          }
+        }
+      } else if (prev.type === 'anon' && (userId || prev.id !== effectiveSid)) {
+        const prevAnon = this.anonymousSessions.get(prev.id);
+        if (prevAnon) {
+          prevAnon.socketIds.delete(socketId);
+          if (prevAnon.socketIds.size === 0) {
+            this.anonymousSessions.delete(prev.id);
+          }
+        }
       }
     }
 
-    return session;
+    if (userId) {
+      // Authenticated User: Keyed and deduplicated by unique authenticated userId
+      let userSession = this.authenticatedUsers.get(userId);
+      if (!userSession) {
+        userSession = {
+          sessionId: effectiveSid,
+          userId,
+          username: user.username || null,
+          role: user.role || 'user',
+          isAuthenticated: true,
+          socketIds: new Set([socketId]),
+          firstSeen: now,
+          lastSeen: now,
+          ip,
+          userAgent
+        };
+        this.authenticatedUsers.set(userId, userSession);
+      } else {
+        userSession.socketIds.add(socketId);
+        userSession.lastSeen = now;
+        userSession.ip = ip;
+        if (user.username) userSession.username = user.username;
+        if (user.role) userSession.role = user.role;
+        userSession.isAuthenticated = true;
+      }
+      this.socketMap.set(socketId, { type: 'user', id: userId, sessionId: effectiveSid });
+      return userSession;
+    } else {
+      // Anonymous Visitor: Keyed and deduplicated by client sessionId
+      let anonSession = this.anonymousSessions.get(effectiveSid);
+      if (!anonSession) {
+        anonSession = {
+          sessionId: effectiveSid,
+          userId: null,
+          username: null,
+          role: 'guest',
+          isAuthenticated: false,
+          socketIds: new Set([socketId]),
+          firstSeen: now,
+          lastSeen: now,
+          ip,
+          userAgent
+        };
+        this.anonymousSessions.set(effectiveSid, anonSession);
+      } else {
+        anonSession.socketIds.add(socketId);
+        anonSession.lastSeen = now;
+        anonSession.ip = ip;
+      }
+      this.socketMap.set(socketId, { type: 'anon', id: effectiveSid, sessionId: effectiveSid });
+      return anonSession;
+    }
+  }
+
+  handleLogout(socketId, sessionId) {
+    const prev = this.socketMap.get(socketId);
+    if (prev && prev.type === 'user') {
+      const userSession = this.authenticatedUsers.get(prev.id);
+      if (userSession) {
+        userSession.socketIds.delete(socketId);
+        if (userSession.socketIds.size === 0) {
+          this.authenticatedUsers.delete(prev.id);
+        }
+      }
+    }
+    this.socketMap.delete(socketId);
+    return null;
   }
 
   handleDisconnect(socketId) {
-    const sessionId = this.socketToSession.get(socketId);
-    if (!sessionId) return null;
+    const info = this.socketMap.get(socketId);
+    if (!info) return null;
 
-    this.socketToSession.delete(socketId);
-    const session = this.sessions.get(sessionId);
-    if (session) {
-      session.socketIds.delete(socketId);
-      session.lastSeen = Date.now();
+    this.socketMap.delete(socketId);
+    const now = Date.now();
+
+    if (info.type === 'user') {
+      const userSession = this.authenticatedUsers.get(info.id);
+      if (userSession) {
+        userSession.socketIds.delete(socketId);
+        userSession.lastSeen = now;
+      }
+      return info.id;
+    } else {
+      const anonSession = this.anonymousSessions.get(info.id);
+      if (anonSession) {
+        anonSession.socketIds.delete(socketId);
+        anonSession.lastSeen = now;
+      }
+      return info.id;
     }
-    return sessionId;
   }
 
   cleanupStaleSessions(now = Date.now()) {
-    for (const [sid, session] of this.sessions.entries()) {
+    // Authenticated users
+    for (const [userId, session] of this.authenticatedUsers.entries()) {
       const hasSockets = session.socketIds.size > 0;
       const timeSinceLastSeen = now - session.lastSeen;
 
       if (!hasSockets && timeSinceLastSeen > this.disconnectGraceMs) {
-        this.sessions.delete(sid);
+        this.authenticatedUsers.delete(userId);
       } else if (timeSinceLastSeen > this.inactivityTimeoutMs) {
-        // Disconnect any lingering socket mappings
         for (const sockId of session.socketIds) {
-          this.socketToSession.delete(sockId);
+          this.socketMap.delete(sockId);
         }
-        this.sessions.delete(sid);
+        this.authenticatedUsers.delete(userId);
+      }
+    }
+
+    // Anonymous sessions
+    for (const [sid, session] of this.anonymousSessions.entries()) {
+      const hasSockets = session.socketIds.size > 0;
+      const timeSinceLastSeen = now - session.lastSeen;
+
+      if (!hasSockets && timeSinceLastSeen > this.disconnectGraceMs) {
+        this.anonymousSessions.delete(sid);
+      } else if (timeSinceLastSeen > this.inactivityTimeoutMs) {
+        for (const sockId of session.socketIds) {
+          this.socketMap.delete(sockId);
+        }
+        this.anonymousSessions.delete(sid);
       }
     }
   }
@@ -81,30 +190,24 @@ export class VisitorSessionManager {
   getStats() {
     this.cleanupStaleSessions();
 
-    let authenticatedCount = 0;
-    let anonymousCount = 0;
-    let adminCount = 0;
-    const uniqueUserIds = new Set();
+    const authenticatedCount = this.authenticatedUsers.size;
+    const anonymousCount = this.anonymousSessions.size;
+    const totalCount = authenticatedCount + anonymousCount;
 
-    for (const session of this.sessions.values()) {
-      if (session.isAuthenticated) {
-        authenticatedCount++;
-        if (session.userId) uniqueUserIds.add(session.userId);
-      } else {
-        anonymousCount++;
-      }
+    let adminCount = 0;
+    for (const session of this.authenticatedUsers.values()) {
       if (session.role === 'admin') {
         adminCount++;
       }
     }
 
     return {
-      totalUniqueSessions: this.sessions.size,
+      totalUniqueSessions: totalCount,
       authenticatedSessions: authenticatedCount,
       anonymousSessions: anonymousCount,
       adminSessions: adminCount,
-      uniqueAuthenticatedUsers: uniqueUserIds.size,
-      activeConnections: this.socketToSession.size
+      uniqueAuthenticatedUsers: authenticatedCount,
+      activeConnections: this.socketMap.size
     };
   }
 }
@@ -319,6 +422,10 @@ export class MetricsService {
 
   handleVisitorDisconnect(socketId) {
     return this.sessionManager.handleDisconnect(socketId);
+  }
+
+  handleVisitorLogout(socketId, sessionId) {
+    return this.sessionManager.handleLogout(socketId, sessionId);
   }
 
   getSnapshot() {

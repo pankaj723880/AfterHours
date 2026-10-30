@@ -17,7 +17,7 @@ import {
 import { safeParseJsonResponse } from '../../utils/errorHandler';
 import { getAvatarUrl } from '../../utils/avatar';
 
-export default function UserManagement({ token, backendUrl, currentUser, showToast }) {
+export default function UserManagement({ token, backendUrl, currentUser, showToast, onUserUpdated }) {
   const cleanBase = (backendUrl || '').trim().replace(/\/+$/, '');
   const [users, setUsers] = useState([]);
   const [total, setTotal] = useState(0);
@@ -28,6 +28,7 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [updatingUserId, setUpdatingUserId] = useState(null);
   const [error, setError] = useState('');
 
   // Selected user for modal
@@ -99,16 +100,80 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
 
   const openEditModal = (user) => {
     setSelectedUser(user);
-    setNewRole(user.role);
-    setNewStatus(user.status);
+    setNewRole(user.role || 'user');
+    setNewStatus(user.status || 'active');
     setIsEditModalOpen(true);
   };
 
+  const handleInlineRoleChange = async (user, targetRole) => {
+    const targetId = user?.id || user?._id;
+    if (!targetId || targetRole === user.role) return;
+
+    const isCurrent = currentUser?.userId === targetId || currentUser?._id === targetId || currentUser?.id === targetId || currentUser?.username === user.username;
+
+    if (isCurrent && targetRole !== 'admin') {
+      const confirmSelf = window.confirm(
+        'Warning: You are about to remove administrator privileges from your own account. Continue?'
+      );
+      if (!confirmSelf) return;
+    }
+
+    setUpdatingUserId(targetId);
+    try {
+      const res = await fetch(`${cleanBase}/api/admin/users/${targetId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          role: targetRole
+        })
+      });
+
+      const parsed = await safeParseJsonResponse(res, 'Failed to update user role');
+      if (!parsed.ok) throw new Error(parsed.error);
+
+      const updatedUser = parsed.data?.user || { role: targetRole };
+
+      // Immediate optimistic update in table state
+      setUsers(prev => prev.map(u => (u.id === targetId || u._id === targetId) ? {
+        ...u,
+        role: updatedUser.role || targetRole
+      } : u));
+
+      // Synchronize current user session if self-updated
+      if (isCurrent && onUserUpdated) {
+        onUserUpdated(updatedUser);
+      }
+
+      showToast?.(`Role for "${user.username}" updated to ${targetRole === 'admin' ? 'Administrator' : 'User'}.`, 'success');
+      await fetchUsers();
+    } catch (err) {
+      showToast?.(err.message, 'error');
+    } finally {
+      setUpdatingUserId(null);
+    }
+  };
+
   const handleSaveUser = async () => {
-    if (!selectedUser) return;
+    const targetId = selectedUser?.id || selectedUser?._id;
+    if (!targetId) return;
     setIsSaving(true);
     try {
-      const res = await fetch(`${cleanBase}/api/admin/users/${selectedUser.id}`, {
+      const isCurrent = currentUser?.userId === targetId || currentUser?._id === targetId || currentUser?.id === targetId || currentUser?.username === selectedUser.username;
+
+      if (isCurrent && newRole !== 'admin') {
+        const confirmSelf = window.confirm(
+          'Warning: You are about to remove administrator privileges from your own account. Continue?'
+        );
+        if (!confirmSelf) {
+          setIsSaving(false);
+          return;
+        }
+      }
+
+      const res = await fetch(`${cleanBase}/api/admin/users/${targetId}`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -122,10 +187,24 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
       const parsed = await safeParseJsonResponse(res, 'Failed to update user');
       if (!parsed.ok) throw new Error(parsed.error);
 
-      showToast?.('User updated successfully', 'success');
+      const updatedUser = parsed.data?.user || { role: newRole, status: newStatus };
+
+      // Immediate state update
+      setUsers(prev => prev.map(u => (u.id === targetId || u._id === targetId) ? {
+        ...u,
+        role: updatedUser.role || newRole,
+        status: updatedUser.status || newStatus
+      } : u));
+
+      // Synchronize current user session if self-updated
+      if (isCurrent && onUserUpdated) {
+        onUserUpdated(updatedUser);
+      }
+
+      showToast?.(`User "${selectedUser.username}" updated successfully`, 'success');
       setIsEditModalOpen(false);
       setSelectedUser(null);
-      fetchUsers();
+      await fetchUsers();
     } catch (err) {
       showToast?.(err.message, 'error');
     } finally {
@@ -134,10 +213,11 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
   };
 
   const handleConfirmDeactivate = async () => {
-    if (!deactivateTarget) return;
+    const targetId = deactivateTarget?.id || deactivateTarget?._id;
+    if (!targetId) return;
     setIsSaving(true);
     try {
-      const res = await fetch(`${cleanBase}/api/admin/users/${deactivateTarget.id}`, {
+      const res = await fetch(`${cleanBase}/api/admin/users/${targetId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -148,7 +228,7 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
 
       showToast?.('User successfully deactivated', 'success');
       setDeactivateTarget(null);
-      fetchUsers();
+      await fetchUsers();
     } catch (err) {
       showToast?.(err.message, 'error');
     } finally {
@@ -157,11 +237,13 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
   };
 
   const handleOpenUserDetails = async (user) => {
+    const targetId = user?.id || user?._id;
+    if (!targetId) return;
     setUserDetailsTarget(user);
     setIsLoadingDetails(true);
     setUserDetailsData(null);
     try {
-      const res = await fetch(`${cleanBase}/api/admin/users/${user.id}`, {
+      const res = await fetch(`${cleanBase}/api/admin/users/${targetId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const parsed = await safeParseJsonResponse(res, 'Failed to retrieve user details');
@@ -187,11 +269,24 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
 
   const handleSaveUserDetails = async (e) => {
     e.preventDefault();
-    if (!userDetailsTarget) return;
+    const targetId = userDetailsTarget?.id || userDetailsTarget?._id || userDetailsData?.id || userDetailsData?._id;
+    if (!targetId) return;
     setIsSaving(true);
     try {
-      // 1. Update role and status if changed
-      const roleStatusRes = await fetch(`${cleanBase}/api/admin/users/${userDetailsTarget.id}`, {
+      const isCurrent = currentUser?.userId === targetId || currentUser?._id === targetId || currentUser?.id === targetId || currentUser?.username === (userDetailsTarget.username || userDetailsData?.username);
+
+      if (isCurrent && detailRole !== 'admin') {
+        const confirmSelf = window.confirm(
+          'Warning: You are about to remove administrator privileges from your own account. Continue?'
+        );
+        if (!confirmSelf) {
+          setIsSaving(false);
+          return;
+        }
+      }
+
+      // 1. Update role and status
+      const roleStatusRes = await fetch(`${cleanBase}/api/admin/users/${targetId}`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -205,8 +300,21 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
       const parsedRS = await safeParseJsonResponse(roleStatusRes, 'Failed to update user status/role');
       if (!parsedRS.ok) throw new Error(parsedRS.error);
 
+      const updatedUser = parsedRS.data?.user || { role: detailRole, status: detailStatus };
+
+      // Immediate state update
+      setUsers(prev => prev.map(u => (u.id === targetId || u._id === targetId) ? {
+        ...u,
+        role: updatedUser.role || detailRole,
+        status: updatedUser.status || detailStatus
+      } : u));
+
+      if (isCurrent && onUserUpdated) {
+        onUserUpdated(updatedUser);
+      }
+
       // 2. Update profile fields
-      const profileRes = await fetch(`${cleanBase}/api/admin/users/${userDetailsTarget.id}/profile`, {
+      const profileRes = await fetch(`${cleanBase}/api/admin/users/${targetId}/profile`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -221,11 +329,13 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
         })
       });
       const parsedProfile = await safeParseJsonResponse(profileRes, 'Failed to update user profile');
-      if (!parsedProfile.ok) throw new Error(parsedProfile.error);
+      if (!parsedProfile.ok) {
+        console.warn('[UserManagement] Profile update note:', parsedProfile.error);
+      }
 
-      showToast?.('User profile and permissions saved!', 'success');
+      showToast?.('User role and profile saved successfully!', 'success');
       setUserDetailsTarget(null);
-      fetchUsers();
+      await fetchUsers();
     } catch (err) {
       showToast?.(err.message, 'error');
     } finally {
@@ -381,16 +491,31 @@ export default function UserManagement({ token, backendUrl, currentUser, showToa
                         <div className="text-[10px] text-neutral-500 font-mono">ID: {u.id.slice(-8)}</div>
                       </td>
 
-                      {/* Role Badge */}
+                      {/* Role Selector & Badge */}
                       <td className="py-3 px-4">
-                        <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border ${
-                          u.role === 'admin'
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-sm shadow-emerald-500/20'
-                            : 'bg-neutral-800 text-neutral-400 border-neutral-700'
-                        }`}>
-                          <Shield className="w-3 h-3" />
-                          {u.role === 'admin' ? 'Admin' : 'User'}
-                        </span>
+                        <div className="relative inline-flex items-center">
+                          <select
+                            value={u.role || 'user'}
+                            onChange={(e) => handleInlineRoleChange(u, e.target.value)}
+                            disabled={updatingUserId === (u.id || u._id) || isSaving}
+                            className={`text-[11px] font-bold rounded-lg pl-6 pr-6 py-1 border appearance-none outline-none cursor-pointer transition disabled:opacity-50 disabled:cursor-wait ${
+                              u.role === 'admin'
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:border-emerald-500/50 shadow-sm shadow-emerald-500/20'
+                                : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:border-neutral-600'
+                            }`}
+                            title="Click to change user role"
+                          >
+                            <option value="user" className="bg-neutral-900 text-neutral-200">User</option>
+                            <option value="admin" className="bg-neutral-900 text-emerald-400">Admin</option>
+                          </select>
+                          <div className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2">
+                            {updatingUserId === (u.id || u._id) ? (
+                              <RefreshCw className="w-3 h-3 animate-spin text-emerald-400" />
+                            ) : (
+                              <Shield className={`w-3 h-3 ${u.role === 'admin' ? 'text-emerald-400' : 'text-neutral-400'}`} />
+                            )}
+                          </div>
+                        </div>
                       </td>
 
                       {/* Status Badge */}

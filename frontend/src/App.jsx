@@ -46,12 +46,19 @@ import ActivityFeed from './components/Activity/ActivityFeed';
 import MobileBottomNav from './components/Navigation/MobileBottomNav';
 import shuffleService from './services/shuffleService';
 import { filterSingleSongs, isSingleSong } from './services/songFilter';
+import RatingPopupModal from './components/Rating/RatingPopupModal';
+import HomepageReviewsSection from './components/Rating/HomepageReviewsSection';
 
 import { io } from 'socket.io-client';
 import { BACKEND_URL, getApiUrl } from './utils/apiUrl';
 export { BACKEND_URL, getApiUrl };
 
 offlineEligibilityService.setBackendUrl(BACKEND_URL);
+
+const getInitialAuthToken = () => {
+  if (typeof window === 'undefined') return '';
+  return localStorage.getItem('afterhours_token') || '';
+};
 
 const getOrCreateSessionId = () => {
   if (typeof window === 'undefined') return 'sid_ssr';
@@ -64,7 +71,10 @@ const getOrCreateSessionId = () => {
 };
 
 const socket = io(BACKEND_URL, {
-  auth: { sessionId: getOrCreateSessionId() },
+  auth: {
+    sessionId: getOrCreateSessionId(),
+    token: getInitialAuthToken()
+  },
   query: { sessionId: getOrCreateSessionId() },
   transports: ['polling', 'websocket'],
   withCredentials: true,
@@ -1327,6 +1337,20 @@ export default function App() {
       'ps207800@gmail.com'
     ].includes(user.username.toLowerCase()))
   );
+
+  const [reviewsRefreshKey, setReviewsRefreshKey] = useState(0);
+
+  // Synchronize authenticated socket session & live presence with backend
+  useEffect(() => {
+    const sid = getOrCreateSessionId();
+    if (authToken && user) {
+      socket.auth = { sessionId: sid, token: authToken };
+      socket.emit('authenticate', { token: authToken, sessionId: sid });
+    } else {
+      socket.auth = { sessionId: sid, token: '' };
+      socket.emit('user_logout', { sessionId: sid });
+    }
+  }, [authToken, user]);
 
   const handleSplashFinished = useCallback(() => {
     setShowSplashScreen(false);
@@ -2760,6 +2784,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   };
 
   const logout = () => {
+    try {
+      socket.emit('user_logout', { sessionId: getOrCreateSessionId() });
+      socket.auth = { sessionId: getOrCreateSessionId(), token: '' };
+    } catch (e) {}
+
     if (websiteSessionIdRef.current && authToken) {
       listeningStatsService.closeWebsiteSession({
         backendUrl: BACKEND_URL,
@@ -2954,6 +2983,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     socket.on('active_users', handleActiveUsersUpdate);
     socket.on('connect', () => {
       setIsLiveCountStale(false);
+      const curToken = localStorage.getItem('afterhours_token');
+      if (curToken) {
+        socket.emit('authenticate', { token: curToken, sessionId: getOrCreateSessionId() });
+      }
       syncLiveUsersCount();
     });
     socket.on('disconnect', () => {
@@ -5972,6 +6005,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               });
             })()}
 
+            {/* Ratings & Reviews Community Section */}
+            <HomepageReviewsSection refreshTrigger={reviewsRefreshKey} />
+
             <DisclaimerFooter footer={cmsConfig?.footer} />
           </div>
         )}
@@ -6484,6 +6520,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               }}
               onOpenAuth={openAuthModal}
               showToast={showToast}
+              onUserUpdated={(updatedUser) => {
+                if (!updatedUser) return;
+                setUser(prev => {
+                  const merged = { ...(prev || {}), ...updatedUser };
+                  try {
+                    localStorage.setItem('afterhours_user', JSON.stringify(merged));
+                  } catch (e) {
+                    console.warn('[LocalStorage] Could not persist updated user:', e);
+                  }
+                  return merged;
+                });
+              }}
               onPreviewConfig={(previewConfig) => {
                 if (previewConfig) {
                   const normalized = normalizeCmsConfig(previewConfig);
@@ -7456,6 +7504,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         onAddToPlaylist={handleAddToPlaylistClick}
         showToast={showToast}
         isBottomPlayerVisible={isBottomPlayerVisible}
+      />
+
+      {/* Automatic 5-Minute Active Usage Rating & Review Modal */}
+      <RatingPopupModal
+        user={user}
+        authToken={authToken}
+        isPlaying={isPlaying}
+        showToast={showToast}
+        onReviewSubmitted={() => setReviewsRefreshKey(k => k + 1)}
       />
 
       {toastMessage && (

@@ -36,6 +36,7 @@ import { liveUsersService } from './services/liveUsersService.js';
 import learningRoutes from './routes/learningIntelligence.js';
 import { learningEngineService } from './services/learningEngineService.js';
 import { CORE_CATALOG_TRACKS } from './services/catalogService.js';
+import reviewsRoutes from './routes/reviews.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -371,6 +372,72 @@ io.on('connection', (socket) => {
     socket.emit('admin_live_metrics', snapshot);
     socket.emit('admin_live_users_config', liveUsersService.getAdminConfig());
   }
+
+  // Handle client authentication event (e.g. login or token resolution)
+  socket.on('authenticate', async (data) => {
+    try {
+      const authToken = data?.token || socket.handshake.auth?.token;
+      const sid = data?.sessionId || sessionId;
+      if (authToken) {
+        const decoded = verifyToken(authToken);
+        if (decoded && decoded.userId) {
+          const userDoc = await User.findById(decoded.userId).select('role status username').lean();
+          if (userDoc && userDoc.status === 'active') {
+            socket.user = userDoc;
+            activeUserSocketMap.set(socket.id, userDoc._id.toString());
+            if (userDoc.role === 'admin') {
+              socket.join('admin_room');
+              socket.emit('admin_live_metrics', metricsService.getSnapshot());
+              socket.emit('admin_live_users_config', liveUsersService.getAdminConfig());
+            }
+            metricsService.registerVisitorConnection({
+              socketId: socket.id,
+              sessionId: sid,
+              user: userDoc,
+              ip,
+              userAgent
+            });
+            if (liveUsersService.mode === 'real') {
+              liveUsersService.broadcastDisplayCount();
+            }
+            socket.emit('active_users', liveUsersService.getPublicDisplayCount().count);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Socket Authenticate Notice]:', e.message);
+    }
+  });
+
+  // Handle client logout event
+  socket.on('user_logout', (data) => {
+    try {
+      socket.leave('admin_room');
+      socket.user = null;
+      activeUserSocketMap.delete(socket.id);
+      metricsService.handleVisitorLogout(socket.id, data?.sessionId || sessionId);
+      if (liveUsersService.mode === 'real') {
+        liveUsersService.broadcastDisplayCount();
+      }
+      socket.emit('active_users', liveUsersService.getPublicDisplayCount().count);
+    } catch (e) {
+      console.warn('[Socket Logout Notice]:', e.message);
+    }
+  });
+
+  // Heartbeat event from client
+  socket.on('heartbeat', (data) => {
+    try {
+      const sid = data?.sessionId || sessionId;
+      metricsService.registerVisitorConnection({
+        socketId: socket.id,
+        sessionId: sid,
+        user: socket.user,
+        ip,
+        userAgent
+      });
+    } catch (e) {}
+  });
 
   socket.on('disconnect', () => {
     metricsService.handleVisitorDisconnect(socket.id);
@@ -816,6 +883,10 @@ app.post(['/api/user/:id/sync', '/user/:id/sync'], async (req, res) => {
 // Mount Protected Admin Routes
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/cms', adminCmsRoutes);
+app.use('/api/admin/reviews', reviewsRoutes);
+
+// Mount Public Ratings & Reviews
+app.use(['/api/reviews', '/reviews'], reviewsRoutes);
 
 // Mount Public CMS Routes
 app.use(['/api/cms', '/cms'], cmsRoutes);
