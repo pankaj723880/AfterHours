@@ -59,34 +59,46 @@ export const aiMusicCompanionClient = {
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
       let donePayload = null;
+      let textAccumulator = '';
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (trimmed.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(trimmed.slice(6));
-              if (data.type === 'chunk') {
-                onChunk(data.text);
-              } else if (data.type === 'done') {
-                donePayload = data;
-              }
-            } catch (e) {}
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(trimmed.slice(6));
+                if (data.type === 'chunk') {
+                  textAccumulator += data.text || '';
+                  onChunk(data.text);
+                } else if (data.type === 'done') {
+                  donePayload = data;
+                }
+              } catch (e) {}
+            }
           }
         }
+      } catch (streamErr) {
+        console.warn('[AiMusicClient] Stream reader notice:', streamErr);
       }
 
       if (donePayload) return donePayload;
+      return {
+        success: true,
+        reply: textAccumulator || "Here's what I found for you in Loopra:",
+        tracks: [],
+        action: null
+      };
     }
 
-    // Default JSON fallback
+    // Default non-streaming JSON path (only when onChunk is not provided)
     return await res.json();
   },
 

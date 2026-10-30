@@ -142,6 +142,14 @@ router.post('/chat', optionalAuth, async (req, res) => {
     });
   } catch (err) {
     console.error('[AiMusicRoutes] Chat error:', err);
+    if (res.headersSent) {
+      res.write(`data: ${JSON.stringify({
+        type: 'done',
+        reply: 'I had trouble connecting to the music network. Please try again in a moment!',
+        tracks: []
+      })}\n\n`);
+      return res.end();
+    }
     return res.status(500).json({
       error: 'An internal error occurred while communicating with Loopra AI',
       details: err.message

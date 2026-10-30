@@ -669,7 +669,7 @@ const TRENDING_SONGS = [
   { id: "IJJX39HRvlc", videoId: "IJJX39HRvlc", title: "Mere Humdum | New Songs 2026", artist: "Vatsal Bhoya", image: "https://i.ytimg.com/vi/IJJX39HRvlc/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/IJJX39HRvlc/hqdefault.jpg", query: "New Songs 2026 Mere Humdum Vatsal Bhoya" },
   { id: "BddP6PYo2gs", videoId: "BddP6PYo2gs", title: "Kesariya (Official Video)", artist: "Arijit Singh, Pritam", image: "https://i.ytimg.com/vi/BddP6PYo2gs/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/BddP6PYo2gs/hqdefault.jpg", query: "Kesariya Arijit Singh Brahmastra" },
   { id: "cIGd8gm_pYE", videoId: "cIGd8gm_pYE", title: "Lover (Official Music Video)", artist: "Diljit Dosanjh", image: "https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg", query: "Lover Diljit Dosanjh Official Video" },
-  { id: "2mDCVzruYzQ", videoId: "2mDCVzruYzQ", title: "Tum Hi Ho (Official Video)", artist: "Arijit Singh | Mithoon", image: "https://i.ytimg.com/vi/2mDCVzruYzQ/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/2mDCVzruYzQ/hqdefault.jpg", query: "Tum Hi Ho Aashiqui 2 Arijit Singh" }
+  { id: "Umqb9KENgmk", videoId: "Umqb9KENgmk", title: "Tum Hi Ho (Official Video)", artist: "Arijit Singh | Mithoon", image: "https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg", query: "Tum Hi Ho Aashiqui 2 Arijit Singh" }
 ];
 
 const POPULAR_ARTISTS = [

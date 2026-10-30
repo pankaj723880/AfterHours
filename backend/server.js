@@ -801,11 +801,11 @@ const FALLBACK_TRENDING = [
   { id: { videoId: 'IJJX39HRvlc' }, snippet: { title: 'Mere Humdum | New Songs 2026', channelTitle: 'Vatsal Bhoya', thumbnails: { high: { url: 'https://i.ytimg.com/vi/IJJX39HRvlc/hqdefault.jpg' } } } },
   { id: { videoId: 'BddP6PYo2gs' }, snippet: { title: 'Kesariya (Official Video) - Brahmāstra | Arijit Singh', channelTitle: 'Sony Music India', thumbnails: { high: { url: 'https://i.ytimg.com/vi/BddP6PYo2gs/hqdefault.jpg' } } } },
   { id: { videoId: 'cIGd8gm_pYE' }, snippet: { title: 'Lover (Official Music Video) - Diljit Dosanjh', channelTitle: 'Speed Records', thumbnails: { high: { url: 'https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg' } } } },
-  { id: { videoId: '2mDCVzruYzQ' }, snippet: { title: 'Tum Hi Ho (Official Video) - Aashiqui 2 | Arijit Singh', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/2mDCVzruYzQ/hqdefault.jpg' } } } }
+  { id: { videoId: 'Umqb9KENgmk' }, snippet: { title: 'Tum Hi Ho (Official Video) - Aashiqui 2 | Arijit Singh', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg' } } } }
 ];
 
 const FALLBACK_ALBUMS = [
-  { id: { videoId: '2mDCVzruYzQ' }, snippet: { title: 'Tum Hi Ho (Official Video) - Aashiqui 2 | Arijit Singh', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/2mDCVzruYzQ/hqdefault.jpg' } } } },
+  { id: { videoId: 'Umqb9KENgmk' }, snippet: { title: 'Tum Hi Ho (Official Video) - Aashiqui 2 | Arijit Singh', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg' } } } },
   { id: { videoId: 'pElvXl3YvY0' }, snippet: { title: 'Ilahi (Full Video Song) - Yeh Jawaani Hai Deewani | Arijit Singh', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/pElvXl3YvY0/hqdefault.jpg' } } } },
   { id: { videoId: '7ccHMhuE6pA' }, snippet: { title: 'Bekhayali (Official Video) - Kabir Singh | Sachet Tandon', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/7ccHMhuE6pA/hqdefault.jpg' } } } },
   { id: { videoId: 'f6vYp2r6d5o' }, snippet: { title: 'Satranga (Full Video Song) - ANIMAL | Arijit Singh', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/f6vYp2r6d5o/hqdefault.jpg' } } } },
