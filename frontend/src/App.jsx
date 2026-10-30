@@ -2693,7 +2693,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const clockInterval = setInterval(updateClock, 1000);
 
     // Initial hydration of public active users count
-    fetch(`${cleanBackendUrl}/api/public/live-users`)
+    fetch(getApiUrl('/api/public/live-users'))
       .then(res => res.json())
       .then(data => {
         if (data && typeof data.count === 'number') {
