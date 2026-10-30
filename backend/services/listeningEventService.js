@@ -100,6 +100,14 @@ export const listeningEventService = {
       playSessionId
     } = eventData || {};
 
+    const dedupeKey = `${userId}_${trackId}_${eventType}`;
+    const now = Date.now();
+    const lastTime = recentEventsCache.get(dedupeKey);
+    if (lastTime && (now - lastTime < DEDUPE_WINDOW_MS)) {
+      return { recorded: false, deduplicated: true };
+    }
+    recentEventsCache.set(dedupeKey, now);
+
     return analyticsService.recordPlaybackEvent(userId, {
       sessionId: playSessionId,
       trackId,

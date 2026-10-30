@@ -589,5 +589,13 @@ export const listeningStatsService = {
     try {
       localStorage.removeItem(getStorageKeyForUser(userOrId));
     } catch (e) {}
+  },
+
+  clearLocalStats(userOrId = null) {
+    try {
+      localStorage.removeItem(getStorageKeyForUser(userOrId));
+      localStorage.removeItem(STORAGE_KEY_GUEST);
+      localStorage.removeItem('loopra_cached_stats_data');
+    } catch (e) {}
   }
 };

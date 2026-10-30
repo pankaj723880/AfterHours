@@ -892,6 +892,9 @@ const setCachedSearch = (key, data) => {
   searchCache.set(key, { data, timestamp: Date.now() });
 };
 
+const rawSearchPoolCache = new Map();
+const POOL_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
 const decodeHtml = (str = '') => {
   return str
     .replace(/&quot;/g, '"')
@@ -1143,20 +1146,73 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
   // 2. Pure JS yt-search fallback with pagination support if official keys are exhausted, rate-limited, or unconfigured
   try {
     const pageOffset = parsePageTokenOffset(pageTokenStr);
-    const searchPage = pageOffset > 0 ? Math.floor(pageOffset / 10) + 1 : 1;
-    const searchPromise = ytSearch({ query: queryStr, page: searchPage });
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('yt-search timeout after 10000ms')), 10000)
-    );
-    const searchResult = await Promise.race([searchPromise, timeoutPromise]);
-    let videos = (searchResult?.videos || []);
-    if (videos.length === 0 && searchResult?.all) {
-      videos = searchResult.all.filter(v => v.videoId || v.type === 'video');
+    const poolKey = queryStr.toLowerCase();
+    let cachedPool = rawSearchPoolCache.get(poolKey);
+
+    if (!cachedPool || (Date.now() - cachedPool.timestamp > POOL_CACHE_TTL)) {
+      cachedPool = { videos: [], timestamp: Date.now() };
+      rawSearchPoolCache.set(poolKey, cachedPool);
     }
 
-    if (videos.length > 0) {
-      const singleSongs = filterSingleSongs(videos);
-      const chosen = (singleSongs.length > 0 ? singleSongs : videos).slice(0, limit);
+    // Top up the pool if needed until we have enough tracks for this page
+    let fetchPage = Math.floor(cachedPool.videos.length / 15) + 1;
+    while (cachedPool.videos.length < pageOffset + limit && fetchPage <= 4) {
+      try {
+        const searchPromise = ytSearch({ query: queryStr, page: fetchPage });
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('yt-search timeout after 8000ms')), 8000)
+        );
+        const searchResult = await Promise.race([searchPromise, timeoutPromise]);
+        let incoming = (searchResult?.videos || []);
+        if (incoming.length === 0 && searchResult?.all) {
+          incoming = searchResult.all.filter(v => v.videoId || v.type === 'video');
+        }
+
+        if (incoming.length > 0) {
+          const singleSongs = filterSingleSongs(incoming);
+          const toAdd = singleSongs.length > 0 ? singleSongs : incoming;
+          const seenIds = new Set(cachedPool.videos.map(v => v.id || v.videoId));
+          for (const v of toAdd) {
+            const vid = v.id || v.videoId;
+            if (vid && !seenIds.has(vid)) {
+              seenIds.add(vid);
+              cachedPool.videos.push(v);
+            }
+          }
+        }
+      } catch (err) {
+        break;
+      }
+      fetchPage++;
+    }
+
+    // If still need more to fill the page, top up from relevant curated catalog tracks
+    if (cachedPool.videos.length < pageOffset + limit && Array.isArray(CORE_CATALOG_TRACKS)) {
+      const qLower = queryStr.toLowerCase();
+      const catalogMatches = CORE_CATALOG_TRACKS.filter(t => {
+        const title = (t.title || '').toLowerCase();
+        const artist = (t.artist || t.channel || '').toLowerCase();
+        return title.includes(qLower) || artist.includes(qLower) || qLower.includes(artist);
+      });
+      const seenIds = new Set(cachedPool.videos.map(v => v.id || v.videoId));
+      for (const t of catalogMatches) {
+        const vid = t.id || t.videoId;
+        if (vid && !seenIds.has(vid)) {
+          seenIds.add(vid);
+          cachedPool.videos.push({
+            id: vid,
+            videoId: vid,
+            title: t.title,
+            channel: t.artist || t.channel,
+            author: { name: t.artist || t.channel }
+          });
+        }
+      }
+    }
+
+    if (cachedPool.videos.length > 0) {
+      const pagedVideos = cachedPool.videos.slice(pageOffset, pageOffset + limit);
+      const chosen = pagedVideos.length > 0 ? pagedVideos : cachedPool.videos.slice(0, limit);
       const items = chosen.map(v => {
         const videoId = v.id || v.videoId;
         return {
@@ -1174,7 +1230,9 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
       });
 
       const nextOffset = (pageOffset > 0 ? pageOffset : 0) + chosen.length;
-      const nextPageToken = videos.length >= limit && nextOffset < 150 ? createPageToken(nextOffset) : null;
+      const nextPageToken = nextOffset < cachedPool.videos.length || (cachedPool.videos.length >= 10 && nextOffset < 60)
+        ? createPageToken(nextOffset)
+        : null;
 
       metricsService.recordYouTube('scraper');
       const resultPayload = { items, nextPageToken };

@@ -55,6 +55,7 @@ export const CORE_CATALOG_TRACKS = [
   { id: "II2EO3NwUrQ", videoId: "II2EO3NwUrQ", title: "Badtameez Dil - Yeh Jawaani Hai Deewani", artist: "Benny Dayal, Pritam", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/II2EO3NwUrQ/hqdefault.jpg", genre: "Party Dance", mood: "Party" },
   { id: "k4yXQkGLeAk", videoId: "k4yXQkGLeAk", title: "Kala Chashma - Baar Baar Dekho", artist: "Amar Arshi, Badshah, Neha Kakkar", channel: "Zee Music Company", thumbnail: "https://i.ytimg.com/vi/k4yXQkGLeAk/hqdefault.jpg", genre: "Party Dance", mood: "Party" },
   { id: "dra3PCbxbDE", videoId: "dra3PCbxbDE", title: "London Thumakda - Queen", artist: "Labh Janjua, Sonu Kakkar, Neha Kakkar", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/dra3PCbxbDE/hqdefault.jpg", genre: "Party Dance", mood: "Party" },
+  { id: "8LZgzAZ2lpQ", videoId: "8LZgzAZ2lpQ", title: "Abhi Toh Party Shuru Hui Hai - Khoobsurat", artist: "Badshah, Aastha Gill", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/8LZgzAZ2lpQ/hqdefault.jpg", genre: "Party Dance", mood: "Party" },
 
   // Soulful / Sufi Rock
   { id: "cmMiyZaSELo", videoId: "cmMiyZaSELo", title: "Zara Sa (Official Video) - Jannat", artist: "KK, Pritam", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/cmMiyZaSELo/hqdefault.jpg", genre: "Pop Rock", mood: "Soulful" },
@@ -418,7 +419,16 @@ export const catalogService = {
     }
     const candidateMap = new Map();
 
-    // 1. Fetch dynamic candidates matching user intent
+    // 1. Fetch curated tracks from verified catalogue first
+    const curated = await this.getCuratedTracks();
+    for (const track of curated) {
+      const id = track.id || track.videoId;
+      if (id && !candidateMap.has(id)) {
+        candidateMap.set(id, track);
+      }
+    }
+
+    // 2. Fetch dynamic candidates matching user intent to broaden pool if needed
     if (intent.dynamicQueries && intent.dynamicQueries.length > 0) {
       try {
         const dynamicTracks = await this.fetchDynamicCandidates(intent.dynamicQueries, 5);
@@ -430,15 +440,6 @@ export const catalogService = {
         }
       } catch (e) {
         console.warn('[CatalogService] Dynamic candidate fetch notice:', e.message);
-      }
-    }
-
-    // 2. Fetch curated tracks and score by relevance to user intent
-    const curated = await this.getCuratedTracks();
-    for (const track of curated) {
-      const id = track.id || track.videoId;
-      if (id && !candidateMap.has(id)) {
-        candidateMap.set(id, track);
       }
     }
 
