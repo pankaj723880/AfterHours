@@ -5193,7 +5193,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               }}
               onOpenAuth={openAuthModal}
               onToggleLike={toggleLike}
-              isLiked={isLiked}
+              isLiked={isSongLiked}
               onAddToPlaylist={handleAddToPlaylistClick}
               showToast={showToast}
             />
@@ -5403,7 +5403,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               }}
               onOpenAuth={openAuthModal}
               onToggleLike={toggleLike}
-              isLiked={isLiked}
+              isLiked={isSongLiked}
               onAddToPlaylist={handleAddToPlaylistClick}
               showToast={showToast}
             />
