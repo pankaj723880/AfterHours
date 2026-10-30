@@ -213,7 +213,7 @@ async function runTests() {
     body: JSON.stringify({
       branding: {
         siteName: '',
-        tagline: 'AfterHours Mehfil Music',
+        tagline: 'Infinite Sound. Endless Vibes.',
         logoUrl: '/loopra-logo.png',
         faviconUrl: '/loopra-logo.png'
       }

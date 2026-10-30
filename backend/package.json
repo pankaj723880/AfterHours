@@ -1,7 +1,7 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "AfterHours Mehfil Music Backend",
+  "description": "Loopra Backend",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

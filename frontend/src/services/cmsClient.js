@@ -266,8 +266,12 @@ export const normalizeCmsConfig = (raw) => {
   return {
     version: typeof raw.version === 'number' ? raw.version : DEFAULT_CMS_CONFIG.version,
     branding: {
-      siteName: typeof raw.branding?.siteName === 'string' ? raw.branding.siteName : (DEFAULT_CMS_CONFIG.branding.siteName || ''),
-      tagline: raw.branding?.tagline ?? DEFAULT_CMS_CONFIG.branding.tagline,
+      siteName: (typeof raw.branding?.siteName === 'string' && raw.branding.siteName.trim() && !/afterhours|mehfil/i.test(raw.branding.siteName))
+        ? raw.branding.siteName.trim()
+        : (DEFAULT_CMS_CONFIG.branding.siteName || 'Loopra'),
+      tagline: (typeof raw.branding?.tagline === 'string' && !/afterhours|mehfil/i.test(raw.branding.tagline))
+        ? raw.branding.tagline.trim()
+        : (DEFAULT_CMS_CONFIG.branding.tagline || ''),
       logoUrl: raw.branding?.logoUrl ?? DEFAULT_CMS_CONFIG.branding.logoUrl,
       faviconUrl: raw.branding?.faviconUrl ?? DEFAULT_CMS_CONFIG.branding.faviconUrl,
       description: raw.branding?.description ?? DEFAULT_CMS_CONFIG.branding.description

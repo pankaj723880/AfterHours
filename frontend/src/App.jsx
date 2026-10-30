@@ -1366,19 +1366,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const rawSiteName = cmsConfig?.branding?.siteName;
-    const siteName = typeof rawSiteName === 'string' ? rawSiteName.trim() : '';
-    const siteTagline = (cmsConfig?.branding?.tagline || cmsConfig?.branding?.siteTagline || '').trim();
-
-    if (siteName && siteTagline) {
-      document.title = `${siteName} — ${siteTagline}`;
-    } else if (siteName) {
-      document.title = `${siteName} — Streaming Lounge`;
-    } else if (siteTagline) {
-      document.title = siteTagline;
-    } else {
-      document.title = 'Music Lounge';
-    }
+    // Keep browser tab title strictly "Loopra" across all sections, navigation, and refreshes
+    document.title = 'Loopra';
 
     const faviconUrl = cmsConfig?.branding?.faviconUrl || '/loopra-logo.png';
     const iconLinks = document.querySelectorAll("link[rel*='icon'], link[rel='apple-touch-icon']");
@@ -1400,7 +1389,7 @@ export default function App() {
     if (cmsConfig?.theme) {
       applyThemeToDom(cmsConfig.theme);
     }
-  }, [cmsConfig?.branding, cmsConfig?.theme]);
+  }, [cmsConfig?.branding, cmsConfig?.theme, activeTab]);
 
   const stationsMap = React.useMemo(() => {
     const base = { ...SPECIAL_STATIONS };

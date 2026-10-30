@@ -503,12 +503,14 @@ export const cmsService = {
       };
 
       const rawBranding = (config.branding && typeof config.branding === 'object') ? config.branding : {};
+      const cleanSiteName = typeof rawBranding.siteName === 'string' ? rawBranding.siteName.trim() : '';
+      const cleanTagline = typeof rawBranding.tagline === 'string' ? rawBranding.tagline.trim() : '';
+
       const safeBranding = {
         ...defaults.branding,
         ...rawBranding,
-        // If siteName is an empty string, preserve it as empty string so "Loopra" is not silently restored
-        siteName: typeof rawBranding.siteName === 'string' ? rawBranding.siteName : (defaults.branding.siteName || ''),
-        tagline: typeof rawBranding.tagline === 'string' ? rawBranding.tagline : defaults.branding.tagline,
+        siteName: cleanSiteName && !/afterhours|mehfil/i.test(cleanSiteName) ? cleanSiteName : (defaults.branding.siteName || 'Loopra'),
+        tagline: cleanTagline && !/afterhours.*mehfil/i.test(cleanTagline) ? cleanTagline : (defaults.branding.tagline || ''),
         logoUrl: typeof rawBranding.logoUrl === 'string' ? rawBranding.logoUrl : defaults.branding.logoUrl,
         faviconUrl: typeof rawBranding.faviconUrl === 'string' ? rawBranding.faviconUrl : defaults.branding.faviconUrl,
         description: typeof rawBranding.description === 'string' ? rawBranding.description : defaults.branding.description
