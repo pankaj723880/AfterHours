@@ -424,7 +424,7 @@ export const catalogService = {
     for (const track of curated) {
       const id = track.id || track.videoId;
       if (id && !candidateMap.has(id)) {
-        candidateMap.set(id, track);
+        candidateMap.set(id, { ...track, isCurated: true });
       }
     }
 
@@ -435,7 +435,7 @@ export const catalogService = {
         for (const t of dynamicTracks) {
           const id = t.id || t.videoId;
           if (id && !candidateMap.has(id)) {
-            candidateMap.set(id, t);
+            candidateMap.set(id, { ...t, isDynamic: true });
           }
         }
       } catch (e) {

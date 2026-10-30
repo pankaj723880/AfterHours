@@ -100,7 +100,7 @@ export const listeningEventService = {
       playSessionId
     } = eventData || {};
 
-    const dedupeKey = `${userId}_${trackId}_${eventType}`;
+    const dedupeKey = `${userId}_${trackId}_${eventType}_${listenedDuration}`;
     const now = Date.now();
     const lastTime = recentEventsCache.get(dedupeKey);
     if (lastTime && (now - lastTime < DEDUPE_WINDOW_MS)) {

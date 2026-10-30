@@ -732,6 +732,11 @@ OUTPUT FORMAT (Strict JSON):
         }
       }
 
+      // Verified catalogue tracks priority bonus (+25)
+      if (track.isCurated || !track.isDynamic) {
+        score += 25;
+      }
+
       return { track, score };
     });
 
