@@ -94,15 +94,13 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isMobileSidebarOpen]);
 
-  const isAdmin = Boolean(
-    (user && user.role === 'admin') ||
-    (user?.username && [
-      'admin@afterhours.com',
-      'pankajsss7238@gmail.com',
-      'pss809352@gmail.com',
-      'ps207800@gmail.com'
-    ].includes(user.username.toLowerCase()))
-  );
+  const isAdmin = Boolean(user && user.role === 'admin');
+
+  useEffect(() => {
+    if (!isAdmin) {
+      onExit?.();
+    }
+  }, [isAdmin, onExit]);
 
   // Fetch CMS Configuration
   const fetchCmsConfig = async () => {

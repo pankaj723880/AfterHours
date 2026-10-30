@@ -12,14 +12,21 @@ const configuredReviewsSettingsSchema = new mongoose.Schema({
   },
   displayRating: {
     type: Number,
-    default: 4.9,
-    min: 1,
+    default: 0,
+    min: 0,
     max: 5
   },
   displayCount: {
     type: Number,
-    default: 1250,
+    default: 0,
     min: 0
+  },
+  distribution: {
+    count1: { type: Number, default: 0, min: 0 },
+    count2: { type: Number, default: 0, min: 0 },
+    count3: { type: Number, default: 0, min: 0 },
+    count4: { type: Number, default: 0, min: 0 },
+    count5: { type: Number, default: 0, min: 0 }
   },
   editorialLabel: {
     type: String,
@@ -33,4 +40,3 @@ const configuredReviewsSettingsSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 export default mongoose.models.ConfiguredReviewsSettings || mongoose.model('ConfiguredReviewsSettings', configuredReviewsSettingsSchema);
-

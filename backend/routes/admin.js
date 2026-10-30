@@ -464,6 +464,60 @@ router.patch('/users/:id', authenticateToken, requireAdmin, async (req, res) => 
       console.warn('[AuditLog Warning]:', auditErr.message);
     }
 
+    // Real-time synchronization of role & status change across all connected clients & sockets
+    try {
+      const io = req.app.get('io');
+      const activeMap = req.app.get('activeUserSocketMap');
+      if (io) {
+        const targetIdStr = updatedUser._id.toString();
+
+        // 1. Broadcast global role change event for all open tabs/sessions of this user
+        io.emit('user_role_changed', {
+          userId: targetIdStr,
+          role: updatedUser.role,
+          status: updatedUser.status
+        });
+
+        // 2. Iterate connected sockets to immediately update in-memory session and room memberships
+        if (io.sockets?.sockets) {
+          for (const [sId, socket] of io.sockets.sockets) {
+            const socketUserId = socket.user?._id?.toString() || 
+                                 socket.user?.id || 
+                                 socket.user?.userId || 
+                                 activeMap?.get?.(sId);
+
+            if (socketUserId && socketUserId.toString() === targetIdStr) {
+              if (socket.user) {
+                socket.user.role = updatedUser.role;
+                socket.user.status = updatedUser.status;
+              }
+
+              if (updatedUser.role !== 'admin') {
+                socket.leave('admin_room');
+                socket.emit('admin_access_revoked', {
+                  message: 'Your administrator privileges have been revoked by an administrator.'
+                });
+              } else if (updatedUser.role === 'admin') {
+                socket.join('admin_room');
+                socket.emit('admin_access_granted', {
+                  message: 'You have been granted administrator privileges.'
+                });
+              }
+
+              if (updatedUser.status === 'suspended' || updatedUser.status === 'deactivated') {
+                socket.emit('user_status_changed', {
+                  status: updatedUser.status,
+                  message: `Your account has been ${updatedUser.status}.`
+                });
+              }
+            }
+          }
+        }
+      }
+    } catch (socketSyncErr) {
+      console.warn('[AdminRoutes] Socket role sync warning:', socketSyncErr.message);
+    }
+
     res.json({
       message: 'User updated successfully',
       user: {
@@ -521,6 +575,29 @@ router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) =>
       ip: getClientIp(req),
       status: 'SUCCESS'
     });
+
+    // Real-time revocation & disconnect
+    try {
+      const io = req.app.get('io');
+      const activeMap = req.app.get('activeUserSocketMap');
+      if (io) {
+        const targetIdStr = targetUser._id.toString();
+        io.emit('user_role_changed', {
+          userId: targetIdStr,
+          role: targetUser.role,
+          status: 'deactivated'
+        });
+        if (io.sockets?.sockets) {
+          for (const [sId, socket] of io.sockets.sockets) {
+            const socketUserId = socket.user?._id?.toString() || socket.user?.id || activeMap?.get?.(sId);
+            if (socketUserId && socketUserId.toString() === targetIdStr) {
+              socket.leave('admin_room');
+              socket.emit('admin_access_revoked', { message: 'Your account has been deactivated.' });
+            }
+          }
+        }
+      }
+    } catch (e) {}
 
     res.json({
       message: 'User successfully deactivated',

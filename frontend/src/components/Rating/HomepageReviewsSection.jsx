@@ -27,12 +27,18 @@ export default function HomepageReviewsSection({ refreshTrigger = 0 }) {
   }, []);
 
   // Fetch paginated reviews (strictly 5 per page)
-  const fetchReviewsPage = useCallback(async (pageToFetch = 1) => {
+  const fetchReviewsPage = useCallback(async (pageToFetch = 1, isEditorial = false) => {
     setIsReviewsLoading(true);
     try {
-      const res = await fetch(getApiUrl(`/api/reviews?page=${pageToFetch}&limit=5`));
+      const sourceQuery = isEditorial ? '&source=editorial' : '';
+      let res = await fetch(getApiUrl(`/api/reviews?page=${pageToFetch}&limit=5${sourceQuery}`));
       if (res.ok) {
-        const data = await res.json();
+        let data = await res.json();
+        // Fallback to general reviews if no editorial reviews found
+        if (isEditorial && (!data.reviews || data.reviews.length === 0)) {
+          res = await fetch(getApiUrl(`/api/reviews?page=${pageToFetch}&limit=5`));
+          if (res.ok) data = await res.json();
+        }
         setReviews(data.reviews || []);
         setCurrentPage(data.page || 1);
         setTotalPages(data.totalPages || 1);
@@ -46,25 +52,27 @@ export default function HomepageReviewsSection({ refreshTrigger = 0 }) {
   }, []);
 
   useEffect(() => {
-    fetchSummary();
-    fetchReviewsPage(1);
-  }, [fetchSummary, fetchReviewsPage, refreshTrigger]);
+    fetchSummary().then(() => {});
+  }, [fetchSummary, refreshTrigger]);
 
-  const handlePrevPage = () => {
-    if (currentPage > 1) {
-      fetchReviewsPage(currentPage - 1);
-    }
-  };
+  useEffect(() => {
+    const isEditorial = Boolean(summary?.editorialSummary?.enabled);
+    fetchReviewsPage(1, isEditorial);
+  }, [summary?.editorialSummary?.enabled, fetchReviewsPage, refreshTrigger]);
 
-  const handleNextPage = () => {
-    if (currentPage < totalPages) {
-      fetchReviewsPage(currentPage + 1);
-    }
-  };
-
-  const totalRatings = summary?.totalRatings || 0;
-  const averageRating = summary?.averageRating || 0.0;
-  const distribution = summary?.distribution || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  const isConfigured = Boolean(summary?.editorialSummary?.enabled);
+  const activeRating = isConfigured 
+    ? (summary.editorialSummary.displayRating ?? 0.0) 
+    : (summary?.averageRating ?? 0.0);
+  const activeTotal = isConfigured 
+    ? (summary.editorialSummary.displayCount ?? 0) 
+    : (summary?.totalRatings ?? 0);
+  const activeDistribution = isConfigured 
+    ? (summary.editorialSummary.distribution || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }) 
+    : (summary?.distribution || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 });
+  const activeBadge = isConfigured 
+    ? (summary.editorialSummary.editorialLabel || 'Curated Editorial Highlights') 
+    : 'Listener Community';
 
   const formatDate = (dateString) => {
     try {
@@ -86,25 +94,31 @@ export default function HomepageReviewsSection({ refreshTrigger = 0 }) {
         {/* Section Header */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div className="space-y-1.5">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-bold uppercase tracking-wider">
+            <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+              isConfigured 
+                ? 'bg-amber-500/15 border border-amber-500/30 text-amber-300' 
+                : 'bg-amber-500/10 border border-amber-500/20 text-amber-400'
+            }`}>
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Listener Community</span>
+              <span>{activeBadge}</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
               Ratings & Reviews
             </h2>
             <p className="text-xs sm:text-sm text-neutral-400 max-w-xl">
-              Authentic listening impressions and ratings from our passionate community of music enthusiasts.
+              {isConfigured
+                ? 'Curated listener ratings, impressions, and highlights selected by our editorial team.'
+                : 'Authentic listening impressions and ratings from our passionate community of music enthusiasts.'}
             </p>
           </div>
 
           {/* Configured Editorial Badge (strictly separate if enabled) */}
-          {summary?.editorialSummary?.enabled && (
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-neutral-900/80 border border-neutral-800 text-[11px] text-neutral-300">
-              <span className="w-2 h-2 rounded-full bg-amber-400" />
-              <span>{summary.editorialSummary.editorialLabel}:</span>
-              <span className="font-extrabold text-amber-400">{summary.editorialSummary.displayRating} ★</span>
-              <span className="text-neutral-400">({summary.editorialSummary.displayCount.toLocaleString()}+ highlights)</span>
+          {isConfigured && (
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-neutral-900/80 border border-amber-500/30 text-[11px] text-neutral-300 shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+              <span className="text-neutral-400">{summary.editorialSummary.editorialLabel}:</span>
+              <span className="font-extrabold text-amber-400">{activeRating.toFixed(1)} ★</span>
+              <span className="text-neutral-400">({activeTotal.toLocaleString()} ratings)</span>
             </div>
           )}
         </div>
@@ -115,7 +129,7 @@ export default function HomepageReviewsSection({ refreshTrigger = 0 }) {
           {/* Average Rating Hero Card */}
           <div className="md:col-span-5 flex flex-col justify-center items-center md:items-start text-center md:text-left space-y-3 md:border-r border-neutral-800/80 md:pr-8">
             <div className="text-5xl sm:text-6xl font-black text-white tracking-tight flex items-baseline gap-2">
-              <span>{averageRating > 0 ? averageRating.toFixed(1) : '5.0'}</span>
+              <span>{activeRating > 0 ? activeRating.toFixed(1) : '0.0'}</span>
               <span className="text-2xl text-neutral-400 font-semibold">/ 5</span>
             </div>
             
@@ -125,9 +139,9 @@ export default function HomepageReviewsSection({ refreshTrigger = 0 }) {
                 <Star
                   key={star}
                   className={`w-5 h-5 ${
-                    (averageRating || 5) >= star
+                    activeRating >= star
                       ? 'fill-amber-400 text-amber-400'
-                      : (averageRating || 5) >= star - 0.5
+                      : activeRating >= star - 0.5
                       ? 'fill-amber-400/50 text-amber-400'
                       : 'text-neutral-700'
                   }`}
@@ -136,15 +150,15 @@ export default function HomepageReviewsSection({ refreshTrigger = 0 }) {
             </div>
 
             <p className="text-xs text-neutral-400 font-medium">
-              Based on <span className="font-bold text-white">{totalRatings}</span> genuine listener rating{totalRatings !== 1 ? 's' : ''}
+              Based on <span className="font-bold text-white">{activeTotal.toLocaleString()}</span> {isConfigured ? 'curated' : 'genuine'} listener rating{activeTotal !== 1 ? 's' : ''}
             </p>
           </div>
 
           {/* Rating Distribution Bars */}
           <div className="md:col-span-7 flex flex-col justify-center space-y-2">
             {[5, 4, 3, 2, 1].map((star) => {
-              const count = distribution[star] || 0;
-              const percent = totalRatings > 0 ? Math.round((count / totalRatings) * 100) : (star === 5 ? 100 : 0);
+              const count = activeDistribution[star] || 0;
+              const percent = activeTotal > 0 ? Math.round((count / activeTotal) * 100) : 0;
               return (
                 <div key={star} className="flex items-center gap-3 text-xs">
                   <div className="flex items-center gap-1 w-12 text-neutral-400 shrink-0 font-semibold">

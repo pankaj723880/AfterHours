@@ -37,9 +37,16 @@ export default function AdminReviewsManagement({ token, backendUrl, showToast })
   const [configuredReviews, setConfiguredReviews] = useState([]);
   const [configuredSettings, setConfiguredSettings] = useState({
     enabled: false,
-    displayRating: 4.9,
-    displayCount: 1250,
-    editorialLabel: 'Curated Editorial Highlights'
+    displayRating: 4.3,
+    displayCount: 150,
+    editorialLabel: 'Curated Editorial Highlights',
+    distribution: {
+      count1: 5,
+      count2: 8,
+      count3: 12,
+      count4: 35,
+      count5: 90
+    }
   });
   const [isConfiguredLoading, setIsConfiguredLoading] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
@@ -90,11 +97,29 @@ export default function AdminReviewsManagement({ token, backendUrl, showToast })
       });
       const parsed = await safeParseJsonResponse(res, 'Failed to fetch configured reviews');
       if (parsed.ok && parsed.data) {
-        setConfiguredSettings(parsed.data.settings || {
-          enabled: false,
-          displayRating: 4.9,
-          displayCount: 1250,
-          editorialLabel: 'Curated Editorial Highlights'
+        const s = parsed.data.settings || {};
+        const dist = s.distribution || {};
+        const c1 = dist.count1 !== undefined ? dist.count1 : 5;
+        const c2 = dist.count2 !== undefined ? dist.count2 : 8;
+        const c3 = dist.count3 !== undefined ? dist.count3 : 12;
+        const c4 = dist.count4 !== undefined ? dist.count4 : 35;
+        const c5 = dist.count5 !== undefined ? dist.count5 : 90;
+        const total = c1 + c2 + c3 + c4 + c5;
+        const weightedSum = (1 * c1) + (2 * c2) + (3 * c3) + (4 * c4) + (5 * c5);
+        const avg = total > 0 ? parseFloat((weightedSum / total).toFixed(1)) : 0.0;
+
+        setConfiguredSettings({
+          enabled: Boolean(s.enabled),
+          displayRating: s.displayRating !== undefined ? s.displayRating : avg,
+          displayCount: s.displayCount !== undefined ? s.displayCount : total,
+          editorialLabel: s.editorialLabel || 'Curated Editorial Highlights',
+          distribution: {
+            count1: c1,
+            count2: c2,
+            count3: c3,
+            count4: c4,
+            count5: c5
+          }
         });
         setConfiguredReviews(parsed.data.reviews || []);
       }
@@ -104,6 +129,30 @@ export default function AdminReviewsManagement({ token, backendUrl, showToast })
       setIsConfiguredLoading(false);
     }
   }, [backendUrl, token, showToast]);
+
+  const handleDistributionCountChange = (starKey, rawValue) => {
+    const val = rawValue === '' ? 0 : Math.max(0, parseInt(rawValue, 10) || 0);
+    setConfiguredSettings(prev => {
+      const nextDist = {
+        ...(prev.distribution || { count1: 0, count2: 0, count3: 0, count4: 0, count5: 0 }),
+        [starKey]: val
+      };
+      const c1 = nextDist.count1 || 0;
+      const c2 = nextDist.count2 || 0;
+      const c3 = nextDist.count3 || 0;
+      const c4 = nextDist.count4 || 0;
+      const c5 = nextDist.count5 || 0;
+      const total = c1 + c2 + c3 + c4 + c5;
+      const weightedSum = (1 * c1) + (2 * c2) + (3 * c3) + (4 * c4) + (5 * c5);
+      const avg = total > 0 ? parseFloat((weightedSum / total).toFixed(1)) : 0.0;
+      return {
+        ...prev,
+        distribution: nextDist,
+        displayCount: total,
+        displayRating: avg
+      };
+    });
+  };
 
   useEffect(() => {
     if (activeArea === 'real') {
@@ -164,17 +213,48 @@ export default function AdminReviewsManagement({ token, backendUrl, showToast })
     if (e) e.preventDefault();
     setIsSavingSettings(true);
     try {
+      const payload = {
+        enabled: Boolean(configuredSettings.enabled),
+        editorialLabel: configuredSettings.editorialLabel || 'Curated Editorial Highlights',
+        distribution: {
+          count1: Math.max(0, parseInt(configuredSettings.distribution?.count1 || 0, 10)),
+          count2: Math.max(0, parseInt(configuredSettings.distribution?.count2 || 0, 10)),
+          count3: Math.max(0, parseInt(configuredSettings.distribution?.count3 || 0, 10)),
+          count4: Math.max(0, parseInt(configuredSettings.distribution?.count4 || 0, 10)),
+          count5: Math.max(0, parseInt(configuredSettings.distribution?.count5 || 0, 10))
+        },
+        displayRating: configuredSettings.displayRating,
+        displayCount: configuredSettings.displayCount
+      };
+
       const res = await fetch(`${backendUrl}/api/admin/reviews/configured-settings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify(configuredSettings)
+        body: JSON.stringify(payload)
       });
       const parsed = await safeParseJsonResponse(res, 'Failed to save settings');
       if (parsed.ok) {
-        if (showToast) showToast('Editorial reviews settings saved');
+        if (showToast) showToast('Configured rating settings successfully saved');
+        if (parsed.data?.settings) {
+          const s = parsed.data.settings;
+          const dist = s.distribution || payload.distribution;
+          setConfiguredSettings({
+            enabled: Boolean(s.enabled),
+            displayRating: s.displayRating ?? payload.displayRating,
+            displayCount: s.displayCount ?? payload.displayCount,
+            editorialLabel: s.editorialLabel || payload.editorialLabel,
+            distribution: {
+              count1: dist.count1 ?? 0,
+              count2: dist.count2 ?? 0,
+              count3: dist.count3 ?? 0,
+              count4: dist.count4 ?? 0,
+              count5: dist.count5 ?? 0
+            }
+          });
+        }
       } else {
         if (showToast) showToast(parsed.error, 'error');
       }
@@ -536,10 +616,15 @@ export default function AdminReviewsManagement({ token, backendUrl, showToast })
           </div>
 
           {/* Configured Display Settings Form */}
-          <form onSubmit={handleSaveConfiguredSettings} className="bg-neutral-900/60 border border-neutral-800 rounded-3xl p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Editorial Display Summary Settings</h3>
-              <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer">
+          <form onSubmit={handleSaveConfiguredSettings} className="bg-neutral-900/60 border border-neutral-800 rounded-3xl p-6 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-800/80 pb-4">
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Configured Rating & Distribution Controls</h3>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Set exact individual star counts; total ratings and weighted average are automatically calculated.
+                </p>
+              </div>
+              <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer shrink-0">
                 <input
                   type="checkbox"
                   checked={configuredSettings.enabled}
@@ -552,29 +637,59 @@ export default function AdminReviewsManagement({ token, backendUrl, showToast })
               </label>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-              <div className="space-y-1.5">
-                <label className="text-xs text-neutral-400 font-medium">Display Rating (1.0 to 5.0)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="1.0"
-                  max="5.0"
-                  value={configuredSettings.displayRating}
-                  onChange={(e) => setConfiguredSettings(prev => ({ ...prev, displayRating: parseFloat(e.target.value) || 4.9 }))}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
-                />
+            {/* Individual Rating Distribution Inputs */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-neutral-200">
+                  Rating Distribution Counts (Enter exact number of users for each star)
+                </label>
+                <span className="text-[11px] text-neutral-400 font-mono">
+                  Formula: (1·c₁ + 2·c₂ + 3·c₃ + 4·c₄ + 5·c₅) / Total
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {[
+                  { star: 1, key: 'count1', label: '1 Star' },
+                  { star: 2, key: 'count2', label: '2 Stars' },
+                  { star: 3, key: 'count3', label: '3 Stars' },
+                  { star: 4, key: 'count4', label: '4 Stars' },
+                  { star: 5, key: 'count5', label: '5 Stars' }
+                ].map(({ star, key, label }) => (
+                  <div key={key} className="space-y-1.5 bg-neutral-950/70 p-3 rounded-2xl border border-neutral-800/90">
+                    <label className="text-xs font-semibold text-neutral-300 flex items-center justify-between">
+                      <span>{label}</span>
+                      <span className="text-amber-400 font-bold">★</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={configuredSettings.distribution?.[key] ?? 0}
+                      onChange={(e) => handleDistributionCountChange(key, e.target.value)}
+                      className="w-full bg-neutral-900 border border-neutral-800 rounded-xl p-2.5 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
+                      placeholder="0"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Calculated Values & Badge Label */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+              <div className="space-y-1.5 bg-neutral-950/40 p-3.5 rounded-2xl border border-neutral-800/80">
+                <label className="text-xs text-neutral-400 font-medium">Configured Total Rating Count</label>
+                <div className="text-lg font-black text-white font-mono flex items-center justify-between">
+                  <span>{configuredSettings.displayCount?.toLocaleString()}</span>
+                  <span className="text-[10px] text-neutral-400 font-normal">Sum of counts</span>
+                </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs text-neutral-400 font-medium">Display Count (e.g. 1250)</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={configuredSettings.displayCount}
-                  onChange={(e) => setConfiguredSettings(prev => ({ ...prev, displayCount: parseInt(e.target.value, 10) || 0 }))}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
-                />
+              <div className="space-y-1.5 bg-neutral-950/40 p-3.5 rounded-2xl border border-neutral-800/80">
+                <label className="text-xs text-neutral-400 font-medium">Configured Average Rating (0–5)</label>
+                <div className="text-lg font-black text-amber-400 font-mono flex items-center justify-between">
+                  <span>{configuredSettings.displayRating?.toFixed(1)} ★</span>
+                  <span className="text-[10px] text-neutral-400 font-normal">Weighted average</span>
+                </div>
               </div>
 
               <div className="space-y-1.5">
@@ -584,8 +699,65 @@ export default function AdminReviewsManagement({ token, backendUrl, showToast })
                   value={configuredSettings.editorialLabel}
                   onChange={(e) => setConfiguredSettings(prev => ({ ...prev, editorialLabel: e.target.value }))}
                   placeholder="Curated Editorial Highlights"
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-amber-500"
                 />
+              </div>
+            </div>
+
+            {/* Live Preview Card */}
+            <div className="p-4 bg-neutral-950/90 border border-neutral-800 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Live Preview (How it will render on Homepage)</span>
+                </span>
+                <span className="text-[10px] text-neutral-400 font-mono">
+                  {configuredSettings.enabled ? '🟢 Mode Active' : '⚪ Mode Inactive'}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                <div className="md:col-span-5 flex flex-col items-start gap-1">
+                  <div className="text-3xl font-black text-white tracking-tight flex items-baseline gap-2">
+                    <span>{configuredSettings.displayRating?.toFixed(1)}</span>
+                    <span className="text-sm text-neutral-400 font-semibold">/ 5.0</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-amber-400">
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <Star
+                        key={s}
+                        className={`w-3.5 h-3.5 ${
+                          (configuredSettings.displayRating || 0) >= s
+                            ? 'fill-amber-400 text-amber-400'
+                            : (configuredSettings.displayRating || 0) >= s - 0.5
+                            ? 'fill-amber-400/50 text-amber-400'
+                            : 'text-neutral-700'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-xs text-neutral-400 font-medium mt-0.5">
+                    Based on <strong className="text-white">{configuredSettings.displayCount?.toLocaleString()}</strong> curated ratings
+                  </span>
+                </div>
+                <div className="md:col-span-7 space-y-1.5">
+                  {[5, 4, 3, 2, 1].map((s) => {
+                    const count = configuredSettings.distribution?.[`count${s}`] || 0;
+                    const total = configuredSettings.displayCount || 0;
+                    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                    return (
+                      <div key={s} className="flex items-center gap-2 text-xs">
+                        <span className="w-8 text-neutral-400 font-medium">{s} ★</span>
+                        <div className="flex-1 h-2 bg-neutral-900 rounded-full overflow-hidden border border-neutral-800">
+                          <div
+                            className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-300"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <span className="w-16 text-right text-neutral-400 font-mono text-[11px]">{count} ({pct}%)</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -593,7 +765,7 @@ export default function AdminReviewsManagement({ token, backendUrl, showToast })
               <button
                 type="submit"
                 disabled={isSavingSettings}
-                className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-extrabold text-xs transition cursor-pointer shadow-md shadow-amber-500/20"
+                className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-extrabold text-xs transition cursor-pointer shadow-md shadow-amber-500/20 disabled:opacity-50"
               >
                 {isSavingSettings ? 'Saving...' : 'Save Settings'}
               </button>

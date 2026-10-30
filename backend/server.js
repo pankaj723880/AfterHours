@@ -188,6 +188,7 @@ io.engine.on('connection_error', (err) => {
 
 // Authenticated Socket.io Handshake for Admin Subscriptions
 const activeUserSocketMap = new Map(); // socket.id -> userId string
+app.set('activeUserSocketMap', activeUserSocketMap);
 
 io.use(async (socket, next) => {
   try {
@@ -670,7 +671,7 @@ app.post(['/api/auth/login', '/auth/login'], authLimiter, async (req, res) => {
   }
 });
 
-app.get(['/api/auth/me', '/auth/me'], authenticateToken, async (req, res) => {
+app.get(['/api/user/me', '/user/me', '/api/auth/me', '/auth/me'], authenticateToken, async (req, res) => {
   try {
     const user = req.user;
     res.json({
@@ -678,15 +679,16 @@ app.get(['/api/auth/me', '/auth/me'], authenticateToken, async (req, res) => {
         id: user._id,
         userId: user._id,
         username: user.username,
+        email: user.email || user.username,
         displayName: user.displayName || user.username,
         avatarUrl: user.avatarUrl || '',
-        role: user.role,
-        status: user.status,
-        likedSongs: user.likedSongs,
-        history: user.history,
+        role: user.role || 'user',
+        status: user.status || 'active',
+        likedSongs: user.likedSongs || [],
+        history: user.history || [],
         searchHistory: user.searchHistory || [],
-        playlists: user.playlists,
-        queue: user.queue
+        playlists: user.playlists || [],
+        queue: user.queue || []
       }
     });
   } catch (err) {

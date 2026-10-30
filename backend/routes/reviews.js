@@ -82,7 +82,14 @@ router.get('/summary', async (req, res) => {
           enabled: true,
           displayRating: configDoc.displayRating,
           displayCount: configDoc.displayCount,
-          editorialLabel: configDoc.editorialLabel || 'Curated Editorial Highlights'
+          editorialLabel: configDoc.editorialLabel || 'Curated Editorial Highlights',
+          distribution: {
+            1: configDoc.distribution?.count1 || 0,
+            2: configDoc.distribution?.count2 || 0,
+            3: configDoc.distribution?.count3 || 0,
+            4: configDoc.distribution?.count4 || 0,
+            5: configDoc.distribution?.count5 || 0
+          }
         };
       }
     } catch (e) {}
@@ -106,8 +113,9 @@ router.get('/', async (req, res) => {
     const limit = Math.min(10, Math.max(1, parseInt(req.query.limit, 10) || 5));
     const skip = (page - 1) * limit;
 
+    const source = req.query.source === 'editorial' ? 'editorial' : 'user';
     const filter = {
-      source: 'user',
+      source,
       status: 'published',
       reviewText: { $exists: true, $ne: '' }
     };
@@ -452,15 +460,20 @@ router.delete(['/admin/real/:id', '/real/:id'], authenticateToken, requireAdmin,
  */
 router.get(['/admin/configured', '/configured'], authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const [settings, reviews] = await Promise.all([
-      ConfiguredReviewsSettings.findOne({ key: 'default_configured_reviews' }).lean() || {
+    let settings = await ConfiguredReviewsSettings.findOne({ key: 'default_configured_reviews' }).lean();
+    if (!settings) {
+      settings = {
         enabled: false,
-        displayRating: 4.9,
-        displayCount: 1250,
-        editorialLabel: 'Curated Editorial Highlights'
-      },
-      Review.find({ source: 'editorial' }).sort({ submittedAt: -1 }).lean()
-    ]);
+        displayRating: 4.3,
+        displayCount: 150,
+        editorialLabel: 'Curated Editorial Highlights',
+        distribution: { count1: 5, count2: 8, count3: 12, count4: 35, count5: 90 }
+      };
+    } else if (!settings.distribution) {
+      settings.distribution = { count1: 0, count2: 0, count3: 0, count4: 0, count5: 0 };
+    }
+
+    const reviews = await Review.find({ source: 'editorial' }).sort({ submittedAt: -1 }).lean();
 
     return res.json({ settings, reviews });
   } catch (err) {
@@ -554,34 +567,74 @@ router.delete(['/admin/configured/:id', '/configured/:id'], authenticateToken, r
 
 /**
  * POST /api/admin/reviews/configured-settings
- * Updates configured display rating, count, and enabled state.
+ * Updates configured display rating, count, distribution, and enabled state.
  */
 router.post(['/admin/configured-settings', '/configured-settings', '/admin/configured/settings', '/configured/settings'], authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { displayRating, displayCount, enabled, editorialLabel } = req.body;
-    const r = parseFloat(displayRating);
-    const c = parseInt(displayCount, 10);
+    const { distribution, displayRating, displayCount, enabled, editorialLabel } = req.body;
 
-    if (displayRating !== undefined && (isNaN(r) || r < 1 || r > 5)) {
-      return res.status(400).json({ error: 'Display rating must be between 1.0 and 5.0' });
+    let c1 = 0, c2 = 0, c3 = 0, c4 = 0, c5 = 0;
+    let hasDistribution = false;
+
+    if (distribution && typeof distribution === 'object') {
+      c1 = parseInt(distribution.count1 ?? distribution['1'] ?? 0, 10);
+      c2 = parseInt(distribution.count2 ?? distribution['2'] ?? 0, 10);
+      c3 = parseInt(distribution.count3 ?? distribution['3'] ?? 0, 10);
+      c4 = parseInt(distribution.count4 ?? distribution['4'] ?? 0, 10);
+      c5 = parseInt(distribution.count5 ?? distribution['5'] ?? 0, 10);
+
+      if (isNaN(c1) || c1 < 0 || isNaN(c2) || c2 < 0 || isNaN(c3) || c3 < 0 || isNaN(c4) || c4 < 0 || isNaN(c5) || c5 < 0) {
+        return res.status(400).json({ error: 'Distribution counts must be non-negative integers' });
+      }
+      hasDistribution = true;
     }
 
-    if (displayCount !== undefined && (isNaN(c) || c < 0)) {
-      return res.status(400).json({ error: 'Display count must be a non-negative number' });
+    let calculatedTotal = 0;
+    let calculatedAvg = 0.0;
+
+    if (hasDistribution) {
+      calculatedTotal = c1 + c2 + c3 + c4 + c5;
+      const weightedSum = (1 * c1) + (2 * c2) + (3 * c3) + (4 * c4) + (5 * c5);
+      calculatedAvg = calculatedTotal > 0 ? parseFloat((weightedSum / calculatedTotal).toFixed(1)) : 0.0;
+    } else {
+      calculatedTotal = displayCount !== undefined ? parseInt(displayCount, 10) : 0;
+      calculatedAvg = displayRating !== undefined ? parseFloat(displayRating) : 0.0;
+    }
+
+    if (isNaN(calculatedTotal) || calculatedTotal < 0) {
+      return res.status(400).json({ error: 'Display count must be a non-negative integer' });
+    }
+    if (isNaN(calculatedAvg) || calculatedAvg < 0 || calculatedAvg > 5) {
+      return res.status(400).json({ error: 'Display rating must be between 0.0 and 5.0' });
+    }
+
+    const updateDoc = {
+      displayRating: calculatedAvg,
+      displayCount: calculatedTotal,
+      updatedBy: req.user?.username || 'admin'
+    };
+
+    if (hasDistribution) {
+      updateDoc.distribution = {
+        count1: c1,
+        count2: c2,
+        count3: c3,
+        count4: c4,
+        count5: c5
+      };
+    }
+
+    if (enabled !== undefined) {
+      updateDoc.enabled = Boolean(enabled);
+    }
+    if (editorialLabel !== undefined) {
+      updateDoc.editorialLabel = sanitizeText(editorialLabel) || 'Curated Editorial Highlights';
     }
 
     const settings = await ConfiguredReviewsSettings.findOneAndUpdate(
       { key: 'default_configured_reviews' },
-      {
-        $set: {
-          ...(displayRating !== undefined && { displayRating: r }),
-          ...(displayCount !== undefined && { displayCount: c }),
-          ...(enabled !== undefined && { enabled: Boolean(enabled) }),
-          ...(editorialLabel !== undefined && { editorialLabel: sanitizeText(editorialLabel) }),
-          updatedBy: req.user?.username || 'admin'
-        }
-      },
-      { upsert: true, new: true }
+      { $set: updateDoc },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
     return res.json({ success: true, settings });
