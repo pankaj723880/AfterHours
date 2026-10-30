@@ -1,5 +1,5 @@
 /**
- * Client service for Loopra AI Music Companion & External Song Recognition.
+ * Client service for Loopra AI Music Companion.
  */
 export const aiMusicCompanionClient = {
   /**
@@ -19,8 +19,7 @@ export const aiMusicCompanionClient = {
     } catch (err) {
       console.warn('[AiMusicClient] Context notice:', err.message);
       return {
-        geminiConfigured: false,
-        recognition: { configured: false, provider: 'none' }
+        geminiConfigured: false
       };
     }
   },
@@ -99,43 +98,6 @@ export const aiMusicCompanionClient = {
     }
 
     // Default non-streaming JSON path (only when onChunk is not provided)
-    return await res.json();
-  },
-
-  /**
-   * Sends audio sample to backend for Gemini song identification.
-   */
-  async identifySong(backendUrl, authToken = null, { audioBlob, mimeType = 'audio/webm', durationSeconds = 10 }) {
-    const headers = { 'Content-Type': 'application/json' };
-    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-
-    // Convert Blob to Base64
-    const audioBase64 = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(audioBlob);
-    });
-
-    const res = await fetch(`${backendUrl}/api/ai-music/identify`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        audioBase64,
-        mimeType,
-        durationSeconds
-      })
-    });
-
-    if (!res.ok) {
-      let errMsg = 'Song identification request failed';
-      try {
-        const data = await res.json();
-        if (data.error) errMsg = data.error;
-      } catch (e) {}
-      throw new Error(errMsg);
-    }
-
     return await res.json();
   }
 };

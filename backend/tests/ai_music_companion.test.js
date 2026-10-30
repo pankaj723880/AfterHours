@@ -1,6 +1,5 @@
 import assert from 'assert';
 import { aiMusicCompanionService, getCurrentDateTimeInfo } from '../services/aiMusicCompanionService.js';
-import { musicRecognitionService } from '../services/musicRecognitionService.js';
 import { catalogService, CORE_CATALOG_TRACKS } from '../services/catalogService.js';
 import { verifySingleSong, isSingleSong } from '../services/songFilter.js';
 
@@ -11,11 +10,9 @@ async function runTests() {
 
   // TEST 1: Service Configuration & Capabilities
   console.log('--- TEST 1: Service Context & Capabilities ---');
-  const providerInfo = musicRecognitionService.getProviderInfo();
-  assert(typeof providerInfo === 'object', 'Provider info must be an object');
-  assert.strictEqual(providerInfo.provider, 'gemini', 'Provider must be pure gemini');
-  assert('configured' in providerInfo, 'Provider info must contain configured boolean');
-  console.log(`[PASS] Music recognition info: provider="${providerInfo.provider}", configured=${providerInfo.configured}, model="${providerInfo.model}"`);
+  const isConfigured = aiMusicCompanionService.isGeminiConfigured();
+  assert(typeof isConfigured === 'boolean', 'Gemini configured state must be a boolean');
+  console.log(`[PASS] AI companion service info: configured=${isConfigured}`);
   passed++;
 
   // TEST 2: Current Song Awareness
@@ -116,45 +113,10 @@ async function runTests() {
   console.log(`[PASS] All ${recommendationChat.tracks.length} recommended tracks verified strictly against catalog candidates.`);
   passed++;
 
-  // TEST 6: Gemini Song Recognition Without Key (Honest Reporting)
-  console.log('\n--- TEST 6: Gemini Recognition Interface - Unconfigured State ---');
-  const dummyAudioBase64 = Buffer.from('RIFF....WAVEfmt ....data....test-audio-bytes-padding-1234567890'.repeat(30)).toString('base64');
 
-  const savedGeminiKey = process.env.GEMINI_API_KEY;
-  const savedGoogleKey = process.env.GOOGLE_API_KEY;
-  delete process.env.GEMINI_API_KEY;
-  delete process.env.GOOGLE_API_KEY;
 
-  const unconfiguredResult = await musicRecognitionService.identifyAudio({
-    audioBase64: dummyAudioBase64,
-    mimeType: 'audio/webm',
-    durationSeconds: 12
-  });
 
-  assert.strictEqual(unconfiguredResult.success, false, 'Should not succeed without keys');
-  assert.strictEqual(unconfiguredResult.configured, false, 'Must report configured=false');
-  assert(unconfiguredResult.message.includes('GEMINI_API_KEY'), 'Must report required GEMINI_API_KEY');
-  console.log('[PASS] Gracefully and honestly reported required GEMINI_API_KEY without paid third-party fallback.');
-  passed++;
 
-  // Restore dummy key so subsequent validation tests can test audio buffer logic
-  process.env.GEMINI_API_KEY = 'test_mock_gemini_key_for_testing';
-
-  // TEST 7: Recognition Audio Validation (Undersized Samples)
-  console.log('\n--- TEST 7: Recognition Audio Sample Validation ---');
-  const shortAudioResult = await musicRecognitionService.identifyAudio({
-    audioBase64: 'short',
-    mimeType: 'audio/webm'
-  });
-  assert.strictEqual(shortAudioResult.success, false, 'Short audio must fail');
-  assert(shortAudioResult.error && shortAudioResult.error.includes('too short'), 'Must report audio sample too short');
-  console.log('[PASS] Correctly rejected undersized audio capture buffer.');
-  passed++;
-
-  // Restore env
-  if (savedGeminiKey) process.env.GEMINI_API_KEY = savedGeminiKey;
-  else delete process.env.GEMINI_API_KEY;
-  if (savedGoogleKey) process.env.GOOGLE_API_KEY = savedGoogleKey;
 
   // TEST 8: Exact Catalogue Matching for Known Hindi Song ("Tum Hi Ho")
   console.log('\n--- TEST 8: Catalogue Matching - Known Hindi Song ("Tum Hi Ho") ---');

@@ -7021,7 +7021,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         showToast={showToast} 
       />
 
-      {/* Loopra AI Floating Music Companion & External Song Recognition */}
+      {/* Loopra AI Floating Music Companion */}
       <LoopraAiCompanion
         backendUrl={BACKEND_URL}
         authToken={authToken}
