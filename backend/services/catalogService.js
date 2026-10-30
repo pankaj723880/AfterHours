@@ -14,24 +14,59 @@ const decodeHtml = (str = '') => {
     .replace(/&gt;/g, '>');
 };
 
-// Foundational verified catalog tracks for immediate instant retrieval
+// Foundational verified catalog tracks for immediate instant retrieval across moods & eras
 export const CORE_CATALOG_TRACKS = [
+  // Romantic Classics & Modern Hits
   { id: "RLzC55ai0eo", videoId: "RLzC55ai0eo", title: "Heeriye (Official Video)", artist: "Jasleen Royal ft Arijit Singh", channel: "Jasleen Royal", thumbnail: "https://i.ytimg.com/vi/RLzC55ai0eo/hqdefault.jpg", genre: "Romantic", mood: "Love" },
   { id: "WWIfHemqSEA", videoId: "WWIfHemqSEA", title: "Tujhko - Love Song 2026", artist: "Arijit Singh", channel: "Arijit Singh", thumbnail: "https://i.ytimg.com/vi/WWIfHemqSEA/hqdefault.jpg", genre: "Romantic", mood: "Emotional" },
   { id: "BddP6PYo2gs", videoId: "BddP6PYo2gs", title: "Kesariya (Official Video)", artist: "Arijit Singh, Pritam", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/BddP6PYo2gs/hqdefault.jpg", genre: "Romantic", mood: "Romantic" },
-  { id: "cIGd8gm_pYE", videoId: "cIGd8gm_pYE", title: "Lover (Official Music Video)", artist: "Diljit Dosanjh", channel: "Diljit Dosanjh", thumbnail: "https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg", genre: "Punjabi Pop", mood: "Party" },
   { id: "Umqb9KENgmk", videoId: "Umqb9KENgmk", title: "Tum Hi Ho (Official Video)", artist: "Arijit Singh | Mithoon", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg", genre: "Romantic", mood: "Melancholic" },
-  { id: "Yqj1_V90KJo", videoId: "Yqj1_V90KJo", title: "Chura Ke Dil Mera", artist: "Kumar Sanu, Alka Yagnik", channel: "Venus", thumbnail: "https://i.ytimg.com/vi/Yqj1_V90KJo/hqdefault.jpg", genre: "90s Bollywood", mood: "Nostalgic" },
-  { id: "KeyfUuXPOcY", videoId: "KeyfUuXPOcY", title: "Dheere Dheere Se Meri Zindagi", artist: "Kumar Sanu, Anuradha Paudwal", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/KeyfUuXPOcY/hqdefault.jpg", genre: "90s Bollywood", mood: "Romantic" },
-  { id: "cNV5hLSa9H8", videoId: "cNV5hLSa9H8", title: "Tujhe Dekha Toh Yeh Jaana Sanam", artist: "Kumar Sanu, Lata Mangeshkar", channel: "YRF", thumbnail: "https://i.ytimg.com/vi/cNV5hLSa9H8/hqdefault.jpg", genre: "90s Bollywood", mood: "Romantic" },
-  { id: "cmMiyZaSELo", videoId: "cmMiyZaSELo", title: "Zara Sa (Official Video) - Jannat", artist: "KK, Pritam", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/cmMiyZaSELo/hqdefault.jpg", genre: "Pop Rock", mood: "Soulful" },
-  { id: "T94PHkuydcw", videoId: "T94PHkuydcw", title: "Kun Faya Kun (Official Video) - Rockstar", artist: "A.R. Rahman, Javed Ali, Mohit Chauhan", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/T94PHkuydcw/hqdefault.jpg", genre: "Sufi Rock", mood: "Intense" },
   { id: "ZdyaixHYviA", videoId: "ZdyaixHYviA", title: "Yeh Jawaani Hai Deewani - Subhanallah", artist: "Sreerama Chandra, Shilpa Rao", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/ZdyaixHYviA/hqdefault.jpg", genre: "Romantic", mood: "Feel-Good" },
+  { id: "dvgZkm1xWPE", videoId: "dvgZkm1xWPE", title: "Teri Ore - Singh Is Kinng", artist: "Shreya Ghoshal, Rahat Fateh Ali Khan", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/dvgZkm1xWPE/hqdefault.jpg", genre: "Romantic", mood: "Love" },
+  { id: "gvyUuxdRdR4", videoId: "gvyUuxdRdR4", title: "Raataan Lambiyan - Shershaah", artist: "Jubin Nautiyal, Asees Kaur", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/gvyUuxdRdR4/hqdefault.jpg", genre: "Romantic", mood: "Love" },
+  { id: "ElZfdU54Cp8", videoId: "ElZfdU54Cp8", title: "Apna Bana Le - Bhediya", artist: "Arijit Singh, Sachin-Jigar", channel: "Zee Music Company", thumbnail: "https://i.ytimg.com/vi/ElZfdU54Cp8/hqdefault.jpg", genre: "Romantic", mood: "Love" },
+
+  // Sad / Heartbreak / Emotional
   { id: "SQWDGLnvxF4", videoId: "SQWDGLnvxF4", title: "Sanam Teri Kasam Title Track", artist: "Ankit Tiwari, Palak Muchhal", channel: "Eros Now", thumbnail: "https://i.ytimg.com/vi/SQWDGLnvxF4/hqdefault.jpg", genre: "Heartbreak", mood: "Sad" },
   { id: "BDlNjOc3wiQ", videoId: "BDlNjOc3wiQ", title: "Bekhayali - Kabir Singh", artist: "Sachet Tandon", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/BDlNjOc3wiQ/hqdefault.jpg", genre: "Rock", mood: "Heartbreak" },
   { id: "284Ov7ysmfA", videoId: "284Ov7ysmfA", title: "Channa Mereya", artist: "Arijit Singh, Pritam", channel: "Sony Music", thumbnail: "https://i.ytimg.com/vi/284Ov7ysmfA/hqdefault.jpg", genre: "Romantic", mood: "Emotional" },
-  { id: "dvgZkm1xWPE", videoId: "dvgZkm1xWPE", title: "Teri Ore - Singh Is Kinng", artist: "Shreya Ghoshal, Rahat Fateh Ali Khan", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/dvgZkm1xWPE/hqdefault.jpg", genre: "Romantic", mood: "Love" },
-  { id: "S6IW8Rj1WqQ", videoId: "S6IW8Rj1WqQ", title: "Aankh Hai Bhari Bhari", artist: "Kumar Sanu", channel: "Tips Official", thumbnail: "https://i.ytimg.com/vi/S6IW8Rj1WqQ/hqdefault.jpg", genre: "Sad Ghazal", mood: "Nostalgic" }
+  { id: "S6IW8Rj1WqQ", videoId: "S6IW8Rj1WqQ", title: "Aankh Hai Bhari Bhari", artist: "Kumar Sanu", channel: "Tips Official", thumbnail: "https://i.ytimg.com/vi/S6IW8Rj1WqQ/hqdefault.jpg", genre: "Sad Ghazal", mood: "Nostalgic" },
+  { id: "sK7riqg2mr4", videoId: "sK7riqg2mr4", title: "Agar Tum Saath Ho - Tamasha", artist: "Alka Yagnik, Arijit Singh", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/sK7riqg2mr4/hqdefault.jpg", genre: "Heartbreak", mood: "Sad" },
+  { id: "2mDC8bQ2r2E", videoId: "2mDC8bQ2r2E", title: "Tujhe Bhula Diya - Anjaana Anjaani", artist: "Mohit Chauhan, Shekhar Ravjiani", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/2mDC8bQ2r2E/hqdefault.jpg", genre: "Heartbreak", mood: "Sad" },
+
+  // 90s Bollywood & Retro Classics
+  { id: "Yqj1_V90KJo", videoId: "Yqj1_V90KJo", title: "Chura Ke Dil Mera", artist: "Kumar Sanu, Alka Yagnik", channel: "Venus", thumbnail: "https://i.ytimg.com/vi/Yqj1_V90KJo/hqdefault.jpg", genre: "90s Bollywood", mood: "Nostalgic" },
+  { id: "KeyfUuXPOcY", videoId: "KeyfUuXPOcY", title: "Dheere Dheere Se Meri Zindagi", artist: "Kumar Sanu, Anuradha Paudwal", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/KeyfUuXPOcY/hqdefault.jpg", genre: "90s Bollywood", mood: "Romantic" },
+  { id: "cNV5hLSa9H8", videoId: "cNV5hLSa9H8", title: "Tujhe Dekha Toh Yeh Jaana Sanam", artist: "Kumar Sanu, Lata Mangeshkar", channel: "YRF", thumbnail: "https://i.ytimg.com/vi/cNV5hLSa9H8/hqdefault.jpg", genre: "90s Bollywood", mood: "Romantic" },
+  { id: "q_46zF7ZJqM", videoId: "q_46zF7ZJqM", title: "Pehla Nasha - Jo Jeeta Wohi Sikandar", artist: "Udit Narayan, Sadhana Sargam", channel: "Venus", thumbnail: "https://i.ytimg.com/vi/q_46zF7ZJqM/hqdefault.jpg", genre: "90s Bollywood", mood: "Romantic" },
+  { id: "b0Z1_mHjW_E", videoId: "b0Z1_mHjW_E", title: "Tip Tip Barsa Paani - Mohra", artist: "Udit Narayan, Alka Yagnik", channel: "Venus", thumbnail: "https://i.ytimg.com/vi/b0Z1_mHjW_E/hqdefault.jpg", genre: "90s Bollywood", mood: "Nostalgic" },
+  { id: "wJ8d4xIeR-c", videoId: "wJ8d4xIeR-c", title: "Baazigar O Baazigar", artist: "Kumar Sanu, Alka Yagnik", channel: "Venus", thumbnail: "https://i.ytimg.com/vi/wJ8d4xIeR-c/hqdefault.jpg", genre: "90s Bollywood", mood: "Nostalgic" },
+  { id: "27y8t1WkYpk", videoId: "27y8t1WkYpk", title: "Dil Hai Ke Manta Nahin Title Track", artist: "Kumar Sanu, Anuradha Paudwal", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/27y8t1WkYpk/hqdefault.jpg", genre: "90s Bollywood", mood: "Romantic" },
+
+  // Energetic / Workout / Motivation
+  { id: "exv-pL9pC_0", videoId: "exv-pL9pC_0", title: "Kar Har Maidaan Fateh - Sanju", artist: "Sukhwinder Singh, Shreya Ghoshal", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/exv-pL9pC_0/hqdefault.jpg", genre: "Motivational", mood: "Workout" },
+  { id: "wMPb6ZkWd1k", videoId: "wMPb6ZkWd1k", title: "Zinda - Bhaag Milkha Bhaag", artist: "Siddharth Mahadevan", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/wMPb6ZkWd1k/hqdefault.jpg", genre: "Rock Motivation", mood: "Workout" },
+  { id: "9mQk7Evt6Dk", videoId: "9mQk7Evt6Dk", title: "Sultan Title Song", artist: "Sukhwinder Singh, Shadab Faridi", channel: "YRF", thumbnail: "https://i.ytimg.com/vi/9mQk7Evt6Dk/hqdefault.jpg", genre: "Workout", mood: "Energetic" },
+  { id: "bL4j_Hq_o1k", videoId: "bL4j_Hq_o1k", title: "Brothers Anthem", artist: "Vishal Dadlani", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/bL4j_Hq_o1k/hqdefault.jpg", genre: "Workout", mood: "Energetic" },
+  { id: "OQ1cbe_g5eM", videoId: "OQ1cbe_g5eM", title: "Chak De India Title Track", artist: "Sukhwinder Singh, Salim-Sulaiman", channel: "YRF", thumbnail: "https://i.ytimg.com/vi/OQ1cbe_g5eM/hqdefault.jpg", genre: "Energetic", mood: "Workout" },
+
+  // Party / Upbeat Pop
+  { id: "cIGd8gm_pYE", videoId: "cIGd8gm_pYE", title: "Lover (Official Music Video)", artist: "Diljit Dosanjh", channel: "Diljit Dosanjh", thumbnail: "https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg", genre: "Punjabi Pop", mood: "Party" },
+  { id: "II2EO3NwUrQ", videoId: "II2EO3NwUrQ", title: "Badtameez Dil - Yeh Jawaani Hai Deewani", artist: "Benny Dayal, Pritam", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/II2EO3NwUrQ/hqdefault.jpg", genre: "Party Dance", mood: "Party" },
+  { id: "k4yXQkGLeAk", videoId: "k4yXQkGLeAk", title: "Kala Chashma - Baar Baar Dekho", artist: "Amar Arshi, Badshah, Neha Kakkar", channel: "Zee Music Company", thumbnail: "https://i.ytimg.com/vi/k4yXQkGLeAk/hqdefault.jpg", genre: "Party Dance", mood: "Party" },
+  { id: "dra3PCbxbDE", videoId: "dra3PCbxbDE", title: "London Thumakda - Queen", artist: "Labh Janjua, Sonu Kakkar, Neha Kakkar", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/dra3PCbxbDE/hqdefault.jpg", genre: "Party Dance", mood: "Party" },
+
+  // Soulful / Sufi Rock
+  { id: "cmMiyZaSELo", videoId: "cmMiyZaSELo", title: "Zara Sa (Official Video) - Jannat", artist: "KK, Pritam", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/cmMiyZaSELo/hqdefault.jpg", genre: "Pop Rock", mood: "Soulful" },
+  { id: "T94PHkuydcw", videoId: "T94PHkuydcw", title: "Kun Faya Kun (Official Video) - Rockstar", artist: "A.R. Rahman, Javed Ali, Mohit Chauhan", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/T94PHkuydcw/hqdefault.jpg", genre: "Sufi Rock", mood: "Intense" },
+  { id: "jHNNMj5bNQw", videoId: "jHNNMj5bNQw", title: "Kabira - Yeh Jawaani Hai Deewani", artist: "Tochi Raina, Rekha Bhardwaj", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/jHNNMj5bNQw/hqdefault.jpg", genre: "Sufi Folk", mood: "Soulful" },
+
+  // Underrated & Indie Gems
+  { id: "vt4jX0iRgCg", videoId: "vt4jX0iRgCg", title: "Kho Gaye Hum Kahan - Baar Baar Dekho", artist: "Jasleen Royal, Prateek Kuhad", channel: "Zee Music Company", thumbnail: "https://i.ytimg.com/vi/vt4jX0iRgCg/hqdefault.jpg", genre: "Indie Acoustic", mood: "Underrated" },
+  { id: "dZ0fwJojhrs", videoId: "dZ0fwJojhrs", title: "Baarishein", artist: "Anuv Jain", channel: "Anuv Jain", thumbnail: "https://i.ytimg.com/vi/dZ0fwJojhrs/hqdefault.jpg", genre: "Indie Acoustic", mood: "Underrated" },
+  { id: "bm34qK3Y3bU", videoId: "bm34qK3Y3bU", title: "Kasoor - Acoustic", artist: "Prateek Kuhad", channel: "Prateek Kuhad", thumbnail: "https://i.ytimg.com/vi/bm34qK3Y3bU/hqdefault.jpg", genre: "Indie Acoustic", mood: "Underrated" },
+  { id: "YtDk_9pM-cM", videoId: "YtDk_9pM-cM", title: "Alizeh - Ae Dil Hai Mushkil", artist: "Arijit Singh, Ash King, Shashwat Singh", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/YtDk_9pM-cM/hqdefault.jpg", genre: "Romantic Melody", mood: "Underrated" },
+  { id: "nBkWuYg5kG4", videoId: "nBkWuYg5kG4", title: "Rozana - Naam Shabana", artist: "Shreya Ghoshal, Rochak Kohli", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/nBkWuYg5kG4/hqdefault.jpg", genre: "Acoustic Melody", mood: "Underrated" }
 ];
 
 export const catalogService = {
