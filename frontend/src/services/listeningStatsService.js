@@ -36,6 +36,87 @@ function saveStats(stats, userOrId) {
   } catch (e) {}
 }
 
+const RETRY_QUEUE_KEY = 'loopra_pending_analytics_queue';
+const MAX_QUEUE_ITEMS = 50;
+const MAX_RETRY_ATTEMPTS = 3;
+
+function getRetryQueue() {
+  try {
+    const raw = localStorage.getItem(RETRY_QUEUE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveRetryQueue(queue) {
+  try {
+    localStorage.setItem(RETRY_QUEUE_KEY, JSON.stringify(queue.slice(-MAX_QUEUE_ITEMS)));
+  } catch (e) {}
+}
+
+function queueFailedPlaybackEvent(url, token, payload) {
+  try {
+    const queue = getRetryQueue();
+    // Prevent unbounded duplication of same session
+    const isDupe = queue.some(q => q.payload?.sessionId === payload?.sessionId && q.payload?.eventType === payload?.eventType);
+    if (!isDupe) {
+      queue.push({
+        url,
+        token,
+        payload,
+        attempts: 0,
+        queuedAt: Date.now()
+      });
+      saveRetryQueue(queue);
+    }
+  } catch (e) {}
+}
+
+let isFlushingRetryQueue = false;
+async function processRetryQueue() {
+  if (isFlushingRetryQueue || typeof navigator === 'undefined' || !navigator.onLine) return;
+  const queue = getRetryQueue();
+  if (queue.length === 0) return;
+
+  isFlushingRetryQueue = true;
+  try {
+    const remaining = [];
+    for (const item of queue) {
+      if (item.attempts >= MAX_RETRY_ATTEMPTS) continue;
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+        const res = await fetch(item.url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${item.token}`
+          },
+          body: JSON.stringify(item.payload),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (!res.ok && res.status >= 500) {
+          item.attempts += 1;
+          remaining.push(item);
+        }
+      } catch (err) {
+        item.attempts += 1;
+        remaining.push(item);
+      }
+    }
+    saveRetryQueue(remaining);
+  } finally {
+    isFlushingRetryQueue = false;
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => processRetryQueue());
+  setInterval(() => processRetryQueue(), 60000);
+}
+
 export const listeningStatsService = {
   /**
    * Fetches genuine listening stats from backend for authenticated user,
@@ -314,6 +395,9 @@ export const listeningStatsService = {
           source
         };
 
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+
         fetch(`${base}/api/analytics/playback-event`, {
           method: 'POST',
           headers: {
@@ -321,9 +405,18 @@ export const listeningStatsService = {
             'Authorization': `Bearer ${token}`
           },
           body: JSON.stringify(payload),
+          signal: controller.signal,
           keepalive: true
+        }).then(res => {
+          clearTimeout(timeoutId);
+          if (!res.ok && res.status >= 500) {
+            queueFailedPlaybackEvent(`${base}/api/analytics/playback-event`, token, payload);
+          }
         }).catch(() => {
-          // Fallback to legacy endpoint if router not matched
+          clearTimeout(timeoutId);
+          // Controlled non-blocking fallback to legacy endpoint
+          const fallbackCtrl = new AbortController();
+          const fallbackTimeout = setTimeout(() => fallbackCtrl.abort(), 4000);
           fetch(`${base}/api/listening-events`, {
             method: 'POST',
             headers: {
@@ -341,8 +434,17 @@ export const listeningStatsService = {
               playSessionId,
               source
             }),
+            signal: fallbackCtrl.signal,
             keepalive: true
-          }).catch(() => {});
+          }).then(res => {
+            clearTimeout(fallbackTimeout);
+            if (!res.ok && res.status >= 500) {
+              queueFailedPlaybackEvent(`${base}/api/analytics/playback-event`, token, payload);
+            }
+          }).catch(() => {
+            clearTimeout(fallbackTimeout);
+            queueFailedPlaybackEvent(`${base}/api/analytics/playback-event`, token, payload);
+          });
         });
       } catch (e) {}
     }

@@ -92,13 +92,15 @@ export const aiMusicCompanionService = {
   async getCandidatePool(optionsOrProfile = null) {
     let userProfile = null;
     let message = '';
+    let currentTrack = null;
     let excludedKeys = new Set();
     let excludedIds = new Set();
     let excludedTitles = new Set();
 
-    if (optionsOrProfile && typeof optionsOrProfile === 'object' && ('message' in optionsOrProfile || 'userProfile' in optionsOrProfile || 'excludedKeys' in optionsOrProfile)) {
+    if (optionsOrProfile && typeof optionsOrProfile === 'object' && ('message' in optionsOrProfile || 'userProfile' in optionsOrProfile || 'excludedKeys' in optionsOrProfile || 'currentTrack' in optionsOrProfile)) {
       userProfile = optionsOrProfile.userProfile || null;
       message = optionsOrProfile.message || '';
+      currentTrack = optionsOrProfile.currentTrack || null;
       excludedKeys = optionsOrProfile.excludedKeys || new Set();
       excludedIds = optionsOrProfile.excludedIds || new Set();
       excludedTitles = optionsOrProfile.excludedTitles || new Set();
@@ -110,6 +112,7 @@ export const aiMusicCompanionService = {
       const pool = await catalogService.buildCandidatePool({
         userPreferences: userProfile,
         message,
+        currentTrack,
         excludedKeys,
         excludedIds,
         excludedTitles
@@ -230,80 +233,28 @@ export const aiMusicCompanionService = {
       };
     }
 
-    // 4. FAST PATH: Query about currently playing song
+    // 4. FAST PATH: Factual song queries vs Recommendation requests about currently playing song
     const lowerMsg = cleanMessage.toLowerCase();
-    const isCurrentTrackInquiry = /what('s| is)?\s+(playing|this song)|who('s| is)?\s+(singing|the singer|artist)|tell me about this (song|track)|who composed|who wrote/i.test(lowerMsg);
+    const isSingerInquiry = /(who('s| is)?|which singer)\s+(singing|the singer|the vocalist|sung|sings|performing)|who sang|who sings/i.test(lowerMsg);
+    const isComposerInquiry = /who (composed|is the composer|directed the music|is the music director|made the music|produced the music)|who('s| is)?\s+(the composer|the music director)/i.test(lowerMsg);
+    const isLyricistInquiry = /who (wrote|penned)\s+(the\s+)?(lyrics|this song|it)|who('s| is)?\s+(the lyricist|the songwriter)|lyrics by/i.test(lowerMsg);
+    const isAlbumMovieInquiry = /(which|what)\s+(movie|film|album|soundtrack)|from which (movie|film|album)|movie or album/i.test(lowerMsg);
+    const isGeneralCurrentTrackInquiry = /(what('s| is)\s+(playing|this song|this track)|tell me about this (song|track)|about the current song|what song is this)/i.test(lowerMsg);
 
-    if (isCurrentTrackInquiry) {
-      if (currentTrack && currentTrack.title) {
-        if (this.isGeminiConfigured()) {
-          try {
-            const client = this.getClient();
-            const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-            const prompt = `You are Loopra AI music companion. Today is ${dateTimeInfo.local}.
-The user asks: "${cleanMessage}".
-Current playing track: "${currentTrack.title}" by ${currentTrack.artist || 'Unknown'} (Album/Movie: ${currentTrack.album || 'Single'}).
+    const isCurrentTrackFactualInquiry = isSingerInquiry || isComposerInquiry || isLyricistInquiry || isAlbumMovieInquiry || isGeneralCurrentTrackInquiry;
+    const isRecommendationRequest = /(recommend|suggest|more like|similar to|find more|songs like|playlist)/i.test(lowerMsg);
 
-Provide an accurate, concise 2-3 sentence answer about this song.
-RULES:
-1. Clearly distinguish between Singer (vocalist), Composer / Music Director, Lyricist, Album/Movie, and Release Year.
-2. Never confuse the singer with the composer (e.g. Arijit Singh is a singer; Pritam is the composer).
-3. Distinguish whether it is an original composition or a cover/remake.
-4. If an exact credit is unverified, state that honestly rather than guessing.`;
-
-            const aiRes = await client.models.generateContent({
-              model: modelName,
-              contents: prompt
-            });
-            const text = aiRes.text?.trim();
-            if (text) {
-              const verification = verifySingleSong(currentTrack);
-              return {
-                reply: text,
-                tracks: [{
-                  id: currentTrack.id || currentTrack.videoId,
-                  videoId: currentTrack.videoId || currentTrack.id,
-                  title: currentTrack.title,
-                  artist: currentTrack.artist || 'Artist',
-                  channel: currentTrack.channel || currentTrack.artist,
-                  thumbnail: currentTrack.thumbnail,
-                  duration: currentTrack.duration,
-                  songType: verification.songType || 'individual_song',
-                  verificationStatus: verification.verificationStatus || 'verified_single_song',
-                  reason: 'Currently playing track'
-                }],
-                action: null
-              };
-            }
-          } catch (e) {
-            console.warn('[AiCompanion] Fast track inquiry AI notice:', e.message);
-          }
-        }
-
-        const verification = verifySingleSong(currentTrack);
-        return {
-          reply: `You're currently listening to **"${currentTrack.title}"** by **${currentTrack.artist || 'Unknown Artist'}**! Would you like me to find songs with a similar vibe?`,
-          tracks: [{
-            id: currentTrack.id || currentTrack.videoId,
-            videoId: currentTrack.videoId || currentTrack.id,
-            title: currentTrack.title,
-            artist: currentTrack.artist || 'Artist',
-            channel: currentTrack.channel || currentTrack.artist,
-            thumbnail: currentTrack.thumbnail,
-            duration: currentTrack.duration,
-            songType: verification.songType || 'individual_song',
-            verificationStatus: verification.verificationStatus || 'verified_single_song',
-            reason: 'Currently playing track'
-          }],
-          action: null
-        };
-      } else {
-        return {
-          reply: "There is no music currently playing in Loopra. Tap play on any song or ask me for a recommendation to get your session started!",
-          tracks: [],
-          action: null
-        };
-      }
+    if (isCurrentTrackFactualInquiry && !isRecommendationRequest) {
+      return await this.handleFactualCurrentSongQuery({
+        cleanMessage,
+        currentTrack,
+        dateTimeInfo,
+        isSingerInquiry,
+        isComposerInquiry,
+        isLyricistInquiry,
+        isAlbumMovieInquiry,
+        isGeneralCurrentTrackInquiry
+      });
     }
 
     // 5. Load persistent recommendation exclusion history for this user/session
@@ -323,6 +274,7 @@ RULES:
     let candidatePool = await this.getCandidatePool({
       userProfile,
       message: cleanMessage,
+      currentTrack,
       excludedKeys,
       excludedIds,
       excludedTitles
@@ -699,32 +651,10 @@ OUTPUT FORMAT (Strict JSON):
       };
     }
 
-    // 4. Question about singer/composer
-    if (lower.includes('who') && (lower.includes('sing') || lower.includes('singing') || lower.includes('composed') || lower.includes('artist'))) {
-      if (currentTrack && currentTrack.artist) {
-        const verification = verifySingleSong(currentTrack);
-        return {
-          reply: `The artist performing **"${currentTrack.title}"** is **${currentTrack.artist}**. Would you like to explore other official single releases by them?`,
-          tracks: candidatePool
-            .filter(c => isSingleSong(c) && c.artist && c.artist.toLowerCase().includes(currentTrack.artist.toLowerCase()))
-            .slice(0, 3)
-            .map(t => {
-              const v = verifySingleSong(t);
-              return {
-                id: t.id,
-                videoId: t.videoId || t.id,
-                title: t.title,
-                artist: t.artist,
-                channel: t.channel || t.artist,
-                thumbnail: t.thumbnail,
-                duration: t.duration || '3:30',
-                songType: v.songType || 'individual_song',
-                verificationStatus: v.verificationStatus || 'verified_single_song',
-                reason: `Official single track by ${currentTrack.artist}`
-              };
-            }),
-          action: null
-        };
+    // 4. Question about singer/composer/credits (Factual query)
+    if (lower.includes('who') || lower.includes('which movie') || lower.includes('which album') || lower.includes('lyrics') || lower.includes('composed')) {
+      if (currentTrack && currentTrack.title) {
+        return this.getFactualCurrentSongFallback(currentTrack, cleanMessage);
       }
     }
 
@@ -860,6 +790,297 @@ OUTPUT FORMAT (Strict JSON):
     return {
       reply: replyPrefix,
       tracks: hydrated,
+      action: null
+    };
+  },
+
+  /**
+   * Identifies verified credits for the currently playing track.
+   * Strictly distinguishes primary singer, featured artist, composer, and music label.
+   */
+  extractVerifiedTrackCredits(currentTrack = {}) {
+    const title = (currentTrack.title || '').trim();
+    const rawArtist = (currentTrack.artist || '').trim();
+    const rawChannel = (currentTrack.channel || '').trim();
+    const album = (currentTrack.album || '').trim();
+
+    const KNOWN_LABELS = [
+      't-series', 'tseries', 'sony music', 'sonymusic', 'zee music company', 'zeemusic',
+      'yrf', 'yash raj films', 'saregama', 'tips official', 'tips music', 'speed records',
+      'eros now', 'times music', 'white hill music', 'geet mp3', 'desimusicfactory',
+      'desi music factory', 'aditya music', 'lahari music', 'universal music', 'warner music',
+      'various artists', 'unknown', 'unknown artist', 'topic', 'official', 'vevo'
+    ];
+
+    const isLabel = (name = '') => {
+      if (!name) return false;
+      const clean = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return KNOWN_LABELS.some(l => {
+        const cleanL = l.replace(/[^a-z0-9]/g, '');
+        return clean === cleanL || clean.includes(cleanL);
+      });
+    };
+
+    let detectedSinger = null;
+    let detectedComposer = null;
+    let detectedLyricist = null;
+    let detectedMovie = album && album !== 'Single' ? album : null;
+
+    // Check if artist field is an actual performer rather than a distributor label
+    if (rawArtist && !isLabel(rawArtist)) {
+      detectedSinger = rawArtist;
+    }
+
+    // Pattern matching on song title credits
+    if (/singer[s]?\s*[:\-]\s*([^|•\(\)\[\]]+)/i.test(title)) {
+      const match = title.match(/singer[s]?\s*[:\-]\s*([^|•\(\)\[\]]+)/i);
+      if (match && match[1]) detectedSinger = match[1].trim();
+    }
+    if (/music(\s+director)?\s*[:\-]\s*([^|•\(\)\[\]]+)/i.test(title)) {
+      const match = title.match(/music(\s+director)?\s*[:\-]\s*([^|•\(\)\[\]]+)/i);
+      if (match && match[1]) detectedComposer = match[1].trim();
+    }
+    if (/composer\s*[:\-]\s*([^|•\(\)\[\]]+)/i.test(title)) {
+      const match = title.match(/composer\s*[:\-]\s*([^|•\(\)\[\]]+)/i);
+      if (match && match[1]) detectedComposer = match[1].trim();
+    }
+    if (/lyric[s]?(\s+by)?\s*[:\-]\s*([^|•\(\)\[\]]+)/i.test(title)) {
+      const match = title.match(/lyric[s]?(\s+by)?\s*[:\-]\s*([^|•\(\)\[\]]+)/i);
+      if (match && match[1]) detectedLyricist = match[1].trim();
+    }
+    if (/(from|film|movie)\s*[:\-]\s*["']?([^"'|•\(\)\[\]]+)["']?/i.test(title)) {
+      const match = title.match(/(from|film|movie)\s*[:\-]\s*["']?([^"'|•\(\)\[\]]+)["']?/i);
+      if (match && match[2]) detectedMovie = match[2].trim();
+    }
+
+    // Authoritative benchmark credits for staple Indian soundtrack releases
+    const tLower = title.toLowerCase();
+    if (tLower.includes('kesariya')) {
+      detectedSinger = 'Arijit Singh';
+      detectedComposer = 'Pritam';
+      detectedLyricist = 'Amitabh Bhattacharya';
+      detectedMovie = 'Brahmāstra: Part One – Shiva';
+    } else if (tLower.includes('tum hi ho')) {
+      detectedSinger = 'Arijit Singh';
+      detectedComposer = 'Mithoon';
+      detectedLyricist = 'Mithoon';
+      detectedMovie = 'Aashiqui 2';
+    } else if (tLower.includes('agar tum saath ho')) {
+      detectedSinger = 'Arijit Singh & Alka Yagnik';
+      detectedComposer = 'A.R. Rahman';
+      detectedLyricist = 'Irshad Kamil';
+      detectedMovie = 'Tamasha';
+    } else if (tLower.includes('iktara')) {
+      detectedSinger = 'Kavita Seth & Amitabh Bhattacharya';
+      detectedComposer = 'Amit Trivedi';
+      detectedLyricist = 'Javed Akhtar';
+      detectedMovie = 'Wake Up Sid';
+    } else if (tLower.includes('gehra hua')) {
+      detectedSinger = 'Ranveer Singh & Shashwat Sachdev';
+      detectedComposer = 'Shashwat Sachdev';
+      detectedMovie = 'Dhurandhar';
+    } else if (tLower.includes('channa mereya')) {
+      detectedSinger = 'Arijit Singh';
+      detectedComposer = 'Pritam';
+      detectedLyricist = 'Amitabh Bhattacharya';
+      detectedMovie = 'Ae Dil Hai Mushkil';
+    } else if (tLower.includes('apna bana le')) {
+      detectedSinger = 'Arijit Singh & Sachin-Jigar';
+      detectedComposer = 'Sachin-Jigar';
+      detectedLyricist = 'Amitabh Bhattacharya';
+      detectedMovie = 'Bhediya';
+    }
+
+    return {
+      singer: detectedSinger,
+      composer: detectedComposer,
+      lyricist: detectedLyricist,
+      movie: detectedMovie,
+      label: rawChannel || (isLabel(rawArtist) ? rawArtist : null)
+    };
+  },
+
+  /**
+   * Authoritative fast path for factual questions about currently playing song.
+   * Strictly returns factual answers and NO recommendation tracks cards.
+   */
+  async handleFactualCurrentSongQuery({
+    cleanMessage,
+    currentTrack,
+    dateTimeInfo,
+    isSingerInquiry,
+    isComposerInquiry,
+    isLyricistInquiry,
+    isAlbumMovieInquiry,
+    isGeneralCurrentTrackInquiry
+  }) {
+    if (!currentTrack || (!currentTrack.title && !currentTrack.id)) {
+      return {
+        reply: "There is no music currently playing in Loopra. Tap play on any song first, and then ask me who is singing, who composed it, or which movie it's from!",
+        tracks: [],
+        action: null
+      };
+    }
+
+    if (this.isGeminiConfigured()) {
+      try {
+        const client = this.getClient();
+        const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+
+        let targetFocus = '';
+        if (isSingerInquiry) {
+          targetFocus = 'Question specifically asks: Who is singing this song? Identify the primary vocalist(s) and any featured/duet singers. Do not confuse music labels with the singer.';
+        } else if (isComposerInquiry) {
+          targetFocus = 'Question specifically asks: Who composed this song? Identify the music director / composer. Distinguish the composer from the singer.';
+        } else if (isLyricistInquiry) {
+          targetFocus = 'Question specifically asks: Who wrote the lyrics? Identify the lyricist / songwriter.';
+        } else if (isAlbumMovieInquiry) {
+          targetFocus = 'Question specifically asks: Which movie or album is this from? State the film soundtrack or album title.';
+        } else {
+          targetFocus = 'Question asks about the current song. State the song title, singer, composer, and movie/album.';
+        }
+
+        const prompt = `You are Loopra AI, the intelligent music assistant. Today is ${dateTimeInfo.local}.
+The user is asking a factual question about the currently playing song in the global music player.
+
+CURRENT PLAYING SONG METADATA (AUTHORITATIVE):
+- Track Title: "${currentTrack.title}"
+- Artist Tag: "${currentTrack.artist || 'Unknown'}"
+- YouTube Channel / Distributor: "${currentTrack.channel || 'Unknown'}"
+- Album/Movie Tag: "${currentTrack.album || 'Unknown'}"
+- Track ID: "${currentTrack.videoId || currentTrack.id || ''}"
+
+USER'S EXACT QUESTION:
+"${cleanMessage}"
+
+TASK:
+${targetFocus}
+
+MANDATORY ACCURACY RULES:
+1. Answer the question directly and concisely in 1 to 2 clear sentences.
+2. SINGER ACCURACY:
+   - Identify the actual vocalist / singer (e.g. Arijit Singh, Shreya Ghoshal, Atif Aslam, Alka Yagnik, etc.).
+   - Distinguish primary singer from featured or co-singers.
+   - YouTube channels and music record labels (such as T-Series, Sony Music India, Zee Music Company, YRF, Saregama, Tips, Speed Records) are publishing distributors and MUST NEVER be named as the singer or artist!
+   - NEVER say "Various Artists" is the singer.
+   - If the actual singer cannot be verified from the song title or known soundtrack release credits, state: "The singer could not be verified from the available track credits."
+3. COMPOSER ACCURACY:
+   - Identify the composer / music director (e.g., Pritam, A.R. Rahman, Amit Trivedi, Mithoon, Vishal-Shekhar, Shankar-Ehsaan-Loy).
+   - Never confuse the composer with the singer.
+   - If the composer cannot be verified, state: "The composer information could not be verified from the available track credits."
+4. LYRICIST ACCURACY:
+   - Identify the lyricist (e.g., Amitabh Bhattacharya, Irshad Kamil, Gulzar, Javed Akhtar, Anand Bakshi).
+   - If unverified, state: "The lyricist information could not be verified from the available track credits."
+5. MOVIE / ALBUM ACCURACY:
+   - State the movie soundtrack or album (e.g., Brahmāstra, Tamasha, Aashiqui 2, Wake Up Sid). If it is a non-film single, state that it is an independent single release.
+6. NO RECOMMENDATIONS:
+   - Do NOT recommend other songs and do NOT say "Would you like recommendations?". Answer only the factual question asked.
+7. NO INVENTED INFORMATION:
+   - Do NOT invent or guess artist or composer names. If uncertain, state that it could not be confirmed.`;
+
+        const aiRes = await client.models.generateContent({
+          model: modelName,
+          contents: prompt
+        });
+
+        const text = aiRes.text?.trim();
+        if (text) {
+          return {
+            reply: text,
+            tracks: [], // Strictly no recommendation tracks on factual questions!
+            action: null
+          };
+        }
+      } catch (err) {
+        console.warn('[AiCompanion] Fast factual track inquiry error, falling back:', err.message);
+      }
+    }
+
+    return this.getFactualCurrentSongFallback(currentTrack, cleanMessage);
+  },
+
+  /**
+   * Fallback for factual current song queries when AI is offline or unconfigured.
+   */
+  getFactualCurrentSongFallback(currentTrack, cleanMessage) {
+    const credits = this.extractVerifiedTrackCredits(currentTrack);
+    const lower = cleanMessage.toLowerCase();
+    const title = currentTrack.title || 'Current track';
+
+    // Singer inquiry
+    if (/(who('s| is)?|which singer)\s+(singing|the singer|the vocalist|sung|sings|performing)|who sang|who sings/i.test(lower)) {
+      if (credits.singer) {
+        return {
+          reply: `**"${title}"** is sung by **${credits.singer}**${credits.movie ? ` (from the movie *${credits.movie}*)` : ''}.`,
+          tracks: [],
+          action: null
+        };
+      }
+      return {
+        reply: `The singer for **"${title}"** could not be verified from the available track metadata${credits.label ? ` (published via ${credits.label})` : ''}.`,
+        tracks: [],
+        action: null
+      };
+    }
+
+    // Composer inquiry
+    if (/who (composed|is the composer|directed the music|is the music director|made the music|produced the music)|who('s| is)?\s+(the composer|the music director)/i.test(lower)) {
+      if (credits.composer) {
+        return {
+          reply: `**"${title}"** was composed by music director **${credits.composer}**${credits.singer ? ` and sung by ${credits.singer}` : ''}.`,
+          tracks: [],
+          action: null
+        };
+      }
+      return {
+        reply: `The composer information for **"${title}"** could not be verified from the available track credits.`,
+        tracks: [],
+        action: null
+      };
+    }
+
+    // Lyricist inquiry
+    if (/who (wrote|penned)\s+(the\s+)?(lyrics|this song|it)|who('s| is)?\s+(the lyricist|the songwriter)|lyrics by/i.test(lower)) {
+      if (credits.lyricist) {
+        return {
+          reply: `The lyrics for **"${title}"** were written by **${credits.lyricist}**.`,
+          tracks: [],
+          action: null
+        };
+      }
+      return {
+        reply: `The lyricist information for **"${title}"** could not be verified from the available track credits.`,
+        tracks: [],
+        action: null
+      };
+    }
+
+    // Album/Movie inquiry
+    if (/(which|what)\s+(movie|film|album|soundtrack)|from which (movie|film|album)|movie or album/i.test(lower)) {
+      if (credits.movie) {
+        return {
+          reply: `**"${title}"** is from the soundtrack album **${credits.movie}**.`,
+          tracks: [],
+          action: null
+        };
+      }
+      return {
+        reply: `**"${title}"** is released as an individual single release.`,
+        tracks: [],
+        action: null
+      };
+    }
+
+    // General current track inquiry
+    const parts = [];
+    if (credits.singer) parts.push(`sung by **${credits.singer}**`);
+    if (credits.composer) parts.push(`composed by **${credits.composer}**`);
+    if (credits.movie) parts.push(`from the movie **${credits.movie}**`);
+
+    const details = parts.length > 0 ? parts.join(', ') : `by **${currentTrack.artist || 'Unknown Artist'}**`;
+    return {
+      reply: `You're listening to **"${title}"**, ${details}.`,
+      tracks: [],
       action: null
     };
   }

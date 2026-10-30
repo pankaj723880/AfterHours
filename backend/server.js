@@ -35,6 +35,7 @@ import { isSingleSong, filterSingleSongs } from './services/songFilter.js';
 import { liveUsersService } from './services/liveUsersService.js';
 import learningRoutes from './routes/learningIntelligence.js';
 import { learningEngineService } from './services/learningEngineService.js';
+import { CORE_CATALOG_TRACKS } from './services/catalogService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -867,7 +868,9 @@ const isKeyDead = (key) => {
   if (!deadApiKeys.has(key)) return false;
   const { reason, time } = deadApiKeys.get(key);
   if (reason === 'invalid') return true; // permanently bad key
-  if (reason === 'quota' && Date.now() - time < 60 * 60 * 1000) return true; // 1-hour quota cooldown
+  if (reason === 'quota' && Date.now() - time < 6 * 60 * 60 * 1000) return true; // 6-hour quota cooldown
+  if (reason === 'rate_limit' && Date.now() - time < 15 * 60 * 1000) return true; // 15-min 429 cooldown
+  if (reason === 'server_error' && Date.now() - time < 2 * 60 * 1000) return true; // 2-min 5xx cooldown
   deadApiKeys.delete(key);
   return false;
 };
@@ -896,6 +899,25 @@ const decodeHtml = (str = '') => {
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>');
+};
+
+const parsePageTokenOffset = (token) => {
+  if (!token || typeof token !== 'string') return 0;
+  try {
+    const clean = token.trim();
+    const buf = Buffer.from(clean, 'base64');
+    if (buf.length >= 2 && buf[0] === 8) {
+      return buf[1];
+    }
+    const num = parseInt(clean, 10);
+    if (!isNaN(num) && num > 0) return num;
+  } catch (e) {}
+  return 0;
+};
+
+const createPageToken = (offset) => {
+  const safeOffset = Math.min(Math.max(offset, 0), 250);
+  return Buffer.from([8, safeOffset, 16, 0]).toString('base64').replace(/=+$/, '');
 };
 
 // Curated fallbacks if YouTube scrapers hit 429 rate limit or keys are exhausted
@@ -928,11 +950,37 @@ const FALLBACK_RADIO = [
 ];
 
 const getCuratedFallback = (queryStr) => {
-  const q = queryStr.toLowerCase();
+  const q = (queryStr || '').toLowerCase().trim();
   if (q.includes('album') || q.includes('jukebox')) return FALLBACK_ALBUMS;
   if (q.includes('radio') || q.includes('lofi')) return FALLBACK_RADIO;
   if (q.includes('trending') || q.includes('hit')) return FALLBACK_TRENDING;
-  return null;
+
+  if (Array.isArray(CORE_CATALOG_TRACKS) && CORE_CATALOG_TRACKS.length > 0) {
+    const catalogMatches = CORE_CATALOG_TRACKS.filter(t => {
+      const title = (t.title || '').toLowerCase();
+      const artist = (t.artist || t.channel || '').toLowerCase();
+      const genre = (t.genre || '').toLowerCase();
+      const mood = (t.mood || '').toLowerCase();
+      return title.includes(q) || artist.includes(q) || genre.includes(q) || mood.includes(q) || q.includes(artist);
+    });
+
+    if (catalogMatches.length > 0) {
+      return catalogMatches.map(t => ({
+        id: { videoId: t.id || t.videoId },
+        snippet: {
+          title: t.title,
+          channelTitle: t.artist || t.channel || 'Loopra Curated',
+          thumbnails: {
+            high: { url: t.thumbnail },
+            medium: { url: t.thumbnail },
+            default: { url: t.thumbnail }
+          }
+        }
+      }));
+    }
+  }
+
+  return FALLBACK_TRENDING;
 };
 
 const sanitizeApiKey = (key) => {
@@ -1070,33 +1118,33 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
         }
       } catch (apiErr) {
         const status = apiErr.response?.status;
-        const errMsg = apiErr.response?.data?.error?.message || apiErr.message;
+        const errData = apiErr.response?.data?.error;
+        const errMsg = errData?.message || apiErr.message;
+        const errReason = errData?.errors?.[0]?.reason || '';
         console.warn(`[YouTube API Upstream] Key attempt failed (${status}):`, errMsg);
 
-        if (status === 400 || (errMsg && errMsg.includes('API key not valid'))) {
+        if (status === 400 || (errMsg && errMsg.includes('API key not valid')) || errReason === 'keyInvalid') {
           deadApiKeys.set(apiKey, { reason: 'invalid', time: Date.now() });
           metricsService.recordYouTube('invalid_key');
-        } else if (status === 403 || (errMsg && errMsg.includes('quota'))) {
+        } else if (status === 403 || errReason === 'quotaExceeded' || errReason === 'dailyLimitExceeded' || (errMsg && errMsg.includes('quota'))) {
           deadApiKeys.set(apiKey, { reason: 'quota', time: Date.now() });
           metricsService.recordYouTube('quota');
+        } else if (status === 429 || errReason === 'rateLimitExceeded' || errReason === 'userRateLimitExceeded') {
+          deadApiKeys.set(apiKey, { reason: 'rate_limit', time: Date.now() });
+          metricsService.recordYouTube('rate_limit');
+        } else if (status >= 500) {
+          deadApiKeys.set(apiKey, { reason: 'server_error', time: Date.now() });
+          metricsService.recordYouTube('server_error');
         }
       }
     }
   }
 
-  // If a continuation token was requested, but all YouTube API keys failed or were exhausted,
-  // do NOT fallback to page 1 scrapers. Return error so frontend can retry.
-  if (pageTokenStr) {
-    return res.status(503).json({
-      error: 'Search pagination service temporarily unavailable. Please retry.',
-      items: [],
-      nextPageToken: null
-    });
-  }
-
-  // 2. Pure JS yt-search fallback if official keys are exhausted, rate-limited, or unconfigured
+  // 2. Pure JS yt-search fallback with pagination support if official keys are exhausted, rate-limited, or unconfigured
   try {
-    const searchPromise = ytSearch({ query: queryStr, page: 1 });
+    const pageOffset = parsePageTokenOffset(pageTokenStr);
+    const searchPage = pageOffset > 0 ? Math.floor(pageOffset / 10) + 1 : 1;
+    const searchPromise = ytSearch({ query: queryStr, page: searchPage });
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('yt-search timeout after 10000ms')), 10000)
     );
@@ -1125,8 +1173,11 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
         };
       });
 
+      const nextOffset = (pageOffset > 0 ? pageOffset : 0) + chosen.length;
+      const nextPageToken = videos.length >= limit && nextOffset < 150 ? createPageToken(nextOffset) : null;
+
       metricsService.recordYouTube('scraper');
-      const resultPayload = { items, nextPageToken: null };
+      const resultPayload = { items, nextPageToken };
       setCachedSearch(cacheKey, resultPayload);
       return res.json(resultPayload);
     }
@@ -1138,7 +1189,13 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
   const fallback = getCuratedFallback(queryStr);
   if (fallback) {
     const singleFallback = filterSingleSongs(fallback);
-    const chosen = (singleFallback.length > 0 ? singleFallback : fallback).slice(0, limit).map(t => ({
+    const pool = singleFallback.length > 0 ? singleFallback : fallback;
+    const pageOffset = parsePageTokenOffset(pageTokenStr);
+    const pagedFallback = pool.slice(pageOffset, pageOffset + limit);
+    const nextOffset = pageOffset + pagedFallback.length;
+    const nextPageToken = nextOffset < pool.length ? createPageToken(nextOffset) : null;
+
+    const chosen = (pagedFallback.length > 0 ? pagedFallback : pool.slice(0, limit)).map(t => ({
       id: { videoId: t.id },
       snippet: {
         title: t.title,
@@ -1151,7 +1208,7 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
       }
     }));
     metricsService.recordYouTube('fallback');
-    const resultPayload = { items: chosen, nextPageToken: null };
+    const resultPayload = { items: chosen, nextPageToken };
     setCachedSearch(cacheKey, resultPayload);
     return res.json(resultPayload);
   }

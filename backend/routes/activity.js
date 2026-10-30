@@ -83,16 +83,15 @@ router.get('/feed', async (req, res) => {
 // 2. POST /api/activity/log - Log a user activity (Authenticated)
 router.post('/log', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.userId || req.user.id;
-    const { type, track, playlist } = req.body;
+    const user = req.user;
+    if (!user || user.status !== 'active') {
+      return res.status(403).json({ error: 'Account inactive or not found' });
+    }
+    const userId = user._id || user.userId || user.id;
+    const { type, track, playlist } = req.body || {};
 
     if (!type || !['listen', 'like', 'playlist_create', 'playlist_update'].includes(type)) {
       return res.status(400).json({ error: 'Valid activity type is required' });
-    }
-
-    const user = await User.findById(userId).lean();
-    if (!user || user.status !== 'active') {
-      return res.status(403).json({ error: 'Account inactive or not found' });
     }
 
     // Privacy rule: Only log public activities if user has opted in to sharing
@@ -110,7 +109,7 @@ router.post('/log', authenticateToken, async (req, res) => {
         type,
         'track.id': trackId,
         createdAt: { $gte: fiveMinutesAgo }
-      });
+      }).maxTimeMS(2000);
 
       if (existing) {
         existing.updatedAt = new Date();
@@ -120,7 +119,7 @@ router.post('/log', authenticateToken, async (req, res) => {
     }
 
     const activity = new Activity({
-      userId: user._id,
+      userId,
       username: user.username,
       displayName: user.displayName || user.username,
       avatarUrl: user.avatarUrl || '',
@@ -143,10 +142,29 @@ router.post('/log', authenticateToken, async (req, res) => {
     });
 
     await activity.save();
+
+    // Broadcast real-time activity to all connected clients
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('activity_feed', {
+        id: activity._id,
+        user: {
+          id: user._id,
+          username: user.username,
+          displayName: user.displayName || user.username,
+          avatarUrl: user.avatarUrl || ''
+        },
+        type,
+        track: activity.track,
+        playlist: activity.playlist,
+        createdAt: activity.createdAt
+      });
+    }
+
     res.status(201).json({ logged: true, id: activity._id });
   } catch (err) {
     console.error('[Activity Log Error]:', err.message);
-    res.status(500).json({ error: 'Failed to record activity' });
+    res.status(500).json({ error: 'Failed to record activity: ' + err.message });
   }
 });
 

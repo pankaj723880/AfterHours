@@ -20,8 +20,8 @@ const getClientIp = (req) => {
 // 1. PUBLIC CMS ENDPOINTS (No Auth Required)
 // ==========================================
 
-// Get public website configuration
-router.get('/public-config', async (req, res) => {
+// Get public website configuration (with backward compatible /config alias)
+router.get(['/public-config', '/config'], async (req, res) => {
   try {
     res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.set('Pragma', 'no-cache');

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { aiMusicCompanionClient } from '../../services/aiMusicCompanionClient';
 
@@ -85,12 +85,37 @@ export default function LoopraAiCompanion({
   onToggleLike,
   isLiked,
   onAddToPlaylist,
-  showToast
+  showToast,
+  isBottomPlayerVisible = false
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [dimensions, setDimensions] = useState(loadSavedDimensions);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 768);
   const [isResizing, setIsResizing] = useState(false);
+
+  // Dynamic clearance for bottom player and mobile navigation
+  const bottomOffsets = useMemo(() => {
+    const isMob = typeof window !== 'undefined' && window.innerWidth <= 768;
+    if (isMob) {
+      // MobileBottomNav is 56px (h-14).
+      // Bottom mini player (when active) is ~64px + 8px gap.
+      const btnBottom = isBottomPlayerVisible
+        ? 'calc(136px + env(safe-area-inset-bottom, 0px))'
+        : 'calc(70px + env(safe-area-inset-bottom, 0px))';
+      const panelBottom = isBottomPlayerVisible
+        ? 'calc(136px + 56px + 10px + env(safe-area-inset-bottom, 0px))'
+        : 'calc(70px + 56px + 10px + env(safe-area-inset-bottom, 0px))';
+      const maxH = isBottomPlayerVisible
+        ? 'calc(100dvh - 215px - env(safe-area-inset-bottom, 0px))'
+        : 'calc(100dvh - 150px - env(safe-area-inset-bottom, 0px))';
+      return { btnBottom, panelBottom, maxH };
+    }
+    // Desktop:
+    const btnBottom = isBottomPlayerVisible ? '88px' : '24px';
+    const panelBottom = isBottomPlayerVisible ? 'calc(88px + 56px + 12px)' : 'calc(24px + 56px + 12px)';
+    const maxH = isBottomPlayerVisible ? 'calc(100vh - 170px)' : 'calc(100vh - 110px)';
+    return { btnBottom, panelBottom, maxH };
+  }, [isBottomPlayerVisible]);
 
   const resizeRef = useRef({
     isResizing: false,
@@ -512,6 +537,8 @@ export default function LoopraAiCompanion({
           style={{
             '--chat-panel-width': `${dimensions.width}px`,
             '--chat-panel-height': `${dimensions.height}px`,
+            '--ai-panel-bottom': bottomOffsets.panelBottom,
+            '--chat-panel-max-height': bottomOffsets.maxH,
             width: `${dimensions.width}px`,
             height: `${dimensions.height}px`
           }}
@@ -613,14 +640,14 @@ export default function LoopraAiCompanion({
             )}
 
             {/* CHAT MESSAGES STREAM */}
-            <div ref={chatScrollRef} className="flex-1 p-4 overflow-y-auto space-y-4 text-xs scroll-smooth select-text">
+            <div ref={chatScrollRef} className="flex-1 min-h-0 p-3.5 sm:p-4 overflow-y-auto overscroll-contain space-y-3.5 text-xs scroll-smooth select-text custom-scrollbar">
                 {messages.map((msg) => (
                   <div
                     key={msg.id}
-                    className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+                    className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} max-w-full`}
                   >
                     <div
-                      className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 leading-relaxed shadow-sm ${
+                      className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 leading-relaxed shadow-sm break-words ${
                         msg.role === 'user'
                           ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-neutral-950 font-medium rounded-br-none'
                           : 'bg-neutral-900/90 text-neutral-200 border border-white/10 rounded-bl-none'
@@ -642,9 +669,9 @@ export default function LoopraAiCompanion({
                       )}
                     </div>
 
-                    {/* PLAYABLE RECOMMENDATION CARDS */}
+                    {/* PLAYABLE RECOMMENDATION CARDS (Only rendered when tracks exist) */}
                     {msg.tracks && msg.tracks.length > 0 && (
-                      <div className="w-full mt-2 space-y-2">
+                      <div className="w-full mt-2.5 space-y-2 max-w-full overflow-hidden">
                         {msg.tracks.map((track, idx) => {
                           const isFav = isLiked ? isLiked(track) : false;
                           const activePlaying = isTrackPlaying(track);
@@ -653,14 +680,14 @@ export default function LoopraAiCompanion({
                           return (
                             <div
                               key={track.id || track.videoId || idx}
-                              className={`flex items-center gap-3 p-2.5 rounded-xl transition group ${
+                              className={`flex items-center justify-between gap-2.5 p-2 sm:p-2.5 rounded-xl transition group max-w-full overflow-hidden ${
                                 activePlaying
                                   ? 'bg-amber-500/15 border border-amber-500/50 shadow-md shadow-amber-500/10'
-                                  : 'bg-neutral-900/70 hover:bg-neutral-800/80 border border-white/10 hover:border-amber-500/30'
+                                  : 'bg-neutral-900/80 hover:bg-neutral-800/90 border border-white/10 hover:border-amber-500/30'
                               }`}
                             >
                               {/* Track Thumbnail with Play/Pause Overlay */}
-                              <div className="relative w-11 h-11 rounded-lg overflow-hidden shrink-0 bg-neutral-800">
+                              <div className="relative w-10 h-10 sm:w-11 sm:h-11 rounded-lg overflow-hidden shrink-0 bg-neutral-800">
                                 <img
                                   src={track.thumbnail || `https://i.ytimg.com/vi/${track.id || track.videoId}/hqdefault.jpg`}
                                   alt={track.title}
@@ -681,7 +708,7 @@ export default function LoopraAiCompanion({
                               </div>
 
                               {/* Title & Artist */}
-                              <div className="flex-1 min-w-0">
+                              <div className="flex-1 min-w-0 pr-1">
                                 <h5 className={`font-semibold truncate text-xs transition ${activePlaying ? 'text-amber-400' : 'text-white group-hover:text-amber-300'}`}>
                                   {track.title}
                                 </h5>
@@ -711,7 +738,7 @@ export default function LoopraAiCompanion({
 
                                 <button
                                   onClick={() => handleCardPlayPauseClick(track)}
-                                  className={`px-2.5 py-1.5 font-bold text-[11px] rounded-lg shadow-sm active:scale-95 transition flex items-center gap-1 cursor-pointer ${
+                                  className={`px-2.5 py-1.5 font-bold text-[11px] rounded-lg shadow-sm active:scale-95 transition flex items-center gap-1 cursor-pointer shrink-0 ${
                                     activePlaying
                                       ? 'bg-neutral-800 text-amber-400 border border-amber-500/40 hover:bg-neutral-700'
                                       : 'bg-amber-500 hover:bg-amber-400 text-neutral-950'
@@ -760,14 +787,28 @@ export default function LoopraAiCompanion({
               </div>
 
             {/* Quick Suggestion Chips */}
-            <div className="px-3 py-2 bg-neutral-900/40 border-t border-white/5 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0 text-[11px]">
+            <div className="px-3 py-2 bg-neutral-900/60 border-t border-white/5 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0 text-[11px]">
               {currentSong && (
-                <button
-                  onClick={() => handleSendMessage("Who is singing this song?")}
-                  className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
-                >
-                  🎙️ Who is singing?
-                </button>
+                <>
+                  <button
+                    onClick={() => handleSendMessage("Who is singing this song?")}
+                    className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
+                  >
+                    🎙️ Who is singing?
+                  </button>
+                  <button
+                    onClick={() => handleSendMessage("Who composed this song?")}
+                    className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
+                  >
+                    🎼 Who composed it?
+                  </button>
+                  <button
+                    onClick={() => handleSendMessage("Recommend songs similar to this")}
+                    className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
+                  >
+                    ✨ Similar Songs
+                  </button>
+                </>
               )}
               <button
                 onClick={() => handleSendMessage("Recommend songs for a rainy evening mood")}
@@ -776,16 +817,16 @@ export default function LoopraAiCompanion({
                 🌧️ Rainy Evening
               </button>
               <button
-                onClick={() => handleSendMessage("Suggest 5 underrated 90s bollywood gems")}
-                className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
-              >
-                📻 90s Gems
-              </button>
-              <button
                 onClick={() => handleSendMessage("Suggest an upbeat party playlist")}
                 className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
               >
                 🔥 Party Vibes
+              </button>
+              <button
+                onClick={() => handleSendMessage("Suggest 5 underrated 90s bollywood gems")}
+                className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
+              >
+                📻 90s Gems
               </button>
             </div>
 
@@ -883,6 +924,9 @@ export default function LoopraAiCompanion({
         <button
           type="button"
           onClick={handleButtonClick}
+          style={{
+            '--ai-button-bottom': bottomOffsets.btnBottom
+          }}
           className={`ai-assistant-floating-button group relative flex items-center justify-center w-14 h-14 rounded-full shadow-2xl active:scale-95 cursor-pointer pointer-events-auto transition-colors duration-150 ${
             isOpen
               ? 'bg-amber-500 text-black shadow-amber-500/40'

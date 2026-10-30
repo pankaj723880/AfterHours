@@ -55,7 +55,7 @@ const userPlaybackEventSchema = new mongoose.Schema({
   },
   eventType: {
     type: String,
-    enum: ['play_start', 'progress', 'pause', 'resume', 'seek', 'completed', 'skip', 'stop'],
+    enum: ['play_start', 'progress', 'pause', 'resume', 'seek', 'completed', 'skip', 'stop', 'like', 'dislike', 'repeat'],
     required: true,
     index: true
   },

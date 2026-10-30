@@ -7454,6 +7454,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         isLiked={isSongLiked}
         onAddToPlaylist={handleAddToPlaylistClick}
         showToast={showToast}
+        isBottomPlayerVisible={isBottomPlayerVisible}
       />
 
       {toastMessage && (

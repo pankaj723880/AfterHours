@@ -82,7 +82,10 @@ export const recommendationEngine = {
     }
 
     // 3. Assemble candidate tracks
-    const candidates = await catalogService.buildCandidatePool(userProfile);
+    const candidates = await catalogService.buildCandidatePool({
+      userPreferences: userProfile,
+      excludedIds: new Set(userProfile.dislikedTrackIds || [])
+    });
 
     // 4. If new user with no history, return clean Discovery Starter Mix
     if (userProfile.isNewUser) {
@@ -247,13 +250,45 @@ export const recommendationEngine = {
 
     // Because You Listened To:
     const recentBase = userProfile.recentTracks?.[0] || null;
-    const relatedToRecent = recentBase
-      ? candidates.filter(t => t.id !== recentBase.trackId).slice(0, 4).map(t => ({
-          ...t,
-          reason: `Inspired by "${recentBase.title}"`,
-          source: 'hybrid'
-        }))
-      : [];
+    const baseArt = recentBase ? (recentBase.artist || '').toLowerCase() : '';
+    const usedInOtherSections = new Set([
+      ...madeForYou.map(m => m.id || m.videoId),
+      ...dailyMix.map(d => d.id || d.videoId)
+    ]);
+
+    let relatedToRecent = [];
+    if (recentBase) {
+      const baseId = recentBase.trackId;
+      // First try same artist or related sound
+      const artistMatches = candidates.filter(t => {
+        const tId = t.id || t.videoId;
+        if (tId === baseId || usedInOtherSections.has(tId)) return false;
+        const tArt = (t.artist || t.channel || '').toLowerCase();
+        return baseArt && (tArt.includes(baseArt) || baseArt.includes(tArt));
+      });
+
+      // Then supplement with adjacent candidates
+      const otherMatches = candidates.filter(t => {
+        const tId = t.id || t.videoId;
+        return tId !== baseId && !usedInOtherSections.has(tId) && !artistMatches.some(a => (a.id || a.videoId) === tId);
+      });
+
+      relatedToRecent = [...artistMatches, ...otherMatches].slice(0, 4).map(t => ({
+        ...t,
+        reason: `Inspired by "${recentBase.title}"`,
+        source: 'hybrid'
+      }));
+    }
+
+    // Favourite artists section: tracks matching user top artists
+    const favouriteArtistsTracks = candidates.filter(t => {
+      const art = (t.artist || t.channel || '').toLowerCase();
+      return topArtistNames.some(a => art.includes(a));
+    }).slice(0, 8).map(t => ({
+      ...t,
+      reason: `Because you love ${t.artist}`,
+      source: 'hybrid'
+    }));
 
     return {
       source: 'catalog_fallback',
@@ -276,7 +311,7 @@ export const recommendationEngine = {
           },
           recommendations: relatedToRecent
         } : null,
-        favouriteArtists: madeForYou.filter(m => topArtistNames.some(a => (m.artist || '').toLowerCase().includes(a))),
+        favouriteArtists: favouriteArtistsTracks.length > 0 ? favouriteArtistsTracks : madeForYou.filter(m => topArtistNames.some(a => (m.artist || '').toLowerCase().includes(a))),
         moreLikeRecent: relatedToRecent
       }
     };

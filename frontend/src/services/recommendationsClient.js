@@ -60,13 +60,16 @@ export const recommendationsClient = {
   },
 
   /**
-   * Sends a listening event to the backend.
+   * Sends a listening event to the backend with timeout protection.
    */
   async logListeningEvent(backendUrl, token, eventData) {
     if (!token || !eventData?.trackId || !eventData?.title) return;
 
-    const url = `${backendUrl.replace(/\/+$/, '')}/api/listening-events`;
+    const base = (backendUrl || '').replace(/\/+$/, '');
+    const url = `${base}/api/listening-events`;
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
       await fetch(url, {
         method: 'POST',
         headers: {
@@ -74,10 +77,12 @@ export const recommendationsClient = {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(eventData),
+        signal: controller.signal,
         keepalive: true
       });
+      clearTimeout(timeoutId);
     } catch (err) {
-      // Non-blocking background telemetry notice
+      // Non-blocking background telemetry notice - player remains unaffected
     }
   },
 

@@ -376,9 +376,20 @@ export const catalogService = {
     let excludedIds = new Set();
     let excludedTitles = new Set();
 
-    if (optionsOrPreferences && typeof optionsOrPreferences === 'object' && ('message' in optionsOrPreferences || 'excludedKeys' in optionsOrPreferences)) {
-      userPreferences = optionsOrPreferences.userPreferences || null;
+    let currentTrack = null;
+    if (optionsOrPreferences && typeof optionsOrPreferences === 'object') {
+      if (optionsOrPreferences.userPreferences) {
+        userPreferences = optionsOrPreferences.userPreferences;
+      } else if (
+        optionsOrPreferences.topArtists ||
+        optionsOrPreferences.topGenres ||
+        optionsOrPreferences.recentTracks ||
+        optionsOrPreferences.favouriteTrackIds
+      ) {
+        userPreferences = optionsOrPreferences;
+      }
       message = optionsOrPreferences.message || '';
+      currentTrack = optionsOrPreferences.currentTrack || null;
       excludedKeys = optionsOrPreferences.excludedKeys || new Set();
       excludedIds = optionsOrPreferences.excludedIds || new Set();
       excludedTitles = optionsOrPreferences.excludedTitles || new Set();
@@ -388,6 +399,23 @@ export const catalogService = {
     }
 
     const intent = this.extractRecommendationIntent(message);
+
+    // If user asked for songs similar to current playing song, seed queries with current track
+    if (currentTrack && (currentTrack.title || currentTrack.artist)) {
+      const lowerM = (message || '').toLowerCase();
+      if (lowerM.includes('similar') || lowerM.includes('like this') || lowerM.includes('more like')) {
+        const seedQueries = [];
+        if (currentTrack.artist && currentTrack.artist !== 'Unknown' && currentTrack.artist !== 'Various Artists') {
+          seedQueries.push(`${currentTrack.artist} hit single songs official`);
+          seedQueries.push(`songs like ${currentTrack.title} ${currentTrack.artist} official video`);
+        } else if (currentTrack.title) {
+          seedQueries.push(`songs like ${currentTrack.title} official video`);
+        }
+        if (seedQueries.length > 0) {
+          intent.dynamicQueries = [...seedQueries, ...(intent.dynamicQueries || [])].slice(0, 3);
+        }
+      }
+    }
     const candidateMap = new Map();
 
     // 1. Fetch dynamic candidates matching user intent
