@@ -25,17 +25,7 @@ export default function ListeningStatsModal({
 
   const canvasRef = useRef(null);
   const isFetchingRef = useRef(false);
-
-  // Live session listening seconds accumulator for open modal
-  const [liveSessionSeconds, setLiveSessionSeconds] = useState(0);
-
-  useEffect(() => {
-    if (!isPlaying) return;
-    const interval = setInterval(() => {
-      setLiveSessionSeconds(prev => prev + 1);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [isPlaying]);
+  const hasLoadedRef = useRef(false);
 
   const loadStats = useCallback(async (force = false) => {
     if (isFetchingRef.current) return;
@@ -57,8 +47,8 @@ export default function ListeningStatsModal({
         setLastUpdated(data.updatedAt ? new Date(data.updatedAt) : new Date());
       }
     } catch (err) {
-      console.warn('[ListeningStatsModal] Refresh error:', err.message);
-      setErrorMessage('Could not refresh latest stats. Showing last saved data.');
+      console.warn('[ListeningStatsModal] Refresh notice:', err.message);
+      setErrorMessage('Could not refresh latest stats. Showing saved records.');
       if (showToast) showToast('Could not refresh stats right now');
     } finally {
       setIsRefreshing(false);
@@ -67,7 +57,13 @@ export default function ListeningStatsModal({
   }, [backendUrl, authToken, user, showToast]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      hasLoadedRef.current = false;
+      return;
+    }
+
+    if (hasLoadedRef.current) return;
+    hasLoadedRef.current = true;
 
     // Instant paint from local cache
     const local = listeningStatsService.computeLocalStats(user);
@@ -80,21 +76,9 @@ export default function ListeningStatsModal({
     loadStats(false);
   }, [isOpen, loadStats, user]);
 
-  // Adjust display metrics with real-time live playback seconds
-  const liveHoursDisplay = useMemo(() => {
-    const baseSec = (activeTab === 'recap' ? weeklyRecap?.totalListeningSeconds : stats?.totalListeningSeconds) || 0;
-    const totalSec = baseSec + liveSessionSeconds;
-    return (totalSec / 3600).toFixed(1);
-  }, [activeTab, weeklyRecap?.totalListeningSeconds, stats?.totalListeningSeconds, liveSessionSeconds]);
-
   const handleManualRefresh = () => {
     if (isRefreshing) return;
     loadStats(true);
-  };
-
-  const formatLastUpdated = (date) => {
-    if (!date) return 'Just now';
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   const handleTrackPlayClick = (track, e) => {
@@ -160,7 +144,7 @@ export default function ListeningStatsModal({
 
       ctx.fillStyle = '#a3a3a3';
       ctx.font = '600 30px Inter, sans-serif';
-      ctx.fillText('WEEKLY RECAP 2026', 90, 185);
+      ctx.fillText('WEEKLY RECAP', 90, 185);
 
       // 3. Hero Header
       ctx.fillStyle = '#ffffff';
@@ -174,7 +158,7 @@ export default function ListeningStatsModal({
 
       ctx.fillStyle = '#d4d4d8';
       ctx.font = '400 32px Inter, sans-serif';
-      ctx.fillText('Beats, moods and memories that made your week special.', 90, 450);
+      ctx.fillText('Genuine beats and memories from your Loopra sessions.', 90, 450);
 
       // 4. Stat Badges Grid (2x2)
       const renderStatBox = (x, y, w, h, label, val, sub) => {
@@ -199,15 +183,16 @@ export default function ListeningStatsModal({
         ctx.fillText(sub, x + 40, y + 180);
       };
 
-      const hrs = weeklyRecap?.totalHours || liveHoursDisplay || '0.0';
+      const hrs = weeklyRecap?.totalHours || '0.0';
       const plays = weeklyRecap?.totalPlays || stats?.totalPlays || 0;
       const tracks = weeklyRecap?.distinctTracksCount || stats?.distinctTracksCount || 0;
-      const peak = weeklyRecap?.peakDay || 'This Week';
+      const peak = weeklyRecap?.peakDay && weeklyRecap.peakDay !== 'None' ? weeklyRecap.peakDay : 'None';
+      const peakHours = weeklyRecap?.peakDayHours || '0.0';
 
-      renderStatBox(90, 520, 420, 220, 'Hours Listened', `${hrs}h`, 'vs last week');
+      renderStatBox(90, 520, 420, 220, 'Hours Listened', `${hrs}h`, 'This week');
       renderStatBox(570, 520, 420, 220, 'Total Plays', `${plays}`, 'Valid Plays');
       renderStatBox(90, 780, 420, 220, 'Unique Tracks', `${tracks}`, 'Diverse taste');
-      renderStatBox(570, 780, 420, 220, 'Peak Day', `${peak}`, `${weeklyRecap?.peakDayHours || '3.5'}h peak`);
+      renderStatBox(570, 780, 420, 220, 'Peak Day', `${peak}`, `${peakHours}h peak`);
 
       // 5. Top Song Banner
       const topSong = weeklyRecap?.topTracks?.[0] || stats?.topTracks?.[0];
@@ -225,12 +210,12 @@ export default function ListeningStatsModal({
 
       ctx.fillStyle = '#ffffff';
       ctx.font = '800 48px Outfit, Inter, sans-serif';
-      const songTitle = topSong?.title ? (topSong.title.length > 25 ? topSong.title.slice(0, 24) + '...' : topSong.title) : 'Tum Hi Ho';
+      const songTitle = topSong?.title ? (topSong.title.length > 25 ? topSong.title.slice(0, 24) + '...' : topSong.title) : 'Loopra Music Sanctuary';
       ctx.fillText(songTitle, 140, 1185);
 
       ctx.fillStyle = '#a1a1aa';
       ctx.font = '500 32px Inter, sans-serif';
-      const songArtist = topSong?.artist ? (topSong.artist.length > 30 ? topSong.artist.slice(0, 29) + '...' : topSong.artist) : 'Arijit Singh';
+      const songArtist = topSong?.artist ? (topSong.artist.length > 30 ? topSong.artist.slice(0, 29) + '...' : topSong.artist) : 'Discovering sounds';
       ctx.fillText(songArtist, 140, 1245);
 
       // 6. Top Artist Banner
@@ -249,12 +234,14 @@ export default function ListeningStatsModal({
 
       ctx.fillStyle = '#ffffff';
       ctx.font = '800 48px Outfit, Inter, sans-serif';
-      const artName = topArtist?.artist ? (topArtist.artist.length > 25 ? topArtist.artist.slice(0, 24) + '...' : topArtist.artist) : 'Arijit Singh';
+      const artName = topArtist?.artist ? (topArtist.artist.length > 25 ? topArtist.artist.slice(0, 24) + '...' : topArtist.artist) : 'Various Artists';
       ctx.fillText(artName, 140, 1485);
 
       ctx.fillStyle = '#f59e0b';
       ctx.font = '600 28px Inter, sans-serif';
-      ctx.fillText(`${topArtist?.count || topArtist?.plays || 12} plays • ${(topArtist?.percentage || 35)}% of listening`, 140, 1530);
+      const artPlays = topArtist?.plays || topArtist?.count || 0;
+      const artPct = topArtist?.percentage || 0;
+      ctx.fillText(`${artPlays} plays • ${artPct}% of listening`, 140, 1530);
 
       // 7. Footer Call to Action
       ctx.fillStyle = '#ffffff';
@@ -264,7 +251,7 @@ export default function ListeningStatsModal({
 
       ctx.fillStyle = '#71717a';
       ctx.font = '500 24px Inter, sans-serif';
-      ctx.fillText('Listen retro Bollywood & high-vibe radio at loopra.vercel.app', W / 2, 1765);
+      ctx.fillText('Listen to verified single songs at loopra.vercel.app', W / 2, 1765);
       ctx.textAlign = 'left';
 
       try {
@@ -296,53 +283,45 @@ export default function ListeningStatsModal({
         await navigator.share({
           files: [file],
           title: 'My Loopra Music Recap',
-          text: `🎶 Check out my Loopra Weekly Recap: ${weeklyRecap?.totalHours || liveHoursDisplay}h listened on Loopra!`
+          text: `🎶 Check out my Loopra Music Recap: ${weeklyRecap?.totalHours || '0.0'}h listened on Loopra!`
         });
         return;
       }
     } catch (e) {}
 
-    // Fallback: Copy summary
-    const summaryText = `🎶 My Loopra Weekly Recap:\n⏱️ ${weeklyRecap?.totalHours || liveHoursDisplay} hrs listened\n🎵 ${weeklyRecap?.distinctTracksCount || 0} distinct tracks\n⭐ Top track: ${weeklyRecap?.topTracks?.[0]?.title || 'Tum Hi Ho'}\nCheck out loopra.vercel.app!`;
+    const summaryText = `🎶 My Loopra Weekly Recap:\n⏱️ ${weeklyRecap?.totalHours || '0.0'} hrs listened\n🎵 ${weeklyRecap?.distinctTracksCount || 0} distinct tracks\nCheck out loopra.vercel.app!`;
     navigator.clipboard?.writeText(summaryText);
     if (showToast) showToast('Recap text copied to clipboard!');
   };
 
-  const targetData = activeTab === 'recap' ? weeklyRecap : stats;
   const topTracksList = activeTab === 'recap' ? (weeklyRecap?.topTracks || []) : (stats?.topTracks || []);
   const topArtistsList = activeTab === 'recap' ? (weeklyRecap?.topArtists || []) : (stats?.topArtists || []);
-  const moodsList = weeklyRecap?.topMoods || [
-    { mood: 'Romantic', percentage: 42, icon: '❤️' },
-    { mood: 'Chill', percentage: 24, icon: '🍃' },
-    { mood: 'Sad', percentage: 14, icon: '☁️' },
-    { mood: 'Energetic', percentage: 12, icon: '⚡' },
-    { mood: 'Nostalgic', percentage: 8, icon: '⏱️' }
-  ];
+  const moodsList = weeklyRecap?.topMoods || [];
 
-  // Daily activity bars for the chart
+  // Daily activity bars for the chart (STRICTLY genuine data)
   const dailyBars = useMemo(() => {
     if (weeklyRecap?.dailyActivity && weeklyRecap.dailyActivity.length === 7) {
       return weeklyRecap.dailyActivity;
     }
-    // Fallback Mon-Sun
     const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return dayNames.map((dayLabel, i) => ({
       dayIndex: i,
       dayLabel,
-      dayShort: `${26 + i} Oct`,
-      hours: [1.2, 2.1, 0.8, 3.6, 5.2, 2.9, 1.4][i] || 0,
-      plays: [6, 12, 5, 20, 32, 16, 8][i] || 0,
-      isPeak: i === 4
+      dayShort: '',
+      hours: 0,
+      plays: 0,
+      seconds: 0,
+      isPeak: false
     }));
   }, [weeklyRecap?.dailyActivity]);
 
   const maxChartValue = useMemo(() => {
     if (activityMetric === 'hours') {
-      const maxH = Math.max(...dailyBars.map(d => d.hours || 0), 1);
-      return Math.ceil(maxH * 1.2);
+      const maxH = Math.max(...dailyBars.map(d => d.hours || 0), 0);
+      return maxH > 0 ? Math.ceil(maxH * 1.25) : 1;
     }
-    const maxP = Math.max(...dailyBars.map(d => d.plays || 0), 1);
-    return Math.ceil(maxP * 1.2);
+    const maxP = Math.max(...dailyBars.map(d => d.plays || 0), 0);
+    return maxP > 0 ? Math.ceil(maxP * 1.25) : 5;
   }, [dailyBars, activityMetric]);
 
   if (!isOpen) return null;
@@ -359,54 +338,33 @@ export default function ListeningStatsModal({
         className="w-full max-w-5xl bg-[#0b0c10] border border-amber-500/20 rounded-3xl overflow-hidden shadow-[0_0_60px_rgba(245,158,11,0.12)] flex flex-col my-auto max-h-[92vh] relative text-white"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Subtle top ambient radial lighting */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-36 bg-gradient-to-b from-amber-500/10 via-orange-500/5 to-transparent blur-3xl pointer-events-none" />
-
-        {/* 1. TOP HEADER */}
-        <div className="p-4 sm:p-5 bg-[#0e0f16]/95 border-b border-neutral-800/80 flex flex-wrap items-center justify-between gap-3 relative z-10">
-          <div className="flex items-center gap-3 min-w-0">
-            {/* Equalizer Badge */}
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500/30 via-orange-500/20 to-neutral-900 border border-amber-500/40 flex items-center justify-center shadow-lg shadow-amber-500/15 shrink-0">
-              <div className="flex items-end gap-0.5 h-4">
-                <span className="w-1 bg-amber-400 rounded-full h-3 animate-pulse" />
-                <span className="w-1 bg-amber-300 rounded-full h-4" />
-                <span className="w-1 bg-amber-500 rounded-full h-2 animate-pulse" />
-              </div>
+        {/* 1. TOP HEADER BAR */}
+        <div className="p-4 sm:p-5 bg-gradient-to-r from-[#12131c] via-[#0f1017] to-[#14120f] border-b border-amber-500/20 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-neutral-950 font-black shadow-lg shadow-amber-500/20 text-lg">
+              📊
             </div>
-
-            <div className="min-w-0">
+            <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-extrabold text-base sm:text-lg text-white tracking-tight">Listening Insights & Recap</h3>
-                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-500 to-orange-500 text-neutral-950 shadow-sm shrink-0">
-                  PRO
+                <h3 className="text-base sm:text-lg font-black text-white font-display tracking-tight">
+                  Listening Insights & Recap
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider">
+                  Verified Data
                 </span>
-                {user?.username && (
-                  <span className="text-[10px] font-mono text-neutral-400 bg-neutral-900/80 px-2 py-0.5 rounded-md border border-neutral-800 hidden sm:inline">
-                    @{user.username}
-                  </span>
-                )}
               </div>
-              <p className="text-xs text-neutral-400 font-medium truncate">Your music journey, beautifully summarised</p>
+              <p className="text-xs text-neutral-400">
+                {lastUpdated ? `Last updated: ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Authentic user playback analytics'}
+              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
-            {/* Live Indicator */}
-            <div className="hidden md:flex flex-col items-end text-right">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                <span>Live • Auto updates every 10 min</span>
-              </div>
-              <span className="text-[10px] text-neutral-400">
-                Last updated: {lastUpdated ? formatLastUpdated(lastUpdated) : 'Just now'}
-              </span>
-            </div>
-
+          <div className="flex items-center gap-2">
             {/* Refresh Button */}
             <button
               onClick={handleManualRefresh}
               disabled={isRefreshing}
-              title="Force sync latest listening records"
+              title="Sync latest listening records"
               className={`px-3.5 py-1.5 rounded-2xl bg-neutral-900/90 hover:bg-neutral-800/90 border border-neutral-700/80 hover:border-amber-500/50 text-neutral-200 hover:text-white transition flex items-center gap-2 text-xs font-semibold shadow-inner cursor-pointer ${
                 isRefreshing ? 'opacity-60 cursor-not-allowed' : ''
               }`}
@@ -428,8 +386,8 @@ export default function ListeningStatsModal({
             {/* Close Button */}
             <button
               onClick={onClose}
-              aria-label="Close modal"
-              className="w-8 h-8 rounded-full bg-neutral-900 border border-neutral-800 hover:border-neutral-700 text-neutral-400 hover:text-white flex items-center justify-center transition cursor-pointer"
+              className="w-8 h-8 rounded-full bg-neutral-900/80 hover:bg-neutral-800 text-neutral-400 hover:text-white transition flex items-center justify-center border border-neutral-800 cursor-pointer text-sm"
+              aria-label="Close"
             >
               ✕
             </button>
@@ -440,7 +398,7 @@ export default function ListeningStatsModal({
         {errorMessage && (
           <div className="px-5 py-2 bg-amber-500/10 border-b border-amber-500/20 text-amber-300 text-xs flex items-center justify-between">
             <span>{errorMessage}</span>
-            <button onClick={() => setErrorMessage(null)} className="text-amber-400 hover:text-amber-200">✕</button>
+            <button onClick={() => setErrorMessage(null)} className="text-amber-400 hover:text-white ml-2">✕</button>
           </div>
         )}
 
@@ -450,7 +408,7 @@ export default function ListeningStatsModal({
           <div className="flex items-center gap-2">
             <button
               onClick={() => setActiveTab('recap')}
-              className={`px-4 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+              className={`px-4 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'recap'
                   ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 shadow-md shadow-amber-500/20'
                   : 'bg-neutral-900/80 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
@@ -460,7 +418,7 @@ export default function ListeningStatsModal({
             </button>
             <button
               onClick={() => setActiveTab('all-time')}
-              className={`px-4 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+              className={`px-4 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'all-time'
                   ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 shadow-md shadow-amber-500/20'
                   : 'bg-neutral-900/80 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
@@ -473,7 +431,7 @@ export default function ListeningStatsModal({
           {/* Date Range Badge */}
           <div className="text-xs text-neutral-400 font-mono flex items-center gap-1.5 bg-neutral-900/60 px-3 py-1 rounded-lg border border-neutral-800/60">
             <span>📅</span>
-            <span>{weeklyRecap?.dateRangeLabel || 'Mon, 27 Oct – Sun, 02 Nov 2026'}</span>
+            <span>{activeTab === 'recap' ? (weeklyRecap?.dateRangeLabel || 'Current Week') : 'Lifetime Listening'}</span>
           </div>
         </div>
 
@@ -483,34 +441,33 @@ export default function ListeningStatsModal({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
             {/* Hero Banner (30% on desktop) */}
             <div className="lg:col-span-4 bg-gradient-to-br from-neutral-900/90 via-[#13141f] to-amber-950/40 border border-amber-500/20 rounded-2xl p-4 sm:p-5 relative overflow-hidden flex flex-col justify-between shadow-lg">
-              {/* Decorative background glow */}
               <div className="absolute -right-8 -top-8 w-40 h-40 bg-amber-500/15 rounded-full blur-2xl pointer-events-none" />
 
               <div>
                 <h2 className="text-2xl sm:text-3xl font-black text-white font-display tracking-tight leading-tight">
-                  Your Week <br />
+                  {activeTab === 'recap' ? 'Your Week' : 'All-Time'} <br />
                   <span className="bg-gradient-to-r from-amber-400 via-amber-300 to-orange-400 bg-clip-text text-transparent">
                     in Music
                   </span>
                 </h2>
-                <p className="text-xs text-neutral-400 mt-1.5 max-w-[210px] leading-relaxed">
-                  Beats, moods and memories that made your week special.
+                <p className="text-xs text-neutral-400 mt-1.5 max-w-[220px] leading-relaxed">
+                  {activeTab === 'recap'
+                    ? 'Genuine beats and memories from your weekly playback.'
+                    : 'Your complete lifetime music journey on Loopra.'}
                 </p>
               </div>
 
-              {/* Decorative Cursive Tagline */}
               <div className="my-3 text-right">
                 <span className="text-amber-400/80 font-serif italic text-sm tracking-wide block drop-shadow-sm">
                   "Music Hits Different With You"
                 </span>
               </div>
 
-              {/* Loopra Logo badge */}
               <div className="flex items-center gap-2 pt-2 border-t border-neutral-800/60">
                 <div className="w-5 h-5 rounded-full bg-amber-500 text-neutral-950 flex items-center justify-center font-bold text-[10px]">
                   ∞
                 </div>
-                <span className="text-xs font-extrabold tracking-wider text-neutral-200">Loopra</span>
+                <span className="text-xs font-extrabold tracking-wider text-neutral-200">Loopra Analytics</span>
               </div>
             </div>
 
@@ -519,19 +476,21 @@ export default function ListeningStatsModal({
               {/* 1. Listening Hours */}
               <div className="bg-[#101118]/80 hover:bg-[#13141f]/90 border border-neutral-800 hover:border-amber-500/30 rounded-2xl p-3.5 flex flex-col justify-between transition-all duration-300 shadow-sm relative overflow-hidden group">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Listening Hours</span>
+                  <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">
+                    {activeTab === 'recap' ? 'Listening Hours' : 'Lifetime Hours'}
+                  </span>
                   <span className="text-amber-400 text-sm">🎧</span>
                 </div>
                 <div className="my-1.5">
                   <p className="text-2xl sm:text-3xl font-black text-white font-display">
-                    {weeklyRecap?.totalHours || liveHoursDisplay}h
+                    {activeTab === 'recap' ? (weeklyRecap?.totalHours || '0.0') : (stats?.totalHours || '0.0')}h
                   </p>
-                  <p className="text-[11px] text-emerald-400 font-bold flex items-center gap-1 mt-0.5">
-                    <span>↑</span>
-                    <span>{weeklyRecap?.hoursTrend || '+28%'} vs last week</span>
+                  <p className="text-[11px] text-neutral-400 font-medium flex items-center gap-1 mt-0.5">
+                    {activeTab === 'recap'
+                      ? (weeklyRecap?.hoursTrend ? <span className="text-emerald-400 font-bold">{weeklyRecap.hoursTrend} vs last week</span> : 'Current week')
+                      : 'Total playback'}
                   </p>
                 </div>
-                {/* Mini Wave SVG */}
                 <svg className="w-full h-6 text-amber-500/50" viewBox="0 0 100 25" preserveAspectRatio="none">
                   <path d="M0,20 Q20,5 40,15 T80,8 T100,20" fill="none" stroke="currentColor" strokeWidth="2.5" />
                 </svg>
@@ -540,19 +499,21 @@ export default function ListeningStatsModal({
               {/* 2. Total Plays */}
               <div className="bg-[#101118]/80 hover:bg-[#13141f]/90 border border-neutral-800 hover:border-amber-500/30 rounded-2xl p-3.5 flex flex-col justify-between transition-all duration-300 shadow-sm relative overflow-hidden group">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Total Plays</span>
+                  <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">
+                    {activeTab === 'recap' ? 'Total Plays' : 'Lifetime Plays'}
+                  </span>
                   <span className="text-amber-400 text-sm">▶️</span>
                 </div>
                 <div className="my-1.5">
                   <p className="text-2xl sm:text-3xl font-black text-white font-display">
-                    {weeklyRecap?.totalPlays || stats?.totalPlays || 0}
+                    {activeTab === 'recap' ? (weeklyRecap?.totalPlays || 0) : (stats?.totalPlays || 0)}
                   </p>
-                  <p className="text-[11px] text-emerald-400 font-bold flex items-center gap-1 mt-0.5">
-                    <span>↑</span>
-                    <span>{weeklyRecap?.playsTrend || '+12%'} vs last week</span>
+                  <p className="text-[11px] text-neutral-400 font-medium flex items-center gap-1 mt-0.5">
+                    {activeTab === 'recap'
+                      ? (weeklyRecap?.playsTrend ? <span className="text-emerald-400 font-bold">{weeklyRecap.playsTrend} vs last week</span> : 'Valid (≥30s)')
+                      : 'Verified plays'}
                   </p>
                 </div>
-                {/* Mini Bar SVG */}
                 <div className="flex items-end justify-between h-6 gap-1 px-1">
                   {[4, 8, 12, 16, 22, 18, 14].map((h, i) => (
                     <span key={i} style={{ height: `${h}px` }} className="flex-1 bg-amber-500/60 rounded-t-sm" />
@@ -568,47 +529,69 @@ export default function ListeningStatsModal({
                 </div>
                 <div className="my-1.5">
                   <p className="text-2xl sm:text-3xl font-black text-white font-display">
-                    {weeklyRecap?.distinctTracksCount || stats?.distinctTracksCount || 0}
+                    {activeTab === 'recap' ? (weeklyRecap?.distinctTracksCount || 0) : (stats?.distinctTracksCount || 0)}
                   </p>
-                  <p className="text-[11px] text-emerald-400 font-bold flex items-center gap-1 mt-0.5">
-                    <span>↑</span>
-                    <span>{weeklyRecap?.tracksTrend || '+31%'} vs last week</span>
+                  <p className="text-[11px] text-neutral-400 font-medium flex items-center gap-1 mt-0.5">
+                    {activeTab === 'recap'
+                      ? (weeklyRecap?.tracksTrend ? <span className="text-emerald-400 font-bold">{weeklyRecap.tracksTrend} vs last week</span> : 'Distinct songs')
+                      : 'All unique songs'}
                   </p>
                 </div>
-                {/* Mini Curve SVG */}
                 <svg className="w-full h-6 text-amber-500/50" viewBox="0 0 100 25" preserveAspectRatio="none">
                   <path d="M0,22 Q30,18 50,8 T100,12" fill="none" stroke="currentColor" strokeWidth="2.5" />
                 </svg>
               </div>
 
-              {/* 4. Peak Day */}
-              <div className="bg-[#101118]/80 hover:bg-[#13141f]/90 border border-neutral-800 hover:border-amber-500/30 rounded-2xl p-3.5 flex flex-col justify-between transition-all duration-300 shadow-sm relative overflow-hidden group">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Peak Day</span>
-                  <span className="text-amber-400 text-sm">🔥</span>
+              {/* 4. Peak Day OR Web Usage */}
+              {activeTab === 'recap' ? (
+                <div className="bg-[#101118]/80 hover:bg-[#13141f]/90 border border-neutral-800 hover:border-amber-500/30 rounded-2xl p-3.5 flex flex-col justify-between transition-all duration-300 shadow-sm relative overflow-hidden group">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Peak Day</span>
+                    <span className="text-amber-400 text-sm">🔥</span>
+                  </div>
+                  <div className="my-1.5">
+                    <p className="text-2xl sm:text-3xl font-black text-amber-400 font-display">
+                      {weeklyRecap?.peakDay && weeklyRecap.peakDay !== 'None' ? weeklyRecap.peakDay : 'None'}
+                    </p>
+                    <p className="text-[11px] text-neutral-300 font-medium mt-0.5">
+                      {weeklyRecap?.peakDayHours && weeklyRecap.totalListeningSeconds > 0 ? `${weeklyRecap.peakDayHours}h peak` : '0.0h peak'}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between text-[8px] font-mono text-neutral-400">
+                    {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => {
+                      const isPeakDay = Boolean(weeklyRecap?.totalListeningSeconds > 0 && weeklyRecap?.dailyActivity?.[i]?.isPeak);
+                      return (
+                        <span
+                          key={i}
+                          className={`w-3.5 h-3.5 rounded flex items-center justify-center font-bold ${
+                            isPeakDay ? 'bg-amber-500 text-neutral-950 shadow-sm' : 'bg-neutral-800/80 text-neutral-400'
+                          }`}
+                        >
+                          {d}
+                        </span>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="my-1.5">
-                  <p className="text-2xl sm:text-3xl font-black text-amber-400 font-display">
-                    {weeklyRecap?.peakDay || 'Fri'}
-                  </p>
-                  <p className="text-[11px] text-neutral-300 font-medium mt-0.5">
-                    {weeklyRecap?.peakDayHours || '3.5'}h listened
-                  </p>
+              ) : (
+                <div className="bg-[#101118]/80 hover:bg-[#13141f]/90 border border-neutral-800 hover:border-amber-500/30 rounded-2xl p-3.5 flex flex-col justify-between transition-all duration-300 shadow-sm relative overflow-hidden group">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Web Usage</span>
+                    <span className="text-amber-400 text-sm">💻</span>
+                  </div>
+                  <div className="my-1.5">
+                    <p className="text-2xl sm:text-3xl font-black text-amber-400 font-display">
+                      {stats?.totalActiveWebsiteHours || '0.0'}h
+                    </p>
+                    <p className="text-[11px] text-neutral-300 font-medium mt-0.5">
+                      {stats?.totalSessions || 0} active sessions
+                    </p>
+                  </div>
+                  <div className="text-[9px] text-neutral-400 font-mono">
+                    Loopra application time
+                  </div>
                 </div>
-                {/* Mini Week Indicator */}
-                <div className="flex items-center justify-between text-[8px] font-mono text-neutral-400">
-                  {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
-                    <span
-                      key={i}
-                      className={`w-3.5 h-3.5 rounded flex items-center justify-center font-bold ${
-                        i === 4 ? 'bg-amber-500 text-neutral-950 shadow-sm' : 'bg-neutral-800/80 text-neutral-400'
-                      }`}
-                    >
-                      {d}
-                    </span>
-                  ))}
-                </div>
-              </div>
+              )}
             </div>
           </div>
 
@@ -625,7 +608,7 @@ export default function ListeningStatsModal({
                 <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-0.5 flex items-center text-[10px]">
                   <button
                     onClick={() => setActivityMetric('hours')}
-                    className={`px-2 py-0.5 rounded-md font-bold transition ${
+                    className={`px-2 py-0.5 rounded-md font-bold transition cursor-pointer ${
                       activityMetric === 'hours'
                         ? 'bg-amber-500 text-neutral-950 shadow-sm'
                         : 'text-neutral-400 hover:text-white'
@@ -635,7 +618,7 @@ export default function ListeningStatsModal({
                   </button>
                   <button
                     onClick={() => setActivityMetric('plays')}
-                    className={`px-2 py-0.5 rounded-md font-bold transition ${
+                    className={`px-2 py-0.5 rounded-md font-bold transition cursor-pointer ${
                       activityMetric === 'plays'
                         ? 'bg-amber-500 text-neutral-950 shadow-sm'
                         : 'text-neutral-400 hover:text-white'
@@ -651,8 +634,8 @@ export default function ListeningStatsModal({
                 <div className="h-40 flex items-end justify-between gap-1.5 px-2">
                   {dailyBars.map((d, i) => {
                     const val = activityMetric === 'hours' ? d.hours : d.plays;
-                    const heightPct = Math.max(10, Math.min(100, Math.round((val / maxChartValue) * 100)));
-                    const isPeak = d.isPeak;
+                    const heightPct = val > 0 ? Math.max(10, Math.min(100, Math.round((val / maxChartValue) * 100))) : 4;
+                    const isPeak = Boolean(d.isPeak && val > 0);
 
                     return (
                       <div key={d.dayLabel || i} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end group">
@@ -667,7 +650,9 @@ export default function ListeningStatsModal({
                           className={`w-full max-w-[28px] rounded-t-lg transition-all duration-500 ${
                             isPeak
                               ? 'bg-gradient-to-t from-orange-600 via-amber-500 to-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.5)]'
-                              : 'bg-gradient-to-t from-orange-950/80 via-amber-900/40 to-amber-700/60 group-hover:to-amber-500'
+                              : val > 0
+                                ? 'bg-gradient-to-t from-orange-950/80 via-amber-900/40 to-amber-700/60 group-hover:to-amber-500'
+                                : 'bg-neutral-800/40'
                           }`}
                         />
 
@@ -676,7 +661,7 @@ export default function ListeningStatsModal({
                           <p className={`text-[10px] font-bold ${isPeak ? 'text-amber-400' : 'text-neutral-300'}`}>
                             {d.dayLabel}
                           </p>
-                          <p className="text-[8px] text-neutral-400 font-mono">{d.dayShort}</p>
+                          <p className="text-[8px] text-neutral-400 font-mono">{d.dayShort || ''}</p>
                         </div>
                       </div>
                     );
@@ -688,28 +673,40 @@ export default function ListeningStatsModal({
               <div className="mt-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-between text-xs">
                 <span className="text-neutral-300 font-medium flex items-center gap-1.5">
                   <span>🔥</span>
-                  <span>You listened <strong className="text-amber-300">{weeklyRecap?.totalHours || liveHoursDisplay} hours</strong> this week</span>
+                  <span>
+                    {activeTab === 'all-time' ? (
+                      <>Lifetime: <strong className="text-amber-300">{stats?.totalHours || '0.0'} hours</strong> across {stats?.totalPlays || 0} plays</>
+                    ) : (
+                      <>Listened <strong className="text-amber-300">{weeklyRecap?.totalHours || '0.0'} hours</strong> this week</>
+                    )}
+                  </span>
                 </span>
-                <span className="text-emerald-400 font-bold font-mono text-[11px] shrink-0">
-                  {weeklyRecap?.hoursTrend || '+28%'} from last week
+                <span className="text-neutral-400 font-mono text-[11px] shrink-0">
+                  {activeTab === 'recap' && weeklyRecap?.hoursTrend ? (
+                    <span className="text-emerald-400 font-bold">{weeklyRecap.hoursTrend} from last week</span>
+                  ) : (
+                    <span>Verified</span>
+                  )}
                 </span>
               </div>
             </div>
 
-            {/* CARD 2: TOP SONGS THIS WEEK (4 cols) */}
+            {/* CARD 2: TOP SONGS (4 cols) */}
             <div className="lg:col-span-4 bg-[#101118]/90 border border-neutral-800/90 rounded-2xl p-4 flex flex-col justify-between shadow-md">
               <div className="flex items-center justify-between mb-2.5">
                 <div className="flex items-center gap-2">
                   <span className="text-amber-400">🎵</span>
-                  <h4 className="text-xs sm:text-sm font-bold text-white">Top Songs This Week</h4>
+                  <h4 className="text-xs sm:text-sm font-bold text-white">
+                    {activeTab === 'all-time' ? 'Top Songs (All-Time)' : 'Top Songs This Week'}
+                  </h4>
                 </div>
-                <span className="text-[11px] font-semibold text-neutral-400 hover:text-amber-400 transition cursor-pointer">
-                  See All
+                <span className="text-[11px] font-semibold text-neutral-400 font-mono">
+                  {topTracksList.length} tracks
                 </span>
               </div>
 
-              {/* List of 5 Songs */}
-              <div className="space-y-1.5">
+              {/* List of Songs */}
+              <div className="space-y-1.5 flex-1 overflow-y-auto max-h-[260px] custom-scrollbar pr-1">
                 {topTracksList.slice(0, 5).map((track, idx) => {
                   const isCurrent = currentSong && (currentSong.id === track.id || currentSong.videoId === track.id);
                   const isRankOne = idx === 0;
@@ -757,12 +754,12 @@ export default function ListeningStatsModal({
                       {/* Right Play Count & Play Action */}
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-[10px] font-mono text-neutral-400">
-                          {track.count || track.plays || 1} plays
+                          {track.plays || track.count || 0} plays
                         </span>
                         <button
                           onClick={(e) => handleTrackPlayClick(track, e)}
                           title="Play song"
-                          className={`w-7 h-7 rounded-full flex items-center justify-center transition ${
+                          className={`w-7 h-7 rounded-full flex items-center justify-center transition cursor-pointer ${
                             isCurrent && isPlaying
                               ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/30'
                               : 'bg-neutral-800 hover:bg-amber-500 text-amber-400 hover:text-neutral-950 border border-amber-500/30'
@@ -784,30 +781,34 @@ export default function ListeningStatsModal({
                 })}
 
                 {topTracksList.length === 0 && (
-                  <div className="py-8 text-center text-xs text-neutral-400">
-                    Play songs on Loopra to generate your top charts.
+                  <div className="py-12 text-center text-xs text-neutral-400">
+                    <p className="text-lg mb-1">🎧</p>
+                    <p>No songs played yet.</p>
+                    <p className="text-[10px] text-neutral-400 mt-1">Play music on Loopra to generate your rankings.</p>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* CARD 3: TOP ARTISTS THIS WEEK (4 cols) */}
+            {/* CARD 3: TOP ARTISTS (4 cols) */}
             <div className="lg:col-span-4 bg-[#101118]/90 border border-neutral-800/90 rounded-2xl p-4 flex flex-col justify-between shadow-md">
               <div className="flex items-center justify-between mb-2.5">
                 <div className="flex items-center gap-2">
                   <span className="text-amber-400">👤</span>
-                  <h4 className="text-xs sm:text-sm font-bold text-white">Top Artists This Week</h4>
+                  <h4 className="text-xs sm:text-sm font-bold text-white">
+                    {activeTab === 'all-time' ? 'Top Artists (All-Time)' : 'Top Artists This Week'}
+                  </h4>
                 </div>
-                <span className="text-[11px] font-semibold text-neutral-400 hover:text-amber-400 transition cursor-pointer">
-                  See All
+                <span className="text-[11px] font-semibold text-neutral-400 font-mono">
+                  {topArtistsList.length} artists
                 </span>
               </div>
 
               {/* List of Artists */}
-              <div className="space-y-2.5">
+              <div className="space-y-2.5 flex-1 overflow-y-auto max-h-[260px] custom-scrollbar pr-1">
                 {topArtistsList.slice(0, 5).map((artist, idx) => {
                   const isRankOne = idx === 0;
-                  const pct = artist.percentage || Math.max(10, Math.round(100 / (idx + 2)));
+                  const pct = artist.percentage || 0;
 
                   return (
                     <div key={artist.artist || idx} className="flex items-center gap-3">
@@ -836,7 +837,7 @@ export default function ListeningStatsModal({
                         <div className="flex items-center justify-between text-xs mb-1">
                           <span className="font-bold text-white truncate max-w-[120px]">{artist.artist}</span>
                           <span className="text-[10px] font-mono text-neutral-400 shrink-0">
-                            {artist.count || artist.plays || 1} plays
+                            {artist.plays || artist.count || 0} plays
                           </span>
                         </div>
                         {/* Progress Bar */}
@@ -857,8 +858,10 @@ export default function ListeningStatsModal({
                 })}
 
                 {topArtistsList.length === 0 && (
-                  <div className="py-8 text-center text-xs text-neutral-400">
-                    No top artists yet this week.
+                  <div className="py-12 text-center text-xs text-neutral-400">
+                    <p className="text-lg mb-1">🎤</p>
+                    <p>No artists recorded yet.</p>
+                    <p className="text-[10px] text-neutral-400 mt-1">Play music to calculate your favourite artists.</p>
                   </div>
                 )}
               </div>
@@ -872,8 +875,8 @@ export default function ListeningStatsModal({
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-amber-400">✨</span>
                 <div>
-                  <h4 className="text-xs sm:text-sm font-bold text-white">Your Weekly Vibes</h4>
-                  <p className="text-[10px] text-neutral-400">Top moods based on your listening</p>
+                  <h4 className="text-xs sm:text-sm font-bold text-white">Your Music Vibes</h4>
+                  <p className="text-[10px] text-neutral-400">Top moods based on genuine playback</p>
                 </div>
               </div>
 
@@ -889,6 +892,12 @@ export default function ListeningStatsModal({
                     <span className="text-[10px] font-mono text-amber-400 font-bold">{m.percentage}%</span>
                   </div>
                 ))}
+
+                {moodsList.length === 0 && (
+                  <div className="py-4 text-xs text-neutral-400">
+                    Play songs on Loopra to generate your music vibe profile.
+                  </div>
+                )}
               </div>
             </div>
 
@@ -898,11 +907,10 @@ export default function ListeningStatsModal({
                 <span className="text-amber-400">📲</span>
                 <div>
                   <h4 className="text-xs sm:text-sm font-bold text-white">Share Your Recap</h4>
-                  <p className="text-[10px] text-neutral-400">Create and share a beautiful summary of your music week.</p>
+                  <p className="text-[10px] text-neutral-400">Create and share an authentic summary of your music week.</p>
                 </div>
               </div>
 
-              {/* Generate Button */}
               <div className="mt-3">
                 <button
                   onClick={generateShareCard}
@@ -920,7 +928,7 @@ export default function ListeningStatsModal({
         <div className="p-3 sm:p-4 bg-[#0e0f16] border-t border-neutral-800/80 flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs text-neutral-400">
             <span>🎧</span>
-            <span>Real-time playback synced</span>
+            <span>Genuine User Listening Telemetry</span>
           </div>
 
           <div className="flex items-center gap-2.5">
@@ -955,13 +963,12 @@ export default function ListeningStatsModal({
               <h4 className="font-extrabold text-white text-sm">Instagram Story Card</h4>
               <button
                 onClick={() => setIsShareModalOpen(false)}
-                className="text-neutral-400 hover:text-white p-1 rounded-lg"
+                className="text-neutral-400 hover:text-white p-1 rounded-lg cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            {/* 9:16 Preview Frame */}
             <div className="w-full max-w-[280px] aspect-[9/16] rounded-2xl overflow-hidden border border-amber-500/30 shadow-2xl bg-neutral-950 relative flex items-center justify-center">
               {isGeneratingShare ? (
                 <div className="flex flex-col items-center gap-2 text-amber-400 text-xs font-bold animate-pulse">
@@ -973,7 +980,6 @@ export default function ListeningStatsModal({
               ) : null}
             </div>
 
-            {/* Actions */}
             <div className="w-full flex gap-2">
               <button
                 onClick={handleDownloadShareCard}

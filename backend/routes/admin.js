@@ -86,16 +86,18 @@ router.get('/health', authenticateToken, requireAdmin, async (req, res) => {
 });
 
 // Live Users Display Configuration (Admin only)
-router.get('/live-users-config', authenticateToken, requireAdmin, (req, res) => {
+const handleGetLiveUsersConfig = (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
   try {
     const config = liveUsersService.getAdminConfig();
-    res.json(config);
+    return res.json(config);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to retrieve live users config: ' + err.message });
+    return res.status(500).json({ error: 'Failed to retrieve live users config: ' + err.message });
   }
-});
+};
 
-router.put('/live-users-config', authenticateToken, requireAdmin, async (req, res) => {
+const handleSaveLiveUsersConfig = async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
   try {
     const { mode, minUsers, maxUsers } = req.body;
     const adminUsername = req.user?.username || 'admin';
@@ -125,15 +127,19 @@ router.put('/live-users-config', authenticateToken, requireAdmin, async (req, re
       console.warn('[AdminRoutes] Audit log notice:', auditErr.message);
     }
 
-    res.json({
+    return res.json({
       success: true,
       message: `Live Users display set to ${mode === 'real' ? 'Real Live Users' : 'Manual Display Range'}`,
       config: updated
     });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    return res.status(400).json({ error: err.message });
   }
-});
+};
+
+router.get('/live-users-config', authenticateToken, requireAdmin, handleGetLiveUsersConfig);
+router.put('/live-users-config', authenticateToken, requireAdmin, handleSaveLiveUsersConfig);
+router.post('/live-users-config', authenticateToken, requireAdmin, handleSaveLiveUsersConfig);
 
 // 3. List Users with Server-Side Pagination, Filtering, & Search
 router.get('/users', authenticateToken, requireAdmin, async (req, res) => {

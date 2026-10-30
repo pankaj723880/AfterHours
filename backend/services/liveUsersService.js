@@ -20,7 +20,7 @@ export class LiveUsersService {
     this.mode = 'real';
     this.minUsers = 500;
     this.maxUsers = 1000;
-    this.currentDisplayCount = 742;
+    this.currentDisplayCount = 0;
     this.updatedAt = new Date();
     this.timer = null;
     this.refreshIntervalMs = 45000; // 45 seconds (within 30-60s window)
@@ -42,7 +42,7 @@ export class LiveUsersService {
             mode: 'real',
             minUsers: 500,
             maxUsers: 1000,
-            currentDisplayCount: this.getRealCount() || 742,
+            currentDisplayCount: this.getRealCount(),
             updatedBy: 'system'
           });
         }
@@ -62,41 +62,54 @@ export class LiveUsersService {
           } else {
             this.currentDisplayCount = this.getRandomIntInRange(this.minUsers, this.maxUsers);
           }
+          this.startPeriodicDrift();
         } else {
           this.currentDisplayCount = this.getRealCount();
+          this.stopPeriodicDrift();
         }
       }
     } catch (err) {
       console.warn('[LiveUsersService] Initialization notice (using fallback defaults):', err.message);
     }
-
-    // Start periodic update timer for realistic natural drift
-    this.startPeriodicDrift();
   }
 
   /**
-   * Starts periodic interval to refresh the public display count.
+   * Starts periodic interval to refresh the public display count (Mode B: Manual only).
    */
   startPeriodicDrift() {
+    this.stopPeriodicDrift();
+
+    // STRICT: Only run periodic drift when explicitly in manual mode
+    if (this.mode === 'manual') {
+      this.timer = setInterval(() => {
+        this.tick();
+      }, this.refreshIntervalMs);
+    }
+  }
+
+  /**
+   * Stops periodic drift timer completely (Mode A: Real).
+   */
+  stopPeriodicDrift() {
     if (this.timer) {
       clearInterval(this.timer);
+      this.timer = null;
     }
-
-    this.timer = setInterval(() => {
-      this.tick();
-    }, this.refreshIntervalMs);
   }
 
   /**
    * Periodic clock tick (every 45s).
    */
   tick() {
-    if (this.mode === 'manual') {
-      this.applySmoothManualDrift();
-    } else {
+    if (this.mode !== 'manual') {
+      // Defensive guard: if somehow triggered while in real mode, shut down timer immediately
+      this.stopPeriodicDrift();
       this.currentDisplayCount = this.getRealCount();
+      this.broadcastDisplayCount();
+      return;
     }
 
+    this.applySmoothManualDrift();
     this.broadcastDisplayCount();
   }
 
@@ -104,6 +117,11 @@ export class LiveUsersService {
    * Generates a gradual, realistic drift within [minUsers, maxUsers] avoiding sudden wild spikes.
    */
   applySmoothManualDrift() {
+    // STRICT: Never drift or randomize unless in manual mode
+    if (this.mode !== 'manual') {
+      return;
+    }
+
     const min = this.minUsers;
     const max = this.maxUsers;
     if (max <= min) {
@@ -150,7 +168,9 @@ export class LiveUsersService {
    */
   getPublicDisplayCount() {
     if (this.mode === 'real') {
-      return { count: this.getRealCount() };
+      const real = this.getRealCount();
+      this.currentDisplayCount = real;
+      return { count: real };
     }
     return { count: Math.round(this.currentDisplayCount) };
   }
@@ -212,7 +232,12 @@ export class LiveUsersService {
       if (this.currentDisplayCount < this.minUsers || this.currentDisplayCount > this.maxUsers) {
         this.currentDisplayCount = this.getRandomIntInRange(this.minUsers, this.maxUsers);
       }
+      this.startPeriodicDrift();
     } else {
+      // Mode A: Real Live Users
+      // Stop all periodic manual drift timers immediately
+      this.stopPeriodicDrift();
+      // Clear previously generated manual display count and fetch actual active count immediately
       this.currentDisplayCount = this.getRealCount();
     }
 
@@ -263,10 +288,7 @@ export class LiveUsersService {
    * Cleanup timer on shutdown.
    */
   destroy() {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
+    this.stopPeriodicDrift();
   }
 }
 

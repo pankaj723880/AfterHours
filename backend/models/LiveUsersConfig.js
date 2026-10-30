@@ -27,7 +27,7 @@ const liveUsersConfigSchema = new mongoose.Schema({
   },
   currentDisplayCount: {
     type: Number,
-    default: 742,
+    default: 0,
     min: 0
   },
   lastGeneratedAt: {

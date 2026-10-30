@@ -28,6 +28,8 @@ import moodRoutes from './routes/mood.js';
 import radioRoutes from './routes/radio.js';
 import recommendationRoutes, { handleListeningEvent } from './routes/recommendations.js';
 import { listeningEventService } from './services/listeningEventService.js';
+import { analyticsService } from './services/analyticsService.js';
+import analyticsRoutes from './routes/analytics.js';
 import aiMusicRoutes from './routes/aiMusic.js';
 import { isSingleSong, filterSingleSongs } from './services/songFilter.js';
 import { liveUsersService } from './services/liveUsersService.js';
@@ -260,9 +262,62 @@ const isDatabaseReady = () => {
 app.use(maintenanceMiddleware);
 
 // Public Live Users Display Endpoint (never exposes admin config or raw analytics)
-app.get('/api/public/live-users', (req, res) => {
+app.get(['/api/public/live-users', '/api/live-users'], (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
   res.json(liveUsersService.getPublicDisplayCount());
 });
+
+// Authoritative Live Users Configuration Endpoints (Admin only)
+app.route(['/api/admin/live-users-config', '/api/live-users-config'])
+  .get(authenticateToken, requireAdmin, (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    try {
+      const config = liveUsersService.getAdminConfig();
+      return res.json(config);
+    } catch (err) {
+      return res.status(500).json({ error: 'Failed to retrieve live users config: ' + err.message });
+    }
+  })
+  .post(authenticateToken, requireAdmin, async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    try {
+      const { mode, minUsers, maxUsers } = req.body;
+      const adminUsername = req.user?.username || 'admin';
+      const updated = await liveUsersService.updateConfig({
+        mode,
+        minUsers,
+        maxUsers,
+        updatedBy: adminUsername
+      });
+      return res.json({
+        success: true,
+        message: `Live Users display set to ${mode === 'real' ? 'Real Live Users' : 'Manual Display Range'}`,
+        config: updated
+      });
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+  })
+  .put(authenticateToken, requireAdmin, async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    try {
+      const { mode, minUsers, maxUsers } = req.body;
+      const adminUsername = req.user?.username || 'admin';
+      const updated = await liveUsersService.updateConfig({
+        mode,
+        minUsers,
+        maxUsers,
+        updatedBy: adminUsername
+      });
+      return res.json({
+        success: true,
+        message: `Live Users display set to ${mode === 'real' ? 'Real Live Users' : 'Manual Display Range'}`,
+        config: updated
+      });
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+  });
 
 // Health check endpoints for Render & API monitors
 app.get('/', (req, res) => {
@@ -757,6 +812,7 @@ app.use(['/api/radio', '/radio'], radioRoutes);
 
 // Mount Gemini AI-Powered Personalized Recommendations & Listening Events
 app.use(['/api/recommendations', '/recommendations'], recommendationRoutes);
+app.use(['/api/analytics', '/analytics'], analyticsRoutes);
 app.post('/api/listening-events', authenticateToken, handleListeningEvent);
 app.get('/api/listening-stats', authenticateToken, async (req, res) => {
   try {
@@ -764,7 +820,7 @@ app.get('/api/listening-stats', authenticateToken, async (req, res) => {
     const timezone = req.query.timezone || 'UTC';
     const forceRefresh = req.query.forceRefresh === 'true';
 
-    const result = await listeningEventService.getListeningStats(userId, { timezone, forceRefresh });
+    const result = await analyticsService.getUnifiedOverview(userId, { timezone, forceRefresh });
     res.json(result);
   } catch (err) {
     console.error('[Listening Stats Route Error]:', err.message);

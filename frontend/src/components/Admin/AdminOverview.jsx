@@ -12,9 +12,12 @@ import {
   Sliders,
   CheckCircle2
 } from 'lucide-react';
+import { BACKEND_URL } from '../../utils/apiUrl';
 
 export default function AdminOverview({ metrics, health, onNavigate, token, backendUrl, showToast }) {
-  const cleanBackendUrl = (backendUrl || '').trim().replace(/\/+$/, '');
+  const cleanBackendUrl = (backendUrl && backendUrl.trim().startsWith('http'))
+    ? backendUrl.trim().replace(/\/+$/, '')
+    : BACKEND_URL;
 
   // Live Users Display Mode State
   const [liveUsersConfig, setLiveUsersConfig] = useState(null);
@@ -29,13 +32,32 @@ export default function AdminOverview({ metrics, health, onNavigate, token, back
   const fetchLiveUsersConfig = async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${cleanBackendUrl}/api/admin/live-users-config`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+      const url = `${cleanBackendUrl}/api/admin/live-users-config`;
+      const res = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        }
       });
-      if (res.ok) {
-        const data = await res.json();
+
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await res.text().catch(() => '');
+        const isHtml = text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html');
+        console.warn(`[AdminOverview] Config fetch returned non-JSON (${res.status} ${res.statusText}):`, isHtml ? 'HTML document' : text);
+        return;
+      }
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        console.warn('[AdminOverview] Config fetch notice:', errJson?.error || res.statusText);
+        return;
+      }
+
+      const data = await res.json();
+      if (data && data.mode) {
         setLiveUsersConfig(data);
-        setSelectedMode(data.mode || 'real');
+        setSelectedMode(data.mode);
         setMinInput(data.minUsers ?? 500);
         setMaxInput(data.maxUsers ?? 1000);
       }
@@ -50,7 +72,7 @@ export default function AdminOverview({ metrics, health, onNavigate, token, back
 
   // Handle Save Live Users Config
   const handleSaveLiveUsersConfig = async () => {
-    if (!token) return;
+    if (!token || isSaving) return;
     setErrorMessage(null);
     setSaveSuccess(false);
 
@@ -74,10 +96,12 @@ export default function AdminOverview({ metrics, health, onNavigate, token, back
 
     setIsSaving(true);
     try {
-      const res = await fetch(`${cleanBackendUrl}/api/admin/live-users-config`, {
+      const url = `${cleanBackendUrl}/api/admin/live-users-config`;
+      const res = await fetch(url, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
@@ -87,16 +111,28 @@ export default function AdminOverview({ metrics, health, onNavigate, token, back
         })
       });
 
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await res.text().catch(() => '');
+        const isHtml = text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html');
+        throw new Error(
+          isHtml
+            ? `API route returned HTML (${res.status} ${res.statusText}). Endpoint: ${url}`
+            : `API returned invalid response type (${contentType || 'none'}). Status: ${res.status}`
+        );
+      }
+
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) {
         setLiveUsersConfig(data.config);
+        setSelectedMode(data.config?.mode || selectedMode);
         setSaveSuccess(true);
         if (showToast) {
           showToast(data.message || 'Live Users configuration updated!', 'success');
         }
         setTimeout(() => setSaveSuccess(false), 3000);
       } else {
-        setErrorMessage(data.error || 'Failed to update Live Users configuration.');
+        setErrorMessage(data?.error || `Failed to update Live Users configuration (${res.status} ${res.statusText})`);
       }
     } catch (err) {
       setErrorMessage(err.message || 'Network error updating Live Users configuration.');
@@ -174,7 +210,7 @@ export default function AdminOverview({ metrics, health, onNavigate, token, back
               <span className="text-emerald-400 font-semibold">{activeAuthUsers}</span> auth • <span className="text-neutral-300 font-semibold">{activeAnonUsers}</span> anon
             </div>
             <div className="text-[10px] text-amber-400/90 font-medium mt-0.5 truncate">
-              Public: <span className="font-bold">{liveUsersConfig?.currentDisplayCount ?? activeVisitors}</span> ({liveUsersConfig?.mode === 'manual' ? 'Manual Range' : 'Real'})
+              Public: <span className="font-bold">{liveUsersConfig?.mode === 'real' ? activeVisitors : (liveUsersConfig?.currentDisplayCount ?? activeVisitors)}</span> ({liveUsersConfig?.mode === 'manual' ? 'Manual Range' : 'Real'})
             </div>
           </div>
         </div>
@@ -259,7 +295,9 @@ export default function AdminOverview({ metrics, health, onNavigate, token, back
           <div className="flex items-center gap-2 bg-neutral-950/80 px-3 py-1.5 rounded-xl border border-neutral-800 text-xs text-neutral-300">
             <span className="text-neutral-500 font-medium">Public Stream:</span>
             <span className="text-amber-400 font-bold font-mono text-sm">
-              {liveUsersConfig?.currentDisplayCount ?? activeVisitors}
+              {liveUsersConfig?.mode === 'real'
+                ? activeVisitors
+                : (liveUsersConfig?.currentDisplayCount ?? activeVisitors)}
             </span>
             <span className="text-[10px] text-neutral-400">users</span>
           </div>

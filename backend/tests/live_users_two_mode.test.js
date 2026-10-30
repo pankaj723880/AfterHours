@@ -175,3 +175,55 @@ test('Internal analytics metrics purity: manual mode does not alter metricsServi
   service.destroy();
 });
 
+
+test('Mode A: Strict immunity against random drift across time ticks (never changes to 100 or random value)', async () => {
+  const service = new LiveUsersService();
+  let liveCount = 3;
+  const mockMetrics = {
+    getSnapshot: () => ({ activeVisitors: liveCount })
+  };
+  service.init({ io: null, metricsService: mockMetrics });
+
+  await service.updateConfig({ mode: 'real' });
+  assert.equal(service.timer, null, 'Periodic drift timer must be null in Real mode');
+
+  // Simulate 20 tick cycles (equivalent to 15+ minutes)
+  for (let i = 0; i < 20; i++) {
+    service.tick();
+    assert.equal(
+      service.getPublicDisplayCount().count,
+      3,
+      `Tick ${i}: Count must remain strictly at genuine count 3, never 100 or drift`
+    );
+  }
+
+  // Simulate dynamic session joins and leaves
+  liveCount = 5; // +2 visitors
+  assert.equal(service.getPublicDisplayCount().count, 5, 'Dynamic visitor increase must reflect immediately');
+
+  liveCount = 1; // -4 visitors
+  assert.equal(service.getPublicDisplayCount().count, 1, 'Dynamic visitor decrease must reflect immediately');
+
+  service.destroy();
+});
+
+test('Switching from Manual to Real immediately halts timer and wipes manual display value', async () => {
+  const service = new LiveUsersService();
+  const mockMetrics = {
+    getSnapshot: () => ({ activeVisitors: 2 })
+  };
+  service.init({ io: null, metricsService: mockMetrics });
+
+  // 1. In manual mode, timer is active and display is generated in range
+  await service.updateConfig({ mode: 'manual', minUsers: 500, maxUsers: 1000 });
+  assert.ok(service.timer !== null, 'Timer must be active in manual mode');
+  const manualVal = service.getPublicDisplayCount().count;
+  assert.ok(manualVal >= 500 && manualVal <= 1000);
+
+  // 2. Switch to Real mode
+  await service.updateConfig({ mode: 'real' });
+  assert.equal(service.timer, null, 'Timer must be stopped immediately upon switching to Real mode');
+  assert.equal(service.getPublicDisplayCount().count, 2, 'Display value must immediately reset to verified count 2');
+
+  service.destroy();
+});

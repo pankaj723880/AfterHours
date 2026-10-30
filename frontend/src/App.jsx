@@ -1867,6 +1867,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const playSessionIdRef = useRef(null);
   const lastSyncedDurationRef = useRef(0);
   const lastStatsRefreshTimeRef = useRef(Date.now());
+  const websiteSessionIdRef = useRef(null);
+  const lastUserInteractionRef = useRef(Date.now());
   const [isPlayerSettingsOpen, setIsPlayerSettingsOpen] = useState(false);
   const [crossfadeDuration, setCrossfadeDuration] = useState(() => {
     try {
@@ -2002,17 +2004,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
 
   const [clockString, setClockString] = useState("");
-  const [activeUsersCount, setActiveUsersCount] = useState(742);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setActiveUsersCount(prev => {
-        const change = Math.floor(Math.random() * 5) - 2; // -2 to +2
-        return Math.max(100, prev + change);
-      });
-    }, 4500);
-    return () => clearInterval(interval);
-  }, []);
+  // Authoritative live users state (strictly driven by backend presence, no local random generation)
+  const [activeUsersCount, setActiveUsersCount] = useState(null);
+  const [isLiveCountStale, setIsLiveCountStale] = useState(false);
+  const verifiedLiveUsersRef = useRef(null);
 
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallBtn, setShowInstallBtn] = useState(false);
@@ -2251,6 +2246,81 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       window.removeEventListener('focus', handleVisibility);
     };
   }, [authToken, user]);
+
+  // Persistent Website Usage Tracking & Heartbeat (User-Isolated)
+  useEffect(() => {
+    if (!authToken || !user) return;
+
+    if (!websiteSessionIdRef.current) {
+      websiteSessionIdRef.current = `ws_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    }
+    lastUserInteractionRef.current = Date.now();
+
+    const markActive = () => {
+      lastUserInteractionRef.current = Date.now();
+    };
+
+    window.addEventListener('mousemove', markActive, { passive: true });
+    window.addEventListener('keydown', markActive, { passive: true });
+    window.addEventListener('click', markActive, { passive: true });
+    window.addEventListener('scroll', markActive, { passive: true });
+    window.addEventListener('touchstart', markActive, { passive: true });
+
+    // Initial presence heartbeat
+    listeningStatsService.sendWebsiteHeartbeat({
+      backendUrl: BACKEND_URL,
+      token: authToken,
+      sessionId: websiteSessionIdRef.current,
+      activeSecondsDelta: 1,
+      page: activeTab || 'home',
+      deviceType: window.innerWidth < 768 ? 'mobile' : (window.innerWidth < 1024 ? 'tablet' : 'desktop'),
+      isIdle: false
+    });
+
+    // Periodic heartbeat every 45s
+    const heartbeatInterval = setInterval(() => {
+      if (!authToken || !websiteSessionIdRef.current) return;
+      const isVisible = document.visibilityState === 'visible';
+      const isRecentlyActive = (Date.now() - lastUserInteractionRef.current) < 90000;
+      const isActivelyListening = isPlaying;
+      const isIdle = !isRecentlyActive && !isActivelyListening;
+      const activeDelta = (isVisible || isActivelyListening) && !isIdle ? 45 : 0;
+
+      listeningStatsService.sendWebsiteHeartbeat({
+        backendUrl: BACKEND_URL,
+        token: authToken,
+        sessionId: websiteSessionIdRef.current,
+        activeSecondsDelta: activeDelta,
+        page: activeTab || 'home',
+        deviceType: window.innerWidth < 768 ? 'mobile' : (window.innerWidth < 1024 ? 'tablet' : 'desktop'),
+        isIdle
+      });
+    }, 45000);
+
+    const handleUnload = () => {
+      if (authToken && websiteSessionIdRef.current) {
+        listeningStatsService.closeWebsiteSession({
+          backendUrl: BACKEND_URL,
+          token: authToken,
+          sessionId: websiteSessionIdRef.current
+        });
+      }
+    };
+
+    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('pagehide', handleUnload);
+
+    return () => {
+      clearInterval(heartbeatInterval);
+      window.removeEventListener('mousemove', markActive);
+      window.removeEventListener('keydown', markActive);
+      window.removeEventListener('click', markActive);
+      window.removeEventListener('scroll', markActive);
+      window.removeEventListener('touchstart', markActive);
+      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('pagehide', handleUnload);
+    };
+  }, [authToken, user, isPlaying, activeTab]);
 
   const openAuthModal = useCallback(() => {
     if (isPlaying) {
@@ -2675,6 +2745,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   };
 
   const logout = () => {
+    if (websiteSessionIdRef.current && authToken) {
+      listeningStatsService.closeWebsiteSession({
+        backendUrl: BACKEND_URL,
+        token: authToken,
+        sessionId: websiteSessionIdRef.current
+      });
+      websiteSessionIdRef.current = null;
+    }
+    listeningStatsService.clearLocalStats();
     setUser(null);
     setAuthToken('');
     localStorage.removeItem('afterhours_token');
@@ -2819,23 +2898,58 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     updateClock();
     const clockInterval = setInterval(updateClock, 1000);
 
-    // Initial hydration of public active users count
-    fetch(getApiUrl('/api/public/live-users'))
-      .then(res => res.json())
-      .then(data => {
-        if (data && typeof data.count === 'number') {
-          setActiveUsersCount(data.count);
-        }
-      })
-      .catch(() => {});
+    // Authoritative hydration of public live users count
+    const syncLiveUsersCount = () => {
+      fetch(getApiUrl('/api/public/live-users'))
+        .then(res => {
+          if (!res.ok) throw new Error('Live users fetch failed');
+          return res.json();
+        })
+        .then(data => {
+          const count = typeof data?.count === 'number' ? data.count : (typeof data === 'number' ? data : null);
+          if (count !== null && !isNaN(count)) {
+            verifiedLiveUsersRef.current = count;
+            setActiveUsersCount(count);
+            setIsLiveCountStale(false);
+          }
+        })
+        .catch(() => {
+          // On API failure, maintain last verified count with stale indicator or show '--' (null)
+          if (verifiedLiveUsersRef.current !== null) {
+            setActiveUsersCount(verifiedLiveUsersRef.current);
+            setIsLiveCountStale(true);
+          } else {
+            setActiveUsersCount(null);
+            setIsLiveCountStale(true);
+          }
+        });
+    };
 
-    socket.on('active_users', (count) => {
-      setActiveUsersCount(count);
+    syncLiveUsersCount();
+
+    const handleActiveUsersUpdate = (payload) => {
+      const count = typeof payload === 'object' && payload !== null ? payload.count : payload;
+      if (typeof count === 'number' && !isNaN(count)) {
+        verifiedLiveUsersRef.current = count;
+        setActiveUsersCount(count);
+        setIsLiveCountStale(false);
+      }
+    };
+
+    socket.on('active_users', handleActiveUsersUpdate);
+    socket.on('connect', () => {
+      setIsLiveCountStale(false);
+      syncLiveUsersCount();
+    });
+    socket.on('disconnect', () => {
+      setIsLiveCountStale(true);
     });
 
     return () => {
       clearInterval(clockInterval);
-      socket.off('active_users');
+      socket.off('active_users', handleActiveUsersUpdate);
+      socket.off('connect');
+      socket.off('disconnect');
     };
   }, []);
   useEffect(() => {
@@ -2985,7 +3099,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const handleNextSong = useCallback(() => {
     // Log skip or completed listen signal for AI recommendations and listening insights
     if (trackPlaybackStartTimeRef.current && currentSongRef.current && !hasLoggedCompletionRef.current) {
-      const elapsedSec = Math.max(activeListeningDurationRef.current, Math.round((Date.now() - trackPlaybackStartTimeRef.current) / 1000));
+      // Use genuine active listened seconds (ignoring paused time / sleep / background freeze)
+      const elapsedSec = activeListeningDurationRef.current;
       const totalDur = durationRef.current || 200;
       const pct = Math.min(100, Math.round((elapsedSec / totalDur) * 100));
 
@@ -3727,6 +3842,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         audio.onended = () => {
           if (currentSongRef.current && authToken && !hasLoggedCompletionRef.current) {
             const dur = audio.duration || 200;
+            const actualListened = activeListeningDurationRef.current || dur;
             recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
               trackId: currentSongRef.current.id || currentSongRef.current.videoId,
               title: currentSongRef.current.title,
@@ -3734,8 +3850,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               thumbnail: currentSongRef.current.thumbnail,
               eventType: 'completed',
               duration: dur,
-              listenedDuration: dur,
+              listenedDuration: actualListened,
               completionPercent: 100,
+              source: 'offline'
+            });
+            listeningStatsService.recordEvent({
+              backendUrl: BACKEND_URL,
+              token: authToken,
+              user,
+              track: currentSongRef.current,
+              eventType: 'completed',
+              duration: dur,
+              listenedDuration: actualListened,
+              playSessionId: playSessionIdRef.current,
               source: 'offline'
             });
             hasLoggedCompletionRef.current = true;
@@ -4988,11 +5115,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           {/* CENTER (Desktop only): ACTIVE USERS */}
           <div className="hidden md:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-900/80 backdrop-blur-xl border border-neutral-800 shadow-lg shrink-0">
             <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite] absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-orange-500"></span>
+              <span className={`animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite] absolute inline-flex h-full w-full rounded-full ${
+                isLiveCountStale ? 'bg-amber-400 opacity-40' : 'bg-orange-400 opacity-75'
+              }`}></span>
+              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                isLiveCountStale ? 'bg-amber-500' : 'bg-orange-500'
+              }`}></span>
             </span>
-            <span className="text-xs font-semibold text-neutral-200 tracking-wide">
-              <span className="text-orange-400 font-bold">{activeUsersCount}</span> Active Users
+            <span className="text-xs font-semibold text-neutral-200 tracking-wide flex items-center gap-1">
+              <span className="text-orange-400 font-bold font-mono">
+                {activeUsersCount !== null ? activeUsersCount : '--'}
+              </span>
+              <span>Active Users</span>
+              {isLiveCountStale && (
+                <span className="text-[10px] text-neutral-500 font-normal" title="Connection stale, showing last verified count">
+                  (stale)
+                </span>
+              )}
             </span>
           </div>
 

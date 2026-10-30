@@ -44,3 +44,4 @@ userAssistantRecommendationSchema.index({ userId: 1, canonicalKey: 1 });
 
 export default mongoose.models.UserAssistantRecommendation ||
   mongoose.model('UserAssistantRecommendation', userAssistantRecommendationSchema);
+

@@ -40,9 +40,12 @@ import CmsMediaLibrary from './CmsMediaLibrary';
 import CmsPublishingHistory from './CmsPublishingHistory';
 import { safeParseJsonResponse } from '../../utils/errorHandler';
 import { DEFAULT_CMS_CONFIG, getCachedCmsConfig, normalizeCmsConfig, applyThemeToDom } from '../../services/cmsClient';
+import { BACKEND_URL } from '../../utils/apiUrl';
 
 export default function AdminDashboard({ user, token, backendUrl, onExit, onOpenAuth, showToast, onPreviewConfig }) {
-  const cleanBackendUrl = (backendUrl || '').trim().replace(/\/+$/, '');
+  const cleanBackendUrl = (backendUrl && backendUrl.trim().startsWith('http'))
+    ? backendUrl.trim().replace(/\/+$/, '')
+    : BACKEND_URL;
   const [activeSubTab, setActiveSubTab] = useState('cms_settings');
   const [metrics, setMetrics] = useState(null);
   const [health, setHealth] = useState(null);
