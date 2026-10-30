@@ -141,7 +141,8 @@ export function verifySingleSong(track) {
     };
   }
 
-  const id = track.id?.videoId || track.id || track.videoId;
+  const trackObj = typeof track === 'string' ? { title: track } : track;
+  const id = trackObj.id?.videoId || trackObj.id || trackObj.videoId;
   if (id && !isValidYouTubeId(id)) {
     return {
       isValid: false,
@@ -152,9 +153,9 @@ export function verifySingleSong(track) {
   }
 
   const title = (
-    track.title ||
-    track.snippet?.title ||
-    track.name ||
+    trackObj.title ||
+    trackObj.snippet?.title ||
+    trackObj.name ||
     ''
   ).trim();
 
@@ -169,44 +170,44 @@ export function verifySingleSong(track) {
 
   const lowerTitle = title.toLowerCase();
   const lowerDesc = (
-    track.description ||
-    track.snippet?.description ||
+    trackObj.description ||
+    trackObj.snippet?.description ||
     ''
   ).toLowerCase();
   const channel = (
-    track.channel ||
-    track.author?.name ||
-    track.snippet?.channelTitle ||
+    trackObj.channel ||
+    trackObj.author?.name ||
+    trackObj.snippet?.channelTitle ||
     ''
   ).trim();
 
   // 1. Duration Validation
-  if (typeof track.duration === 'number' && track.duration > 0) {
-    if (track.duration > 900) { // > 15 minutes
+  if (typeof trackObj.duration === 'number' && trackObj.duration > 0) {
+    if (trackObj.duration > 900) { // > 15 minutes
       return {
         isValid: false,
-        reason: `Duration (${track.duration}s) exceeds 15 minutes compilation limit`,
+        reason: `Duration (${trackObj.duration}s) exceeds 15 minutes compilation limit`,
         songType: 'compilation',
         verificationStatus: 'rejected_multi_song'
       };
     }
   }
-  if (typeof track.duration === 'string') {
-    const colons = (track.duration.match(/:/g) || []).length;
+  if (typeof trackObj.duration === 'string') {
+    const colons = (trackObj.duration.match(/:/g) || []).length;
     if (colons >= 2) {
       return {
         isValid: false,
-        reason: `Duration (${track.duration}) is 1 hour or longer (compilation)`,
+        reason: `Duration (${trackObj.duration}) is 1 hour or longer (compilation)`,
         songType: 'compilation',
         verificationStatus: 'rejected_multi_song'
       };
     }
     if (colons === 1) {
-      const parts = track.duration.split(':').map(p => parseInt(p, 10) || 0);
+      const parts = trackObj.duration.split(':').map(p => parseInt(p, 10) || 0);
       if (parts[0] >= 15) {
         return {
           isValid: false,
-          reason: `Duration (${track.duration}) exceeds 15 minutes limit`,
+          reason: `Duration (${trackObj.duration}) exceeds 15 minutes limit`,
           songType: 'compilation',
           verificationStatus: 'rejected_multi_song'
         };

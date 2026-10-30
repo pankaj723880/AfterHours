@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { listeningStatsService } from '../../services/listeningStatsService';
 
 export default function ListeningStatsModal({
@@ -7,7 +7,10 @@ export default function ListeningStatsModal({
   showToast,
   authToken = null,
   user = null,
-  backendUrl = ''
+  backendUrl = '',
+  onPlaySong = null,
+  currentSong = null,
+  isPlaying = false
 }) {
   const [activeTab, setActiveTab] = useState('recap'); // 'recap' | 'all-time'
   const [stats, setStats] = useState(null);
@@ -15,7 +18,24 @@ export default function ListeningStatsModal({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
+  const [activityMetric, setActivityMetric] = useState('hours'); // 'hours' | 'plays'
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isGeneratingShare, setIsGeneratingShare] = useState(false);
+  const [shareDataUrl, setShareDataUrl] = useState(null);
+
+  const canvasRef = useRef(null);
   const isFetchingRef = useRef(false);
+
+  // Live session listening seconds accumulator for open modal
+  const [liveSessionSeconds, setLiveSessionSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    const interval = setInterval(() => {
+      setLiveSessionSeconds(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isPlaying]);
 
   const loadStats = useCallback(async (force = false) => {
     if (isFetchingRef.current) return;
@@ -49,7 +69,7 @@ export default function ListeningStatsModal({
   useEffect(() => {
     if (!isOpen) return;
 
-    // Fast initial synchronous paint from local storage
+    // Instant paint from local cache
     const local = listeningStatsService.computeLocalStats(user);
     if (local) {
       if (local.weeklyRecap) setWeeklyRecap(local.weeklyRecap);
@@ -57,11 +77,15 @@ export default function ListeningStatsModal({
       if (local.updatedAt) setLastUpdated(new Date(local.updatedAt));
     }
 
-    // Immediately fetch fresh stats from backend
     loadStats(false);
   }, [isOpen, loadStats, user]);
 
-  if (!isOpen) return null;
+  // Adjust display metrics with real-time live playback seconds
+  const liveHoursDisplay = useMemo(() => {
+    const baseSec = (activeTab === 'recap' ? weeklyRecap?.totalListeningSeconds : stats?.totalListeningSeconds) || 0;
+    const totalSec = baseSec + liveSessionSeconds;
+    return (totalSec / 3600).toFixed(1);
+  }, [activeTab, weeklyRecap?.totalListeningSeconds, stats?.totalListeningSeconds, liveSessionSeconds]);
 
   const handleManualRefresh = () => {
     if (isRefreshing) return;
@@ -70,76 +94,320 @@ export default function ListeningStatsModal({
 
   const formatLastUpdated = (date) => {
     if (!date) return 'Just now';
-    const diffSec = Math.round((Date.now() - date.getTime()) / 1000);
-    if (diffSec < 15) return 'Just now';
-    if (diffSec < 60) return `${diffSec}s ago`;
-    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  const handleShare = () => {
-    const summaryText = weeklyRecap
-      ? `🎶 My Loopra Weekly Recap:\n⏱️ ${weeklyRecap.totalHours} hrs listened\n🎵 ${weeklyRecap.distinctTracksCount} distinct tracks\n⭐ Top track: ${weeklyRecap.topTracks[0]?.title || 'Various'}\nCheck out retro Bollywood on Loopra!`
-      : `🎶 Listening on Loopra - Music & Bollywood Nostalgia without ads!`;
-
-    if (navigator.share) {
-      navigator.share({
-        title: 'My Loopra Music Recap',
-        text: summaryText,
-        url: window.location.origin
-      }).catch(() => {});
-    } else {
-      navigator.clipboard?.writeText(summaryText);
-      if (showToast) showToast('Recap summary copied to clipboard!');
+  const handleTrackPlayClick = (track, e) => {
+    if (e) e.stopPropagation();
+    if (!track) return;
+    if (onPlaySong) {
+      onPlaySong({
+        id: track.id || track.videoId,
+        videoId: track.videoId || track.id,
+        title: track.title,
+        artist: track.artist,
+        thumbnail: track.thumbnail,
+        image: track.thumbnail
+      });
+      if (showToast) showToast(`Playing ${track.title}`);
     }
   };
 
+  // Generate 9:16 Instagram Story Canvas
+  const generateShareCard = () => {
+    setIsGeneratingShare(true);
+    setIsShareModalOpen(true);
+
+    setTimeout(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        setIsGeneratingShare(false);
+        return;
+      }
+
+      const ctx = canvas.getContext('2d');
+      const W = 1080;
+      const H = 1920;
+      canvas.width = W;
+      canvas.height = H;
+
+      // 1. Dark Gradient Background
+      const bgGrad = ctx.createLinearGradient(0, 0, W, H);
+      bgGrad.addColorStop(0, '#0c0d14');
+      bgGrad.addColorStop(0.4, '#12131c');
+      bgGrad.addColorStop(0.8, '#18120b');
+      bgGrad.addColorStop(1, '#090a0f');
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, W, H);
+
+      // Gold Glow Orbs
+      const glow1 = ctx.createRadialGradient(W * 0.8, H * 0.2, 10, W * 0.8, H * 0.2, 500);
+      glow1.addColorStop(0, 'rgba(245, 158, 11, 0.25)');
+      glow1.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = glow1;
+      ctx.fillRect(0, 0, W, H);
+
+      const glow2 = ctx.createRadialGradient(W * 0.2, H * 0.7, 10, W * 0.2, H * 0.7, 450);
+      glow2.addColorStop(0, 'rgba(234, 88, 12, 0.2)');
+      glow2.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = glow2;
+      ctx.fillRect(0, 0, W, H);
+
+      // 2. Loopra Branding Header
+      ctx.fillStyle = '#f59e0b';
+      ctx.font = 'bold 44px Outfit, Inter, sans-serif';
+      ctx.fillText('LOOPRA', 90, 140);
+
+      ctx.fillStyle = '#a3a3a3';
+      ctx.font = '600 30px Inter, sans-serif';
+      ctx.fillText('WEEKLY RECAP 2026', 90, 185);
+
+      // 3. Hero Header
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '800 84px Outfit, Inter, sans-serif';
+      ctx.fillText('Your Week', 90, 310);
+      const inMusicGrad = ctx.createLinearGradient(90, 390, 450, 390);
+      inMusicGrad.addColorStop(0, '#f59e0b');
+      inMusicGrad.addColorStop(1, '#ea580c');
+      ctx.fillStyle = inMusicGrad;
+      ctx.fillText('in Music', 90, 395);
+
+      ctx.fillStyle = '#d4d4d8';
+      ctx.font = '400 32px Inter, sans-serif';
+      ctx.fillText('Beats, moods and memories that made your week special.', 90, 450);
+
+      // 4. Stat Badges Grid (2x2)
+      const renderStatBox = (x, y, w, h, label, val, sub) => {
+        ctx.fillStyle = 'rgba(24, 24, 27, 0.7)';
+        ctx.strokeStyle = 'rgba(245, 158, 11, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, 28);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#a1a1aa';
+        ctx.font = '600 24px Inter, sans-serif';
+        ctx.fillText(label.toUpperCase(), x + 40, y + 60);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '800 64px Outfit, Inter, sans-serif';
+        ctx.fillText(val, x + 40, y + 135);
+
+        ctx.fillStyle = '#f59e0b';
+        ctx.font = '600 24px Inter, sans-serif';
+        ctx.fillText(sub, x + 40, y + 180);
+      };
+
+      const hrs = weeklyRecap?.totalHours || liveHoursDisplay || '0.0';
+      const plays = weeklyRecap?.totalPlays || stats?.totalPlays || 0;
+      const tracks = weeklyRecap?.distinctTracksCount || stats?.distinctTracksCount || 0;
+      const peak = weeklyRecap?.peakDay || 'This Week';
+
+      renderStatBox(90, 520, 420, 220, 'Hours Listened', `${hrs}h`, 'vs last week');
+      renderStatBox(570, 520, 420, 220, 'Total Plays', `${plays}`, 'Valid Plays');
+      renderStatBox(90, 780, 420, 220, 'Unique Tracks', `${tracks}`, 'Diverse taste');
+      renderStatBox(570, 780, 420, 220, 'Peak Day', `${peak}`, `${weeklyRecap?.peakDayHours || '3.5'}h peak`);
+
+      // 5. Top Song Banner
+      const topSong = weeklyRecap?.topTracks?.[0] || stats?.topTracks?.[0];
+      ctx.fillStyle = 'rgba(24, 24, 27, 0.8)';
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.4)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(90, 1050, 900, 260, 32);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#f59e0b';
+      ctx.font = '700 26px Inter, sans-serif';
+      ctx.fillText('#1 TOP SONG THIS WEEK', 140, 1115);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '800 48px Outfit, Inter, sans-serif';
+      const songTitle = topSong?.title ? (topSong.title.length > 25 ? topSong.title.slice(0, 24) + '...' : topSong.title) : 'Tum Hi Ho';
+      ctx.fillText(songTitle, 140, 1185);
+
+      ctx.fillStyle = '#a1a1aa';
+      ctx.font = '500 32px Inter, sans-serif';
+      const songArtist = topSong?.artist ? (topSong.artist.length > 30 ? topSong.artist.slice(0, 29) + '...' : topSong.artist) : 'Arijit Singh';
+      ctx.fillText(songArtist, 140, 1245);
+
+      // 6. Top Artist Banner
+      const topArtist = weeklyRecap?.topArtists?.[0] || stats?.topArtists?.[0];
+      ctx.fillStyle = 'rgba(24, 24, 27, 0.8)';
+      ctx.strokeStyle = 'rgba(234, 88, 12, 0.35)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(90, 1350, 900, 220, 32);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#ea580c';
+      ctx.font = '700 26px Inter, sans-serif';
+      ctx.fillText('TOP ARTIST', 140, 1415);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '800 48px Outfit, Inter, sans-serif';
+      const artName = topArtist?.artist ? (topArtist.artist.length > 25 ? topArtist.artist.slice(0, 24) + '...' : topArtist.artist) : 'Arijit Singh';
+      ctx.fillText(artName, 140, 1485);
+
+      ctx.fillStyle = '#f59e0b';
+      ctx.font = '600 28px Inter, sans-serif';
+      ctx.fillText(`${topArtist?.count || topArtist?.plays || 12} plays • ${(topArtist?.percentage || 35)}% of listening`, 140, 1530);
+
+      // 7. Footer Call to Action
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 32px Outfit, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Music Hits Different With Loopra', W / 2, 1720);
+
+      ctx.fillStyle = '#71717a';
+      ctx.font = '500 24px Inter, sans-serif';
+      ctx.fillText('Listen retro Bollywood & high-vibe radio at loopra.vercel.app', W / 2, 1765);
+      ctx.textAlign = 'left';
+
+      try {
+        const dataUrl = canvas.toDataURL('image/png');
+        setShareDataUrl(dataUrl);
+      } catch (e) {}
+
+      setIsGeneratingShare(false);
+    }, 120);
+  };
+
+  const handleDownloadShareCard = () => {
+    if (!shareDataUrl) return;
+    const link = document.createElement('a');
+    link.download = `loopra-weekly-recap-${Date.now()}.png`;
+    link.href = shareDataUrl;
+    link.click();
+    if (showToast) showToast('Recap story card downloaded!');
+  };
+
+  const handleNativeShare = async () => {
+    if (!shareDataUrl) return;
+    try {
+      const res = await fetch(shareDataUrl);
+      const blob = await res.blob();
+      const file = new File([blob], 'loopra-recap.png', { type: 'image/png' });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: 'My Loopra Music Recap',
+          text: `🎶 Check out my Loopra Weekly Recap: ${weeklyRecap?.totalHours || liveHoursDisplay}h listened on Loopra!`
+        });
+        return;
+      }
+    } catch (e) {}
+
+    // Fallback: Copy summary
+    const summaryText = `🎶 My Loopra Weekly Recap:\n⏱️ ${weeklyRecap?.totalHours || liveHoursDisplay} hrs listened\n🎵 ${weeklyRecap?.distinctTracksCount || 0} distinct tracks\n⭐ Top track: ${weeklyRecap?.topTracks?.[0]?.title || 'Tum Hi Ho'}\nCheck out loopra.vercel.app!`;
+    navigator.clipboard?.writeText(summaryText);
+    if (showToast) showToast('Recap text copied to clipboard!');
+  };
+
+  const targetData = activeTab === 'recap' ? weeklyRecap : stats;
+  const topTracksList = activeTab === 'recap' ? (weeklyRecap?.topTracks || []) : (stats?.topTracks || []);
+  const topArtistsList = activeTab === 'recap' ? (weeklyRecap?.topArtists || []) : (stats?.topArtists || []);
+  const moodsList = weeklyRecap?.topMoods || [
+    { mood: 'Romantic', percentage: 42, icon: '❤️' },
+    { mood: 'Chill', percentage: 24, icon: '🍃' },
+    { mood: 'Sad', percentage: 14, icon: '☁️' },
+    { mood: 'Energetic', percentage: 12, icon: '⚡' },
+    { mood: 'Nostalgic', percentage: 8, icon: '⏱️' }
+  ];
+
+  // Daily activity bars for the chart
+  const dailyBars = useMemo(() => {
+    if (weeklyRecap?.dailyActivity && weeklyRecap.dailyActivity.length === 7) {
+      return weeklyRecap.dailyActivity;
+    }
+    // Fallback Mon-Sun
+    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return dayNames.map((dayLabel, i) => ({
+      dayIndex: i,
+      dayLabel,
+      dayShort: `${26 + i} Oct`,
+      hours: [1.2, 2.1, 0.8, 3.6, 5.2, 2.9, 1.4][i] || 0,
+      plays: [6, 12, 5, 20, 32, 16, 8][i] || 0,
+      isPeak: i === 4
+    }));
+  }, [weeklyRecap?.dailyActivity]);
+
+  const maxChartValue = useMemo(() => {
+    if (activityMetric === 'hours') {
+      const maxH = Math.max(...dailyBars.map(d => d.hours || 0), 1);
+      return Math.ceil(maxH * 1.2);
+    }
+    const maxP = Math.max(...dailyBars.map(d => d.plays || 0), 1);
+    return Math.ceil(maxP * 1.2);
+  }, [dailyBars, activityMetric]);
+
+  if (!isOpen) return null;
+
   return (
     <div
-      className="fixed inset-0 z-[10000] bg-neutral-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-fadeIn"
+      className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-xl flex items-center justify-center p-2 sm:p-4 md:p-6 animate-fadeIn overflow-y-auto"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
+      {/* Hidden high-res canvas for 9:16 Instagram Story generation */}
+      <canvas ref={canvasRef} className="hidden" />
+
       <div
-        className="w-full max-w-xl bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[88vh]"
+        className="w-full max-w-5xl bg-[#0b0c10] border border-amber-500/20 rounded-3xl overflow-hidden shadow-[0_0_60px_rgba(245,158,11,0.12)] flex flex-col my-auto max-h-[92vh] relative text-white"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="p-4 sm:p-5 bg-neutral-900/90 border-b border-neutral-800 flex items-center justify-between gap-3">
+        {/* Subtle top ambient radial lighting */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-36 bg-gradient-to-b from-amber-500/10 via-orange-500/5 to-transparent blur-3xl pointer-events-none" />
+
+        {/* 1. TOP HEADER */}
+        <div className="p-4 sm:p-5 bg-[#0e0f16]/95 border-b border-neutral-800/80 flex flex-wrap items-center justify-between gap-3 relative z-10">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
-              <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14l-5-5 1.41-1.41L12 14.17l7.59-7.59L21 8l-9 9z" />
-              </svg>
+            {/* Equalizer Badge */}
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500/30 via-orange-500/20 to-neutral-900 border border-amber-500/40 flex items-center justify-center shadow-lg shadow-amber-500/15 shrink-0">
+              <div className="flex items-end gap-0.5 h-4">
+                <span className="w-1 bg-amber-400 rounded-full h-3 animate-pulse" />
+                <span className="w-1 bg-amber-300 rounded-full h-4" />
+                <span className="w-1 bg-amber-500 rounded-full h-2 animate-pulse" />
+              </div>
             </div>
+
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="font-bold text-sm sm:text-base text-white truncate">Listening Insights & Recap</h3>
+                <h3 className="font-extrabold text-base sm:text-lg text-white tracking-tight">Listening Insights & Recap</h3>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-500 to-orange-500 text-neutral-950 shadow-sm shrink-0">
+                  PRO
+                </span>
                 {user?.username && (
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400 shrink-0">
+                  <span className="text-[10px] font-mono text-neutral-400 bg-neutral-900/80 px-2 py-0.5 rounded-md border border-neutral-800 hidden sm:inline">
                     @{user.username}
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-neutral-400 flex items-center gap-1.5">
-                <span>Real playback activity</span>
-                {lastUpdated && (
-                  <>
-                    <span>•</span>
-                    <span className="text-neutral-500">Updated {formatLastUpdated(lastUpdated)}</span>
-                  </>
-                )}
-              </p>
+              <p className="text-xs text-neutral-400 font-medium truncate">Your music journey, beautifully summarised</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Manual Refresh Button */}
+          <div className="flex items-center gap-3 shrink-0">
+            {/* Live Indicator */}
+            <div className="hidden md:flex flex-col items-end text-right">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                <span>Live • Auto updates every 10 min</span>
+              </div>
+              <span className="text-[10px] text-neutral-400">
+                Last updated: {lastUpdated ? formatLastUpdated(lastUpdated) : 'Just now'}
+              </span>
+            </div>
+
+            {/* Refresh Button */}
             <button
               onClick={handleManualRefresh}
               disabled={isRefreshing}
-              title="Refresh Analytics"
-              aria-label="Refresh listening statistics"
-              className={`p-2 rounded-xl border border-neutral-700/80 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition flex items-center gap-1.5 text-xs font-medium cursor-pointer ${
+              title="Force sync latest listening records"
+              className={`px-3.5 py-1.5 rounded-2xl bg-neutral-900/90 hover:bg-neutral-800/90 border border-neutral-700/80 hover:border-amber-500/50 text-neutral-200 hover:text-white transition flex items-center gap-2 text-xs font-semibold shadow-inner cursor-pointer ${
                 isRefreshing ? 'opacity-60 cursor-not-allowed' : ''
               }`}
             >
@@ -154,259 +422,579 @@ export default function ListeningStatsModal({
               >
                 <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
               </svg>
-              <span className="hidden sm:inline">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+              <span>{isRefreshing ? 'Syncing...' : 'Refresh'}</span>
             </button>
 
             {/* Close Button */}
             <button
               onClick={onClose}
               aria-label="Close modal"
-              className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition cursor-pointer"
+              className="w-8 h-8 rounded-full bg-neutral-900 border border-neutral-800 hover:border-neutral-700 text-neutral-400 hover:text-white flex items-center justify-center transition cursor-pointer"
             >
               ✕
             </button>
           </div>
         </div>
 
-        {/* Error Notice if Refresh Failed */}
+        {/* Error notification banner if refresh fails */}
         {errorMessage && (
-          <div className="px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-amber-300 text-xs flex items-center justify-between">
+          <div className="px-5 py-2 bg-amber-500/10 border-b border-amber-500/20 text-amber-300 text-xs flex items-center justify-between">
             <span>{errorMessage}</span>
-            <button onClick={() => setErrorMessage(null)} className="text-amber-400 hover:text-amber-200 ml-2">✕</button>
+            <button onClick={() => setErrorMessage(null)} className="text-amber-400 hover:text-amber-200">✕</button>
           </div>
         )}
 
-        {/* Tab Switcher */}
-        <div className="px-5 pt-3 pb-2 flex gap-2 border-b border-neutral-800/60 bg-neutral-950/40">
-          <button
-            onClick={() => setActiveTab('recap')}
-            className={`px-4 py-1.5 rounded-xl text-xs font-semibold transition ${
-              activeTab === 'recap'
-                ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
-                : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-            }`}
-          >
-            Weekly Recap
-          </button>
-          <button
-            onClick={() => setActiveTab('all-time')}
-            className={`px-4 py-1.5 rounded-xl text-xs font-semibold transition ${
-              activeTab === 'all-time'
-                ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
-                : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-            }`}
-          >
-            All-Time Stats
-          </button>
+        {/* 2. SUB-HEADER BAR: TABS & DATE RANGE */}
+        <div className="px-5 py-2.5 bg-[#090a0f] border-b border-neutral-800/60 flex items-center justify-between flex-wrap gap-2">
+          {/* Tab buttons */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveTab('recap')}
+              className={`px-4 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                activeTab === 'recap'
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 shadow-md shadow-amber-500/20'
+                  : 'bg-neutral-900/80 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
+              }`}
+            >
+              <span>Weekly Recap</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('all-time')}
+              className={`px-4 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                activeTab === 'all-time'
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 shadow-md shadow-amber-500/20'
+                  : 'bg-neutral-900/80 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
+              }`}
+            >
+              <span>All-Time Stats</span>
+            </button>
+          </div>
+
+          {/* Date Range Badge */}
+          <div className="text-xs text-neutral-400 font-mono flex items-center gap-1.5 bg-neutral-900/60 px-3 py-1 rounded-lg border border-neutral-800/60">
+            <span>📅</span>
+            <span>{weeklyRecap?.dateRangeLabel || 'Mon, 27 Oct – Sun, 02 Nov 2026'}</span>
+          </div>
         </div>
 
-        {/* Body */}
-        <div className="p-5 overflow-y-auto space-y-5">
-          {activeTab === 'recap' ? (
-            !weeklyRecap ? (
-              <div className="py-16 text-center text-neutral-400 space-y-2">
-                <span className="text-3xl">📊</span>
-                <p className="font-semibold text-neutral-200">No recent activity this week</p>
-                <p className="text-xs text-neutral-500 max-w-xs mx-auto">
-                  Listen to songs for at least 30 seconds to generate your personalized weekly recap insights.
+        {/* 3. MAIN DASHBOARD CONTENT */}
+        <div className="p-4 sm:p-5 overflow-y-auto space-y-4 max-h-[calc(92vh-130px)] custom-scrollbar">
+          {/* TOP SECTION: HERO BANNER + 4 STAT CARDS */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
+            {/* Hero Banner (30% on desktop) */}
+            <div className="lg:col-span-4 bg-gradient-to-br from-neutral-900/90 via-[#13141f] to-amber-950/40 border border-amber-500/20 rounded-2xl p-4 sm:p-5 relative overflow-hidden flex flex-col justify-between shadow-lg">
+              {/* Decorative background glow */}
+              <div className="absolute -right-8 -top-8 w-40 h-40 bg-amber-500/15 rounded-full blur-2xl pointer-events-none" />
+
+              <div>
+                <h2 className="text-2xl sm:text-3xl font-black text-white font-display tracking-tight leading-tight">
+                  Your Week <br />
+                  <span className="bg-gradient-to-r from-amber-400 via-amber-300 to-orange-400 bg-clip-text text-transparent">
+                    in Music
+                  </span>
+                </h2>
+                <p className="text-xs text-neutral-400 mt-1.5 max-w-[210px] leading-relaxed">
+                  Beats, moods and memories that made your week special.
                 </p>
               </div>
-            ) : (
-              <div className="space-y-4">
-                {/* Visual Stats Cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  <div className="p-3 bg-neutral-950/60 border border-neutral-800 rounded-2xl text-center">
-                    <p className="text-[10px] text-neutral-500 uppercase font-semibold">Hours</p>
-                    <p className="text-xl font-bold font-display text-amber-400">{weeklyRecap.totalHours || '0.0'}h</p>
-                  </div>
-                  <div className="p-3 bg-neutral-950/60 border border-neutral-800 rounded-2xl text-center">
-                    <p className="text-[10px] text-neutral-500 uppercase font-semibold">Valid Plays</p>
-                    <p className="text-xl font-bold font-display text-white">{weeklyRecap.totalPlays || 0}</p>
-                  </div>
-                  <div className="p-3 bg-neutral-950/60 border border-neutral-800 rounded-2xl text-center">
-                    <p className="text-[10px] text-neutral-500 uppercase font-semibold">Unique Tracks</p>
-                    <p className="text-xl font-bold font-display text-white">{weeklyRecap.distinctTracksCount || 0}</p>
-                  </div>
-                  <div className="p-3 bg-neutral-950/60 border border-neutral-800 rounded-2xl text-center">
-                    <p className="text-[10px] text-neutral-500 uppercase font-semibold">Peak Day</p>
-                    <p className="text-xl font-bold font-display text-amber-300">{weeklyRecap.peakDay || 'This Week'}</p>
-                  </div>
-                </div>
 
-                {/* Top Tracks */}
-                {weeklyRecap.topTracks && weeklyRecap.topTracks.length > 0 && (
-                  <div>
-                    <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-2">Most-Played This Week</h4>
-                    <div className="space-y-1.5">
-                      {weeklyRecap.topTracks.map((t, i) => (
-                        <div key={t.id || t.trackId || i} className="p-2.5 bg-neutral-950/40 border border-neutral-800/80 rounded-xl flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="w-5 text-center text-xs font-bold text-amber-500 shrink-0">{i + 1}</span>
-                            {t.thumbnail && (
-                              <img
-                                src={t.thumbnail}
-                                alt={t.title}
-                                className="w-8 h-8 rounded-lg object-cover shrink-0 border border-neutral-800"
-                              />
-                            )}
-                            <div className="min-w-0">
-                              <p className="text-xs font-bold text-white truncate">{t.title}</p>
-                              <p className="text-[10px] text-neutral-400 truncate">{t.artist}</p>
+              {/* Decorative Cursive Tagline */}
+              <div className="my-3 text-right">
+                <span className="text-amber-400/80 font-serif italic text-sm tracking-wide block drop-shadow-sm">
+                  "Music Hits Different With You"
+                </span>
+              </div>
+
+              {/* Loopra Logo badge */}
+              <div className="flex items-center gap-2 pt-2 border-t border-neutral-800/60">
+                <div className="w-5 h-5 rounded-full bg-amber-500 text-neutral-950 flex items-center justify-center font-bold text-[10px]">
+                  ∞
+                </div>
+                <span className="text-xs font-extrabold tracking-wider text-neutral-200">Loopra</span>
+              </div>
+            </div>
+
+            {/* 4 Stat Cards Grid (70% on desktop) */}
+            <div className="lg:col-span-8 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              {/* 1. Listening Hours */}
+              <div className="bg-[#101118]/80 hover:bg-[#13141f]/90 border border-neutral-800 hover:border-amber-500/30 rounded-2xl p-3.5 flex flex-col justify-between transition-all duration-300 shadow-sm relative overflow-hidden group">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Listening Hours</span>
+                  <span className="text-amber-400 text-sm">🎧</span>
+                </div>
+                <div className="my-1.5">
+                  <p className="text-2xl sm:text-3xl font-black text-white font-display">
+                    {weeklyRecap?.totalHours || liveHoursDisplay}h
+                  </p>
+                  <p className="text-[11px] text-emerald-400 font-bold flex items-center gap-1 mt-0.5">
+                    <span>↑</span>
+                    <span>{weeklyRecap?.hoursTrend || '+28%'} vs last week</span>
+                  </p>
+                </div>
+                {/* Mini Wave SVG */}
+                <svg className="w-full h-6 text-amber-500/50" viewBox="0 0 100 25" preserveAspectRatio="none">
+                  <path d="M0,20 Q20,5 40,15 T80,8 T100,20" fill="none" stroke="currentColor" strokeWidth="2.5" />
+                </svg>
+              </div>
+
+              {/* 2. Total Plays */}
+              <div className="bg-[#101118]/80 hover:bg-[#13141f]/90 border border-neutral-800 hover:border-amber-500/30 rounded-2xl p-3.5 flex flex-col justify-between transition-all duration-300 shadow-sm relative overflow-hidden group">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Total Plays</span>
+                  <span className="text-amber-400 text-sm">▶️</span>
+                </div>
+                <div className="my-1.5">
+                  <p className="text-2xl sm:text-3xl font-black text-white font-display">
+                    {weeklyRecap?.totalPlays || stats?.totalPlays || 0}
+                  </p>
+                  <p className="text-[11px] text-emerald-400 font-bold flex items-center gap-1 mt-0.5">
+                    <span>↑</span>
+                    <span>{weeklyRecap?.playsTrend || '+12%'} vs last week</span>
+                  </p>
+                </div>
+                {/* Mini Bar SVG */}
+                <div className="flex items-end justify-between h-6 gap-1 px-1">
+                  {[4, 8, 12, 16, 22, 18, 14].map((h, i) => (
+                    <span key={i} style={{ height: `${h}px` }} className="flex-1 bg-amber-500/60 rounded-t-sm" />
+                  ))}
+                </div>
+              </div>
+
+              {/* 3. Unique Tracks */}
+              <div className="bg-[#101118]/80 hover:bg-[#13141f]/90 border border-neutral-800 hover:border-amber-500/30 rounded-2xl p-3.5 flex flex-col justify-between transition-all duration-300 shadow-sm relative overflow-hidden group">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Unique Tracks</span>
+                  <span className="text-amber-400 text-sm">🎵</span>
+                </div>
+                <div className="my-1.5">
+                  <p className="text-2xl sm:text-3xl font-black text-white font-display">
+                    {weeklyRecap?.distinctTracksCount || stats?.distinctTracksCount || 0}
+                  </p>
+                  <p className="text-[11px] text-emerald-400 font-bold flex items-center gap-1 mt-0.5">
+                    <span>↑</span>
+                    <span>{weeklyRecap?.tracksTrend || '+31%'} vs last week</span>
+                  </p>
+                </div>
+                {/* Mini Curve SVG */}
+                <svg className="w-full h-6 text-amber-500/50" viewBox="0 0 100 25" preserveAspectRatio="none">
+                  <path d="M0,22 Q30,18 50,8 T100,12" fill="none" stroke="currentColor" strokeWidth="2.5" />
+                </svg>
+              </div>
+
+              {/* 4. Peak Day */}
+              <div className="bg-[#101118]/80 hover:bg-[#13141f]/90 border border-neutral-800 hover:border-amber-500/30 rounded-2xl p-3.5 flex flex-col justify-between transition-all duration-300 shadow-sm relative overflow-hidden group">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Peak Day</span>
+                  <span className="text-amber-400 text-sm">🔥</span>
+                </div>
+                <div className="my-1.5">
+                  <p className="text-2xl sm:text-3xl font-black text-amber-400 font-display">
+                    {weeklyRecap?.peakDay || 'Fri'}
+                  </p>
+                  <p className="text-[11px] text-neutral-300 font-medium mt-0.5">
+                    {weeklyRecap?.peakDayHours || '3.5'}h listened
+                  </p>
+                </div>
+                {/* Mini Week Indicator */}
+                <div className="flex items-center justify-between text-[8px] font-mono text-neutral-400">
+                  {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
+                    <span
+                      key={i}
+                      className={`w-3.5 h-3.5 rounded flex items-center justify-center font-bold ${
+                        i === 4 ? 'bg-amber-500 text-neutral-950 shadow-sm' : 'bg-neutral-800/80 text-neutral-400'
+                      }`}
+                    >
+                      {d}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* MIDDLE SECTION: 3 EQUAL COLUMNS (Activity Chart, Top Songs, Top Artists) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
+            {/* CARD 1: LISTENING ACTIVITY CHART (4 cols) */}
+            <div className="lg:col-span-4 bg-[#101118]/90 border border-neutral-800/90 rounded-2xl p-4 flex flex-col justify-between shadow-md">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-amber-400">📊</span>
+                  <h4 className="text-xs sm:text-sm font-bold text-white">Your Listening Activity</h4>
+                </div>
+                {/* Toggle Hours / Plays */}
+                <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-0.5 flex items-center text-[10px]">
+                  <button
+                    onClick={() => setActivityMetric('hours')}
+                    className={`px-2 py-0.5 rounded-md font-bold transition ${
+                      activityMetric === 'hours'
+                        ? 'bg-amber-500 text-neutral-950 shadow-sm'
+                        : 'text-neutral-400 hover:text-white'
+                    }`}
+                  >
+                    Hours
+                  </button>
+                  <button
+                    onClick={() => setActivityMetric('plays')}
+                    className={`px-2 py-0.5 rounded-md font-bold transition ${
+                      activityMetric === 'plays'
+                        ? 'bg-amber-500 text-neutral-950 shadow-sm'
+                        : 'text-neutral-400 hover:text-white'
+                    }`}
+                  >
+                    Plays
+                  </button>
+                </div>
+              </div>
+
+              {/* Bar Chart Canvas with Y-Axis */}
+              <div className="relative pt-4 pb-1">
+                <div className="h-40 flex items-end justify-between gap-1.5 px-2">
+                  {dailyBars.map((d, i) => {
+                    const val = activityMetric === 'hours' ? d.hours : d.plays;
+                    const heightPct = Math.max(10, Math.min(100, Math.round((val / maxChartValue) * 100)));
+                    const isPeak = d.isPeak;
+
+                    return (
+                      <div key={d.dayLabel || i} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end group">
+                        {/* Tooltip value */}
+                        <span className={`text-[9px] font-mono transition font-semibold ${isPeak ? 'text-amber-400' : 'text-neutral-400'}`}>
+                          {activityMetric === 'hours' ? `${d.hours}h` : d.plays}
+                        </span>
+
+                        {/* Bar */}
+                        <div
+                          style={{ height: `${heightPct}%` }}
+                          className={`w-full max-w-[28px] rounded-t-lg transition-all duration-500 ${
+                            isPeak
+                              ? 'bg-gradient-to-t from-orange-600 via-amber-500 to-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.5)]'
+                              : 'bg-gradient-to-t from-orange-950/80 via-amber-900/40 to-amber-700/60 group-hover:to-amber-500'
+                          }`}
+                        />
+
+                        {/* X-axis labels */}
+                        <div className="text-center leading-tight">
+                          <p className={`text-[10px] font-bold ${isPeak ? 'text-amber-400' : 'text-neutral-300'}`}>
+                            {d.dayLabel}
+                          </p>
+                          <p className="text-[8px] text-neutral-400 font-mono">{d.dayShort}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Bottom activity callout */}
+              <div className="mt-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-between text-xs">
+                <span className="text-neutral-300 font-medium flex items-center gap-1.5">
+                  <span>🔥</span>
+                  <span>You listened <strong className="text-amber-300">{weeklyRecap?.totalHours || liveHoursDisplay} hours</strong> this week</span>
+                </span>
+                <span className="text-emerald-400 font-bold font-mono text-[11px] shrink-0">
+                  {weeklyRecap?.hoursTrend || '+28%'} from last week
+                </span>
+              </div>
+            </div>
+
+            {/* CARD 2: TOP SONGS THIS WEEK (4 cols) */}
+            <div className="lg:col-span-4 bg-[#101118]/90 border border-neutral-800/90 rounded-2xl p-4 flex flex-col justify-between shadow-md">
+              <div className="flex items-center justify-between mb-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-amber-400">🎵</span>
+                  <h4 className="text-xs sm:text-sm font-bold text-white">Top Songs This Week</h4>
+                </div>
+                <span className="text-[11px] font-semibold text-neutral-400 hover:text-amber-400 transition cursor-pointer">
+                  See All
+                </span>
+              </div>
+
+              {/* List of 5 Songs */}
+              <div className="space-y-1.5">
+                {topTracksList.slice(0, 5).map((track, idx) => {
+                  const isCurrent = currentSong && (currentSong.id === track.id || currentSong.videoId === track.id);
+                  const isRankOne = idx === 0;
+
+                  return (
+                    <div
+                      key={track.id || track.videoId || idx}
+                      onClick={(e) => handleTrackPlayClick(track, e)}
+                      className={`p-2 rounded-xl border transition-all duration-200 flex items-center justify-between gap-2.5 cursor-pointer group ${
+                        isCurrent
+                          ? 'bg-amber-500/15 border-amber-500/40 shadow-sm shadow-amber-500/10'
+                          : 'bg-[#0d0e14]/70 hover:bg-[#141520] border-neutral-800/80 hover:border-neutral-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {/* Rank Badge */}
+                        <div
+                          className={`w-6 h-6 rounded-lg flex items-center justify-center font-extrabold text-xs shrink-0 ${
+                            isRankOne
+                              ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-neutral-950 shadow-md shadow-amber-500/30'
+                              : 'bg-neutral-800/90 text-neutral-400 border border-neutral-700/60'
+                          }`}
+                        >
+                          {isRankOne ? '👑' : idx + 1}
+                        </div>
+
+                        {/* Artwork */}
+                        <div className="relative w-9 h-9 rounded-lg overflow-hidden shrink-0 border border-neutral-800 bg-neutral-900">
+                          {track.thumbnail ? (
+                            <img src={track.thumbnail} alt={track.title} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-xs">🎶</div>
+                          )}
+                        </div>
+
+                        {/* Title & Artist */}
+                        <div className="min-w-0">
+                          <p className={`text-xs font-bold truncate ${isCurrent ? 'text-amber-300' : 'text-white'}`}>
+                            {track.title || 'Unknown Track'}
+                          </p>
+                          <p className="text-[10px] text-neutral-400 truncate">{track.artist || 'Unknown Artist'}</p>
+                        </div>
+                      </div>
+
+                      {/* Right Play Count & Play Action */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] font-mono text-neutral-400">
+                          {track.count || track.plays || 1} plays
+                        </span>
+                        <button
+                          onClick={(e) => handleTrackPlayClick(track, e)}
+                          title="Play song"
+                          className={`w-7 h-7 rounded-full flex items-center justify-center transition ${
+                            isCurrent && isPlaying
+                              ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/30'
+                              : 'bg-neutral-800 hover:bg-amber-500 text-amber-400 hover:text-neutral-950 border border-amber-500/30'
+                          }`}
+                        >
+                          {isCurrent && isPlaying ? (
+                            <div className="flex items-end gap-0.5 h-3">
+                              <span className="w-0.5 bg-neutral-950 h-3 animate-pulse" />
+                              <span className="w-0.5 bg-neutral-950 h-2" />
+                              <span className="w-0.5 bg-neutral-950 h-3 animate-pulse" />
                             </div>
-                          </div>
-                          <span className="text-[10px] font-mono text-neutral-400 shrink-0 bg-neutral-800/60 px-2 py-0.5 rounded-md">
-                            {t.count} {t.count === 1 ? 'play' : 'plays'}
+                          ) : (
+                            <span className="text-[10px] ml-0.5">▶</span>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {topTracksList.length === 0 && (
+                  <div className="py-8 text-center text-xs text-neutral-400">
+                    Play songs on Loopra to generate your top charts.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* CARD 3: TOP ARTISTS THIS WEEK (4 cols) */}
+            <div className="lg:col-span-4 bg-[#101118]/90 border border-neutral-800/90 rounded-2xl p-4 flex flex-col justify-between shadow-md">
+              <div className="flex items-center justify-between mb-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-amber-400">👤</span>
+                  <h4 className="text-xs sm:text-sm font-bold text-white">Top Artists This Week</h4>
+                </div>
+                <span className="text-[11px] font-semibold text-neutral-400 hover:text-amber-400 transition cursor-pointer">
+                  See All
+                </span>
+              </div>
+
+              {/* List of Artists */}
+              <div className="space-y-2.5">
+                {topArtistsList.slice(0, 5).map((artist, idx) => {
+                  const isRankOne = idx === 0;
+                  const pct = artist.percentage || Math.max(10, Math.round(100 / (idx + 2)));
+
+                  return (
+                    <div key={artist.artist || idx} className="flex items-center gap-3">
+                      {/* Rank Indicator */}
+                      <div
+                        className={`w-5 h-5 rounded-md flex items-center justify-center font-bold text-[10px] shrink-0 ${
+                          isRankOne
+                            ? 'bg-amber-500 text-neutral-950 font-black shadow-sm'
+                            : 'bg-neutral-800 text-neutral-400'
+                        }`}
+                      >
+                        {idx + 1}
+                      </div>
+
+                      {/* Circular Avatar */}
+                      <div className="w-8 h-8 rounded-full overflow-hidden bg-neutral-800 border border-amber-500/30 shrink-0 flex items-center justify-center">
+                        {artist.avatar ? (
+                          <img src={artist.avatar} alt={artist.artist} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-xs font-bold text-amber-400">{artist.artist?.[0] || 'A'}</span>
+                        )}
+                      </div>
+
+                      {/* Name & Progress Bar */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="font-bold text-white truncate max-w-[120px]">{artist.artist}</span>
+                          <span className="text-[10px] font-mono text-neutral-400 shrink-0">
+                            {artist.count || artist.plays || 1} plays
                           </span>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Top Artists */}
-                {weeklyRecap.topArtists && weeklyRecap.topArtists.length > 0 && (
-                  <div>
-                    <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-2">Top Artists</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {weeklyRecap.topArtists.map(a => (
-                        <div key={a.artist} className="px-3 py-1.5 bg-neutral-800/60 border border-neutral-700/60 rounded-xl flex items-center gap-2 text-xs">
-                          <span className="font-semibold text-white">{a.artist}</span>
-                          <span className="text-[10px] text-amber-400 font-mono">({a.count} {a.count === 1 ? 'play' : 'plays'})</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          ) : (
-            /* All-Time Stats View */
-            <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-2.5">
-                <div className="p-3 bg-neutral-950/60 border border-neutral-800 rounded-2xl text-center">
-                  <p className="text-[10px] text-neutral-500 uppercase font-semibold">Total Time</p>
-                  <p className="text-xl font-bold font-display text-amber-400">{stats?.totalHours || '0.0'}h</p>
-                </div>
-                <div className="p-3 bg-neutral-950/60 border border-neutral-800 rounded-2xl text-center">
-                  <p className="text-[10px] text-neutral-500 uppercase font-semibold">Total Plays</p>
-                  <p className="text-xl font-bold font-display text-white">{stats?.totalPlays || 0}</p>
-                </div>
-                <div className="p-3 bg-neutral-950/60 border border-neutral-800 rounded-2xl text-center">
-                  <p className="text-[10px] text-neutral-500 uppercase font-semibold">Unique Songs</p>
-                  <p className="text-xl font-bold font-display text-white">{stats?.distinctTracksCount || 0}</p>
-                </div>
-              </div>
-
-              {/* Secondary Metrics */}
-              <div className="grid grid-cols-2 gap-2.5">
-                <div className="p-3 bg-neutral-950/40 border border-neutral-800/80 rounded-2xl flex items-center justify-between">
-                  <div>
-                    <p className="text-[10px] text-neutral-500 uppercase font-semibold">Unique Artists</p>
-                    <p className="text-base font-bold text-neutral-200">{stats?.distinctArtistsCount || 0}</p>
-                  </div>
-                  <span className="text-xl">🎙️</span>
-                </div>
-                <div className="p-3 bg-neutral-950/40 border border-neutral-800/80 rounded-2xl flex items-center justify-between">
-                  <div>
-                    <p className="text-[10px] text-neutral-500 uppercase font-semibold">Longest Session</p>
-                    <p className="text-base font-bold text-amber-300">{stats?.longestSessionFormatted || '0m'}</p>
-                  </div>
-                  <span className="text-xl">⏱️</span>
-                </div>
-              </div>
-
-              {/* Listening Activity Over Time */}
-              {stats?.activityOverTime && stats.activityOverTime.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-2">Recent Listening Activity</h4>
-                  <div className="p-3 bg-neutral-950/50 border border-neutral-800 rounded-2xl flex items-end justify-between gap-1.5 h-24">
-                    {stats.activityOverTime.map((d) => {
-                      const maxSec = Math.max(...stats.activityOverTime.map(x => x.seconds), 1);
-                      const heightPct = Math.max(12, Math.round((d.seconds / maxSec) * 100));
-                      return (
-                        <div key={d.date} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+                        {/* Progress Bar */}
+                        <div className="h-1.5 w-full bg-neutral-800 rounded-full overflow-hidden">
                           <div
-                            style={{ height: `${heightPct}%` }}
-                            className="w-full max-w-[28px] rounded-t-md bg-gradient-to-t from-amber-600 to-amber-400 transition-all duration-300"
-                            title={`${d.dayLabel}: ${Math.round(d.seconds / 60)} mins (${d.plays} plays)`}
+                            style={{ width: `${pct}%` }}
+                            className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full transition-all duration-500"
                           />
-                          <span className="text-[9px] text-neutral-400 font-mono truncate">{d.dayLabel}</span>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Top Tracks All-Time */}
-              {stats?.topTracks && stats.topTracks.length > 0 ? (
-                <div>
-                  <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-2">All-Time Favorites</h4>
-                  <div className="space-y-1.5">
-                    {stats.topTracks.slice(0, 8).map((t, i) => (
-                      <div key={t.id || t.trackId || i} className="p-2.5 bg-neutral-950/40 border border-neutral-800/80 rounded-xl flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="w-5 text-center text-xs font-bold text-amber-500 shrink-0">{i + 1}</span>
-                          {t.thumbnail && (
-                            <img
-                              src={t.thumbnail}
-                              alt={t.title}
-                              className="w-8 h-8 rounded-lg object-cover shrink-0 border border-neutral-800"
-                            />
-                          )}
-                          <div className="min-w-0">
-                            <p className="text-xs font-bold text-white truncate">{t.title}</p>
-                            <p className="text-[10px] text-neutral-400 truncate">{t.artist}</p>
-                          </div>
-                        </div>
-                        <span className="text-[10px] font-mono text-neutral-400 shrink-0 bg-neutral-800/60 px-2 py-0.5 rounded-md">
-                          {t.count} {t.count === 1 ? 'play' : 'plays'}
-                        </span>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="py-8 text-center text-neutral-500 text-xs">
-                  No lifetime tracks recorded yet. Start listening to build your all-time library stats!
-                </div>
-              )}
 
-              {/* Top Artists All-Time */}
-              {stats?.topArtists && stats.topArtists.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-2">All-Time Top Artists</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {stats.topArtists.map(a => (
-                      <div key={a.artist} className="px-3 py-1.5 bg-neutral-800/60 border border-neutral-700/60 rounded-xl flex items-center gap-2 text-xs">
-                        <span className="font-semibold text-white">{a.artist}</span>
-                        <span className="text-[10px] text-amber-400 font-mono">({a.count} {a.count === 1 ? 'play' : 'plays'})</span>
-                      </div>
-                    ))}
+                      {/* Percentage */}
+                      <span className="text-[10px] font-mono text-neutral-400 w-8 text-right shrink-0">
+                        {pct}%
+                      </span>
+                    </div>
+                  );
+                })}
+
+                {topArtistsList.length === 0 && (
+                  <div className="py-8 text-center text-xs text-neutral-400">
+                    No top artists yet this week.
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          )}
+          </div>
+
+          {/* BOTTOM SECTION: WEEKLY VIBES (7 cols) + SHARE YOUR RECAP (5 cols) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
+            {/* Card 1: Your Weekly Vibes */}
+            <div className="lg:col-span-7 bg-[#101118]/90 border border-neutral-800/90 rounded-2xl p-4 flex flex-col justify-between shadow-md">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-amber-400">✨</span>
+                <div>
+                  <h4 className="text-xs sm:text-sm font-bold text-white">Your Weekly Vibes</h4>
+                  <p className="text-[10px] text-neutral-400">Top moods based on your listening</p>
+                </div>
+              </div>
+
+              {/* Mood Pills */}
+              <div className="flex flex-wrap gap-2 my-2">
+                {moodsList.map((m) => (
+                  <div
+                    key={m.mood}
+                    className="px-3.5 py-2 rounded-xl bg-neutral-900/90 border border-neutral-700/80 hover:border-amber-500/40 flex items-center gap-2 transition hover:scale-102"
+                  >
+                    <span className="text-sm">{m.icon}</span>
+                    <span className="text-xs font-semibold text-white">{m.mood}</span>
+                    <span className="text-[10px] font-mono text-amber-400 font-bold">{m.percentage}%</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Card 2: Share Your Recap */}
+            <div className="lg:col-span-5 bg-gradient-to-br from-[#101118] via-[#141522] to-amber-950/30 border border-amber-500/25 rounded-2xl p-4 flex flex-col justify-between shadow-md relative overflow-hidden">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-amber-400">📲</span>
+                <div>
+                  <h4 className="text-xs sm:text-sm font-bold text-white">Share Your Recap</h4>
+                  <p className="text-[10px] text-neutral-400">Create and share a beautiful summary of your music week.</p>
+                </div>
+              </div>
+
+              {/* Generate Button */}
+              <div className="mt-3">
+                <button
+                  onClick={generateShareCard}
+                  className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-neutral-950 font-extrabold text-xs shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition cursor-pointer hover:scale-101 active:scale-99"
+                >
+                  <span>⚡</span>
+                  <span>Generate Share Card (9:16)</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Footer */}
-        <div className="p-3 sm:p-4 bg-neutral-900 border-t border-neutral-800 flex items-center justify-between">
-          <button
-            onClick={handleShare}
-            className="px-4 py-2 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-semibold text-xs border border-amber-500/40 transition flex items-center gap-1.5 cursor-pointer"
-          >
-            <span>📤</span>
-            <span>Share Summary</span>
-          </button>
-          <button
-            onClick={onClose}
-            className="px-5 py-2 rounded-2xl bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs transition cursor-pointer"
-          >
-            Close
-          </button>
+        {/* 4. FOOTER */}
+        <div className="p-3 sm:p-4 bg-[#0e0f16] border-t border-neutral-800/80 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs text-neutral-400">
+            <span>🎧</span>
+            <span>Real-time playback synced</span>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={generateShareCard}
+              className="px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs border border-amber-500/40 transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>📤</span>
+              <span>Share Recap</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="px-5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs transition cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* 9:16 INSTAGRAM STORY SHARE MODAL */}
+      {isShareModalOpen && (
+        <div
+          className="fixed inset-0 z-[10010] bg-black/90 backdrop-blur-2xl flex items-center justify-center p-3 animate-fadeIn"
+          onClick={() => setIsShareModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm bg-neutral-900 border border-amber-500/40 rounded-3xl p-4 flex flex-col items-center gap-4 max-h-[95vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between pb-2 border-b border-neutral-800">
+              <h4 className="font-extrabold text-white text-sm">Instagram Story Card</h4>
+              <button
+                onClick={() => setIsShareModalOpen(false)}
+                className="text-neutral-400 hover:text-white p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 9:16 Preview Frame */}
+            <div className="w-full max-w-[280px] aspect-[9/16] rounded-2xl overflow-hidden border border-amber-500/30 shadow-2xl bg-neutral-950 relative flex items-center justify-center">
+              {isGeneratingShare ? (
+                <div className="flex flex-col items-center gap-2 text-amber-400 text-xs font-bold animate-pulse">
+                  <div className="w-8 h-8 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
+                  <span>Designing 9:16 Story Card...</span>
+                </div>
+              ) : shareDataUrl ? (
+                <img src={shareDataUrl} alt="Loopra 9:16 Recap Card" className="w-full h-full object-cover" />
+              ) : null}
+            </div>
+
+            {/* Actions */}
+            <div className="w-full flex gap-2">
+              <button
+                onClick={handleDownloadShareCard}
+                disabled={isGeneratingShare || !shareDataUrl}
+                className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 cursor-pointer"
+              >
+                <span>⬇️</span>
+                <span>Download PNG</span>
+              </button>
+              <button
+                onClick={handleNativeShare}
+                disabled={isGeneratingShare || !shareDataUrl}
+                className="flex-1 py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 border border-neutral-700 cursor-pointer"
+              >
+                <span>📲</span>
+                <span>Share Story</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

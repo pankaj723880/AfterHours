@@ -460,8 +460,29 @@ export const listeningEventService = {
     let weeklyListeningSeconds = 0;
     const weeklyTrackCounts = new Map(); // trackId -> { id, title, artist, thumbnail, count, seconds }
     const weeklyArtistCounts = new Map(); // artist -> count
-    const weeklyDaySeconds = new Map(); // 'Mon', 'Tue', etc. -> seconds
     let weeklyValidPlays = 0;
+
+    // 7-day daily breakdown for current week (Mon-Sun)
+    const daysNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const dailyActivity = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startOfWeek.getTime() + i * 24 * 60 * 60 * 1000);
+      let dayShort = '';
+      try {
+        dayShort = new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'short', timeZone: timezone }).format(d);
+      } catch {
+        dayShort = `${d.getDate()} ${d.toLocaleString('en-US', { month: 'short' })}`;
+      }
+      dailyActivity.push({
+        dayIndex: i,
+        dayLabel: daysNames[i],
+        dayShort,
+        seconds: 0,
+        hours: 0,
+        plays: 0,
+        isPeak: false
+      });
+    }
 
     for (const ev of weeklyEvents) {
       const sec = Math.max(0, Number(ev.listenedDuration) || 0);
@@ -474,6 +495,7 @@ export const listeningEventService = {
         const tId = ev.trackId;
         const currentTrack = weeklyTrackCounts.get(tId) || {
           id: tId,
+          videoId: tId,
           title: ev.title || 'Unknown Track',
           artist: ev.artist || 'Unknown Artist',
           thumbnail: ev.thumbnail || '',
@@ -491,52 +513,157 @@ export const listeningEventService = {
         }
       }
 
-      // Calculate weekday in user's timezone for peak listening day
+      // Add to daily activity slot
       if (sec > 0 || isValidPlay) {
-        let dayName = 'Mon';
+        let evDayIndex = 0;
         try {
-          dayName = new Intl.DateTimeFormat('en-US', {
+          const evDate = new Date(ev.timestamp);
+          const parts = new Intl.DateTimeFormat('en-US', {
             weekday: 'short',
             timeZone: timezone
-          }).format(new Date(ev.timestamp));
+          }).formatToParts(evDate);
+          const wkd = parts.find(p => p.type === 'weekday')?.value || 'Mon';
+          const mapW = { 'Mon': 0, 'Tue': 1, 'Wed': 2, 'Thu': 3, 'Fri': 4, 'Sat': 5, 'Sun': 6 };
+          evDayIndex = mapW[wkd] ?? 0;
         } catch {
-          dayName = new Date(ev.timestamp).toLocaleDateString('en-US', { weekday: 'short' });
+          evDayIndex = (new Date(ev.timestamp).getDay() + 6) % 7;
         }
-        weeklyDaySeconds.set(dayName, (weeklyDaySeconds.get(dayName) || 0) + (sec > 0 ? sec : 30));
+        if (dailyActivity[evDayIndex]) {
+          dailyActivity[evDayIndex].seconds += sec;
+          if (isValidPlay) dailyActivity[evDayIndex].plays += 1;
+        }
       }
     }
+
+    // Determine peak day and peak hours
+    let peakDay = 'N/A';
+    let peakDayHours = '0.0';
+    let maxDaySec = -1;
+    let peakIndex = -1;
+    dailyActivity.forEach((day, idx) => {
+      day.hours = parseFloat((day.seconds / 3600).toFixed(1));
+      if (day.seconds > maxDaySec) {
+        maxDaySec = day.seconds;
+        peakDay = day.dayLabel;
+        peakDayHours = day.hours.toFixed(1);
+        peakIndex = idx;
+      }
+    });
+    if (peakIndex >= 0 && maxDaySec > 0) {
+      dailyActivity[peakIndex].isPeak = true;
+    }
+
+    // Previous week comparison for trends
+    const prevWeekStart = new Date(startOfWeek.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const prevWeekEvents = allEvents.filter(e => {
+      const t = e.timestamp ? new Date(e.timestamp) : null;
+      return t && t >= prevWeekStart && t < startOfWeek;
+    });
+    let prevWeekSec = 0;
+    let prevWeekPlays = 0;
+    const prevWeekTrackIds = new Set();
+    prevWeekEvents.forEach(e => {
+      const s = Math.max(0, Number(e.listenedDuration) || 0);
+      prevWeekSec += s;
+      if (s >= 30 || e.eventType === 'completed') {
+        prevWeekPlays += 1;
+        if (e.trackId) prevWeekTrackIds.add(e.trackId);
+      }
+    });
+
+    const calcTrend = (current, prev) => {
+      if (prev > 0) {
+        const diff = Math.round(((current - prev) / prev) * 100);
+        return diff >= 0 ? `+${diff}%` : `${diff}%`;
+      }
+      return current > 0 ? '+100%' : '0%';
+    };
+
+    const hoursTrend = calcTrend(weeklyListeningSeconds, prevWeekSec);
+    const playsTrend = calcTrend(weeklyValidPlays, prevWeekPlays);
+    const tracksTrend = calcTrend(weeklyTrackCounts.size, prevWeekTrackIds.size);
+
+    // Formatted date range label (e.g. "Mon, 27 Oct – Sun, 02 Nov 2026")
+    const endOfWeek = new Date(startOfWeek.getTime() + 6 * 24 * 60 * 60 * 1000);
+    let dateRangeLabel = 'This Week';
+    try {
+      const startFmt = new Intl.DateTimeFormat('en-US', { weekday: 'short', day: '2-digit', month: 'short', timeZone: timezone }).format(startOfWeek);
+      const endFmt = new Intl.DateTimeFormat('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', timeZone: timezone }).format(endOfWeek);
+      dateRangeLabel = `${startFmt} – ${endFmt}`;
+    } catch {}
 
     const weeklyTopTracks = Array.from(weeklyTrackCounts.values())
       .sort((a, b) => b.count - a.count || b.seconds - a.seconds)
-      .slice(0, 5);
+      .slice(0, 10);
 
+    // Top Artists with percentages and avatars
+    const totalArtistPlays = Array.from(weeklyArtistCounts.values()).reduce((a, b) => a + b, 0) || 1;
     const weeklyTopArtists = Array.from(weeklyArtistCounts.entries())
-      .map(([artist, count]) => ({ artist, count }))
+      .map(([artist, count]) => {
+        const sampleTrack = Array.from(weeklyTrackCounts.values()).find(t => t.artist?.toLowerCase() === artist.toLowerCase());
+        return {
+          artist,
+          count,
+          plays: count,
+          percentage: Math.min(100, Math.round((count / totalArtistPlays) * 100)),
+          avatar: sampleTrack?.thumbnail || ''
+        };
+      })
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
-    let peakDay = 'N/A';
-    let maxDaySec = -1;
-    for (const [day, secs] of weeklyDaySeconds.entries()) {
-      if (secs > maxDaySec) {
-        maxDaySec = secs;
-        peakDay = day;
+    // Dynamic Top Moods based on listening
+    const computeMoods = (trackList) => {
+      const weights = { Romantic: 0, Chill: 0, Sad: 0, Energetic: 0, Nostalgic: 0 };
+      trackList.forEach(t => {
+        const txt = `${t.title || ''} ${t.artist || ''}`.toLowerCase();
+        if (/romantic|love|tum hi ho|kesariya|heeriye|dil|pyaar|humnava|arijit|shreya/.test(txt)) weights.Romantic += 4;
+        if (/chill|acoustic|raataan|kho gaye|baarishein|prateek|anuv|lofi|subhanallah/.test(txt)) weights.Chill += 3;
+        if (/sad|heartbreak|channa mereya|bekhayali|judai|aankh hai|agar tum|alizeh|kasoor/.test(txt)) weights.Sad += 3;
+        if (/party|dance|lover|diljit|badtameez|kala chashma|london|chak de|workout|rock/.test(txt)) weights.Energetic += 3;
+        if (/90s|retro|kumar sanu|alka yagnik|udit|lata|kishore|dheere|chura ke|nostalg/.test(txt)) weights.Nostalgic += 3;
+      });
+      const totalW = Object.values(weights).reduce((a, b) => a + b, 0);
+      if (totalW === 0) {
+        return [
+          { mood: 'Romantic', percentage: 42, icon: '❤️' },
+          { mood: 'Chill', percentage: 24, icon: '🍃' },
+          { mood: 'Sad', percentage: 14, icon: '☁️' },
+          { mood: 'Energetic', percentage: 12, icon: '⚡' },
+          { mood: 'Nostalgic', percentage: 8, icon: '⏱️' }
+        ];
       }
-    }
+      return [
+        { mood: 'Romantic', percentage: Math.round((weights.Romantic / totalW) * 100) || 20, icon: '❤️' },
+        { mood: 'Chill', percentage: Math.round((weights.Chill / totalW) * 100) || 20, icon: '🍃' },
+        { mood: 'Sad', percentage: Math.round((weights.Sad / totalW) * 100) || 20, icon: '☁️' },
+        { mood: 'Energetic', percentage: Math.round((weights.Energetic / totalW) * 100) || 20, icon: '⚡' },
+        { mood: 'Nostalgic', percentage: Math.round((weights.Nostalgic / totalW) * 100) || 20, icon: '⏱️' }
+      ].sort((a, b) => b.percentage - a.percentage);
+    };
+
+    const weeklyMoods = computeMoods(weeklyTopTracks);
 
     const hasWeeklyActivity = weeklyValidPlays > 0 || weeklyListeningSeconds >= 20;
 
     const weeklyRecap = hasWeeklyActivity ? {
       periodLabel: 'This Week',
+      dateRangeLabel,
       startOfWeek: startOfWeek.toISOString(),
       totalListeningSeconds: weeklyListeningSeconds,
       totalListeningMinutes: Math.round(weeklyListeningSeconds / 60),
       totalHours: (weeklyListeningSeconds / 3600).toFixed(1),
+      hoursTrend,
       totalPlays: weeklyValidPlays,
+      playsTrend,
       distinctTracksCount: weeklyTrackCounts.size,
+      tracksTrend,
       peakDay: peakDay !== 'N/A' ? peakDay : 'This Week',
+      peakDayHours,
+      dailyActivity,
       topTracks: weeklyTopTracks,
       topArtists: weeklyTopArtists,
+      topMoods: weeklyMoods
     } : null;
 
     // 4. Aggregate All-Time Stats

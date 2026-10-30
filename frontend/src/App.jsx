@@ -7224,6 +7224,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         authToken={authToken}
         user={user}
         backendUrl={BACKEND_URL}
+        onPlaySong={playSong}
+        currentSong={currentSong}
+        isPlaying={isPlaying}
       />
 
       <UserProfileModal 

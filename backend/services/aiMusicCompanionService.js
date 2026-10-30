@@ -2,6 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import { catalogService } from './catalogService.js';
 import { listeningEventService } from './listeningEventService.js';
 import { verifySingleSong, isSingleSong } from './songFilter.js';
+import { recommendationHistoryService, getCanonicalSongKey, cleanSongTitle } from './recommendationHistoryService.js';
 
 export const aiCompanionDiagnostics = {
   totalChats: 0,
@@ -10,11 +11,6 @@ export const aiCompanionDiagnostics = {
   lastLatencyMs: 0,
   lastError: null
 };
-
-// In-memory cache for candidate pools to avoid repeated slow network operations
-let cachedCandidatePool = null;
-let lastCandidatePoolTime = 0;
-const CANDIDATE_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
 /**
  * Returns dynamic, server-authoritative date and time with timezone awareness.
@@ -91,27 +87,37 @@ export const aiMusicCompanionService = {
   },
 
   /**
-   * Fast cached candidate pool fetcher with strict single-song filtering.
+   * Builds an expansive, intent-matched candidate pool with strict single-song filtering.
    */
-  async getCandidatePool(userProfile = null) {
-    const now = Date.now();
-    if (cachedCandidatePool && now - lastCandidatePoolTime < CANDIDATE_CACHE_TTL) {
-      return [...cachedCandidatePool];
+  async getCandidatePool(optionsOrProfile = null) {
+    let userProfile = null;
+    let message = '';
+    let excludedKeys = new Set();
+    let excludedIds = new Set();
+    let excludedTitles = new Set();
+
+    if (optionsOrProfile && typeof optionsOrProfile === 'object' && ('message' in optionsOrProfile || 'userProfile' in optionsOrProfile || 'excludedKeys' in optionsOrProfile)) {
+      userProfile = optionsOrProfile.userProfile || null;
+      message = optionsOrProfile.message || '';
+      excludedKeys = optionsOrProfile.excludedKeys || new Set();
+      excludedIds = optionsOrProfile.excludedIds || new Set();
+      excludedTitles = optionsOrProfile.excludedTitles || new Set();
+    } else {
+      userProfile = optionsOrProfile;
     }
 
     try {
-      const pool = await catalogService.buildCandidatePool(userProfile);
-      // Strictly verify every single candidate track
-      const verifiedPool = (pool || []).filter(t => isSingleSong(t));
-      cachedCandidatePool = verifiedPool;
-      lastCandidatePoolTime = now;
-      return [...verifiedPool];
+      const pool = await catalogService.buildCandidatePool({
+        userPreferences: userProfile,
+        message,
+        excludedKeys,
+        excludedIds,
+        excludedTitles
+      });
+      return (pool || []).filter(t => isSingleSong(t));
     } catch (e) {
       const curated = await catalogService.getCuratedTracks();
-      const verifiedCurated = (curated || []).filter(t => isSingleSong(t));
-      cachedCandidatePool = verifiedCurated;
-      lastCandidatePoolTime = now;
-      return [...verifiedCurated];
+      return (curated || []).filter(t => isSingleSong(t));
     }
   },
 
@@ -176,7 +182,7 @@ export const aiMusicCompanionService = {
   /**
    * Main conversational intelligence engine (Standard Fast Response).
    */
-  async processChat({ user = null, message = '', currentTrack = null, history = [] }) {
+  async processChat({ user = null, userId = null, message = '', currentTrack = null, history = [], sessionKey = null }) {
     aiCompanionDiagnostics.totalChats += 1;
     const startTime = Date.now();
     const dateTimeInfo = getCurrentDateTimeInfo();
@@ -189,6 +195,8 @@ export const aiMusicCompanionService = {
         action: null
       };
     }
+
+    const clientKey = userId || (user ? (user._id ? user._id.toString() : String(user.id || user)) : (sessionKey || 'guest'));
 
     // 1. FAST PATH: Check for direct playback intent FIRST ("play the 2nd one", "play Kesariya", etc.)
     const directTrackToPlay = this.detectPlaybackRequest(cleanMessage, history, []);
@@ -298,8 +306,27 @@ RULES:
       }
     }
 
-    // 5. Retrieve candidate pool
-    let candidatePool = await this.getCandidatePool(userProfile);
+    // 5. Load persistent recommendation exclusion history for this user/session
+    const { excludedIds, excludedKeys, excludedTitles, excludedList } =
+      await recommendationHistoryService.getExclusionSets(clientKey, history);
+
+    // If user explicitly asks for a previous song by name ("play Kesariya", "recommend Tum Hi Ho again", etc.)
+    const explicitTrack = recommendationHistoryService.checkExplicitRequest(cleanMessage, excludedList);
+    if (explicitTrack) {
+      excludedIds.delete(explicitTrack.trackId);
+      excludedIds.delete(explicitTrack.videoId);
+      excludedKeys.delete(explicitTrack.canonicalKey);
+      excludedTitles.delete(explicitTrack.cleanTitle);
+    }
+
+    // 6. Retrieve dynamic candidate pool tailored to user message intent & preferences
+    let candidatePool = await this.getCandidatePool({
+      userProfile,
+      message: cleanMessage,
+      excludedKeys,
+      excludedIds,
+      excludedTitles
+    });
 
     // If this is a time-sensitive query (e.g. latest releases, trending 2026, new songs), retrieve fresh verified releases
     let freshReleases = [];
@@ -307,7 +334,6 @@ RULES:
       try {
         freshReleases = await catalogService.fetchFreshVerifiedReleases(cleanMessage, dateTimeInfo.year);
         if (freshReleases.length > 0) {
-          // Prepend fresh verified tracks to candidate pool
           candidatePool = [...freshReleases, ...candidatePool];
         }
       } catch (err) {
@@ -315,8 +341,56 @@ RULES:
       }
     }
 
-    // Check again if direct playback intent was for a candidate title
-    const candidatePlayMatch = this.detectPlaybackRequest(cleanMessage, history, candidatePool);
+    // 7. Strict duplicate filtering & artist diversity enforcement
+    const intent = catalogService.extractRecommendationIntent(cleanMessage);
+    const seenIds = new Set();
+    const seenKeys = new Set();
+    const deduplicatedCandidates = [];
+    const artistCounts = new Map();
+
+    for (const track of candidatePool) {
+      const id = track.id || track.videoId;
+      if (!id || seenIds.has(id)) continue;
+
+      const verification = verifySingleSong(track);
+      if (!verification.isValid) continue;
+
+      const canonicalKey = getCanonicalSongKey(track);
+      if (seenKeys.has(canonicalKey)) continue;
+
+      // Exclude if already recommended recently (unless explicitly requested)
+      if (excludedIds.has(id) || excludedKeys.has(canonicalKey)) {
+        continue;
+      }
+      const clTitle = cleanSongTitle(track.title);
+      if (clTitle && clTitle.length >= 4 && excludedTitles.has(clTitle)) {
+        continue;
+      }
+
+      // Exclude skipped tracks from user listening profile
+      if (userProfile?.skippedTrackIds?.includes(id)) {
+        continue;
+      }
+
+      // Artist diversity: max 2 tracks per artist unless specifically requested
+      const artistKey = (track.artist || track.channel || '').toLowerCase();
+      if (!intent.targetArtist || !artistKey.includes(intent.targetArtist.toLowerCase())) {
+        const count = artistCounts.get(artistKey) || 0;
+        if (count >= 2) continue;
+        artistCounts.set(artistKey, count + 1);
+      }
+
+      seenIds.add(id);
+      seenKeys.add(canonicalKey);
+      deduplicatedCandidates.push({
+        ...track,
+        songType: verification.songType,
+        verificationStatus: verification.verificationStatus
+      });
+    }
+
+    // Check again if direct playback intent was for any candidate title
+    const candidatePlayMatch = this.detectPlaybackRequest(cleanMessage, history, deduplicatedCandidates);
     if (candidatePlayMatch) {
       return {
         reply: `🎵 Playing **"${candidatePlayMatch.title}"** by ${candidatePlayMatch.artist || 'Artist'} for you now. Enjoy the sound!`,
@@ -328,21 +402,27 @@ RULES:
       };
     }
 
-    // 6. Check if Gemini API is configured
+    // 8. Check if Gemini API is configured
     const client = this.getClient();
     if (!client) {
       aiCompanionDiagnostics.fallbackChats += 1;
       return this.generateFallbackResponse({
         cleanMessage,
         currentTrack,
-        candidatePool,
+        candidatePool: deduplicatedCandidates,
         userProfile,
         dateTimeInfo,
-        freshReleases
+        freshReleases,
+        clientKey,
+        intent,
+        excludedIds,
+        excludedKeys,
+        excludedTitles,
+        excludedList
       });
     }
 
-    // 7. Build compact context for Gemini
+    // 9. Build compact context for Gemini
     const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
     let currentTrackContext = "NO TRACK CURRENTLY PLAYING IN LOOPRA";
@@ -352,20 +432,16 @@ RULES:
 
     const candidateMap = new Map();
     const compactCandidates = [];
-    for (const c of candidatePool.slice(0, 35)) {
+    for (const c of deduplicatedCandidates.slice(0, 35)) {
       const id = c.id || c.videoId;
       if (!id || candidateMap.has(id)) continue;
-      // Strictly verify candidate is a single song
-      const verification = verifySingleSong(c);
-      if (!verification.isValid) continue;
-
       candidateMap.set(id, c);
       compactCandidates.push({
         id,
         title: c.title,
         artist: c.artist || c.channel || 'Artist',
         genre: c.genre || 'Desi',
-        songType: verification.songType,
+        songType: c.songType || 'individual_song',
         uploadedAt: c.uploadedAt || undefined
       });
     }
@@ -387,7 +463,7 @@ SERVER TIME & DATE CONTEXT:
 CURRENT PLAYER STATUS:
 ${currentTrackContext}
 
-VERIFIED CANDIDATE PLAYABLE TRACKS:
+VERIFIED CANDIDATE PLAYABLE TRACKS (Intent Matched & Unrecommended):
 ${JSON.stringify(compactCandidates, null, 2)}
 
 USER PREFERENCES:
@@ -401,20 +477,24 @@ USER MESSAGE:
 "${cleanMessage}"
 
 CRITICAL INSTRUCTIONS & ACCURACY MANDATES:
-1. CURRENT-DATE AWARENESS:
+1. NEVER REPEAT RECENT RECOMMENDATIONS:
+   - Pick ONLY fresh tracks from the "VERIFIED CANDIDATE PLAYABLE TRACKS" list above.
+   - Do not repeat tracks previously recommended in the conversation.
+   - Do not return generic responses; align your recommendation directly with the user's specific request.
+
+2. CURRENT-DATE AWARENESS:
    - Today's date is strictly ${dateTimeInfo.local}. Use this dynamic date context.
-   - For questions about current music releases, trending songs, or events, use the verified candidates list and state the relevant date context.
+   - For questions about current music releases, trending songs, or events, state the relevant date context.
    - Do NOT treat pre-trained knowledge as live current information.
    - If current information or a specific fact cannot be verified, state honestly that it cannot be verified rather than fabricating release dates, chart positions, or credits.
 
-2. STRICT INDIVIDUAL SINGLE SONGS ONLY:
-   - Loopra has a zero-tolerance policy for compilations.
+3. STRICT INDIVIDUAL SINGLE SONGS ONLY:
    - Recommend ONLY individual, complete songs.
    - NEVER recommend mashups, medleys, jukeboxes, non-stop collections, compilations, best-of collections, top 10/20 song collections, DJ mixes, continuous mixes, or playlist videos.
    - Pick tracks STRICTLY from the "VERIFIED CANDIDATE PLAYABLE TRACKS" list above.
    - NEVER invent or hallucinate YouTube IDs. Only use IDs from the candidate list.
 
-3. ACCURATE SONG CREDITS:
+4. ACCURATE SONG CREDITS:
    - Distinguish strictly between:
      * Original Singer (vocalist)
      * Composer / Music Director (creator of melody and score)
@@ -422,7 +502,6 @@ CRITICAL INSTRUCTIONS & ACCURACY MANDATES:
      * Album / Movie
      * Release Year
      * Original vs Cover/Remake
-   - Never confuse singers with composers (e.g., Arijit Singh is a singer; Pritam / A.R. Rahman is a composer).
 
 OUTPUT FORMAT (Strict JSON):
 {
@@ -456,21 +535,18 @@ OUTPUT FORMAT (Strict JSON):
 
       // Hydrate selected tracks strictly from candidateMap with single-song verification
       const hydratedTracks = [];
-      const seenIds = new Set();
+      const seenSelectedIds = new Set();
 
       if (Array.isArray(parsed.selectedTrackIds)) {
         for (const item of parsed.selectedTrackIds) {
           const trackId = typeof item === 'string' ? item : item?.id;
-          if (!trackId || seenIds.has(trackId) || !candidateMap.has(trackId)) continue;
+          if (!trackId || seenSelectedIds.has(trackId) || !candidateMap.has(trackId)) continue;
 
           const fullTrack = candidateMap.get(trackId);
-          // Strictly reject any track that fails single song verification
           const verification = verifySingleSong(fullTrack);
-          if (!verification.isValid) {
-            continue;
-          }
+          if (!verification.isValid) continue;
 
-          seenIds.add(trackId);
+          seenSelectedIds.add(trackId);
           hydratedTracks.push({
             id: fullTrack.id,
             videoId: fullTrack.videoId || fullTrack.id,
@@ -486,13 +562,14 @@ OUTPUT FORMAT (Strict JSON):
         }
       }
 
-      // If user asked for recommendations but none passed, fall back to first verified candidates
-      if (hydratedTracks.length === 0 && (lowerMsg.includes('recommend') || lowerMsg.includes('suggest') || lowerMsg.includes('song'))) {
+      // If user asked for recommendations but none were returned by model, fallback to top unrecommended candidates
+      if (hydratedTracks.length === 0 && (lowerMsg.includes('recommend') || lowerMsg.includes('suggest') || lowerMsg.includes('song') || lowerMsg.includes('music'))) {
         for (const c of compactCandidates.slice(0, 3)) {
           const full = candidateMap.get(c.id);
-          if (full) {
+          if (full && !seenSelectedIds.has(full.id)) {
             const verification = verifySingleSong(full);
             if (verification.isValid) {
+              seenSelectedIds.add(full.id);
               hydratedTracks.push({
                 id: full.id,
                 videoId: full.videoId || full.id,
@@ -510,6 +587,11 @@ OUTPUT FORMAT (Strict JSON):
         }
       }
 
+      // Record recommendation to persistent memory
+      if (hydratedTracks.length > 0) {
+        await recommendationHistoryService.recordRecommendations(clientKey, hydratedTracks, cleanMessage);
+      }
+
       return {
         reply: parsed.reply || `Here are verified single songs handpicked for you as of ${dateTimeInfo.local}:`,
         tracks: hydratedTracks,
@@ -521,10 +603,16 @@ OUTPUT FORMAT (Strict JSON):
       return this.generateFallbackResponse({
         cleanMessage,
         currentTrack,
-        candidatePool,
+        candidatePool: deduplicatedCandidates,
         userProfile,
         dateTimeInfo,
         freshReleases,
+        clientKey,
+        intent,
+        excludedIds,
+        excludedKeys,
+        excludedTitles,
+        excludedList,
         errorNote: err.message
       });
     }
@@ -534,7 +622,21 @@ OUTPUT FORMAT (Strict JSON):
    * Deterministic fallback response when Gemini is unconfigured or rate limited.
    * Adheres strictly to single-song rules, dynamic date awareness, and zero fabrication.
    */
-  generateFallbackResponse({ cleanMessage, currentTrack, candidatePool = [], userProfile = null, dateTimeInfo = getCurrentDateTimeInfo(), freshReleases = [], errorNote = null }) {
+  async generateFallbackResponse({
+    cleanMessage,
+    currentTrack,
+    candidatePool = [],
+    userProfile = null,
+    dateTimeInfo = getCurrentDateTimeInfo(),
+    freshReleases = [],
+    clientKey = null,
+    intent = null,
+    excludedIds = new Set(),
+    excludedKeys = new Set(),
+    excludedTitles = new Set(),
+    excludedList = [],
+    errorNote = null
+  }) {
     const lower = cleanMessage.toLowerCase();
 
     // 1. Query asking for unverified facts / statistics / chart position
@@ -628,43 +730,7 @@ OUTPUT FORMAT (Strict JSON):
 
     // 5. Fresh releases query
     if (freshReleases.length > 0) {
-      return {
-        reply: `As of ${dateTimeInfo.local}, here are fresh verified individual releases from official music channels:`,
-        tracks: freshReleases.filter(t => isSingleSong(t)).slice(0, 4).map(t => {
-          const v = verifySingleSong(t);
-          return {
-            id: t.id,
-            videoId: t.videoId || t.id,
-            title: t.title,
-            artist: t.artist,
-            channel: t.channel || t.artist,
-            thumbnail: t.thumbnail,
-            duration: t.duration || '3:30',
-            songType: v.songType || 'individual_song',
-            verificationStatus: v.verificationStatus || 'verified_single_song',
-            reason: `Fresh official release (${dateTimeInfo.year})`
-          };
-        }),
-        action: null
-      };
-    }
-
-    // 6. Similar songs or mood recommendation - strictly single songs
-    const verifiedCandidates = candidatePool.filter(c => isSingleSong(c));
-    let matchingTracks = verifiedCandidates.filter(c => {
-      const matchText = `${c.title} ${c.artist} ${c.genre} ${c.mood}`.toLowerCase();
-      return lower.split(/\s+/).some(term => term.length > 3 && matchText.includes(term));
-    });
-
-    if (matchingTracks.length === 0) {
-      matchingTracks = verifiedCandidates.slice(0, 4);
-    } else {
-      matchingTracks = matchingTracks.slice(0, 4);
-    }
-
-    return {
-      reply: `Here are verified single tracks from the Loopra sanctuary matching your vibe:`,
-      tracks: matchingTracks.map(t => {
+      const selected = freshReleases.filter(t => isSingleSong(t)).slice(0, 4).map(t => {
         const v = verifySingleSong(t);
         return {
           id: t.id,
@@ -676,9 +742,124 @@ OUTPUT FORMAT (Strict JSON):
           duration: t.duration || '3:30',
           songType: v.songType || 'individual_song',
           verificationStatus: v.verificationStatus || 'verified_single_song',
-          reason: 'Curated individual song from Loopra catalogue'
+          reason: `Fresh official release (${dateTimeInfo.year})`
         };
-      }),
+      });
+
+      if (clientKey && selected.length > 0) {
+        await recommendationHistoryService.recordRecommendations(clientKey, selected, cleanMessage);
+      }
+
+      return {
+        reply: `As of ${dateTimeInfo.local}, here are fresh verified individual releases from official music channels:`,
+        tracks: selected,
+        action: null
+      };
+    }
+
+    // 6. Recommendation query - strictly non-repetitive single songs
+    const currentIntent = intent || catalogService.extractRecommendationIntent(cleanMessage);
+    const verifiedCandidates = candidatePool.filter(c => isSingleSong(c));
+
+    // Filter out previously recommended tracks
+    const unrecommendedCandidates = verifiedCandidates.filter(c => {
+      const id = c.id || c.videoId;
+      if (!id || excludedIds.has(id)) return false;
+      const key = getCanonicalSongKey(c);
+      if (excludedKeys.has(key)) return false;
+      const clTitle = cleanSongTitle(c.title);
+      if (clTitle && clTitle.length >= 4 && excludedTitles.has(clTitle)) return false;
+      return true;
+    });
+
+    const poolToUse = unrecommendedCandidates.length >= 3 ? unrecommendedCandidates : verifiedCandidates;
+
+    // Score relevance to intent
+    const scored = poolToUse.map(track => {
+      let score = 0;
+      const combined = `${track.title} ${track.artist || ''} ${track.genre || ''} ${track.mood || ''}`.toLowerCase();
+
+      if (currentIntent.mood && (combined.includes(currentIntent.mood) || (track.mood && track.mood.toLowerCase().includes(currentIntent.mood)))) {
+        score += 15;
+      }
+      if (currentIntent.era && (combined.includes(currentIntent.era) || (track.genre && track.genre.toLowerCase().includes(currentIntent.era)))) {
+        score += 15;
+      }
+      if (currentIntent.genre && (combined.includes(currentIntent.genre) || (track.genre && track.genre.toLowerCase().includes(currentIntent.genre)))) {
+        score += 10;
+      }
+      if (currentIntent.curationType === 'underrated' && (combined.includes('underrated') || combined.includes('indie') || combined.includes('acoustic'))) {
+        score += 15;
+      }
+      if (currentIntent.targetArtist && combined.includes(currentIntent.targetArtist.toLowerCase())) {
+        score += 20;
+      }
+
+      // Query tokens match
+      for (const term of lower.split(/\s+/)) {
+        if (term.length > 3 && combined.includes(term)) {
+          score += 5;
+        }
+      }
+
+      return { track, score };
+    });
+
+    // Sort by score with random tie-breaker so subsequent turns differ
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return Math.random() - 0.5;
+    });
+
+    // Select up to 4 diverse tracks ensuring artist diversity
+    const selectedTracks = [];
+    const artistSeen = new Set();
+
+    for (const item of scored) {
+      const t = item.track;
+      const art = (t.artist || t.channel || '').toLowerCase();
+      if (artistSeen.has(art) && scored.length > 4 && !currentIntent.targetArtist) continue;
+      artistSeen.add(art);
+      selectedTracks.push(t);
+      if (selectedTracks.length >= 4) break;
+    }
+
+    const hydrated = selectedTracks.map(t => {
+      const v = verifySingleSong(t);
+      let reason = 'Curated individual song from Loopra';
+      if (currentIntent.mood) reason = `${currentIntent.mood.charAt(0).toUpperCase() + currentIntent.mood.slice(1)} vibe track`;
+      else if (currentIntent.era) reason = `${currentIntent.era.toUpperCase()} era classic`;
+      else if (currentIntent.curationType === 'underrated') reason = 'Underrated musical gem';
+
+      return {
+        id: t.id,
+        videoId: t.videoId || t.id,
+        title: t.title,
+        artist: t.artist,
+        channel: t.channel || t.artist,
+        thumbnail: t.thumbnail,
+        duration: t.duration || '3:30',
+        songType: v.songType || 'individual_song',
+        verificationStatus: v.verificationStatus || 'verified_single_song',
+        reason
+      };
+    });
+
+    // Record chosen tracks into user recommendation history so next turn receives DIFFERENT songs
+    if (clientKey && hydrated.length > 0) {
+      await recommendationHistoryService.recordRecommendations(clientKey, hydrated, cleanMessage);
+    }
+
+    let replyPrefix = 'Here are verified single tracks from the Loopra sanctuary matching your vibe:';
+    if (currentIntent.mood === 'romantic') replyPrefix = 'Here are soulful romantic single songs handpicked for your mood:';
+    else if (currentIntent.mood === 'sad') replyPrefix = 'Here are heartfelt, emotional single tracks for your soulful session:';
+    else if (currentIntent.mood === 'workout') replyPrefix = 'Here are high-energy motivational songs to power up your workout:';
+    else if (currentIntent.era === '90s') replyPrefix = 'Here are timeless 90s Bollywood single songs that capture the golden era:';
+    else if (currentIntent.curationType === 'underrated') replyPrefix = 'Here are underrated musical gems that deserve a special spot on your playlist:';
+
+    return {
+      reply: replyPrefix,
+      tracks: hydrated,
       action: null
     };
   }

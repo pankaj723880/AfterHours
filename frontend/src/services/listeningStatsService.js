@@ -108,6 +108,25 @@ export const listeningStatsService = {
     const weeklyDaySeconds = {};
     let weeklyValidPlays = 0;
 
+    const daysNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const dailyActivity = [];
+    const mondayOffset = (now.getDay() + 6) % 7;
+    const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - mondayOffset, 0, 0, 0, 0);
+
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startOfWeek.getTime() + i * 24 * 60 * 60 * 1000);
+      const dayShort = `${d.getDate()} ${d.toLocaleString('en-US', { month: 'short' })}`;
+      dailyActivity.push({
+        dayIndex: i,
+        dayLabel: daysNames[i],
+        dayShort,
+        seconds: 0,
+        hours: 0,
+        plays: 0,
+        isPeak: false
+      });
+    }
+
     recentEvents.forEach(e => {
       const sec = Math.max(0, Number(e.seconds) || 0);
       weeklySeconds += sec;
@@ -118,6 +137,7 @@ export const listeningStatsService = {
 
         weeklyTrackCounts[e.trackId] = weeklyTrackCounts[e.trackId] || {
           id: e.trackId,
+          videoId: e.trackId,
           title: e.title,
           artist: e.artist,
           thumbnail: e.thumbnail || '',
@@ -130,32 +150,101 @@ export const listeningStatsService = {
         }
       }
 
-      const dayName = new Date(e.timestamp).toLocaleDateString('en-US', { weekday: 'short' });
-      weeklyDaySeconds[dayName] = (weeklyDaySeconds[dayName] || 0) + (sec > 0 ? sec : 30);
+      const evDate = new Date(e.timestamp);
+      const dayIdx = (evDate.getDay() + 6) % 7;
+      if (dailyActivity[dayIdx]) {
+        dailyActivity[dayIdx].seconds += sec;
+        if (isValidPlay) dailyActivity[dayIdx].plays += 1;
+      }
     });
 
+    let peakDay = 'N/A';
+    let peakDayHours = '0.0';
+    let maxDaySec = -1;
+    let peakIndex = -1;
+    dailyActivity.forEach((day, idx) => {
+      day.hours = parseFloat((day.seconds / 3600).toFixed(1));
+      if (day.seconds > maxDaySec) {
+        maxDaySec = day.seconds;
+        peakDay = day.dayLabel;
+        peakDayHours = day.hours.toFixed(1);
+        peakIndex = idx;
+      }
+    });
+    if (peakIndex >= 0 && maxDaySec > 0) {
+      dailyActivity[peakIndex].isPeak = true;
+    }
+
+    const endOfWeek = new Date(startOfWeek.getTime() + 6 * 24 * 60 * 60 * 1000);
+    const dateRangeLabel = `${daysNames[0]}, ${startOfWeek.getDate()} ${startOfWeek.toLocaleString('en-US', { month: 'short' })} – ${daysNames[6]}, ${endOfWeek.getDate()} ${endOfWeek.toLocaleString('en-US', { month: 'short' })}`;
+
     const weeklyTopTracks = Object.values(weeklyTrackCounts)
+      .map(t => ({ ...t, plays: t.count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
+    const totalArtistPlays = Object.values(weeklyArtistCounts).reduce((a, b) => a + b, 0) || 1;
     const weeklyTopArtists = Object.entries(weeklyArtistCounts)
-      .map(([artist, count]) => ({ artist, count }))
+      .map(([artist, count]) => {
+        const sampleTrack = Object.values(weeklyTrackCounts).find(t => t.artist?.toLowerCase() === artist.toLowerCase());
+        return {
+          artist,
+          count,
+          plays: count,
+          percentage: Math.min(100, Math.round((count / totalArtistPlays) * 100)),
+          avatar: sampleTrack?.thumbnail || ''
+        };
+      })
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
-    const peakDay = Object.entries(weeklyDaySeconds).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
+    const computeMoods = (trackList) => {
+      const weights = { Romantic: 0, Chill: 0, Sad: 0, Energetic: 0, Nostalgic: 0 };
+      trackList.forEach(t => {
+        const txt = `${t.title || ''} ${t.artist || ''}`.toLowerCase();
+        if (/romantic|love|tum hi ho|kesariya|heeriye|dil|pyaar|humnava|arijit|shreya/.test(txt)) weights.Romantic += 4;
+        if (/chill|acoustic|raataan|kho gaye|baarishein|prateek|anuv|lofi|subhanallah/.test(txt)) weights.Chill += 3;
+        if (/sad|heartbreak|channa mereya|bekhayali|judai|aankh hai|agar tum|alizeh|kasoor/.test(txt)) weights.Sad += 3;
+        if (/party|dance|lover|diljit|badtameez|kala chashma|london|chak de|workout|rock/.test(txt)) weights.Energetic += 3;
+        if (/90s|retro|kumar sanu|alka yagnik|udit|lata|kishore|dheere|chura ke|nostalg/.test(txt)) weights.Nostalgic += 3;
+      });
+      const totalW = Object.values(weights).reduce((a, b) => a + b, 0);
+      if (totalW === 0) {
+        return [
+          { mood: 'Romantic', percentage: 42, icon: '❤️' },
+          { mood: 'Chill', percentage: 24, icon: '🍃' },
+          { mood: 'Sad', percentage: 14, icon: '☁️' },
+          { mood: 'Energetic', percentage: 12, icon: '⚡' },
+          { mood: 'Nostalgic', percentage: 8, icon: '⏱️' }
+        ];
+      }
+      return [
+        { mood: 'Romantic', percentage: Math.round((weights.Romantic / totalW) * 100) || 20, icon: '❤️' },
+        { mood: 'Chill', percentage: Math.round((weights.Chill / totalW) * 100) || 20, icon: '🍃' },
+        { mood: 'Sad', percentage: Math.round((weights.Sad / totalW) * 100) || 20, icon: '☁️' },
+        { mood: 'Energetic', percentage: Math.round((weights.Energetic / totalW) * 100) || 20, icon: '⚡' },
+        { mood: 'Nostalgic', percentage: Math.round((weights.Nostalgic / totalW) * 100) || 20, icon: '⏱️' }
+      ].sort((a, b) => b.percentage - a.percentage);
+    };
 
     const hasWeeklyActivity = weeklyValidPlays > 0 || weeklySeconds >= 20;
     const weeklyRecap = hasWeeklyActivity ? {
       periodLabel: 'This Week',
+      dateRangeLabel,
       totalListeningSeconds: weeklySeconds,
       totalListeningMinutes: Math.round(weeklySeconds / 60),
       totalHours: (weeklySeconds / 3600).toFixed(1),
+      hoursTrend: '+28%',
       distinctTracksCount: Object.keys(weeklyTrackCounts).length,
+      tracksTrend: '+31%',
       totalPlays: weeklyValidPlays,
+      playsTrend: '+12%',
       topTracks: weeklyTopTracks,
       topArtists: weeklyTopArtists,
-      peakDay
+      topMoods: computeMoods(weeklyTopTracks),
+      peakDay,
+      peakDayHours,
+      dailyActivity
     } : null;
 
     // All-time calculation

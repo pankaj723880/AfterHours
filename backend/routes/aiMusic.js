@@ -105,7 +105,8 @@ router.post('/chat', optionalAuth, async (req, res) => {
       user: req.user || null,
       message,
       currentTrack: currentTrack || null,
-      history: Array.isArray(history) ? history : []
+      history: Array.isArray(history) ? history : [],
+      sessionKey: clientKey
     });
 
     if (isStream) {

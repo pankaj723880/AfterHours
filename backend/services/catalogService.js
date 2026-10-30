@@ -237,33 +237,236 @@ export const catalogService = {
   },
 
   /**
-   * Builds an expansive pool of valid candidate songs for AI evaluation.
+   * Extracts music intent, mood, genre, era, artist, and search queries from a user message.
    */
-  async buildCandidatePool(userPreferences = null) {
-    const curated = await this.getCuratedTracks();
-    const candidateMap = new Map();
+  extractRecommendationIntent(message = '') {
+    const text = (message || '').toLowerCase();
 
-    for (const track of curated) {
-      candidateMap.set(track.id, track);
+    const intent = {
+      mood: null,
+      era: null,
+      genre: null,
+      curationType: null,
+      targetArtist: null,
+      dynamicQueries: []
+    };
+
+    // 1. Mood Detection
+    if (/\b(romantic|love|romance|pyaar|ishq|valentine|couples?|mohabbat)\b/i.test(text)) {
+      intent.mood = 'romantic';
+    } else if (/\b(sad|heartbreak|crying|pain|dard|breakup|melanchol(y|ic)|sorrow|lonely|alone|tears?)\b/i.test(text)) {
+      intent.mood = 'sad';
+    } else if (/\b(workout|gym|energetic|exercise|fitness|cardio|pump|beast|motivation|training|hype)\b/i.test(text)) {
+      intent.mood = 'workout';
+    } else if (/\b(party|dance|club|upbeat|celebration|banger|dj|groove|nightclub|festive)\b/i.test(text)) {
+      intent.mood = 'party';
+    } else if (/\b(chill|relax(ing)?|calm|peaceful|soothing|sleep|study|lofi|unwind|ambient)\b/i.test(text)) {
+      intent.mood = 'chill';
+    } else if (/\b(happy|feel-?good|joy|smile|cheerful|positive|vibes?|morning)\b/i.test(text)) {
+      intent.mood = 'happy';
+    } else if (/\b(sufi|devotional|spiritual|prayer|qawwali|bhajan)\b/i.test(text)) {
+      intent.mood = 'sufi';
     }
 
-    // If user has specific top artists or genres, fetch targeted single-track candidates
+    // 2. Era Detection
+    if (/\b(90s|nineties|1990s|90's)\b/i.test(text)) {
+      intent.era = '90s';
+    } else if (/\b(80s|eighties|1980s|80's)\b/i.test(text)) {
+      intent.era = '80s';
+    } else if (/\b(2000s|2000's|00s)\b/i.test(text)) {
+      intent.era = '2000s';
+    } else if (/\b(retro|vintage|oldies|golden\s+era|classic\s+bollywood)\b/i.test(text)) {
+      intent.era = 'retro';
+    } else if (/\b(latest|new|2026|2025|fresh|recent|current\s+hits)\b/i.test(text)) {
+      intent.era = 'latest';
+    }
+
+    // 3. Curation Type (Underrated / Hidden Gems vs Mainstream Hits)
+    if (/\b(underrated|hidden\s+gems?|lesser\s+known|obscure|non-mainstream|indie\s+gems?|overlooked|sleeper\s+hits?)\b/i.test(text)) {
+      intent.curationType = 'underrated';
+    } else if (/\b(hits?|top\s+(songs|hits)|popular|blockbuster|famous|all\s+time\s+best)\b/i.test(text)) {
+      intent.curationType = 'hits';
+    }
+
+    // 4. Genre Detection
+    if (/\b(punjabi|bhangra)\b/i.test(text)) {
+      intent.genre = 'punjabi';
+    } else if (/\b(bollywood|hindi)\b/i.test(text)) {
+      intent.genre = 'bollywood';
+    } else if (/\b(ghazal|shayari)\b/i.test(text)) {
+      intent.genre = 'ghazal';
+    } else if (/\b(rock|metal)\b/i.test(text)) {
+      intent.genre = 'rock';
+    } else if (/\b(acoustic|unplugged)\b/i.test(text)) {
+      intent.genre = 'acoustic';
+    } else if (/\b(pop|indie\s+pop)\b/i.test(text)) {
+      intent.genre = 'pop';
+    }
+
+    // 5. Target Artist Detection ("like Arijit Singh", "songs by KK", etc.)
+    const artistMatch = text.match(/(?:like|similar to|by|from|of)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,2})/i);
+    if (artistMatch && artistMatch[1]) {
+      const candidateArtist = artistMatch[1].trim();
+      const blacklist = ['songs', 'song', 'music', 'track', 'tracks', 'something', 'anything', 'melodies', 'bollywood', 'artists', 'vibe', 'vibes', 'hits'];
+      if (!blacklist.includes(candidateArtist.toLowerCase())) {
+        intent.targetArtist = candidateArtist;
+      }
+    }
+
+    // 6. Build tailored YouTube search queries
+    const queries = [];
+    if (intent.targetArtist) {
+      queries.push(`${intent.targetArtist} official single song`);
+      queries.push(`songs like ${intent.targetArtist} official music video`);
+      queries.push(`${intent.targetArtist} hit song official video`);
+    } else if (intent.curationType === 'underrated' && intent.era === '90s') {
+      queries.push('underrated 90s bollywood songs official');
+      queries.push('hidden gems 90s hindi songs official video');
+      queries.push('lesser known 90s romantic bollywood melodies');
+    } else if (intent.curationType === 'underrated') {
+      queries.push('underrated hindi indie single songs official');
+      queries.push('hidden gems bollywood songs official video');
+      queries.push('lesser known soulful acoustic hindi songs');
+    } else if (intent.era === '90s') {
+      queries.push('best 90s bollywood single songs official');
+      queries.push('90s evergreen hindi songs official video');
+      queries.push('superhit 90s romantic songs official');
+    } else if (intent.mood === 'workout') {
+      queries.push('high energy workout motivational songs hindi punjabi official');
+      queries.push('gym workout energetic songs official video');
+      queries.push('motivational pump workout beats single songs');
+    } else if (intent.mood === 'sad') {
+      queries.push('sad heartbreak emotional hindi songs official video');
+      queries.push('heart touching sad single songs official');
+      queries.push('deep melancholic acoustic hindi songs');
+    } else if (intent.mood === 'romantic') {
+      queries.push('best romantic hindi single songs official');
+      queries.push('soulful love songs official video');
+      queries.push('heart touching romantic melodies official');
+    } else if (intent.mood === 'party') {
+      queries.push('upbeat party dance songs hindi punjabi official');
+      queries.push('club dance tracks hindi official video');
+      queries.push('high energy celebration songs');
+    } else if (intent.mood === 'chill') {
+      queries.push('chill soothing acoustic hindi songs official');
+      queries.push('lofi chill hindi songs official video');
+      queries.push('peaceful relaxing hindi melodies');
+    } else {
+      const cleanQ = text.replace(/^(recommend|suggest|give me|find me|play)\s+/i, '').replace(/songs?|tracks?|music/gi, '').trim();
+      if (cleanQ.length > 2) {
+        queries.push(`${cleanQ} official single song`);
+        queries.push(`${cleanQ} official music video`);
+      } else {
+        queries.push('top hit single songs official video');
+        queries.push('popular trending hindi single songs official');
+      }
+    }
+
+    intent.dynamicQueries = queries.slice(0, 3);
+    return intent;
+  },
+
+  /**
+   * Builds an expansive, diverse, intent-matched pool of valid candidate songs for AI evaluation.
+   */
+  async buildCandidatePool(optionsOrPreferences = null, maybeMessage = '') {
+    let userPreferences = null;
+    let message = '';
+    let excludedKeys = new Set();
+    let excludedIds = new Set();
+    let excludedTitles = new Set();
+
+    if (optionsOrPreferences && typeof optionsOrPreferences === 'object' && ('message' in optionsOrPreferences || 'excludedKeys' in optionsOrPreferences)) {
+      userPreferences = optionsOrPreferences.userPreferences || null;
+      message = optionsOrPreferences.message || '';
+      excludedKeys = optionsOrPreferences.excludedKeys || new Set();
+      excludedIds = optionsOrPreferences.excludedIds || new Set();
+      excludedTitles = optionsOrPreferences.excludedTitles || new Set();
+    } else {
+      userPreferences = optionsOrPreferences;
+      message = maybeMessage || '';
+    }
+
+    const intent = this.extractRecommendationIntent(message);
+    const candidateMap = new Map();
+
+    // 1. Fetch dynamic candidates matching user intent
+    if (intent.dynamicQueries && intent.dynamicQueries.length > 0) {
+      try {
+        const dynamicTracks = await this.fetchDynamicCandidates(intent.dynamicQueries, 5);
+        for (const t of dynamicTracks) {
+          const id = t.id || t.videoId;
+          if (id && !candidateMap.has(id)) {
+            candidateMap.set(id, t);
+          }
+        }
+      } catch (e) {
+        console.warn('[CatalogService] Dynamic candidate fetch notice:', e.message);
+      }
+    }
+
+    // 2. Fetch curated tracks and score by relevance to user intent
+    const curated = await this.getCuratedTracks();
+    for (const track of curated) {
+      const id = track.id || track.videoId;
+      if (id && !candidateMap.has(id)) {
+        candidateMap.set(id, track);
+      }
+    }
+
+    // 3. User personalized preferences
     if (userPreferences) {
       const topArtists = (userPreferences.topArtists || []).slice(0, 2).map(a => `${a.name} best single songs`);
       const topGenres = (userPreferences.topGenres || []).slice(0, 1).map(g => `${g.name} hit songs`);
       const queries = [...topArtists, ...topGenres];
 
       if (queries.length > 0) {
-        const dynamic = await this.fetchDynamicCandidates(queries, 5);
-        for (const track of dynamic) {
-          if (!candidateMap.has(track.id)) {
-            candidateMap.set(track.id, track);
+        try {
+          const prefTracks = await this.fetchDynamicCandidates(queries, 4);
+          for (const track of prefTracks) {
+            const id = track.id || track.videoId;
+            if (id && !candidateMap.has(id)) {
+              candidateMap.set(id, track);
+            }
           }
-        }
+        } catch (e) {}
       }
     }
 
-    return Array.from(candidateMap.values());
+    // Convert map to array
+    const allCandidates = Array.from(candidateMap.values());
+
+    // Score relevance to intent
+    const scoredCandidates = allCandidates.map(track => {
+      let score = 0;
+      const combined = `${track.title} ${track.artist || ''} ${track.genre || ''} ${track.mood || ''}`.toLowerCase();
+
+      if (intent.mood && (combined.includes(intent.mood) || (track.mood && track.mood.toLowerCase().includes(intent.mood)))) {
+        score += 15;
+      }
+      if (intent.era && (combined.includes(intent.era) || (track.genre && track.genre.toLowerCase().includes(intent.era)))) {
+        score += 15;
+      }
+      if (intent.genre && (combined.includes(intent.genre) || (track.genre && track.genre.toLowerCase().includes(intent.genre)))) {
+        score += 10;
+      }
+      if (intent.curationType === 'underrated' && (combined.includes('underrated') || combined.includes('indie') || combined.includes('acoustic'))) {
+        score += 15;
+      }
+      if (intent.targetArtist && combined.includes(intent.targetArtist.toLowerCase())) {
+        score += 20;
+      }
+
+      return { track, score };
+    });
+
+    // Sort by score descending with randomized tie-breaking for diversity
+    scoredCandidates.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return Math.random() - 0.5;
+    });
+
+    return scoredCandidates.map(item => item.track);
   },
 
   /**
