@@ -2,22 +2,74 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { aiMusicCompanionClient } from '../../services/aiMusicCompanionClient';
 
-const BUTTON_SIZE = 56;
-const DEFAULT_MARGIN = 24; // ~24px from right and bottom edges of viewport
-const GAP_PANEL_BUTTON = 12; // Comfortable gap between chat panel and assistant button
-const VIEWPORT_PADDING = 16; // Minimum padding from browser viewport edges
-const MIN_PANEL_WIDTH = 340;
-const MIN_PANEL_HEIGHT = 420;
-const DEFAULT_PANEL_WIDTH = 410;
-const DEFAULT_PANEL_HEIGHT = 580;
+const STORAGE_KEY_DESKTOP = 'loopra_ai_chat_dims_desktop';
+const STORAGE_KEY_MOBILE = 'loopra_ai_chat_dims_mobile';
 
-const getDefaultAnchor = () => {
-  if (typeof window === 'undefined') return { x: 300, y: 500, isCustom: false };
+const DEFAULT_DESKTOP_WIDTH = 420; // 400-440px
+const DEFAULT_DESKTOP_HEIGHT = 580; // 550-620px
+
+export const getViewportInfo = () => {
+  if (typeof window === 'undefined') {
+    return { width: 1200, height: 800, isMobile: false };
+  }
+  const vv = window.visualViewport;
+  const vw = Math.round(vv ? vv.width : window.innerWidth);
+  const vh = Math.round(vv ? vv.height : window.innerHeight);
+  const isMobile = window.innerWidth <= 768;
+  return { width: vw, height: vh, isMobile };
+};
+
+export const getDefaultDimensions = (isMobile, vp) => {
+  if (isMobile) {
+    // Mobile: 85-90% width (approx 88%), 55-65% height (approx 60%)
+    const targetW = Math.round(vp.width * 0.88);
+    const targetH = Math.round(vp.height * 0.60);
+    const maxW = Math.max(260, vp.width - 24);
+    const maxH = Math.max(260, vp.height - 96);
+    return {
+      width: Math.min(targetW, maxW),
+      height: Math.min(targetH, maxH),
+    };
+  }
+  // Desktop/Laptop: 400-440px width (420px), 550-620px height (580px)
+  const maxW = Math.max(340, vp.width - 48);
+  const maxH = Math.max(380, vp.height - 110);
   return {
-    x: Math.max(VIEWPORT_PADDING, window.innerWidth - DEFAULT_MARGIN - BUTTON_SIZE),
-    y: Math.max(VIEWPORT_PADDING, window.innerHeight - DEFAULT_MARGIN - BUTTON_SIZE),
-    isCustom: false
+    width: Math.min(DEFAULT_DESKTOP_WIDTH, maxW),
+    height: Math.min(DEFAULT_DESKTOP_HEIGHT, maxH),
   };
+};
+
+export const loadSavedDimensions = () => {
+  const vp = getViewportInfo();
+  const key = vp.isMobile ? STORAGE_KEY_MOBILE : STORAGE_KEY_DESKTOP;
+  const defaults = getDefaultDimensions(vp.isMobile, vp);
+
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (
+        typeof parsed.width === 'number' &&
+        typeof parsed.height === 'number' &&
+        parsed.width >= (vp.isMobile ? 240 : 300) &&
+        parsed.height >= (vp.isMobile ? 220 : 340)
+      ) {
+        const rightOffset = vp.isMobile ? 16 : 24;
+        const bottomOffset = vp.isMobile ? 96 : 92;
+        const maxW = Math.max(260, vp.width - rightOffset - 12);
+        const maxH = Math.max(240, vp.height - bottomOffset - 12);
+
+        // Clamp to current viewport
+        return {
+          width: Math.min(Math.max(vp.isMobile ? 240 : 300, Math.round(parsed.width)), maxW),
+          height: Math.min(Math.max(vp.isMobile ? 220 : 340, Math.round(parsed.height)), maxH)
+        };
+      }
+    }
+  } catch (e) {}
+
+  return defaults;
 };
 
 export default function LoopraAiCompanion({
@@ -36,40 +88,73 @@ export default function LoopraAiCompanion({
   showToast
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640);
+  const [dimensions, setDimensions] = useState(loadSavedDimensions);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 768);
+  const [isResizing, setIsResizing] = useState(false);
 
-  // Single shared position anchor for BOTH the button and the chat window (tracks button top-left)
-  const [anchor, setAnchor] = useState(() => {
+  const resizeRef = useRef({
+    isResizing: false,
+    startX: 0,
+    startY: 0,
+    startWidth: 0,
+    startHeight: 0,
+    dir: 'bl',
+    pointerId: null
+  });
+
+  // Clean up legacy drag anchor persistence so it never overrides fixed positioning
+  useEffect(() => {
     try {
-      const savedV2 = localStorage.getItem('loopra_ai_companion_anchor_v2');
-      if (savedV2) {
-        const parsed = JSON.parse(savedV2);
-        if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
-          if (typeof window !== 'undefined') {
-            const maxX = window.innerWidth - BUTTON_SIZE - DEFAULT_MARGIN;
-            const maxY = window.innerHeight - BUTTON_SIZE - DEFAULT_MARGIN;
-            const clampedX = Math.min(Math.max(VIEWPORT_PADDING, parsed.x), maxX);
-            const clampedY = Math.min(Math.max(VIEWPORT_PADDING, parsed.y), maxY);
-            return { x: clampedX, y: clampedY, isCustom: Boolean(parsed.isCustom) };
-          }
-          return parsed;
+      localStorage.removeItem('loopra_ai_companion_anchor_v2');
+      localStorage.removeItem('loopra_ai_companion_anchor');
+      localStorage.removeItem('loopra_ai_companion_dims');
+    } catch (e) {}
+  }, []);
+
+  // Viewport resize & device orientation handling
+  useEffect(() => {
+    const handleViewportChange = () => {
+      const vp = getViewportInfo();
+      setIsMobile(prevMobile => {
+        if (prevMobile !== vp.isMobile) {
+          // Device profile changed (e.g. desktop window shrank to mobile size)
+          setDimensions(loadSavedDimensions());
+        } else {
+          // Same profile: verify dimensions stay within new viewport bounds
+          setDimensions(prev => {
+            const rightOffset = vp.isMobile ? 16 : 24;
+            const bottomOffset = vp.isMobile ? 96 : 92;
+            const maxW = Math.max(260, vp.width - rightOffset - 12);
+            const maxH = Math.max(240, vp.height - bottomOffset - 12);
+            const minW = vp.isMobile ? 240 : 320;
+            const minH = vp.isMobile ? 220 : 380;
+
+            if (prev.width > maxW || prev.height > maxH) {
+              return {
+                width: Math.min(Math.max(minW, prev.width), maxW),
+                height: Math.min(Math.max(minH, prev.height), maxH)
+              };
+            }
+            return prev;
+          });
         }
-      }
-    } catch (e) {}
-    return getDefaultAnchor();
-  });
+        return vp.isMobile;
+      });
+    };
 
-  // Chat panel dimensions
-  const [panelDims, setPanelDims] = useState(() => {
-    try {
-      const saved = localStorage.getItem('loopra_ai_companion_dims');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.width && parsed.height) return parsed;
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('orientationchange', handleViewportChange);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleViewportChange);
+    }
+    return () => {
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('orientationchange', handleViewportChange);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleViewportChange);
       }
-    } catch (e) {}
-    return { width: DEFAULT_PANEL_WIDTH, height: DEFAULT_PANEL_HEIGHT };
-  });
+    };
+  }, []);
 
   // Chat message history (session persistence)
   const [messages, setMessages] = useState(() => {
@@ -81,7 +166,7 @@ export default function LoopraAiCompanion({
       {
         id: 'welcome',
         role: 'model',
-        text: "Hey! I'm Loopra AI, your personal music companion. Ask me about what's playing right now, request vibes for any mood, or use Identify Song to name music playing on your device or around you!",
+        text: "Hey! I'm Loopra AI, your personal music companion. Ask me about what's playing right now, request vibes for any mood, or ask for recommendations!",
         tracks: [],
         timestamp: Date.now()
       }
@@ -94,49 +179,8 @@ export default function LoopraAiCompanion({
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
-  // Dragging & Interaction Refs
-  const isDraggingUnitRef = useRef(false);
-  const unitDragStartRef = useRef({ x: 0, y: 0, startAnchorX: 0, startAnchorY: 0, hasMoved: false });
-  const resizeDirectionRef = useRef(null);
-  const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0, anchorX: 0, anchorY: 0 });
-
   const speechRecognitionRef = useRef(null);
   const chatScrollRef = useRef(null);
-
-  // Responsive screen clamping & window resize tracking
-  useEffect(() => {
-    const handleResize = () => {
-      const mobile = window.innerWidth < 640;
-      setIsMobile(mobile);
-
-      setAnchor(prev => {
-        if (!prev.isCustom) {
-          return getDefaultAnchor();
-        }
-        const maxX = window.innerWidth - BUTTON_SIZE - DEFAULT_MARGIN;
-        const maxY = window.innerHeight - BUTTON_SIZE - DEFAULT_MARGIN;
-        const minX = isOpen && !mobile
-          ? Math.max(VIEWPORT_PADDING, panelDims.width - BUTTON_SIZE + VIEWPORT_PADDING)
-          : VIEWPORT_PADDING;
-        const minY = isOpen && !mobile
-          ? Math.max(VIEWPORT_PADDING, panelDims.height + GAP_PANEL_BUTTON + VIEWPORT_PADDING)
-          : VIEWPORT_PADDING;
-
-        return {
-          x: Math.min(Math.max(minX, prev.x), Math.max(minX, maxX)),
-          y: Math.min(Math.max(minY, prev.y), Math.max(minY, maxY)),
-          isCustom: true
-        };
-      });
-    };
-
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('orientationchange', handleResize);
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('orientationchange', handleResize);
-    };
-  }, [isOpen, panelDims]);
 
   // Save chat history
   useEffect(() => {
@@ -379,266 +423,142 @@ export default function LoopraAiCompanion({
     if (showToast) showToast('Conversation cleared');
   };
 
-  // Dynamic available space above and to the left of the assistant button
-  const maxAvailableHeight = typeof window !== 'undefined'
-    ? Math.max(260, anchor.y - GAP_PANEL_BUTTON - VIEWPORT_PADDING)
-    : DEFAULT_PANEL_HEIGHT;
-  const maxAvailableWidth = typeof window !== 'undefined'
-    ? Math.max(MIN_PANEL_WIDTH, anchor.x + BUTTON_SIZE - VIEWPORT_PADDING)
-    : DEFAULT_PANEL_WIDTH;
-
-  const effectivePanelHeight = Math.min(panelDims.height, maxAvailableHeight);
-  const effectivePanelWidth = Math.min(panelDims.width, maxAvailableWidth);
-
-  // Chat panel position anchored strictly above-left of button
-  const panelTop = anchor.y - GAP_PANEL_BUTTON - effectivePanelHeight;
-  const panelLeft = anchor.x + BUTTON_SIZE - effectivePanelWidth;
-
   // -------------------------------------------------------------
-  // ONE SHARED UNIT DRAG HANDLERS (Moves button AND panel together)
-  // -------------------------------------------------------------
-
-  const handleUnitPointerDown = (e) => {
-    // Exclude clicks on inputs, buttons, or resize handles
-    if (e.target.closest('button, input, select, textarea, [data-no-drag]')) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    isDraggingUnitRef.current = true;
-    unitDragStartRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      startAnchorX: anchor.x,
-      startAnchorY: anchor.y,
-      hasMoved: false
-    };
-  };
-
-  const handleUnitPointerMove = (e) => {
-    if (!isDraggingUnitRef.current) return;
-    const dx = e.clientX - unitDragStartRef.current.x;
-    const dy = e.clientY - unitDragStartRef.current.y;
-
-    if (Math.hypot(dx, dy) > 4) {
-      unitDragStartRef.current.hasMoved = true;
-
-      // When chat is open, clamp so BOTH the panel and button stay within viewport
-      const minX = isOpen && !isMobile
-        ? Math.max(VIEWPORT_PADDING, effectivePanelWidth - BUTTON_SIZE + VIEWPORT_PADDING)
-        : VIEWPORT_PADDING;
-      const maxX = window.innerWidth - BUTTON_SIZE - VIEWPORT_PADDING;
-
-      const minY = isOpen && !isMobile
-        ? Math.max(VIEWPORT_PADDING, effectivePanelHeight + GAP_PANEL_BUTTON + VIEWPORT_PADDING)
-        : VIEWPORT_PADDING;
-      const maxY = window.innerHeight - BUTTON_SIZE - VIEWPORT_PADDING;
-
-      const newX = Math.min(Math.max(minX, unitDragStartRef.current.startAnchorX + dx), Math.max(minX, maxX));
-      const newY = Math.min(Math.max(minY, unitDragStartRef.current.startAnchorY + dy), Math.max(minY, maxY));
-
-      setAnchor({ x: newX, y: newY, isCustom: true });
-    }
-  };
-
-  const handleUnitPointerUp = (e) => {
-    if (!isDraggingUnitRef.current) return;
-    isDraggingUnitRef.current = false;
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch (err) {}
-
-    if (unitDragStartRef.current.hasMoved) {
-      try {
-        localStorage.setItem('loopra_ai_companion_anchor_v2', JSON.stringify({ ...anchor, isCustom: true }));
-        localStorage.setItem('loopra_ai_companion_anchor', JSON.stringify({ ...anchor, isCustom: true }));
-      } catch (err) {}
-    }
-  };
-
-  // Handle Button Click (Toggles Open/Close if not dragged)
-  const handleButtonClick = (e) => {
-    if (unitDragStartRef.current.hasMoved) return;
-    setIsOpen(prev => {
-      const willOpen = !prev;
-      if (willOpen && !isMobile) {
-        // Ensure there is sufficient room for the panel above and to the left
-        setAnchor(current => {
-          const minRequiredY = MIN_PANEL_HEIGHT + GAP_PANEL_BUTTON + VIEWPORT_PADDING;
-          const minRequiredX = MIN_PANEL_WIDTH - BUTTON_SIZE + VIEWPORT_PADDING;
-          const needAdjustY = current.y < minRequiredY;
-          const needAdjustX = current.x < minRequiredX;
-          if (needAdjustY || needAdjustX) {
-            return {
-              ...current,
-              x: Math.max(current.x, minRequiredX),
-              y: Math.max(current.y, minRequiredY),
-              isCustom: true
-            };
-          }
-          return current;
-        });
-      }
-      return willOpen;
-    });
-  };
-
-  // -------------------------------------------------------------
-  // RESIZE HANDLERS (Keeps button attached at corner)
+  // MANUAL RESIZE HANDLERS (Bottom-left corner & edges)
+  // Mouse & touch unified via pointer events with pointer capture
   // -------------------------------------------------------------
 
   const handleResizePointerDown = (dir, e) => {
     e.preventDefault();
     e.stopPropagation();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    resizeDirectionRef.current = dir;
-    resizeStartRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      width: panelDims.width,
-      height: panelDims.height,
-      anchorX: anchor.x,
-      anchorY: anchor.y
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (err) {}
+
+    setIsResizing(true);
+    resizeRef.current = {
+      isResizing: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      startWidth: dimensions.width,
+      startHeight: dimensions.height,
+      dir,
+      pointerId: e.pointerId
     };
   };
 
   const handleResizePointerMove = (e) => {
-    const dir = resizeDirectionRef.current;
-    if (!dir) return;
+    if (!resizeRef.current.isResizing) return;
+    e.preventDefault();
+    const { startX, startY, startWidth, startHeight, dir } = resizeRef.current;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
 
-    const dx = e.clientX - resizeStartRef.current.x;
-    const dy = e.clientY - resizeStartRef.current.y;
+    const vp = getViewportInfo();
+    const isMob = vp.isMobile;
+    const rightOffset = isMob ? 16 : 24;
+    const bottomOffset = isMob ? 96 : 92;
 
-    const maxW = Math.min(850, window.innerWidth - 32);
-    const maxH = Math.min(900, window.innerHeight - 40);
+    const maxW = Math.max(260, vp.width - rightOffset - 12);
+    const maxH = Math.max(240, vp.height - bottomOffset - 12);
+    const minW = isMob ? Math.min(240, maxW) : 320;
+    const minH = isMob ? Math.min(220, maxH) : 380;
 
-    let newW = resizeStartRef.current.width;
-    let newH = resizeStartRef.current.height;
-    let newAnchorX = resizeStartRef.current.anchorX;
-    let newAnchorY = resizeStartRef.current.anchorY;
+    let newW = startWidth;
+    let newH = startHeight;
 
-    if (dir.includes('n')) {
-      const candidateH = Math.max(MIN_PANEL_HEIGHT, Math.min(resizeStartRef.current.height - dy, maxH));
-      const maxHAllowed = newAnchorY - GAP_PANEL_BUTTON - VIEWPORT_PADDING;
-      newH = Math.min(candidateH, Math.max(MIN_PANEL_HEIGHT, maxHAllowed));
+    // Bottom-left corner or left edge: dragging left expands width, dragging right shrinks
+    if (dir === 'bl' || dir === 'l') {
+      newW = Math.min(maxW, Math.max(minW, Math.round(startWidth - dx)));
     }
-    if (dir.includes('w')) {
-      const candidateW = Math.max(MIN_PANEL_WIDTH, Math.min(resizeStartRef.current.width - dx, maxW));
-      const maxWAllowed = newAnchorX + BUTTON_SIZE - VIEWPORT_PADDING;
-      newW = Math.min(candidateW, Math.max(MIN_PANEL_WIDTH, maxWAllowed));
-    }
-    if (dir.includes('e')) {
-      const candidateW = Math.max(MIN_PANEL_WIDTH, Math.min(resizeStartRef.current.width + dx, maxW));
-      const maxXAnchor = window.innerWidth - BUTTON_SIZE - VIEWPORT_PADDING;
-      const candidateAnchorX = resizeStartRef.current.anchorX + (candidateW - resizeStartRef.current.width);
-      newAnchorX = Math.min(maxXAnchor, candidateAnchorX);
-      newW = candidateW;
-    }
-    if (dir.includes('s')) {
-      const candidateH = Math.max(MIN_PANEL_HEIGHT, Math.min(resizeStartRef.current.height + dy, maxH));
-      const maxYAnchor = window.innerHeight - BUTTON_SIZE - VIEWPORT_PADDING;
-      const candidateAnchorY = resizeStartRef.current.anchorY + (candidateH - resizeStartRef.current.height);
-      newAnchorY = Math.min(maxYAnchor, candidateAnchorY);
-      newH = candidateH;
+    // Bottom-left corner or bottom edge: dragging up expands height, dragging down shrinks
+    if (dir === 'bl' || dir === 'b') {
+      newH = Math.min(maxH, Math.max(minH, Math.round(startHeight - dy)));
     }
 
-    setPanelDims({ width: newW, height: newH });
-    setAnchor({
-      x: newAnchorX,
-      y: newAnchorY,
-      isCustom: true
-    });
+    setDimensions({ width: newW, height: newH });
   };
 
   const handleResizePointerUp = (e) => {
-    if (!resizeDirectionRef.current) return;
-    resizeDirectionRef.current = null;
+    if (!resizeRef.current.isResizing) return;
+    resizeRef.current.isResizing = false;
+    setIsResizing(false);
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch (err) {}
+
+    // Persist preferred dimensions separately for desktop and mobile
     try {
-      localStorage.setItem('loopra_ai_companion_dims', JSON.stringify(panelDims));
-      localStorage.setItem('loopra_ai_companion_anchor_v2', JSON.stringify({ ...anchor, isCustom: true }));
-      localStorage.setItem('loopra_ai_companion_anchor', JSON.stringify({ ...anchor, isCustom: true }));
+      const vp = getViewportInfo();
+      const key = vp.isMobile ? STORAGE_KEY_MOBILE : STORAGE_KEY_DESKTOP;
+      localStorage.setItem(key, JSON.stringify(dimensions));
     } catch (err) {}
+  };
+
+  const handleButtonClick = () => {
+    setIsOpen(prev => !prev);
   };
 
   if (typeof document === 'undefined') return null;
 
   return ReactDOM.createPortal(
-    <div className="loopra-ai-assistant-container select-none">
+    <>
       {/* ------------------------------------------------------------- */}
       {/* 1. EXPANDABLE CHAT PANEL                                      */}
-      {/* Desktop: positioned strictly above and to left of button      */}
-      {/* Mobile: bottom drawer pinned above navigation bar             */}
+      {/* Fixed: anchored strictly above and to left of floating button */}
       {/* ------------------------------------------------------------- */}
       {isOpen && (
         <div
-          style={
-            isMobile
-              ? {
-                  position: 'fixed',
-                  left: '8px',
-                  right: '8px',
-                  bottom: 'calc(76px + env(safe-area-inset-bottom, 0px))',
-                  maxHeight: 'calc(100dvh - 140px)',
-                  height: '560px',
-                  zIndex: 99990,
-                  touchAction: 'none'
-                }
-              : {
-                  position: 'fixed',
-                  left: `${panelLeft}px`,
-                  top: `${panelTop}px`,
-                  width: `${effectivePanelWidth}px`,
-                  height: `${effectivePanelHeight}px`,
-                  zIndex: 99990,
-                  touchAction: 'none'
-                }
-          }
-          className="flex flex-col bg-neutral-950/95 border border-amber-500/40 rounded-2xl shadow-2xl backdrop-blur-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 pointer-events-auto"
+          style={{
+            '--chat-panel-width': `${dimensions.width}px`,
+            '--chat-panel-height': `${dimensions.height}px`,
+            width: `${dimensions.width}px`,
+            height: `${dimensions.height}px`
+          }}
+          className={`ai-assistant-chat-panel flex flex-col bg-neutral-950/95 border border-amber-500/40 rounded-2xl shadow-2xl backdrop-blur-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 pointer-events-auto ${
+            isResizing ? 'ring-2 ring-amber-500/40 select-none' : ''
+          }`}
         >
-            {/* Header (Acts as drag handle for the entire unit) */}
-            <div
-              onPointerDown={handleUnitPointerDown}
-              onPointerMove={handleUnitPointerMove}
-              onPointerUp={handleUnitPointerUp}
-              className="px-4 py-3 bg-gradient-to-r from-neutral-900 via-neutral-900/95 to-neutral-950 border-b border-white/10 flex items-center justify-between shrink-0 cursor-move active:cursor-grabbing select-none"
-              title="Drag to reposition complete assistant unit"
-            >
-              <div className="flex items-center gap-2.5 min-w-0 pointer-events-none">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-600 to-amber-400 p-0.5 flex items-center justify-center shrink-0 shadow-md shadow-amber-500/20">
-                  <div className="w-full h-full bg-neutral-950 rounded-full flex items-center justify-center">
-                    <span className="text-amber-400 text-xs font-black">AI</span>
-                  </div>
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <h3 className="text-sm font-bold text-white tracking-wide truncate">Loopra AI</h3>
-                    <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded">
-                      Companion
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-neutral-400 truncate">Connected Music Intelligence</p>
+          {/* Header */}
+          <div className="px-4 py-3 bg-gradient-to-r from-neutral-900 via-neutral-900/95 to-neutral-950 border-b border-white/10 flex items-center justify-between shrink-0 select-none">
+            <div className="flex items-center gap-2.5 min-w-0 pointer-events-none">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-600 to-amber-400 p-0.5 flex items-center justify-center shrink-0 shadow-md shadow-amber-500/20">
+                <div className="w-full h-full bg-neutral-950 rounded-full flex items-center justify-center">
+                  <span className="text-amber-400 text-xs font-black">AI</span>
                 </div>
               </div>
-
-              {/* Header Actions */}
-              <div className="flex items-center gap-1 shrink-0" data-no-drag="true">
-                <button
-                  onClick={clearChat}
-                  className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-lg text-xs transition cursor-pointer"
-                  title="Clear conversation"
-                >
-                  🗑️
-                </button>
-
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-lg text-xs transition cursor-pointer"
-                  title="Close assistant panel"
-                >
-                  ✕
-                </button>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <h3 className="text-sm font-bold text-white tracking-wide truncate">Loopra AI</h3>
+                  <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded">
+                    Companion
+                  </span>
+                </div>
+                <p className="text-[10px] text-neutral-400 truncate">Connected Music Intelligence</p>
               </div>
             </div>
+
+            {/* Header Actions */}
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={clearChat}
+                className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-lg text-xs transition cursor-pointer"
+                title="Clear conversation"
+              >
+                🗑️
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-lg text-xs transition cursor-pointer"
+                title="Close assistant panel"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
 
             {/* Current Playing Song Awareness Pill */}
             <div className="px-4 py-2 bg-neutral-900/60 border-b border-white/5 flex items-center justify-between gap-2 text-xs shrink-0">
@@ -910,135 +830,89 @@ export default function LoopraAiCompanion({
               </button>
             </form>
 
-            {/* Desktop 8-Directional Resize Handles */}
-            {!isMobile && (
-              <>
-                <div
-                  onPointerDown={(e) => handleResizePointerDown('se', e)}
-                  onPointerMove={handleResizePointerMove}
-                  onPointerUp={handleResizePointerUp}
-                  className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize z-50 flex items-end justify-end p-0.5"
-                  title="Resize window"
-                >
-                  <svg className="w-2.5 h-2.5 text-amber-500/60" viewBox="0 0 6 6">
-                    <circle cx="5" cy="5" r="1" fill="currentColor" />
-                    <circle cx="5" cy="2" r="1" fill="currentColor" />
-                    <circle cx="2" cy="5" r="1" fill="currentColor" />
-                  </svg>
-                </div>
-                <div
-                  onPointerDown={(e) => handleResizePointerDown('sw', e)}
-                  onPointerMove={handleResizePointerMove}
-                  onPointerUp={handleResizePointerUp}
-                  className="absolute bottom-0 left-0 w-4 h-4 cursor-sw-resize z-50"
-                />
-                <div
-                  onPointerDown={(e) => handleResizePointerDown('ne', e)}
-                  onPointerMove={handleResizePointerMove}
-                  onPointerUp={handleResizePointerUp}
-                  className="absolute top-0 right-0 w-4 h-4 cursor-ne-resize z-50"
-                />
-                <div
-                  onPointerDown={(e) => handleResizePointerDown('nw', e)}
-                  onPointerMove={handleResizePointerMove}
-                  onPointerUp={handleResizePointerUp}
-                  className="absolute top-0 left-0 w-4 h-4 cursor-nw-resize z-50"
-                />
-                <div
-                  onPointerDown={(e) => handleResizePointerDown('e', e)}
-                  onPointerMove={handleResizePointerMove}
-                  onPointerUp={handleResizePointerUp}
-                  className="absolute top-4 bottom-4 right-0 w-2 cursor-e-resize z-40"
-                />
-                <div
-                  onPointerDown={(e) => handleResizePointerDown('w', e)}
-                  onPointerMove={handleResizePointerMove}
-                  onPointerUp={handleResizePointerUp}
-                  className="absolute top-4 bottom-4 left-0 w-2 cursor-w-resize z-40"
-                />
-                <div
-                  onPointerDown={(e) => handleResizePointerDown('s', e)}
-                  onPointerMove={handleResizePointerMove}
-                  onPointerUp={handleResizePointerUp}
-                  className="absolute bottom-0 left-4 right-4 h-2 cursor-s-resize z-40"
-                />
-                <div
-                  onPointerDown={(e) => handleResizePointerDown('n', e)}
-                  onPointerMove={handleResizePointerMove}
-                  onPointerUp={handleResizePointerUp}
-                  className="absolute top-0 left-4 right-4 h-2 cursor-n-resize z-40"
-                />
-              </>
-            )}
+            {/* --------------------------------------------------------- */}
+            {/* MANUAL RESIZE HANDLERS                                    */}
+            {/* Touch & pointer friendly bottom-left corner & edge grips  */}
+            {/* --------------------------------------------------------- */}
+
+            {/* 1. Primary Bottom-Left Corner Handle */}
+            <div
+              onPointerDown={(e) => handleResizePointerDown('bl', e)}
+              onPointerMove={handleResizePointerMove}
+              onPointerUp={handleResizePointerUp}
+              onPointerCancel={handleResizePointerUp}
+              className="absolute bottom-0 left-0 w-11 h-11 sm:w-9 sm:h-9 z-50 flex items-end justify-start p-1.5 cursor-sw-resize select-none touch-none group/resize"
+              title="Drag to resize chat window"
+              aria-label="Resize assistant chat window"
+            >
+              <div className="w-4 h-4 rounded-bl-md border-b-2 border-l-2 border-amber-500/70 group-hover/resize:border-amber-400 group-active/resize:border-amber-300 transition-colors flex items-end justify-start p-0.5 shadow-sm">
+                <div className="w-1.5 h-1.5 border-b border-l border-amber-400/90" />
+              </div>
+            </div>
+
+            {/* 2. Bottom Edge Handle */}
+            <div
+              onPointerDown={(e) => handleResizePointerDown('b', e)}
+              onPointerMove={handleResizePointerMove}
+              onPointerUp={handleResizePointerUp}
+              onPointerCancel={handleResizePointerUp}
+              className="absolute bottom-0 left-12 right-12 h-2.5 z-40 cursor-s-resize select-none touch-none flex items-center justify-center group/bottom"
+              title="Drag bottom edge to adjust height"
+            >
+              <div className="w-8 h-1 rounded-full bg-white/10 group-hover/bottom:bg-amber-400/50 group-active/bottom:bg-amber-400 transition-colors" />
+            </div>
+
+            {/* 3. Left Edge Handle */}
+            <div
+              onPointerDown={(e) => handleResizePointerDown('l', e)}
+              onPointerMove={handleResizePointerMove}
+              onPointerUp={handleResizePointerUp}
+              onPointerCancel={handleResizePointerUp}
+              className="absolute top-14 bottom-12 left-0 w-2.5 z-40 cursor-w-resize select-none touch-none group/left flex items-center justify-start"
+              title="Drag left edge to adjust width"
+            >
+              <div className="w-1 h-8 rounded-full bg-white/10 group-hover/left:bg-amber-400/50 group-active/left:bg-amber-400 ml-0.5 transition-colors" />
+            </div>
           </div>
         )}
 
         {/* ------------------------------------------------------------- */}
         {/* 2. FLOATING ASSISTANT BUTTON                                  */}
-        {/* Desktop: strictly fixed at anchor (bottom-right 24px default)  */}
-        {/* Mobile: bottom-right safe area above nav & player             */}
+        {/* Strictly fixed at bottom-right of viewport via CSS class      */}
         {/* ------------------------------------------------------------- */}
-        <div
-          style={
-            isMobile
-              ? {
-                  position: 'fixed',
-                  right: '16px',
-                  bottom: currentSong
-                    ? 'calc(136px + env(safe-area-inset-bottom, 0px))'
-                    : 'calc(76px + env(safe-area-inset-bottom, 0px))',
-                  zIndex: 99992,
-                  touchAction: 'none'
-                }
-              : {
-                  position: 'fixed',
-                  left: `${anchor.x}px`,
-                  top: `${anchor.y}px`,
-                  width: '56px',
-                  height: '56px',
-                  zIndex: 99992,
-                  touchAction: 'none'
-                }
-          }
-          onPointerDown={handleUnitPointerDown}
-          onPointerMove={handleUnitPointerMove}
-          onPointerUp={handleUnitPointerUp}
-          className="cursor-grab active:cursor-grabbing select-none pointer-events-auto"
-          title="Drag to reposition Loopra AI assistant"
+        <button
+          type="button"
+          onClick={handleButtonClick}
+          className={`ai-assistant-floating-button group relative flex items-center justify-center w-14 h-14 rounded-full shadow-2xl active:scale-95 cursor-pointer pointer-events-auto transition-colors duration-150 ${
+            isOpen
+              ? 'bg-amber-500 text-black shadow-amber-500/40'
+              : 'bg-neutral-900/95 text-amber-400 hover:text-white border border-amber-500/40 hover:border-amber-400 shadow-amber-500/20 backdrop-blur-2xl'
+          }`}
+          aria-label="Toggle Loopra AI Music Companion"
+          title="Loopra AI Assistant"
         >
-          <button
-            type="button"
-            onClick={handleButtonClick}
-            className={`group relative flex items-center justify-center w-14 h-14 rounded-full transition-transform duration-150 shadow-2xl active:scale-95 cursor-pointer ${
-              isOpen
-                ? 'bg-amber-500 text-black shadow-amber-500/40 rotate-90 scale-105'
-                : 'bg-neutral-900/95 text-amber-400 hover:text-white border border-amber-500/40 hover:border-amber-400 shadow-amber-500/20 hover:scale-105 backdrop-blur-2xl'
-            }`}
-            aria-label="Toggle Loopra AI Music Companion"
-          >
-            {isOpen ? (
-              <svg className="w-6 h-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            ) : (
-              <div className="relative flex items-center justify-center pointer-events-none">
-                <span className="absolute -inset-1.5 rounded-full bg-gradient-to-r from-amber-500/40 via-orange-500/30 to-amber-500/40 blur-sm animate-pulse" />
-                <div className="relative flex items-end gap-1 h-5 px-1">
-                  <span className={`w-1 bg-amber-400 rounded-full transition-all duration-300 ${isPlaying ? 'h-5 animate-pulse' : 'h-3'}`} />
-                  <span className={`w-1 bg-amber-300 rounded-full transition-all duration-300 ${isPlaying ? 'h-3 animate-ping' : 'h-4'}`} />
-                  <span className={`w-1 bg-amber-400 rounded-full transition-all duration-300 ${isPlaying ? 'h-4 animate-pulse' : 'h-2'}`} />
-                </div>
+          {isOpen ? (
+            <svg className="w-6 h-6 pointer-events-none transition-transform duration-200 rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          ) : (
+            <div className="relative flex items-center justify-center pointer-events-none">
+              <span className="absolute -inset-1.5 rounded-full bg-gradient-to-r from-amber-500/40 via-orange-500/30 to-amber-500/40 blur-sm animate-pulse" />
+              <div className="relative flex items-end gap-1 h-5 px-1">
+                <span className={`w-1 bg-amber-400 rounded-full transition-all duration-300 ${isPlaying ? 'h-5 animate-pulse' : 'h-3'}`} />
+                <span className={`w-1 bg-amber-300 rounded-full transition-all duration-300 ${isPlaying ? 'h-3 animate-ping' : 'h-4'}`} />
+                <span className={`w-1 bg-amber-400 rounded-full transition-all duration-300 ${isPlaying ? 'h-4 animate-pulse' : 'h-2'}`} />
               </div>
-            )}
+            </div>
+          )}
 
-            {!isOpen && (
-              <span className="absolute right-16 top-1/2 -translate-y-1/2 hidden md:group-hover:inline-block px-3 py-1.5 bg-neutral-900/95 border border-amber-500/30 text-amber-300 text-xs font-semibold rounded-lg shadow-xl whitespace-nowrap pointer-events-none backdrop-blur-md">
-                Loopra AI • Connected Companion
-              </span>
-            )}
-          </button>
-        </div>
-      </div>,
+          {!isOpen && (
+            <span className="absolute right-16 top-1/2 -translate-y-1/2 hidden md:group-hover:inline-block px-3 py-1.5 bg-neutral-900/95 border border-amber-500/30 text-amber-300 text-xs font-semibold rounded-lg shadow-xl whitespace-nowrap pointer-events-none backdrop-blur-md">
+              Loopra AI • Music Companion
+            </span>
+          )}
+        </button>
+      </>,
       document.body
     );
 }

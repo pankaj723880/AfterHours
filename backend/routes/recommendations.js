@@ -77,7 +77,7 @@ const handleListeningEvent = async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized: Authentication required' });
     }
 
-    const { trackId, title, artist, channel, thumbnail, eventType, duration, listenedDuration, completionPercent, source } = req.body || {};
+    const { trackId, title, artist, channel, thumbnail, eventType, duration, listenedDuration, completionPercent, source, playSessionId } = req.body || {};
 
     if (!trackId || !title) {
       return res.status(400).json({ error: 'trackId and title are required' });
@@ -93,7 +93,8 @@ const handleListeningEvent = async (req, res) => {
       duration,
       listenedDuration,
       completionPercent,
-      source
+      source,
+      playSessionId
     });
 
     res.json({

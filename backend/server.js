@@ -27,6 +27,7 @@ import activityRoutes from './routes/activity.js';
 import moodRoutes from './routes/mood.js';
 import radioRoutes from './routes/radio.js';
 import recommendationRoutes, { handleListeningEvent } from './routes/recommendations.js';
+import { listeningEventService } from './services/listeningEventService.js';
 import aiMusicRoutes from './routes/aiMusic.js';
 import { isSingleSong, filterSingleSongs } from './services/songFilter.js';
 import { liveUsersService } from './services/liveUsersService.js';
@@ -757,6 +758,19 @@ app.use(['/api/radio', '/radio'], radioRoutes);
 // Mount Gemini AI-Powered Personalized Recommendations & Listening Events
 app.use(['/api/recommendations', '/recommendations'], recommendationRoutes);
 app.post('/api/listening-events', authenticateToken, handleListeningEvent);
+app.get('/api/listening-stats', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.userId || req.user.id;
+    const timezone = req.query.timezone || 'UTC';
+    const forceRefresh = req.query.forceRefresh === 'true';
+
+    const result = await listeningEventService.getListeningStats(userId, { timezone, forceRefresh });
+    res.json(result);
+  } catch (err) {
+    console.error('[Listening Stats Route Error]:', err.message);
+    res.status(500).json({ error: 'Failed to retrieve listening statistics: ' + err.message });
+  }
+});
 
 // Mount Loopra AI Music Companion & External Song Recognition
 app.use(['/api/ai-music', '/ai-music'], aiMusicRoutes);

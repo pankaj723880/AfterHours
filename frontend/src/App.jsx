@@ -407,27 +407,33 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
       interval = setInterval(() => {
         try {
           if (playerRef.current?.getCurrentTime) {
-            const cur = playerRef.current.getCurrentTime();
-            if (typeof cur === 'number' && !isNaN(cur)) {
-              setCurrentTime(cur);
-              if (Math.abs(cur - lastSavedTimeRef.current) >= 3) {
-                lastSavedTimeRef.current = cur;
-                try {
-                  localStorage.setItem('afterhours_current_time', cur.toString());
-                } catch (e) {}
+            const state = typeof playerRef.current.getPlayerState === 'function' ? playerRef.current.getPlayerState() : 1;
+            if (state === 1 || state === 2 || state === 3) {
+              const cur = playerRef.current.getCurrentTime();
+              if (typeof cur === 'number' && !isNaN(cur)) {
+                setCurrentTime(cur);
+                if (Math.abs(cur - lastSavedTimeRef.current) >= 3) {
+                  lastSavedTimeRef.current = cur;
+                  try {
+                    localStorage.setItem('afterhours_current_time', cur.toString());
+                  } catch (e) {}
+                }
               }
             }
           }
           if (playerRef.current?.getDuration) {
-            const dur = playerRef.current.getDuration();
-            if (typeof dur === 'number' && !isNaN(dur) && dur > 0) {
-              setDuration(prev => {
-                if (prev !== dur) {
-                  try { localStorage.setItem('afterhours_duration', dur.toString()); } catch (e) {}
-                  return dur;
-                }
-                return prev;
-              });
+            const state = typeof playerRef.current.getPlayerState === 'function' ? playerRef.current.getPlayerState() : 1;
+            if (state === 1 || state === 2 || state === 3) {
+              const dur = playerRef.current.getDuration();
+              if (typeof dur === 'number' && !isNaN(dur) && dur > 0) {
+                setDuration(prev => {
+                  if (prev !== dur) {
+                    try { localStorage.setItem('afterhours_duration', dur.toString()); } catch (e) {}
+                    return dur;
+                  }
+                  return prev;
+                });
+              }
             }
           }
         } catch (e) {}
@@ -1858,6 +1864,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [isMuted, setIsMuted] = useState(false);
   const [historyPageLimit, setHistoryPageLimit] = useState(15);
   const activeListeningDurationRef = useRef(0);
+  const playSessionIdRef = useRef(null);
+  const lastSyncedDurationRef = useRef(0);
+  const lastStatsRefreshTimeRef = useRef(Date.now());
   const [isPlayerSettingsOpen, setIsPlayerSettingsOpen] = useState(false);
   const [crossfadeDuration, setCrossfadeDuration] = useState(() => {
     try {
@@ -2080,26 +2089,84 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
   }, [authToken, user]);
 
-  // Meaningful listening tracker (threshold >= 30s)
+  // Meaningful listening tracker (threshold >= 30s) & Session State Management
   useEffect(() => {
-    activeListeningDurationRef.current = 0;
-    hasLoggedListenForCurrentSongRef.current = false;
-  }, [currentSong?.id]);
+    if (currentSong?.id || currentSong?.videoId) {
+      playSessionIdRef.current = `ps_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      activeListeningDurationRef.current = 0;
+      lastSyncedDurationRef.current = 0;
+      hasLoggedListenForCurrentSongRef.current = false;
+    }
+  }, [currentSong?.id, currentSong?.videoId]);
 
+  // Track Pause & Resume events
+  const wasPlayingRef = useRef(false);
+  useEffect(() => {
+    if (!currentSong) return;
+    if (wasPlayingRef.current && !isPlaying && activeListeningDurationRef.current > 0) {
+      // User paused
+      if (authToken) {
+        recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+          trackId: currentSong.id || currentSong.videoId,
+          title: currentSong.title,
+          artist: currentSong.artist || currentSong.channel || 'Unknown Artist',
+          thumbnail: getCleanThumbnail(currentSong),
+          eventType: 'pause',
+          duration: durationRef.current || 0,
+          listenedDuration: activeListeningDurationRef.current,
+          completionPercent: Math.min(100, Math.round((activeListeningDurationRef.current / (durationRef.current || 200)) * 100)),
+          playSessionId: playSessionIdRef.current,
+          source: activeTab || 'player'
+        });
+      }
+    } else if (!wasPlayingRef.current && isPlaying && activeListeningDurationRef.current > 0) {
+      // User resumed
+      if (authToken) {
+        recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+          trackId: currentSong.id || currentSong.videoId,
+          title: currentSong.title,
+          artist: currentSong.artist || currentSong.channel || 'Unknown Artist',
+          thumbnail: getCleanThumbnail(currentSong),
+          eventType: 'resume',
+          duration: durationRef.current || 0,
+          listenedDuration: activeListeningDurationRef.current,
+          completionPercent: Math.min(100, Math.round((activeListeningDurationRef.current / (durationRef.current || 200)) * 100)),
+          playSessionId: playSessionIdRef.current,
+          source: activeTab || 'player'
+        });
+      }
+    }
+    wasPlayingRef.current = isPlaying;
+  }, [isPlaying, currentSong, authToken, activeTab]);
+
+  // 1-second interval counting actual listening time (strictly when isPlaying === true)
   useEffect(() => {
     if (!isPlaying || !currentSong) return;
     const interval = setInterval(() => {
       activeListeningDurationRef.current += 1;
-      // Increment aggregate listening time
-      listeningStatsService.recordListeningTime(1);
+      // Increment user-isolated aggregate listening time
+      listeningStatsService.recordListeningTime(1, user);
 
       // Once user listens for at least 30 seconds, record as a valid play and broadcast activity
       if (activeListeningDurationRef.current >= 30 && !hasLoggedListenForCurrentSongRef.current) {
         hasLoggedListenForCurrentSongRef.current = true;
-        listeningStatsService.recordPlay(currentSong, activeListeningDurationRef.current);
+        listeningStatsService.recordPlay(currentSong, activeListeningDurationRef.current, user);
 
-        // Social Listening Activity Feed logging (only for genuine 30s+ plays)
         if (authToken) {
+          recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+            trackId: currentSong?.id || currentSong?.videoId,
+            title: currentSong?.title || 'Unknown Track',
+            artist: currentSong?.artist || currentSong?.channel || 'Unknown Artist',
+            thumbnail: getCleanThumbnail(currentSong),
+            eventType: 'progress',
+            duration: durationRef.current || 0,
+            listenedDuration: activeListeningDurationRef.current,
+            completionPercent: Math.min(100, Math.round((activeListeningDurationRef.current / (durationRef.current || 200)) * 100)),
+            playSessionId: playSessionIdRef.current,
+            source: activeTab || 'player'
+          });
+
+          // Social Listening Activity Feed logging (only for genuine 30s+ plays)
           try {
             fetch(getApiUrl('/api/activity/log'), {
               method: 'POST',
@@ -2120,10 +2187,70 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             }).catch(() => {});
           } catch (e) {}
         }
+      } else if (activeListeningDurationRef.current % 15 === 0 && activeListeningDurationRef.current > 0) {
+        // Periodic sync every 15s of active playback
+        lastSyncedDurationRef.current = activeListeningDurationRef.current;
+        if (authToken) {
+          recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+            trackId: currentSong?.id || currentSong?.videoId,
+            title: currentSong?.title || 'Unknown Track',
+            artist: currentSong?.artist || currentSong?.channel || 'Unknown Artist',
+            thumbnail: getCleanThumbnail(currentSong),
+            eventType: 'progress',
+            duration: durationRef.current || 0,
+            listenedDuration: activeListeningDurationRef.current,
+            completionPercent: Math.min(100, Math.round((activeListeningDurationRef.current / (durationRef.current || 200)) * 100)),
+            playSessionId: playSessionIdRef.current,
+            source: activeTab || 'player'
+          });
+        }
       }
     }, 1000);
     return () => clearInterval(interval);
-  }, [isPlaying, currentSong, authToken]);
+  }, [isPlaying, currentSong, authToken, user, activeTab]);
+
+  // 10-Minute Automatic Analytics Refresh while user is logged in & app active
+  useEffect(() => {
+    if (!authToken || !user) return;
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        listeningStatsService.fetchStats({
+          backendUrl: BACKEND_URL,
+          token: authToken,
+          user,
+          forceRefresh: true
+        }).then(() => {
+          lastStatsRefreshTimeRef.current = Date.now();
+        }).catch(() => {});
+      }
+    }, 10 * 60 * 1000); // 10 minutes
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        const elapsed = Date.now() - (lastStatsRefreshTimeRef.current || 0);
+        if (elapsed >= 10 * 60 * 1000) {
+          listeningStatsService.fetchStats({
+            backendUrl: BACKEND_URL,
+            token: authToken,
+            user,
+            forceRefresh: true
+          }).then(() => {
+            lastStatsRefreshTimeRef.current = Date.now();
+          }).catch(() => {});
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
+    };
+  }, [authToken, user]);
 
   const openAuthModal = useCallback(() => {
     if (isPlaying) {
@@ -2856,34 +2983,62 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   }, [activeTab, currentSong, stationsMap, authToken]);
 
   const handleNextSong = useCallback(() => {
-    // Log skip or completed listen signal for AI recommendations
-    if (trackPlaybackStartTimeRef.current && currentSongRef.current && authToken && !hasLoggedCompletionRef.current) {
-      const elapsedSec = Math.max(0, Math.round((Date.now() - trackPlaybackStartTimeRef.current) / 1000));
+    // Log skip or completed listen signal for AI recommendations and listening insights
+    if (trackPlaybackStartTimeRef.current && currentSongRef.current && !hasLoggedCompletionRef.current) {
+      const elapsedSec = Math.max(activeListeningDurationRef.current, Math.round((Date.now() - trackPlaybackStartTimeRef.current) / 1000));
       const totalDur = durationRef.current || 200;
       const pct = Math.min(100, Math.round((elapsedSec / totalDur) * 100));
 
       if (elapsedSec < 15) {
-        recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
-          trackId: currentSongRef.current.id || currentSongRef.current.videoId,
-          title: currentSongRef.current.title,
-          artist: currentSongRef.current.artist || currentSongRef.current.channel,
-          thumbnail: currentSongRef.current.thumbnail,
+        if (authToken) {
+          recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+            trackId: currentSongRef.current.id || currentSongRef.current.videoId,
+            title: currentSongRef.current.title,
+            artist: currentSongRef.current.artist || currentSongRef.current.channel,
+            thumbnail: currentSongRef.current.thumbnail,
+            eventType: 'skip',
+            duration: totalDur,
+            listenedDuration: elapsedSec,
+            completionPercent: pct,
+            playSessionId: playSessionIdRef.current,
+            source: activeTab || 'player'
+          });
+        }
+        listeningStatsService.recordEvent({
+          backendUrl: BACKEND_URL,
+          token: authToken,
+          user,
+          track: currentSongRef.current,
           eventType: 'skip',
           duration: totalDur,
           listenedDuration: elapsedSec,
-          completionPercent: pct,
+          playSessionId: playSessionIdRef.current,
           source: activeTab || 'player'
         });
       } else if (elapsedSec >= 30 || pct >= 50) {
-        recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
-          trackId: currentSongRef.current.id || currentSongRef.current.videoId,
-          title: currentSongRef.current.title,
-          artist: currentSongRef.current.artist || currentSongRef.current.channel,
-          thumbnail: currentSongRef.current.thumbnail,
+        if (authToken) {
+          recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+            trackId: currentSongRef.current.id || currentSongRef.current.videoId,
+            title: currentSongRef.current.title,
+            artist: currentSongRef.current.artist || currentSongRef.current.channel,
+            thumbnail: currentSongRef.current.thumbnail,
+            eventType: 'completed',
+            duration: totalDur,
+            listenedDuration: elapsedSec,
+            completionPercent: pct,
+            playSessionId: playSessionIdRef.current,
+            source: activeTab || 'player'
+          });
+        }
+        listeningStatsService.recordEvent({
+          backendUrl: BACKEND_URL,
+          token: authToken,
+          user,
+          track: currentSongRef.current,
           eventType: 'completed',
           duration: totalDur,
           listenedDuration: elapsedSec,
-          completionPercent: pct,
+          playSessionId: playSessionIdRef.current,
           source: activeTab || 'player'
         });
         hasLoggedCompletionRef.current = true;
@@ -3154,6 +3309,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   }, [queue]);
 
   const ytContainerRef = useRef(null);
+  const fallbackAttemptedRef = useRef({});
 
   useEffect(() => {
     return () => {
@@ -3183,7 +3339,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       height: '100%',
       width: '100%',
       videoId: videoId,
-      host: 'https://www.youtube.com',
+      host: 'https://www.youtube-nocookie.com',
       playerVars: { 
         autoplay: shouldAutoPlay ? 1 : 0, 
         controls: 1, 
@@ -3192,8 +3348,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         enablejsapi: 1,
         playsinline: 1,
         start: startSeconds > 0 ? Math.floor(startSeconds) : 0,
-        origin: window.location.origin,
-        widget_referrer: window.location.origin
+        origin: window.location.origin
       },
       events: {
         onReady: (e) => {
@@ -3222,17 +3377,32 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           } else if (e.data === 2) { // Paused
             setIsPlaying(false);
           } else if (e.data === 0) { // Ended
-            if (currentSongRef.current && authToken && !hasLoggedCompletionRef.current) {
+            if (currentSongRef.current && !hasLoggedCompletionRef.current) {
               const dur = durationRef.current || 200;
-              recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
-                trackId: currentSongRef.current.id || currentSongRef.current.videoId,
-                title: currentSongRef.current.title,
-                artist: currentSongRef.current.artist || currentSongRef.current.channel,
-                thumbnail: currentSongRef.current.thumbnail,
+              const actualListened = activeListeningDurationRef.current || dur;
+              if (authToken) {
+                recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+                  trackId: currentSongRef.current.id || currentSongRef.current.videoId,
+                  title: currentSongRef.current.title,
+                  artist: currentSongRef.current.artist || currentSongRef.current.channel,
+                  thumbnail: currentSongRef.current.thumbnail,
+                  eventType: 'completed',
+                  duration: dur,
+                  listenedDuration: actualListened,
+                  completionPercent: 100,
+                  playSessionId: playSessionIdRef.current,
+                  source: activeTab || 'player'
+                });
+              }
+              listeningStatsService.recordEvent({
+                backendUrl: BACKEND_URL,
+                token: authToken,
+                user,
+                track: currentSongRef.current,
                 eventType: 'completed',
                 duration: dur,
-                listenedDuration: dur,
-                completionPercent: 100,
+                listenedDuration: actualListened,
+                playSessionId: playSessionIdRef.current,
                 source: activeTab || 'player'
               });
               hasLoggedCompletionRef.current = true;
@@ -3253,12 +3423,59 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         onError: (e) => {
           console.warn("YouTube player playback error code:", e.data);
           setIsPlaying(false);
-          
+
+          const isRestricted = (e.data === 150 || e.data === 101);
+          const isNotFound = (e.data === 100 || e.data === 2);
+          const failedId = videoId || currentSongRef.current?.id || currentSongRef.current?.videoId;
+
+          // Automatic embeddable alternative recovery (Strictly max 1 attempt per failed track ID to eliminate loops)
+          if ((isRestricted || isNotFound) && failedId && !fallbackAttemptedRef.current[failedId] && currentSongRef.current) {
+            fallbackAttemptedRef.current[failedId] = true;
+            const songToRecover = currentSongRef.current;
+            showToast(`Finding playable stream for "${songToRecover.title}"...`, 3000);
+
+            const query = `${songToRecover.title} ${songToRecover.artist || ''} official audio`;
+            const searchUrl = `${getApiUrl('/api/youtube/search')}?q=${encodeURIComponent(query)}&limit=5`;
+            fetch(searchUrl)
+              .then(res => res.json())
+              .then(data => {
+                const results = Array.isArray(data) ? data : (data.results || data.videos || []);
+                const alternative = results.find(r => {
+                  const rId = r.id || r.videoId;
+                  return rId && rId !== failedId;
+                });
+                if (alternative && (alternative.id || alternative.videoId)) {
+                  const altId = alternative.id || alternative.videoId;
+                  console.info(`[Player] Loaded alternative embeddable ID ${altId} for "${songToRecover.title}"`);
+                  const updatedSong = {
+                    ...songToRecover,
+                    id: altId,
+                    videoId: altId,
+                    thumbnail: alternative.thumbnail || songToRecover.thumbnail
+                  };
+                  setCurrentSong(updatedSong);
+                  initPlayerInstance(altId, true, 0);
+                  showToast(`Now playing playable version of "${songToRecover.title}"`, 3000);
+                  return;
+                }
+                const msg = isRestricted 
+                  ? "Playback restricted by video owner (Error 150). Please select another song or radio station."
+                  : "Playback error encountered. Please tap to retry.";
+                showToast(msg, 4000);
+              })
+              .catch(() => {
+                const msg = isRestricted 
+                  ? "Playback restricted by video owner (Error 150). Please select another song or radio station."
+                  : "Playback error encountered. Please tap to retry.";
+                showToast(msg, 4000);
+              });
+            return;
+          }
+
           if (isInitialMountRef.current) {
             return;
           }
 
-          const isRestricted = (e.data === 150 || e.data === 101);
           const msg = isRestricted 
             ? "Playback restricted by video owner. Please tap to retry or select another song."
             : "Playback error encountered. Please tap to retry.";
@@ -7002,7 +7219,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       <ListeningStatsModal 
         isOpen={isStatsOpen} 
         onClose={() => setIsStatsOpen(false)} 
-        showToast={showToast} 
+        showToast={showToast}
+        authToken={authToken}
+        user={user}
+        backendUrl={BACKEND_URL}
       />
 
       <UserProfileModal 

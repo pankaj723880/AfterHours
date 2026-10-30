@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import User from '../models/User.js';
 import { authenticateToken, verifyToken } from '../middleware/auth.js';
+import { listeningEventService } from '../services/listeningEventService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -632,6 +633,21 @@ router.get('/playlist/:playlistId', authenticateToken, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch playlist: ' + err.message });
+  }
+});
+
+// 17. Get Authenticated User's Listening Insights & Recap
+router.get('/listening-stats', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.userId || req.user.id;
+    const timezone = req.query.timezone || 'UTC';
+    const forceRefresh = req.query.forceRefresh === 'true';
+
+    const result = await listeningEventService.getListeningStats(userId, { timezone, forceRefresh });
+    res.json(result);
+  } catch (err) {
+    console.error('[Listening Stats Route Error]:', err.message);
+    res.status(500).json({ error: 'Failed to retrieve listening statistics: ' + err.message });
   }
 });
 

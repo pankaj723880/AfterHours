@@ -81,7 +81,7 @@ test('aiMusicCompanionClient.js handles streaming without calling json() on cons
   );
 });
 
-test('LoopraAiCompanion.jsx is rendered via Portal to document.body and uses single shared anchor', () => {
+test('LoopraAiCompanion.jsx is rendered via Portal to document.body and cleans up legacy anchors', () => {
   const companionPath = path.join(
     __dirname,
     '..',
@@ -100,14 +100,14 @@ test('LoopraAiCompanion.jsx is rendered via Portal to document.body and uses sin
   );
   assert.ok(
     companionCode.includes('loopra_ai_companion_anchor'),
-    'Companion must use loopra_ai_companion_anchor for persistent unified position'
+    'Companion must reference loopra_ai_companion_anchor for legacy cleanup'
   );
   assert.ok(
-    companionCode.includes('getDisplayMedia'),
-    'Companion must support getDisplayMedia for tab/system audio capture'
+    companionCode.includes('ai-assistant-floating-button'),
+    'Companion must apply ai-assistant-floating-button CSS class'
   );
   assert.ok(
-    companionCode.includes('getUserMedia'),
-    'Companion must support getUserMedia for acoustic microphone fallback'
+    !companionCode.includes('stopAndAnalyzeEarly'),
+    'Companion must not have broken stopAndAnalyzeEarly references'
   );
 });

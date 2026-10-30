@@ -1,170 +1,354 @@
 /**
  * Loopra Listening Statistics & Recap Service
- * Records meaningful playback events (> 20s duration threshold)
- * Computes lifetime metrics, top tracks, top artists, and 7-day weekly recaps.
+ * Handles user-isolated playback telemetry, real-time tracking,
+ * 10-minute auto-refresh, and dynamic weekly & lifetime recap queries.
  */
 
-const STORAGE_KEY_STATS = 'afterhours_listening_stats';
+const STORAGE_KEY_GUEST = 'loopra_guest_listening_stats';
 
-function getStoredStats() {
+function getStorageKeyForUser(userOrId) {
+  if (!userOrId) return STORAGE_KEY_GUEST;
+  const id = typeof userOrId === 'object' ? (userOrId._id || userOrId.userId || userOrId.id) : userOrId;
+  return id ? `loopra_user_stats_${id}` : STORAGE_KEY_GUEST;
+}
+
+function getStoredStats(userOrId) {
+  const key = getStorageKeyForUser(userOrId);
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_STATS);
+    const raw = localStorage.getItem(key);
     if (raw) return JSON.parse(raw);
   } catch (e) {}
   return {
     totalListeningSeconds: 0,
-    playEvents: [], // { trackId, title, artist, timestamp, seconds }
-    trackPlayCounts: {}, // trackId -> { title, artist, count, lastPlayed }
+    playEvents: [], // { trackId, title, artist, thumbnail, timestamp, seconds, playSessionId }
+    trackPlayCounts: {}, // trackId -> { title, artist, thumbnail, count, seconds, lastPlayed }
     artistPlayCounts: {}, // artist -> count
     dailySeconds: {}, // 'YYYY-MM-DD' -> seconds
+    longestSessionSeconds: 0,
+    updatedAt: new Date().toISOString()
   };
 }
 
-function saveStats(stats) {
+function saveStats(stats, userOrId) {
+  const key = getStorageKeyForUser(userOrId);
   try {
-    localStorage.setItem(STORAGE_KEY_STATS, JSON.stringify(stats));
+    localStorage.setItem(key, JSON.stringify(stats));
   } catch (e) {}
 }
 
 export const listeningStatsService = {
-  // Record a completed meaningful play count once threshold (30s) is reached
-  recordPlay(track, durationSeconds = 30) {
+  /**
+   * Fetches genuine listening stats from backend for authenticated user,
+   * with automatic fallback to guest stats or user-isolated local cache.
+   */
+  async fetchStats({ backendUrl = '', token = null, user = null, forceRefresh = false, timezone = null } = {}) {
+    const tz = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const userId = user ? (user._id || user.userId || user.id) : null;
+
+    if (token && userId && backendUrl) {
+      try {
+        const base = backendUrl.replace(/\/+$/, '');
+        const url = `${base}/api/user/listening-stats?timezone=${encodeURIComponent(tz)}&forceRefresh=${Boolean(forceRefresh)}`;
+        const res = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.success) {
+            // Cache user stats for offline/instant-open resilience
+            try {
+              localStorage.setItem(`loopra_user_server_stats_${userId}`, JSON.stringify({
+                ...data,
+                cachedAt: Date.now()
+              }));
+            } catch (e) {}
+            return data;
+          }
+        }
+      } catch (err) {
+        // Fallback to local cache if network fails
+        console.warn('[ListeningStatsService] Backend fetch notice:', err.message);
+      }
+
+      // Check cached server data for this user
+      try {
+        const cachedRaw = localStorage.getItem(`loopra_user_server_stats_${userId}`);
+        if (cachedRaw) {
+          const parsed = JSON.parse(cachedRaw);
+          return { ...parsed, isOfflineCache: true };
+        }
+      } catch (e) {}
+    }
+
+    // Guest / Local User fallback
+    return this.computeLocalStats(userId);
+  },
+
+  /**
+   * Computes Weekly Recap and All-Time stats locally for guest or offline mode.
+   */
+  computeLocalStats(userOrId) {
+    const stats = getStoredStats(userOrId);
+    const now = new Date();
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+    const recentEvents = (stats.playEvents || []).filter(e => {
+      const t = new Date(e.timestamp).getTime();
+      return !isNaN(t) && t >= sevenDaysAgo;
+    });
+
+    let weeklySeconds = 0;
+    const weeklyTrackCounts = {};
+    const weeklyArtistCounts = {};
+    const weeklyDaySeconds = {};
+    let weeklyValidPlays = 0;
+
+    recentEvents.forEach(e => {
+      const sec = Math.max(0, Number(e.seconds) || 0);
+      weeklySeconds += sec;
+
+      const isValidPlay = sec >= 30 || e.eventType === 'completed';
+      if (isValidPlay) {
+        weeklyValidPlays += 1;
+
+        weeklyTrackCounts[e.trackId] = weeklyTrackCounts[e.trackId] || {
+          id: e.trackId,
+          title: e.title,
+          artist: e.artist,
+          thumbnail: e.thumbnail || '',
+          count: 0
+        };
+        weeklyTrackCounts[e.trackId].count += 1;
+
+        if (e.artist && e.artist !== 'Unknown Artist') {
+          weeklyArtistCounts[e.artist] = (weeklyArtistCounts[e.artist] || 0) + 1;
+        }
+      }
+
+      const dayName = new Date(e.timestamp).toLocaleDateString('en-US', { weekday: 'short' });
+      weeklyDaySeconds[dayName] = (weeklyDaySeconds[dayName] || 0) + (sec > 0 ? sec : 30);
+    });
+
+    const weeklyTopTracks = Object.values(weeklyTrackCounts)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    const weeklyTopArtists = Object.entries(weeklyArtistCounts)
+      .map(([artist, count]) => ({ artist, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    const peakDay = Object.entries(weeklyDaySeconds).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
+
+    const hasWeeklyActivity = weeklyValidPlays > 0 || weeklySeconds >= 20;
+    const weeklyRecap = hasWeeklyActivity ? {
+      periodLabel: 'This Week',
+      totalListeningSeconds: weeklySeconds,
+      totalListeningMinutes: Math.round(weeklySeconds / 60),
+      totalHours: (weeklySeconds / 3600).toFixed(1),
+      distinctTracksCount: Object.keys(weeklyTrackCounts).length,
+      totalPlays: weeklyValidPlays,
+      topTracks: weeklyTopTracks,
+      topArtists: weeklyTopArtists,
+      peakDay
+    } : null;
+
+    // All-time calculation
+    const totalSecs = stats.totalListeningSeconds || 0;
+    const allTimeTopTracks = Object.entries(stats.trackPlayCounts || {})
+      .map(([id, data]) => ({ id, ...data }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    const allTimeTopArtists = Object.entries(stats.artistPlayCounts || {})
+      .map(([artist, count]) => ({ artist, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+
+    const longestSec = stats.longestSessionSeconds || 0;
+    let longestFormatted = '0m';
+    if (longestSec >= 3600) {
+      longestFormatted = `${Math.floor(longestSec / 3600)}h ${Math.floor((longestSec % 3600) / 60)}m`;
+    } else if (longestSec >= 60) {
+      longestFormatted = `${Math.floor(longestSec / 60)}m ${longestSec % 60}s`;
+    } else if (longestSec > 0) {
+      longestFormatted = `${longestSec}s`;
+    }
+
+    const allTimeStats = {
+      totalListeningSeconds: totalSecs,
+      totalMinutes: Math.round(totalSecs / 60),
+      totalHours: (totalSecs / 3600).toFixed(1),
+      totalPlays: Object.values(stats.trackPlayCounts || {}).reduce((acc, t) => acc + (t.count || 0), 0),
+      distinctTracksCount: Object.keys(stats.trackPlayCounts || {}).length,
+      distinctArtistsCount: Object.keys(stats.artistPlayCounts || {}).length,
+      topTracks: allTimeTopTracks,
+      topArtists: allTimeTopArtists,
+      longestSessionSeconds: longestSec,
+      longestSessionFormatted: longestFormatted,
+      activityOverTime: Object.entries(stats.dailySeconds || {}).map(([date, sec]) => ({
+        date,
+        dayLabel: new Date(date).toLocaleDateString('en-US', { weekday: 'short' }),
+        seconds: sec,
+        plays: Math.max(1, Math.round(sec / 180))
+      })).slice(-7)
+    };
+
+    return {
+      success: true,
+      userId: userOrId ? (userOrId._id || userOrId.userId || userOrId.id || userOrId) : null,
+      updatedAt: stats.updatedAt || new Date().toISOString(),
+      weeklyRecap,
+      allTimeStats,
+      isLocal: true
+    };
+  },
+
+  /**
+   * Records a user listening event both on the backend (if authenticated)
+   * and in user-isolated local state.
+   */
+  async recordEvent({
+    backendUrl = '',
+    token = null,
+    user = null,
+    track,
+    eventType = 'play_start',
+    duration = 0,
+    listenedDuration = 0,
+    playSessionId = null,
+    source = 'player'
+  }) {
     if (!track || (!track.id && !track.videoId)) return;
 
-    const stats = getStoredStats();
-    const now = new Date();
     const trackId = track.id || track.videoId;
     const title = track.title || 'Unknown Track';
     const artist = track.artist || track.channel || 'Unknown Artist';
+    const thumbnail = track.thumbnail || track.image || '';
+    const userId = user ? (user._id || user.userId || user.id) : null;
 
-    // Track play counts
-    if (!stats.trackPlayCounts[trackId]) {
-      stats.trackPlayCounts[trackId] = { title, artist, count: 0, lastPlayed: now.toISOString() };
+    // 1. Dispatch to backend if authenticated
+    if (token && backendUrl) {
+      try {
+        const base = backendUrl.replace(/\/+$/, '');
+        fetch(`${base}/api/listening-events`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            trackId,
+            title,
+            artist,
+            thumbnail,
+            eventType,
+            duration: Math.max(0, Math.round(duration)),
+            listenedDuration: Math.max(0, Math.round(listenedDuration)),
+            playSessionId,
+            source
+          }),
+          keepalive: true
+        }).catch(() => {});
+      } catch (e) {}
     }
-    stats.trackPlayCounts[trackId].count += 1;
-    stats.trackPlayCounts[trackId].lastPlayed = now.toISOString();
 
-    // Artist play counts
-    if (artist && artist !== 'Unknown Artist') {
-      stats.artistPlayCounts[artist] = (stats.artistPlayCounts[artist] || 0) + 1;
+    // 2. Update user-isolated local record
+    const stats = getStoredStats(userId);
+    const now = new Date();
+    const dateKey = now.toISOString().slice(0, 10);
+    const sec = Math.max(0, Math.round(listenedDuration));
+
+    if (sec > (stats.longestSessionSeconds || 0)) {
+      stats.longestSessionSeconds = sec;
     }
 
-    // Keep last 150 raw events for recap slicing
-    stats.playEvents = [
-      { trackId, title, artist, timestamp: now.toISOString(), seconds: Math.round(durationSeconds) },
-      ...(stats.playEvents || []).slice(0, 149)
-    ];
+    if (eventType === 'completed' || (sec >= 30 && !stats.trackPlayCounts[trackId]?.creditedThisSession)) {
+      if (!stats.trackPlayCounts[trackId]) {
+        stats.trackPlayCounts[trackId] = { title, artist, thumbnail, count: 0, seconds: 0, lastPlayed: now.toISOString() };
+      }
+      stats.trackPlayCounts[trackId].count += 1;
+      stats.trackPlayCounts[trackId].seconds = (stats.trackPlayCounts[trackId].seconds || 0) + sec;
+      stats.trackPlayCounts[trackId].lastPlayed = now.toISOString();
 
-    saveStats(stats);
+      if (artist && artist !== 'Unknown Artist') {
+        stats.artistPlayCounts[artist] = (stats.artistPlayCounts[artist] || 0) + 1;
+      }
+    }
+
+    // Add event to playEvents log (max 100)
+    if (sec >= 15 || eventType === 'completed') {
+      const filtered = (stats.playEvents || []).filter(e => e.playSessionId !== playSessionId);
+      stats.playEvents = [
+        { trackId, title, artist, thumbnail, timestamp: now.toISOString(), seconds: sec, playSessionId, eventType },
+        ...filtered.slice(0, 99)
+      ];
+    }
+
+    stats.updatedAt = now.toISOString();
+    saveStats(stats, userId);
   },
 
-  // Record cumulative listening seconds incrementally
-  recordListeningTime(seconds = 1) {
+  /**
+   * Increment cumulative listening seconds incrementally.
+   */
+  recordListeningTime(seconds = 1, userOrId = null) {
     if (seconds <= 0) return;
-    const stats = getStoredStats();
+    const stats = getStoredStats(userOrId);
     const now = new Date();
     const dateKey = now.toISOString().slice(0, 10);
 
     stats.totalListeningSeconds = (stats.totalListeningSeconds || 0) + Math.round(seconds);
     stats.dailySeconds[dateKey] = (stats.dailySeconds[dateKey] || 0) + Math.round(seconds);
+    stats.updatedAt = now.toISOString();
 
-    saveStats(stats);
+    saveStats(stats, userOrId);
   },
 
-  // Backward compatible record session
-  recordListeningSession(track, durationSeconds = 30) {
-    this.recordListeningTime(durationSeconds);
-    this.recordPlay(track, durationSeconds);
-  },
+  /**
+   * Backward-compatible recordPlay method.
+   */
+  recordPlay(track, durationSeconds = 30, userOrId = null) {
+    if (!track) return;
+    const stats = getStoredStats(userOrId);
+    const now = new Date();
+    const trackId = track.id || track.videoId;
+    const title = track.title || 'Unknown Track';
+    const artist = track.artist || track.channel || 'Unknown Artist';
+    const thumbnail = track.thumbnail || track.image || '';
 
-  // Get aggregated overview
-  getOverview() {
-    const stats = getStoredStats();
-    const totalSecs = stats.totalListeningSeconds || 0;
-    const totalMinutes = Math.round(totalSecs / 60);
-    const totalHours = (totalSecs / 3600).toFixed(1);
+    if (!stats.trackPlayCounts[trackId]) {
+      stats.trackPlayCounts[trackId] = { title, artist, thumbnail, count: 0, seconds: 0, lastPlayed: now.toISOString() };
+    }
+    stats.trackPlayCounts[trackId].count += 1;
+    stats.trackPlayCounts[trackId].seconds = (stats.trackPlayCounts[trackId].seconds || 0) + Math.round(durationSeconds);
 
-    // Sort top tracks
-    const topTracks = Object.entries(stats.trackPlayCounts || {})
-      .map(([id, data]) => ({ id, ...data }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-
-    // Sort top artists
-    const topArtists = Object.entries(stats.artistPlayCounts || {})
-      .map(([artist, count]) => ({ artist, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 8);
-
-    return {
-      totalListeningSeconds: totalSecs,
-      totalMinutes,
-      totalHours,
-      totalPlays: Object.values(stats.trackPlayCounts || {}).reduce((acc, t) => acc + (t.count || 0), 0),
-      distinctTracksCount: Object.keys(stats.trackPlayCounts || {}).length,
-      topTracks,
-      topArtists,
-      dailySeconds: stats.dailySeconds || {}
-    };
-  },
-
-  // Compute 7-day Weekly Recap
-  getWeeklyRecap() {
-    const stats = getStoredStats();
-    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const recentEvents = (stats.playEvents || []).filter(e => new Date(e.timestamp).getTime() >= sevenDaysAgo);
-
-    if (recentEvents.length === 0) {
-      return null;
+    if (artist && artist !== 'Unknown Artist') {
+      stats.artistPlayCounts[artist] = (stats.artistPlayCounts[artist] || 0) + 1;
     }
 
-    let weeklySeconds = 0;
-    const trackCounts = {};
-    const artistCounts = {};
-    const dayCounts = {};
-
-    recentEvents.forEach(e => {
-      weeklySeconds += e.seconds || 0;
-
-      trackCounts[e.trackId] = trackCounts[e.trackId] || { title: e.title, artist: e.artist, count: 0 };
-      trackCounts[e.trackId].count += 1;
-
-      if (e.artist && e.artist !== 'Unknown Artist') {
-        artistCounts[e.artist] = (artistCounts[e.artist] || 0) + 1;
-      }
-
-      const dayName = new Date(e.timestamp).toLocaleDateString('en-US', { weekday: 'short' });
-      dayCounts[dayName] = (dayCounts[dayName] || 0) + (e.seconds || 0);
-    });
-
-    const topTracks = Object.entries(trackCounts)
-      .map(([id, data]) => ({ id, ...data }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
-
-    const topArtists = Object.entries(artistCounts)
-      .map(([artist, count]) => ({ artist, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 3);
-
-    // Most active day
-    const peakDay = Object.entries(dayCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
-
-    return {
-      periodLabel: 'Past 7 Days',
-      totalListeningMinutes: Math.round(weeklySeconds / 60),
-      totalHours: (weeklySeconds / 3600).toFixed(1),
-      distinctTracksCount: Object.keys(trackCounts).length,
-      totalPlays: recentEvents.length,
-      topTracks,
-      topArtists,
-      peakDay
-    };
+    stats.updatedAt = now.toISOString();
+    saveStats(stats, userOrId);
   },
 
-  clearStats() {
+  getOverview(userOrId = null) {
+    const res = this.computeLocalStats(userOrId);
+    return res.allTimeStats;
+  },
+
+  getWeeklyRecap(userOrId = null) {
+    const res = this.computeLocalStats(userOrId);
+    return res.weeklyRecap;
+  },
+
+  clearStats(userOrId = null) {
     try {
-      localStorage.removeItem(STORAGE_KEY_STATS);
+      localStorage.removeItem(getStorageKeyForUser(userOrId));
     } catch (e) {}
   }
 };

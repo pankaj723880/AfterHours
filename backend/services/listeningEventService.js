@@ -7,7 +7,10 @@ import User from '../models/User.js';
 const recentEventsCache = new Map();
 const DEDUPE_WINDOW_MS = 3000;
 
-// Cleanup memory cache every 5 minutes
+// In-memory cache for computed listening statistics (30 seconds TTL)
+const statsCache = new Map();
+
+// Cleanup memory caches periodically
 setInterval(() => {
   const now = Date.now();
   for (const [key, timestamp] of recentEventsCache.entries()) {
@@ -15,7 +18,63 @@ setInterval(() => {
       recentEventsCache.delete(key);
     }
   }
+  for (const [key, entry] of statsCache.entries()) {
+    if (now - entry.timestamp > 60000) {
+      statsCache.delete(key);
+    }
+  }
 }, 5 * 60 * 1000).unref();
+
+/**
+ * Calculates start of the current week (Monday 00:00:00 local time) in the user's timezone.
+ */
+export function getWeekStartInTimezone(timezone = 'UTC') {
+  try {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+      hour12: false
+    });
+    
+    const parts = formatter.formatToParts(now);
+    const p = {};
+    for (const part of parts) {
+      p[part.type] = part.value;
+    }
+    
+    const localNow = new Date(Date.UTC(
+      parseInt(p.year, 10),
+      parseInt(p.month, 10) - 1,
+      parseInt(p.day, 10),
+      parseInt(p.hour, 10) % 24,
+      parseInt(p.minute, 10),
+      parseInt(p.second, 10)
+    ));
+    
+    const offsetMs = localNow.getTime() - now.getTime();
+    const localDay = (localNow.getUTCDay() + 6) % 7; // Monday = 0, Sunday = 6
+    const startOfWeekLocalMs = Date.UTC(
+      localNow.getUTCFullYear(),
+      localNow.getUTCMonth(),
+      localNow.getUTCDate() - localDay,
+      0, 0, 0, 0
+    );
+    
+    return new Date(startOfWeekLocalMs - offsetMs);
+  } catch (e) {
+    const d = new Date();
+    const day = (d.getDay() + 6) % 7;
+    d.setDate(d.getDate() - day);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+}
 
 export const listeningEventService = {
   /**
@@ -36,7 +95,8 @@ export const listeningEventService = {
       duration = 0,
       listenedDuration = 0,
       completionPercent = 0,
-      source = 'player'
+      source = 'player',
+      playSessionId
     } = eventData || {};
 
     if (!trackId || typeof trackId !== 'string') {
@@ -46,14 +106,14 @@ export const listeningEventService = {
       throw new Error('Valid track title is required');
     }
 
-    const validEvents = ['play_start', 'progress', 'completed', 'skip', 'like', 'dislike', 'repeat'];
+    const validEvents = ['play_start', 'progress', 'completed', 'skip', 'like', 'dislike', 'repeat', 'pause', 'resume'];
     const normalizedEventType = validEvents.includes(eventType) ? eventType : 'play_start';
 
     // Anti-duplication guard against duplicate React renders / rapid event dispatches
-    const dedupeKey = `${userId.toString()}_${trackId}_${normalizedEventType}`;
+    const dedupeKey = `${userId.toString()}_${playSessionId || trackId}_${normalizedEventType}`;
     const now = Date.now();
     const lastLogged = recentEventsCache.get(dedupeKey);
-    if (lastLogged && now - lastLogged < DEDUPE_WINDOW_MS) {
+    if (lastLogged && now - lastLogged < DEDUPE_WINDOW_MS && normalizedEventType !== 'progress' && normalizedEventType !== 'completed') {
       return { recorded: false, deduplicated: true };
     }
     recentEventsCache.set(dedupeKey, now);
@@ -77,37 +137,84 @@ export const listeningEventService = {
       effectiveEventType = 'progress';
     }
 
+    // Invalidate cached statistics for this user on active listen updates
+    const userIdStr = userId.toString();
+    for (const key of statsCache.keys()) {
+      if (key.startsWith(userIdStr)) {
+        statsCache.delete(key);
+      }
+    }
+
     // Persist event in MongoDB if connected
     let savedEventId = new mongoose.Types.ObjectId();
     if (mongoose.connection && mongoose.connection.readyState === 1) {
-      const listeningEvent = new UserListeningEvent({
-        userId,
-        trackId: trackId.trim(),
-        title: title.slice(0, 200).trim(),
-        artist: (artist || channel || 'Unknown Artist').slice(0, 150).trim(),
-        channel: (channel || '').slice(0, 150).trim(),
-        thumbnail: thumbnail || '',
-        eventType: effectiveEventType,
-        duration: durNum,
-        listenedDuration: listenedNum,
-        completionPercent: pct,
-        source: (source || 'player').slice(0, 50).trim(),
-        timestamp: new Date()
-      });
+      const cleanSessionId = typeof playSessionId === 'string' && playSessionId.trim() ? playSessionId.trim() : null;
 
-      await listeningEvent.save();
-      savedEventId = listeningEvent._id;
+      if (cleanSessionId) {
+        // Find existing record for this playback session
+        let existing = await UserListeningEvent.findOne({ userId, playSessionId: cleanSessionId });
+        if (existing) {
+          existing.listenedDuration = Math.max(existing.listenedDuration || 0, listenedNum);
+          if (durNum > 0) existing.duration = Math.max(existing.duration || 0, durNum);
+          if (pct > 0) existing.completionPercent = Math.max(existing.completionPercent || 0, pct);
+          if (thumbnail && !existing.thumbnail) existing.thumbnail = thumbnail;
+          if (effectiveEventType === 'completed') {
+            existing.eventType = 'completed';
+          } else if (existing.eventType !== 'completed' && ['pause', 'resume', 'progress', 'skip'].includes(effectiveEventType)) {
+            existing.eventType = effectiveEventType;
+          }
+          await existing.save();
+          savedEventId = existing._id;
+        } else {
+          const listeningEvent = new UserListeningEvent({
+            userId,
+            playSessionId: cleanSessionId,
+            trackId: trackId.trim(),
+            title: title.slice(0, 200).trim(),
+            artist: (artist || channel || 'Unknown Artist').slice(0, 150).trim(),
+            channel: (channel || '').slice(0, 150).trim(),
+            thumbnail: thumbnail || '',
+            eventType: effectiveEventType,
+            duration: durNum,
+            listenedDuration: listenedNum,
+            completionPercent: pct,
+            source: (source || 'player').slice(0, 50).trim(),
+            timestamp: new Date()
+          });
+          await listeningEvent.save();
+          savedEventId = listeningEvent._id;
+        }
+      } else {
+        const listeningEvent = new UserListeningEvent({
+          userId,
+          trackId: trackId.trim(),
+          title: title.slice(0, 200).trim(),
+          artist: (artist || channel || 'Unknown Artist').slice(0, 150).trim(),
+          channel: (channel || '').slice(0, 150).trim(),
+          thumbnail: thumbnail || '',
+          eventType: effectiveEventType,
+          duration: durNum,
+          listenedDuration: listenedNum,
+          completionPercent: pct,
+          source: (source || 'player').slice(0, 50).trim(),
+          timestamp: new Date()
+        });
+        await listeningEvent.save();
+        savedEventId = listeningEvent._id;
+      }
     }
 
-    // Incrementally update user preference profile
-    await this.updateUserPreferences(userId, {
-      trackId: trackId.trim(),
-      title,
-      artist,
-      eventType: effectiveEventType,
-      completionPercent: pct,
-      thumbnail
-    });
+    // Incrementally update user preference profile (only for significant milestones)
+    if (['play_start', 'completed', 'skip', 'like', 'dislike', 'repeat'].includes(effectiveEventType) || listenedNum >= 30) {
+      await this.updateUserPreferences(userId, {
+        trackId: trackId.trim(),
+        title,
+        artist,
+        eventType: effectiveEventType,
+        completionPercent: pct,
+        thumbnail
+      });
+    }
 
     return {
       recorded: true,
@@ -279,5 +386,285 @@ export const listeningEventService = {
       recommendationsEnabled: pref.recommendationsEnabled !== false,
       isNewUser: (pref.totalPlays === 0 && historyTracks.length === 0 && likedTrackIds.length === 0)
     };
+  },
+
+  /**
+   * Returns empty baseline statistics structure for cold-start or disconnected database.
+   */
+  getEmptyStatsStructure(userId = null) {
+    return {
+      success: true,
+      userId: userId ? userId.toString() : null,
+      updatedAt: new Date().toISOString(),
+      weeklyRecap: null,
+      allTimeStats: {
+        totalListeningSeconds: 0,
+        totalMinutes: 0,
+        totalHours: '0.0',
+        totalPlays: 0,
+        distinctTracksCount: 0,
+        distinctArtistsCount: 0,
+        topTracks: [],
+        topArtists: [],
+        longestSessionSeconds: 0,
+        longestSessionFormatted: '0m',
+        activityOverTime: []
+      }
+    };
+  },
+
+  /**
+   * Computes genuine Weekly Recap and All-Time Listening Statistics for an authenticated user.
+   */
+  async getListeningStats(userId, { timezone = 'UTC', forceRefresh = false } = {}) {
+    if (!userId) {
+      throw new Error('Authenticated user ID is required to fetch listening statistics');
+    }
+
+    const userIdStr = userId.toString();
+    const cacheKey = `${userIdStr}_${timezone}`;
+    const now = Date.now();
+
+    // In-memory cache check (30-second TTL unless forceRefresh is true)
+    if (!forceRefresh && statsCache.has(cacheKey)) {
+      const cached = statsCache.get(cacheKey);
+      if (now - cached.timestamp < 30000) {
+        return cached.data;
+      }
+    }
+
+    if (!mongoose.connection || mongoose.connection.readyState !== 1) {
+      return this.getEmptyStatsStructure(userId);
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(userIdStr);
+
+    // 1. Calculate Start of Current Week in User's Timezone (Monday 00:00:00 local time)
+    const startOfWeek = getWeekStartInTimezone(timezone);
+
+    // 2. Fetch all user listening events (strictly scoped to userObjectId)
+    const allEvents = await UserListeningEvent.find({ userId: userObjectId })
+      .sort({ timestamp: -1 })
+      .lean()
+      .maxTimeMS(6000);
+
+    // Fetch user for baseline history fallback if no events yet
+    const userDoc = await User.findById(userObjectId)
+      .select('history likedSongs')
+      .lean()
+      .maxTimeMS(3000);
+
+    // 3. Aggregate Weekly Recap
+    const weeklyEvents = allEvents.filter(e => e.timestamp && new Date(e.timestamp) >= startOfWeek);
+
+    let weeklyListeningSeconds = 0;
+    const weeklyTrackCounts = new Map(); // trackId -> { id, title, artist, thumbnail, count, seconds }
+    const weeklyArtistCounts = new Map(); // artist -> count
+    const weeklyDaySeconds = new Map(); // 'Mon', 'Tue', etc. -> seconds
+    let weeklyValidPlays = 0;
+
+    for (const ev of weeklyEvents) {
+      const sec = Math.max(0, Number(ev.listenedDuration) || 0);
+      weeklyListeningSeconds += sec;
+
+      const isValidPlay = sec >= 30 || ev.eventType === 'completed';
+      if (isValidPlay) {
+        weeklyValidPlays += 1;
+
+        const tId = ev.trackId;
+        const currentTrack = weeklyTrackCounts.get(tId) || {
+          id: tId,
+          title: ev.title || 'Unknown Track',
+          artist: ev.artist || 'Unknown Artist',
+          thumbnail: ev.thumbnail || '',
+          count: 0,
+          seconds: 0
+        };
+        currentTrack.count += 1;
+        currentTrack.seconds += sec;
+        if (ev.thumbnail && !currentTrack.thumbnail) currentTrack.thumbnail = ev.thumbnail;
+        weeklyTrackCounts.set(tId, currentTrack);
+
+        const art = (ev.artist || '').trim();
+        if (art && art !== 'Unknown Artist') {
+          weeklyArtistCounts.set(art, (weeklyArtistCounts.get(art) || 0) + 1);
+        }
+      }
+
+      // Calculate weekday in user's timezone for peak listening day
+      if (sec > 0 || isValidPlay) {
+        let dayName = 'Mon';
+        try {
+          dayName = new Intl.DateTimeFormat('en-US', {
+            weekday: 'short',
+            timeZone: timezone
+          }).format(new Date(ev.timestamp));
+        } catch {
+          dayName = new Date(ev.timestamp).toLocaleDateString('en-US', { weekday: 'short' });
+        }
+        weeklyDaySeconds.set(dayName, (weeklyDaySeconds.get(dayName) || 0) + (sec > 0 ? sec : 30));
+      }
+    }
+
+    const weeklyTopTracks = Array.from(weeklyTrackCounts.values())
+      .sort((a, b) => b.count - a.count || b.seconds - a.seconds)
+      .slice(0, 5);
+
+    const weeklyTopArtists = Array.from(weeklyArtistCounts.entries())
+      .map(([artist, count]) => ({ artist, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    let peakDay = 'N/A';
+    let maxDaySec = -1;
+    for (const [day, secs] of weeklyDaySeconds.entries()) {
+      if (secs > maxDaySec) {
+        maxDaySec = secs;
+        peakDay = day;
+      }
+    }
+
+    const hasWeeklyActivity = weeklyValidPlays > 0 || weeklyListeningSeconds >= 20;
+
+    const weeklyRecap = hasWeeklyActivity ? {
+      periodLabel: 'This Week',
+      startOfWeek: startOfWeek.toISOString(),
+      totalListeningSeconds: weeklyListeningSeconds,
+      totalListeningMinutes: Math.round(weeklyListeningSeconds / 60),
+      totalHours: (weeklyListeningSeconds / 3600).toFixed(1),
+      totalPlays: weeklyValidPlays,
+      distinctTracksCount: weeklyTrackCounts.size,
+      peakDay: peakDay !== 'N/A' ? peakDay : 'This Week',
+      topTracks: weeklyTopTracks,
+      topArtists: weeklyTopArtists,
+    } : null;
+
+    // 4. Aggregate All-Time Stats
+    let totalAllTimeSeconds = 0;
+    let totalAllTimeValidPlays = 0;
+    let longestSessionSec = 0;
+    const allTimeTrackCounts = new Map();
+    const allTimeArtistCounts = new Map();
+    const dailyActivityMap = new Map();
+
+    for (const ev of allEvents) {
+      const sec = Math.max(0, Number(ev.listenedDuration) || 0);
+      totalAllTimeSeconds += sec;
+      if (sec > longestSessionSec) {
+        longestSessionSec = sec;
+      }
+
+      const isValidPlay = sec >= 30 || ev.eventType === 'completed';
+      if (isValidPlay) {
+        totalAllTimeValidPlays += 1;
+
+        const tId = ev.trackId;
+        const currentTrack = allTimeTrackCounts.get(tId) || {
+          id: tId,
+          title: ev.title || 'Unknown Track',
+          artist: ev.artist || 'Unknown Artist',
+          thumbnail: ev.thumbnail || '',
+          count: 0,
+          seconds: 0
+        };
+        currentTrack.count += 1;
+        currentTrack.seconds += sec;
+        if (ev.thumbnail && !currentTrack.thumbnail) currentTrack.thumbnail = ev.thumbnail;
+        allTimeTrackCounts.set(tId, currentTrack);
+
+        const art = (ev.artist || '').trim();
+        if (art && art !== 'Unknown Artist') {
+          allTimeArtistCounts.set(art, (allTimeArtistCounts.get(art) || 0) + 1);
+        }
+      }
+
+      if (ev.timestamp) {
+        let dateKey = 'today';
+        let dayLabel = 'Day';
+        try {
+          const d = new Date(ev.timestamp);
+          dateKey = d.toISOString().slice(0, 10);
+          dayLabel = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: timezone }).format(d);
+        } catch {}
+        const curDaily = dailyActivityMap.get(dateKey) || { date: dateKey, dayLabel, seconds: 0, plays: 0 };
+        curDaily.seconds += sec;
+        if (isValidPlay) curDaily.plays += 1;
+        dailyActivityMap.set(dateKey, curDaily);
+      }
+    }
+
+    // Historical fallback: If user has history in userDoc.history and no events were recorded yet,
+    // populate genuine song/artist records from user.history without inventing listening duration.
+    if (allEvents.length === 0 && userDoc?.history && Array.isArray(userDoc.history) && userDoc.history.length > 0) {
+      for (const h of userDoc.history) {
+        const tId = h.id || h.videoId;
+        if (tId && !allTimeTrackCounts.has(tId)) {
+          allTimeTrackCounts.set(tId, {
+            id: tId,
+            title: h.title || 'Unknown Track',
+            artist: h.artist || h.channel || 'Unknown Artist',
+            thumbnail: h.thumbnail || h.image || '',
+            count: 1,
+            seconds: 0
+          });
+        }
+        const art = (h.artist || h.channel || '').trim();
+        if (art && art !== 'Unknown Artist') {
+          allTimeArtistCounts.set(art, (allTimeArtistCounts.get(art) || 0) + 1);
+        }
+      }
+      totalAllTimeValidPlays = userDoc.history.length;
+    }
+
+    const allTimeTopTracks = Array.from(allTimeTrackCounts.values())
+      .sort((a, b) => b.count - a.count || b.seconds - a.seconds)
+      .slice(0, 10);
+
+    const allTimeTopArtists = Array.from(allTimeArtistCounts.entries())
+      .map(([artist, count]) => ({ artist, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+
+    let longestSessionFormatted = '0m';
+    if (longestSessionSec >= 3600) {
+      const h = Math.floor(longestSessionSec / 3600);
+      const m = Math.floor((longestSessionSec % 3600) / 60);
+      longestSessionFormatted = `${h}h ${m}m`;
+    } else if (longestSessionSec >= 60) {
+      const m = Math.floor(longestSessionSec / 60);
+      const s = longestSessionSec % 60;
+      longestSessionFormatted = s > 0 ? `${m}m ${s}s` : `${m}m`;
+    } else if (longestSessionSec > 0) {
+      longestSessionFormatted = `${longestSessionSec}s`;
+    }
+
+    const activityOverTime = Array.from(dailyActivityMap.values())
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(-7);
+
+    const allTimeStats = {
+      totalListeningSeconds: totalAllTimeSeconds,
+      totalMinutes: Math.round(totalAllTimeSeconds / 60),
+      totalHours: (totalAllTimeSeconds / 3600).toFixed(1),
+      totalPlays: totalAllTimeValidPlays,
+      distinctTracksCount: allTimeTrackCounts.size,
+      distinctArtistsCount: allTimeArtistCounts.size,
+      topTracks: allTimeTopTracks,
+      topArtists: allTimeTopArtists,
+      longestSessionSeconds: longestSessionSec,
+      longestSessionFormatted,
+      activityOverTime
+    };
+
+    const result = {
+      success: true,
+      userId: userIdStr,
+      updatedAt: new Date().toISOString(),
+      weeklyRecap,
+      allTimeStats
+    };
+
+    statsCache.set(cacheKey, { timestamp: now, data: result });
+    return result;
   }
 };

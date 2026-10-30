@@ -36,9 +36,15 @@ const userListeningEventSchema = new mongoose.Schema({
     default: '',
     trim: true
   },
+  playSessionId: {
+    type: String,
+    index: true,
+    sparse: true,
+    trim: true
+  },
   eventType: {
     type: String,
-    enum: ['play_start', 'progress', 'completed', 'skip', 'like', 'dislike', 'repeat'],
+    enum: ['play_start', 'progress', 'completed', 'skip', 'like', 'dislike', 'repeat', 'pause', 'resume'],
     required: true,
     index: true
   },
@@ -73,6 +79,9 @@ const userListeningEventSchema = new mongoose.Schema({
 userListeningEventSchema.index({ userId: 1, timestamp: -1 });
 userListeningEventSchema.index({ userId: 1, trackId: 1, eventType: 1 });
 userListeningEventSchema.index({ userId: 1, eventType: 1, timestamp: -1 });
+userListeningEventSchema.index({ userId: 1, playSessionId: 1 });
+userListeningEventSchema.index({ userId: 1, timestamp: -1, listenedDuration: -1 });
+userListeningEventSchema.index({ userId: 1, listenedDuration: -1 });
 
 export default mongoose.model('UserListeningEvent', userListeningEventSchema);
 
