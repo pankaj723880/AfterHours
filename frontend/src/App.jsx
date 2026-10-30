@@ -34,6 +34,7 @@ import MoodToMusicSection from './components/Mood/MoodToMusicSection';
 import PersonalizedRecommendationsSection from './components/Recommendations/PersonalizedRecommendationsSection';
 import LoopraAiCompanion from './components/AiMusicCompanion/LoopraAiCompanion';
 import { recommendationsClient } from './services/recommendationsClient';
+import { learningIntelligenceClient } from './services/learningIntelligenceClient';
 import LoopraCanvas from './components/Player/LoopraCanvas';
 import TimeMachineRadio from './components/Radio/TimeMachineRadio';
 import IndianRadioView from './components/Radio/IndianRadioView';
@@ -1308,6 +1309,25 @@ export default function App() {
   const [isAppInitialized, setIsAppInitialized] = useState(false);
   const [showSplashScreen, setShowSplashScreen] = useState(true);
 
+  // Auth State
+  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('afterhours_user') || 'null'));
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('afterhours_token') || '');
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [isLoginMode, setIsLoginMode] = useState(true);
+  const [authForm, setAuthForm] = useState({ username: '', password: '' });
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+
+  const isAdmin = Boolean(
+    (user && user.role === 'admin') ||
+    (user?.username && [
+      'admin@afterhours.com',
+      'pankajsss7238@gmail.com',
+      'pss809352@gmail.com',
+      'ps207800@gmail.com'
+    ].includes(user.username.toLowerCase()))
+  );
+
   const handleSplashFinished = useCallback(() => {
     setShowSplashScreen(false);
   }, []);
@@ -1319,6 +1339,17 @@ export default function App() {
     }, 2800);
     return () => clearTimeout(splashSafetyTimer);
   }, []);
+
+  // Passively record feature visits in AI Learning Intelligence Engine
+  useEffect(() => {
+    if (authToken && activeTab && activeTab !== 'admin') {
+      learningIntelligenceClient.recordEvent(BACKEND_URL, authToken, {
+        category: 'website',
+        eventType: activeTab === 'radio' ? 'radio_usage' : (activeTab === 'discover' ? 'discover_usage' : 'feature_visit'),
+        metadata: { featureName: activeTab }
+      });
+    }
+  }, [activeTab, authToken]);
 
   useEffect(() => {
     let isMounted = true;
@@ -2017,25 +2048,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [showAllAlbums, setShowAllAlbums] = useState(false);
   const [showAllRadio, setShowAllRadio] = useState(false);
 
-  // Auth State
-  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('afterhours_user') || 'null'));
-  const [authToken, setAuthToken] = useState(() => localStorage.getItem('afterhours_token') || '');
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [isLoginMode, setIsLoginMode] = useState(true);
-  const [authForm, setAuthForm] = useState({ username: '', password: '' });
-  const [authError, setAuthError] = useState('');
-  const [authLoading, setAuthLoading] = useState(false);
-
-  const isAdmin = Boolean(
-    (user && user.role === 'admin') ||
-    (user?.username && [
-      'admin@afterhours.com',
-      'pankajsss7238@gmail.com',
-      'pss809352@gmail.com',
-      'ps207800@gmail.com'
-    ].includes(user.username.toLowerCase()))
-  );
-
   useEffect(() => {
     if (authToken) {
       fetch(getApiUrl('/api/auth/me'), {
@@ -2161,8 +2173,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             source: activeTab || 'player'
           });
 
-          // Social Listening Activity Feed logging (only for genuine 30s+ plays)
+          // Social Listening Activity Feed logging (only for genuine 30s+ plays, protected by timeout)
           try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 4000);
             fetch(getApiUrl('/api/activity/log'), {
               method: 'POST',
               headers: {
@@ -2178,8 +2192,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   artist: currentSong?.artist || currentSong?.channel || 'Unknown Artist',
                   albumArt: getCleanThumbnail(currentSong)
                 }
-              })
-            }).catch(() => {});
+              }),
+              signal: controller.signal
+            }).then(() => clearTimeout(timeoutId)).catch(() => clearTimeout(timeoutId));
           } catch (e) {}
         }
       } else if (activeListeningDurationRef.current % 15 === 0 && activeListeningDurationRef.current > 0) {
@@ -3454,7 +3469,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       height: '100%',
       width: '100%',
       videoId: videoId,
-      host: 'https://www.youtube.com',
       playerVars: { 
         autoplay: shouldAutoPlay ? 1 : 0, 
         controls: 1, 
@@ -3463,8 +3477,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         enablejsapi: 1,
         playsinline: 1,
         start: startSeconds > 0 ? Math.floor(startSeconds) : 0,
-        origin: window.location.origin,
-        widget_referrer: window.location.origin
+        origin: typeof window !== 'undefined' ? window.location.origin : '',
+        widget_referrer: typeof window !== 'undefined' ? window.location.href : ''
       },
       events: {
         onReady: (e) => {
@@ -4269,6 +4283,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         });
 
         try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 4000);
           fetch(getApiUrl('/api/activity/log'), {
             method: 'POST',
             headers: {
@@ -4284,9 +4300,21 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 artist: song?.artist || song?.channel || 'Unknown Artist',
                 albumArt: getCleanThumbnail(song)
               }
-            })
-          }).catch(() => {});
+            }),
+            signal: controller.signal
+          }).then(() => clearTimeout(timeoutId)).catch(() => clearTimeout(timeoutId));
         } catch (e) {}
+      } else if (isAlreadyLiked && authToken) {
+        learningIntelligenceClient.recordEvent(BACKEND_URL, authToken, {
+          category: 'music',
+          eventType: 'unlike',
+          metadata: {
+            trackId: songId,
+            songTitle: song?.title || 'Unknown Track',
+            artistName: song?.artist || song?.channel || 'Unknown Artist',
+            source: activeTab || 'favourites'
+          }
+        });
       }
 
       return isAlreadyLiked 
@@ -4326,6 +4354,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
     if (authToken) {
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
         fetch(getApiUrl('/api/activity/log'), {
           method: 'POST',
           headers: {
@@ -4338,8 +4368,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               id: newPlaylist.id,
               name: newPlaylist.name
             }
-          })
-        }).catch(() => {});
+          }),
+          signal: controller.signal
+        }).then(() => clearTimeout(timeoutId)).catch(() => clearTimeout(timeoutId));
       } catch (e) {}
     }
     showToast(`Created playlist "${newPlaylistName.trim()}"`);
@@ -4380,6 +4411,20 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           localStorage.setItem('guest_playlists', JSON.stringify(updatedPlaylists));
         }
       } catch (e) {}
+
+      if (authToken) {
+        learningIntelligenceClient.recordEvent(BACKEND_URL, authToken, {
+          category: 'music',
+          eventType: 'playlist_add',
+          metadata: {
+            trackId: songToAdd.id || songToAdd.videoId,
+            songTitle: songToAdd.title,
+            artistName: songToAdd.artist || songToAdd.channel,
+            playlistName: targetName
+          }
+        });
+      }
+
       showToast(`Added to "${targetName}"`);
     } else {
       showToast('Track already in playlist');
@@ -4403,6 +4448,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     setSearchError('');
     setSearchLoadMoreError('');
     setIsLoadingMoreSearch(false);
+
+    if (authToken) {
+      learningIntelligenceClient.recordEvent(BACKEND_URL, authToken, {
+        category: 'discovery',
+        eventType: 'search',
+        metadata: { searchQuery: trimmedQuery }
+      });
+    }
 
     // If cache already has modern format with pagination token
     const cachedEntry = searchCache[trimmedQuery];

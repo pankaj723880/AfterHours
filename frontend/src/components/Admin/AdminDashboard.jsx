@@ -21,6 +21,7 @@ import {
   Eye,
   Sliders,
   Sparkles,
+  Brain,
   X,
   AlertCircle,
   Menu
@@ -38,6 +39,7 @@ import CmsLayoutEditor from './CmsLayoutEditor';
 import CmsMusicManager from './CmsMusicManager';
 import CmsMediaLibrary from './CmsMediaLibrary';
 import CmsPublishingHistory from './CmsPublishingHistory';
+import AiLearningIntelligence from './AiLearningIntelligence';
 import { safeParseJsonResponse } from '../../utils/errorHandler';
 import { DEFAULT_CMS_CONFIG, getCachedCmsConfig, normalizeCmsConfig, applyThemeToDom } from '../../services/cmsClient';
 import { BACKEND_URL } from '../../utils/apiUrl';
@@ -365,6 +367,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
 
   const operationsNavItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'ai_learning', label: 'AI Learning Engine', icon: Brain, badge: 'Intelligence' },
     { id: 'traffic', label: 'Live Traffic', icon: Activity, badge: isSocketConnected ? 'LIVE' : null },
     { id: 'users', label: 'Users & Roles', icon: Users },
     { id: 'activity', label: 'Activity Moderation', icon: Activity },
@@ -709,6 +712,14 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               metrics={metrics} 
               health={health} 
               onNavigate={setActiveSubTab} 
+              token={token}
+              backendUrl={cleanBackendUrl}
+              showToast={showToast}
+            />
+          )}
+
+          {activeSubTab === 'ai_learning' && (
+            <AiLearningIntelligence
               token={token}
               backendUrl={cleanBackendUrl}
               showToast={showToast}

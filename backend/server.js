@@ -33,6 +33,8 @@ import analyticsRoutes from './routes/analytics.js';
 import aiMusicRoutes from './routes/aiMusic.js';
 import { isSingleSong, filterSingleSongs } from './services/songFilter.js';
 import { liveUsersService } from './services/liveUsersService.js';
+import learningRoutes from './routes/learningIntelligence.js';
+import { learningEngineService } from './services/learningEngineService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -228,6 +230,7 @@ mongoose.connect(MONGODB_URI, {
     metricsService.initPersistence();
     cmsService.initDefaults();
     liveUsersService.init({ io, metricsService });
+    learningEngineService.init();
   })
   .catch((err) => {
     isMongoConnected = false;
@@ -242,6 +245,7 @@ mongoose.connection.on('connected', () => {
   cmsService.initDefaults();
   seedDefaultLicensedTracks();
   liveUsersService.init({ io, metricsService });
+  learningEngineService.init();
 });
 
 mongoose.connection.on('error', (err) => {
@@ -781,6 +785,26 @@ app.post(['/api/user/:id/sync', '/user/:id/sync'], async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    // Passively observe recent like actions in AI Learning Intelligence Engine
+    if (Array.isArray(likedSongs) && likedSongs.length > 0) {
+      setImmediate(() => {
+        const topLiked = likedSongs[0];
+        if (topLiked) {
+          learningEngineService.recordEvent({
+            userId: user._id,
+            category: 'music',
+            eventType: 'like',
+            metadata: {
+              trackId: topLiked.id || topLiked.videoId,
+              songTitle: topLiked.title,
+              artistName: topLiked.artist || topLiked.channel,
+              source: 'favourites'
+            }
+          }).catch(() => {});
+        }
+      });
+    }
+
     res.json({ message: 'Synced', timestamp: Date.now() });
   } catch (err) {
     console.error('[User Sync Error]:', err.message);
@@ -830,6 +854,9 @@ app.get('/api/listening-stats', authenticateToken, async (req, res) => {
 
 // Mount Loopra AI Music Companion & External Song Recognition
 app.use(['/api/ai-music', '/ai-music'], aiMusicRoutes);
+
+// Mount AI Learning Intelligence Engine (Passive Observation & Admin Intelligence)
+app.use(['/api/learning-intelligence', '/learning-intelligence'], learningRoutes);
 
 // YouTube API Search with In-Memory Caching & Rotating Keys
 const searchCache = new Map();
@@ -952,6 +979,24 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
 
   // Record search term in music metrics
   metricsService.recordMusicEvent({ type: 'search', query: queryStr });
+
+  // Passively observe search in AI Learning Intelligence Engine if authenticated
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    try {
+      const decoded = verifyToken(authHeader.replace('Bearer ', ''));
+      if (decoded && decoded.userId) {
+        setImmediate(() => {
+          learningEngineService.recordEvent({
+            userId: decoded.userId,
+            category: 'discovery',
+            eventType: 'search',
+            metadata: { searchQuery: queryStr }
+          }).catch(() => {});
+        });
+      }
+    } catch (e) {}
+  }
 
   const cached = getCachedSearch(cacheKey);
   if (cached) {

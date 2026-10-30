@@ -5,6 +5,7 @@ import UserListeningSession from '../models/UserListeningSession.js';
 import WebsiteUsageSession from '../models/WebsiteUsageSession.js';
 import UserMusicPreference from '../models/UserMusicPreference.js';
 import User from '../models/User.js';
+import { learningEngineService } from './learningEngineService.js';
 
 // In-memory cache for aggregated analytics responses (30 seconds TTL)
 const analyticsCache = new Map();
@@ -181,152 +182,174 @@ export const analyticsService = {
 
     let playbackDoc = null;
     if (mongoose.connection && mongoose.connection.readyState === 1) {
-      // 1. Upsert into UserPlaybackEvent by (userId, sessionId)
-      let existingEvent = await UserPlaybackEvent.findOne({ userId: userObjectId, sessionId: cleanSessionId });
+      const validPlay = isValidMusicPlay(listenedSec, durSec, isCompleted);
 
-      if (existingEvent) {
-        existingEvent.listenedDurationSeconds = Math.max(existingEvent.listenedDurationSeconds || 0, listenedSec);
-        if (durSec > 0) existingEvent.durationSeconds = Math.max(existingEvent.durationSeconds || 0, durSec);
-        if (posSec > 0) existingEvent.playbackPositionSeconds = posSec;
-        if (compPct > 0) existingEvent.completionPercent = Math.max(existingEvent.completionPercent || 0, compPct);
-        if (cleanArtwork && !existingEvent.artworkUrl) existingEvent.artworkUrl = cleanArtwork;
-
-        if (isCompleted) {
-          existingEvent.completed = true;
-          existingEvent.eventType = 'completed';
-          existingEvent.endedAt = now;
-        } else if (eventType === 'pause') {
-          existingEvent.pausedAt = now;
-          if (existingEvent.eventType !== 'completed') existingEvent.eventType = 'pause';
-        } else if (eventType === 'resume') {
-          existingEvent.resumedAt = now;
-          if (existingEvent.eventType !== 'completed') existingEvent.eventType = 'resume';
-        } else if (eventType === 'skip' || eventType === 'stop') {
-          existingEvent.endedAt = now;
-          if (existingEvent.eventType !== 'completed') existingEvent.eventType = eventType;
-        } else if (existingEvent.eventType !== 'completed' && eventType === 'progress') {
-          existingEvent.eventType = 'progress';
-        }
-
-        await existingEvent.save();
-        playbackDoc = existingEvent;
-      } else {
-        playbackDoc = new UserPlaybackEvent({
-          userId: userObjectId,
-          sessionId: cleanSessionId,
+      // Fast atomic upsert for UserPlaybackEvent
+      const playbackUpdate = {
+        $set: {
           trackId: cleanTrackId,
           videoId: cleanVideoId,
           songTitle: cleanTitle.slice(0, 250),
           artistName: cleanArtist.slice(0, 200),
           albumName: cleanAlbum.slice(0, 200),
-          artworkUrl: cleanArtwork,
           source: (source || 'player').slice(0, 60),
-          eventType,
-          startedAt: now,
-          pausedAt: eventType === 'pause' ? now : undefined,
-          resumedAt: eventType === 'resume' ? now : undefined,
-          endedAt: isCompleted || eventType === 'skip' || eventType === 'stop' ? now : undefined,
-          listenedDurationSeconds: listenedSec,
-          playbackPositionSeconds: posSec,
-          durationSeconds: durSec,
-          completionPercent: compPct,
-          completed: isCompleted,
           deviceType,
           platform
-        });
-        await playbackDoc.save();
-      }
-
-      // 2. Sync to legacy UserListeningEvent for backward compatibility
-      try {
-        let legacy = await UserListeningEvent.findOne({ userId: userObjectId, playSessionId: cleanSessionId });
-        if (legacy) {
-          legacy.listenedDuration = Math.max(legacy.listenedDuration || 0, listenedSec);
-          if (durSec > 0) legacy.duration = Math.max(legacy.duration || 0, durSec);
-          if (compPct > 0) legacy.completionPercent = Math.max(legacy.completionPercent || 0, compPct);
-          if (isCompleted) legacy.eventType = 'completed';
-          await legacy.save();
-        } else {
-          legacy = new UserListeningEvent({
-            userId: userObjectId,
-            playSessionId: cleanSessionId,
-            trackId: cleanTrackId,
-            title: cleanTitle.slice(0, 200),
-            artist: cleanArtist.slice(0, 150),
-            channel: cleanArtist.slice(0, 150),
-            thumbnail: cleanArtwork,
-            eventType: isCompleted ? 'completed' : eventType,
-            duration: durSec,
-            listenedDuration: listenedSec,
-            completionPercent: compPct,
-            source: (source || 'player').slice(0, 50),
-            timestamp: now
-          });
-          await legacy.save();
+        },
+        $setOnInsert: {
+          userId: userObjectId,
+          sessionId: cleanSessionId,
+          startedAt: now
+        },
+        $max: {
+          listenedDurationSeconds: listenedSec,
+          durationSeconds: durSec,
+          completionPercent: compPct,
+          playbackPositionSeconds: posSec
         }
-      } catch (e) {
-        // Non-blocking
+      };
+      if (cleanArtwork) playbackUpdate.$set.artworkUrl = cleanArtwork;
+
+      if (isCompleted) {
+        playbackUpdate.$set.completed = true;
+        playbackUpdate.$set.eventType = 'completed';
+        playbackUpdate.$set.endedAt = now;
+      } else if (eventType === 'pause') {
+        playbackUpdate.$set.pausedAt = now;
+        playbackUpdate.$set.eventType = 'pause';
+      } else if (eventType === 'resume') {
+        playbackUpdate.$set.resumedAt = now;
+        playbackUpdate.$set.eventType = 'resume';
+      } else if (eventType === 'skip' || eventType === 'stop') {
+        playbackUpdate.$set.endedAt = now;
+        playbackUpdate.$set.eventType = eventType;
+      } else if (eventType) {
+        playbackUpdate.$set.eventType = eventType;
       }
 
-      // 3. Update UserListeningSession
-      try {
-        let session = await UserListeningSession.findOne({ userId: userObjectId, sessionId: cleanSessionId });
-        const validPlay = isValidMusicPlay(listenedSec, durSec, isCompleted);
-
-        if (session) {
-          session.lastActiveAt = now;
-          session.activeListeningDurationSeconds = Math.max(session.activeListeningDurationSeconds || 0, listenedSec);
-          if (isCompleted) {
-            session.status = 'completed';
-            session.endedAt = now;
-          } else if (eventType === 'pause') {
-            session.status = 'paused';
-          } else {
-            session.status = 'active';
-          }
-          if (validPlay && session.songsPlayed === 0) {
-            session.songsPlayed = 1;
-          }
-          await session.save();
-        } else {
-          session = new UserListeningSession({
-            userId: userObjectId,
-            sessionId: cleanSessionId,
-            startedAt: now,
-            lastActiveAt: now,
-            activeListeningDurationSeconds: listenedSec,
-            songsPlayed: validPlay ? 1 : 0,
-            tracks: [{
-              trackId: cleanTrackId,
-              videoId: cleanVideoId,
-              title: cleanTitle,
-              artist: cleanArtist,
-              artworkUrl: cleanArtwork,
-              listenedSeconds: listenedSec,
-              completed: isCompleted
-            }],
-            deviceType,
-            platform,
-            status: isCompleted ? 'completed' : 'active'
-          });
-          await session.save();
+      // Fast atomic upsert for legacy UserListeningEvent
+      const legacyUpdate = {
+        $set: {
+          trackId: cleanTrackId,
+          title: cleanTitle.slice(0, 200),
+          artist: cleanArtist.slice(0, 150),
+          channel: cleanArtist.slice(0, 150),
+          thumbnail: cleanArtwork,
+          source: (source || 'player').slice(0, 50),
+          timestamp: now
+        },
+        $setOnInsert: {
+          userId: userObjectId,
+          playSessionId: cleanSessionId
+        },
+        $max: {
+          listenedDuration: listenedSec,
+          duration: durSec,
+          completionPercent: compPct
         }
-      } catch (e) {
-        // Non-blocking
-      }
+      };
+      if (isCompleted) legacyUpdate.$set.eventType = 'completed';
+      else if (eventType) legacyUpdate.$set.eventType = eventType;
 
-      // 4. Update UserMusicPreference if significant listen
-      if (isValidMusicPlay(listenedSec, durSec, isCompleted)) {
-        try {
-          await this.updateUserPreference(userObjectId, {
+      // Fast atomic upsert for UserListeningSession
+      const sessionUpdate = {
+        $set: {
+          lastActiveAt: now,
+          deviceType,
+          platform,
+          status: isCompleted ? 'completed' : (eventType === 'pause' ? 'paused' : 'active')
+        },
+        $setOnInsert: {
+          userId: userObjectId,
+          sessionId: cleanSessionId,
+          startedAt: now,
+          tracks: [{
             trackId: cleanTrackId,
+            videoId: cleanVideoId,
             title: cleanTitle,
             artist: cleanArtist,
-            thumbnail: cleanArtwork,
+            artworkUrl: cleanArtwork,
+            listenedSeconds: listenedSec,
             completed: isCompleted
+          }]
+        },
+        $max: {
+          activeListeningDurationSeconds: listenedSec
+        }
+      };
+      if (validPlay) {
+        sessionUpdate.$set.songsPlayed = 1;
+      }
+      if (isCompleted) {
+        sessionUpdate.$set.endedAt = now;
+      }
+
+      // Execute all 3 writes concurrently with strict query timeout
+      const pPlayback = UserPlaybackEvent.findOneAndUpdate(
+        { userId: userObjectId, sessionId: cleanSessionId },
+        playbackUpdate,
+        { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
+      ).maxTimeMS(2500);
+
+      const pLegacy = UserListeningEvent.findOneAndUpdate(
+        { userId: userObjectId, playSessionId: cleanSessionId },
+        legacyUpdate,
+        { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
+      ).maxTimeMS(2500).catch(err => {
+        console.warn('[Analytics Legacy Sync Notice]:', err.message);
+      });
+
+      const pSession = UserListeningSession.findOneAndUpdate(
+        { userId: userObjectId, sessionId: cleanSessionId },
+        sessionUpdate,
+        { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
+      ).maxTimeMS(2500).catch(err => {
+        console.warn('[Analytics Session Sync Notice]:', err.message);
+      });
+
+      const [savedPlayback] = await Promise.all([pPlayback, pLegacy, pSession]);
+      playbackDoc = savedPlayback;
+
+      // Update UserMusicPreference asynchronously in background (zero HTTP latency penalty)
+      if (validPlay) {
+        setImmediate(async () => {
+          try {
+            await this.updateUserPreference(userObjectId, {
+              trackId: cleanTrackId,
+              title: cleanTitle,
+              artist: cleanArtist,
+              thumbnail: cleanArtwork,
+              completed: isCompleted
+            });
+          } catch (e) {}
+        });
+      }
+
+      // Passively observe in AI Learning Intelligence Engine (zero HTTP latency penalty)
+      setImmediate(async () => {
+        try {
+          await learningEngineService.recordEvent({
+            userId: userObjectId,
+            category: 'music',
+            eventType,
+            metadata: {
+              trackId: cleanTrackId,
+              videoId: cleanVideoId,
+              songTitle: cleanTitle,
+              artistName: cleanArtist,
+              albumName: cleanAlbum,
+              durationSeconds: durSec,
+              listenedDurationSeconds: listenedSec,
+              playbackPositionSeconds: posSec,
+              completionPercent: compPct,
+              source,
+              deviceType,
+              platform,
+              sessionId: cleanSessionId
+            }
           });
         } catch (e) {}
-      }
+      });
     }
 
     return {
@@ -405,6 +428,23 @@ export const analyticsService = {
       }
 
       this.invalidateUserCache(userObjectId);
+
+      // Passively observe website activity in AI Learning Intelligence Engine
+      setImmediate(async () => {
+        try {
+          await learningEngineService.recordEvent({
+            userId: userObjectId,
+            category: 'website',
+            eventType: 'session_heartbeat',
+            metadata: {
+              featureName: page || 'website',
+              durationSeconds: allowedDelta,
+              deviceType,
+              sessionId: cleanSessionId
+            }
+          });
+        } catch (e) {}
+      });
 
       return {
         success: true,
