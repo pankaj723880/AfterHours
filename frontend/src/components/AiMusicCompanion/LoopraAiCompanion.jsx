@@ -8,7 +8,7 @@ const STORAGE_KEY_MOBILE = 'loopra_ai_chat_dims_mobile';
 const DEFAULT_DESKTOP_WIDTH = 420; // 400-440px
 const DEFAULT_DESKTOP_HEIGHT = 580; // 550-620px
 
-export const getViewportInfo = () => {
+const getViewportInfo = () => {
   if (typeof window === 'undefined') {
     return { width: 1200, height: 800, isMobile: false };
   }
@@ -19,7 +19,7 @@ export const getViewportInfo = () => {
   return { width: vw, height: vh, isMobile };
 };
 
-export const getDefaultDimensions = (isMobile, vp) => {
+const getDefaultDimensions = (isMobile, vp) => {
   if (isMobile) {
     // Mobile: 85-90% width (approx 88%), 55-65% height (approx 60%)
     const targetW = Math.round(vp.width * 0.88);
@@ -40,7 +40,7 @@ export const getDefaultDimensions = (isMobile, vp) => {
   };
 };
 
-export const loadSavedDimensions = () => {
+const loadSavedDimensions = () => {
   const vp = getViewportInfo();
   const key = vp.isMobile ? STORAGE_KEY_MOBILE : STORAGE_KEY_DESKTOP;
   const defaults = getDefaultDimensions(vp.isMobile, vp);

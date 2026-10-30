@@ -3339,7 +3339,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       height: '100%',
       width: '100%',
       videoId: videoId,
-      host: 'https://www.youtube-nocookie.com',
+      host: 'https://www.youtube.com',
       playerVars: { 
         autoplay: shouldAutoPlay ? 1 : 0, 
         controls: 1, 
@@ -3348,7 +3348,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         enablejsapi: 1,
         playsinline: 1,
         start: startSeconds > 0 ? Math.floor(startSeconds) : 0,
-        origin: window.location.origin
+        origin: window.location.origin,
+        widget_referrer: window.location.origin
       },
       events: {
         onReady: (e) => {
