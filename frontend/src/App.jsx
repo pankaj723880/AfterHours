@@ -1330,84 +1330,6 @@ export default function App() {
 
   const isAdmin = Boolean(user && user.role === 'admin');
 
-  // Real-time synchronization of user roles and immediate revocation of admin dashboard
-  useEffect(() => {
-    // 1. Fetch live user account state from server on mount / reconnect to prevent stale roles
-    const syncCurrentUserState = async () => {
-      const curToken = localStorage.getItem('afterhours_token');
-      if (!curToken) return;
-      try {
-        const res = await fetch(getApiUrl('/api/auth/me'), {
-          headers: { Authorization: `Bearer ${curToken}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.user) {
-            setUser(prev => {
-              if (!prev) return data.user;
-              const merged = { ...prev, ...data.user };
-              localStorage.setItem('afterhours_user', JSON.stringify(merged));
-              if (prev.role === 'admin' && merged.role !== 'admin' && activeTab === 'admin') {
-                setActiveTab('home');
-                window.history.pushState(null, '', '/');
-                showToast('Your administrator privileges have been revoked.', 'warning');
-              }
-              return merged;
-            });
-          }
-        }
-      } catch (err) {}
-    };
-
-    syncCurrentUserState();
-
-    // 2. Real-time Socket.io listeners for instant promotion/revocation
-    const handleRoleChanged = (data) => {
-      if (!data || !user) return;
-      const currentUid = user.id || user._id || user.userId;
-      if (currentUid && data.userId && currentUid.toString() === data.userId.toString()) {
-        const newRole = data.role;
-        const updated = { ...user, role: newRole, status: data.status || user.status };
-        setUser(updated);
-        localStorage.setItem('afterhours_user', JSON.stringify(updated));
-
-        if (newRole !== 'admin') {
-          if (activeTab === 'admin') {
-            setActiveTab('home');
-            window.history.pushState(null, '', '/');
-          }
-          showToast('Your administrator privileges have been revoked by an administrator.', 'warning');
-        } else if (newRole === 'admin') {
-          showToast('You have been granted administrator privileges.', 'success');
-        }
-      }
-    };
-
-    const handleAdminRevoked = (data) => {
-      setUser(prev => {
-        if (!prev) return prev;
-        const updated = { ...prev, role: 'user' };
-        localStorage.setItem('afterhours_user', JSON.stringify(updated));
-        return updated;
-      });
-      if (activeTab === 'admin') {
-        setActiveTab('home');
-        window.history.pushState(null, '', '/');
-      }
-      showToast(data?.message || 'Your administrator privileges have been revoked.', 'warning');
-    };
-
-    socket.on('user_role_changed', handleRoleChanged);
-    socket.on('admin_access_revoked', handleAdminRevoked);
-    socket.on('connect', syncCurrentUserState);
-
-    return () => {
-      socket.off('user_role_changed', handleRoleChanged);
-      socket.off('admin_access_revoked', handleAdminRevoked);
-      socket.off('connect', syncCurrentUserState);
-    };
-  }, [user, activeTab, showToast]);
-
   const [reviewsRefreshKey, setReviewsRefreshKey] = useState(0);
 
   // Synchronize authenticated socket session & live presence with backend
@@ -2065,6 +1987,84 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       setToastMessage(null);
     }, duration);
   }, []);
+
+  // Real-time synchronization of user roles and immediate revocation of admin dashboard
+  useEffect(() => {
+    // 1. Fetch live user account state from server on mount / reconnect to prevent stale roles
+    const syncCurrentUserState = async () => {
+      const curToken = localStorage.getItem('afterhours_token');
+      if (!curToken) return;
+      try {
+        const res = await fetch(getApiUrl('/api/auth/me'), {
+          headers: { Authorization: `Bearer ${curToken}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.user) {
+            setUser(prev => {
+              if (!prev) return data.user;
+              const merged = { ...prev, ...data.user };
+              localStorage.setItem('afterhours_user', JSON.stringify(merged));
+              if (prev.role === 'admin' && merged.role !== 'admin' && activeTab === 'admin') {
+                setActiveTab('home');
+                window.history.pushState(null, '', '/');
+                showToast('Your administrator privileges have been revoked.', 'warning');
+              }
+              return merged;
+            });
+          }
+        }
+      } catch (err) {}
+    };
+
+    syncCurrentUserState();
+
+    // 2. Real-time Socket.io listeners for instant promotion/revocation
+    const handleRoleChanged = (data) => {
+      if (!data || !user) return;
+      const currentUid = user.id || user._id || user.userId;
+      if (currentUid && data.userId && currentUid.toString() === data.userId.toString()) {
+        const newRole = data.role;
+        const updated = { ...user, role: newRole, status: data.status || user.status };
+        setUser(updated);
+        localStorage.setItem('afterhours_user', JSON.stringify(updated));
+
+        if (newRole !== 'admin') {
+          if (activeTab === 'admin') {
+            setActiveTab('home');
+            window.history.pushState(null, '', '/');
+          }
+          showToast('Your administrator privileges have been revoked by an administrator.', 'warning');
+        } else if (newRole === 'admin') {
+          showToast('You have been granted administrator privileges.', 'success');
+        }
+      }
+    };
+
+    const handleAdminRevoked = (data) => {
+      setUser(prev => {
+        if (!prev) return prev;
+        const updated = { ...prev, role: 'user' };
+        localStorage.setItem('afterhours_user', JSON.stringify(updated));
+        return updated;
+      });
+      if (activeTab === 'admin') {
+        setActiveTab('home');
+        window.history.pushState(null, '', '/');
+      }
+      showToast(data?.message || 'Your administrator privileges have been revoked.', 'warning');
+    };
+
+    socket.on('user_role_changed', handleRoleChanged);
+    socket.on('admin_access_revoked', handleAdminRevoked);
+    socket.on('connect', syncCurrentUserState);
+
+    return () => {
+      socket.off('user_role_changed', handleRoleChanged);
+      socket.off('admin_access_revoked', handleAdminRevoked);
+      socket.off('connect', syncCurrentUserState);
+    };
+  }, [user, activeTab, showToast]);
 
   // Sleep Timer countdown loop
   useEffect(() => {
