@@ -2,10 +2,23 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { aiMusicCompanionClient } from '../../services/aiMusicCompanionClient';
 
+const BUTTON_SIZE = 56;
+const DEFAULT_MARGIN = 24; // ~24px from right and bottom edges of viewport
+const GAP_PANEL_BUTTON = 12; // Comfortable gap between chat panel and assistant button
+const VIEWPORT_PADDING = 16; // Minimum padding from browser viewport edges
 const MIN_PANEL_WIDTH = 340;
 const MIN_PANEL_HEIGHT = 420;
 const DEFAULT_PANEL_WIDTH = 410;
 const DEFAULT_PANEL_HEIGHT = 580;
+
+const getDefaultAnchor = () => {
+  if (typeof window === 'undefined') return { x: 300, y: 500, isCustom: false };
+  return {
+    x: Math.max(VIEWPORT_PADDING, window.innerWidth - DEFAULT_MARGIN - BUTTON_SIZE),
+    y: Math.max(VIEWPORT_PADDING, window.innerHeight - DEFAULT_MARGIN - BUTTON_SIZE),
+    isCustom: false
+  };
+};
 
 export default function LoopraAiCompanion({
   backendUrl,
@@ -25,24 +38,25 @@ export default function LoopraAiCompanion({
   const [isOpen, setIsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640);
 
-  // Single shared position anchor for BOTH the button and the chat window
+  // Single shared position anchor for BOTH the button and the chat window (tracks button top-left)
   const [anchor, setAnchor] = useState(() => {
     try {
-      const saved = localStorage.getItem('loopra_ai_companion_anchor');
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const savedV2 = localStorage.getItem('loopra_ai_companion_anchor_v2');
+      if (savedV2) {
+        const parsed = JSON.parse(savedV2);
         if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+          if (typeof window !== 'undefined') {
+            const maxX = window.innerWidth - BUTTON_SIZE - DEFAULT_MARGIN;
+            const maxY = window.innerHeight - BUTTON_SIZE - DEFAULT_MARGIN;
+            const clampedX = Math.min(Math.max(VIEWPORT_PADDING, parsed.x), maxX);
+            const clampedY = Math.min(Math.max(VIEWPORT_PADDING, parsed.y), maxY);
+            return { x: clampedX, y: clampedY, isCustom: Boolean(parsed.isCustom) };
+          }
           return parsed;
         }
       }
     } catch (e) {}
-    if (typeof window !== 'undefined') {
-      return {
-        x: Math.max(16, window.innerWidth - 80),
-        y: Math.max(60, window.innerHeight - 130)
-      };
-    }
-    return { x: 300, y: 500 };
+    return getDefaultAnchor();
   });
 
   // Chat panel dimensions
@@ -101,18 +115,29 @@ export default function LoopraAiCompanion({
   const speechRecognitionRef = useRef(null);
   const chatScrollRef = useRef(null);
 
-  // Responsive screen clamping
+  // Responsive screen clamping & window resize tracking
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < 640;
       setIsMobile(mobile);
 
       setAnchor(prev => {
-        const maxX = window.innerWidth - (isOpen && !mobile ? panelDims.width + 16 : 76);
-        const maxY = window.innerHeight - (isOpen && !mobile ? panelDims.height + 16 : 80);
+        if (!prev.isCustom) {
+          return getDefaultAnchor();
+        }
+        const maxX = window.innerWidth - BUTTON_SIZE - DEFAULT_MARGIN;
+        const maxY = window.innerHeight - BUTTON_SIZE - DEFAULT_MARGIN;
+        const minX = isOpen && !mobile
+          ? Math.max(VIEWPORT_PADDING, panelDims.width - BUTTON_SIZE + VIEWPORT_PADDING)
+          : VIEWPORT_PADDING;
+        const minY = isOpen && !mobile
+          ? Math.max(VIEWPORT_PADDING, panelDims.height + GAP_PANEL_BUTTON + VIEWPORT_PADDING)
+          : VIEWPORT_PADDING;
+
         return {
-          x: Math.min(Math.max(12, prev.x), Math.max(12, maxX)),
-          y: Math.min(Math.max(40, prev.y), Math.max(40, maxY))
+          x: Math.min(Math.max(minX, prev.x), Math.max(minX, maxX)),
+          y: Math.min(Math.max(minY, prev.y), Math.max(minY, maxY)),
+          isCustom: true
         };
       });
     };
@@ -549,6 +574,21 @@ export default function LoopraAiCompanion({
     if (showToast) showToast('Conversation cleared');
   };
 
+  // Dynamic available space above and to the left of the assistant button
+  const maxAvailableHeight = typeof window !== 'undefined'
+    ? Math.max(260, anchor.y - GAP_PANEL_BUTTON - VIEWPORT_PADDING)
+    : DEFAULT_PANEL_HEIGHT;
+  const maxAvailableWidth = typeof window !== 'undefined'
+    ? Math.max(MIN_PANEL_WIDTH, anchor.x + BUTTON_SIZE - VIEWPORT_PADDING)
+    : DEFAULT_PANEL_WIDTH;
+
+  const effectivePanelHeight = Math.min(panelDims.height, maxAvailableHeight);
+  const effectivePanelWidth = Math.min(panelDims.width, maxAvailableWidth);
+
+  // Chat panel position anchored strictly above-left of button
+  const panelTop = anchor.y - GAP_PANEL_BUTTON - effectivePanelHeight;
+  const panelLeft = anchor.x + BUTTON_SIZE - effectivePanelWidth;
+
   // -------------------------------------------------------------
   // ONE SHARED UNIT DRAG HANDLERS (Moves button AND panel together)
   // -------------------------------------------------------------
@@ -572,14 +612,24 @@ export default function LoopraAiCompanion({
     const dx = e.clientX - unitDragStartRef.current.x;
     const dy = e.clientY - unitDragStartRef.current.y;
 
-    if (Math.hypot(dx, dy) > 5) {
+    if (Math.hypot(dx, dy) > 4) {
       unitDragStartRef.current.hasMoved = true;
-      const maxX = window.innerWidth - (isOpen && !isMobile ? panelDims.width + 16 : 76);
-      const maxY = window.innerHeight - (isOpen && !isMobile ? panelDims.height + 16 : 80);
 
-      const newX = Math.min(Math.max(12, unitDragStartRef.current.startAnchorX + dx), Math.max(12, maxX));
-      const newY = Math.min(Math.max(40, unitDragStartRef.current.startAnchorY + dy), Math.max(40, maxY));
-      setAnchor({ x: newX, y: newY });
+      // When chat is open, clamp so BOTH the panel and button stay within viewport
+      const minX = isOpen && !isMobile
+        ? Math.max(VIEWPORT_PADDING, effectivePanelWidth - BUTTON_SIZE + VIEWPORT_PADDING)
+        : VIEWPORT_PADDING;
+      const maxX = window.innerWidth - BUTTON_SIZE - VIEWPORT_PADDING;
+
+      const minY = isOpen && !isMobile
+        ? Math.max(VIEWPORT_PADDING, effectivePanelHeight + GAP_PANEL_BUTTON + VIEWPORT_PADDING)
+        : VIEWPORT_PADDING;
+      const maxY = window.innerHeight - BUTTON_SIZE - VIEWPORT_PADDING;
+
+      const newX = Math.min(Math.max(minX, unitDragStartRef.current.startAnchorX + dx), Math.max(minX, maxX));
+      const newY = Math.min(Math.max(minY, unitDragStartRef.current.startAnchorY + dy), Math.max(minY, maxY));
+
+      setAnchor({ x: newX, y: newY, isCustom: true });
     }
   };
 
@@ -592,7 +642,8 @@ export default function LoopraAiCompanion({
 
     if (unitDragStartRef.current.hasMoved) {
       try {
-        localStorage.setItem('loopra_ai_companion_anchor', JSON.stringify(anchor));
+        localStorage.setItem('loopra_ai_companion_anchor_v2', JSON.stringify({ ...anchor, isCustom: true }));
+        localStorage.setItem('loopra_ai_companion_anchor', JSON.stringify({ ...anchor, isCustom: true }));
       } catch (err) {}
     }
   };
@@ -600,7 +651,28 @@ export default function LoopraAiCompanion({
   // Handle Button Click (Toggles Open/Close if not dragged)
   const handleButtonClick = (e) => {
     if (unitDragStartRef.current.hasMoved) return;
-    setIsOpen(prev => !prev);
+    setIsOpen(prev => {
+      const willOpen = !prev;
+      if (willOpen && !isMobile) {
+        // Ensure there is sufficient room for the panel above and to the left
+        setAnchor(current => {
+          const minRequiredY = MIN_PANEL_HEIGHT + GAP_PANEL_BUTTON + VIEWPORT_PADDING;
+          const minRequiredX = MIN_PANEL_WIDTH - BUTTON_SIZE + VIEWPORT_PADDING;
+          const needAdjustY = current.y < minRequiredY;
+          const needAdjustX = current.x < minRequiredX;
+          if (needAdjustY || needAdjustX) {
+            return {
+              ...current,
+              x: Math.max(current.x, minRequiredX),
+              y: Math.max(current.y, minRequiredY),
+              isCustom: true
+            };
+          }
+          return current;
+        });
+      }
+      return willOpen;
+    });
   };
 
   // -------------------------------------------------------------
@@ -637,27 +709,36 @@ export default function LoopraAiCompanion({
     let newAnchorX = resizeStartRef.current.anchorX;
     let newAnchorY = resizeStartRef.current.anchorY;
 
-    if (dir.includes('e')) {
-      newW = Math.max(MIN_PANEL_WIDTH, Math.min(resizeStartRef.current.width + dx, maxW));
-    }
-    if (dir.includes('s')) {
-      newH = Math.max(MIN_PANEL_HEIGHT, Math.min(resizeStartRef.current.height + dy, maxH));
+    if (dir.includes('n')) {
+      const candidateH = Math.max(MIN_PANEL_HEIGHT, Math.min(resizeStartRef.current.height - dy, maxH));
+      const maxHAllowed = newAnchorY - GAP_PANEL_BUTTON - VIEWPORT_PADDING;
+      newH = Math.min(candidateH, Math.max(MIN_PANEL_HEIGHT, maxHAllowed));
     }
     if (dir.includes('w')) {
       const candidateW = Math.max(MIN_PANEL_WIDTH, Math.min(resizeStartRef.current.width - dx, maxW));
-      newAnchorX = resizeStartRef.current.anchorX + (resizeStartRef.current.width - candidateW);
+      const maxWAllowed = newAnchorX + BUTTON_SIZE - VIEWPORT_PADDING;
+      newW = Math.min(candidateW, Math.max(MIN_PANEL_WIDTH, maxWAllowed));
+    }
+    if (dir.includes('e')) {
+      const candidateW = Math.max(MIN_PANEL_WIDTH, Math.min(resizeStartRef.current.width + dx, maxW));
+      const maxXAnchor = window.innerWidth - BUTTON_SIZE - VIEWPORT_PADDING;
+      const candidateAnchorX = resizeStartRef.current.anchorX + (candidateW - resizeStartRef.current.width);
+      newAnchorX = Math.min(maxXAnchor, candidateAnchorX);
       newW = candidateW;
     }
-    if (dir.includes('n')) {
-      const candidateH = Math.max(MIN_PANEL_HEIGHT, Math.min(resizeStartRef.current.height - dy, maxH));
-      newAnchorY = resizeStartRef.current.anchorY + (resizeStartRef.current.height - candidateH);
+    if (dir.includes('s')) {
+      const candidateH = Math.max(MIN_PANEL_HEIGHT, Math.min(resizeStartRef.current.height + dy, maxH));
+      const maxYAnchor = window.innerHeight - BUTTON_SIZE - VIEWPORT_PADDING;
+      const candidateAnchorY = resizeStartRef.current.anchorY + (candidateH - resizeStartRef.current.height);
+      newAnchorY = Math.min(maxYAnchor, candidateAnchorY);
       newH = candidateH;
     }
 
     setPanelDims({ width: newW, height: newH });
     setAnchor({
-      x: Math.min(Math.max(12, newAnchorX), window.innerWidth - newW - 12),
-      y: Math.min(Math.max(40, newAnchorY), window.innerHeight - newH - 16)
+      x: newAnchorX,
+      y: newAnchorY,
+      isCustom: true
     });
   };
 
@@ -669,56 +750,46 @@ export default function LoopraAiCompanion({
     } catch (err) {}
     try {
       localStorage.setItem('loopra_ai_companion_dims', JSON.stringify(panelDims));
-      localStorage.setItem('loopra_ai_companion_anchor', JSON.stringify(anchor));
+      localStorage.setItem('loopra_ai_companion_anchor_v2', JSON.stringify({ ...anchor, isCustom: true }));
+      localStorage.setItem('loopra_ai_companion_anchor', JSON.stringify({ ...anchor, isCustom: true }));
     } catch (err) {}
   };
 
   if (typeof document === 'undefined') return null;
 
   return ReactDOM.createPortal(
-    <div
-      style={
-        isMobile && isOpen
-          ? {
-              position: 'fixed',
-              left: '8px',
-              right: '8px',
-              bottom: 'calc(70px + env(safe-area-inset-bottom, 0px))',
-              zIndex: 9990,
-              touchAction: 'none'
-            }
-          : {
-              position: 'fixed',
-              left: `${anchor.x}px`,
-              top: `${anchor.y}px`,
-              zIndex: 9990,
-              touchAction: 'none'
-            }
-      }
-      className="select-none pointer-events-auto"
-    >
+    <div className="loopra-ai-assistant-container select-none">
       {/* ------------------------------------------------------------- */}
-      {/* ONE CONNECTED FLOATING ASSISTANT UNIT (Panel + Button)        */}
+      {/* 1. EXPANDABLE CHAT PANEL                                      */}
+      {/* Desktop: positioned strictly above and to left of button      */}
+      {/* Mobile: bottom drawer pinned above navigation bar             */}
       {/* ------------------------------------------------------------- */}
-      <div className="relative flex flex-col items-end">
-
-        {/* EXPANDABLE CHAT PANEL (Directly attached to anchor) */}
-        {isOpen && (
-          <div
-            style={
-              isMobile
-                ? {
-                    width: '100%',
-                    height: '560px',
-                    maxHeight: 'calc(100dvh - 130px)'
-                  }
-                : {
-                    width: `${panelDims.width}px`,
-                    height: `${panelDims.height}px`
-                  }
-            }
-            className="flex flex-col bg-neutral-950/95 border border-amber-500/40 rounded-2xl shadow-2xl backdrop-blur-2xl overflow-hidden mb-2 animate-in fade-in zoom-in-95 duration-150"
-          >
+      {isOpen && (
+        <div
+          style={
+            isMobile
+              ? {
+                  position: 'fixed',
+                  left: '8px',
+                  right: '8px',
+                  bottom: 'calc(76px + env(safe-area-inset-bottom, 0px))',
+                  maxHeight: 'calc(100dvh - 140px)',
+                  height: '560px',
+                  zIndex: 99990,
+                  touchAction: 'none'
+                }
+              : {
+                  position: 'fixed',
+                  left: `${panelLeft}px`,
+                  top: `${panelTop}px`,
+                  width: `${effectivePanelWidth}px`,
+                  height: `${effectivePanelHeight}px`,
+                  zIndex: 99990,
+                  touchAction: 'none'
+                }
+          }
+          className="flex flex-col bg-neutral-950/95 border border-amber-500/40 rounded-2xl shadow-2xl backdrop-blur-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 pointer-events-auto"
+        >
             {/* Header (Acts as drag handle for the entire unit) */}
             <div
               onPointerDown={handleUnitPointerDown}
@@ -1416,13 +1487,38 @@ export default function LoopraAiCompanion({
           </div>
         )}
 
-        {/* FLOATING BUTTON (Connected visually & structurally as part of the unit) */}
+        {/* ------------------------------------------------------------- */}
+        {/* 2. FLOATING ASSISTANT BUTTON                                  */}
+        {/* Desktop: strictly fixed at anchor (bottom-right 24px default)  */}
+        {/* Mobile: bottom-right safe area above nav & player             */}
+        {/* ------------------------------------------------------------- */}
         <div
+          style={
+            isMobile
+              ? {
+                  position: 'fixed',
+                  right: '16px',
+                  bottom: currentSong
+                    ? 'calc(136px + env(safe-area-inset-bottom, 0px))'
+                    : 'calc(76px + env(safe-area-inset-bottom, 0px))',
+                  zIndex: 99992,
+                  touchAction: 'none'
+                }
+              : {
+                  position: 'fixed',
+                  left: `${anchor.x}px`,
+                  top: `${anchor.y}px`,
+                  width: '56px',
+                  height: '56px',
+                  zIndex: 99992,
+                  touchAction: 'none'
+                }
+          }
           onPointerDown={handleUnitPointerDown}
           onPointerMove={handleUnitPointerMove}
           onPointerUp={handleUnitPointerUp}
-          className="relative flex items-center justify-end select-none cursor-grab active:cursor-grabbing"
-          title="Drag to reposition entire Loopra AI unit"
+          className="cursor-grab active:cursor-grabbing select-none pointer-events-auto"
+          title="Drag to reposition Loopra AI assistant"
         >
           <button
             type="button"
@@ -1456,9 +1552,7 @@ export default function LoopraAiCompanion({
             )}
           </button>
         </div>
-
-      </div>
-    </div>,
-    document.body
-  );
+      </div>,
+      document.body
+    );
 }

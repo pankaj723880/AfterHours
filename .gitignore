@@ -44,6 +44,7 @@ backend/.env.*
 
 # Scratch and temp scripts
 scratch/
+*.response
 patch*.js
 patch*.cjs
 fix_*.cjs

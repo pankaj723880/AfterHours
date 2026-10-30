@@ -29,6 +29,7 @@ import radioRoutes from './routes/radio.js';
 import recommendationRoutes, { handleListeningEvent } from './routes/recommendations.js';
 import aiMusicRoutes from './routes/aiMusic.js';
 import { isSingleSong, filterSingleSongs } from './services/songFilter.js';
+import { liveUsersService } from './services/liveUsersService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -223,6 +224,7 @@ mongoose.connect(MONGODB_URI, {
     seedDefaultAdmin();
     metricsService.initPersistence();
     cmsService.initDefaults();
+    liveUsersService.init({ io, metricsService });
   })
   .catch((err) => {
     isMongoConnected = false;
@@ -236,6 +238,7 @@ mongoose.connection.on('connected', () => {
   metricsService.initPersistence();
   cmsService.initDefaults();
   seedDefaultLicensedTracks();
+  liveUsersService.init({ io, metricsService });
 });
 
 mongoose.connection.on('error', (err) => {
@@ -255,6 +258,11 @@ const isDatabaseReady = () => {
 // Global Maintenance Mode Guard
 app.use(maintenanceMiddleware);
 
+// Public Live Users Display Endpoint (never exposes admin config or raw analytics)
+app.get('/api/public/live-users', (req, res) => {
+  res.json(liveUsersService.getPublicDisplayCount());
+});
+
 // Health check endpoints for Render & API monitors
 app.get('/', (req, res) => {
   res.send('AfterHours API is running');
@@ -271,8 +279,6 @@ app.get(['/health', '/api/health'], (req, res) => {
 });
 
 // Socket.io for Real-time Active Users & Admin Streams
-let simulatedBase = 742;
-
 io.on('connection', (socket) => {
   const sessionId = socket.handshake.auth?.sessionId || 
     socket.handshake.query?.sessionId || 
@@ -290,28 +296,30 @@ io.on('connection', (socket) => {
   });
 
   const snapshot = metricsService.getSnapshot();
-  io.emit('active_users', simulatedBase + snapshot.activeVisitors * 3);
 
-  // If newly connected socket is admin, send immediate snapshot
+  // Send current live display count to connecting client
+  socket.emit('active_users', liveUsersService.getPublicDisplayCount().count);
+
+  // If in Real Live Users mode, broadcast newly updated real presence count
+  if (liveUsersService.mode === 'real') {
+    liveUsersService.broadcastDisplayCount();
+  }
+
+  // If newly connected socket is admin, send immediate snapshot & live users config
   if (socket.user && socket.user.role === 'admin') {
     socket.emit('admin_live_metrics', snapshot);
+    socket.emit('admin_live_users_config', liveUsersService.getAdminConfig());
   }
 
   socket.on('disconnect', () => {
     metricsService.handleVisitorDisconnect(socket.id);
     activeUserSocketMap.delete(socket.id);
-    const updatedSnap = metricsService.getSnapshot();
-    io.emit('active_users', simulatedBase + updatedSnap.activeVisitors * 3);
+    // If in Real Live Users mode, update public count immediately on disconnect
+    if (liveUsersService.mode === 'real') {
+      liveUsersService.broadcastDisplayCount();
+    }
   });
 });
-
-// Fluctuate the simulated active users for standard music player
-setInterval(() => {
-  const change = Math.floor(Math.random() * 8) - 3;
-  simulatedBase = Math.max(500, simulatedBase + change);
-  const snap = metricsService.getSnapshot();
-  io.emit('active_users', simulatedBase + snap.activeVisitors * 3);
-}, 3000);
 
 // Push live metrics to authorized admin room only
 setInterval(() => {

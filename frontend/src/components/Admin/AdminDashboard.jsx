@@ -706,6 +706,9 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               metrics={metrics} 
               health={health} 
               onNavigate={setActiveSubTab} 
+              token={token}
+              backendUrl={cleanBackendUrl}
+              showToast={showToast}
             />
           )}
 

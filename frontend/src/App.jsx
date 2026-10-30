@@ -2692,6 +2692,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     updateClock();
     const clockInterval = setInterval(updateClock, 1000);
 
+    // Initial hydration of public active users count
+    fetch(`${cleanBackendUrl}/api/public/live-users`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && typeof data.count === 'number') {
+          setActiveUsersCount(data.count);
+        }
+      })
+      .catch(() => {});
+
     socket.on('active_users', (count) => {
       setActiveUsersCount(count);
     });
@@ -6088,7 +6098,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             py-2 px-3
             ${isMiniPlayerExpanded ? 'w-[calc(100%-1rem)] max-w-xl' : 'w-[calc(100%-1.75rem)] max-w-sm sm:max-w-md'}
             md:bottom-0 md:right-0 md:translate-x-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'}
-            md:w-auto md:max-w-none md:rounded-none md:border-t md:border-x-0 md:border-b-0 md:border-amber-500/20 md:bg-neutral-950/95 md:py-3 md:px-6 md:shadow-[0_-10px_35px_rgba(0,0,0,0.8),0_0_20px_rgba(var(--accent-rgb,245,158,11),0.06)]`}
+            md:w-auto md:max-w-none md:rounded-none md:border-t md:border-x-0 md:border-b-0 md:border-amber-500/20 md:bg-neutral-950/95 md:py-3 md:pl-6 md:pr-28 md:shadow-[0_-10px_35px_rgba(0,0,0,0.8),0_0_20px_rgba(var(--accent-rgb,245,158,11),0.06)]`}
         >
           {/* Quick Horizontal Expand/Collapse Pill for Mobile */}
           <div className="md:hidden absolute -top-3.5 right-3 z-50 shrink-0 pointer-events-auto">

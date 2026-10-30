@@ -5,6 +5,7 @@ import AuditLog from '../models/AuditLog.js';
 import Activity from '../models/Activity.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { metricsService } from '../services/metrics.js';
+import { liveUsersService } from '../services/liveUsersService.js';
 
 const router = express.Router();
 
@@ -81,6 +82,56 @@ router.get('/health', authenticateToken, requireAdmin, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: 'Health diagnostics failed: ' + err.message });
+  }
+});
+
+// Live Users Display Configuration (Admin only)
+router.get('/live-users-config', authenticateToken, requireAdmin, (req, res) => {
+  try {
+    const config = liveUsersService.getAdminConfig();
+    res.json(config);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve live users config: ' + err.message });
+  }
+});
+
+router.put('/live-users-config', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { mode, minUsers, maxUsers } = req.body;
+    const adminUsername = req.user?.username || 'admin';
+
+    const previousConfig = liveUsersService.getAdminConfig();
+    const updated = await liveUsersService.updateConfig({
+      mode,
+      minUsers,
+      maxUsers,
+      updatedBy: adminUsername
+    });
+
+    // Create Audit Log entry
+    try {
+      await AuditLog.create({
+        action: 'UPDATE_LIVE_USERS_CONFIG',
+        adminId: req.user._id,
+        adminUsername,
+        details: `Updated Live Users display mode to "${mode}" (Range: ${updated.minUsers} - ${updated.maxUsers})`,
+        metadata: {
+          previous: previousConfig,
+          updated
+        },
+        ip: getClientIp(req)
+      });
+    } catch (auditErr) {
+      console.warn('[AdminRoutes] Audit log notice:', auditErr.message);
+    }
+
+    res.json({
+      success: true,
+      message: `Live Users display set to ${mode === 'real' ? 'Real Live Users' : 'Manual Display Range'}`,
+      config: updated
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 
