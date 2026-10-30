@@ -507,6 +507,8 @@ export default function LoopraAiCompanion({
     }
   };
 
+  const stopAndAnalyzeEarly = stopAudioCapture;
+
   const cancelAudioCapture = () => {
     if (recognitionTimerRef.current) {
       clearInterval(recognitionTimerRef.current);

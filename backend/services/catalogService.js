@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import CuratedCollection from '../models/CuratedCollection.js';
 import ytSearch from 'yt-search';
-import { filterSingleSongs, isSingleSong } from './songFilter.js';
+import { filterSingleSongs, isSingleSong, verifySingleSong } from './songFilter.js';
 
 // Clean decode for HTML entities commonly present in YouTube responses
 const decodeHtml = (str = '') => {
@@ -24,8 +24,8 @@ export const CORE_CATALOG_TRACKS = [
   { id: "Yqj1_V90KJo", videoId: "Yqj1_V90KJo", title: "Chura Ke Dil Mera", artist: "Kumar Sanu, Alka Yagnik", channel: "Venus", thumbnail: "https://i.ytimg.com/vi/Yqj1_V90KJo/hqdefault.jpg", genre: "90s Bollywood", mood: "Nostalgic" },
   { id: "KeyfUuXPOcY", videoId: "KeyfUuXPOcY", title: "Dheere Dheere Se Meri Zindagi", artist: "Kumar Sanu, Anuradha Paudwal", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/KeyfUuXPOcY/hqdefault.jpg", genre: "90s Bollywood", mood: "Romantic" },
   { id: "cNV5hLSa9H8", videoId: "cNV5hLSa9H8", title: "Tujhe Dekha Toh Yeh Jaana Sanam", artist: "Kumar Sanu, Lata Mangeshkar", channel: "YRF", thumbnail: "https://i.ytimg.com/vi/cNV5hLSa9H8/hqdefault.jpg", genre: "90s Bollywood", mood: "Romantic" },
-  { id: "r0c1f6XxRQg", videoId: "r0c1f6XxRQg", title: "Evergreen Hits of KK Jukebox", artist: "KK, Pritam", channel: "Sony Music", thumbnail: "https://i.ytimg.com/vi/r0c1f6XxRQg/hqdefault.jpg", genre: "Pop Rock", mood: "Soulful" },
-  { id: "ARtRGkaG_OA", videoId: "ARtRGkaG_OA", title: "Rockstar Audio Jukebox", artist: "A.R. Rahman, Mohit Chauhan", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/ARtRGkaG_OA/hqdefault.jpg", genre: "Sufi Rock", mood: "Intense" },
+  { id: "cmMiyZaSELo", videoId: "cmMiyZaSELo", title: "Zara Sa (Official Video) - Jannat", artist: "KK, Pritam", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/cmMiyZaSELo/hqdefault.jpg", genre: "Pop Rock", mood: "Soulful" },
+  { id: "0RXT4gkLHlk", videoId: "0RXT4gkLHlk", title: "Kun Faya Kun (Official Video) - Rockstar", artist: "A.R. Rahman, Javed Ali, Mohit Chauhan", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/0RXT4gkLHlk/hqdefault.jpg", genre: "Sufi Rock", mood: "Intense" },
   { id: "ZdyaixHYviA", videoId: "ZdyaixHYviA", title: "Yeh Jawaani Hai Deewani - Subhanallah", artist: "Sreerama Chandra, Shilpa Rao", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/ZdyaixHYviA/hqdefault.jpg", genre: "Romantic", mood: "Feel-Good" },
   { id: "SQWDGLnvxF4", videoId: "SQWDGLnvxF4", title: "Sanam Teri Kasam Title Track", artist: "Ankit Tiwari, Palak Muchhal", channel: "Eros Now", thumbnail: "https://i.ytimg.com/vi/SQWDGLnvxF4/hqdefault.jpg", genre: "Heartbreak", mood: "Sad" },
   { id: "BDlNjOc3wiQ", videoId: "BDlNjOc3wiQ", title: "Bekhayali - Kabir Singh", artist: "Sachet Tandon", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/BDlNjOc3wiQ/hqdefault.jpg", genre: "Rock", mood: "Heartbreak" },
@@ -36,24 +36,30 @@ export const CORE_CATALOG_TRACKS = [
 
 export const catalogService = {
   /**
-   * Retrieves verified songs from MongoDB CuratedCollections and core catalog.
+   * Retrieves strictly verified single songs from MongoDB CuratedCollections and core catalog.
+   * Excludes compilations, medleys, jukeboxes, and non-stop mixes.
    */
   async getCuratedTracks() {
     const candidateMap = new Map();
 
     // 1. Seed with core verified tracks
     for (const track of CORE_CATALOG_TRACKS) {
-      candidateMap.set(track.id, {
-        id: track.id,
-        videoId: track.videoId || track.id,
-        title: track.title,
-        artist: track.artist,
-        channel: track.channel || track.artist,
-        thumbnail: track.thumbnail,
-        duration: '3:45',
-        genre: track.genre || 'Desi Hits',
-        mood: track.mood || 'Vibes'
-      });
+      if (isSingleSong(track)) {
+        const verification = verifySingleSong(track);
+        candidateMap.set(track.id, {
+          id: track.id,
+          videoId: track.videoId || track.id,
+          title: track.title,
+          artist: track.artist,
+          channel: track.channel || track.artist,
+          thumbnail: track.thumbnail,
+          duration: track.duration || '3:45',
+          genre: track.genre || 'Desi Hits',
+          mood: track.mood || 'Vibes',
+          songType: verification.songType,
+          verificationStatus: verification.verificationStatus
+        });
+      }
     }
 
     // 2. Fetch from published MongoDB CuratedCollections if database is connected
@@ -68,17 +74,20 @@ export const catalogService = {
           if (Array.isArray(col.tracks)) {
             for (const t of col.tracks) {
               const trackId = t.videoId || t.id;
-              if (trackId && !t.isHidden && !candidateMap.has(trackId)) {
+              if (trackId && !t.isHidden && !candidateMap.has(trackId) && isSingleSong(t)) {
+                const verification = verifySingleSong(t);
                 candidateMap.set(trackId, {
                   id: trackId,
                   videoId: trackId,
                   title: decodeHtml(t.title),
                   artist: decodeHtml(t.artist || 'Unknown Artist'),
-                  channel: decodeHtml(t.artist || 'Loopra Collection'),
+                  channel: decodeHtml(t.channel || t.artist || 'Loopra Collection'),
                   thumbnail: t.thumbnail || `https://i.ytimg.com/vi/${trackId}/hqdefault.jpg`,
                   duration: t.duration || '3:30',
                   genre: col.name || col.category || 'Desi Lounge',
-                  mood: 'Curated'
+                  mood: 'Curated',
+                  songType: verification.songType,
+                  verificationStatus: verification.verificationStatus
                 });
               }
             }
@@ -94,7 +103,7 @@ export const catalogService = {
 
   /**
    * Dynamically supplements candidates using search queries tailored to user top preferences.
-   * Filters results to ensure single-song playback safety.
+   * Filters results strictly through verifySingleSong to ensure single-song playback safety.
    */
   async fetchDynamicCandidates(queries = [], maxPerQuery = 6) {
     if (!Array.isArray(queries) || queries.length === 0) return [];
@@ -110,17 +119,22 @@ export const catalogService = {
 
         for (const v of filtered.slice(0, maxPerQuery)) {
           if (!v.videoId || seenIds.has(v.videoId)) continue;
+          const verification = verifySingleSong(v);
+          if (!verification.isValid) continue;
+
           seenIds.add(v.videoId);
           dynamicTracks.push({
             id: v.videoId,
             videoId: v.videoId,
             title: decodeHtml(v.title),
-            artist: decodeHtml(v.author?.name || 'Various Artists'),
-            channel: decodeHtml(v.author?.name || ''),
+            artist: decodeHtml(v.artist || v.author?.name || 'Various Artists'),
+            channel: decodeHtml(v.channel || v.author?.name || ''),
             thumbnail: v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
-            duration: v.timestamp || '3:30',
+            duration: v.timestamp || v.duration || '3:30',
             genre: query,
-            mood: 'Personalized'
+            mood: 'Personalized',
+            songType: verification.songType,
+            verificationStatus: verification.verificationStatus
           });
         }
       } catch (err) {
@@ -129,6 +143,62 @@ export const catalogService = {
     }
 
     return dynamicTracks;
+  },
+
+  /**
+   * Fetches fresh, verified single songs released by an artist or matching a query.
+   * Prioritizes official artist and music label channels.
+   * Strictly rejects mashups, medleys, jukeboxes, and compilations.
+   */
+  async fetchFreshVerifiedReleases(query = '', currentYear = new Date().getFullYear()) {
+    if (!query || typeof query !== 'string') return [];
+    const cleanQ = query.trim();
+    const searchTerms = [
+      `${cleanQ} official song ${currentYear}`,
+      `${cleanQ} official music video`
+    ];
+
+    const freshTracks = [];
+    const seenIds = new Set();
+
+    for (const term of searchTerms) {
+      try {
+        const searchResult = await ytSearch({ query: term, page: 1 });
+        const videos = (searchResult?.videos || []).slice(0, 8);
+        for (const v of videos) {
+          if (!v.videoId || seenIds.has(v.videoId)) continue;
+          const verification = verifySingleSong({
+            id: v.videoId,
+            title: v.title,
+            description: v.description,
+            duration: v.timestamp || v.seconds,
+            channel: v.author?.name
+          });
+
+          if (verification.isValid) {
+            seenIds.add(v.videoId);
+            freshTracks.push({
+              id: v.videoId,
+              videoId: v.videoId,
+              title: decodeHtml(v.title),
+              artist: decodeHtml(v.author?.name || 'Artist'),
+              channel: decodeHtml(v.author?.name || ''),
+              thumbnail: v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
+              duration: v.timestamp || '3:30',
+              uploadedAt: v.ago || '',
+              songType: verification.songType,
+              verificationStatus: verification.verificationStatus
+            });
+            if (freshTracks.length >= 6) break;
+          }
+        }
+      } catch (err) {
+        console.warn(`[CatalogService] Fresh release search notice for "${term}":`, err.message);
+      }
+      if (freshTracks.length >= 6) break;
+    }
+
+    return freshTracks;
   },
 
   /**

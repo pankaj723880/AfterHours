@@ -1,7 +1,8 @@
 /**
- * Loopra Single-Song Identification & Filtering Engine
+ * Loopra Single-Song Identification & Verification Engine
  * 
  * Enforces strict single-song filtering across all Loopra discovery surfaces:
+ * - Loopra AI Music Companion & recommendations
  * - Search results (/api/youtube/search)
  * - Discover Swipe deck
  * - 100-song Shuffle pool
@@ -9,40 +10,72 @@
  * - Home & Categorized recommendations
  * - Nostalgia Radio & Playlists
  * 
- * Exclusion criteria:
- * - Full albums, audio jukeboxes, video jukeboxes
- * - Mashups, medleys, non-stop mixes, mega mixes
- * - 1h/2h/3h+ compilations and continuous music
- * - "Top 10/20/50/100 Songs", "Best of [Artist/Year]" collections
- * - Multiple song karaoke packs
- * - Tracks exceeding 15 minutes (900 seconds)
+ * Strict Exclusion criteria:
+ * - Mashups
+ * - Medleys
+ * - Jukebox videos (audio & video)
+ * - Non-stop song collections
+ * - Multiple-song compilations & remix compilations
+ * - Best-of collections & Top 10/20/50/100 song collections
+ * - DJ mixes & continuous mixes
+ * - Playlist videos containing multiple songs
+ * - Multiple-track concert compilations
+ * - Videos exceeding 15 minutes (900s) or containing multi-track timestamps
  * 
- * Preservation criteria:
- * - Genuine single songs (Hindi, Bollywood, Punjabi, Retro, Ghazals, English, etc.)
- * - Official music videos, lyric videos, acoustic / unplugged singles
- * - Bollywood "Full Video Song" / "Full Song" singles (not full album)
+ * Strict Acceptance criteria:
+ * - One individual song per recommendation
+ * - Full official song versions
+ * - Individual official music videos & audio releases
+ * - Single-song remixes (where the video contains only that one song)
+ * - Individual acoustic, unplugged or live versions of a single song
  */
 
-// Regex for multi-song titles and collections
+// Known official artist and record label channel indicators
+const OFFICIAL_CHANNELS = [
+  't-series', 'tseries', 'sony music', 'sonymusic', 'zee music', 'zeemusic',
+  'yrf', 'yash raj films', 'tips official', 'tips music', 'saregama', 'saregamamusic',
+  'universal music', 'warner music', 'speed records', 'white hill music',
+  'eros now', 'venus', 'aditya music', 'lahari music', 'geet mp3',
+  'times music', 'svf music', 't-series apna punjab', 'panj-aab records'
+];
+
+// Multi-song title patterns that MUST ALWAYS be rejected
 const MULTI_SONG_TITLE_REGEXES = [
-  /\b(audio\s+jukebox|video\s+jukebox|jukebox)\b/i,
-  /\b(full\s+album|complete\s+album|all\s+album\s+songs|album\s+jukebox)\b/i,
-  /\b(all\s+songs|all\s+song|all\s+video\s+songs|songs\s+collection|song\s+collection|music\s+collection)\b/i,
+  // Jukeboxes
+  /\b(audio\s+jukebox|video\s+jukebox|album\s+jukebox|radio\s+jukebox|jukebox)\b/i,
+  // Mashups
   /\b(mashup|mash\s+up|mash-up)\b/i,
+  // Medleys
   /\b(medley|medly)\b/i,
+  // Non-stop collections
   /\b(non[\s-]?stop|nonstop)\b/i,
-  /\b(compilation|song\s+compilation)\b/i,
-  /\b(top\s*\d{1,4}\s*(songs?|tracks?|hits?|romantic|bollywood|punjabi|retro|classics?)?)\b/i,
-  /\b(best\s*\d{1,4}\s*(songs?|tracks?|hits?|romantic|bollywood|punjabi|retro|classics?)?)\b/i,
+  // Compilations
+  /\b(compilation|song\s+compilation|remix\s+compilation|video\s+compilation|hits\s+compilation|remixes\s+compilation)\b/i,
+  // Albums and complete collections
+  /\b(full\s+album|complete\s+album|all\s+album\s+songs|album\s+songs)\b/i,
+  /\b(all\s+songs|all\s+song|all\s+video\s+songs|songs\s+collection|song\s+collection|music\s+collection|hits\s+collection)\b/i,
+  /\b(multiple\s+songs?|songs?\s+combined|all\s+songs?\s+in\s+one\s+video)\b/i,
+  // Top / Best-of collections
+  /\b(top\s*\d{1,4}\b)/i,
+  /\b(best\s*\d{1,4}\b)/i,
+  /\b(top\s+songs|best\s+songs)\b/i,
   /\b(greatest\s+hits\s+jukebox|golden\s+hits\s+collection|evergreen\s+hits\s+jukebox)\b/i,
   /\b(best\s+of\s+(?:19\d\d|20\d\d|90s|80s|70s|60s|2000s|2010s|2020s))\b/i,
   /\b(best\s+of\s+[a-z\s]+(jukebox|collection|songs|hits))\b/i,
-  /\b(\d+\s*hours?|\d+\s*hrs?|\d+hr)\b/i,
+  // Continuous & DJ multi-song mixes
+  /\b(party\s+mix|dj\s+mix|dj\s+(nonstop|party)|megamix|mega\s+mix)\b/i,
+  /\b(continuous\s+(music|mix|playback|stream))\b/i,
   /\b(back\s*to\s*back|back\s*2\s*back|\bb2b\b)\b/i,
-  /\b(party\s+mix|dj\s+mix|club\s+mix|megamix|mega\s+mix|remix\s+compilation)\b/i,
-  /\b(continuous\s+music)\b/i,
+  // Playlists as single videos
+  /\b(full\s+playlist|youtube\s+playlist|songs\s+playlist|video\s+playlist)\b/i,
+  // Concert multi-track collections
+  /\b(concert\s+compilation|live\s+concert\s+all\s+songs|full\s+concert\s+songs)\b/i,
+  // Durations in title (hours)
+  /\b(\d+\s*hours?|\d+\s*hrs?|\d+hr)\b/i,
+  // Karaoke multi-packs
   /\b(karaoke\s+collection|multiple\s+songs?\s+karaoke)\b/i,
-  /\b(1\.\s+.*\b2\.\s+.*\b3\.\s+)/i // numbered multi-song track listing
+  // Tracklist listings in title
+  /\b1\.\s+.*\b2\.\s+.*\b3\.\s+/i
 ];
 
 /**
@@ -50,15 +83,73 @@ const MULTI_SONG_TITLE_REGEXES = [
  */
 export function isValidYouTubeId(id) {
   if (!id || typeof id !== 'string') return false;
-  // YouTube video IDs are exactly 11 characters (base64url: letters, digits, _, -)
   return /^[a-zA-Z0-9_-]{11}$/.test(id.trim());
 }
 
 /**
- * Determines whether a track represents a single song rather than a compilation or album
+ * Classifies an individual song into its specific Loopra songType.
+ * Preserves distinction between official release, single remix, acoustic/live, and general single song.
  */
-export function isSingleSong(track) {
-  if (!track) return false;
+export function classifySongType(title = '', channel = '') {
+  const lower = `${title} ${channel}`.toLowerCase();
+
+  // 1. Single-song remixes
+  if (/\b(dance\s+remix|club\s+mix|lofi\s+remix|lo-fi\s+remix|chill\s+mix|lofi|remix|slowed(\s+and|\s*\+)?\s+reverb)\b/i.test(lower) &&
+      !/\b(compilation|nonstop|megamix|jukebox)\b/i.test(lower)) {
+    return 'single_song_remix';
+  }
+
+  // 2. Single-song acoustic / unplugged / live versions
+  if (/\b(acoustic\s+(version|video)?|unplugged|live\s+performance|live\s+at|live\s+in|live\s+version|orchestral)\b/i.test(lower) &&
+      !/\b(compilation|nonstop|full\s+concert)\b/i.test(lower)) {
+    return 'acoustic_unplugged';
+  }
+
+  // 3. Official singles & music videos
+  if (/\b(official\s+video|official\s+music\s+video|official\s+audio|full\s+video\s+song|full\s+song|lyric\s+video|original\s+song)\b/i.test(lower)) {
+    return 'official_release';
+  }
+
+  return 'individual_song';
+}
+
+/**
+ * Checks if channel is an official label or artist channel.
+ */
+export function isOfficialChannel(channel = '') {
+  if (!channel || typeof channel !== 'string') return false;
+  const lower = channel.toLowerCase().trim();
+  if (lower.endsWith('vevo') || lower.endsWith('official') || lower.includes('topic')) {
+    return true;
+  }
+  return OFFICIAL_CHANNELS.some(c => lower.includes(c));
+}
+
+/**
+ * Comprehensive verification of whether a video is strictly an individual song.
+ * Evaluates Title, Description, Channel, and Duration.
+ * 
+ * Returns { isValid, reason, songType, verificationStatus, isOfficialChannel }
+ */
+export function verifySingleSong(track) {
+  if (!track) {
+    return {
+      isValid: false,
+      reason: 'Track is null or undefined',
+      songType: 'invalid',
+      verificationStatus: 'rejected'
+    };
+  }
+
+  const id = track.id?.videoId || track.id || track.videoId;
+  if (id && !isValidYouTubeId(id)) {
+    return {
+      isValid: false,
+      reason: `Invalid YouTube video ID "${id}"`,
+      songType: 'invalid',
+      verificationStatus: 'rejected'
+    };
+  }
 
   const title = (
     track.title ||
@@ -67,7 +158,14 @@ export function isSingleSong(track) {
     ''
   ).trim();
 
-  if (!title) return false;
+  if (!title) {
+    return {
+      isValid: false,
+      reason: 'Empty title',
+      songType: 'invalid',
+      verificationStatus: 'rejected'
+    };
+  }
 
   const lowerTitle = title.toLowerCase();
   const lowerDesc = (
@@ -75,54 +173,121 @@ export function isSingleSong(track) {
     track.snippet?.description ||
     ''
   ).toLowerCase();
+  const channel = (
+    track.channel ||
+    track.author?.name ||
+    track.snippet?.channelTitle ||
+    ''
+  ).trim();
 
-  // 1. Duration validation
-  // Number of seconds
+  // 1. Duration Validation
   if (typeof track.duration === 'number' && track.duration > 0) {
-    // Over 15 minutes (900s) is overwhelming evidence of a compilation/mix/album
-    if (track.duration > 900) return false;
+    if (track.duration > 900) { // > 15 minutes
+      return {
+        isValid: false,
+        reason: `Duration (${track.duration}s) exceeds 15 minutes compilation limit`,
+        songType: 'compilation',
+        verificationStatus: 'rejected_multi_song'
+      };
+    }
   }
-  // Formatted duration string (e.g. "1:15:20" or "45:00")
   if (typeof track.duration === 'string') {
     const colons = (track.duration.match(/:/g) || []).length;
-    if (colons >= 2) return false; // >= 1 hour
+    if (colons >= 2) {
+      return {
+        isValid: false,
+        reason: `Duration (${track.duration}) is 1 hour or longer (compilation)`,
+        songType: 'compilation',
+        verificationStatus: 'rejected_multi_song'
+      };
+    }
     if (colons === 1) {
       const parts = track.duration.split(':').map(p => parseInt(p, 10) || 0);
-      if (parts[0] >= 15) return false; // >= 15 minutes
-    }
-  }
-
-  // 2. Pattern Matching against exclusion regexes
-  for (const regex of MULTI_SONG_TITLE_REGEXES) {
-    if (regex.test(lowerTitle)) {
-      return false;
-    }
-  }
-
-  // 3. Multi-track listing checks in title
-  // Forward slash separates multiple songs: "Song A / Song B / Song C / Song D"
-  const slashParts = title.split(/\s*\/\s*/);
-  if (slashParts.length >= 4) {
-    const hasOfficialSongIndicator = lowerTitle.includes('official') || lowerTitle.includes('video song') || lowerTitle.includes('full song');
-    if (!hasOfficialSongIndicator) {
-      return false;
-    }
-  }
-
-  // 4. Description checks for explicit tracklists
-  if (lowerDesc) {
-    if (/\b(audio jukebox|full album songs|track list:|tracklist:)\b/i.test(lowerDesc)) {
-      if (/\b(album|collection|hits|songs|jukebox)\b/i.test(lowerTitle)) {
-        return false;
+      if (parts[0] >= 15) {
+        return {
+          isValid: false,
+          reason: `Duration (${track.duration}) exceeds 15 minutes limit`,
+          songType: 'compilation',
+          verificationStatus: 'rejected_multi_song'
+        };
       }
     }
   }
 
-  return true;
+  // 2. Pattern Matching against exclusion regexes in title
+  for (const regex of MULTI_SONG_TITLE_REGEXES) {
+    if (regex.test(lowerTitle)) {
+      return {
+        isValid: false,
+        reason: `Title matches multi-song exclusion pattern: ${regex}`,
+        songType: 'multi_song_compilation',
+        verificationStatus: 'rejected_multi_song'
+      };
+    }
+  }
+
+  // 3. Multi-track forward slash listing: "Song A / Song B / Song C / Song D"
+  const slashParts = title.split(/\s*\/\s*/);
+  if (slashParts.length >= 4) {
+    const hasOfficialSongIndicator = lowerTitle.includes('official') || lowerTitle.includes('video song') || lowerTitle.includes('full song');
+    if (!hasOfficialSongIndicator) {
+      return {
+        isValid: false,
+        reason: 'Title contains multiple track slash separators',
+        songType: 'multi_track_listing',
+        verificationStatus: 'rejected_multi_song'
+      };
+    }
+  }
+
+  // 4. Description inspection for multi-song tracklists and timestamps
+  if (lowerDesc) {
+    if (/\b(audio jukebox|full album songs|track list:|tracklist:|songs in this video:|all tracks:)\b/i.test(lowerDesc)) {
+      if (/\b(album|collection|hits|songs|jukebox|vol|volume)\b/i.test(lowerTitle)) {
+        return {
+          isValid: false,
+          reason: 'Description contains explicit tracklist for collection',
+          songType: 'multi_song_compilation',
+          verificationStatus: 'rejected_multi_song'
+        };
+      }
+    }
+
+    // Detect multiple song timestamps in description (e.g. "0:00 Song1 \n 3:45 Song2")
+    const timestampMatches = lowerDesc.match(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g) || [];
+    if (timestampMatches.length >= 4 && !lowerTitle.includes('official video') && !lowerTitle.includes('full song')) {
+      return {
+        isValid: false,
+        reason: `Description contains ${timestampMatches.length} timestamp markers indicative of multi-track video`,
+        songType: 'multi_track_compilation',
+        verificationStatus: 'rejected_multi_song'
+      };
+    }
+  }
+
+  // Classification & Official Channel Check
+  const official = isOfficialChannel(channel);
+  const songType = classifySongType(title, channel);
+  const verificationStatus = official ? 'verified_official' : 'verified_single_song';
+
+  return {
+    isValid: true,
+    songType,
+    verificationStatus,
+    isOfficialChannel: official
+  };
 }
 
 /**
- * Normalizes metadata into Loopra standard track schema
+ * Determines whether a track represents a single song rather than a compilation or album.
+ */
+export function isSingleSong(track) {
+  const result = verifySingleSong(track);
+  return result.isValid;
+}
+
+/**
+ * Normalizes metadata into Loopra standard track schema with structured verification fields
  */
 export function normalizeTrack(raw) {
   if (!raw) return null;
@@ -148,6 +313,8 @@ export function normalizeTrack(raw) {
     .replace(/&amp;/g, '&')
     .replace(/VEVO|Official|Topic/gi, '').trim();
 
+  const channel = (raw.channel || raw.snippet?.channelTitle || raw.author?.name || artist || 'Loopra Channel').trim();
+
   const thumbnail = raw.thumbnail ||
     raw.image ||
     raw.snippet?.thumbnails?.high?.url ||
@@ -155,25 +322,35 @@ export function normalizeTrack(raw) {
     raw.snippet?.thumbnails?.default?.url ||
     `https://i.ytimg.com/vi/${trimmedId}/hqdefault.jpg`;
 
+  const verification = verifySingleSong({
+    id: trimmedId,
+    title,
+    channel,
+    duration: raw.duration,
+    description: raw.description || raw.snippet?.description
+  });
+
   return {
     id: trimmedId,
     videoId: trimmedId,
     title,
     artist: artist || 'Loopra Artist',
-    channel: raw.channel || raw.snippet?.channelTitle || artist || 'Loopra Channel',
+    channel,
     thumbnail,
     image: thumbnail,
-    duration: raw.duration,
+    duration: raw.duration || '3:30',
+    songType: verification.songType || 'individual_song',
+    verificationStatus: verification.verificationStatus || 'verified_single_song',
     query: `${title} ${artist}`.trim()
   };
 }
 
 /**
- * Filters an array of tracks using the 7-step pipeline:
+ * Filters an array of tracks using the Loopra strict single-song pipeline:
  * 1. candidate normalization
  * 2. embeddability validation (valid YouTube ID)
  * 3. deduplication by videoId
- * 4. single-song validation
+ * 4. single-song validation (rejects mashups, medleys, jukeboxes, non-stop compilations)
  */
 export function filterSingleSongs(tracks = []) {
   if (!Array.isArray(tracks)) return [];
@@ -196,8 +373,11 @@ export function filterSingleSongs(tracks = []) {
 }
 
 export default {
+  verifySingleSong,
   isSingleSong,
   isValidYouTubeId,
+  classifySongType,
+  isOfficialChannel,
   normalizeTrack,
   filterSingleSongs
 };
