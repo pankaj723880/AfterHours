@@ -1331,6 +1331,13 @@ export default function App() {
   const isAdmin = Boolean(user && user.role === 'admin');
 
   const [reviewsRefreshKey, setReviewsRefreshKey] = useState(0);
+  const [isRatingModalOpen, setIsRatingModalOpen] = useState(false);
+  const [ratingModalMode, setRatingModalMode] = useState('rate'); // 'rate' | 'review'
+
+  const handleOpenRatingModal = useCallback((mode = 'rate') => {
+    setRatingModalMode(mode);
+    setIsRatingModalOpen(true);
+  }, []);
 
   // Synchronize authenticated socket session & live presence with backend
   useEffect(() => {
@@ -1988,12 +1995,26 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }, duration);
   }, []);
 
+  // Keep stable refs to avoid infinite re-render loops in socket & effect callbacks
+  const userRef = useRef(user);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  const isSyncingUserStateRef = useRef(false);
+
   // Real-time synchronization of user roles and immediate revocation of admin dashboard
   useEffect(() => {
     // 1. Fetch live user account state from server on mount / reconnect to prevent stale roles
     const syncCurrentUserState = async () => {
       const curToken = localStorage.getItem('afterhours_token');
-      if (!curToken) return;
+      if (!curToken || isSyncingUserStateRef.current) return;
+      isSyncingUserStateRef.current = true;
       try {
         const res = await fetch(getApiUrl('/api/auth/me'), {
           headers: { Authorization: `Bearer ${curToken}` }
@@ -2003,9 +2024,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           if (data?.user) {
             setUser(prev => {
               if (!prev) return data.user;
+              // If core authorization details are unchanged, return prev to preserve object reference
+              const isUnchanged = prev._id === data.user._id &&
+                prev.role === data.user.role &&
+                prev.status === data.user.status &&
+                prev.username === data.user.username;
+              if (isUnchanged) return prev;
+
               const merged = { ...prev, ...data.user };
               localStorage.setItem('afterhours_user', JSON.stringify(merged));
-              if (prev.role === 'admin' && merged.role !== 'admin' && activeTab === 'admin') {
+              if (prev.role === 'admin' && merged.role !== 'admin' && activeTabRef.current === 'admin') {
                 setActiveTab('home');
                 window.history.pushState(null, '', '/');
                 showToast('Your administrator privileges have been revoked.', 'warning');
@@ -2014,23 +2042,27 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             });
           }
         }
-      } catch (err) {}
+      } catch (err) {
+      } finally {
+        isSyncingUserStateRef.current = false;
+      }
     };
 
     syncCurrentUserState();
 
     // 2. Real-time Socket.io listeners for instant promotion/revocation
     const handleRoleChanged = (data) => {
-      if (!data || !user) return;
-      const currentUid = user.id || user._id || user.userId;
+      const currentUser = userRef.current;
+      if (!data || !currentUser) return;
+      const currentUid = currentUser.id || currentUser._id || currentUser.userId;
       if (currentUid && data.userId && currentUid.toString() === data.userId.toString()) {
         const newRole = data.role;
-        const updated = { ...user, role: newRole, status: data.status || user.status };
+        const updated = { ...currentUser, role: newRole, status: data.status || currentUser.status };
         setUser(updated);
         localStorage.setItem('afterhours_user', JSON.stringify(updated));
 
         if (newRole !== 'admin') {
-          if (activeTab === 'admin') {
+          if (activeTabRef.current === 'admin') {
             setActiveTab('home');
             window.history.pushState(null, '', '/');
           }
@@ -2048,7 +2080,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         localStorage.setItem('afterhours_user', JSON.stringify(updated));
         return updated;
       });
-      if (activeTab === 'admin') {
+      if (activeTabRef.current === 'admin') {
         setActiveTab('home');
         window.history.pushState(null, '', '/');
       }
@@ -2064,7 +2096,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       socket.off('admin_access_revoked', handleAdminRevoked);
       socket.off('connect', syncCurrentUserState);
     };
-  }, [user, activeTab, showToast]);
+  }, [showToast]);
 
   // Sleep Timer countdown loop
   useEffect(() => {
@@ -6076,7 +6108,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             })()}
 
             {/* Ratings & Reviews Community Section */}
-            <HomepageReviewsSection refreshTrigger={reviewsRefreshKey} />
+            <HomepageReviewsSection 
+              refreshTrigger={reviewsRefreshKey} 
+              onOpenRatingModal={handleOpenRatingModal} 
+            />
 
             <DisclaimerFooter footer={cmsConfig?.footer} />
           </div>
@@ -7576,12 +7611,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         isBottomPlayerVisible={isBottomPlayerVisible}
       />
 
-      {/* Automatic 5-Minute Active Usage Rating & Review Modal */}
+      {/* Automatic 5-Minute Active Usage & Direct Rate/Review Modal */}
       <RatingPopupModal
         user={user}
         authToken={authToken}
         isPlaying={isPlaying}
         showToast={showToast}
+        isOpen={isRatingModalOpen}
+        onClose={() => setIsRatingModalOpen(false)}
+        initialMode={ratingModalMode}
         onReviewSubmitted={() => setReviewsRefreshKey(k => k + 1)}
       />
 

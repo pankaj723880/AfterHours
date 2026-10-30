@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Star, X, Sparkles, CheckCircle2, MessageSquare } from 'lucide-react';
+import { Star, X, Sparkles, CheckCircle2, MessageSquare, ShieldAlert } from 'lucide-react';
 import { getApiUrl } from '../../utils/apiUrl';
 
 const ACTIVE_THRESHOLD_SECONDS = 300; // 5 minutes of genuine continuous active usage
@@ -18,29 +18,31 @@ export default function RatingPopupModal({
   authToken,
   isPlaying = false,
   showToast = null,
-  onReviewSubmitted = null
+  onReviewSubmitted = null,
+  isOpen: externalIsOpen = undefined,
+  onClose: externalOnClose = null,
+  initialMode = 'rate' // 'rate' | 'review'
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isOpen = externalIsOpen !== undefined ? externalIsOpen : internalOpen;
+
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
   const [reviewText, setReviewText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [hasRatedOrDismissed, setHasRatedOrDismissed] = useState(false);
+  const [existingReview, setExistingReview] = useState(null);
 
+  const reviewTextareaRef = useRef(null);
   const lastActivityRef = useRef(Date.now());
   const activeSecondsRef = useRef(0);
   const timerRef = useRef(null);
   const broadcastChannelRef = useRef(null);
 
-  const isAdmin = Boolean(
-    user?.role === 'admin' ||
-    user?.username === 'admin@afterhours.com' ||
-    user?.username === 'pankajsss7238@gmail.com' ||
-    user?.username === 'pss809352@gmail.com'
-  );
+  const isAdmin = Boolean(user?.role === 'admin');
 
-  // Initialize BroadcastChannel to coordinate multi-tab popups
+  // Multi-tab sync via BroadcastChannel
   useEffect(() => {
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       try {
@@ -48,7 +50,8 @@ export default function RatingPopupModal({
         channel.onmessage = (event) => {
           if (event.data?.type === 'RATING_SUBMITTED' || event.data?.type === 'RATING_DISMISSED') {
             setHasRatedOrDismissed(true);
-            setIsOpen(false);
+            setInternalOpen(false);
+            if (externalOnClose) externalOnClose();
           }
         };
         broadcastChannelRef.current = channel;
@@ -59,16 +62,15 @@ export default function RatingPopupModal({
         broadcastChannelRef.current.close();
       }
     };
-  }, []);
+  }, [externalOnClose]);
 
-  // Fetch initial rating status from backend or localStorage
-  useEffect(() => {
+  // Load user rating status from backend (authenticated) or localStorage (anonymous)
+  const refreshUserStatus = () => {
     if (isAdmin) {
       setHasRatedOrDismissed(true);
       return;
     }
 
-    // Anonymous check in localStorage
     if (!authToken) {
       try {
         const anonStatus = localStorage.getItem('loopra_anon_rating_status');
@@ -76,32 +78,51 @@ export default function RatingPopupModal({
           const parsed = JSON.parse(anonStatus);
           if (parsed.hasRated || parsed.hasDismissed) {
             setHasRatedOrDismissed(true);
-            return;
+          }
+          if (parsed.hasRated) {
+            setExistingReview(parsed);
+            if (!rating) setRating(parsed.rating || 0);
+            if (!reviewText) setReviewText(parsed.reviewText || '');
           }
         }
       } catch (e) {}
+      return;
     }
 
-    // Authenticated check from backend
-    if (authToken) {
-      fetch(getApiUrl('/api/reviews/user-status'), {
-        headers: { Authorization: `Bearer ${authToken}` }
+    fetch(getApiUrl('/api/reviews/user-status'), {
+      headers: { Authorization: `Bearer ${authToken}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.isAdmin || data.hasRated || data.hasDismissed) {
+          setHasRatedOrDismissed(true);
+        }
+        if (data.existingReview) {
+          setExistingReview(data.existingReview);
+          if (!rating) setRating(data.existingReview.rating || 0);
+          if (!reviewText) setReviewText(data.existingReview.reviewText || '');
+        }
       })
-        .then(res => res.json())
-        .then(data => {
-          if (data.isAdmin || data.hasRated || data.hasDismissed) {
-            setHasRatedOrDismissed(true);
-          }
-        })
-        .catch(() => {});
-    }
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    refreshUserStatus();
   }, [authToken, user, isAdmin]);
 
-  // Track genuine continuous active usage (5 minutes)
+  // Focus review textarea if opened in 'review' mode
+  useEffect(() => {
+    if (isOpen && initialMode === 'review') {
+      setTimeout(() => {
+        reviewTextareaRef.current?.focus();
+      }, 150);
+    }
+  }, [isOpen, initialMode]);
+
+  // Track genuine continuous active usage (5 minutes) for automatic prompt
   useEffect(() => {
     if (hasRatedOrDismissed || isAdmin || isOpen || isSubmitted) return;
 
-    // Load persisted active seconds for anonymous or current session
     try {
       const storedSec = parseInt(localStorage.getItem('loopra_active_usage_seconds') || '0', 10);
       if (!isNaN(storedSec) && storedSec > 0) {
@@ -120,15 +141,14 @@ export default function RatingPopupModal({
     window.addEventListener('touchstart', markActive, { passive: true });
 
     timerRef.current = setInterval(() => {
-      if (document.hidden) return; // Tab is hidden or minimized: pause
+      if (document.hidden) return;
 
       const now = Date.now();
       const isRecentlyActive = (now - lastActivityRef.current) < IDLE_TIMEOUT_MS;
-      const isGenuinelyActive = isRecentlyActive || isPlaying; // Active interaction or listening
+      const isGenuinelyActive = isRecentlyActive || isPlaying;
 
       if (isGenuinelyActive) {
         activeSecondsRef.current += 1;
-        // Persist accumulated seconds periodically
         if (activeSecondsRef.current % 10 === 0) {
           try {
             localStorage.setItem('loopra_active_usage_seconds', activeSecondsRef.current.toString());
@@ -136,7 +156,7 @@ export default function RatingPopupModal({
         }
 
         if (activeSecondsRef.current >= ACTIVE_THRESHOLD_SECONDS) {
-          setIsOpen(true);
+          setInternalOpen(true);
           clearInterval(timerRef.current);
         }
       }
@@ -153,20 +173,18 @@ export default function RatingPopupModal({
   }, [hasRatedOrDismissed, isAdmin, isOpen, isSubmitted, isPlaying]);
 
   const handleDismiss = async () => {
-    setIsOpen(false);
+    setInternalOpen(false);
+    if (externalOnClose) externalOnClose();
     setHasRatedOrDismissed(true);
 
-    // Broadcast to other tabs
     if (broadcastChannelRef.current) {
       broadcastChannelRef.current.postMessage({ type: 'RATING_DISMISSED' });
     }
 
-    // Save anonymous dismissal
     try {
       localStorage.setItem('loopra_anon_rating_status', JSON.stringify({ hasDismissed: true, dismissedAt: Date.now() }));
     } catch (e) {}
 
-    // Save authenticated dismissal to MongoDB
     if (authToken) {
       try {
         await fetch(getApiUrl('/api/reviews/dismiss-popup'), {
@@ -184,6 +202,12 @@ export default function RatingPopupModal({
 
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
+    if (isAdmin) {
+      if (showToast) showToast('Admin accounts manage reviews via the Admin Dashboard.', 'info');
+      handleDismiss();
+      return;
+    }
+
     if (rating < 1 || rating > 5) {
       if (showToast) showToast('Please select a star rating (1 to 5 stars)', 'error');
       return;
@@ -192,20 +216,29 @@ export default function RatingPopupModal({
     setIsSubmitting(true);
     try {
       if (!authToken) {
-        // Anonymous fallback storage
-        localStorage.setItem('loopra_anon_rating_status', JSON.stringify({
+        // Anonymous user submission (session-backed storage)
+        const anonData = {
           hasRated: true,
           rating,
           reviewText: reviewText.trim(),
           ratedAt: Date.now()
-        }));
+        };
+        localStorage.setItem('loopra_anon_rating_status', JSON.stringify(anonData));
+        setExistingReview(anonData);
         setIsSubmitted(true);
         setHasRatedOrDismissed(true);
+
         if (broadcastChannelRef.current) {
           broadcastChannelRef.current.postMessage({ type: 'RATING_SUBMITTED' });
         }
-        if (showToast) showToast('Thank you for rating Loopra!');
-        setTimeout(() => setIsOpen(false), 2000);
+        if (showToast) showToast(existingReview ? 'Your rating has been updated!' : 'Thank you for rating Loopra!');
+        if (onReviewSubmitted) onReviewSubmitted();
+
+        setTimeout(() => {
+          setInternalOpen(false);
+          if (externalOnClose) externalOnClose();
+          setIsSubmitted(false);
+        }, 1800);
         return;
       }
 
@@ -226,18 +259,26 @@ export default function RatingPopupModal({
         throw new Error(data.error || 'Failed to submit rating');
       }
 
+      setExistingReview({
+        rating,
+        reviewText: reviewText.trim(),
+        submittedAt: new Date().toISOString()
+      });
       setIsSubmitted(true);
       setHasRatedOrDismissed(true);
+
       if (broadcastChannelRef.current) {
         broadcastChannelRef.current.postMessage({ type: 'RATING_SUBMITTED' });
       }
 
-      if (showToast) showToast('Thank you for rating Loopra!');
+      if (showToast) showToast(existingReview ? 'Your rating has been updated!' : 'Thank you for rating Loopra!');
       if (onReviewSubmitted) onReviewSubmitted();
 
       setTimeout(() => {
-        setIsOpen(false);
-      }, 2000);
+        setInternalOpen(false);
+        if (externalOnClose) externalOnClose();
+        setIsSubmitted(false);
+      }, 1800);
     } catch (err) {
       if (showToast) showToast(err.message, 'error');
     } finally {
@@ -271,9 +312,11 @@ export default function RatingPopupModal({
             <div className="w-16 h-16 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 animate-in zoom-in-50 duration-300">
               <CheckCircle2 className="w-9 h-9" />
             </div>
-            <h3 className="text-xl font-extrabold text-white">Thank You!</h3>
+            <h3 className="text-xl font-extrabold text-white">
+              {existingReview ? 'Rating Updated!' : 'Thank You!'}
+            </h3>
             <p className="text-xs text-neutral-300 max-w-xs">
-              Your rating helps us craft an even richer sonic sanctuary for Bollywood and retro music lovers.
+              Your feedback helps us refine this sanctuary for Bollywood and retro music lovers.
             </p>
           </div>
         ) : (
@@ -282,15 +325,24 @@ export default function RatingPopupModal({
             <div className="text-center space-y-1.5">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[11px] font-bold tracking-wide uppercase">
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Listener Feedback</span>
+                <span>{existingReview ? 'Update Your Rating' : 'Listener Feedback'}</span>
               </div>
               <h2 id="rating-title" className="text-2xl font-black text-white tracking-tight">
-                Enjoying Loopra?
+                {existingReview ? 'Update Your Feedback' : 'Enjoying Loopra?'}
               </h2>
               <p className="text-xs text-neutral-300 max-w-sm mx-auto leading-relaxed">
-                You've been immersed in Loopra for a while! How has your listening experience been?
+                {existingReview
+                  ? 'You previously rated Loopra. Feel free to adjust your stars or update your review below.'
+                  : "How has your listening experience been? Your rating shapes our retro sanctuary."}
               </p>
             </div>
+
+            {isAdmin && (
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center gap-2.5 text-xs text-amber-300">
+                <ShieldAlert className="w-4 h-4 shrink-0" />
+                <span>Administrator account: Manage and author reviews directly in the Admin Dashboard.</span>
+              </div>
+            )}
 
             {/* Interactive Stars */}
             <div className="flex flex-col items-center justify-center gap-2 pt-1">
@@ -322,7 +374,7 @@ export default function RatingPopupModal({
               {/* Star Rating Label */}
               <div className="h-5">
                 <span className="text-xs font-semibold text-amber-400/90 tracking-wide transition-all">
-                  {STAR_LABELS[hoverRating || rating] || 'Tap a star to rate'}
+                  {STAR_LABELS[hoverRating || rating] || (existingReview ? `Current: ${rating} Star${rating !== 1 ? 's' : ''}` : 'Tap a star to rate')}
                 </span>
               </div>
             </div>
@@ -337,6 +389,7 @@ export default function RatingPopupModal({
                 <span className="text-[10px] text-neutral-400">{reviewText.length}/1000</span>
               </label>
               <textarea
+                ref={reviewTextareaRef}
                 id="review-text"
                 rows={3}
                 value={reviewText}
@@ -353,18 +406,18 @@ export default function RatingPopupModal({
                 onClick={handleDismiss}
                 className="flex-1 py-3 px-4 rounded-2xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white text-xs font-bold transition active:scale-95 cursor-pointer border border-neutral-700/50"
               >
-                Maybe Later
+                {existingReview ? 'Cancel' : 'Maybe Later'}
               </button>
               <button
                 type="submit"
-                disabled={rating === 0 || isSubmitting}
+                disabled={rating === 0 || isSubmitting || isAdmin}
                 className={`flex-1 py-3 px-4 rounded-2xl font-extrabold text-xs tracking-wide transition active:scale-95 shadow-lg cursor-pointer ${
-                  rating === 0 || isSubmitting
+                  rating === 0 || isSubmitting || isAdmin
                     ? 'bg-neutral-800 text-neutral-400 cursor-not-allowed border border-neutral-700'
                     : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 shadow-amber-500/20'
                 }`}
               >
-                {isSubmitting ? 'Submitting...' : 'Submit Rating'}
+                {isSubmitting ? 'Saving...' : (existingReview ? 'Update Rating' : 'Submit Rating')}
               </button>
             </div>
           </form>
@@ -373,4 +426,3 @@ export default function RatingPopupModal({
     </div>
   );
 }
-

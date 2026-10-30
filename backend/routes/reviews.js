@@ -173,14 +173,30 @@ router.get('/user-status', async (req, res) => {
     }
 
     if (user.role === 'admin') {
-      return res.json({ isAnonymous: false, hasRated: true, hasDismissed: true, isAdmin: true });
+      return res.json({ isAnonymous: false, hasRated: true, hasDismissed: true, isAdmin: true, existingReview: null });
+    }
+
+    let existingReview = null;
+    const rev = await Review.findOne({
+      userId: user._id,
+      campaign: 'general',
+      source: 'user'
+    }).lean();
+
+    if (rev) {
+      existingReview = {
+        rating: rev.rating,
+        reviewText: rev.reviewText || '',
+        submittedAt: rev.submittedAt
+      };
     }
 
     return res.json({
       isAnonymous: false,
-      hasRated: Boolean(user.ratingPopupStatus?.hasRated),
+      hasRated: Boolean(user.ratingPopupStatus?.hasRated || rev),
       hasDismissed: Boolean(user.ratingPopupStatus?.hasDismissed),
-      isAdmin: false
+      isAdmin: false,
+      existingReview
     });
   } catch (err) {
     return res.json({ isAnonymous: true, hasRated: false, hasDismissed: false, isAdmin: false });

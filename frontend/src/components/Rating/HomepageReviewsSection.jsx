@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Star, ChevronLeft, ChevronRight, MessageSquare, Sparkles, UserCheck } from 'lucide-react';
 import { getApiUrl } from '../../utils/apiUrl';
 
-export default function HomepageReviewsSection({ refreshTrigger = 0 }) {
+export default function HomepageReviewsSection({ refreshTrigger = 0, onOpenRatingModal = null }) {
   const [summary, setSummary] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -112,15 +112,37 @@ export default function HomepageReviewsSection({ refreshTrigger = 0 }) {
             </p>
           </div>
 
-          {/* Configured Editorial Badge (strictly separate if enabled) */}
-          {isConfigured && (
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-neutral-900/80 border border-amber-500/30 text-[11px] text-neutral-300 shadow-sm">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-              <span className="text-neutral-400">{summary.editorialSummary.editorialLabel}:</span>
-              <span className="font-extrabold text-amber-400">{activeRating.toFixed(1)} ★</span>
-              <span className="text-neutral-400">({activeTotal.toLocaleString()} ratings)</span>
-            </div>
-          )}
+          {/* Header Actions: Editorial Badge + Direct Rate & Review CTAs */}
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+            {isConfigured && (
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-neutral-900/80 border border-amber-500/30 text-[11px] text-neutral-300 shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-neutral-400">{summary.editorialSummary.editorialLabel}:</span>
+                <span className="font-extrabold text-amber-400">{activeRating.toFixed(1)} ★</span>
+                <span className="text-neutral-400">({activeTotal.toLocaleString()})</span>
+              </div>
+            )}
+
+            {/* Prominent "Rate Loopra" Primary CTA */}
+            <button
+              type="button"
+              onClick={() => onOpenRatingModal?.('rate')}
+              className="inline-flex items-center gap-2 px-4 py-2 sm:px-5 sm:py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 font-black text-xs tracking-wide transition shadow-lg shadow-amber-500/20 active:scale-95 cursor-pointer"
+            >
+              <Star className="w-4 h-4 fill-neutral-950" />
+              <span>Rate Loopra</span>
+            </button>
+
+            {/* Secondary "Write a Review" Option */}
+            <button
+              type="button"
+              onClick={() => onOpenRatingModal?.('review')}
+              className="inline-flex items-center gap-2 px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-2xl bg-neutral-900/90 hover:bg-neutral-800 text-white hover:text-amber-300 border border-neutral-700/80 font-bold text-xs transition active:scale-95 cursor-pointer"
+            >
+              <MessageSquare className="w-4 h-4 text-amber-400" />
+              <span>Write a Review</span>
+            </button>
+          </div>
         </div>
 
         {/* Top Summary & Distribution Row */}
@@ -152,6 +174,24 @@ export default function HomepageReviewsSection({ refreshTrigger = 0 }) {
             <p className="text-xs text-neutral-400 font-medium">
               Based on <span className="font-bold text-white">{activeTotal.toLocaleString()}</span> {isConfigured ? 'curated' : 'genuine'} listener rating{activeTotal !== 1 ? 's' : ''}
             </p>
+
+            <div className="pt-1 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onOpenRatingModal?.('rate')}
+                className="text-[11px] font-bold text-amber-400 hover:text-amber-300 underline underline-offset-4 cursor-pointer transition"
+              >
+                Rate Loopra
+              </button>
+              <span className="text-neutral-600">•</span>
+              <button
+                type="button"
+                onClick={() => onOpenRatingModal?.('review')}
+                className="text-[11px] font-medium text-neutral-400 hover:text-white cursor-pointer transition"
+              >
+                Write a review
+              </button>
+            </div>
           </div>
 
           {/* Rating Distribution Bars */}
@@ -182,7 +222,7 @@ export default function HomepageReviewsSection({ refreshTrigger = 0 }) {
 
         {/* Written Reviews Wall */}
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
               <MessageSquare className="w-4 h-4 text-amber-400" />
               <span>Listener Reviews</span>
@@ -193,32 +233,43 @@ export default function HomepageReviewsSection({ refreshTrigger = 0 }) {
               )}
             </h3>
 
-            {/* Pagination Controls */}
-            {totalPages > 1 && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-neutral-400 mr-2 font-mono">
-                  Page {currentPage} of {totalPages}
-                </span>
-                <button
-                  type="button"
-                  onClick={handlePrevPage}
-                  disabled={currentPage <= 1 || isReviewsLoading}
-                  aria-label="Previous reviews page"
-                  className="p-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white hover:bg-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleNextPage}
-                  disabled={currentPage >= totalPages || isReviewsLoading}
-                  aria-label="Next reviews page"
-                  className="p-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white hover:bg-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => onOpenRatingModal?.('review')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-amber-500/40 text-neutral-300 hover:text-amber-300 text-xs font-semibold transition cursor-pointer"
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+                <span>Write a Review</span>
+              </button>
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-neutral-400 mr-1 font-mono">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handlePrevPage}
+                    disabled={currentPage <= 1 || isReviewsLoading}
+                    aria-label="Previous reviews page"
+                    className="p-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white hover:bg-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleNextPage}
+                    disabled={currentPage >= totalPages || isReviewsLoading}
+                    aria-label="Next reviews page"
+                    className="p-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white hover:bg-neutral-800 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Reviews List */}
