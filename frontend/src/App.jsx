@@ -31,6 +31,8 @@ import RecommendedRow from './components/Common/RecommendedRow';
 import ContinueListeningBanner from './components/Common/ContinueListeningBanner';
 import { listeningStatsService } from './services/listeningStatsService';
 import MoodToMusicSection from './components/Mood/MoodToMusicSection';
+import PersonalizedRecommendationsSection from './components/Recommendations/PersonalizedRecommendationsSection';
+import { recommendationsClient } from './services/recommendationsClient';
 import LoopraCanvas from './components/Player/LoopraCanvas';
 import TimeMachineRadio from './components/Radio/TimeMachineRadio';
 import IndianRadioView from './components/Radio/IndianRadioView';
@@ -1272,6 +1274,7 @@ export default function App() {
       if (path === '/admin') return 'admin';
       if (path === '/discover' || params.get('q')) return 'discover';
       if (path === '/downloads/explore' || path === '/downloads-explore') return 'downloads';
+      if (path === '/for-you' || path === '/recommendations') return 'for-you';
       if (['/library', '/history', '/playlists', '/downloads', '/barber', '/truck', '/pauwa', '/mood', '/timemachine', '/activity', '/radio', '/indian-radio'].includes(path)) {
         return path === '/indian-radio' ? 'radio' : path.replace('/', '');
       }
@@ -1594,6 +1597,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const playerRef = useRef(null);
   const wasPlayingBeforeAuthRef = useRef(false);
   const isInitialMountRef = useRef(true);
+  const trackPlaybackStartTimeRef = useRef(null);
+  const currentSongRef = useRef(currentSong);
+  const hasLoggedCompletionRef = useRef(false);
+
+  useEffect(() => {
+    currentSongRef.current = currentSong;
+  }, [currentSong]);
 
   const [isShuffle, setIsShuffle] = useState(() => {
     try {
@@ -2796,6 +2806,24 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
 
     setCurrentSong(song);
+    trackPlaybackStartTimeRef.current = Date.now();
+    hasLoggedCompletionRef.current = false;
+
+    if (authToken && song) {
+      recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+        trackId: song.id || song.videoId,
+        title: song.title,
+        artist: song.artist || song.channel || 'Unknown Artist',
+        channel: song.channel || '',
+        thumbnail: song.thumbnail || song.image || '',
+        eventType: 'play_start',
+        duration: 0,
+        listenedDuration: 0,
+        completionPercent: 0,
+        source: activeTab || 'player'
+      });
+    }
+
     if (!song?.isRadio) {
       setIsPlaying(true);
     }
@@ -2817,6 +2845,40 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   }, [activeTab, currentSong, stationsMap, authToken]);
 
   const handleNextSong = useCallback(() => {
+    // Log skip or completed listen signal for AI recommendations
+    if (trackPlaybackStartTimeRef.current && currentSongRef.current && authToken && !hasLoggedCompletionRef.current) {
+      const elapsedSec = Math.max(0, Math.round((Date.now() - trackPlaybackStartTimeRef.current) / 1000));
+      const totalDur = durationRef.current || 200;
+      const pct = Math.min(100, Math.round((elapsedSec / totalDur) * 100));
+
+      if (elapsedSec < 15) {
+        recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+          trackId: currentSongRef.current.id || currentSongRef.current.videoId,
+          title: currentSongRef.current.title,
+          artist: currentSongRef.current.artist || currentSongRef.current.channel,
+          thumbnail: currentSongRef.current.thumbnail,
+          eventType: 'skip',
+          duration: totalDur,
+          listenedDuration: elapsedSec,
+          completionPercent: pct,
+          source: activeTab || 'player'
+        });
+      } else if (elapsedSec >= 30 || pct >= 50) {
+        recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+          trackId: currentSongRef.current.id || currentSongRef.current.videoId,
+          title: currentSongRef.current.title,
+          artist: currentSongRef.current.artist || currentSongRef.current.channel,
+          thumbnail: currentSongRef.current.thumbnail,
+          eventType: 'completed',
+          duration: totalDur,
+          listenedDuration: elapsedSec,
+          completionPercent: pct,
+          source: activeTab || 'player'
+        });
+        hasLoggedCompletionRef.current = true;
+      }
+    }
+
     const effectiveQueue = (queue && queue.length > 0)
       ? queue
       : (trendingSongs && trendingSongs.length > 0 ? trendingSongs : TRENDING_SONGS);
@@ -3142,10 +3204,29 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           if (e.data === 1) { // Playing
             setIsPlaying(true);
             isInitialMountRef.current = false;
+            if (!trackPlaybackStartTimeRef.current) {
+              trackPlaybackStartTimeRef.current = Date.now();
+            }
             if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
           } else if (e.data === 2) { // Paused
             setIsPlaying(false);
           } else if (e.data === 0) { // Ended
+            if (currentSongRef.current && authToken && !hasLoggedCompletionRef.current) {
+              const dur = durationRef.current || 200;
+              recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+                trackId: currentSongRef.current.id || currentSongRef.current.videoId,
+                title: currentSongRef.current.title,
+                artist: currentSongRef.current.artist || currentSongRef.current.channel,
+                thumbnail: currentSongRef.current.thumbnail,
+                eventType: 'completed',
+                duration: dur,
+                listenedDuration: dur,
+                completionPercent: 100,
+                source: activeTab || 'player'
+              });
+              hasLoggedCompletionRef.current = true;
+            }
+
             const currentRepeat = isRepeatRef.current;
             if (currentRepeat === 'one' || currentRepeat === true) {
               playerRef.current?.seekTo?.(0, true);
@@ -3415,6 +3496,22 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           }
         };
         audio.onended = () => {
+          if (currentSongRef.current && authToken && !hasLoggedCompletionRef.current) {
+            const dur = audio.duration || 200;
+            recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+              trackId: currentSongRef.current.id || currentSongRef.current.videoId,
+              title: currentSongRef.current.title,
+              artist: currentSongRef.current.artist || currentSongRef.current.channel,
+              thumbnail: currentSongRef.current.thumbnail,
+              eventType: 'completed',
+              duration: dur,
+              listenedDuration: dur,
+              completionPercent: 100,
+              source: 'offline'
+            });
+            hasLoggedCompletionRef.current = true;
+          }
+
           const currentRepeat = isRepeatRef.current;
           if (currentRepeat === 'one' || currentRepeat === true) {
             audio.currentTime = 0;
@@ -3806,6 +3903,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       const normalizedSong = { ...song, id: songId, videoId: songId };
 
       if (!isAlreadyLiked && authToken) {
+        recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+          trackId: songId,
+          title: song?.title || 'Unknown Track',
+          artist: song?.artist || song?.channel || 'Unknown Artist',
+          thumbnail: getCleanThumbnail(song),
+          eventType: 'like',
+          source: activeTab || 'favourites'
+        });
+
         try {
           fetch(getApiUrl('/api/activity/log'), {
             method: 'POST',
@@ -5076,6 +5182,25 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
 
 
+        {activeTab === 'for-you' && (
+          <div className="max-w-7xl mx-auto px-0 md:px-4 pt-1 md:pt-6 space-y-6 md:space-y-10 w-full min-w-0">
+            <PersonalizedRecommendationsSection
+              backendUrl={BACKEND_URL}
+              authToken={authToken}
+              user={user}
+              onPlayTrack={(track) => {
+                playSong(track);
+              }}
+              onOpenAuth={openAuthModal}
+              onToggleLike={toggleLike}
+              isLiked={isLiked}
+              onAddToPlaylist={handleAddToPlaylistClick}
+              showToast={showToast}
+            />
+            <DisclaimerFooter footer={cmsConfig?.footer} />
+          </div>
+        )}
+
         {activeTab === 'home' && (
           <div className="max-w-7xl mx-auto px-0 md:px-4 pt-1 md:pt-6 space-y-6 md:space-y-10 w-full min-w-0">
             {/* Promotional Hero Banner if configured in CMS */}
@@ -5268,15 +5393,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </div>
             </div>
 
-            {/* Smart Personalized Recommendations Hub */}
-            <RecommendedRow
-              likedSongs={likedSongs}
-              history={history}
-              availableTracks={[...(trendingSongs || []), ...(TRENDING_SONGS || []), ...(POPULAR_ALBUMS || []), ...(POPULAR_RADIO || [])]}
-              onPlaySong={playSong}
-              currentSong={currentSong}
-              isPlaying={isPlaying}
-              onOpenVideo={handleOpenVideo}
+            {/* Gemini AI-Powered Personalized Recommendations Lounge */}
+            <PersonalizedRecommendationsSection
+              backendUrl={BACKEND_URL}
+              authToken={authToken}
+              user={user}
+              onPlayTrack={(track) => {
+                playSong(track);
+              }}
+              onOpenAuth={openAuthModal}
+              onToggleLike={toggleLike}
+              isLiked={isLiked}
+              onAddToPlaylist={handleAddToPlaylistClick}
+              showToast={showToast}
             />
 
             {/* Dynamic Homepage Sections from CMS Configuration */}

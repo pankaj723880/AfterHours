@@ -1,0 +1,129 @@
+// Frontend client for Loopra Gemini AI-Powered Recommendations & Listening Events
+
+export const recommendationsClient = {
+  /**
+   * Fetches personalized recommendations for the authenticated user.
+   */
+  async getPersonalized(backendUrl, token, forceRefresh = false) {
+    if (!token) {
+      return { success: false, unauthenticated: true };
+    }
+
+    const url = `${backendUrl.replace(/\/+$/, '')}/api/recommendations/personalized${forceRefresh ? '?refresh=true' : ''}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to fetch recommendations (${res.status})`);
+    }
+
+    return await res.json();
+  },
+
+  /**
+   * Fetches Daily Mix tracks.
+   */
+  async getDailyMix(backendUrl, token) {
+    if (!token) return { success: false, items: [] };
+
+    const url = `${backendUrl.replace(/\/+$/, '')}/api/recommendations/daily-mix`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!res.ok) return { success: false, items: [] };
+    return await res.json();
+  },
+
+  /**
+   * Fetches discovery tracks (works unauthenticated).
+   */
+  async getDiscover(backendUrl) {
+    const url = `${backendUrl.replace(/\/+$/, '')}/api/recommendations/discover`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!res.ok) return { success: false, items: [] };
+    return await res.json();
+  },
+
+  /**
+   * Sends a listening event to the backend.
+   */
+  async logListeningEvent(backendUrl, token, eventData) {
+    if (!token || !eventData?.trackId || !eventData?.title) return;
+
+    const url = `${backendUrl.replace(/\/+$/, '')}/api/listening-events`;
+    try {
+      await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(eventData),
+        keepalive: true
+      });
+    } catch (err) {
+      // Non-blocking background telemetry notice
+    }
+  },
+
+  /**
+   * Requests a manual fresh calculation of recommendations.
+   */
+  async refreshRecommendations(backendUrl, token) {
+    if (!token) throw new Error('Authentication required');
+
+    const url = `${backendUrl.replace(/\/+$/, '')}/api/recommendations/refresh`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to refresh recommendations');
+    }
+    return data;
+  },
+
+  /**
+   * Updates recommendation privacy preferences (e.g. toggle personalization).
+   */
+  async updatePreferences(backendUrl, token, preferences) {
+    if (!token) throw new Error('Authentication required');
+
+    const url = `${backendUrl.replace(/\/+$/, '')}/api/recommendations/preferences`;
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(preferences)
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Failed to update preferences');
+    }
+    return await res.json();
+  }
+};
+

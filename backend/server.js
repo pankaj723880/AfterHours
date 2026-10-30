@@ -26,6 +26,7 @@ import profileRoutes from './routes/profile.js';
 import activityRoutes from './routes/activity.js';
 import moodRoutes from './routes/mood.js';
 import radioRoutes from './routes/radio.js';
+import recommendationRoutes, { handleListeningEvent } from './routes/recommendations.js';
 import { isSingleSong, filterSingleSongs } from './services/songFilter.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -743,6 +744,10 @@ app.use(['/api/mood', '/mood'], moodRoutes);
 
 // Mount Verified Real Indian Radio Streaming Routes
 app.use(['/api/radio', '/radio'], radioRoutes);
+
+// Mount Gemini AI-Powered Personalized Recommendations & Listening Events
+app.use(['/api/recommendations', '/recommendations'], recommendationRoutes);
+app.post('/api/listening-events', authenticateToken, handleListeningEvent);
 
 // YouTube API Search with In-Memory Caching & Rotating Keys
 const searchCache = new Map();
