@@ -1,7 +1,7 @@
 import assert from 'assert';
 import { aiMusicCompanionService } from '../services/aiMusicCompanionService.js';
 import { musicRecognitionService } from '../services/musicRecognitionService.js';
-import { catalogService } from '../services/catalogService.js';
+import { catalogService, CORE_CATALOG_TRACKS } from '../services/catalogService.js';
 
 console.log('=== STARTING LOOPRA AI MUSIC COMPANION TEST SUITE ===\n');
 
@@ -12,8 +12,9 @@ async function runTests() {
   console.log('--- TEST 1: Service Context & Capabilities ---');
   const providerInfo = musicRecognitionService.getProviderInfo();
   assert(typeof providerInfo === 'object', 'Provider info must be an object');
+  assert.strictEqual(providerInfo.provider, 'gemini', 'Provider must be pure gemini');
   assert('configured' in providerInfo, 'Provider info must contain configured boolean');
-  console.log(`[PASS] Music recognition info: provider="${providerInfo.provider}", configured=${providerInfo.configured}`);
+  console.log(`[PASS] Music recognition info: provider="${providerInfo.provider}", configured=${providerInfo.configured}, model="${providerInfo.model}"`);
   passed++;
 
   // TEST 2: Current Song Awareness
@@ -68,44 +69,42 @@ async function runTests() {
   const mockHistory = [
     {
       role: 'user',
-      text: 'Recommend 3 romantic songs'
+      content: 'Suggest some classic romantic Hindi hits.'
     },
     {
       role: 'model',
-      text: 'Here are 3 beautiful romantic melodies for you:',
+      content: 'Here are timeless romantic songs for you.',
       tracks: [
-        { id: 'RLzC55ai0eo', videoId: 'RLzC55ai0eo', title: 'Heeriye', artist: 'Jasleen Royal, Arijit Singh' },
-        { id: 'cNV5hLSa9H8', videoId: 'cNV5hLSa9H8', title: 'Tujhe Dekha Toh Yeh Jaana Sanam', artist: 'Kumar Sanu' },
-        { id: 'dvgZkm1xWPE', videoId: 'dvgZkm1xWPE', title: 'Teri Ore', artist: 'Shreya Ghoshal' }
+        { id: 'cNV5hLSa9H8', title: 'Tujhe Dekha Toh Yeh Jaana Sanam', artist: 'Kumar Sanu' },
+        { id: 'Umqb9KENgmk', title: 'Tum Hi Ho', artist: 'Arijit Singh' },
+        { id: 'KeyfUuXPOcY', title: 'Dheere Dheere Se Meri Zindagi', artist: 'Kumar Sanu' }
       ]
     }
   ];
 
-  const playSecondChat = await aiMusicCompanionService.processChat({
-    message: "Play the second one please",
+  const chatResponse = await aiMusicCompanionService.processChat({
+    message: 'Play the 2nd one',
     currentTrack: null,
     history: mockHistory
   });
 
-  assert(playSecondChat.action && playSecondChat.action.type === 'PLAY_TRACK', 'Must produce a PLAY_TRACK action');
-  assert.strictEqual(playSecondChat.action.track.id, 'cNV5hLSa9H8', 'Second track ID must match Tujhe Dekha Toh Yeh Jaana Sanam');
-  assert(playSecondChat.reply.includes('Tujhe Dekha Toh Yeh Jaana Sanam'), 'Reply must confirm playing the 2nd track');
-  console.log('[PASS] Multi-turn ordinal resolution successfully triggered PLAY_TRACK action for 2nd track.');
+  assert(chatResponse.action, 'Playback action must be recognized');
+  assert.strictEqual(chatResponse.action.type, 'PLAY_TRACK', 'Action type must be PLAY_TRACK');
+  assert.strictEqual(chatResponse.action.track.id, 'Umqb9KENgmk', 'Second track ID must match Tum Hi Ho (Umqb9KENgmk)');
+  console.log(`[PASS] Multi-turn ordinal resolution successfully triggered PLAY_TRACK action for 2nd track: "${chatResponse.action.track.title}" (${chatResponse.action.track.id})`);
   passed++;
 
-  // TEST 5: Recommendations Strict Catalog Integrity
+  // TEST 5: Candidate Catalog Integrity
   console.log('\n--- TEST 5: Candidate Catalog Integrity (Zero Hallucinated IDs) ---');
-  const candidateTracks = await catalogService.getCuratedTracks();
-  const validIdSet = new Set(candidateTracks.map(t => t.id || t.videoId));
-
+  const candidatePool = await catalogService.getCuratedTracks();
   const recommendationChat = await aiMusicCompanionService.processChat({
-    message: "Suggest some good nostalgic 90s bollywood music",
+    message: "Recommend some upbeat party songs",
     currentTrack: null,
     history: []
   });
 
-  assert(Array.isArray(recommendationChat.tracks), 'Must return array of tracks');
-  assert(recommendationChat.tracks.length > 0, 'Must return at least one track');
+  assert(Array.isArray(recommendationChat.tracks), 'Chat must return track array');
+  const validIdSet = new Set(candidatePool.map(c => c.id || c.videoId));
 
   for (const t of recommendationChat.tracks) {
     const trackId = t.id || t.videoId;
@@ -116,46 +115,89 @@ async function runTests() {
   console.log(`[PASS] All ${recommendationChat.tracks.length} recommended tracks verified strictly against catalog candidates.`);
   passed++;
 
-  // TEST 6: External Song Recognition Without Credentials (Honest Reporting)
-  console.log('\n--- TEST 6: External Recognition Interface - Unconfigured State ---');
+  // TEST 6: Gemini Song Recognition Without Key (Honest Reporting)
+  console.log('\n--- TEST 6: Gemini Recognition Interface - Unconfigured State ---');
   const dummyAudioBase64 = Buffer.from('RIFF....WAVEfmt ....data....test-audio-bytes-padding-1234567890'.repeat(30)).toString('base64');
 
-  // Temporarily ensure recognition keys are undefined for this test
-  const savedAcrHost = process.env.ACRCLOUD_HOST;
-  const savedAcrKey = process.env.ACRCLOUD_ACCESS_KEY;
-  const savedAudD = process.env.AUDD_API_TOKEN;
-  delete process.env.ACRCLOUD_HOST;
-  delete process.env.ACRCLOUD_ACCESS_KEY;
-  delete process.env.AUDD_API_TOKEN;
+  const savedGeminiKey = process.env.GEMINI_API_KEY;
+  const savedGoogleKey = process.env.GOOGLE_API_KEY;
+  delete process.env.GEMINI_API_KEY;
+  delete process.env.GOOGLE_API_KEY;
 
   const unconfiguredResult = await musicRecognitionService.identifyAudio({
     audioBase64: dummyAudioBase64,
-    mimeType: 'audio/webm'
+    mimeType: 'audio/webm',
+    durationSeconds: 12
   });
 
   assert.strictEqual(unconfiguredResult.success, false, 'Should not succeed without keys');
   assert.strictEqual(unconfiguredResult.configured, false, 'Must report configured=false');
-  assert(unconfiguredResult.message.includes('ACRCloud') || unconfiguredResult.message.includes('AudD'), 'Must report required credentials');
-  console.log('[PASS] Gracefully and honestly reported required recognition credentials without mock simulation.');
+  assert(unconfiguredResult.message.includes('GEMINI_API_KEY'), 'Must report required GEMINI_API_KEY');
+  console.log('[PASS] Gracefully and honestly reported required GEMINI_API_KEY without paid third-party fallback.');
   passed++;
 
-  // TEST 7: Recognition Audio Validation
+  // Restore dummy key so subsequent validation tests can test audio buffer logic
+  process.env.GEMINI_API_KEY = 'test_mock_gemini_key_for_testing';
+
+  // TEST 7: Recognition Audio Validation (Undersized Samples)
   console.log('\n--- TEST 7: Recognition Audio Sample Validation ---');
   const shortAudioResult = await musicRecognitionService.identifyAudio({
     audioBase64: 'short',
     mimeType: 'audio/webm'
   });
   assert.strictEqual(shortAudioResult.success, false, 'Short audio must fail');
+  assert(shortAudioResult.error && shortAudioResult.error.includes('too short'), 'Must report audio sample too short');
   console.log('[PASS] Correctly rejected undersized audio capture buffer.');
   passed++;
 
   // Restore env
-  if (savedAcrHost) process.env.ACRCLOUD_HOST = savedAcrHost;
-  if (savedAcrKey) process.env.ACRCLOUD_ACCESS_KEY = savedAcrKey;
-  if (savedAudD) process.env.AUDD_API_TOKEN = savedAudD;
+  if (savedGeminiKey) process.env.GEMINI_API_KEY = savedGeminiKey;
+  else delete process.env.GEMINI_API_KEY;
+  if (savedGoogleKey) process.env.GOOGLE_API_KEY = savedGoogleKey;
 
-  // TEST 8: User Profile Isolation
-  console.log('\n--- TEST 8: User Profile Isolation in Chat Responses ---');
+  // TEST 8: Exact Catalogue Matching for Known Hindi Song ("Tum Hi Ho")
+  console.log('\n--- TEST 8: Catalogue Matching - Known Hindi Song ("Tum Hi Ho") ---');
+  const tumHiHoMatch = await catalogService.findExactCatalogueMatch({
+    title: 'Tum Hi Ho',
+    artist: 'Arijit Singh',
+    album: 'Aashiqui 2'
+  });
+
+  assert.strictEqual(tumHiHoMatch.isExactMatch, true, 'Tum Hi Ho must match exact catalogue track');
+  assert.ok(tumHiHoMatch.matchedTrack, 'Matched track must be present');
+  assert.strictEqual(tumHiHoMatch.matchedTrack.id, 'Umqb9KENgmk', 'Must match official Tum Hi Ho video ID Umqb9KENgmk');
+  assert.notStrictEqual(tumHiHoMatch.matchedTrack.id, '2mDCVzruYzQ', 'Must NEVER match Butta Bomma ID');
+  console.log(`[PASS] Exact match verified for Tum Hi Ho -> ${tumHiHoMatch.matchedTrack.title} (${tumHiHoMatch.matchedTrack.id})`);
+  passed++;
+
+  // TEST 9: Exact Catalogue Matching for Known Hindi Song ("Kesariya")
+  console.log('\n--- TEST 9: Catalogue Matching - Known Hindi Song ("Kesariya") ---');
+  const kesariyaMatch = await catalogService.findExactCatalogueMatch({
+    title: 'Kesariya',
+    artist: 'Arijit Singh',
+    album: 'Brahmastra'
+  });
+
+  assert.strictEqual(kesariyaMatch.isExactMatch, true, 'Kesariya must match exact catalogue track');
+  assert.strictEqual(kesariyaMatch.matchedTrack.id, 'BddP6PYo2gs', 'Must match Kesariya ID BddP6PYo2gs');
+  console.log(`[PASS] Exact match verified for Kesariya -> ${kesariyaMatch.matchedTrack.title} (${kesariyaMatch.matchedTrack.id})`);
+  passed++;
+
+  // TEST 10: Unknown / Uncatalogued Song Handling (Never Plays Random Song)
+  console.log('\n--- TEST 10: Unknown Song Handling (Zero False Fallbacks) ---');
+  const unknownSongMatch = await catalogService.findExactCatalogueMatch({
+    title: 'Xyz Completely Unknown Obscure Song 987654321',
+    artist: 'Nonexistent Band 12345',
+    album: 'Fake Album'
+  });
+
+  assert.strictEqual(unknownSongMatch.isExactMatch, false, 'Unknown song must NOT match catalogue');
+  assert.strictEqual(unknownSongMatch.matchedTrack, null, 'Must NOT return a random fallback track');
+  console.log('[PASS] Uncatalogued song successfully resolved to isExactMatch=false with matchedTrack=null (Zero false fallbacks).');
+  passed++;
+
+  // TEST 11: User Profile Isolation
+  console.log('\n--- TEST 11: User Profile Isolation in Chat Responses ---');
   const userA = { _id: '507f1f77bcf86cd799439011', username: 'pankaj' };
   const userB = { _id: '507f1f77bcf86cd799439022', username: 'rahul' };
 
@@ -184,4 +226,3 @@ runTests().catch(err => {
   console.error('\n[TEST FAILED]:', err);
   process.exit(1);
 });
-

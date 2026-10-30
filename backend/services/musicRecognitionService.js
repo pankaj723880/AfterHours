@@ -1,207 +1,63 @@
-import crypto from 'crypto';
-import fetch from 'node-fetch';
+import { GoogleGenAI } from '@google/genai';
 
 /**
- * Music Recognition Service
- * Handles external environmental audio recognition via ACRCloud or AudD.
- * If credentials are not configured, gracefully reports configuration requirements
- * without fabricating false recognition results.
+ * Gemini-Powered Music Recognition Service
+ * Analyzes audio snippets using Gemini API multimodal audio understanding.
+ * 
+ * - Zero third-party paid song recognition APIs (No ACRCloud, AudD, AcoustID).
+ * - Secured through backend GEMINI_API_KEY environment variable.
+ * - Transient processing: recorded audio is never permanently saved to disk or DB.
+ * - Distinguishes verified vs probable vs unknown detections without hallucination.
  */
 export const musicRecognitionService = {
   /**
-   * Checks whether an external music recognition provider is configured.
+   * Initializes GoogleGenAI client using backend environment variables.
+   */
+  getClient() {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '') {
+      return null;
+    }
+    return new GoogleGenAI({ apiKey: apiKey.trim() });
+  },
+
+  /**
+   * Checks whether Gemini API credentials are configured.
    */
   isConfigured() {
-    const hasAcrCloud = Boolean(
-      process.env.ACRCLOUD_HOST &&
-      process.env.ACRCLOUD_ACCESS_KEY &&
-      process.env.ACRCLOUD_SECRET_KEY
-    );
-    const hasAudD = Boolean(process.env.AUDD_API_TOKEN);
-    return hasAcrCloud || hasAudD;
+    const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    return Boolean(key && typeof key === 'string' && key.trim().length > 10);
   },
 
   /**
-   * Returns details about the active provider.
+   * Returns details about the active recognition provider.
    */
   getProviderInfo() {
-    if (process.env.ACRCLOUD_HOST && process.env.ACRCLOUD_ACCESS_KEY) {
-      return {
-        provider: 'acrcloud',
-        host: process.env.ACRCLOUD_HOST,
-        configured: true
-      };
-    }
-    if (process.env.AUDD_API_TOKEN) {
-      return {
-        provider: 'audd',
-        configured: true
-      };
-    }
+    const configured = this.isConfigured();
+    const model = process.env.GEMINI_RECOGNITION_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     return {
-      provider: 'none',
-      configured: false,
-      requiredEnvVars: [
-        'ACRCLOUD_HOST, ACRCLOUD_ACCESS_KEY, ACRCLOUD_SECRET_KEY',
-        'or AUDD_API_TOKEN'
-      ]
+      provider: 'gemini',
+      model,
+      configured,
+      requiredEnvVars: configured ? [] : ['GEMINI_API_KEY']
     };
   },
 
   /**
-   * Generates ACRCloud HMAC-SHA1 signature.
+   * Core audio recognition handler using Gemini multimodal audio analysis.
+   * 
+   * @param {Object} params
+   * @param {string} params.audioBase64 - Base64 encoded audio sample (WebM, WAV, MP4, etc.)
+   * @param {string} params.mimeType - MIME type of the audio stream
+   * @param {number} params.durationSeconds - Length of captured sample in seconds (10-15s recommended)
    */
-  buildAcrCloudSignature(httpMethod, httpUri, accessKey, secretKey, timestamp) {
-    const stringToSign = [
-      httpMethod,
-      httpUri,
-      accessKey,
-      'audio',
-      '1',
-      timestamp
-    ].join('\n');
-
-    return crypto
-      .createHmac('sha1', secretKey)
-      .update(Buffer.from(stringToSign, 'utf-8'))
-      .digest('base64');
-  },
-
-  /**
-   * Identifies an audio sample buffer using ACRCloud.
-   */
-  async identifyWithAcrCloud(audioBuffer) {
-    const host = process.env.ACRCLOUD_HOST;
-    const accessKey = process.env.ACRCLOUD_ACCESS_KEY;
-    const secretKey = process.env.ACRCLOUD_SECRET_KEY;
-    const timestamp = Math.floor(Date.now() / 1000);
-    const signature = this.buildAcrCloudSignature('POST', '/v1/identify', accessKey, secretKey, timestamp);
-
-    // Build multipart/form-data boundary
-    const boundary = '----LoopraAcrBoundary' + Date.now();
-    const crlf = '\r\n';
-
-    let body = Buffer.concat([
-      Buffer.from(`--${boundary}${crlf}Content-Disposition: form-data; name="sample"; filename="sample.wav"${crlf}Content-Type: application/octet-stream${crlf}${crlf}`),
-      audioBuffer,
-      Buffer.from(`${crlf}--${boundary}${crlf}Content-Disposition: form-data; name="access_key"${crlf}${crlf}${accessKey}`),
-      Buffer.from(`${crlf}--${boundary}${crlf}Content-Disposition: form-data; name="sample_bytes"${crlf}${crlf}${audioBuffer.length}`),
-      Buffer.from(`${crlf}--${boundary}${crlf}Content-Disposition: form-data; name="timestamp"${crlf}${crlf}${timestamp}`),
-      Buffer.from(`${crlf}--${boundary}${crlf}Content-Disposition: form-data; name="signature"${crlf}${crlf}${signature}`),
-      Buffer.from(`${crlf}--${boundary}${crlf}Content-Disposition: form-data; name="data_type"${crlf}${crlf}audio`),
-      Buffer.from(`${crlf}--${boundary}${crlf}Content-Disposition: form-data; name="signature_version"${crlf}${crlf}1`),
-      Buffer.from(`${crlf}--${boundary}--${crlf}`)
-    ]);
-
-    const url = host.startsWith('http') ? `${host}/v1/identify` : `https://${host}/v1/identify`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        'Content-Length': body.length.toString()
-      },
-      body
-    });
-
-    if (!response.ok) {
-      throw new Error(`ACRCloud returned HTTP status ${response.status}`);
-    }
-
-    const data = await response.json();
-    if (data.status?.code === 0 && data.metadata?.music?.[0]) {
-      const music = data.metadata.music[0];
-      return {
-        success: true,
-        provider: 'acrcloud',
-        title: music.title || 'Unknown Title',
-        artist: (music.artists || []).map(a => a.name).join(', ') || 'Unknown Artist',
-        album: music.album?.name || null,
-        releaseDate: music.release_date || null,
-        score: music.score || 100,
-        genres: (music.genres || []).map(g => g.name),
-        externalMetadata: {
-          label: music.label || null,
-          durationMs: music.duration_ms || null
-        }
-      };
-    }
-
-    return {
-      success: false,
-      provider: 'acrcloud',
-      statusCode: data.status?.code,
-      message: data.status?.msg || 'No matching music found in ACRCloud audio database'
-    };
-  },
-
-  /**
-   * Identifies an audio sample buffer using AudD.
-   */
-  async identifyWithAudD(audioBuffer) {
-    const apiToken = process.env.AUDD_API_TOKEN;
-    const boundary = '----LoopraAudDBoundary' + Date.now();
-    const crlf = '\r\n';
-
-    let body = Buffer.concat([
-      Buffer.from(`--${boundary}${crlf}Content-Disposition: form-data; name="file"; filename="sample.wav"${crlf}Content-Type: application/octet-stream${crlf}${crlf}`),
-      audioBuffer,
-      Buffer.from(`${crlf}--${boundary}${crlf}Content-Disposition: form-data; name="api_token"${crlf}${crlf}${apiToken}`),
-      Buffer.from(`${crlf}--${boundary}--${crlf}`)
-    ]);
-
-    const response = await fetch('https://api.audd.io/', {
-      method: 'POST',
-      headers: {
-        'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        'Content-Length': body.length.toString()
-      },
-      body
-    });
-
-    if (!response.ok) {
-      throw new Error(`AudD returned HTTP status ${response.status}`);
-    }
-
-    const data = await response.json();
-    if (data.status === 'success' && data.result) {
-      const res = data.result;
-      return {
-        success: true,
-        provider: 'audd',
-        title: res.title || 'Unknown Title',
-        artist: res.artist || 'Unknown Artist',
-        album: res.album || null,
-        releaseDate: res.release_date || null,
-        score: 95,
-        externalMetadata: {
-          label: res.label || null
-        }
-      };
-    }
-
-    return {
-      success: false,
-      provider: 'audd',
-      message: data.error?.error_message || 'No matching track found'
-    };
-  },
-
-  /**
-   * Core identification handler.
-   * Accepts base64 audio data or binary buffer.
-   */
-  async identifyAudio({ audioBase64, mimeType = 'audio/webm', durationSeconds = 6 }) {
+  async identifyAudio({ audioBase64, mimeType = 'audio/webm', durationSeconds = 10 } = {}) {
     if (!this.isConfigured()) {
       return {
         success: false,
         configured: false,
-        message: 'External song recognition requires an ACRCloud or AudD API key configured on the server. Please set ACRCLOUD_ACCESS_KEY & ACRCLOUD_SECRET_KEY or AUDD_API_TOKEN in your backend environment variables.',
-        requiredEnvVars: [
-          'ACRCLOUD_HOST',
-          'ACRCLOUD_ACCESS_KEY',
-          'ACRCLOUD_SECRET_KEY',
-          'or AUDD_API_TOKEN'
-        ]
+        message: 'Gemini song recognition requires GEMINI_API_KEY configured in backend environment variables.',
+        requiredEnvVars: ['GEMINI_API_KEY']
       };
     }
 
@@ -212,30 +68,121 @@ export const musicRecognitionService = {
       };
     }
 
-    // Strip data URI header if present
+    // Strip optional data URI header (e.g. data:audio/webm;base64,)
     const cleanBase64 = audioBase64.replace(/^data:audio\/[^;]+;base64,/, '');
     const audioBuffer = Buffer.from(cleanBase64, 'base64');
 
+    // Reject undersized buffers (e.g., < 1KB is insufficient for audio recognition)
     if (audioBuffer.length < 1000) {
       return {
         success: false,
-        error: 'Audio sample too short. Please capture at least 4-6 seconds of music.'
+        error: 'Audio sample too short. Please capture 10–15 seconds of audio for accurate identification.'
       };
     }
 
-    // Call active provider
-    if (process.env.ACRCLOUD_HOST && process.env.ACRCLOUD_ACCESS_KEY) {
-      return await this.identifyWithAcrCloud(audioBuffer);
-    }
-    if (process.env.AUDD_API_TOKEN) {
-      return await this.identifyWithAudD(audioBuffer);
-    }
+    const cleanMime = (mimeType || 'audio/webm').split(';')[0].trim();
+    const client = this.getClient();
+    const modelName = process.env.GEMINI_RECOGNITION_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
-    return {
-      success: false,
-      configured: false,
-      message: 'No supported music recognition provider found'
-    };
+    const systemInstruction = `You are an expert audio musicologist and song recognition system for Loopra.
+Analyze the provided audio recording snippet carefully.
+
+CRITICAL INSTRUCTIONS:
+1. Accurately identify the song playing in the audio clip:
+   - title: The official or recognized song title. If uncertain or no recognizable music is playing, return "unknown".
+   - artist: The primary performing artist, singer, or band. If uncertain, return "unknown".
+   - album: The album or movie soundtrack, or null if unidentifiable.
+   - language: The language of the song/lyrics (e.g. "Hindi", "English", "Punjabi", "Spanish", "Instrumental", etc.), or null if unidentifiable.
+   - genre: The musical genre (e.g. "Bollywood Romantic", "Pop", "Rock", "Hip Hop", "Sufi", "EDM", etc.), or null if unknown.
+   - confidence: An integer percentage from 0 to 100 representing your exact identification confidence.
+   - status: "verified" if confidence >= 80% and the song is unmistakable; "probable" if confidence is between 45% and 79% (some characteristics match but clip is noisy, short, or ambiguous); "unknown" if confidence is < 45% or no distinct recognizable song is detected.
+   - reason: A short 1-2 sentence explanation of detected vocals, melody, distinctive chords, lyrics, or why identification failed.
+
+2. NEVER FABRICATE OR HALLUCINATE A SONG:
+   - If the audio contains only ambient silence, talking, noise, distorted sounds, or an unrecognizable track, you MUST set status to "unknown", title to "unknown", artist to "unknown", and confidence to an integer below 40.
+   - Never guess a popular song just because you hear faint chords or rhythms.`;
+
+    try {
+      const response = await client.models.generateContent({
+        model: modelName,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  mimeType: cleanMime,
+                  data: cleanBase64
+                }
+              },
+              {
+                text: 'Identify the song in this audio recording. Output strictly valid JSON with title, artist, album, language, genre, confidence, status, and reason.'
+              }
+            ]
+          }
+        ],
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json'
+        }
+      });
+
+      let parsed = null;
+      try {
+        const text = response.text || '';
+        const cleanJson = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+        parsed = JSON.parse(cleanJson);
+      } catch (parseErr) {
+        console.warn('[MusicRecognition] JSON parse warning from Gemini response:', parseErr.message);
+      }
+
+      const rawTitle = (parsed?.title || 'unknown').trim();
+      const rawArtist = (parsed?.artist || 'unknown').trim();
+      const album = parsed?.album ? String(parsed.album).trim() : null;
+      const language = parsed?.language ? String(parsed.language).trim() : null;
+      const genre = parsed?.genre ? String(parsed.genre).trim() : null;
+
+      const rawConfidence = Number(parsed?.confidence);
+      const confidence = Number.isFinite(rawConfidence) ? Math.min(Math.max(Math.round(rawConfidence), 0), 100) : 0;
+      const rawStatus = parsed?.status;
+      const status = (rawStatus === 'verified' || rawStatus === 'probable') ? rawStatus : 'unknown';
+      const reason = parsed?.reason || (status === 'unknown' ? 'Audio sample was insufficient or no distinct song could be matched.' : 'Identified based on acoustic characteristics and vocals.');
+
+      const isRecognized = status !== 'unknown' && confidence >= 45 && rawTitle.toLowerCase() !== 'unknown';
+
+      return {
+        success: true,
+        configured: true,
+        recognized: isRecognized,
+        provider: 'gemini',
+        model: modelName,
+        title: isRecognized ? rawTitle : 'unknown',
+        artist: isRecognized ? rawArtist : 'unknown',
+        album: isRecognized ? album : null,
+        language: isRecognized ? language : null,
+        genre: isRecognized ? genre : null,
+        confidence: isRecognized ? confidence : Math.min(confidence, 35),
+        status: isRecognized ? status : 'unknown',
+        reason
+      };
+    } catch (err) {
+      console.error('[MusicRecognitionService] Gemini recognition error:', err);
+
+      // Handle Quota and Rate Limit specifically
+      if (err.status === 429 || /quota|RESOURCE_EXHAUSTED/i.test(err.message)) {
+        return {
+          success: false,
+          configured: true,
+          error: 'Gemini API quota exceeded. Please wait a moment before identifying another track.',
+          isQuotaError: true
+        };
+      }
+
+      return {
+        success: false,
+        configured: true,
+        error: err.message || 'Gemini song recognition encountered an unexpected error.'
+      };
+    }
   }
 };
-

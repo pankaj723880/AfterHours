@@ -355,13 +355,15 @@ export default function LoopraAiCompanion({
   };
 
   // -------------------------------------------------------------
-  // AUDIO RECOGNITION: DEVICE / TAB OUTPUT + MIC FALLBACK
+  // GEMINI-POWERED AUDIO RECOGNITION: MIC & DESKTOP TAB OUTPUT
   // -------------------------------------------------------------
+
+  const RECORDING_DURATION = 12; // 12 seconds capture for reliable acoustic fingerprinting
 
   const startAudioRecognition = async (useMic = false) => {
     stopAudioCapture();
     setRecognitionState('recording');
-    setCountdown(6);
+    setCountdown(RECORDING_DURATION);
     setRecognitionError(null);
     setIdentifiedResult(null);
     audioChunksRef.current = [];
@@ -387,7 +389,7 @@ export default function LoopraAiCompanion({
         if (audioTracks.length === 0) {
           stream.getTracks().forEach(t => t.stop());
           setRecognitionState('error');
-          setRecognitionError("No audio track was shared. Please check 'Share audio' in the browser dialog, or click 'Switch to Mic' below.");
+          setRecognitionError("No audio track was shared. In the browser dialog, please select an active Tab or Screen and verify 'Share audio' is checked, or switch to Microphone.");
           return;
         }
 
@@ -432,18 +434,24 @@ export default function LoopraAiCompanion({
           activeCaptureStreamRef.current = null;
         }
 
+        if (audioChunksRef.current.length === 0) {
+          setRecognitionState('idle');
+          return;
+        }
+
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' });
         await processCapturedAudio(audioBlob, mimeType);
       };
 
       recorder.start(500);
 
-      let timeLeft = 6;
+      let timeLeft = RECORDING_DURATION;
       recognitionTimerRef.current = setInterval(() => {
         timeLeft -= 1;
         setCountdown(timeLeft);
         if (timeLeft <= 0) {
           clearInterval(recognitionTimerRef.current);
+          recognitionTimerRef.current = null;
           if (recorder.state === 'recording') {
             recorder.stop();
           }
@@ -453,9 +461,9 @@ export default function LoopraAiCompanion({
     } catch (err) {
       setRecognitionState('error');
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setRecognitionError('Permission was cancelled or denied. Please select an audio source and allow access to identify music.');
+        setRecognitionError('Microphone permission was denied. Please allow microphone access in your browser to identify ambient music.');
       } else {
-        setRecognitionError('Capture failed: ' + err.message);
+        setRecognitionError('Audio capture failed: ' + err.message);
       }
     }
   };
@@ -474,13 +482,32 @@ export default function LoopraAiCompanion({
     }
   };
 
+  const cancelAudioCapture = () => {
+    if (recognitionTimerRef.current) {
+      clearInterval(recognitionTimerRef.current);
+      recognitionTimerRef.current = null;
+    }
+    audioChunksRef.current = [];
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      try {
+        mediaRecorderRef.current.onstop = null; // Do not process
+        mediaRecorderRef.current.stop();
+      } catch (e) {}
+    }
+    if (activeCaptureStreamRef.current) {
+      activeCaptureStreamRef.current.getTracks().forEach(t => t.stop());
+      activeCaptureStreamRef.current = null;
+    }
+    setRecognitionState('idle');
+  };
+
   const processCapturedAudio = async (audioBlob, mimeType) => {
     setRecognitionState('analyzing');
     try {
       const res = await aiMusicCompanionClient.identifySong(backendUrl, authToken, {
         audioBlob,
         mimeType: mimeType || 'audio/webm',
-        durationSeconds: 6
+        durationSeconds: RECORDING_DURATION
       });
 
       if (!res.configured && res.configured === false) {
@@ -489,9 +516,15 @@ export default function LoopraAiCompanion({
         return;
       }
 
-      if (!res.success || !res.match) {
+      if (!res.success) {
         setRecognitionState('error');
-        setRecognitionError(res.message || 'No matching track identified. Try capturing again during a clearer section of the song.');
+        setRecognitionError(res.message || 'Recognition service encountered an error.');
+        return;
+      }
+
+      if (!res.recognized || !res.match || res.match.status === 'unknown') {
+        setRecognitionState('not_found');
+        setRecognitionError(res.message || 'No recognizable song was detected in this audio sample. Please capture closer to the speakers.');
         return;
       }
 
@@ -499,7 +532,7 @@ export default function LoopraAiCompanion({
       setRecognitionState('result');
     } catch (err) {
       setRecognitionState('error');
-      setRecognitionError(err.message || 'Recognition service failed. Please try again.');
+      setRecognitionError(err.message || 'Gemini recognition service failed. Please try again.');
     }
   };
 
@@ -836,111 +869,168 @@ export default function LoopraAiCompanion({
                 )}
 
                 {/* Mode Selector */}
-                <div className="flex items-center gap-2 mb-5 bg-neutral-900 p-1 rounded-xl border border-white/10 text-xs">
-                  <button
-                    onClick={() => {
-                      setRecognitionMode('device');
-                      setRecognitionState('idle');
-                    }}
-                    className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${
-                      recognitionMode === 'device'
-                        ? 'bg-amber-500 text-neutral-950 font-bold shadow'
-                        : 'text-neutral-400 hover:text-white'
-                    }`}
-                  >
-                    🎧 Tab / System Audio
-                  </button>
+                <div className="flex items-center gap-2 mb-4 bg-neutral-900 p-1 rounded-xl border border-white/10 text-xs">
                   <button
                     onClick={() => {
                       setRecognitionMode('mic');
                       setRecognitionState('idle');
                     }}
-                    className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center gap-1.5 ${
                       recognitionMode === 'mic'
                         ? 'bg-amber-500 text-neutral-950 font-bold shadow'
                         : 'text-neutral-400 hover:text-white'
                     }`}
                   >
-                    🎙️ Microphone
+                    <span>🎙️</span> Microphone
+                  </button>
+                  <button
+                    onClick={() => {
+                      setRecognitionMode('device');
+                      setRecognitionState('idle');
+                    }}
+                    className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                      recognitionMode === 'device'
+                        ? 'bg-amber-500 text-neutral-950 font-bold shadow'
+                        : 'text-neutral-400 hover:text-white'
+                    }`}
+                  >
+                    <span>🎧</span> Tab / Screen Audio
                   </button>
                 </div>
 
+                {/* Explanation & Permissions Notice */}
                 {recognitionState === 'idle' && (
-                  <div className="space-y-3">
+                  <div className="w-full max-w-sm space-y-3">
+                    <div className="bg-neutral-900/80 border border-white/10 rounded-xl p-3 text-left space-y-1.5 text-[11px] text-neutral-300">
+                      {recognitionMode === 'mic' ? (
+                        <>
+                          <p className="font-semibold text-amber-400 flex items-center gap-1">
+                            <span>🎙️</span> Microphone Ambient Listening
+                          </p>
+                          <p className="text-neutral-400 leading-relaxed">
+                            Loopra AI will listen through your microphone for ~12 seconds to detect playing music. Microphone access is requested only while listening.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-semibold text-amber-400 flex items-center gap-1">
+                            <span>🖥️</span> Desktop Browser Tab / System Audio
+                          </p>
+                          <p className="text-neutral-400 leading-relaxed">
+                            Capture audio from a browser tab or desktop application. Please ensure <strong>"Share audio"</strong> is checked in the browser picker dialog.
+                          </p>
+                        </>
+                      )}
+                      <p className="text-[10px] text-neutral-500 pt-1 border-t border-white/5 flex items-center gap-1">
+                        <span>🔒</span> Audio is processed transiently by Gemini AI and <strong>never stored</strong>.
+                      </p>
+                    </div>
+
                     <button
                       onClick={() => startAudioRecognition(recognitionMode === 'mic')}
-                      className="px-6 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-neutral-950 font-bold text-xs rounded-full shadow-lg shadow-amber-500/20 transition active:scale-95 cursor-pointer"
+                      className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-neutral-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 transition active:scale-95 cursor-pointer flex items-center justify-center gap-2"
                     >
-                      {recognitionMode === 'device' ? 'Select Tab/Screen & Capture' : 'Listen via Mic (6s)'}
+                      <span>▶</span> Start Listening ({RECORDING_DURATION}s)
                     </button>
-                    {recognitionMode === 'device' && (
-                      <p className="text-[10px] text-neutral-500 italic max-w-xs">
-                        Tip: In the browser pop-up, choose a Tab and make sure <strong>"Share audio"</strong> is checked!
-                      </p>
-                    )}
                   </div>
                 )}
 
                 {recognitionState === 'recording' && (
-                  <div className="space-y-4">
-                    <div className="relative flex items-center justify-center w-20 h-20 mx-auto">
-                      <span className="absolute inset-0 rounded-full bg-amber-500/30 animate-ping" />
-                      <span className="absolute inset-2 rounded-full bg-amber-500/20 animate-pulse" />
-                      <span className="relative text-2xl font-black text-amber-400">{countdown}s</span>
+                  <div className="space-y-4 py-2">
+                    <div className="relative flex items-center justify-center w-24 h-24 mx-auto">
+                      <span className="absolute inset-0 rounded-full bg-amber-500/20 animate-ping" />
+                      <span className="absolute inset-2 rounded-full bg-amber-500/30 animate-pulse" />
+                      <span className="relative text-3xl font-black text-amber-400">{countdown}s</span>
                     </div>
-                    <p className="text-xs text-amber-300 font-medium animate-pulse">
-                      {recognitionMode === 'device' ? 'Capturing audio output stream...' : 'Listening to room audio...'}
-                    </p>
-                    <button
-                      onClick={stopAudioCapture}
-                      className="px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs rounded-full border border-white/10 cursor-pointer"
-                    >
-                      Cancel
-                    </button>
+                    <div className="space-y-1">
+                      <p className="text-xs text-amber-300 font-medium animate-pulse">
+                        {recognitionMode === 'device' ? 'Capturing audio stream...' : 'Listening to ambient music...'}
+                      </p>
+                      <p className="text-[10px] text-neutral-400">
+                        {countdown} seconds remaining. Speak or play music clearly.
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-center gap-2 pt-1">
+                      <button
+                        onClick={stopAndAnalyzeEarly}
+                        className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs rounded-full shadow transition cursor-pointer"
+                      >
+                        Stop & Identify Now
+                      </button>
+                      <button
+                        onClick={cancelAudioCapture}
+                        className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs rounded-full border border-white/10 cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 )}
 
                 {recognitionState === 'analyzing' && (
-                  <div className="space-y-3">
-                    <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mx-auto" />
-                    <p className="text-xs text-neutral-300 font-medium">
-                      Fingerprinting audio and matching music catalogue...
+                  <div className="space-y-3 py-4">
+                    <div className="w-10 h-10 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mx-auto" />
+                    <p className="text-xs text-neutral-200 font-semibold">
+                      Analyzing audio with Gemini AI...
+                    </p>
+                    <p className="text-[11px] text-neutral-400">
+                      Verifying song identity against Loopra catalogue...
                     </p>
                   </div>
                 )}
 
                 {recognitionState === 'result' && identifiedResult && (
-                  <div className="w-full max-w-sm bg-neutral-900/90 border border-amber-500/40 rounded-xl p-4 text-left shadow-xl space-y-3 animate-in fade-in">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded">
-                        Match {identifiedResult.confidence}%
+                  <div className="w-full max-w-sm bg-neutral-900/95 border border-amber-500/40 rounded-xl p-4 text-left shadow-xl space-y-3 animate-in fade-in">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border ${
+                        identifiedResult.status === 'verified'
+                          ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                          : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                      }`}>
+                        {identifiedResult.status === 'verified' ? '✓ Verified' : '~ Probable'} Match ({identifiedResult.confidence}%)
                       </span>
-                      <span className="text-[10px] text-neutral-400">Song Identified</span>
+                      <span className="text-[10px] text-neutral-400">Gemini Recognition</span>
                     </div>
 
                     <div>
-                      <h5 className="text-sm font-bold text-white line-clamp-1">{identifiedResult.title}</h5>
-                      <p className="text-xs text-amber-400/90 line-clamp-1">{identifiedResult.artist}</p>
+                      <h5 className="text-base font-bold text-white line-clamp-1">{identifiedResult.title}</h5>
+                      <p className="text-xs text-amber-400 font-medium line-clamp-1">{identifiedResult.artist}</p>
                       {identifiedResult.album && (
                         <p className="text-[10px] text-neutral-400 line-clamp-1">Album: {identifiedResult.album}</p>
                       )}
                     </div>
 
+                    {/* Metadata tags */}
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      {identifiedResult.language && (
+                        <span className="px-2 py-0.5 bg-neutral-800 text-neutral-300 text-[10px] rounded border border-white/5">
+                          🗣️ {identifiedResult.language}
+                        </span>
+                      )}
+                      {identifiedResult.genre && (
+                        <span className="px-2 py-0.5 bg-neutral-800 text-neutral-300 text-[10px] rounded border border-white/5">
+                          🎵 {identifiedResult.genre}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Commentary */}
                     {identifiedResult.commentary && (
-                      <p className="text-[11px] text-neutral-300 italic bg-neutral-950/60 p-2.5 rounded-lg border border-white/5">
+                      <p className="text-[11px] text-neutral-300 italic bg-neutral-950/70 p-2.5 rounded-lg border border-white/5 leading-relaxed">
                         "{identifiedResult.commentary}"
                       </p>
                     )}
 
-                    <div className="flex items-center gap-2 pt-1">
-                      {identifiedResult.playableTrack && (
+                    {/* Loopra Playback Availability */}
+                    {identifiedResult.availableInLoopra && identifiedResult.playableTrack ? (
+                      <div className="pt-1">
                         <button
                           onClick={() => handleCardPlayPauseClick(identifiedResult.playableTrack)}
-                          className="flex-1 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-neutral-950 font-bold text-xs rounded-lg shadow-md hover:brightness-110 active:scale-95 transition text-center flex items-center justify-center gap-1.5 cursor-pointer"
+                          className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-neutral-950 font-bold text-xs rounded-lg shadow-md hover:brightness-110 active:scale-95 transition text-center flex items-center justify-center gap-1.5 cursor-pointer"
                         >
                           {isTrackPlaying(identifiedResult.playableTrack) ? (
                             <>
-                              <span>⏸️</span> Pause
+                              <span>⏸️</span> Pause in Loopra
                             </>
                           ) : (
                             <>
@@ -948,30 +1038,55 @@ export default function LoopraAiCompanion({
                             </>
                           )}
                         </button>
-                      )}
+                      </div>
+                    ) : (
+                      <div className="bg-neutral-950/80 border border-neutral-800 rounded-lg p-2.5 text-[11px] text-neutral-400 space-y-1">
+                        <p className="text-amber-400/90 font-medium flex items-center gap-1">
+                          <span>ℹ️</span> Not in Loopra Catalogue
+                        </p>
+                        <p className="text-[10px] text-neutral-500 leading-relaxed">
+                          This song was recognized, but an exact match is not currently in Loopra's verified catalogue. Loopra never plays unrelated tracks as fallback.
+                        </p>
+                      </div>
+                    )}
 
+                    <div className="flex items-center gap-2 pt-1 border-t border-white/5">
                       <button
                         onClick={() => setRecognitionState('idle')}
-                        className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs rounded-lg border border-white/10 cursor-pointer"
+                        className="w-full py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs rounded-lg border border-white/10 cursor-pointer font-medium"
                       >
-                        Capture Again
+                        Listen Again
                       </button>
                     </div>
+                  </div>
+                )}
+
+                {recognitionState === 'not_found' && (
+                  <div className="w-full max-w-sm bg-neutral-900/90 border border-neutral-800 rounded-xl p-4 text-center space-y-3">
+                    <span className="text-2xl block">❓</span>
+                    <h5 className="text-xs font-bold text-neutral-200">Song Not Recognized</h5>
+                    <p className="text-[11px] text-neutral-400 leading-relaxed">
+                      {recognitionError || 'Could not identify a song from this audio snippet. Loopra AI strictly avoids guessing or fabricating song identities.'}
+                    </p>
+                    <button
+                      onClick={() => setRecognitionState('idle')}
+                      className="px-5 py-2 bg-amber-500 text-neutral-950 text-xs rounded-lg font-bold hover:bg-amber-400 transition cursor-pointer"
+                    >
+                      Try Again
+                    </button>
                   </div>
                 )}
 
                 {recognitionState === 'unconfigured' && (
                   <div className="w-full max-w-sm bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-left space-y-2">
                     <h5 className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                      <span>⚙️</span> Recognition API Setup Required
+                      <span>⚙️</span> Gemini API Setup Required
                     </h5>
                     <p className="text-[11px] text-neutral-300 leading-relaxed">
-                      Song fingerprinting requires ACRCloud credentials configured on Render:
+                      Gemini song recognition requires a Gemini API key configured on the server:
                     </p>
-                    <div className="bg-neutral-900/90 p-2 rounded text-[10px] font-mono text-amber-400 space-y-1">
-                      <div>ACRCLOUD_HOST</div>
-                      <div>ACRCLOUD_ACCESS_KEY</div>
-                      <div>ACRCLOUD_SECRET_KEY</div>
+                    <div className="bg-neutral-900/90 p-2 rounded text-[10px] font-mono text-amber-400">
+                      GEMINI_API_KEY
                     </div>
                     <button
                       onClick={() => setRecognitionState('idle')}
@@ -984,7 +1099,7 @@ export default function LoopraAiCompanion({
 
                 {recognitionState === 'error' && (
                   <div className="w-full max-w-sm bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-center space-y-3">
-                    <p className="text-xs text-red-300 font-medium">{recognitionError || 'Song recognition failed'}</p>
+                    <p className="text-xs text-red-300 font-medium leading-relaxed">{recognitionError || 'Song recognition failed'}</p>
                     <div className="flex items-center justify-center gap-2">
                       <button
                         onClick={() => setRecognitionState('idle')}

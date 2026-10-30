@@ -159,7 +159,7 @@ router.post('/chat', optionalAuth, async (req, res) => {
 
 /**
  * POST /api/ai-music/identify
- * Microphone audio recognition service.
+ * Gemini-powered song recognition service with catalogue verification.
  */
 router.post('/identify', optionalAuth, async (req, res) => {
   const clientKey = req.user ? req.user._id.toString() : (req.ip || 'guest');
@@ -179,81 +179,78 @@ router.post('/identify', optionalAuth, async (req, res) => {
     const recognitionResult = await musicRecognitionService.identifyAudio({
       audioBase64,
       mimeType: mimeType || 'audio/webm',
-      durationSeconds: durationSeconds || 6
+      durationSeconds: durationSeconds || 10
     });
 
-    // If provider is not configured
+    // If Gemini recognition is not configured
     if (!recognitionResult.configured && recognitionResult.configured === false) {
       return res.status(200).json({
         success: false,
         configured: false,
-        message: recognitionResult.message,
-        requiredEnvVars: recognitionResult.requiredEnvVars
+        message: recognitionResult.message || 'Gemini API is not configured on the server.',
+        requiredEnvVars: recognitionResult.requiredEnvVars || ['GEMINI_API_KEY']
       });
     }
 
-    // If recognition failed to match
+    // If technical error occurred during analysis
     if (!recognitionResult.success) {
       return res.status(200).json({
         success: false,
         configured: true,
-        message: recognitionResult.message || 'No matching song detected. Please try capturing closer to the speakers.'
+        message: recognitionResult.error || 'Gemini song recognition encountered an issue.',
+        isQuotaError: Boolean(recognitionResult.isQuotaError)
       });
     }
 
-    // Song was successfully recognized!
-    const { title, artist, album, score, releaseDate } = recognitionResult;
-
-    // Search for a playable candidate in Loopra's single-track catalog
-    let playableTrack = null;
-    try {
-      const candidates = await catalogService.fetchDynamicCandidates([`${title} ${artist}`], 1);
-      if (candidates && candidates.length > 0) {
-        playableTrack = candidates[0];
-      }
-    } catch (e) {
-      console.warn('[AiMusicRoutes] Notice searching playable candidate for identified song:', e.message);
-    }
-
-    // If not found in dynamic search, construct verified metadata object
-    if (!playableTrack) {
-      playableTrack = {
-        title,
-        artist,
-        album: album || 'Identified Single',
-        channel: artist,
-        thumbnail: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&q=80',
-        duration: '3:30',
-        isIdentified: true
-      };
-    }
-
-    // Generate short AI commentary if Gemini is configured
-    let commentary = `Identified with ${score}% match confidence.`;
-    if (aiMusicCompanionService.isGeminiConfigured()) {
-      try {
-        const client = aiMusicCompanionService.getClient();
-        const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-        const aiPrompt = `In 2 brief, engaging sentences, share an interesting musical trivia or cultural insight about the song "${title}" by ${artist} (${releaseDate || 'Retro/Contemporary'}). Keep it warm and concise.`;
-        const aiRes = await client.models.generateContent({
-          model: modelName,
-          contents: aiPrompt
-        });
-        if (aiRes.text) {
-          commentary = aiRes.text.trim();
+    // If audio is unrecognizable, noise, or uncertain
+    if (!recognitionResult.recognized || recognitionResult.status === 'unknown') {
+      return res.status(200).json({
+        success: true,
+        configured: true,
+        recognized: false,
+        message: recognitionResult.reason || 'Could not recognize a song in this audio sample. Please record closer to the audio source.',
+        match: {
+          title: 'Unknown Song',
+          artist: 'Unknown Artist',
+          status: 'unknown',
+          confidence: recognitionResult.confidence || 0,
+          reason: recognitionResult.reason,
+          availableInLoopra: false,
+          playableTrack: null
         }
-      } catch (e) { }
+      });
+    }
+
+    // Song was recognized!
+    const { title, artist, album, language, genre, confidence, status, reason } = recognitionResult;
+
+    // Search actual Loopra catalogue for an EXACT verified single-track match
+    const catalogueMatch = await catalogService.findExactCatalogueMatch({ title, artist, album });
+    const availableInLoopra = catalogueMatch.isExactMatch && Boolean(catalogueMatch.matchedTrack);
+    const playableTrack = availableInLoopra ? catalogueMatch.matchedTrack : null;
+
+    let commentary = `${status === 'verified' ? 'Verified Match' : 'Probable Match'} (${confidence}% confidence): "${title}" by ${artist}.`;
+    if (reason) {
+      commentary += ` ${reason}`;
+    }
+    if (!availableInLoopra) {
+      commentary += ` Note: An exact match for this song is not currently in Loopra's catalogue.`;
     }
 
     return res.json({
       success: true,
       configured: true,
+      recognized: true,
       match: {
         title,
         artist,
         album,
-        confidence: score,
-        releaseDate,
+        language,
+        genre,
+        confidence,
+        status, // 'verified' | 'probable'
+        reason,
+        availableInLoopra,
         playableTrack,
         commentary
       }
@@ -261,7 +258,7 @@ router.post('/identify', optionalAuth, async (req, res) => {
   } catch (err) {
     console.error('[AiMusicRoutes] Identification error:', err);
     return res.status(500).json({
-      error: 'An error occurred during song recognition',
+      error: 'An error occurred during Gemini song recognition',
       details: err.message
     });
   }

@@ -159,5 +159,98 @@ export const catalogService = {
     }
 
     return Array.from(candidateMap.values());
+  },
+
+  /**
+   * Matches an identified song strictly against the actual Loopra catalogue.
+   * Matches using normalized title and artist.
+   * Never returns an unrelated track as a fallback.
+   * If no exact match exists, returns { isExactMatch: false, matchedTrack: null }.
+   */
+  async findExactCatalogueMatch({ title, artist, album } = {}) {
+    if (!title || typeof title !== 'string' || title.toLowerCase() === 'unknown') {
+      return { isExactMatch: false, matchedTrack: null, reason: 'Invalid or unknown title' };
+    }
+
+    const clean = (str = '') =>
+      str
+        .toLowerCase()
+        .replace(/\(.*?\)/g, '')
+        .replace(/\[.*?\]/g, '')
+        .replace(/official video|music video|lyric video|full song|audio song|video song|hd|4k|remastered/gi, '')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const targetTitle = clean(title);
+    if (!targetTitle) {
+      return { isExactMatch: false, matchedTrack: null, reason: 'Target title reduced to empty' };
+    }
+
+    const targetArtist = (artist && artist.toLowerCase() !== 'unknown') ? clean(artist) : '';
+
+    // 1. Search in verified curated tracks (core catalog + curated collections)
+    const curated = await this.getCuratedTracks();
+    for (const track of curated) {
+      const trackTitle = clean(track.title);
+      const trackArtist = clean(track.artist || track.channel);
+
+      const titleMatches = trackTitle === targetTitle ||
+        trackTitle.startsWith(targetTitle) ||
+        targetTitle.startsWith(trackTitle) ||
+        trackTitle.includes(targetTitle);
+
+      if (titleMatches) {
+        if (targetArtist) {
+          const artistTokens = targetArtist.split(' ').filter(w => w.length > 2);
+          const artistMatches = artistTokens.length === 0 || artistTokens.some(tok => trackArtist.includes(tok) || trackTitle.includes(tok));
+          if (artistMatches) {
+            return { isExactMatch: true, matchedTrack: track, matchType: 'curated' };
+          }
+        } else {
+          return { isExactMatch: true, matchedTrack: track, matchType: 'curated' };
+        }
+      }
+    }
+
+    // 2. Search dynamic candidates in Loopra catalogue using YouTube search with strict single-song filter
+    try {
+      const searchQueries = [
+        targetArtist ? `${targetTitle} ${targetArtist} official song` : `${targetTitle} official song`
+      ];
+      const dynamicCandidates = await this.fetchDynamicCandidates(searchQueries, 5);
+
+      for (const track of dynamicCandidates) {
+        const trackTitle = clean(track.title);
+        const trackArtist = clean(track.artist || track.channel);
+
+        // Strict verification: title must contain all significant tokens of the target title
+        const targetTokens = targetTitle.split(' ').filter(w => w.length > 2);
+        const allTokensPresent = targetTokens.length > 0
+          ? targetTokens.every(token => trackTitle.includes(token))
+          : trackTitle.includes(targetTitle);
+
+        if (allTokensPresent) {
+          if (targetArtist) {
+            const artistTokens = targetArtist.split(' ').filter(w => w.length > 2);
+            const artistMatches = artistTokens.length === 0 || artistTokens.some(tok => trackArtist.includes(tok) || trackTitle.includes(tok));
+            if (artistMatches) {
+              return { isExactMatch: true, matchedTrack: track, matchType: 'catalogue_search' };
+            }
+          } else {
+            return { isExactMatch: true, matchedTrack: track, matchType: 'catalogue_search' };
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[CatalogService] Exact match search notice:', e.message);
+    }
+
+    // Strict non-hallucination: No exact verified match found
+    return {
+      isExactMatch: false,
+      matchedTrack: null,
+      reason: `No exact catalogue match found for "${title}" by ${artist || 'Unknown'}`
+    };
   }
 };

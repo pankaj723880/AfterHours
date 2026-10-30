@@ -103,9 +103,9 @@ export const aiMusicCompanionClient = {
   },
 
   /**
-   * Sends microphone audio recording to backend for identification.
+   * Sends audio sample to backend for Gemini song identification.
    */
-  async identifySong(backendUrl, authToken = null, { audioBlob, mimeType = 'audio/webm', durationSeconds = 6 }) {
+  async identifySong(backendUrl, authToken = null, { audioBlob, mimeType = 'audio/webm', durationSeconds = 10 }) {
     const headers = { 'Content-Type': 'application/json' };
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
 
