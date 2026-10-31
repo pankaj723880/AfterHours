@@ -21,14 +21,19 @@ export default function PersonalizedRecommendationsSection({
 
   const fetchRecommendations = useCallback(async (isRefresh = false) => {
     if (!authToken) {
-      // Unauthenticated: fetch general discovery tracks
+      // Unauthenticated: fetch general discovery tracks with strictly disjoint Daily Mix and Discover
       try {
         setLoading(true);
         const res = await recommendationsClient.getDiscover(backendUrl);
+        const items = res.items || [];
+        const dailyMix = items.slice(0, 5);
+        const dailyMixIds = new Set(dailyMix.map(t => t.id || t.videoId));
+        const discover = items.slice(5).filter(t => !dailyMixIds.has(t.id || t.videoId)).slice(0, 5);
+
         setData({
-          madeForYou: res.items || [],
-          dailyMix: (res.items || []).slice(0, 6),
-          discover: (res.items || []).slice(4, 10),
+          madeForYou: items.slice(0, 6),
+          dailyMix,
+          discover,
           isGuest: true
         });
         setError(null);
@@ -46,9 +51,26 @@ export default function PersonalizedRecommendationsSection({
 
       const res = await recommendationsClient.getPersonalized(backendUrl, authToken, isRefresh);
       if (res?.data) {
-        setData(res.data);
-        if (typeof res.data.recommendationsEnabled === 'boolean') {
-          setRecommendationsEnabled(res.data.recommendationsEnabled);
+        const rawData = res.data;
+        const dailyMix = rawData.dailyMix || [];
+        const dailyMixIds = new Set(dailyMix.map(t => t.id || t.videoId));
+        const dailyMixTitles = new Set(dailyMix.map(t => (t.title || '').toLowerCase().trim()));
+
+        // Client-side cross-section deduplication guarantee
+        const distinctDiscover = (rawData.discover || []).filter(t => {
+          const id = t.id || t.videoId;
+          const title = (t.title || '').toLowerCase().trim();
+          return id && !dailyMixIds.has(id) && !dailyMixTitles.has(title);
+        });
+
+        setData({
+          ...rawData,
+          dailyMix,
+          discover: distinctDiscover
+        });
+
+        if (typeof rawData.recommendationsEnabled === 'boolean') {
+          setRecommendationsEnabled(rawData.recommendationsEnabled);
         }
         setError(null);
       }
@@ -102,12 +124,29 @@ export default function PersonalizedRecommendationsSection({
   const renderTrackCard = (track, idx) => {
     if (!track) return null;
     const trackLiked = isLiked?.(track);
-    const thumbnail = track.thumbnail || `https://i.ytimg.com/vi/${track.id || track.videoId}/hqdefault.jpg`;
+    const trackId = track.id || track.videoId;
+    const thumbnail = track.thumbnail || `https://i.ytimg.com/vi/${trackId}/hqdefault.jpg`;
+
+    // Ensure clean, verified artist - eliminate "Unknown Artist" when channel or metadata exists
+    let cleanArtist = track.artist;
+    if (!cleanArtist || cleanArtist === 'Unknown Artist' || cleanArtist === 'Various Artists' || cleanArtist === 'Unknown') {
+      cleanArtist = track.channel || 'Loopra Artist';
+    }
+
+    const playableTrack = {
+      ...track,
+      id: trackId,
+      videoId: trackId,
+      title: track.title,
+      artist: cleanArtist,
+      channel: track.channel || cleanArtist,
+      thumbnail
+    };
 
     return (
       <div
-        key={`${track.id || track.videoId || idx}-${idx}`}
-        onClick={() => onPlayTrack(track)}
+        key={`${trackId || idx}-${idx}`}
+        onClick={() => onPlayTrack(playableTrack)}
         className="group relative flex flex-col shrink-0 w-36 sm:w-44 md:w-48 bg-neutral-900/60 hover:bg-neutral-800/80 border border-neutral-800/80 hover:border-amber-500/40 rounded-2xl p-2.5 sm:p-3 transition-all duration-300 hover:shadow-xl hover:shadow-amber-500/10 cursor-pointer select-none"
       >
         <div className="relative aspect-square w-full rounded-xl overflow-hidden mb-2 sm:mb-2.5 bg-neutral-950">
@@ -117,7 +156,7 @@ export default function PersonalizedRecommendationsSection({
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             onError={(e) => {
               if (!e.target.src.includes('hqdefault')) {
-                e.target.src = `https://i.ytimg.com/vi/${track.id || track.videoId}/hqdefault.jpg`;
+                e.target.src = `https://i.ytimg.com/vi/${trackId}/hqdefault.jpg`;
               }
             }}
           />
@@ -144,8 +183,8 @@ export default function PersonalizedRecommendationsSection({
         <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-amber-400 transition" title={track.title}>
           {track.title}
         </h4>
-        <p className="text-[11px] sm:text-xs text-neutral-400 truncate mt-0.5" title={track.artist}>
-          {track.artist || 'Unknown Artist'}
+        <p className="text-[11px] sm:text-xs text-neutral-400 truncate mt-0.5" title={cleanArtist}>
+          {cleanArtist}
         </p>
 
         {/* Action icons bar on card */}
@@ -153,7 +192,7 @@ export default function PersonalizedRecommendationsSection({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onToggleLike?.(track);
+              onToggleLike?.(playableTrack);
             }}
             className={`p-1 rounded-lg transition ${
               trackLiked ? 'text-amber-400 hover:text-amber-300' : 'text-neutral-500 hover:text-white'
@@ -169,7 +208,7 @@ export default function PersonalizedRecommendationsSection({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onAddToPlaylist(track, e);
+                onAddToPlaylist(playableTrack, e);
               }}
               className="p-1 rounded-lg text-neutral-500 hover:text-white transition"
               title="Add to playlist"

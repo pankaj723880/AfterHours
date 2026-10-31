@@ -1,4 +1,5 @@
 import express from 'express';
+import jwt from 'jsonwebtoken';
 import { authenticateToken } from '../middleware/auth.js';
 import { recommendationEngine } from '../services/recommendationEngine.js';
 import { listeningEventService } from '../services/listeningEventService.js';
@@ -37,10 +38,19 @@ router.get('/personalized', authenticateToken, async (req, res) => {
 router.get('/daily-mix', authenticateToken, async (req, res) => {
   try {
     const userId = req.user._id || req.user.userId || req.user.id;
+    const limit = Math.max(1, Math.min(50, parseInt(req.query.limit, 10) || 10));
+    const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+
     const result = await recommendationEngine.getPersonalizedRecommendations(userId);
+    const allItems = result.dailyMix || [];
+    const items = allItems.slice(offset, offset + limit);
+
     res.json({
       success: true,
-      items: result.dailyMix || []
+      items,
+      total: allItems.length,
+      offset,
+      limit
     });
   } catch (err) {
     console.error('[Recommendations Daily Mix Error]:', err.message);
@@ -50,15 +60,56 @@ router.get('/daily-mix', authenticateToken, async (req, res) => {
 
 /**
  * 3. GET /api/recommendations/discover
- * Retrieves fresh discovery recommendations
+ * Retrieves fresh discovery recommendations.
+ * If authenticated, returns user's distinct personalized discovery tracks (zero overlap with Daily Mix).
+ * Supports pagination (limit & offset).
  */
 router.get('/discover', async (req, res) => {
   try {
+    const limit = Math.max(1, Math.min(50, parseInt(req.query.limit, 10) || 12));
+    const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+
+    // Optional user token check
+    let userId = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const token = authHeader.split(' ')[1];
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'loopra-super-secret-jwt-key');
+        userId = decoded.userId || decoded.id || decoded._id;
+      } catch (e) {}
+    }
+
+    if (userId) {
+      const result = await recommendationEngine.getPersonalizedRecommendations(userId);
+      const allItems = result.discover || [];
+      const items = allItems.slice(offset, offset + limit);
+      return res.json({
+        success: true,
+        items,
+        total: allItems.length,
+        offset,
+        limit
+      });
+    }
+
+    // Unauthenticated / Guest: Return curated tracks with distinct discovery mood (indie, acoustic, sufi)
     const candidates = await catalogService.getCuratedTracks();
-    const shuffled = [...candidates].sort(() => 0.5 - Math.random());
+    const discoveryTracks = candidates.filter(t => {
+      const g = (t.genre || '').toLowerCase();
+      const m = (t.mood || '').toLowerCase();
+      return m.includes('underrated') || g.includes('indie') || g.includes('acoustic') || g.includes('sufi');
+    });
+    const fallbackTracks = candidates.filter(t => !discoveryTracks.some(d => (d.id || d.videoId) === (t.id || t.videoId)));
+    const merged = [...discoveryTracks, ...fallbackTracks];
+    const items = merged.slice(offset, offset + limit).map(t => ({ ...t, reason: 'Curated Discovery' }));
+
     res.json({
       success: true,
-      items: shuffled.slice(0, 12).map(t => ({ ...t, reason: 'Curated Discovery' }))
+      items,
+      total: merged.length,
+      offset,
+      limit
     });
   } catch (err) {
     console.error('[Recommendations Discover Error]:', err.message);

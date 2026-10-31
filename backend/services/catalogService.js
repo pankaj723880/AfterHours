@@ -14,6 +14,53 @@ const decodeHtml = (str = '') => {
     .replace(/&gt;/g, '>');
 };
 
+/**
+ * Normalizes artist, title, and channel metadata to guarantee no "Unknown Artist"
+ * labels whenever channel or title information exists.
+ */
+export function cleanArtistAndTitle({ title = '', artist = '', channel = '', author = null } = {}) {
+  let cleanTitle = decodeHtml(title).trim();
+  let cleanArtist = decodeHtml(artist || '').trim();
+  let cleanChannel = decodeHtml(channel || author?.name || '').trim();
+
+  // Strip generic video noise from title
+  cleanTitle = cleanTitle
+    .replace(/\s*\|\s*Official (?:Music )?Video.*$/i, '')
+    .replace(/\s*\(\s*Official (?:Music )?Video\s*\)/i, '')
+    .replace(/\s*\[\s*Official (?:Music )?Video\s*\]/i, '')
+    .trim();
+
+  const isGeneric = (str) => {
+    if (!str) return true;
+    const lower = str.toLowerCase().trim();
+    return lower === 'unknown' || lower === 'unknown artist' || lower === 'various' || lower === 'various artists' || lower === 'artist' || lower === '';
+  };
+
+  if (isGeneric(cleanArtist)) {
+    // Check if title has separator "Artist - Title" or "Title | Artist"
+    if (cleanTitle.includes(' - ')) {
+      const parts = cleanTitle.split(' - ').map(p => p.trim());
+      if (parts.length === 2 && parts[0].length < 40 && parts[1].length > 1) {
+        cleanArtist = parts[0];
+        cleanTitle = parts[1];
+      }
+    }
+  }
+
+  if (isGeneric(cleanArtist) && cleanChannel && !isGeneric(cleanChannel)) {
+    const lowerChan = cleanChannel.toLowerCase();
+    if (!lowerChan.includes('loopra') && !lowerChan.includes('youtube') && !lowerChan.includes('topic')) {
+      cleanArtist = cleanChannel;
+    }
+  }
+
+  if (isGeneric(cleanArtist)) {
+    cleanArtist = cleanChannel || 'Loopra Artist';
+  }
+
+  return { title: cleanTitle, artist: cleanArtist, channel: cleanChannel };
+}
+
 // Foundational verified catalog tracks for immediate instant retrieval across moods & eras
 export const CORE_CATALOG_TRACKS = [
   // Romantic Classics & Modern Hits
@@ -112,12 +159,17 @@ export const catalogService = {
               const trackId = t.videoId || t.id;
               if (trackId && !t.isHidden && !candidateMap.has(trackId) && isSingleSong(t)) {
                 const verification = verifySingleSong(t);
+                const meta = cleanArtistAndTitle({
+                  title: t.title,
+                  artist: t.artist,
+                  channel: t.channel
+                });
                 candidateMap.set(trackId, {
                   id: trackId,
                   videoId: trackId,
-                  title: decodeHtml(t.title),
-                  artist: decodeHtml(t.artist || 'Unknown Artist'),
-                  channel: decodeHtml(t.channel || t.artist || 'Loopra Collection'),
+                  title: meta.title,
+                  artist: meta.artist,
+                  channel: meta.channel,
                   thumbnail: t.thumbnail || `https://i.ytimg.com/vi/${trackId}/hqdefault.jpg`,
                   duration: t.duration || '3:30',
                   genre: col.name || col.category || 'Desi Lounge',
@@ -159,12 +211,17 @@ export const catalogService = {
           if (!verification.isValid) continue;
 
           seenIds.add(v.videoId);
+          const meta = cleanArtistAndTitle({
+            title: v.title,
+            artist: v.artist || v.author?.name,
+            channel: v.channel || v.author?.name
+          });
           dynamicTracks.push({
             id: v.videoId,
             videoId: v.videoId,
-            title: decodeHtml(v.title),
-            artist: decodeHtml(v.artist || v.author?.name || 'Various Artists'),
-            channel: decodeHtml(v.channel || v.author?.name || ''),
+            title: meta.title,
+            artist: meta.artist,
+            channel: meta.channel,
             thumbnail: v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
             duration: v.timestamp || v.duration || '3:30',
             genre: query,

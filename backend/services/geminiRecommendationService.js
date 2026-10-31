@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { getCanonicalSongKey } from './recommendationHistoryService.js';
 
 // In-memory diagnostics accumulator (No sensitive data)
 export const geminiDiagnostics = {
@@ -91,8 +92,9 @@ ${JSON.stringify(compactCandidates.slice(0, 40), null, 2)}
 2. DO NOT invent, hallucinate, or generate any new YouTube IDs, URLs, or tracks not in the list.
 3. Organize the selected songs into the following structured sections:
    - "madeForYou": Top 5-8 songs tailored to their overall artist, mood, and genre affinity.
-   - "dailyMix": 4-6 songs offering a cohesive, smooth listening blend.
-   - "discover": 3-5 high-quality tracks that broaden their musical horizon based on subtle adjacent genres.
+   - "dailyMix": 4-6 songs offering a cohesive, smooth listening blend of familiar favorites.
+   - "discover": 3-5 high-quality tracks that broaden their musical horizon with novel artists or adjacent genres.
+   * ABSOLUTE RULE FOR DISCOVER: "discover" MUST BE COMPLETELY DISJOINT from "dailyMix". Under NO circumstances may any song in "dailyMix" appear in "discover".
    - "becauseYouListenedToReason": A brief 1-sentence explanation of who or what inspired this mix (e.g., "Because you enjoy romantic melodies by Arijit Singh").
    - "moreLikeRecent": 3-5 songs matching the vibe of their recent plays.
 4. For each selected song, provide:
@@ -168,12 +170,44 @@ Output strictly valid JSON complying with this structure.
       };
 
       const hydratedMadeForYou = validateAndHydrate(parsed.madeForYou);
-      const hydratedDailyMix = validateAndHydrate(parsed.dailyMix);
-      const hydratedDiscover = validateAndHydrate(parsed.discover);
+      let hydratedDailyMix = validateAndHydrate(parsed.dailyMix);
+      let rawDiscover = validateAndHydrate(parsed.discover);
       const hydratedMoreLikeRecent = validateAndHydrate(parsed.moreLikeRecent);
 
       if (hydratedMadeForYou.length === 0 && hydratedDailyMix.length === 0) {
         throw new Error('Gemini did not return sufficient valid catalog candidate IDs');
+      }
+
+      // If dailyMix is empty, take from madeForYou
+      if (hydratedDailyMix.length === 0) {
+        hydratedDailyMix = hydratedMadeForYou.slice(0, 5);
+      }
+
+      // Strict Cross-Section Deduplication: discover MUST NOT overlap with dailyMix
+      const dailyMixIds = new Set(hydratedDailyMix.map(t => t.id || t.videoId));
+      const dailyMixKeys = new Set(hydratedDailyMix.map(t => getCanonicalSongKey(t)));
+
+      let distinctDiscover = rawDiscover.filter(t => {
+        const id = t.id || t.videoId;
+        const key = getCanonicalSongKey(t);
+        return !dailyMixIds.has(id) && !dailyMixKeys.has(key);
+      });
+
+      // Backfill discover from candidate pool if needed with novel tracks
+      if (distinctDiscover.length < 4) {
+        for (const cand of candidates) {
+          const id = cand.id || cand.videoId;
+          const key = getCanonicalSongKey(cand);
+          if (dailyMixIds.has(id) || dailyMixKeys.has(key)) continue;
+          if (distinctDiscover.some(d => (d.id || d.videoId) === id || getCanonicalSongKey(d) === key)) continue;
+
+          distinctDiscover.push({
+            ...cand,
+            reason: 'Broaden your taste with adjacent sounds',
+            source: 'gemini_supplemented'
+          });
+          if (distinctDiscover.length >= 5) break;
+        }
       }
 
       geminiDiagnostics.successfulGenerations += 1;
@@ -189,8 +223,8 @@ Output strictly valid JSON complying with this structure.
         },
         recommendations: {
           madeForYou: hydratedMadeForYou,
-          dailyMix: hydratedDailyMix.length > 0 ? hydratedDailyMix : hydratedMadeForYou.slice(0, 4),
-          discover: hydratedDiscover.length > 0 ? hydratedDiscover : candidates.slice(8, 14),
+          dailyMix: hydratedDailyMix,
+          discover: distinctDiscover,
           becauseYouListenedTo: {
             baseTrack: userProfile.recentTracks?.[0] || hydratedMadeForYou[0] || null,
             recommendations: hydratedMadeForYou.slice(0, 4)

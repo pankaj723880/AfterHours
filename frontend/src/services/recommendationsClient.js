@@ -27,12 +27,12 @@ export const recommendationsClient = {
   },
 
   /**
-   * Fetches Daily Mix tracks.
+   * Fetches Daily Mix tracks with optional pagination.
    */
-  async getDailyMix(backendUrl, token) {
+  async getDailyMix(backendUrl, token, { limit = 10, offset = 0 } = {}) {
     if (!token) return { success: false, items: [] };
 
-    const url = `${backendUrl.replace(/\/+$/, '')}/api/recommendations/daily-mix`;
+    const url = `${backendUrl.replace(/\/+$/, '')}/api/recommendations/daily-mix?limit=${limit}&offset=${offset}`;
     const res = await fetch(url, {
       method: 'GET',
       headers: {
@@ -46,13 +46,18 @@ export const recommendationsClient = {
   },
 
   /**
-   * Fetches discovery tracks (works unauthenticated).
+   * Fetches discovery tracks with optional pagination and token awareness.
    */
-  async getDiscover(backendUrl) {
-    const url = `${backendUrl.replace(/\/+$/, '')}/api/recommendations/discover`;
+  async getDiscover(backendUrl, token = null, { limit = 12, offset = 0 } = {}) {
+    const url = `${backendUrl.replace(/\/+$/, '')}/api/recommendations/discover?limit=${limit}&offset=${offset}`;
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const res = await fetch(url, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' }
+      headers
     });
 
     if (!res.ok) return { success: false, items: [] };
