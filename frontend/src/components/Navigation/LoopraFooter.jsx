@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ChevronDown,
   ChevronUp,
@@ -27,6 +28,25 @@ export default function LoopraFooter({
 }) {
   const [openAccordion, setOpenAccordion] = useState(null);
   const [legalModalTab, setLegalModalTab] = useState(null);
+
+  useEffect(() => {
+    if (!legalModalTab) return;
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setLegalModalTab(null);
+      }
+    };
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [legalModalTab]);
 
   const siteName = branding?.siteName || 'Loopra';
   const logoUrl = branding?.logoUrl || '/loopra-logo.png';
@@ -397,16 +417,16 @@ export default function LoopraFooter({
 
       </div>
 
-      {/* 5. LEGAL & POLICIES POPUP MODAL */}
-      {legalModalTab && (
+      {/* 5. LEGAL & POLICIES POPUP MODAL (RENDERED VIA PORTAL DIRECTLY TO BODY FOR VIEWPORT CENTERING) */}
+      {legalModalTab && typeof document !== 'undefined' && createPortal(
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+          className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
           onClick={() => setLegalModalTab(null)}
         >
           <div
-            className="relative w-full max-w-xl max-h-[85vh] bg-neutral-900 border border-amber-500/30 rounded-3xl shadow-2xl overflow-hidden flex flex-col"
+            className="relative w-full max-w-xl max-h-[85vh] bg-neutral-900 border border-amber-500/30 rounded-3xl shadow-2xl overflow-hidden flex flex-col my-auto"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -528,8 +548,10 @@ export default function LoopraFooter({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </footer>
   );
 }
+

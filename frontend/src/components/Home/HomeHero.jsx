@@ -20,7 +20,37 @@ export default function HomeHero({
       <div className="absolute -top-16 -left-16 w-80 h-80 rounded-full bg-amber-500/15 blur-[100px] pointer-events-none" />
       <div className="absolute top-1/4 right-0 w-80 h-80 rounded-full bg-orange-500/15 blur-[90px] pointer-events-none" />
 
-      {/* Top Split Layout: Content on Left, Cinematic Headphone Person & Waveform on Right */}
+      {/* Cinematic Man with Headphones (man.png) - Full Height & Seamless Background Merge */}
+      <div className="absolute top-0 right-0 h-full w-[56%] sm:w-[50%] md:w-[44%] max-w-[440px] pointer-events-none select-none overflow-hidden z-0">
+        {/* Ambient warm golden glow behind the character */}
+        <div className="absolute inset-0 bg-gradient-to-l from-amber-500/25 via-orange-500/10 to-transparent blur-3xl pointer-events-none" />
+
+        {/* Full-Height Character Artwork */}
+        <img
+          src="/man.png"
+          alt="Person with headphones enjoying Loopra"
+          className="w-full h-full object-cover object-[center_top] sm:object-top"
+          style={{
+            maskImage: 'linear-gradient(to left, rgba(0,0,0,1) 40%, rgba(0,0,0,0.6) 70%, rgba(0,0,0,0) 100%), linear-gradient(to bottom, rgba(0,0,0,1) 60%, rgba(0,0,0,0) 98%)',
+            WebkitMaskImage: 'linear-gradient(to left, rgba(0,0,0,1) 40%, rgba(0,0,0,0.6) 70%, rgba(0,0,0,0) 100%), linear-gradient(to bottom, rgba(0,0,0,1) 60%, rgba(0,0,0,0) 98%)'
+          }}
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+          }}
+        />
+
+        {/* Seamless color merge overlays matching hero background (#181818 -> #121212 -> #0c0c0c) */}
+        {/* Left smooth fade */}
+        <div className="absolute inset-y-0 left-0 w-24 sm:w-36 bg-gradient-to-r from-[#181818] via-[#141414]/90 to-transparent pointer-events-none" />
+        {/* Bottom smooth fade behind search bar */}
+        <div className="absolute inset-x-0 bottom-0 h-20 sm:h-28 bg-gradient-to-t from-[#0c0c0c] via-[#0c0c0c]/85 to-transparent pointer-events-none" />
+        {/* Top subtle blend */}
+        <div className="absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-[#181818]/70 to-transparent pointer-events-none" />
+        {/* Right subtle softness */}
+        <div className="absolute inset-y-0 right-0 w-4 bg-gradient-to-l from-[#121212]/40 to-transparent pointer-events-none" />
+      </div>
+
+      {/* Top Split Layout: Content on Left, Spacer on Right */}
       <div className="relative z-10 flex items-start justify-between gap-3 sm:gap-6 min-h-[140px] sm:min-h-[160px]">
         {/* Left Column: Clock Pill + Brand Tagline + Headline + Subtitle */}
         <div className="flex-1 min-w-0 pr-2 sm:pr-4 flex flex-col justify-start">
@@ -50,43 +80,8 @@ export default function HomeHero({
           </p>
         </div>
 
-        {/* Right Column: Person with Headphones + Golden Waveform Graphic */}
-        <div className="relative shrink-0 w-32 sm:w-48 md:w-56 h-36 sm:h-44 flex items-center justify-end select-none pointer-events-none">
-          {/* Subtle golden ambient glow behind the character */}
-          <div className="absolute inset-0 bg-gradient-to-l from-amber-500/25 via-orange-500/15 to-transparent rounded-full blur-2xl" />
-
-          {/* Cinematic Headphone Profile Image */}
-          <div className="relative w-full h-full flex items-center justify-end overflow-hidden rounded-2xl">
-            <img
-              src="/hero-cinematic.png"
-              alt="Person with headphones listening to Loopra"
-              className="w-full h-full object-cover object-right mask-radial-fade"
-              style={{
-                maskImage: 'linear-gradient(to left, black 65%, transparent 100%)',
-                WebkitMaskImage: 'linear-gradient(to left, black 65%, transparent 100%)'
-              }}
-              onError={(e) => {
-                // If hero image fails, fallback gracefully
-                e.currentTarget.style.display = 'none';
-              }}
-            />
-
-            {/* Golden Vertical Equalizer Waveform Graphic */}
-            <div className="absolute bottom-3 left-2 sm:left-4 flex items-end gap-[2px] sm:gap-1 h-8 sm:h-12 z-20">
-              {[14, 22, 32, 18, 28, 36, 24, 16, 30, 20, 26, 12].map((height, i) => (
-                <span
-                  key={i}
-                  className="w-[2.5px] sm:w-[3px] bg-gradient-to-t from-amber-500 via-amber-400 to-amber-300 rounded-full animate-pulse shadow-[0_0_6px_rgba(245,158,11,0.6)]"
-                  style={{
-                    height: `${height}px`,
-                    animationDelay: `${(i % 5) * 150}ms`,
-                    animationDuration: '1.2s'
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
+        {/* Right Column Spacer: Preserves layout balance so text never clashes with artwork */}
+        <div className="shrink-0 w-28 min-[380px]:w-36 sm:w-48 md:w-56 h-32 sm:h-40 pointer-events-none select-none" />
       </div>
 
       {/* Bottom Full-Width Search Experience */}
