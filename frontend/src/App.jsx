@@ -56,6 +56,7 @@ if (typeof window !== 'undefined') {
 }
 import ActivityFeed from './components/Activity/ActivityFeed';
 import MobileBottomNav from './components/Navigation/MobileBottomNav';
+import LoopraFooter from './components/Navigation/LoopraFooter';
 import shuffleService from './services/shuffleService';
 import { filterSingleSongs, isSingleSong } from './services/songFilter';
 import RatingPopupModal from './components/Rating/RatingPopupModal';
@@ -220,28 +221,23 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
   );
 };
 
-const DisclaimerFooter = React.memo(({ footer }) => {
-  const disclaimer = footer?.disclaimerText || "Audio plays through YouTube’s embedded player. Nothing is hosted on this site, and all rights stay with the labels, composers and performers. Song credits are put together from film soundtrack listings.";
-  const takedown = footer?.takedownText || "If you hold rights to anything here and want it taken off, email";
-  const email = footer?.contactEmail || footer?.takedownEmail || 'pankajsss7238@gmail.com';
-  const copyright = footer?.copyright || footer?.copyrightText;
-
+const DisclaimerFooter = React.memo(({
+  footer,
+  branding,
+  onNavigate,
+  onOpenInsights,
+  onOpenRatingModal,
+  onScrollToTop
+}) => {
   return (
-    <div className="mt-8 pt-6 border-t border-neutral-800 text-neutral-400 text-xs space-y-2 leading-relaxed">
-      <p>{disclaimer}</p>
-      <p>
-        {takedown}{' '}
-        <a href={`mailto:${email}`} className="text-amber-400 underline font-medium hover:text-amber-300">
-          {email}
-        </a>{' '}
-        and it comes down.
-      </p>
-      {copyright && (
-        <p className="text-[11px] text-neutral-500 pt-1">
-          {copyright}
-        </p>
-      )}
-    </div>
+    <LoopraFooter
+      footer={footer}
+      branding={branding}
+      onNavigate={onNavigate}
+      onOpenInsights={onOpenInsights}
+      onOpenRatingModal={onOpenRatingModal}
+      onScrollToTop={onScrollToTop}
+    />
   );
 });
 
@@ -310,38 +306,6 @@ const SPECIAL_STATIONS = {
       "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=1600&auto=format&fit=crop"
     ],
     queries: ["bollywood acoustic unplugged lofi hindi chill sufi songs"]
-  },
-  swipe: {
-    id: "swipe",
-    title: "Discover Swipe",
-    subtitle: "Swipe right to like, swipe left to skip through music recommendations",
-    badge: "🔥 Discover Swipe",
-    bgImages: [],
-    queries: []
-  },
-  discover: {
-    id: "discover",
-    title: "Discover & Search",
-    subtitle: "Explore global tracks, classic retro gems, and personalized audio streams",
-    badge: "✨ Global Audio Search",
-    bgImages: [],
-    queries: []
-  },
-  library: {
-    id: "library",
-    title: "Liked Songs Collection",
-    subtitle: "Your personal archive of favorite tracks and memorable hits",
-    badge: "❤️ Saved Library",
-    bgImages: [],
-    queries: []
-  },
-  history: {
-    id: "history",
-    title: "Listening History",
-    subtitle: "Recently played sessions and past audio logs",
-    badge: "🕒 Playback Log",
-    bgImages: [],
-    queries: []
   }
 };
 
@@ -1266,9 +1230,10 @@ const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlled
         </div>
         <button 
           onClick={() => setShowAll(!showAll)}
-          className="text-xs font-bold uppercase tracking-wider text-amber-500 hover:text-amber-400 transition-colors shrink-0"
+          className="text-xs font-semibold text-neutral-400 hover:text-white transition-colors shrink-0 flex items-center gap-0.5 cursor-pointer"
         >
-          {showAll ? 'Show Less' : 'View All'}
+          <span>{showAll ? 'Show Less' : 'View All'}</span>
+          <span className="text-neutral-500 font-bold">&gt;</span>
         </button>
       </div>
 
@@ -5324,6 +5289,24 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     );
   }
 
+  const handleScrollToTop = useCallback(() => {
+    if (mainScrollRef.current) {
+      mainScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, []);
+
+  const commonFooterProps = {
+    footer: cmsConfig?.footer,
+    branding: cmsConfig?.branding,
+    onNavigate: handleStationSelect,
+    onOpenInsights: () => setIsStatsOpen(true),
+    onOpenRatingModal: handleOpenRatingModal,
+    onScrollToTop: handleScrollToTop
+  };
+
   return (
     <div className="h-[100dvh] bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative overflow-hidden">
       {/* Premium 3D Infinity Startup Splash Screen */}
@@ -5737,14 +5720,36 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             </span>
           </div>
 
-          {/* RIGHT: INSTALL APP & AUTH/LOGOUT (+ MOBILE CLOCK) */}
+          {/* RIGHT: INSTALL APP & AUTH/LOGOUT */}
           <div className="flex items-center gap-2">
+            {/* Mobile Circular Download Button / Desktop Pill */}
             <button
               onClick={handleInstallClick}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-500 hover:from-amber-400 hover:to-amber-500 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0"
+              className="md:hidden w-8 h-8 rounded-full bg-amber-500 hover:bg-amber-400 text-neutral-950 flex items-center justify-center shadow-md active:scale-95 transition shrink-0 cursor-pointer"
+              title="Install App"
+              aria-label="Install App"
+            >
+              <Icon name="download" className="w-4 h-4 text-neutral-950 shrink-0" />
+            </button>
+            <button
+              onClick={handleInstallClick}
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-500 hover:from-amber-400 hover:to-amber-500 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0"
             >
               <Icon name="download" className="w-3.5 h-3.5 text-white shrink-0" />
               <span className="hidden sm:inline">Install App</span>
+            </button>
+
+            {/* Mobile Shield Button */}
+            <button
+              onClick={() => {
+                setActiveTab('admin');
+                window.history.pushState({ tab: 'admin' }, '', '/admin');
+              }}
+              aria-label="Admin / Security"
+              title="Admin / Security"
+              className="md:hidden w-8 h-8 rounded-full flex items-center justify-center bg-neutral-900 border border-amber-500/40 text-amber-400 shadow-md active:scale-95 transition shrink-0 cursor-pointer"
+            >
+              <Icon name="shield" className="w-4 h-4 text-amber-400" />
             </button>
             
             {user ? (
@@ -5757,7 +5762,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     }}
                     aria-label="Open Admin Dashboard"
                     title="Open Admin Dashboard"
-                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/40 hover:border-amber-400 shadow-md shadow-amber-950/40 hover:shadow-amber-500/20 active:scale-95 transition-all shrink-0 cursor-pointer"
+                    className="hidden md:flex w-9 h-9 sm:w-10 sm:h-10 rounded-full items-center justify-center bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/40 hover:border-amber-400 shadow-md shadow-amber-950/40 hover:shadow-amber-500/20 active:scale-95 transition-all shrink-0 cursor-pointer"
                   >
                     <Icon name="shield" className="w-4 h-4 text-amber-400" />
                   </button>
@@ -5873,18 +5878,34 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 )}
               </div>
             ) : (
-              <button
-                onClick={() => {
-                  if (isPlaying) {
-                    togglePlayPause();
-                  }
-                  openAuthModal();
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0"
-              >
-                <Icon name="user" className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden sm:inline">Login</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Mobile avatar shortcut opening auth modal */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isPlaying) togglePlayPause();
+                    openAuthModal();
+                  }}
+                  className="md:hidden w-8 h-8 rounded-full bg-[#E11D48] text-white font-extrabold text-xs flex items-center justify-center border border-pink-400/30 shadow-md active:scale-95 transition cursor-pointer"
+                  title="Sign In / Account"
+                  aria-label="Sign In / Account"
+                >
+                  <span>P</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (isPlaying) {
+                      togglePlayPause();
+                    }
+                    openAuthModal();
+                  }}
+                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0"
+                >
+                  <Icon name="user" className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden sm:inline">Login</span>
+                </button>
+              </div>
             )}
           </div>
         </header>
@@ -5960,7 +5981,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
             />
-            <DisclaimerFooter footer={cmsConfig?.footer} />
+            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -5976,7 +5997,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               showToast={showToast}
               fetchTracks={handleFetchDiscoveryTracks}
             />
-            <DisclaimerFooter footer={cmsConfig?.footer} />
+            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -5995,7 +6016,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               onAddToPlaylist={handleAddToPlaylistClick}
               showToast={showToast}
             />
-            <DisclaimerFooter footer={cmsConfig?.footer} />
+            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6075,97 +6096,116 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   </div>
 
                   {/* Tactile Control Buttons Container */}
-                  <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2 sm:gap-3.5 pt-1 sm:pt-2 w-full" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex flex-col items-center lg:items-start gap-2 pt-1 w-full" onClick={(e) => e.stopPropagation()}>
                     {currentSong ? (
                       <>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            togglePlayPause();
-                          }}
-                          className="px-5 sm:px-6 py-2.5 sm:py-3 min-h-[48px] sm:min-h-[52px] rounded-2xl amber-glow-btn text-neutral-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xl shadow-orange-950/50 cursor-pointer active:scale-95 transition-all"
-                          title={isPlaying ? "Pause" : "Play"}
-                          aria-label={isPlaying ? "Pause playback" : "Resume playback"}
-                        >
-                          <Icon name={isPlaying ? "pause" : "play"} className="w-5 h-5 fill-current" />
-                          <span>{isPlaying ? 'Pause' : 'Resume'}</span>
-                        </button>
+                        <div className="flex items-center justify-center lg:justify-start gap-2 w-full">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              togglePlayPause();
+                            }}
+                            className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-full bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-md cursor-pointer active:scale-95 transition-all"
+                            title={isPlaying ? "Pause" : "Play"}
+                            aria-label={isPlaying ? "Pause playback" : "Resume playback"}
+                          >
+                            <Icon name={isPlaying ? "pause" : "play"} className="w-4 h-4 fill-current" />
+                            <span>{isPlaying ? 'Pause' : 'Resume'}</span>
+                          </button>
 
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleNextSong();
-                          }}
-                          className="w-12 h-12 sm:w-13 sm:h-13 min-h-[48px] sm:min-h-[52px] rounded-2xl bg-neutral-800/90 hover:bg-neutral-700 active:scale-95 text-neutral-200 hover:text-white border border-neutral-700/80 transition shadow-lg flex items-center justify-center cursor-pointer shrink-0"
-                          title="Next Track"
-                          aria-label="Next Track"
-                        >
-                          <Icon name="skipNext" className="w-5 h-5 text-neutral-300" />
-                        </button>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleNextSong();
+                            }}
+                            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-neutral-900 hover:bg-neutral-800 active:scale-95 text-neutral-200 hover:text-white border border-neutral-700/80 transition shadow-md flex items-center justify-center cursor-pointer shrink-0"
+                            title="Next Track"
+                            aria-label="Next Track"
+                          >
+                            <Icon name="skipNext" className="w-4 h-4 text-neutral-300" />
+                          </button>
 
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenExpandedPlayer('player');
-                          }}
-                          className="px-4 sm:px-5 py-2.5 sm:py-3 min-h-[48px] sm:min-h-[52px] rounded-2xl bg-neutral-800/90 hover:bg-neutral-700 active:scale-95 text-neutral-200 hover:text-white font-semibold text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-2 shadow-lg cursor-pointer shrink-0"
-                          title="Open Expanded Now Playing"
-                          aria-label="Open Expanded Now Playing"
-                        >
-                          <Icon name="expand" className="w-4 h-4 text-amber-400 shrink-0" />
-                          <span>Now Playing</span>
-                        </button>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenExpandedPlayer('player');
+                            }}
+                            className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full bg-neutral-900/90 hover:bg-neutral-800 active:scale-95 text-neutral-200 hover:text-white font-medium text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-1.5 shadow-md cursor-pointer shrink-0"
+                            title="Open Expanded Now Playing"
+                            aria-label="Open Expanded Now Playing"
+                          >
+                            <Icon name="expand" className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                            <span>Now Playing</span>
+                          </button>
+                        </div>
 
+                        {/* Centered Queue Pill */}
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
                             handleOpenExpandedPlayer('queue');
                           }}
-                          className="px-4 sm:px-5 py-2.5 sm:py-3 min-h-[48px] sm:min-h-[52px] rounded-2xl bg-neutral-800/90 hover:bg-neutral-700 active:scale-95 text-neutral-200 hover:text-white font-semibold text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-2 shadow-lg cursor-pointer shrink-0"
+                          className="px-3.5 py-1 rounded-full bg-neutral-900/80 hover:bg-neutral-800 active:scale-95 text-neutral-400 hover:text-neutral-200 font-medium text-[10px] sm:text-xs border border-neutral-800 transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 mx-auto lg:mx-0 mt-0.5"
                           title="View Queue"
                           aria-label="View Queue"
                         >
-                          <Icon name="list" className="w-4 h-4 text-amber-400 shrink-0" />
+                          <Icon name="list" className="w-3 h-3 text-amber-400 shrink-0" />
                           <span>Queue ({queue.length})</span>
                         </button>
                       </>
                     ) : (
                       <>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handlePlayTrending((trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs);
-                          }}
-                          className="px-5 sm:px-6 py-2.5 sm:py-3 min-h-[48px] sm:min-h-[52px] rounded-2xl amber-glow-btn text-neutral-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xl shadow-orange-950/50 cursor-pointer active:scale-95 transition-all"
-                          title="Spin Trending Hit"
-                          aria-label="Spin Trending Hit"
-                        >
-                          <Icon name="play" className="w-5 h-5 fill-current" />
-                          <span>Spin Trending Hit</span>
-                        </button>
+                        <div className="flex items-center justify-center lg:justify-start gap-2 w-full">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayTrending((trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs);
+                            }}
+                            className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-full bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-md cursor-pointer active:scale-95 transition-all"
+                            title="Spin Trending Hit"
+                            aria-label="Spin Trending Hit"
+                          >
+                            <Icon name="play" className="w-4 h-4 fill-current" />
+                            <span>Spin Hit</span>
+                          </button>
 
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handlePlayTrending((trendingSongs?.[1] || trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[1] || trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs);
-                          }}
-                          className="w-12 h-12 sm:w-13 sm:h-13 min-h-[48px] sm:min-h-[52px] rounded-2xl bg-neutral-800/90 hover:bg-neutral-700 active:scale-95 text-neutral-200 hover:text-white border border-neutral-700/80 transition shadow-lg flex items-center justify-center cursor-pointer shrink-0"
-                          title="Next Track"
-                          aria-label="Next Track"
-                        >
-                          <Icon name="skipNext" className="w-5 h-5 text-neutral-300" />
-                        </button>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayTrending((trendingSongs?.[1] || trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[1] || trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs);
+                            }}
+                            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-neutral-900 hover:bg-neutral-800 active:scale-95 text-neutral-200 hover:text-white border border-neutral-700/80 transition shadow-md flex items-center justify-center cursor-pointer shrink-0"
+                            title="Next Track"
+                            aria-label="Next Track"
+                          >
+                            <Icon name="skipNext" className="w-4 h-4 text-neutral-300" />
+                          </button>
 
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenExpandedPlayer('player');
+                            }}
+                            className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full bg-neutral-900/90 hover:bg-neutral-800 active:scale-95 text-neutral-200 hover:text-white font-medium text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-1.5 shadow-md cursor-pointer shrink-0"
+                            title="Open Expanded Now Playing"
+                            aria-label="Open Expanded Now Playing"
+                          >
+                            <Icon name="expand" className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                            <span>Now Playing</span>
+                          </button>
+                        </div>
+
+                        {/* Centered Queue Pill */}
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
                             handleOpenExpandedPlayer('queue');
                           }}
-                          className="px-4 sm:px-5 py-2.5 sm:py-3 min-h-[48px] sm:min-h-[52px] rounded-2xl bg-neutral-800/90 hover:bg-neutral-700 active:scale-95 text-neutral-200 hover:text-white font-semibold text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-2 shadow-lg cursor-pointer shrink-0"
+                          className="px-3.5 py-1 rounded-full bg-neutral-900/80 hover:bg-neutral-800 active:scale-95 text-neutral-400 hover:text-neutral-200 font-medium text-[10px] sm:text-xs border border-neutral-800 transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 mx-auto lg:mx-0 mt-0.5"
                           title="View Queue"
                           aria-label="View Queue"
                         >
-                          <Icon name="list" className="w-4 h-4 text-amber-400 shrink-0" />
+                          <Icon name="list" className="w-3 h-3 text-amber-400 shrink-0" />
                           <span>Queue ({queue.length})</span>
                         </button>
                       </>
@@ -6266,7 +6306,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       <ScrollableRow
                         key="sec-artists"
                         title={sec.title || "Popular artists"}
-                        subtitle={sec.subtitle || "Find your favorite singers"}
+                        subtitle={sec.subtitle || "The voices that define soundtracks."}
                         items={POPULAR_ARTISTS}
                         showAll={showAllArtists}
                         setShowAll={handleSetShowAllArtists}
@@ -6279,7 +6319,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                               </div>
                             </div>
                             <h3 className="text-xs md:text-sm font-bold text-white truncate w-full text-center group-hover:text-amber-400 transition">{artist.name}</h3>
-                            <p className="text-[10px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1 w-full text-center">{artist.role}</p>
+                            <p className="text-[10px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1 w-full text-center">Artist</p>
                           </div>
                         )}
                       />
@@ -6290,7 +6330,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       <ScrollableRow
                         key="sec-albums"
                         title={sec.title || "Popular albums and singles"}
-                        subtitle={sec.subtitle || "Latest releases"}
+                        subtitle={sec.subtitle || "Latest releases & iconic soundtracks."}
                         items={popularAlbums}
                         fallbackItems={POPULAR_ALBUMS}
                         showAll={showAllAlbums}
@@ -6317,7 +6357,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       <ScrollableRow
                         key="sec-radio"
                         title={sec.title || "Popular radio"}
-                        subtitle={sec.subtitle || "Live streams 24/7"}
+                        subtitle={sec.subtitle || "Live streams and 24/7 continuous audio."}
                         items={popularRadio}
                         fallbackItems={POPULAR_RADIO}
                         showAll={showAllRadio}
@@ -6351,11 +6391,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               onOpenRatingModal={handleOpenRatingModal} 
             />
 
-            <DisclaimerFooter footer={cmsConfig?.footer} />
+            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
-        {Boolean(currentStation && activeTab !== 'home') && (
+        {Boolean(currentStation && !['home', 'discover', 'swipe', 'for-you', 'library', 'history', 'radio', 'indian-radio', 'mood', 'timemachine', 'activity', 'admin', 'offline', 'offline-explore'].includes(activeTab)) && (
           <div key={`page-station-${activeTab}`} className="page-transition max-w-4xl mx-auto space-y-6 relative z-10">
             <div className="p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl border border-neutral-700/50 relative overflow-hidden shadow-2xl backdrop-blur-md bg-neutral-900/40 w-full min-w-0">
               <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
@@ -6471,7 +6511,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </>
             )}
 
-            <DisclaimerFooter footer={cmsConfig?.footer} />
+            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6536,7 +6576,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 })
               )}
             </div>
-            <DisclaimerFooter footer={cmsConfig?.footer} />
+            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6644,7 +6684,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </div>
             )}
 
-            <DisclaimerFooter footer={cmsConfig?.footer} />
+            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6798,7 +6838,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 }}
               />
             )}
-            <DisclaimerFooter footer={cmsConfig?.footer} />
+            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6824,7 +6864,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 showToast(`Saved mood playlist "${name}" (${playlistTracks.length} tracks)`);
               }}
             />
-            <DisclaimerFooter footer={cmsConfig?.footer} />
+            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6837,7 +6877,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               onTogglePlay={togglePlayPause}
               apiBase={BACKEND_URL}
             />
-            <DisclaimerFooter footer={cmsConfig?.footer} />
+            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6853,7 +6893,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               isPlaying={isPlaying}
               backendUrl={BACKEND_URL}
             />
-            <DisclaimerFooter footer={cmsConfig?.footer} />
+            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6870,7 +6910,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               isPlaying={isPlaying}
               backendUrl={BACKEND_URL}
             />
-            <DisclaimerFooter footer={cmsConfig?.footer} />
+            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 

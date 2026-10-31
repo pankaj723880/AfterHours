@@ -487,18 +487,29 @@ export default function PersonalizedRecommendationsSection({
 
     return (
       <div className="space-y-2.5 sm:space-y-3.5">
-        <div className="flex items-baseline justify-between px-1">
-          <div>
-            <h3 className="text-sm sm:text-base md:text-lg font-bold text-white tracking-tight flex items-center gap-2">
+        <div className="flex items-end justify-between px-1">
+          <div className="min-w-0 pr-2">
+            <h3 className="text-sm sm:text-base md:text-lg font-bold text-white tracking-tight flex items-center gap-2 truncate">
               <span>{title}</span>
             </h3>
             {subtitle && (
-              <p className="text-[11px] sm:text-xs text-neutral-400 mt-0.5">{subtitle}</p>
+              <p className="text-[11px] sm:text-xs text-neutral-400 mt-0.5 line-clamp-1">{subtitle}</p>
             )}
           </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (items[0]) onPlayTrack(items[0]);
+            }}
+            className="text-[11px] sm:text-xs font-semibold text-neutral-400 hover:text-white flex items-center gap-0.5 shrink-0 transition-colors"
+          >
+            <span>View All</span>
+            <span className="text-neutral-500 font-bold">&gt;</span>
+          </button>
         </div>
 
-        <div className="flex items-stretch gap-3 sm:gap-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-neutral-800 scrollbar-track-transparent">
+        <div className="flex items-stretch gap-2.5 sm:gap-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-neutral-800 scrollbar-track-transparent">
           {items.map((track, i) => renderTrackCard(track, i, sectionKey))}
         </div>
       </div>
@@ -547,72 +558,91 @@ export default function PersonalizedRecommendationsSection({
       <div className="absolute top-0 right-10 w-96 h-96 rounded-full bg-amber-500/8 blur-[100px] pointer-events-none" />
 
       {/* Header Banner */}
-      <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 border-b border-neutral-800/80 pb-4 sm:pb-6">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-widest bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/40 text-amber-300 flex items-center gap-1.5 shadow-sm">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
-              </span>
-              {isGeminiPowered ? 'Gemini 3.8 Flash AI' : 'Personalized AI Lounge'}
+      <div className="relative z-10 flex items-center justify-between gap-3 sm:gap-6 border-b border-neutral-800/80 pb-4 sm:pb-6">
+        <div className="flex-1 min-w-0 pr-2">
+          {/* Header Badges */}
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 border border-amber-500/35 text-amber-300 flex items-center gap-1.5 shadow-sm">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_6px_#f59e0b]" />
+              <span>PERSONALIZED AI LOUNGE</span>
             </span>
 
-            {data?.insights?.dominantMood && (
-              <span className="text-[11px] text-neutral-400 font-medium">
-                • {data.insights.dominantMood}
-              </span>
-            )}
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-neutral-900 border border-neutral-800 text-neutral-300 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-neutral-400" />
+              <span>{data?.insights?.dominantMood || 'Melodic & Nostalgic'}</span>
+            </span>
           </div>
 
-          <h1 className="text-lg sm:text-2xl font-display font-black text-white tracking-tight">
-            {isNewUser ? 'Discover Fresh Sounds' : 'Curated Just For You'}
-          </h1>
+          <h2 className="text-xl sm:text-2xl md:text-3xl font-display font-extrabold text-white tracking-tight">
+            Curated Just For You
+          </h2>
 
-          <p className="text-xs sm:text-sm text-neutral-400 mt-1 max-w-2xl">
+          <p className="text-xs sm:text-sm text-neutral-400 mt-1 max-w-xl line-clamp-2 leading-relaxed">
             {data?.insights?.summary || (isNewUser
-              ? 'Start listening to songs to let Gemini AI learn your unique music taste.'
-              : 'Tuned continuously based on your listening sessions, favorites, and skips.')}
+              ? 'Crafted around your affinity for curated favorites and fresh listening explorations.'
+              : 'Crafted around your affinity for live streams, curated favorites and nostalgic melodies.')}
           </p>
-        </div>
 
-        {/* Control Actions (Refresh & Privacy) */}
-        <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
-          {authToken && (
+          {/* Control Actions (Refresh & Privacy) */}
+          <div className="flex items-center gap-2 mt-3.5">
             <button
               onClick={handleManualRefresh}
               disabled={refreshing}
-              className="px-3.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+              className="px-3.5 py-1.5 rounded-xl bg-neutral-900/90 hover:bg-neutral-800 text-neutral-200 hover:text-white border border-neutral-700/80 text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-sm"
               title="Refresh recommendations"
             >
-              <svg className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg className={`w-3.5 h-3.5 text-amber-400 ${refreshing ? 'animate-spin' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <path d="M23 4v6h-6M1 20v-6h6" />
                 <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
               </svg>
               <span>{refreshing ? 'Curating...' : 'Refresh Mix'}</span>
             </button>
-          )}
 
-          {authToken && (
             <button
               onClick={() => setShowPrivacySettings(!showPrivacySettings)}
-              className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white text-xs transition cursor-pointer"
+              className="p-1.5 rounded-xl bg-neutral-900/90 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-700/80 text-xs transition cursor-pointer shadow-sm"
               title="Recommendation Privacy"
             >
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg className="w-4 h-4 text-neutral-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
               </svg>
             </button>
-          )}
+          </div>
+        </div>
 
-          {!authToken && (
-            <button
-              onClick={onOpenAuth}
-              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold transition shadow-md cursor-pointer"
-            >
-              Sign In For AI Personalization
-            </button>
-          )}
+        {/* 3D Golden Headphones Visual Graphic on Right */}
+        <div className="relative shrink-0 w-24 sm:w-32 md:w-36 h-24 sm:h-32 flex items-center justify-center select-none pointer-events-none">
+          <div className="absolute inset-0 bg-amber-500/15 rounded-full blur-xl" />
+          <svg className="w-20 h-20 sm:w-28 sm:h-28 drop-shadow-[0_10px_20px_rgba(245,158,11,0.35)]" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="goldHeadband" x1="20" y1="20" x2="180" y2="180" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#F59E0B" />
+                <stop offset="35%" stopColor="#FDE68A" />
+                <stop offset="70%" stopColor="#D97706" />
+                <stop offset="100%" stopColor="#B45309" />
+              </linearGradient>
+              <linearGradient id="goldCup" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#FBBF24" />
+                <stop offset="50%" stopColor="#F59E0B" />
+                <stop offset="100%" stopColor="#92400E" />
+              </linearGradient>
+            </defs>
+            {/* Outer Headband */}
+            <path d="M45 110 C45 50, 155 50, 155 110" stroke="url(#goldHeadband)" strokeWidth="14" strokeLinecap="round" />
+            <path d="M52 105 C52 60, 148 60, 148 105" stroke="#171717" strokeWidth="6" strokeLinecap="round" opacity="0.6" />
+            {/* Left Ear Cup */}
+            <g transform="rotate(-15 45 125)">
+              <rect x="25" y="95" width="28" height="55" rx="14" fill="url(#goldCup)" stroke="#FDE68A" strokeWidth="2" />
+              <rect x="30" y="102" width="18" height="41" rx="9" fill="#1C1917" />
+              <circle cx="39" cy="122" r="4" fill="#F59E0B" />
+            </g>
+            {/* Right Ear Cup */}
+            <g transform="rotate(15 155 125)">
+              <rect x="147" y="95" width="28" height="55" rx="14" fill="url(#goldCup)" stroke="#FDE68A" strokeWidth="2" />
+              <rect x="152" y="102" width="18" height="41" rx="9" fill="#1C1917" />
+              <circle cx="161" cy="122" r="4" fill="#F59E0B" />
+            </g>
+          </svg>
         </div>
       </div>
 

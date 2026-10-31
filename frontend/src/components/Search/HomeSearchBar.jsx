@@ -32,7 +32,7 @@ export default function HomeSearchBar({
   onSelectSong,
   onPlaySong,
   initialQuery = '',
-  placeholder = "Search songs, artists, albums...",
+  placeholder = "Search songs, artists, or paste link...",
   suggestions,
   showQuickTags = true,
   user = null,
@@ -357,15 +357,9 @@ export default function HomeSearchBar({
           {/* Search Action Button */}
           <button
             type="submit"
-            className="group relative flex items-center gap-1.5 px-3 py-1.5 sm:px-6 sm:py-3 rounded-xl sm:rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-neutral-950 font-bold text-xs sm:text-sm tracking-wide shadow-lg shadow-orange-950/60 active:scale-95 transition-all duration-200 shrink-0 cursor-pointer overflow-hidden border border-amber-300/40"
+            className="flex items-center justify-center px-4 py-2 sm:px-6 sm:py-2.5 rounded-full bg-amber-400 hover:bg-amber-300 text-neutral-950 font-black text-xs sm:text-sm uppercase tracking-wider shadow-md active:scale-95 transition-all shrink-0 cursor-pointer"
           >
-            <span className="relative z-10 flex items-center gap-1 font-display uppercase tracking-wider font-extrabold text-[11px] sm:text-sm">
-              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-neutral-950" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-4.35-4.35m1.85-5.65a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <span>Search</span>
-            </span>
-            <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+            <span>Search</span>
           </button>
         </form>
 
@@ -525,8 +519,8 @@ export default function HomeSearchBar({
       {/* Quick Search Tag Pills */}
       {showQuickTags && (
         <div className="flex items-center gap-2 mt-2.5 sm:mt-3 px-0 overflow-x-auto hide-scrollbar text-xs">
-          <span className="text-neutral-500 text-[11px] font-semibold uppercase tracking-wider shrink-0 flex items-center gap-1">
-            <span className="text-amber-500">⚡</span> Quick:
+          <span className="text-amber-400 text-[11px] font-extrabold uppercase tracking-wider shrink-0 flex items-center gap-1">
+            <span>⚡</span> QUICK:
           </span>
           <div className="flex items-center gap-1.5 shrink-0">
             {activeSuggestions.map((tag) => (

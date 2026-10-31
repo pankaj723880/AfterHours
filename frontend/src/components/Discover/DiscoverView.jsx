@@ -3,20 +3,13 @@ import HomeSearchBar from '../Search/HomeSearchBar';
 import DownloadTrackButton from '../Offline/DownloadTrackButton';
 import {
   Search,
-  Radio,
   Sparkles,
-  History,
   Disc,
   Flame,
-  Music,
-  Headphones,
   Play,
   Video,
   MoreVertical,
-  Compass,
-  ArrowRight,
-  TrendingUp,
-  Volume2
+  TrendingUp
 } from 'lucide-react';
 import { getCleanThumbnail, isThumbnailUrlFormatValid } from '../../utils/thumbnailValidator';
 
@@ -86,69 +79,6 @@ export default function DiscoverView({
     if (setSearchQuery) setSearchQuery(q);
     if (fetchYouTubeMusic) fetchYouTubeMusic(q);
   };
-
-  const handlePromoSearchClick = () => {
-    // Focus search bar or search default query
-    const searchInput = document.querySelector('input[role="combobox"]');
-    if (searchInput) {
-      searchInput.focus();
-      searchInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    } else {
-      handleChipClick('Bollywood Hits');
-    }
-  };
-
-  // Category navigation cards
-  const categoryCards = [
-    {
-      id: 'radio',
-      title: 'Indian Live Radio',
-      subtitle: '24/7 non-stop regional streams & live broadcasts',
-      tag: 'LIVE',
-      badgeColor: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
-      tagDot: 'bg-rose-500 animate-pulse',
-      icon: Radio,
-      gradient: 'from-rose-950/30 via-neutral-900/90 to-neutral-950',
-      borderColor: 'hover:border-rose-500/50',
-      action: () => onNavigate && onNavigate('radio')
-    },
-    {
-      id: 'mood',
-      title: 'Mood-to-Music AI',
-      subtitle: 'AI companion matching your exact emotions',
-      tag: 'GEMINI AI',
-      badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-      tagDot: 'bg-amber-400',
-      icon: Sparkles,
-      gradient: 'from-amber-950/30 via-neutral-900/90 to-neutral-950',
-      borderColor: 'hover:border-amber-500/50',
-      action: () => onNavigate && onNavigate('mood')
-    },
-    {
-      id: 'timemachine',
-      title: 'Time Machine Radio',
-      subtitle: 'Travel through the golden decades 1950s–2020s',
-      tag: 'DECADES',
-      badgeColor: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
-      tagDot: 'bg-yellow-400',
-      icon: Disc,
-      gradient: 'from-yellow-950/25 via-neutral-900/90 to-neutral-950',
-      borderColor: 'hover:border-yellow-500/50',
-      action: () => onNavigate && onNavigate('timemachine')
-    },
-    {
-      id: 'barber',
-      title: 'Nostalgia Stations',
-      subtitle: 'Authentic vintage Saloon, Truck & Theka vibes',
-      tag: 'RETRO',
-      badgeColor: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
-      tagDot: 'bg-orange-400',
-      icon: History,
-      gradient: 'from-orange-950/25 via-neutral-900/90 to-neutral-950',
-      borderColor: 'hover:border-orange-500/50',
-      action: () => onNavigate && onNavigate('barber')
-    }
-  ];
 
   return (
     <div className="w-full max-w-5xl mx-auto px-3 sm:px-4 md:px-6 space-y-6 sm:space-y-8 pb-32 md:pb-20 relative z-10 overflow-x-hidden">
@@ -248,104 +178,7 @@ export default function DiscoverView({
         </div>
       </section>
 
-      {/* =========================================================================
-          SECTION 3: GLOBAL AUDIO SEARCH PROMOTIONAL CARD
-          ========================================================================= */}
-      <section aria-label="Global Audio Search Promotion">
-        <div
-          onClick={handlePromoSearchClick}
-          className="relative rounded-2xl sm:rounded-3xl p-4 sm:p-5 md:p-6 bg-gradient-to-r from-neutral-900/90 via-amber-950/20 to-neutral-950 border border-amber-500/30 hover:border-amber-500/60 shadow-[0_10px_30px_rgba(0,0,0,0.6)] transition-all duration-300 cursor-pointer group active:scale-[0.99] overflow-hidden"
-        >
-          {/* Subtle Ambient Radial Glow */}
-          <div className="absolute -top-10 right-10 w-44 h-44 rounded-full bg-amber-500/10 blur-[60px] pointer-events-none" />
 
-          <div className="flex items-center justify-between gap-3 sm:gap-6 relative z-10">
-            {/* Left Column: Headings & Action */}
-            <div className="space-y-1.5 flex-1 min-w-0">
-              <span className="inline-block text-[9px] sm:text-[10px] font-mono font-bold text-amber-400 uppercase tracking-widest bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
-                Smart Audio Discovery
-              </span>
-              <h2 className="text-base sm:text-xl font-display font-extrabold text-white tracking-tight leading-snug group-hover:text-amber-300 transition">
-                YOUR MUSIC, SMARTER.
-              </h2>
-              <p className="text-xs sm:text-sm text-neutral-300/90 max-w-md line-clamp-2">
-                Discover songs, artists and genres with global audio search.
-              </p>
-
-              <div className="pt-2">
-                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-400 group-hover:text-amber-300 group-hover:translate-x-0.5 transition">
-                  <span>Explore Search</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </span>
-              </div>
-            </div>
-
-            {/* Right Column: Stylized Vinyl Artwork */}
-            <div className="relative shrink-0 flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20">
-              {/* Outer Vinyl Record Disc */}
-              <div className="w-full h-full rounded-full bg-gradient-to-br from-neutral-900 via-neutral-950 to-neutral-900 border-2 border-amber-500/30 flex items-center justify-center shadow-xl group-hover:rotate-45 transition-transform duration-700">
-                {/* Grooves */}
-                <div className="w-4/5 h-4/5 rounded-full border border-neutral-800 flex items-center justify-center">
-                  <div className="w-3/5 h-3/5 rounded-full border border-neutral-800/60 flex items-center justify-center">
-                    {/* Golden Center Label */}
-                    <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center shadow-md">
-                      <Music className="w-3 h-3 text-neutral-950" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* =========================================================================
-          SECTION 4: EXPLORE BY CATEGORY (Mobile 2-Col Grid, Minimum 44px Targets)
-          ========================================================================= */}
-      <section aria-label="Explore by Category" className="space-y-3">
-        <div className="flex items-center justify-between px-1">
-          <h2 className="text-xs sm:text-sm font-bold text-neutral-400 uppercase tracking-wider flex items-center gap-1.5">
-            <Compass className="w-3.5 h-3.5 text-amber-500" />
-            <span>Explore by Category</span>
-          </h2>
-          <span className="text-[11px] text-neutral-500">Specialized Radios</span>
-        </div>
-
-        {/* 2-column mobile grid, 4-column on desktop */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4">
-          {categoryCards.map((cat) => {
-            const IconComponent = cat.icon;
-            return (
-              <div
-                key={cat.id}
-                onClick={cat.action}
-                className={`relative rounded-2xl p-3.5 sm:p-4 bg-gradient-to-br ${cat.gradient} border border-neutral-800/90 ${cat.borderColor} hover:shadow-lg transition-all duration-200 cursor-pointer active:scale-[0.98] flex flex-col justify-between min-h-[115px] sm:min-h-[130px] group`}
-              >
-                {/* Top Row: Icon & Tag */}
-                <div className="flex items-center justify-between gap-1 mb-2">
-                  <div className="w-8 h-8 rounded-xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-amber-400 group-hover:scale-105 transition-transform">
-                    <IconComponent className="w-4 h-4" />
-                  </div>
-                  <span className={`inline-flex items-center gap-1 text-[9px] font-mono font-bold px-2 py-0.5 rounded-full border ${cat.badgeColor}`}>
-                    {cat.tagDot && <span className={`w-1.5 h-1.5 rounded-full ${cat.tagDot}`} />}
-                    <span>{cat.tag}</span>
-                  </span>
-                </div>
-
-                {/* Bottom Row: Title & Subtitle */}
-                <div>
-                  <h3 className="text-xs sm:text-sm font-bold text-white group-hover:text-amber-300 transition line-clamp-1">
-                    {cat.title}
-                  </h3>
-                  <p className="text-[10px] sm:text-[11px] text-neutral-400 mt-0.5 line-clamp-2">
-                    {cat.subtitle}
-                  </p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
 
       {/* =========================================================================
           SECTION 5: DISCOVERY CONTENT / SEARCH RESULTS

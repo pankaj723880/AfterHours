@@ -15,63 +15,96 @@ export default function HomeHero({
   onOpenInsights
 }) {
   return (
-    <div className="relative w-full rounded-3xl p-5 sm:p-8 md:p-10 bg-gradient-to-br from-neutral-900/95 via-neutral-950/90 to-neutral-950/95 border border-amber-500/25 shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_35px_rgba(245,158,11,0.1)] overflow-hidden">
-      {/* Background Cinematic Visual with Smooth Vignette Blend */}
-      <div
-        className="absolute inset-0 bg-cover bg-right md:bg-center opacity-30 mix-blend-screen pointer-events-none scale-105 transition-transform duration-1000"
-        style={{ backgroundImage: `url('/hero-cinematic.png')` }}
-      />
-      <div className="absolute inset-0 bg-gradient-to-r from-neutral-950 via-neutral-950/80 to-transparent pointer-events-none" />
-      <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-transparent to-neutral-950/40 pointer-events-none" />
-
+    <div className="relative w-full rounded-3xl p-4 sm:p-6 md:p-8 bg-gradient-to-b from-[#181818] via-[#121212] to-[#0c0c0c] border border-amber-500/25 shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_30px_rgba(245,158,11,0.08)] overflow-hidden">
       {/* Ambient Warm Golden Orbs */}
       <div className="absolute -top-16 -left-16 w-80 h-80 rounded-full bg-amber-500/15 blur-[100px] pointer-events-none" />
-      <div className="absolute -bottom-20 right-10 w-96 h-96 rounded-full bg-orange-500/10 blur-[120px] pointer-events-none" />
+      <div className="absolute top-1/4 right-0 w-80 h-80 rounded-full bg-orange-500/15 blur-[90px] pointer-events-none" />
 
-      {/* Top-Left Live Digital Clock */}
-      <div className="absolute top-3.5 left-3.5 sm:top-5 sm:left-6 z-20 flex items-center gap-1.5 sm:gap-2 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-2xl bg-neutral-900/85 backdrop-blur-xl border border-neutral-800 text-[11px] sm:text-xs font-mono text-amber-300 shadow-md select-none pointer-events-none">
-        <span aria-hidden="true">⏳</span>
-        <span>{clockString || "00:00:00"}</span>
-      </div>
+      {/* Top Split Layout: Content on Left, Cinematic Headphone Person & Waveform on Right */}
+      <div className="relative z-10 flex items-start justify-between gap-3 sm:gap-6 min-h-[140px] sm:min-h-[160px]">
+        {/* Left Column: Clock Pill + Brand Tagline + Headline + Subtitle */}
+        <div className="flex-1 min-w-0 pr-2 sm:pr-4 flex flex-col justify-start">
+          {/* Live Digital Clock Pill */}
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-900/85 backdrop-blur-xl border border-amber-500/30 text-[11px] sm:text-xs font-mono text-amber-300 shadow-md select-none w-fit mb-2.5">
+            <span aria-hidden="true" className="text-amber-400">⏳</span>
+            <span className="font-semibold">{clockString || "01:40:02 AM"}</span>
+          </div>
 
-      <div className="relative z-10 max-w-4xl mx-auto flex flex-col items-center text-center space-y-4 sm:space-y-6 pt-7 sm:pt-0">
-        {/* Welcome Pill */}
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold tracking-wide shadow-sm backdrop-blur-md">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-          </span>
-          <span className="uppercase tracking-widest text-[10px] font-mono font-bold">Welcome to Loopra</span>
-          <span className="text-amber-500/60">•</span>
-          <span className="text-neutral-300 font-medium hidden sm:inline text-[11px]">Immersive Desi & Global Lounge</span>
-        </div>
+          {/* Welcome Label & Accent Dash */}
+          <div className="mb-1">
+            <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-widest text-amber-400/90 font-mono">
+              WELCOME TO LOOPRA
+            </span>
+            <div className="w-7 h-[2px] bg-amber-400 rounded-full mt-0.5 mb-1" />
+          </div>
 
-        {/* Cinematic Headline & Subtitle */}
-        <div className="space-y-1.5 sm:space-y-2">
-          <h1 className="text-3xl sm:text-5xl md:text-6xl font-display font-black text-white tracking-tight leading-tight drop-shadow-md">
-            More Than <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-amber-400 to-orange-400">Music</span>
+          {/* Headline: More Than Music */}
+          <h1 className="text-2xl min-[380px]:text-3xl sm:text-4xl md:text-5xl font-display font-black text-white tracking-tight leading-[1.08] drop-shadow-md">
+            More Than <br className="sm:hidden" />
+            <span className="text-amber-400">Music</span>
           </h1>
-          <p className="text-sm sm:text-base md:text-lg text-amber-200/90 font-medium tracking-wide">
-            Stream. Discover. Relive. Repeat.
+
+          {/* Subtitle */}
+          <p className="text-xs sm:text-sm text-neutral-400 font-medium tracking-wide mt-1.5 leading-snug">
+            Stream. Discover.<br className="sm:hidden" /> Relive. Repeat.
           </p>
         </div>
 
-        {/* Integrated Search Bar */}
-        <div className="w-full pt-2 sm:pt-3">
-          <HomeSearchBar
-            onSearch={onSearch}
-            onSelectSong={onSelectSong}
-            onPlaySong={onPlaySong}
-            placeholder={placeholder || "Search songs, artists, albums..."}
-            suggestions={suggestions}
-            showQuickTags={true}
-            user={user}
-            token={token}
-            backendUrl={backendUrl}
-          />
+        {/* Right Column: Person with Headphones + Golden Waveform Graphic */}
+        <div className="relative shrink-0 w-32 sm:w-48 md:w-56 h-36 sm:h-44 flex items-center justify-end select-none pointer-events-none">
+          {/* Subtle golden ambient glow behind the character */}
+          <div className="absolute inset-0 bg-gradient-to-l from-amber-500/25 via-orange-500/15 to-transparent rounded-full blur-2xl" />
+
+          {/* Cinematic Headphone Profile Image */}
+          <div className="relative w-full h-full flex items-center justify-end overflow-hidden rounded-2xl">
+            <img
+              src="/hero-cinematic.png"
+              alt="Person with headphones listening to Loopra"
+              className="w-full h-full object-cover object-right mask-radial-fade"
+              style={{
+                maskImage: 'linear-gradient(to left, black 65%, transparent 100%)',
+                WebkitMaskImage: 'linear-gradient(to left, black 65%, transparent 100%)'
+              }}
+              onError={(e) => {
+                // If hero image fails, fallback gracefully
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+
+            {/* Golden Vertical Equalizer Waveform Graphic */}
+            <div className="absolute bottom-3 left-2 sm:left-4 flex items-end gap-[2px] sm:gap-1 h-8 sm:h-12 z-20">
+              {[14, 22, 32, 18, 28, 36, 24, 16, 30, 20, 26, 12].map((height, i) => (
+                <span
+                  key={i}
+                  className="w-[2.5px] sm:w-[3px] bg-gradient-to-t from-amber-500 via-amber-400 to-amber-300 rounded-full animate-pulse shadow-[0_0_6px_rgba(245,158,11,0.6)]"
+                  style={{
+                    height: `${height}px`,
+                    animationDelay: `${(i % 5) * 150}ms`,
+                    animationDuration: '1.2s'
+                  }}
+                />
+              ))}
+            </div>
+          </div>
         </div>
+      </div>
+
+      {/* Bottom Full-Width Search Experience */}
+      <div className="relative z-10 w-full pt-3 sm:pt-4">
+        <HomeSearchBar
+          onSearch={onSearch}
+          onSelectSong={onSelectSong}
+          onPlaySong={onPlaySong}
+          placeholder={placeholder || "Search songs, artists, or paste link..."}
+          suggestions={suggestions}
+          showQuickTags={true}
+          user={user}
+          token={token}
+          backendUrl={backendUrl}
+        />
       </div>
     </div>
   );
 }
+
 
