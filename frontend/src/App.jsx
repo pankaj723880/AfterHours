@@ -51,6 +51,7 @@ import { filterSingleSongs, isSingleSong } from './services/songFilter';
 import RatingPopupModal from './components/Rating/RatingPopupModal';
 import HomepageReviewsSection from './components/Rating/HomepageReviewsSection';
 import { updateRouteMetadata } from './utils/seo';
+import { TrackDeduplicator, getCanonicalSongKey } from './utils/trackIdentity';
 
 import { io } from 'socket.io-client';
 import { BACKEND_URL, getApiUrl } from './utils/apiUrl';
@@ -1539,6 +1540,28 @@ export default function App() {
   const [popularAlbums, setPopularAlbums] = useState(() => {
     return validateAndSanitizeItems(localStorage.getItem('afterhours_albums'), POPULAR_ALBUMS);
   });
+  // Track rendered personalized recommendation track keys to coordinate zero duplicates across homepage
+  const [renderedRecTrackKeys, setRenderedRecTrackKeys] = useState(() => new Set());
+
+  const handlePersonalizedTracksRendered = useCallback((tracks) => {
+    if (!Array.isArray(tracks)) return;
+    const dedup = new TrackDeduplicator(tracks);
+    setRenderedRecTrackKeys(new Set(dedup.getAllKeys()));
+  }, []);
+
+  // Filter trending songs dynamically so no song rendered above in recommendations ever repeats below
+  const uniqueTrendingSongs = React.useMemo(() => {
+    const raw = (trendingSongs && trendingSongs.length > 0) ? trendingSongs : TRENDING_SONGS;
+    const dedup = new TrackDeduplicator();
+    return raw.filter(t => {
+      const key = getCanonicalSongKey(t);
+      if (renderedRecTrackKeys.has(key)) return false;
+      if (dedup.isDuplicate(t)) return false;
+      dedup.add(t);
+      return true;
+    });
+  }, [trendingSongs, renderedRecTrackKeys]);
+
   const [popularRadio, setPopularRadio] = useState(() => {
     return validateAndSanitizeItems(localStorage.getItem('afterhours_radio'), POPULAR_RADIO);
   });
@@ -6251,6 +6274,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               isLiked={isSongLiked}
               onAddToPlaylist={handleAddToPlaylistClick}
               showToast={showToast}
+              onTracksRendered={handlePersonalizedTracksRendered}
             />
 
             {/* Dynamic Homepage Sections from CMS Configuration */}
@@ -6277,12 +6301,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         key="sec-trending"
                         title={sec.title || "Trending songs"}
                         subtitle={sec.subtitle || "The most played hits right now"}
-                        items={trendingSongs}
-                        fallbackItems={TRENDING_SONGS}
+                        items={uniqueTrendingSongs}
+                        fallbackItems={[]}
                         showAll={showAllTrending}
                         setShowAll={setShowAllTrending}
                         renderItem={(song) => (
-                          <div onClick={() => handlePlayTrending(song.query || song.title, song, trendingSongs)} className="group cursor-pointer">
+                          <div onClick={() => handlePlayTrending(song.query || song.title, song, uniqueTrendingSongs)} className="group cursor-pointer">
                             <div className="relative mb-2 md:mb-3">
                               <img src={getCleanThumbnail(song)} alt={song.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => handleImageError(e, song.title, song.id)} />
                               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">

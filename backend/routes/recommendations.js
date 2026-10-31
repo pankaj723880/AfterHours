@@ -5,11 +5,27 @@ import { recommendationEngine } from '../services/recommendationEngine.js';
 import { listeningEventService } from '../services/listeningEventService.js';
 import UserMusicPreference from '../models/UserMusicPreference.js';
 import { catalogService } from '../services/catalogService.js';
+import { TrackDeduplicator, getCanonicalSongKey } from '../services/recommendationHistoryService.js';
 
 const router = express.Router();
 
 // Helper rate limiter for recommendation refresh
 const refreshCooldowns = new Map();
+
+// Helper to parse exclusion parameters from request
+function parseExclusions(req) {
+  const rawIds = req.query.excludeIds || req.query.exclude || '';
+  const rawKeys = req.query.excludeKeys || '';
+
+  const excludedIds = new Set(
+    rawIds ? String(rawIds).split(',').map(s => s.trim()).filter(Boolean) : []
+  );
+  const excludedKeys = new Set(
+    rawKeys ? String(rawKeys).split(',').map(s => s.trim()).filter(Boolean) : []
+  );
+
+  return { excludedIds, excludedKeys };
+}
 
 /**
  * 1. GET /api/recommendations/personalized
@@ -40,9 +56,19 @@ router.get('/daily-mix', authenticateToken, async (req, res) => {
     const userId = req.user._id || req.user.userId || req.user.id;
     const limit = Math.max(1, Math.min(50, parseInt(req.query.limit, 10) || 10));
     const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+    const { excludedIds, excludedKeys } = parseExclusions(req);
 
     const result = await recommendationEngine.getPersonalizedRecommendations(userId);
-    const allItems = result.dailyMix || [];
+    let allItems = result.dailyMix || [];
+
+    if (excludedIds.size > 0 || excludedKeys.size > 0) {
+      allItems = allItems.filter(t => {
+        const id = t.id || t.videoId;
+        const key = getCanonicalSongKey(t);
+        return (!id || !excludedIds.has(id)) && (!key || !excludedKeys.has(key));
+      });
+    }
+
     const items = allItems.slice(offset, offset + limit);
 
     res.json({
@@ -62,12 +88,13 @@ router.get('/daily-mix', authenticateToken, async (req, res) => {
  * 3. GET /api/recommendations/discover
  * Retrieves fresh discovery recommendations.
  * If authenticated, returns user's distinct personalized discovery tracks (zero overlap with Daily Mix).
- * Supports pagination (limit & offset).
+ * Supports pagination (limit & offset) and explicit exclusion parameters.
  */
 router.get('/discover', async (req, res) => {
   try {
     const limit = Math.max(1, Math.min(50, parseInt(req.query.limit, 10) || 12));
     const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+    const { excludedIds, excludedKeys } = parseExclusions(req);
 
     // Optional user token check
     let userId = null;
@@ -82,7 +109,16 @@ router.get('/discover', async (req, res) => {
 
     if (userId) {
       const result = await recommendationEngine.getPersonalizedRecommendations(userId);
-      const allItems = result.discover || [];
+      let allItems = result.discover || [];
+
+      if (excludedIds.size > 0 || excludedKeys.size > 0) {
+        allItems = allItems.filter(t => {
+          const id = t.id || t.videoId;
+          const key = getCanonicalSongKey(t);
+          return (!id || !excludedIds.has(id)) && (!key || !excludedKeys.has(key));
+        });
+      }
+
       const items = allItems.slice(offset, offset + limit);
       return res.json({
         success: true,
@@ -101,7 +137,16 @@ router.get('/discover', async (req, res) => {
       return m.includes('underrated') || g.includes('indie') || g.includes('acoustic') || g.includes('sufi');
     });
     const fallbackTracks = candidates.filter(t => !discoveryTracks.some(d => (d.id || d.videoId) === (t.id || t.videoId)));
-    const merged = [...discoveryTracks, ...fallbackTracks];
+    let merged = [...discoveryTracks, ...fallbackTracks];
+
+    if (excludedIds.size > 0 || excludedKeys.size > 0) {
+      merged = merged.filter(t => {
+        const id = t.id || t.videoId;
+        const key = getCanonicalSongKey(t);
+        return (!id || !excludedIds.has(id)) && (!key || !excludedKeys.has(key));
+      });
+    }
+
     const items = merged.slice(offset, offset + limit).map(t => ({ ...t, reason: 'Curated Discovery' }));
 
     res.json({

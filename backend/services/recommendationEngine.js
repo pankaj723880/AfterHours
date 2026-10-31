@@ -4,7 +4,7 @@ import UserListeningEvent from '../models/UserListeningEvent.js';
 import { listeningEventService } from './listeningEventService.js';
 import { catalogService } from './catalogService.js';
 import { geminiRecommendationService, geminiDiagnostics } from './geminiRecommendationService.js';
-import { getCanonicalSongKey, cleanSongTitle, cleanArtistName } from './recommendationHistoryService.js';
+import { getCanonicalSongKey, cleanSongTitle, cleanArtistName, areTracksSame, TrackDeduplicator } from './recommendationHistoryService.js';
 
 // Configuration
 const CACHE_TTL_HOURS = 6;
@@ -32,20 +32,33 @@ export const recommendationEngine = {
     if (cached && !forceRefresh) {
       const isExpired = cached.expiresAt && new Date(cached.expiresAt) <= now;
 
-      // Anti-corruption check: Ensure cached dailyMix and discover are genuinely distinct
-      const cachedDaily = cached.recommendations?.dailyMix || [];
-      const cachedDiscover = cached.recommendations?.discover || [];
-      const cachedDailyIds = new Set(cachedDaily.map(t => t.id || t.videoId));
-      const cachedDailyKeys = new Set(cachedDaily.map(t => getCanonicalSongKey(t)));
+      // Complete Anti-corruption check: Ensure zero duplicates across ALL recommendation sections
+      const recs = cached.recommendations || {};
+      const allSections = [
+        recs.madeForYou || [],
+        recs.becauseYouListenedTo?.recommendations || [],
+        recs.dailyMix || [],
+        recs.favouriteArtists || [],
+        recs.discover || [],
+        recs.moreLikeRecent || []
+      ];
 
-      const hasDuplicateRecommendations = cachedDiscover.some(t => {
-        const id = t.id || t.videoId;
-        const key = getCanonicalSongKey(t);
-        return cachedDailyIds.has(id) || cachedDailyKeys.has(key);
-      });
+      const testDeduplicator = new TrackDeduplicator();
+      let hasDuplicateRecommendations = false;
+      for (const section of allSections) {
+        if (!Array.isArray(section)) continue;
+        for (const track of section) {
+          if (testDeduplicator.isDuplicate(track)) {
+            hasDuplicateRecommendations = true;
+            break;
+          }
+          testDeduplicator.add(track);
+        }
+        if (hasDuplicateRecommendations) break;
+      }
 
       if (hasDuplicateRecommendations) {
-        // Stale or corrupted legacy cache where dailyMix and discover share songs.
+        // Stale or corrupted legacy cache where any recommendation sections share songs.
         // Discard immediately to regenerate disjoint recommendation sets.
         cached = null;
       } else {
@@ -83,12 +96,9 @@ export const recommendationEngine = {
     // If user has explicitly disabled personalized recommendations in privacy settings
     if (userProfile.recommendationsEnabled === false) {
       const starterCandidates = await catalogService.getCuratedTracks();
-      const dailyMix = starterCandidates.slice(0, 6);
-      const dailyIds = new Set(dailyMix.map(t => t.id || t.videoId));
-      const dailyKeys = new Set(dailyMix.map(t => getCanonicalSongKey(t)));
-      const discover = starterCandidates
-        .filter(t => !dailyIds.has(t.id || t.videoId) && !dailyKeys.has(getCanonicalSongKey(t)))
-        .slice(0, 6);
+      const starterDedup = new TrackDeduplicator();
+      const dailyMix = starterDedup.filterUnique(starterCandidates).slice(0, 6);
+      const discover = starterDedup.filterUnique(starterCandidates).slice(0, 6);
 
       return {
         madeForYou: [],
@@ -166,82 +176,74 @@ export const recommendationEngine = {
 
   /**
    * Helper: Builds friendly discovery starter mix for brand new accounts.
-   */
-  /**
-   * Helper: Builds friendly discovery starter mix for brand new accounts.
-   * Partitions candidates into completely disjoint pools:
+   * Partitions candidates into completely disjoint pools across ALL sections:
+   * - Made For You: Diverse trending starter showcase
    * - Daily Mix: Evergreen, universally familiar hits (e.g. Kesariya, Tum Hi Ho).
    * - Discover: Novel indie, acoustic, and diverse sounds (e.g. Anuv Jain, Prateek Kuhad, Sufi Rock).
-   * ZERO overlap between Daily Mix and Discover!
+   * ZERO overlap across the entire starter ecosystem!
    */
   buildDiscoveryStarterMix(candidates = []) {
-    const dailyMix = [];
-    const dailyMixIds = new Set();
-    const dailyMixKeys = new Set();
+    const deduplicator = new TrackDeduplicator();
 
-    // Select familiar mainstream hits for Daily Mix (Romantic, 90s, Pop)
+    // 1. Made For You: Diverse starter showcase (Romantic, Bollywood, Pop hits)
+    const madeForYou = [];
     for (const track of candidates) {
-      const id = track.id || track.videoId;
-      const key = getCanonicalSongKey(track);
-      if (!id || dailyMixIds.has(id) || dailyMixKeys.has(key)) continue;
+      if (deduplicator.isDuplicate(track)) continue;
 
       const genre = (track.genre || '').toLowerCase();
       const mood = (track.mood || '').toLowerCase();
       const isMainstream = genre.includes('romantic') || genre.includes('bollywood') || genre.includes('pop') || mood.includes('love') || mood.includes('feel-good');
 
+      if (isMainstream || madeForYou.length < 5) {
+        deduplicator.add(track);
+        madeForYou.push({
+          ...track,
+          reason: 'Trending on Loopra',
+          source: 'starter'
+        });
+      }
+      if (madeForYou.length >= 6) break;
+    }
+
+    // 2. Select familiar mainstream hits for Daily Mix (STRICTLY DISJOINT from Made For You)
+    const dailyMix = [];
+    for (const track of candidates) {
+      if (deduplicator.isDuplicate(track)) continue;
+
+      const genre = (track.genre || '').toLowerCase();
+      const mood = (track.mood || '').toLowerCase();
+      const isMainstream = genre.includes('romantic') || genre.includes('bollywood') || genre.includes('pop') || mood.includes('love') || mood.includes('feel-good') || mood.includes('nostalgic');
+
       if (isMainstream || dailyMix.length < 5) {
+        deduplicator.add(track);
         dailyMix.push({
           ...track,
           reason: 'Popular Daily Mix',
           source: 'starter'
         });
-        dailyMixIds.add(id);
-        dailyMixKeys.add(key);
       }
       if (dailyMix.length >= 6) break;
     }
 
-    // Select novel discovery gems for Discover (Acoustic, Indie, Sufi, Rock, Underrated)
-    // STRICTLY DISJOINT from dailyMix
+    // 3. Select novel discovery gems for Discover (Acoustic, Indie, Sufi, Rock, Underrated)
+    // STRICTLY DISJOINT from Made For You and Daily Mix
     const discover = [];
-    const discoverIds = new Set();
-    const discoverKeys = new Set();
-
     for (const track of candidates) {
-      const id = track.id || track.videoId;
-      const key = getCanonicalSongKey(track);
-      if (!id || dailyMixIds.has(id) || dailyMixKeys.has(key)) continue;
-      if (discoverIds.has(id) || discoverKeys.has(key)) continue;
+      if (deduplicator.isDuplicate(track)) continue;
 
       const genre = (track.genre || '').toLowerCase();
       const mood = (track.mood || '').toLowerCase();
       const isNovel = mood.includes('underrated') || genre.includes('indie') || genre.includes('acoustic') || genre.includes('sufi') || genre.includes('rock');
 
       if (isNovel || discover.length < 5) {
+        deduplicator.add(track);
         discover.push({
           ...track,
           reason: 'Explore new sounds',
           source: 'discovery'
         });
-        discoverIds.add(id);
-        discoverKeys.add(key);
       }
       if (discover.length >= 6) break;
-    }
-
-    // Made For You: Diverse starter showcase
-    const madeForYou = [];
-    const mIds = new Set();
-    for (const track of candidates) {
-      const id = track.id || track.videoId;
-      if (!id || mIds.has(id)) continue;
-      mIds.add(id);
-      madeForYou.push({
-        ...track,
-        reason: 'Trending on Loopra',
-        source: 'starter'
-      });
-      if (madeForYou.length >= 6) break;
     }
 
     return {
@@ -265,14 +267,7 @@ export const recommendationEngine = {
   /**
    * Intelligent Heuristic Hybrid Recommendation Engine.
    * Runs when Gemini API is unconfigured or temporarily unavailable.
-   * 
-   * Strategy 1 - Your Daily Mix:
-   * Focuses on familiarity, cohesive flow, and continuity. Prioritizes user's
-   * top artists, frequent favorites, and completed listens.
-   * 
-   * Strategy 2 - Discover Your Next Favourite:
-   * Focuses on novelty, taste expansion, and exploring new artists / adjacent genres.
-   * STRICTLY DISJOINT: Excludes all tracks in Daily Mix and user's top played songs.
+   * Enforces 100% mutual disjointness across ALL sections using TrackDeduplicator.
    */
   generateHeuristicRecommendations(userProfile, candidates = []) {
     const skippedSet = new Set(userProfile.skippedTrackIds || []);
@@ -283,11 +278,13 @@ export const recommendationEngine = {
     const primaryArtist = topArtistNames[0] || 'Arijit Singh';
     const topGenres = (userProfile.topGenres || []).map(g => g.name.toLowerCase());
 
+    const deduplicator = new TrackDeduplicator();
+
     // 1. Score candidates for familiarity and affinity
     const scoredCandidates = [];
     for (const track of candidates) {
       const trackId = track.id || track.videoId;
-      if (!trackId || dislikedSet.has(trackId)) continue; // Respect explicit dislikes completely
+      if (!trackId || dislikedSet.has(trackId)) continue;
 
       let familiarityScore = 10;
       const trackArtist = (track.artist || track.channel || '').toLowerCase();
@@ -321,24 +318,18 @@ export const recommendationEngine = {
 
     // 2. Build Made For You (diversified, max 2 tracks per artist)
     const madeForYou = [];
-    const madeForYouIds = new Set();
-    const madeForYouKeys = new Set();
     const mArtistCount = {};
 
     for (const item of scoredCandidates) {
-      const id = item.track.id || item.track.videoId;
-      const key = item.canonicalKey;
+      if (deduplicator.isDuplicate(item.track)) continue;
       const art = (item.track.artist || 'various').toLowerCase();
-
-      if (madeForYouIds.has(id) || madeForYouKeys.has(key)) continue;
       if ((mArtistCount[art] || 0) >= 2) continue;
 
       mArtistCount[art] = (mArtistCount[art] || 0) + 1;
-      madeForYouIds.add(id);
-      madeForYouKeys.add(key);
+      deduplicator.add(item.track);
       madeForYou.push({
         ...item.track,
-        reason: favouriteSet.has(id)
+        reason: favouriteSet.has(item.track.id || item.track.videoId)
           ? 'Based on your favourites'
           : topArtistNames.some(a => art.includes(a))
             ? `Because you love ${item.track.artist}`
@@ -348,31 +339,61 @@ export const recommendationEngine = {
       if (madeForYou.length >= 6) break;
     }
 
-    // 3. Strategy 1: "Your Daily Mix"
+    // 3. Because You Listened To (strictly disjoint from Made For You)
+    const recentBase = userProfile.recentTracks?.[0] || null;
+    const baseArt = recentBase ? (recentBase.artist || '').toLowerCase() : '';
+    let relatedToRecent = [];
+
+    if (recentBase) {
+      const baseId = recentBase.trackId;
+      for (const cand of candidates) {
+        const cId = cand.id || cand.videoId;
+        if (cId === baseId || deduplicator.isDuplicate(cand)) continue;
+        const cArt = (cand.artist || cand.channel || '').toLowerCase();
+        if (baseArt && (cArt.includes(baseArt) || baseArt.includes(cArt))) {
+          deduplicator.add(cand);
+          relatedToRecent.push({
+            ...cand,
+            reason: `Inspired by "${recentBase.title}"`,
+            source: 'hybrid'
+          });
+          if (relatedToRecent.length >= 4) break;
+        }
+      }
+      if (relatedToRecent.length < 3) {
+        for (const cand of candidates) {
+          const cId = cand.id || cand.videoId;
+          if (cId === baseId || deduplicator.isDuplicate(cand)) continue;
+          deduplicator.add(cand);
+          relatedToRecent.push({
+            ...cand,
+            reason: `Inspired by "${recentBase.title}"`,
+            source: 'hybrid'
+          });
+          if (relatedToRecent.length >= 4) break;
+        }
+      }
+    }
+
+    // 4. Strategy 1: "Your Daily Mix"
     // Cohesive, familiar flow based on user history, top genres, and top artists
+    // STRICTLY DISJOINT: Exclude all tracks already in madeForYou and becauseYouListenedTo
     const dailyMix = [];
-    const dailyMixIds = new Set();
-    const dailyMixKeys = new Set();
     const dArtistCount = {};
 
     for (const item of scoredCandidates) {
-      const id = item.track.id || item.track.videoId;
-      const key = item.canonicalKey;
+      if (deduplicator.isDuplicate(item.track)) continue;
       const art = (item.track.artist || 'various').toLowerCase();
-
-      // Disallow internal duplicates
-      if (dailyMixIds.has(id) || dailyMixKeys.has(key)) continue;
 
       // Limit max 2 per artist in dailyMix for smooth variety
       if ((dArtistCount[art] || 0) >= 2) continue;
 
       dArtistCount[art] = (dArtistCount[art] || 0) + 1;
-      dailyMixIds.add(id);
-      dailyMixKeys.add(key);
+      deduplicator.add(item.track);
 
       dailyMix.push({
         ...item.track,
-        reason: favouriteSet.has(id)
+        reason: favouriteSet.has(item.track.id || item.track.videoId)
           ? 'From your frequent favourites'
           : topArtistNames.some(a => art.includes(a))
             ? `Curated daily hit from ${item.track.artist}`
@@ -383,22 +404,32 @@ export const recommendationEngine = {
       if (dailyMix.length >= 6) break;
     }
 
-    // 4. Strategy 2: "Discover Your Next Favourite"
+    // 5. Favourite artists section (strictly disjoint from all above)
+    const favouriteArtistsTracks = [];
+    for (const cand of candidates) {
+      if (deduplicator.isDuplicate(cand)) continue;
+      const art = (cand.artist || cand.channel || '').toLowerCase();
+      if (topArtistNames.some(a => art.includes(a))) {
+        deduplicator.add(cand);
+        favouriteArtistsTracks.push({
+          ...cand,
+          reason: `Because you love ${cand.artist}`,
+          source: 'hybrid'
+        });
+        if (favouriteArtistsTracks.length >= 6) break;
+      }
+    }
+
+    // 6. Strategy 2: "Discover Your Next Favourite"
     // Prioritizes novel artists, unexplored music, and related genres
-    // CRITICAL: MUST BE COMPLETELY DISJOINT FROM dailyMix
+    // CRITICAL: MUST BE COMPLETELY DISJOINT FROM ALL PREVIOUS SECTIONS
     const discover = [];
-    const discoverIds = new Set();
-    const discoverKeys = new Set();
-
     const discoveryCandidates = [];
-    for (const track of candidates) {
-      const id = track.id || track.videoId;
-      const key = getCanonicalSongKey(track);
 
-      // STRICT EXCLUSION: Exclude tracks in dailyMix
-      if (dailyMixIds.has(id) || dailyMixKeys.has(key)) continue;
-      // STRICT EXCLUSION: Exclude tracks in madeForYou
-      if (madeForYouIds.has(id) || madeForYouKeys.has(key)) continue;
+    for (const track of candidates) {
+      if (deduplicator.isDuplicate(track)) continue;
+      const id = track.id || track.videoId;
+
       // STRICT EXCLUSION: Exclude tracks user already plays frequently or favorited
       if (favouriteSet.has(id) || recentTrackIds.has(id) || skippedSet.has(id) || dislikedSet.has(id)) continue;
 
@@ -406,11 +437,7 @@ export const recommendationEngine = {
       const isKnownArtist = topArtistNames.some(a => trackArtist.includes(a));
 
       let discoveryScore = 15;
-      // Bonus if it's a NEW artist (+20)
-      if (!isKnownArtist) {
-        discoveryScore += 20;
-      }
-      // Bonus if it's an indie, acoustic, or underrated gem (+15)
+      if (!isKnownArtist) discoveryScore += 20;
       const mood = (track.mood || '').toLowerCase();
       const genre = (track.genre || '').toLowerCase();
       if (mood.includes('underrated') || genre.includes('indie') || genre.includes('acoustic') || mood.includes('soulful')) {
@@ -419,20 +446,16 @@ export const recommendationEngine = {
 
       discoveryCandidates.push({
         track,
-        score: discoveryScore,
-        canonicalKey: key,
-        id
+        score: discoveryScore
       });
     }
 
     discoveryCandidates.sort((a, b) => b.score - a.score);
 
     for (const item of discoveryCandidates) {
-      if (discoverIds.has(item.id) || discoverKeys.has(item.canonicalKey)) continue;
+      if (deduplicator.isDuplicate(item.track)) continue;
 
-      discoverIds.add(item.id);
-      discoverKeys.add(item.canonicalKey);
-
+      deduplicator.add(item.track);
       discover.push({
         ...item.track,
         reason: 'Fresh sound picked to broaden your taste',
@@ -443,17 +466,12 @@ export const recommendationEngine = {
     }
 
     // If discover still needs candidates and candidate pool is limited:
-    // Only add if it does NOT violate dailyMix exclusion!
+    // Only add if it does NOT violate any section exclusion!
     if (discover.length < 4) {
       for (const track of candidates) {
-        const id = track.id || track.videoId;
-        const key = getCanonicalSongKey(track);
-        if (dailyMixIds.has(id) || dailyMixKeys.has(key)) continue;
-        if (discoverIds.has(id) || discoverKeys.has(key)) continue;
-        if (dislikedSet.has(id)) continue;
+        if (deduplicator.isDuplicate(track) || dislikedSet.has(track.id || track.videoId)) continue;
 
-        discoverIds.add(id);
-        discoverKeys.add(key);
+        deduplicator.add(track);
         discover.push({
           ...track,
           reason: 'Curated discovery recommendation',
@@ -463,45 +481,20 @@ export const recommendationEngine = {
       }
     }
 
-    // 5. Because You Listened To:
-    const recentBase = userProfile.recentTracks?.[0] || null;
-    const baseArt = recentBase ? (recentBase.artist || '').toLowerCase() : '';
-    const usedInOtherSections = new Set([
-      ...madeForYou.map(m => m.id || m.videoId),
-      ...dailyMix.map(d => d.id || d.videoId)
-    ]);
-
-    let relatedToRecent = [];
+    // 7. More Like Recent (fresh vibe, strictly disjoint from all above)
+    const moreLikeRecent = [];
     if (recentBase) {
-      const baseId = recentBase.trackId;
-      const artistMatches = candidates.filter(t => {
-        const tId = t.id || t.videoId;
-        if (tId === baseId || usedInOtherSections.has(tId)) return false;
-        const tArt = (t.artist || t.channel || '').toLowerCase();
-        return baseArt && (tArt.includes(baseArt) || baseArt.includes(tArt));
-      });
-
-      const otherMatches = candidates.filter(t => {
-        const tId = t.id || t.videoId;
-        return tId !== baseId && !usedInOtherSections.has(tId) && !artistMatches.some(a => (a.id || a.videoId) === tId);
-      });
-
-      relatedToRecent = [...artistMatches, ...otherMatches].slice(0, 4).map(t => ({
-        ...t,
-        reason: `Inspired by "${recentBase.title}"`,
-        source: 'hybrid'
-      }));
+      for (const cand of candidates) {
+        if (deduplicator.isDuplicate(cand)) continue;
+        deduplicator.add(cand);
+        moreLikeRecent.push({
+          ...cand,
+          reason: 'Matches vibe of recent sessions',
+          source: 'hybrid'
+        });
+        if (moreLikeRecent.length >= 4) break;
+      }
     }
-
-    // 6. Favourite artists section
-    const favouriteArtistsTracks = candidates.filter(t => {
-      const art = (t.artist || t.channel || '').toLowerCase();
-      return topArtistNames.some(a => art.includes(a));
-    }).slice(0, 8).map(t => ({
-      ...t,
-      reason: `Because you love ${t.artist}`,
-      source: 'hybrid'
-    }));
 
     return {
       source: 'catalog_fallback',
@@ -514,7 +507,7 @@ export const recommendationEngine = {
         madeForYou,
         dailyMix,
         discover,
-        becauseYouListenedTo: recentBase ? {
+        becauseYouListenedTo: recentBase && relatedToRecent.length > 0 ? {
           baseTrack: {
             id: recentBase.trackId,
             videoId: recentBase.trackId,
@@ -525,14 +518,14 @@ export const recommendationEngine = {
           recommendations: relatedToRecent
         } : null,
         favouriteArtists: favouriteArtistsTracks,
-        moreLikeRecent: relatedToRecent
+        moreLikeRecent
       }
     };
   },
 
   /**
-   * Sanitizes recommendations across sections to guarantee:
-   * 1. Zero duplicate tracks between Daily Mix and Discover Your Next Favourite.
+   * Sanitizes recommendations across sections using TrackDeduplicator to guarantee:
+   * 1. EXACTLY ZERO duplicate tracks across all sections.
    * 2. Zero internal duplicates within any section.
    * 3. Accurate metadata (no "Unknown Artist" labels when channel or title has information).
    * 4. Reliable videoId / id matching.
@@ -541,6 +534,8 @@ export const recommendationEngine = {
     if (!recommendations || typeof recommendations !== 'object') {
       return recommendations;
     }
+
+    const deduplicator = new TrackDeduplicator();
 
     const cleanTrack = (t, defaultReason = '') => {
       if (!t) return null;
@@ -568,89 +563,96 @@ export const recommendationEngine = {
     // 1. Sanitize Made For You
     const rawMadeForYou = Array.isArray(recommendations.madeForYou) ? recommendations.madeForYou : [];
     const madeForYou = [];
-    const mIds = new Set();
-    const mKeys = new Set();
 
     for (const t of rawMadeForYou) {
       const clean = cleanTrack(t, 'Matches your listening vibe');
-      if (!clean) continue;
-      const key = getCanonicalSongKey(clean);
-      if (mIds.has(clean.id) || mKeys.has(key)) continue;
-      mIds.add(clean.id);
-      mKeys.add(key);
+      if (!clean || deduplicator.isDuplicate(clean)) continue;
+      deduplicator.add(clean);
       madeForYou.push(clean);
     }
 
-    // 2. Sanitize Daily Mix (internal deduplication)
+    // 2. Sanitize Because You Listened To (strictly disjoint from Made For You)
+    let becauseYouListenedTo = null;
+    if (recommendations.becauseYouListenedTo && typeof recommendations.becauseYouListenedTo === 'object') {
+      const rawRecs = Array.isArray(recommendations.becauseYouListenedTo.recommendations)
+        ? recommendations.becauseYouListenedTo.recommendations
+        : [];
+      const becauseRecs = [];
+      for (const t of rawRecs) {
+        const clean = cleanTrack(t, 'Inspired by your listening history');
+        if (!clean || deduplicator.isDuplicate(clean)) continue;
+        deduplicator.add(clean);
+        becauseRecs.push(clean);
+      }
+      if (becauseRecs.length > 0) {
+        becauseYouListenedTo = {
+          baseTrack: recommendations.becauseYouListenedTo.baseTrack || null,
+          recommendations: becauseRecs
+        };
+      }
+    }
+
+    // 3. Sanitize Daily Mix (strictly disjoint from all above)
     const rawDailyMix = Array.isArray(recommendations.dailyMix) ? recommendations.dailyMix : [];
     const dailyMix = [];
-    const dailyMixIds = new Set();
-    const dailyMixKeys = new Set();
 
     for (const t of rawDailyMix) {
       const clean = cleanTrack(t, 'Curated for your daily listening');
-      if (!clean) continue;
-      const key = getCanonicalSongKey(clean);
-      if (dailyMixIds.has(clean.id) || dailyMixKeys.has(key)) continue;
-      dailyMixIds.add(clean.id);
-      dailyMixKeys.add(key);
+      if (!clean || deduplicator.isDuplicate(clean)) continue;
+      deduplicator.add(clean);
       dailyMix.push(clean);
     }
 
-    // 3. Sanitize Discover Your Next Favourite:
-    // STRICTLY DISJOINT: Exclude all tracks in dailyMix
+    // 4. Sanitize Favourite Artists (strictly disjoint from all above)
+    const rawFavArtists = Array.isArray(recommendations.favouriteArtists) ? recommendations.favouriteArtists : [];
+    const favouriteArtists = [];
+    for (const t of rawFavArtists) {
+      const clean = cleanTrack(t, 'From your top artists');
+      if (!clean || deduplicator.isDuplicate(clean)) continue;
+      deduplicator.add(clean);
+      favouriteArtists.push(clean);
+    }
+
+    // 5. Sanitize Discover Your Next Favourite (strictly disjoint from all above)
     const rawDiscover = Array.isArray(recommendations.discover) ? recommendations.discover : [];
     const discover = [];
-    const discoverIds = new Set();
-    const discoverKeys = new Set();
 
     for (const t of rawDiscover) {
       const clean = cleanTrack(t, 'Fresh discovery picked for you');
-      if (!clean) continue;
-      const key = getCanonicalSongKey(clean);
-
-      // Exclude if already in Daily Mix
-      if (dailyMixIds.has(clean.id) || dailyMixKeys.has(key)) continue;
-      // Exclude if already in Discover
-      if (discoverIds.has(clean.id) || discoverKeys.has(key)) continue;
-
-      discoverIds.add(clean.id);
-      discoverKeys.add(key);
+      if (!clean || deduplicator.isDuplicate(clean)) continue;
+      deduplicator.add(clean);
       discover.push(clean);
     }
 
-    // Backfill Discover if needed from candidates without violating Daily Mix exclusion
+    // Backfill Discover if needed from candidates without violating global exclusion
     if (discover.length < 4 && Array.isArray(candidates) && candidates.length > 0) {
       for (const cand of candidates) {
         const clean = cleanTrack(cand, 'Broaden your taste with adjacent sounds');
-        if (!clean) continue;
-        const key = getCanonicalSongKey(clean);
-
-        if (dailyMixIds.has(clean.id) || dailyMixKeys.has(key)) continue;
-        if (discoverIds.has(clean.id) || discoverKeys.has(key)) continue;
-
-        discoverIds.add(clean.id);
-        discoverKeys.add(key);
+        if (!clean || deduplicator.isDuplicate(clean)) continue;
+        deduplicator.add(clean);
         discover.push(clean);
-
         if (discover.length >= 5) break;
       }
     }
 
-    // 4. Sanitize other sections
+    // 6. Sanitize More Like Recent (strictly disjoint from all above)
     const rawMoreLike = Array.isArray(recommendations.moreLikeRecent) ? recommendations.moreLikeRecent : [];
-    const moreLikeRecent = rawMoreLike.map(t => cleanTrack(t)).filter(Boolean);
-
-    const rawFavArtists = Array.isArray(recommendations.favouriteArtists) ? recommendations.favouriteArtists : [];
-    const favouriteArtists = rawFavArtists.map(t => cleanTrack(t)).filter(Boolean);
+    const moreLikeRecent = [];
+    for (const t of rawMoreLike) {
+      const clean = cleanTrack(t, 'Vibes matching your recent session');
+      if (!clean || deduplicator.isDuplicate(clean)) continue;
+      deduplicator.add(clean);
+      moreLikeRecent.push(clean);
+    }
 
     return {
       ...recommendations,
       madeForYou,
+      becauseYouListenedTo,
       dailyMix,
+      favouriteArtists,
       discover,
-      moreLikeRecent,
-      favouriteArtists
+      moreLikeRecent
     };
   },
 

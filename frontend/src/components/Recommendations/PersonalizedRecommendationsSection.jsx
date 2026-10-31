@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { recommendationsClient } from '../../services/recommendationsClient';
+import { TrackDeduplicator } from '../../utils/trackIdentity';
 
 export default function PersonalizedRecommendationsSection({
   backendUrl,
@@ -10,7 +11,8 @@ export default function PersonalizedRecommendationsSection({
   onToggleLike,
   isLiked,
   onAddToPlaylist,
-  showToast
+  showToast,
+  onTracksRendered
 }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -21,21 +23,40 @@ export default function PersonalizedRecommendationsSection({
 
   const fetchRecommendations = useCallback(async (isRefresh = false) => {
     if (!authToken) {
-      // Unauthenticated: fetch general discovery tracks with strictly disjoint Daily Mix and Discover
+      // Unauthenticated: fetch general discovery tracks with strictly disjoint pools
       try {
         setLoading(true);
-        const res = await recommendationsClient.getDiscover(backendUrl);
+        const res = await recommendationsClient.getDiscover(backendUrl, null, { limit: 30 });
         const items = res.items || [];
-        const dailyMix = items.slice(0, 5);
-        const dailyMixIds = new Set(dailyMix.map(t => t.id || t.videoId));
-        const discover = items.slice(5).filter(t => !dailyMixIds.has(t.id || t.videoId)).slice(0, 5);
+        const deduplicator = new TrackDeduplicator();
 
-        setData({
-          madeForYou: items.slice(0, 6),
+        const madeForYou = [];
+        const dailyMix = [];
+        const discover = [];
+
+        for (const t of items) {
+          if (deduplicator.isDuplicate(t)) continue;
+          deduplicator.add(t);
+
+          if (madeForYou.length < 6) {
+            madeForYou.push(t);
+          } else if (dailyMix.length < 5) {
+            dailyMix.push(t);
+          } else if (discover.length < 5) {
+            discover.push(t);
+          }
+          if (madeForYou.length >= 6 && dailyMix.length >= 5 && discover.length >= 5) break;
+        }
+
+        const formatted = {
+          madeForYou,
           dailyMix,
           discover,
           isGuest: true
-        });
+        };
+
+        setData(formatted);
+        onTracksRendered?.([...madeForYou, ...dailyMix, ...discover]);
         setError(null);
       } catch (err) {
         setError('Failed to load music suggestions');
@@ -52,22 +73,46 @@ export default function PersonalizedRecommendationsSection({
       const res = await recommendationsClient.getPersonalized(backendUrl, authToken, isRefresh);
       if (res?.data) {
         const rawData = res.data;
-        const dailyMix = rawData.dailyMix || [];
-        const dailyMixIds = new Set(dailyMix.map(t => t.id || t.videoId));
-        const dailyMixTitles = new Set(dailyMix.map(t => (t.title || '').toLowerCase().trim()));
+        const deduplicator = new TrackDeduplicator();
 
-        // Client-side cross-section deduplication guarantee
-        const distinctDiscover = (rawData.discover || []).filter(t => {
-          const id = t.id || t.videoId;
-          const title = (t.title || '').toLowerCase().trim();
-          return id && !dailyMixIds.has(id) && !dailyMixTitles.has(title);
-        });
+        const madeForYou = deduplicator.filterUnique(rawData.madeForYou || []).slice(0, 6);
 
-        setData({
+        let becauseYouListenedTo = null;
+        if (rawData.becauseYouListenedTo && typeof rawData.becauseYouListenedTo === 'object') {
+          const rawRecs = rawData.becauseYouListenedTo.recommendations || [];
+          const becauseRecs = deduplicator.filterUnique(rawRecs).slice(0, 4);
+          if (becauseRecs.length > 0) {
+            becauseYouListenedTo = {
+              baseTrack: rawData.becauseYouListenedTo.baseTrack,
+              recommendations: becauseRecs
+            };
+          }
+        }
+
+        const dailyMix = deduplicator.filterUnique(rawData.dailyMix || []).slice(0, 6);
+        const favouriteArtists = deduplicator.filterUnique(rawData.favouriteArtists || []).slice(0, 6);
+        const discover = deduplicator.filterUnique(rawData.discover || []).slice(0, 6);
+        const moreLikeRecent = deduplicator.filterUnique(rawData.moreLikeRecent || []).slice(0, 4);
+
+        const formatted = {
           ...rawData,
+          madeForYou,
+          becauseYouListenedTo,
           dailyMix,
-          discover: distinctDiscover
-        });
+          favouriteArtists,
+          discover,
+          moreLikeRecent
+        };
+
+        setData(formatted);
+        onTracksRendered?.([
+          ...madeForYou,
+          ...(becauseYouListenedTo?.recommendations || []),
+          ...dailyMix,
+          ...favouriteArtists,
+          ...discover,
+          ...moreLikeRecent
+        ]);
 
         if (typeof rawData.recommendationsEnabled === 'boolean') {
           setRecommendationsEnabled(rawData.recommendationsEnabled);
@@ -81,7 +126,7 @@ export default function PersonalizedRecommendationsSection({
       setLoading(false);
       setRefreshing(false);
     }
-  }, [backendUrl, authToken]);
+  }, [backendUrl, authToken, onTracksRendered]);
 
   useEffect(() => {
     fetchRecommendations(false);
@@ -96,7 +141,47 @@ export default function PersonalizedRecommendationsSection({
       setRefreshing(true);
       const res = await recommendationsClient.refreshRecommendations(backendUrl, authToken);
       if (res?.data) {
-        setData(res.data);
+        const rawData = res.data;
+        const deduplicator = new TrackDeduplicator();
+
+        const madeForYou = deduplicator.filterUnique(rawData.madeForYou || []).slice(0, 6);
+
+        let becauseYouListenedTo = null;
+        if (rawData.becauseYouListenedTo && typeof rawData.becauseYouListenedTo === 'object') {
+          const rawRecs = rawData.becauseYouListenedTo.recommendations || [];
+          const becauseRecs = deduplicator.filterUnique(rawRecs).slice(0, 4);
+          if (becauseRecs.length > 0) {
+            becauseYouListenedTo = {
+              baseTrack: rawData.becauseYouListenedTo.baseTrack,
+              recommendations: becauseRecs
+            };
+          }
+        }
+
+        const dailyMix = deduplicator.filterUnique(rawData.dailyMix || []).slice(0, 6);
+        const favouriteArtists = deduplicator.filterUnique(rawData.favouriteArtists || []).slice(0, 6);
+        const discover = deduplicator.filterUnique(rawData.discover || []).slice(0, 6);
+        const moreLikeRecent = deduplicator.filterUnique(rawData.moreLikeRecent || []).slice(0, 4);
+
+        const formatted = {
+          ...rawData,
+          madeForYou,
+          becauseYouListenedTo,
+          dailyMix,
+          favouriteArtists,
+          discover,
+          moreLikeRecent
+        };
+
+        setData(formatted);
+        onTracksRendered?.([
+          ...madeForYou,
+          ...(becauseYouListenedTo?.recommendations || []),
+          ...dailyMix,
+          ...favouriteArtists,
+          ...discover,
+          ...moreLikeRecent
+        ]);
         showToast?.('Fresh recommendations curated by Gemini AI');
       }
     } catch (err) {

@@ -27,12 +27,19 @@ export const recommendationsClient = {
   },
 
   /**
-   * Fetches Daily Mix tracks with optional pagination.
+   * Fetches Daily Mix tracks with optional pagination and exclusion support.
    */
-  async getDailyMix(backendUrl, token, { limit = 10, offset = 0 } = {}) {
+  async getDailyMix(backendUrl, token, { limit = 10, offset = 0, excludeIds = [], excludeKeys = [] } = {}) {
     if (!token) return { success: false, items: [] };
 
-    const url = `${backendUrl.replace(/\/+$/, '')}/api/recommendations/daily-mix?limit=${limit}&offset=${offset}`;
+    let url = `${backendUrl.replace(/\/+$/, '')}/api/recommendations/daily-mix?limit=${limit}&offset=${offset}`;
+    if (excludeIds.length > 0) {
+      url += `&excludeIds=${encodeURIComponent(excludeIds.join(','))}`;
+    }
+    if (excludeKeys.length > 0) {
+      url += `&excludeKeys=${encodeURIComponent(excludeKeys.join(','))}`;
+    }
+
     const res = await fetch(url, {
       method: 'GET',
       headers: {
@@ -46,10 +53,17 @@ export const recommendationsClient = {
   },
 
   /**
-   * Fetches discovery tracks with optional pagination and token awareness.
+   * Fetches discovery tracks with optional pagination, token awareness, and exclusion support.
    */
-  async getDiscover(backendUrl, token = null, { limit = 12, offset = 0 } = {}) {
-    const url = `${backendUrl.replace(/\/+$/, '')}/api/recommendations/discover?limit=${limit}&offset=${offset}`;
+  async getDiscover(backendUrl, token = null, { limit = 12, offset = 0, excludeIds = [], excludeKeys = [] } = {}) {
+    let url = `${backendUrl.replace(/\/+$/, '')}/api/recommendations/discover?limit=${limit}&offset=${offset}`;
+    if (excludeIds.length > 0) {
+      url += `&excludeIds=${encodeURIComponent(excludeIds.join(','))}`;
+    }
+    if (excludeKeys.length > 0) {
+      url += `&excludeKeys=${encodeURIComponent(excludeKeys.join(','))}`;
+    }
+
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
