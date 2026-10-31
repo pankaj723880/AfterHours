@@ -3,6 +3,7 @@ import { catalogService } from './catalogService.js';
 import { listeningEventService } from './listeningEventService.js';
 import { verifySingleSong, isSingleSong } from './songFilter.js';
 import { recommendationHistoryService, getCanonicalSongKey, cleanSongTitle } from './recommendationHistoryService.js';
+import { getCleanTrackThumbnail, isValidThumbnailUrlFormat } from './thumbnailValidationService.js';
 
 export const aiCompanionDiagnostics = {
   totalChats: 0,
@@ -495,6 +496,9 @@ OUTPUT FORMAT (Strict JSON):
           if (!trackId || seenSelectedIds.has(trackId) || !candidateMap.has(trackId)) continue;
 
           const fullTrack = candidateMap.get(trackId);
+          const cleanThumb = getCleanTrackThumbnail(fullTrack.thumbnail, fullTrack.id);
+          if (!isValidThumbnailUrlFormat(cleanThumb)) continue;
+
           const verification = verifySingleSong(fullTrack);
           if (!verification.isValid) continue;
 
@@ -505,7 +509,7 @@ OUTPUT FORMAT (Strict JSON):
             title: fullTrack.title,
             artist: fullTrack.artist,
             channel: fullTrack.channel || fullTrack.artist,
-            thumbnail: fullTrack.thumbnail,
+            thumbnail: cleanThumb,
             duration: fullTrack.duration || '3:30',
             songType: verification.songType || 'individual_song',
             verificationStatus: verification.verificationStatus || 'verified_single_song',
@@ -519,6 +523,9 @@ OUTPUT FORMAT (Strict JSON):
         for (const c of compactCandidates.slice(0, 3)) {
           const full = candidateMap.get(c.id);
           if (full && !seenSelectedIds.has(full.id)) {
+            const cleanThumb = getCleanTrackThumbnail(full.thumbnail, full.id);
+            if (!isValidThumbnailUrlFormat(cleanThumb)) continue;
+
             const verification = verifySingleSong(full);
             if (verification.isValid) {
               seenSelectedIds.add(full.id);
@@ -528,7 +535,7 @@ OUTPUT FORMAT (Strict JSON):
                 title: full.title,
                 artist: full.artist,
                 channel: full.channel || full.artist,
-                thumbnail: full.thumbnail,
+                thumbnail: cleanThumb,
                 duration: full.duration || '3:30',
                 songType: verification.songType || 'individual_song',
                 verificationStatus: verification.verificationStatus || 'verified_single_song',

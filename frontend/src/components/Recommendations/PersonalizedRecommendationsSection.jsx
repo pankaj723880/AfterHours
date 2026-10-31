@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { recommendationsClient } from '../../services/recommendationsClient';
 import { TrackDeduplicator } from '../../utils/trackIdentity';
+import { getCleanThumbnail, isThumbnailUrlFormatValid, invalidateVideoIdClient, isVideoIdInvalid } from '../../utils/thumbnailValidator';
 
 export default function PersonalizedRecommendationsSection({
   backendUrl,
@@ -20,19 +21,60 @@ export default function PersonalizedRecommendationsSection({
   const [error, setError] = useState(null);
   const [recommendationsEnabled, setRecommendationsEnabled] = useState(true);
   const [showPrivacySettings, setShowPrivacySettings] = useState(false);
+  const backupPoolRef = useRef([]);
+
+  // Filter helper to ensure tracks have clean, valid, non-placeholder thumbnails
+  const sanitizeThumbnailTracks = useCallback((tracks = []) => {
+    if (!Array.isArray(tracks)) return [];
+    const valid = [];
+    for (const t of tracks) {
+      if (!t) continue;
+      const cleanThumb = getCleanThumbnail(t);
+      if (cleanThumb && isThumbnailUrlFormatValid(cleanThumb)) {
+        valid.push({
+          ...t,
+          thumbnail: cleanThumb
+        });
+      }
+    }
+    return valid;
+  }, []);
+
+  // Proactively fetches extra discovery candidates to guarantee valid replacements are ready
+  const refillBackupPool = useCallback(async (existingTracks = []) => {
+    try {
+      const res = await recommendationsClient.getDiscover(backendUrl, authToken || null, { limit: 30 });
+      const raw = res?.items || [];
+      const valid = sanitizeThumbnailTracks(raw);
+      const dedup = new TrackDeduplicator();
+      existingTracks.forEach(t => dedup.add(t));
+
+      const fresh = [];
+      for (const t of valid) {
+        if (!dedup.isDuplicate(t)) {
+          dedup.add(t);
+          fresh.push(t);
+        }
+      }
+      backupPoolRef.current = fresh;
+    } catch (e) {
+      // Graceful fallback
+    }
+  }, [backendUrl, authToken, sanitizeThumbnailTracks]);
 
   const fetchRecommendations = useCallback(async (isRefresh = false) => {
     if (!authToken) {
       // Unauthenticated: fetch general discovery tracks with strictly disjoint pools
       try {
         setLoading(true);
-        const res = await recommendationsClient.getDiscover(backendUrl, null, { limit: 30 });
-        const items = res.items || [];
+        const res = await recommendationsClient.getDiscover(backendUrl, null, { limit: 35 });
+        const items = sanitizeThumbnailTracks(res.items || []);
         const deduplicator = new TrackDeduplicator();
 
         const madeForYou = [];
         const dailyMix = [];
         const discover = [];
+        const extras = [];
 
         for (const t of items) {
           if (deduplicator.isDuplicate(t)) continue;
@@ -44,9 +86,12 @@ export default function PersonalizedRecommendationsSection({
             dailyMix.push(t);
           } else if (discover.length < 5) {
             discover.push(t);
+          } else {
+            extras.push(t);
           }
-          if (madeForYou.length >= 6 && dailyMix.length >= 5 && discover.length >= 5) break;
         }
+
+        backupPoolRef.current = extras;
 
         const formatted = {
           madeForYou,
@@ -75,24 +120,39 @@ export default function PersonalizedRecommendationsSection({
         const rawData = res.data;
         const deduplicator = new TrackDeduplicator();
 
-        const madeForYou = deduplicator.filterUnique(rawData.madeForYou || []).slice(0, 6);
+        const madeForYou = deduplicator.filterUnique(sanitizeThumbnailTracks(rawData.madeForYou || [])).slice(0, 6);
 
         let becauseYouListenedTo = null;
         if (rawData.becauseYouListenedTo && typeof rawData.becauseYouListenedTo === 'object') {
-          const rawRecs = rawData.becauseYouListenedTo.recommendations || [];
+          const rawBase = rawData.becauseYouListenedTo.baseTrack;
+          const cleanBaseThumb = getCleanThumbnail(rawBase);
+          const rawRecs = sanitizeThumbnailTracks(rawData.becauseYouListenedTo.recommendations || []);
           const becauseRecs = deduplicator.filterUnique(rawRecs).slice(0, 4);
-          if (becauseRecs.length > 0) {
+
+          if (becauseRecs.length > 0 && cleanBaseThumb && isThumbnailUrlFormatValid(cleanBaseThumb)) {
             becauseYouListenedTo = {
-              baseTrack: rawData.becauseYouListenedTo.baseTrack,
+              baseTrack: {
+                ...rawBase,
+                thumbnail: cleanBaseThumb
+              },
               recommendations: becauseRecs
             };
           }
         }
 
-        const dailyMix = deduplicator.filterUnique(rawData.dailyMix || []).slice(0, 6);
-        const favouriteArtists = deduplicator.filterUnique(rawData.favouriteArtists || []).slice(0, 6);
-        const discover = deduplicator.filterUnique(rawData.discover || []).slice(0, 6);
-        const moreLikeRecent = deduplicator.filterUnique(rawData.moreLikeRecent || []).slice(0, 4);
+        const dailyMix = deduplicator.filterUnique(sanitizeThumbnailTracks(rawData.dailyMix || [])).slice(0, 6);
+        const favouriteArtists = deduplicator.filterUnique(sanitizeThumbnailTracks(rawData.favouriteArtists || [])).slice(0, 6);
+        const discover = deduplicator.filterUnique(sanitizeThumbnailTracks(rawData.discover || [])).slice(0, 6);
+        const moreLikeRecent = deduplicator.filterUnique(sanitizeThumbnailTracks(rawData.moreLikeRecent || [])).slice(0, 4);
+
+        const allRendered = [
+          ...madeForYou,
+          ...(becauseYouListenedTo?.recommendations || []),
+          ...dailyMix,
+          ...favouriteArtists,
+          ...discover,
+          ...moreLikeRecent
+        ];
 
         const formatted = {
           ...rawData,
@@ -105,19 +165,15 @@ export default function PersonalizedRecommendationsSection({
         };
 
         setData(formatted);
-        onTracksRendered?.([
-          ...madeForYou,
-          ...(becauseYouListenedTo?.recommendations || []),
-          ...dailyMix,
-          ...favouriteArtists,
-          ...discover,
-          ...moreLikeRecent
-        ]);
+        onTracksRendered?.(allRendered);
 
         if (typeof rawData.recommendationsEnabled === 'boolean') {
           setRecommendationsEnabled(rawData.recommendationsEnabled);
         }
         setError(null);
+
+        // Pre-fill backup pool with extra discovery songs
+        refillBackupPool(allRendered);
       }
     } catch (err) {
       console.warn('[PersonalizedRecommendations] Notice:', err.message);
@@ -126,7 +182,7 @@ export default function PersonalizedRecommendationsSection({
       setLoading(false);
       setRefreshing(false);
     }
-  }, [backendUrl, authToken, onTracksRendered]);
+  }, [backendUrl, authToken, onTracksRendered, sanitizeThumbnailTracks, refillBackupPool]);
 
   useEffect(() => {
     fetchRecommendations(false);
@@ -144,24 +200,39 @@ export default function PersonalizedRecommendationsSection({
         const rawData = res.data;
         const deduplicator = new TrackDeduplicator();
 
-        const madeForYou = deduplicator.filterUnique(rawData.madeForYou || []).slice(0, 6);
+        const madeForYou = deduplicator.filterUnique(sanitizeThumbnailTracks(rawData.madeForYou || [])).slice(0, 6);
 
         let becauseYouListenedTo = null;
         if (rawData.becauseYouListenedTo && typeof rawData.becauseYouListenedTo === 'object') {
-          const rawRecs = rawData.becauseYouListenedTo.recommendations || [];
+          const rawBase = rawData.becauseYouListenedTo.baseTrack;
+          const cleanBaseThumb = getCleanThumbnail(rawBase);
+          const rawRecs = sanitizeThumbnailTracks(rawData.becauseYouListenedTo.recommendations || []);
           const becauseRecs = deduplicator.filterUnique(rawRecs).slice(0, 4);
-          if (becauseRecs.length > 0) {
+
+          if (becauseRecs.length > 0 && cleanBaseThumb && isThumbnailUrlFormatValid(cleanBaseThumb)) {
             becauseYouListenedTo = {
-              baseTrack: rawData.becauseYouListenedTo.baseTrack,
+              baseTrack: {
+                ...rawBase,
+                thumbnail: cleanBaseThumb
+              },
               recommendations: becauseRecs
             };
           }
         }
 
-        const dailyMix = deduplicator.filterUnique(rawData.dailyMix || []).slice(0, 6);
-        const favouriteArtists = deduplicator.filterUnique(rawData.favouriteArtists || []).slice(0, 6);
-        const discover = deduplicator.filterUnique(rawData.discover || []).slice(0, 6);
-        const moreLikeRecent = deduplicator.filterUnique(rawData.moreLikeRecent || []).slice(0, 4);
+        const dailyMix = deduplicator.filterUnique(sanitizeThumbnailTracks(rawData.dailyMix || [])).slice(0, 6);
+        const favouriteArtists = deduplicator.filterUnique(sanitizeThumbnailTracks(rawData.favouriteArtists || [])).slice(0, 6);
+        const discover = deduplicator.filterUnique(sanitizeThumbnailTracks(rawData.discover || [])).slice(0, 6);
+        const moreLikeRecent = deduplicator.filterUnique(sanitizeThumbnailTracks(rawData.moreLikeRecent || [])).slice(0, 4);
+
+        const allRendered = [
+          ...madeForYou,
+          ...(becauseYouListenedTo?.recommendations || []),
+          ...dailyMix,
+          ...favouriteArtists,
+          ...discover,
+          ...moreLikeRecent
+        ];
 
         const formatted = {
           ...rawData,
@@ -174,14 +245,8 @@ export default function PersonalizedRecommendationsSection({
         };
 
         setData(formatted);
-        onTracksRendered?.([
-          ...madeForYou,
-          ...(becauseYouListenedTo?.recommendations || []),
-          ...dailyMix,
-          ...favouriteArtists,
-          ...discover,
-          ...moreLikeRecent
-        ]);
+        onTracksRendered?.(allRendered);
+        refillBackupPool(allRendered);
         showToast?.('Fresh recommendations curated by Gemini AI');
       }
     } catch (err) {
@@ -190,6 +255,94 @@ export default function PersonalizedRecommendationsSection({
       setRefreshing(false);
     }
   };
+
+  /**
+   * Post-Render Image Failure Handler:
+   * When an image fails to load in the browser, immediately discard the candidate
+   * from the carousel, pull a valid replacement from backupPoolRef that satisfies
+   * BOTH: 1) Valid, usable thumbnail, and 2) Zero duplicate across all homepage sections.
+   */
+  const handleTrackImageFailure = useCallback((failedTrack, sectionKey) => {
+    const failedId = failedTrack?.id || failedTrack?.videoId;
+    if (!failedId || !sectionKey) return;
+    invalidateVideoIdClient(failedId);
+
+    setData(prev => {
+      if (!prev) return prev;
+
+      if (sectionKey === 'becauseYouListenedTo') {
+        // If baseTrack image failed, discard whole becauseYouListenedTo section
+        if ((prev.becauseYouListenedTo?.baseTrack?.id || prev.becauseYouListenedTo?.baseTrack?.videoId) === failedId) {
+          return { ...prev, becauseYouListenedTo: null };
+        }
+        // If one of the recommendations failed, filter it out
+        const curRecs = prev.becauseYouListenedTo?.recommendations || [];
+        const filtered = curRecs.filter(t => (t.id || t.videoId) !== failedId);
+        return {
+          ...prev,
+          becauseYouListenedTo: filtered.length > 0 ? { ...prev.becauseYouListenedTo, recommendations: filtered } : null
+        };
+      }
+
+      const currentSection = prev[sectionKey];
+      if (!Array.isArray(currentSection)) return prev;
+
+      // Discard failed track
+      const updatedSection = currentSection.filter(t => (t.id || t.videoId) !== failedId);
+
+      // Build active deduplicator with all currently rendered songs across all sections
+      const activeDeduplicator = new TrackDeduplicator();
+      ['madeForYou', 'dailyMix', 'favouriteArtists', 'discover', 'moreLikeRecent'].forEach(k => {
+        if (Array.isArray(prev[k])) {
+          prev[k].forEach(item => {
+            if ((item.id || item.videoId) !== failedId) {
+              activeDeduplicator.add(item);
+            }
+          });
+        }
+      });
+      if (prev.becauseYouListenedTo?.recommendations) {
+        prev.becauseYouListenedTo.recommendations.forEach(item => {
+          if ((item.id || item.videoId) !== failedId) {
+            activeDeduplicator.add(item);
+          }
+        });
+      }
+
+      // Find replacement candidate from backup pool
+      let replacement = null;
+      const remainingBackup = [];
+      for (const candidate of backupPoolRef.current) {
+        if (!replacement && !activeDeduplicator.isDuplicate(candidate) && isThumbnailUrlFormatValid(candidate.thumbnail)) {
+          replacement = candidate;
+          activeDeduplicator.add(candidate);
+        } else {
+          remainingBackup.push(candidate);
+        }
+      }
+      backupPoolRef.current = remainingBackup;
+
+      if (replacement) {
+        updatedSection.push(replacement);
+      }
+
+      const updatedData = {
+        ...prev,
+        [sectionKey]: updatedSection
+      };
+
+      onTracksRendered?.([
+        ...(updatedData.madeForYou || []),
+        ...(updatedData.becauseYouListenedTo?.recommendations || []),
+        ...(updatedData.dailyMix || []),
+        ...(updatedData.favouriteArtists || []),
+        ...(updatedData.discover || []),
+        ...(updatedData.moreLikeRecent || [])
+      ]);
+
+      return updatedData;
+    });
+  }, [onTracksRendered]);
 
   const handleTogglePrivacy = async (enabled) => {
     if (!authToken) return;
@@ -206,11 +359,14 @@ export default function PersonalizedRecommendationsSection({
   };
 
   // Helper track renderer
-  const renderTrackCard = (track, idx) => {
+  const renderTrackCard = (track, idx, sectionKey) => {
     if (!track) return null;
     const trackLiked = isLiked?.(track);
     const trackId = track.id || track.videoId;
-    const thumbnail = track.thumbnail || `https://i.ytimg.com/vi/${trackId}/hqdefault.jpg`;
+    const thumbnail = getCleanThumbnail(track, trackId);
+    if (!thumbnail || !isThumbnailUrlFormatValid(thumbnail)) {
+      return null;
+    }
 
     // Ensure clean, verified artist - eliminate "Unknown Artist" when channel or metadata exists
     let cleanArtist = track.artist;
@@ -239,9 +395,24 @@ export default function PersonalizedRecommendationsSection({
             src={thumbnail}
             alt={track.title}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            onLoad={(e) => {
+              const target = e.currentTarget;
+              const w = target.naturalWidth;
+              const h = target.naturalHeight;
+              if (w <= 1 || h <= 1 || (w === 120 && h === 90)) {
+                handleTrackImageFailure(track, sectionKey);
+              }
+            }}
             onError={(e) => {
-              if (!e.target.src.includes('hqdefault')) {
-                e.target.src = `https://i.ytimg.com/vi/${trackId}/hqdefault.jpg`;
+              const target = e.currentTarget;
+              const attempts = parseInt(target.dataset.attempts || '0', 10);
+              const isInvalidId = typeof isVideoIdInvalid === 'function' ? isVideoIdInvalid(trackId) : false;
+              if (attempts === 0 && trackId && !target.src.includes('mqdefault') && !isInvalidId) {
+                target.dataset.attempts = '1';
+                target.src = `https://i.ytimg.com/vi/${trackId}/mqdefault.jpg`;
+              } else {
+                target.onerror = null;
+                handleTrackImageFailure(track, sectionKey);
               }
             }}
           />
@@ -309,7 +480,7 @@ export default function PersonalizedRecommendationsSection({
   };
 
   // Render Horizontal Row of Tracks
-  const renderRow = (title, subtitle, items = []) => {
+  const renderRow = (title, subtitle, items = [], sectionKey) => {
     if (!items || items.length === 0) return null;
 
     return (
@@ -326,7 +497,7 @@ export default function PersonalizedRecommendationsSection({
         </div>
 
         <div className="flex items-stretch gap-3 sm:gap-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-neutral-800 scrollbar-track-transparent">
-          {items.map((track, i) => renderTrackCard(track, i))}
+          {items.map((track, i) => renderTrackCard(track, i, sectionKey))}
         </div>
       </div>
     );
@@ -474,7 +645,8 @@ export default function PersonalizedRecommendationsSection({
         {renderRow(
           'Made For You',
           'Handpicked matching your overall music affinity and mood',
-          data?.madeForYou
+          data?.madeForYou,
+          'madeForYou'
         )}
 
         {/* Row 2: Because You Listened To */}
@@ -482,7 +654,8 @@ export default function PersonalizedRecommendationsSection({
           renderRow(
             `Because You Listened To "${data.becauseYouListenedTo.baseTrack.title}"`,
             `Songs sharing the same soulful tempo and vibe as ${data.becauseYouListenedTo.baseTrack.artist}`,
-            data.becauseYouListenedTo.recommendations
+            data.becauseYouListenedTo.recommendations,
+            'becauseYouListenedTo'
           )
         )}
 
@@ -490,7 +663,8 @@ export default function PersonalizedRecommendationsSection({
         {renderRow(
           'Your Daily Mix',
           'A cohesive, uninterrupted flow of your favorite genres',
-          data?.dailyMix
+          data?.dailyMix,
+          'dailyMix'
         )}
 
         {/* Row 4: Your Favourite Artists */}
@@ -498,7 +672,8 @@ export default function PersonalizedRecommendationsSection({
           renderRow(
             'Your Favourite Artists',
             'Selected songs from the singers you play the most',
-            data.favouriteArtists
+            data.favouriteArtists,
+            'favouriteArtists'
           )
         )}
 
@@ -506,7 +681,8 @@ export default function PersonalizedRecommendationsSection({
         {renderRow(
           'Discover Your Next Favourite',
           'Broaden your taste with tracks adjacent to what you love',
-          data?.discover
+          data?.discover,
+          'discover'
         )}
 
         {/* Row 6: More Like Your Recent Plays */}
@@ -514,7 +690,8 @@ export default function PersonalizedRecommendationsSection({
           renderRow(
             'More Like Your Recent Plays',
             'Fresh tunes that vibe with your recent listening session',
-            data.moreLikeRecent
+            data.moreLikeRecent,
+            'moreLikeRecent'
           )
         )}
       </div>

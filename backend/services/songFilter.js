@@ -1,3 +1,5 @@
+import { isValidThumbnailUrlFormat } from './thumbnailValidationService.js';
+
 /**
  * Loopra Single-Song Identification & Verification Engine
  * 
@@ -316,12 +318,14 @@ export function normalizeTrack(raw) {
 
   const channel = (raw.channel || raw.snippet?.channelTitle || raw.author?.name || artist || 'Loopra Channel').trim();
 
-  const thumbnail = raw.thumbnail ||
+  const candidateThumbnail = raw.thumbnail ||
     raw.image ||
     raw.snippet?.thumbnails?.high?.url ||
     raw.snippet?.thumbnails?.medium?.url ||
     raw.snippet?.thumbnails?.default?.url ||
     `https://i.ytimg.com/vi/${trimmedId}/hqdefault.jpg`;
+
+  const thumbnail = isValidThumbnailUrlFormat(candidateThumbnail) ? candidateThumbnail : '';
 
   const verification = verifySingleSong({
     id: trimmedId,
@@ -352,6 +356,7 @@ export function normalizeTrack(raw) {
  * 2. embeddability validation (valid YouTube ID)
  * 3. deduplication by videoId
  * 4. single-song validation (rejects mashups, medleys, jukeboxes, non-stop compilations)
+ * 5. strict thumbnail validation (rejects empty, broken, or placeholder thumbnails)
  */
 export function filterSingleSongs(tracks = []) {
   if (!Array.isArray(tracks)) return [];
@@ -364,6 +369,7 @@ export function filterSingleSongs(tracks = []) {
 
     if (!isValidYouTubeId(track.id)) continue;
     if (seenIds.has(track.id)) continue;
+    if (!isValidThumbnailUrlFormat(track.thumbnail)) continue;
     if (!isSingleSong(track)) continue;
 
     seenIds.add(track.id);

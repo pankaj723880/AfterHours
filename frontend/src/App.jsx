@@ -30,7 +30,8 @@ import UserAvatar from './components/Common/UserAvatar';
 import { getAvatarUrl } from './utils/avatar';
 import DiscoverSwipe from './components/Discover/DiscoverSwipe';
 import RecommendedRow from './components/Common/RecommendedRow';
-import ContinueListeningBanner from './components/Common/ContinueListeningBanner';
+import HomeHero from './components/Home/HomeHero';
+import FeatureShortcuts from './components/Home/FeatureShortcuts';
 import { listeningStatsService } from './services/listeningStatsService';
 import MoodToMusicSection from './components/Mood/MoodToMusicSection';
 import PersonalizedRecommendationsSection from './components/Recommendations/PersonalizedRecommendationsSection';
@@ -52,6 +53,12 @@ import RatingPopupModal from './components/Rating/RatingPopupModal';
 import HomepageReviewsSection from './components/Rating/HomepageReviewsSection';
 import { updateRouteMetadata } from './utils/seo';
 import { TrackDeduplicator, getCanonicalSongKey } from './utils/trackIdentity';
+import {
+  isThumbnailUrlFormatValid,
+  getCleanThumbnail,
+  isVideoIdInvalid,
+  invalidateVideoIdClient
+} from './utils/thumbnailValidator';
 
 import { io } from 'socket.io-client';
 import { BACKEND_URL, getApiUrl } from './utils/apiUrl';
@@ -338,66 +345,59 @@ const formatTime = (secs) => {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 };
 
-const getCleanThumbnail = (itemOrUrl, explicitId) => {
-  if (!itemOrUrl && !explicitId) return "https://ui-avatars.com/api/?name=Music&background=1e1e1e&color=f59e0b&size=300";
-
-  let url = typeof itemOrUrl === 'string' ? itemOrUrl : (itemOrUrl?.thumbnail || itemOrUrl?.image || itemOrUrl?.snippet?.thumbnails?.high?.url || itemOrUrl?.snippet?.thumbnails?.medium?.url || '');
-  const rawId = explicitId || (typeof itemOrUrl === 'object' ? (itemOrUrl?.videoId || itemOrUrl?.id) : null);
-  const id = typeof rawId === 'string' ? rawId : (rawId?.videoId || null);
-
-  if (id && typeof id === 'string' && /^[a-zA-Z0-9_-]{11}$/.test(id)) {
-    return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
-  }
-
-  if (url && typeof url === 'string') {
-    const ytMatch = url.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})\//) || url.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
-    if (ytMatch && ytMatch[1]) {
-      return `https://i.ytimg.com/vi/${ytMatch[1]}/hqdefault.jpg`;
+const handleImageLoad = (e) => {
+  const target = e.currentTarget || e.target;
+  if (!target) return;
+  const w = target.naturalWidth;
+  const h = target.naturalHeight;
+  // If YouTube 120x90 unavailable placeholder or broken 1x1 image
+  if (w <= 1 || h <= 1 || (w === 120 && h === 90)) {
+    target.style.display = 'none';
+    const cardGroup = target.closest('.group');
+    if (cardGroup && !cardGroup.classList.contains('artist-card')) {
+      cardGroup.style.display = 'none';
     }
-
-    if (url.includes('ytimg.com') || url.includes('ggpht.com')) {
-      return url
-        .replace(/\/[^/]*hq720[^/]*\.(?:jpg|webp)(?:\?.*)?$/i, '/hqdefault.jpg')
-        .replace(/\/[^/]*custom[^/]*\.(?:jpg|webp)(?:\?.*)?$/i, '/hqdefault.jpg')
-        .replace(/\/maxresdefault\.(?:jpg|webp)(?:\?.*)?$/i, '/hqdefault.jpg')
-        .replace(/\?.*$/i, '');
-    }
-
-    return url;
   }
-
-  if (id && typeof id === 'string') {
-    return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
-  }
-
-  const fallbackTitle = typeof itemOrUrl === 'object' ? (itemOrUrl?.title || itemOrUrl?.name || 'Music') : 'Music';
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(fallbackTitle)}&background=1e1e1e&color=f59e0b&size=300`;
 };
 
 const handleImageError = (e, fallbackTitle, explicitId) => {
   const target = e.currentTarget || e.target;
   if (!target) return;
 
+  const safeId = typeof explicitId === 'string' ? explicitId : (explicitId?.videoId || null);
+  if (safeId) {
+    invalidateVideoIdClient(safeId);
+  }
+
   const attempts = parseInt(target.dataset.errorAttempts || '0', 10);
   const currentSrc = target.src || '';
 
-  if (attempts >= 2 || currentSrc.includes('ui-avatars.com')) {
+  if (attempts >= 1 || !isThumbnailUrlFormatValid(currentSrc)) {
     target.onerror = null;
+    // Hide the broken image and remove/hide broken song card container so no placeholder is shown
+    target.style.display = 'none';
+    const cardGroup = target.closest('.group');
+    if (cardGroup && !cardGroup.classList.contains('artist-card')) {
+      cardGroup.style.display = 'none';
+    }
     return;
   }
 
   target.dataset.errorAttempts = (attempts + 1).toString();
 
-  const safeId = typeof explicitId === 'string' ? explicitId : (explicitId?.videoId || null);
   const ytMatch = currentSrc.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})\//) || (safeId ? [null, safeId] : null);
-  if (ytMatch && ytMatch[1] && typeof ytMatch[1] === 'string' && !currentSrc.includes('mqdefault.jpg')) {
+  const isInvalid = typeof isVideoIdInvalid === 'function' && ytMatch && ytMatch[1] ? isVideoIdInvalid(ytMatch[1]) : false;
+  if (ytMatch && ytMatch[1] && typeof ytMatch[1] === 'string' && !isInvalid && !currentSrc.includes('mqdefault.jpg')) {
     target.src = `https://i.ytimg.com/vi/${ytMatch[1]}/mqdefault.jpg`;
     return;
   }
 
   target.onerror = null;
-  const name = fallbackTitle || 'Music';
-  target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1e1e1e&color=f59e0b&size=300`;
+  target.style.display = 'none';
+  const cardGroup = target.closest('.group');
+  if (cardGroup && !cardGroup.classList.contains('artist-card')) {
+    cardGroup.style.display = 'none';
+  }
 };
 
 const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId, isRadio = false }) => {
@@ -1213,7 +1213,7 @@ const POPULAR_ARTISTS = [
 ];
 
 const POPULAR_ALBUMS = [
-  { id: "B61fSzdCzzs", videoId: "B61fSzdCzzs", title: "Aashiqui 2", artist: "Mithoon, Ankit Tiwari", image: "https://i.ytimg.com/vi/B61fSzdCzzs/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/B61fSzdCzzs/hqdefault.jpg", query: "Aashiqui 2 full album songs jukebox" },
+  { id: "Umqb9KENgmk", videoId: "Umqb9KENgmk", title: "Aashiqui 2", artist: "Mithoon, Ankit Tiwari", image: "https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg", query: "Aashiqui 2 full album songs jukebox" },
   { id: "ZdyaixHYviA", videoId: "ZdyaixHYviA", title: "Yeh Jawaani Hai Deewani", artist: "Pritam", image: "https://i.ytimg.com/vi/ZdyaixHYviA/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/ZdyaixHYviA/hqdefault.jpg", query: "Yeh Jawaani Hai Deewani full songs jukebox" },
   { id: "SQWDGLnvxF4", videoId: "SQWDGLnvxF4", title: "Sanam Teri Kasam", artist: "Himesh Reshammiya", image: "https://i.ytimg.com/vi/SQWDGLnvxF4/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/SQWDGLnvxF4/hqdefault.jpg", query: "Sanam Teri Kasam full songs jukebox" },
   { id: "BDlNjOc3wiQ", videoId: "BDlNjOc3wiQ", title: "Kabir Singh", artist: "Sachet-Parampara, Mithoon", image: "https://i.ytimg.com/vi/BDlNjOc3wiQ/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/BDlNjOc3wiQ/hqdefault.jpg", query: "Kabir Singh full album songs jukebox" },
@@ -1550,10 +1550,13 @@ export default function App() {
   }, []);
 
   // Filter trending songs dynamically so no song rendered above in recommendations ever repeats below
+  // and strictly guarantee valid, usable thumbnails
   const uniqueTrendingSongs = React.useMemo(() => {
     const raw = (trendingSongs && trendingSongs.length > 0) ? trendingSongs : TRENDING_SONGS;
     const dedup = new TrackDeduplicator();
     return raw.filter(t => {
+      const cleanThumb = getCleanThumbnail(t);
+      if (!cleanThumb || !isThumbnailUrlFormatValid(cleanThumb)) return false;
       const key = getCanonicalSongKey(t);
       if (renderedRecTrackKeys.has(key)) return false;
       if (dedup.isDuplicate(t)) return false;
@@ -1583,7 +1586,7 @@ export default function App() {
               thumbnail: img,
               query: (i.snippet?.title || '') + " " + (i.snippet?.channelTitle || '')
             };
-          }).filter(item => item.id && typeof item.id === 'string' && item.id.length >= 5 && item.title);
+          }).filter(item => item.id && typeof item.id === 'string' && item.id.length >= 5 && item.title && isThumbnailUrlFormatValid(item.thumbnail));
 
           // Strictly filter for individual single songs only
           const singleSongs = filterSingleSongs(list);
@@ -1757,7 +1760,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isPlayerMinimized, setIsPlayerMinimized] = useState(false);
-  const [showMobileTip, setShowMobileTip] = useState(true);
 
   const [videoModalSong, setVideoModalSong] = useState(null);
   const [isPipActive, setIsPipActive] = useState(false);
@@ -5801,17 +5803,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             </div>
           )}
 
-          {showMobileTip && (
-            <div className="md:hidden relative z-30 mb-3 sm:mb-4 p-2.5 sm:p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 backdrop-blur-md flex items-start justify-between gap-2 text-xs text-amber-200 w-full min-w-0">
-              <div className="flex items-start gap-2">
-                <Icon name="info" className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <p>
-                  <strong>Mobile Tip:</strong> If audio pauses when switching apps or locking your phone, pull down your notification panel and tap <strong>Play</strong>!
-                </p>
-              </div>
-              <button onClick={() => setShowMobileTip(false)} className="text-amber-400 font-bold text-sm px-1 shrink-0">✕</button>
-            </div>
-          )}
+
 
         {((navigationHistory.length > 0 && activeTab !== 'home') || (activeTab === 'home' && (showAllTrending || showAllArtists || showAllAlbums || showAllRadio))) && (
           <div className="relative z-20 mb-6 flex justify-start">
@@ -6070,7 +6062,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'home' && (
-          <div className="max-w-7xl mx-auto px-0 md:px-4 pt-1 md:pt-6 space-y-6 md:space-y-10 w-full min-w-0">
+          <div className="max-w-7xl mx-auto px-0 md:px-4 pt-0.5 md:pt-2 space-y-4 md:space-y-6 w-full min-w-0">
             {/* Promotional Hero Banner if configured in CMS */}
             <CmsHeroBanner 
               banner={cmsConfig?.banner} 
@@ -6085,41 +6077,24 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               }}
             />
 
-            {/* Continue Listening Banner (Resume unfinished audio >5s) */}
-            {(() => {
-              const savedSongRaw = localStorage.getItem('afterhours_current_song');
-              const savedTimeRaw = parseFloat(localStorage.getItem('afterhours_current_time') || '0');
-              const savedDurRaw = parseFloat(localStorage.getItem('afterhours_duration') || '0');
-              if (savedSongRaw && savedTimeRaw > 5 && (!savedDurRaw || savedTimeRaw / savedDurRaw < 0.95)) {
-                try {
-                  const saved = JSON.parse(savedSongRaw);
-                  return (
-                    <ContinueListeningBanner
-                      savedSong={saved}
-                      savedTime={savedTimeRaw}
-                      onResume={() => playSong(saved, savedTimeRaw)}
-                      onDismiss={() => {
-                        localStorage.removeItem('afterhours_current_song');
-                        localStorage.removeItem('afterhours_current_time');
-                      }}
-                    />
-                  );
-                } catch (e) {}
-              }
-              return null;
-            })()}
-
-            {/* Prominent 3D Home Search Bar */}
-            <HomeSearchBar 
+            {/* Cinematic Hero Banner with Integrated Voice Search & Quick Tags */}
+            <HomeHero 
               onSearch={handleSearchFromHome}
               onSelectSong={playSong}
               onPlaySong={playSong}
               placeholder={cmsConfig?.searchPage?.placeholder || "Search songs, artists, albums..."}
               suggestions={cmsConfig?.searchPage?.quickTags}
-              showQuickTags={true}
               user={user}
               token={authToken}
               backendUrl={BACKEND_URL}
+              onNavigate={handleStationSelect}
+              onOpenInsights={() => setIsStatsOpen(true)}
+            />
+
+            {/* Premium Feature Shortcut Cards */}
+            <FeatureShortcuts 
+              onNavigate={handleStationSelect}
+              onOpenInsights={() => setIsStatsOpen(true)}
             />
 
             {/* Featured 3D Turntable Lounge Showcase for Mobile & Desktop */}
@@ -6306,17 +6281,29 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         showAll={showAllTrending}
                         setShowAll={setShowAllTrending}
                         renderItem={(song) => (
-                          <div onClick={() => handlePlayTrending(song.query || song.title, song, uniqueTrendingSongs)} className="group cursor-pointer">
-                            <div className="relative mb-2 md:mb-3">
-                              <img src={getCleanThumbnail(song)} alt={song.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => handleImageError(e, song.title, song.id)} />
-                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
-                                <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
-                                  <Icon name="play" className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-neutral-950 translate-x-[1px] md:translate-x-[2px]" />
+                          <div 
+                            onClick={() => handlePlayTrending(song.query || song.title, song, uniqueTrendingSongs)} 
+                            className="group relative flex flex-col p-2.5 sm:p-3 rounded-2xl bg-neutral-900/60 hover:bg-neutral-800/80 border border-neutral-800/80 hover:border-amber-500/40 transition-all duration-300 cursor-pointer shadow-md hover:shadow-[0_10px_25px_rgba(245,158,11,0.12)] active:scale-[0.98]"
+                          >
+                            <div className="relative mb-2.5 overflow-hidden rounded-xl aspect-square shadow-lg">
+                              <img 
+                                src={getCleanThumbnail(song)} 
+                                alt={song.title} 
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                                onError={(e) => handleImageError(e, song.title, song.id)} 
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                                <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-r from-amber-400 to-orange-500 rounded-full flex items-center justify-center shadow-xl transform scale-75 group-hover:scale-100 transition-transform">
+                                  <Icon name="play" className="w-4 h-4 sm:w-5 sm:h-5 text-neutral-950 translate-x-[1px]" />
                                 </div>
                               </div>
                             </div>
-                            <h3 className="text-xs md:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{song.title}</h3>
-                            <p className="text-[11px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1">{song.artist}</p>
+                            <h3 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-amber-400 transition-colors leading-tight">
+                              {song.title}
+                            </h3>
+                            <p className="text-[11px] text-neutral-400 truncate mt-1 font-medium">
+                              {song.artist || song.channel || 'Featured Track'}
+                            </p>
                           </div>
                         )}
                       />

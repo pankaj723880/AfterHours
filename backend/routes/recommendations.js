@@ -6,6 +6,7 @@ import { listeningEventService } from '../services/listeningEventService.js';
 import UserMusicPreference from '../models/UserMusicPreference.js';
 import { catalogService } from '../services/catalogService.js';
 import { TrackDeduplicator, getCanonicalSongKey } from '../services/recommendationHistoryService.js';
+import { getCleanTrackThumbnail, isValidThumbnailUrlFormat, filterTracksWithValidThumbnailsSync } from '../services/thumbnailValidationService.js';
 
 const router = express.Router();
 
@@ -345,9 +346,14 @@ router.get('/similar', async (req, res) => {
       if (!id || seen.has(id)) continue;
       // Do not recommend the exact same title
       if (cleanTitle && (track.title || '').toLowerCase() === cleanTitle.toLowerCase()) continue;
+
+      const cleanThumb = getCleanTrackThumbnail(track.thumbnail, id);
+      if (!isValidThumbnailUrlFormat(cleanThumb)) continue;
+
       seen.add(id);
       results.push({
         ...track,
+        thumbnail: cleanThumb,
         reason: cleanArtist ? `Similar acoustic vibe to ${cleanArtist}` : 'Recommended based on this track'
       });
       if (results.length >= 12) break;

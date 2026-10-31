@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { getCleanThumbnail } from '../../utils/storage';
+import { getCleanThumbnail, isThumbnailUrlFormatValid } from '../../utils/storage';
 import { filterSingleSongs, normalizeTrack } from '../../services/songFilter';
 
 export default function DiscoverSwipe({
@@ -98,7 +98,8 @@ export default function DiscoverSwipe({
 
       if (Array.isArray(candidates) && candidates.length > 0) {
         const verifiedSingleSongs = filterSingleSongs(candidates);
-        const sourceTracks = verifiedSingleSongs.length > 0 ? verifiedSingleSongs : candidates;
+        const sourceTracks = (verifiedSingleSongs.length > 0 ? verifiedSingleSongs : candidates)
+          .filter(t => isThumbnailUrlFormatValid(getCleanThumbnail(t)));
 
         const fresh = sourceTracks.filter(t => {
           const id = t.id || t.videoId;
@@ -524,6 +525,17 @@ export default function DiscoverSwipe({
             src={getCleanThumbnail(currentCard, currentCardId)}
             alt={currentCard.title}
             className={`w-full h-full object-cover pointer-events-none transition duration-500 ${isBuffering ? 'scale-105 filter blur-[1px]' : ''}`}
+            onLoad={(e) => {
+              const target = e.currentTarget;
+              const w = target.naturalWidth;
+              const h = target.naturalHeight;
+              if (w <= 1 || h <= 1 || (w === 120 && h === 90)) {
+                setCurrentIndex(prev => prev + 1);
+              }
+            }}
+            onError={() => {
+              setCurrentIndex(prev => prev + 1);
+            }}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/20 to-transparent" />
 

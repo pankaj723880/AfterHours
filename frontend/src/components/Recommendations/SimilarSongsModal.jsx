@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getCleanThumbnail, isThumbnailUrlFormatValid } from '../../utils/thumbnailValidator';
 
 export default function SimilarSongsModal({
   isOpen,
@@ -36,7 +37,14 @@ export default function SimilarSongsModal({
       .then(res => res.json())
       .then(data => {
         if (data && data.items) {
-          setSimilarTracks(data.items);
+          const valid = (data.items || []).filter(item => {
+            const thumb = getCleanThumbnail(item, item.id || item.videoId);
+            return isThumbnailUrlFormatValid(thumb);
+          }).map(item => ({
+            ...item,
+            thumbnail: getCleanThumbnail(item, item.id || item.videoId)
+          }));
+          setSimilarTracks(valid);
         } else {
           setSimilarTracks([]);
         }
@@ -115,9 +123,23 @@ export default function SimilarSongsModal({
                   }}
                 >
                   <img
-                    src={item.thumbnail || `https://i.ytimg.com/vi/${item.id || item.videoId}/hqdefault.jpg`}
+                    src={item.thumbnail}
                     alt={item.title}
                     className="w-10 h-10 rounded-xl object-cover shrink-0 border border-neutral-800"
+                    onLoad={(e) => {
+                      const target = e.currentTarget;
+                      const w = target.naturalWidth;
+                      const h = target.naturalHeight;
+                      if (w <= 1 || h <= 1 || (w === 120 && h === 90)) {
+                        const card = target.closest('.group');
+                        if (card) card.style.display = 'none';
+                      }
+                    }}
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      const card = target.closest('.group');
+                      if (card) card.style.display = 'none';
+                    }}
                   />
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-white group-hover:text-amber-300 transition truncate">

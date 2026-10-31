@@ -161,9 +161,9 @@ async function runAudit() {
   // TEST 6: Limited Candidate Pool Handling
   console.log('--- TEST 6: Limited Candidate Pool (Return Fewer Results Rather Than Duplicate) ---');
   const tinyPool = [
-    { id: 'track-1', videoId: 'track-1', title: 'Song One', artist: 'Artist One', genre: 'Pop', mood: 'Vibes' },
-    { id: 'track-2', videoId: 'track-2', title: 'Song Two', artist: 'Artist Two', genre: 'Pop', mood: 'Vibes' },
-    { id: 'track-3', videoId: 'track-3', title: 'Song Three', artist: 'Artist Three', genre: 'Pop', mood: 'Vibes' }
+    { id: 'dQw4w9WgXc1', videoId: 'dQw4w9WgXc1', title: 'Song One', artist: 'Artist One', genre: 'Pop', mood: 'Vibes', thumbnail: 'https://i.ytimg.com/vi/dQw4w9WgXc1/hqdefault.jpg' },
+    { id: 'dQw4w9WgXc2', videoId: 'dQw4w9WgXc2', title: 'Song Two', artist: 'Artist Two', genre: 'Pop', mood: 'Vibes', thumbnail: 'https://i.ytimg.com/vi/dQw4w9WgXc2/hqdefault.jpg' },
+    { id: 'dQw4w9WgXc3', videoId: 'dQw4w9WgXc3', title: 'Song Three', artist: 'Artist Three', genre: 'Pop', mood: 'Vibes', thumbnail: 'https://i.ytimg.com/vi/dQw4w9WgXc3/hqdefault.jpg' }
   ];
 
   const tinyDaily = [tinyPool[0], tinyPool[1]];

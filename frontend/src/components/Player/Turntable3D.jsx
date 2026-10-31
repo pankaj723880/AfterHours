@@ -165,7 +165,7 @@ export default function Turntable3D({
                   alt={currentSong?.title || "Now Playing"}
                   className="w-full h-full object-cover rounded-full"
                   onError={(e) => {
-                    e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentSong?.title || 'Loopra')}&background=18181b&color=f59e0b&size=300`;
+                    e.currentTarget.style.display = 'none';
                   }}
                 />
 

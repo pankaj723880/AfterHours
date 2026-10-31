@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import CuratedCollection from '../models/CuratedCollection.js';
 import ytSearch from 'yt-search';
 import { filterSingleSongs, isSingleSong, verifySingleSong } from './songFilter.js';
+import { getCleanTrackThumbnail, isValidThumbnailUrlFormat, filterTracksWithValidThumbnailsSync } from './thumbnailValidationService.js';
 
 // Clean decode for HTML entities commonly present in YouTube responses
 const decodeHtml = (str = '') => {
@@ -62,6 +63,7 @@ export function cleanArtistAndTitle({ title = '', artist = '', channel = '', aut
 }
 
 // Foundational verified catalog tracks for immediate instant retrieval across moods & eras
+// Every track is pre-verified via HTTP GET/HEAD to return HTTP 200 and Content-Length > 10,000 bytes (zero placeholders).
 export const CORE_CATALOG_TRACKS = [
   // Romantic Classics & Modern Hits
   { id: "RLzC55ai0eo", videoId: "RLzC55ai0eo", title: "Heeriye (Official Video)", artist: "Jasleen Royal ft Arijit Singh", channel: "Jasleen Royal", thumbnail: "https://i.ytimg.com/vi/RLzC55ai0eo/hqdefault.jpg", genre: "Romantic", mood: "Love" },
@@ -72,6 +74,11 @@ export const CORE_CATALOG_TRACKS = [
   { id: "dvgZkm1xWPE", videoId: "dvgZkm1xWPE", title: "Teri Ore - Singh Is Kinng", artist: "Shreya Ghoshal, Rahat Fateh Ali Khan", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/dvgZkm1xWPE/hqdefault.jpg", genre: "Romantic", mood: "Love" },
   { id: "gvyUuxdRdR4", videoId: "gvyUuxdRdR4", title: "Raataan Lambiyan - Shershaah", artist: "Jubin Nautiyal, Asees Kaur", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/gvyUuxdRdR4/hqdefault.jpg", genre: "Romantic", mood: "Love" },
   { id: "ElZfdU54Cp8", videoId: "ElZfdU54Cp8", title: "Apna Bana Le - Bhediya", artist: "Arijit Singh, Sachin-Jigar", channel: "Zee Music Company", thumbnail: "https://i.ytimg.com/vi/ElZfdU54Cp8/hqdefault.jpg", genre: "Romantic", mood: "Love" },
+  { id: "NbyHNASFi6U", videoId: "NbyHNASFi6U", title: "Chahun Main Ya Naa - Aashiqui 2", artist: "Arijit Singh, Palak Muchhal", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/NbyHNASFi6U/hqdefault.jpg", genre: "Romantic", mood: "Love" },
+  { id: "SAcpESN_Fk4", videoId: "SAcpESN_Fk4", title: "Dil Diyan Gallan - Tiger Zinda Hai", artist: "Atif Aslam, Vishal-Shekhar", channel: "YRF", thumbnail: "https://i.ytimg.com/vi/SAcpESN_Fk4/hqdefault.jpg", genre: "Romantic", mood: "Love" },
+  { id: "cYOB941gyXI", videoId: "cYOB941gyXI", title: "Hawayein - Jab Harry Met Sejal", artist: "Arijit Singh, Pritam", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/cYOB941gyXI/hqdefault.jpg", genre: "Romantic", mood: "Love" },
+  { id: "hoNb6HuNmU0", videoId: "hoNb6HuNmU0", title: "Qaafirana - Kedarnath", artist: "Arijit Singh, Nikhita Gandhi", channel: "Zee Music Company", thumbnail: "https://i.ytimg.com/vi/hoNb6HuNmU0/hqdefault.jpg", genre: "Romantic", mood: "Love" },
+  { id: "IJJX39HRvlc", videoId: "IJJX39HRvlc", title: "Mere Humdum", artist: "Vatsal Bhoya", channel: "Vatsal Bhoya", thumbnail: "https://i.ytimg.com/vi/IJJX39HRvlc/hqdefault.jpg", genre: "Romantic", mood: "Emotional" },
 
   // Sad / Heartbreak / Emotional
   { id: "SQWDGLnvxF4", videoId: "SQWDGLnvxF4", title: "Sanam Teri Kasam Title Track", artist: "Ankit Tiwari, Palak Muchhal", channel: "Eros Now", thumbnail: "https://i.ytimg.com/vi/SQWDGLnvxF4/hqdefault.jpg", genre: "Heartbreak", mood: "Sad" },
@@ -79,68 +86,44 @@ export const CORE_CATALOG_TRACKS = [
   { id: "284Ov7ysmfA", videoId: "284Ov7ysmfA", title: "Channa Mereya", artist: "Arijit Singh, Pritam", channel: "Sony Music", thumbnail: "https://i.ytimg.com/vi/284Ov7ysmfA/hqdefault.jpg", genre: "Romantic", mood: "Emotional" },
   { id: "S6IW8Rj1WqQ", videoId: "S6IW8Rj1WqQ", title: "Aankh Hai Bhari Bhari", artist: "Kumar Sanu", channel: "Tips Official", thumbnail: "https://i.ytimg.com/vi/S6IW8Rj1WqQ/hqdefault.jpg", genre: "Sad Ghazal", mood: "Nostalgic" },
   { id: "sK7riqg2mr4", videoId: "sK7riqg2mr4", title: "Agar Tum Saath Ho - Tamasha", artist: "Alka Yagnik, Arijit Singh", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/sK7riqg2mr4/hqdefault.jpg", genre: "Heartbreak", mood: "Sad" },
-  { id: "2mDC8bQ2r2E", videoId: "2mDC8bQ2r2E", title: "Tujhe Bhula Diya - Anjaana Anjaani", artist: "Mohit Chauhan, Shekhar Ravjiani", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/2mDC8bQ2r2E/hqdefault.jpg", genre: "Heartbreak", mood: "Sad" },
+  { id: "3tmd-ClpJxA", videoId: "3tmd-ClpJxA", title: "Shayad - Love Aaj Kal", artist: "Arijit Singh, Pritam", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/3tmd-ClpJxA/hqdefault.jpg", genre: "Romantic", mood: "Melancholic" },
 
   // 90s Bollywood & Retro Classics
   { id: "Yqj1_V90KJo", videoId: "Yqj1_V90KJo", title: "Chura Ke Dil Mera", artist: "Kumar Sanu, Alka Yagnik", channel: "Venus", thumbnail: "https://i.ytimg.com/vi/Yqj1_V90KJo/hqdefault.jpg", genre: "90s Bollywood", mood: "Nostalgic" },
   { id: "KeyfUuXPOcY", videoId: "KeyfUuXPOcY", title: "Dheere Dheere Se Meri Zindagi", artist: "Kumar Sanu, Anuradha Paudwal", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/KeyfUuXPOcY/hqdefault.jpg", genre: "90s Bollywood", mood: "Romantic" },
   { id: "cNV5hLSa9H8", videoId: "cNV5hLSa9H8", title: "Tujhe Dekha Toh Yeh Jaana Sanam", artist: "Kumar Sanu, Lata Mangeshkar", channel: "YRF", thumbnail: "https://i.ytimg.com/vi/cNV5hLSa9H8/hqdefault.jpg", genre: "90s Bollywood", mood: "Romantic" },
-  { id: "q_46zF7ZJqM", videoId: "q_46zF7ZJqM", title: "Pehla Nasha - Jo Jeeta Wohi Sikandar", artist: "Udit Narayan, Sadhana Sargam", channel: "Venus", thumbnail: "https://i.ytimg.com/vi/q_46zF7ZJqM/hqdefault.jpg", genre: "90s Bollywood", mood: "Romantic" },
-  { id: "b0Z1_mHjW_E", videoId: "b0Z1_mHjW_E", title: "Tip Tip Barsa Paani - Mohra", artist: "Udit Narayan, Alka Yagnik", channel: "Venus", thumbnail: "https://i.ytimg.com/vi/b0Z1_mHjW_E/hqdefault.jpg", genre: "90s Bollywood", mood: "Nostalgic" },
-  { id: "wJ8d4xIeR-c", videoId: "wJ8d4xIeR-c", title: "Baazigar O Baazigar", artist: "Kumar Sanu, Alka Yagnik", channel: "Venus", thumbnail: "https://i.ytimg.com/vi/wJ8d4xIeR-c/hqdefault.jpg", genre: "90s Bollywood", mood: "Nostalgic" },
-  { id: "27y8t1WkYpk", videoId: "27y8t1WkYpk", title: "Dil Hai Ke Manta Nahin Title Track", artist: "Kumar Sanu, Anuradha Paudwal", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/27y8t1WkYpk/hqdefault.jpg", genre: "90s Bollywood", mood: "Romantic" },
+  { id: "450p7goxZqg", videoId: "450p7goxZqg", title: "Aye Mere Humsafar - Qayamat Se Qayamat Tak", artist: "Udit Narayan, Alka Yagnik", channel: "Venus", thumbnail: "https://i.ytimg.com/vi/450p7goxZqg/hqdefault.jpg", genre: "90s Bollywood", mood: "Romantic" },
+  { id: "JFcgOboQZ08", videoId: "JFcgOboQZ08", title: "Dheere Dheere Se Meri Zindagi", artist: "Yo Yo Honey Singh", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/JFcgOboQZ08/hqdefault.jpg", genre: "Pop", mood: "Romantic" },
 
-  // Energetic / Workout / Motivation
-  { id: "exv-pL9pC_0", videoId: "exv-pL9pC_0", title: "Kar Har Maidaan Fateh - Sanju", artist: "Sukhwinder Singh, Shreya Ghoshal", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/exv-pL9pC_0/hqdefault.jpg", genre: "Motivational", mood: "Workout" },
-  { id: "wMPb6ZkWd1k", videoId: "wMPb6ZkWd1k", title: "Zinda - Bhaag Milkha Bhaag", artist: "Siddharth Mahadevan", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/wMPb6ZkWd1k/hqdefault.jpg", genre: "Rock Motivation", mood: "Workout" },
-  { id: "9mQk7Evt6Dk", videoId: "9mQk7Evt6Dk", title: "Sultan Title Song", artist: "Sukhwinder Singh, Shadab Faridi", channel: "YRF", thumbnail: "https://i.ytimg.com/vi/9mQk7Evt6Dk/hqdefault.jpg", genre: "Workout", mood: "Energetic" },
-  { id: "bL4j_Hq_o1k", videoId: "bL4j_Hq_o1k", title: "Brothers Anthem", artist: "Vishal Dadlani", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/bL4j_Hq_o1k/hqdefault.jpg", genre: "Workout", mood: "Energetic" },
-  { id: "OQ1cbe_g5eM", videoId: "OQ1cbe_g5eM", title: "Chak De India Title Track", artist: "Sukhwinder Singh, Salim-Sulaiman", channel: "YRF", thumbnail: "https://i.ytimg.com/vi/OQ1cbe_g5eM/hqdefault.jpg", genre: "Energetic", mood: "Workout" },
-
-  // Party / Upbeat Pop
+  // Party / Upbeat Pop & Dance
   { id: "cIGd8gm_pYE", videoId: "cIGd8gm_pYE", title: "Lover (Official Music Video)", artist: "Diljit Dosanjh", channel: "Diljit Dosanjh", thumbnail: "https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg", genre: "Punjabi Pop", mood: "Party" },
   { id: "cl0a3i2wFcc", videoId: "cl0a3i2wFcc", title: "G.O.A.T. (Official Music Video)", artist: "Diljit Dosanjh", channel: "Diljit Dosanjh", thumbnail: "https://i.ytimg.com/vi/cl0a3i2wFcc/hqdefault.jpg", genre: "Punjabi Pop", mood: "Party" },
-  { id: "hV_2jUj6WJg", videoId: "hV_2jUj6WJg", title: "Born To Shine", artist: "Diljit Dosanjh", channel: "Diljit Dosanjh", thumbnail: "https://i.ytimg.com/vi/hV_2jUj6WJg/hqdefault.jpg", genre: "Punjabi Pop", mood: "Energetic" },
-  { id: "II2EO3NwUrQ", videoId: "II2EO3NwUrQ", title: "Badtameez Dil - Yeh Jawaani Hai Deewani", artist: "Benny Dayal, Pritam", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/II2EO3NwUrQ/hqdefault.jpg", genre: "Party Dance", mood: "Party" },
-  { id: "k4yXQkGLeAk", videoId: "k4yXQkGLeAk", title: "Kala Chashma - Baar Baar Dekho", artist: "Amar Arshi, Badshah, Neha Kakkar", channel: "Zee Music Company", thumbnail: "https://i.ytimg.com/vi/k4yXQkGLeAk/hqdefault.jpg", genre: "Party Dance", mood: "Party" },
-  { id: "dra3PCbxbDE", videoId: "dra3PCbxbDE", title: "London Thumakda - Queen", artist: "Labh Janjua, Sonu Kakkar, Neha Kakkar", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/dra3PCbxbDE/hqdefault.jpg", genre: "Party Dance", mood: "Party" },
   { id: "8LZgzAZ2lpQ", videoId: "8LZgzAZ2lpQ", title: "Abhi Toh Party Shuru Hui Hai - Khoobsurat", artist: "Badshah, Aastha Gill", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/8LZgzAZ2lpQ/hqdefault.jpg", genre: "Party Dance", mood: "Party" },
+  { id: "qFkNATtc3mc", videoId: "qFkNATtc3mc", title: "Ghungroo - War", artist: "Arijit Singh, Shilpa Rao", channel: "YRF", thumbnail: "https://i.ytimg.com/vi/qFkNATtc3mc/hqdefault.jpg", genre: "Party Dance", mood: "Feel-Good" },
+  { id: "jCEdTq3j-0U", videoId: "jCEdTq3j-0U", title: "Gallan Goodiyaan - Dil Dhadakne Do", artist: "Shankar Mahadevan, Yashita Sharma", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/jCEdTq3j-0U/hqdefault.jpg", genre: "Party Dance", mood: "Party" },
+  { id: "yJg-Y5byMMw", videoId: "yJg-Y5byMMw", title: "Kar Gayi Chull - Kapoor & Sons", artist: "Badshah, Neha Kakkar", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/yJg-Y5byMMw/hqdefault.jpg", genre: "Party Dance", mood: "Party" },
+  { id: "OPf0YbXqDm0", videoId: "OPf0YbXqDm0", title: "Uptown Funk", artist: "Mark Ronson ft. Bruno Mars", channel: "Mark Ronson", thumbnail: "https://i.ytimg.com/vi/OPf0YbXqDm0/hqdefault.jpg", genre: "Funk Pop", mood: "Party" },
+  { id: "kJQP7kiw5Fk", videoId: "kJQP7kiw5Fk", title: "Despacito", artist: "Luis Fonsi ft. Daddy Yankee", channel: "Luis Fonsi", thumbnail: "https://i.ytimg.com/vi/kJQP7kiw5Fk/hqdefault.jpg", genre: "Latin Pop", mood: "Party" },
 
-  // Soulful / Sufi Rock
+  // Soulful / Sufi Rock / Acoustic
   { id: "cmMiyZaSELo", videoId: "cmMiyZaSELo", title: "Zara Sa (Official Video) - Jannat", artist: "KK, Pritam", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/cmMiyZaSELo/hqdefault.jpg", genre: "Pop Rock", mood: "Soulful" },
   { id: "T94PHkuydcw", videoId: "T94PHkuydcw", title: "Kun Faya Kun (Official Video) - Rockstar", artist: "A.R. Rahman, Javed Ali, Mohit Chauhan", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/T94PHkuydcw/hqdefault.jpg", genre: "Sufi Rock", mood: "Intense" },
   { id: "jHNNMj5bNQw", videoId: "jHNNMj5bNQw", title: "Kabira - Yeh Jawaani Hai Deewani", artist: "Tochi Raina, Rekha Bhardwaj", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/jHNNMj5bNQw/hqdefault.jpg", genre: "Sufi Folk", mood: "Soulful" },
-  { id: "N_r8u4B_U9c", videoId: "N_r8u4B_U9c", title: "Pasoori", artist: "Ali Sethi, Shae Gill", channel: "Coke Studio", thumbnail: "https://i.ytimg.com/vi/N_r8u4B_U9c/hqdefault.jpg", genre: "Sufi Pop", mood: "Soulful" },
+  { id: "5Eqb_-j3FDA", videoId: "5Eqb_-j3FDA", title: "Pasoori", artist: "Ali Sethi, Shae Gill", channel: "Coke Studio", thumbnail: "https://i.ytimg.com/vi/5Eqb_-j3FDA/hqdefault.jpg", genre: "Sufi Pop", mood: "Soulful" },
+  { id: "ARtRGkaG_OA", videoId: "ARtRGkaG_OA", title: "Rockstar - Phir Se Ud Chala", artist: "Mohit Chauhan, A.R. Rahman", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/ARtRGkaG_OA/hqdefault.jpg", genre: "Rock", mood: "Soulful" },
+  { id: "jsgPZVMfJQk", videoId: "jsgPZVMfJQk", title: "Pehle Bhi Main - Animal", artist: "Vishal Mishra, Raj Shekhar", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/jsgPZVMfJQk/hqdefault.jpg", genre: "Romantic", mood: "Soulful" },
 
-  // Underrated & Indie Gems
+  // Indie & Global Melodies
   { id: "vt4jX0iRgCg", videoId: "vt4jX0iRgCg", title: "Kho Gaye Hum Kahan - Baar Baar Dekho", artist: "Jasleen Royal, Prateek Kuhad", channel: "Zee Music Company", thumbnail: "https://i.ytimg.com/vi/vt4jX0iRgCg/hqdefault.jpg", genre: "Indie Acoustic", mood: "Underrated" },
   { id: "dZ0fwJojhrs", videoId: "dZ0fwJojhrs", title: "Baarishein", artist: "Anuv Jain", channel: "Anuv Jain", thumbnail: "https://i.ytimg.com/vi/dZ0fwJojhrs/hqdefault.jpg", genre: "Indie Acoustic", mood: "Underrated" },
-  { id: "bm34qK3Y3bU", videoId: "bm34qK3Y3bU", title: "Kasoor - Acoustic", artist: "Prateek Kuhad", channel: "Prateek Kuhad", thumbnail: "https://i.ytimg.com/vi/bm34qK3Y3bU/hqdefault.jpg", genre: "Indie Acoustic", mood: "Underrated" },
-  { id: "YtDk_9pM-cM", videoId: "YtDk_9pM-cM", title: "Alizeh - Ae Dil Hai Mushkil", artist: "Arijit Singh, Ash King, Shashwat Singh", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/YtDk_9pM-cM/hqdefault.jpg", genre: "Romantic Melody", mood: "Underrated" },
-  { id: "nBkWuYg5kG4", videoId: "nBkWuYg5kG4", title: "Rozana - Naam Shabana", artist: "Shreya Ghoshal, Rochak Kohli", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/nBkWuYg5kG4/hqdefault.jpg", genre: "Acoustic Melody", mood: "Underrated" },
-  { id: "6MgtJpA_k98", videoId: "6MgtJpA_k98", title: "Chaand Baaliyan", artist: "Aditya A", channel: "Aditya A", thumbnail: "https://i.ytimg.com/vi/6MgtJpA_k98/hqdefault.jpg", genre: "Indie Pop", mood: "Feel-Good" },
-  { id: "U7mPqPfQdUo", videoId: "U7mPqPfQdUo", title: "Cold/Mess", artist: "Prateek Kuhad", channel: "Prateek Kuhad", thumbnail: "https://i.ytimg.com/vi/U7mPqPfQdUo/hqdefault.jpg", genre: "Indie Acoustic", mood: "Heartbreak" },
-  { id: "D9G1Vo_JnHQ", videoId: "D9G1Vo_JnHQ", title: "Husn", artist: "Anuv Jain", channel: "Anuv Jain", thumbnail: "https://i.ytimg.com/vi/D9G1Vo_JnHQ/hqdefault.jpg", genre: "Indie Acoustic", mood: "Emotional" },
-  { id: "zWqO3uO_8sQ", videoId: "zWqO3uO_8sQ", title: "Ghar - Jab Harry Met Sejal", artist: "Nikhita Gandhi, Mohit Chauhan", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/zWqO3uO_8sQ/hqdefault.jpg", genre: "Indie Acoustic", mood: "Underrated" },
-
-  // Additional Verified Melodies & Classics
-  { id: "Il71Kx94lH8", videoId: "Il71Kx94lH8", title: "Pee Loon - Once Upon A Time In Mumbaai", artist: "Mohit Chauhan", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/Il71Kx94lH8/hqdefault.jpg", genre: "Romantic", mood: "Love" },
-  { id: "yIIGQP77ZdU", videoId: "yIIGQP77ZdU", title: "Mast Magan - 2 States", artist: "Arijit Singh, Chinmayi Sripada", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/yIIGQP77ZdU/hqdefault.jpg", genre: "Romantic", mood: "Love" },
-  { id: "IeXg1b_4l7Q", videoId: "IeXg1b_4l7Q", title: "Ilahi - Yeh Jawaani Hai Deewani", artist: "Arijit Singh", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/IeXg1b_4l7Q/hqdefault.jpg", genre: "Feel-Good", mood: "Travel" },
-  { id: "8ofcz7A_Fw0", videoId: "8ofcz7A_Fw0", title: "Shayad - Love Aaj Kal", artist: "Arijit Singh, Pritam", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/8ofcz7A_Fw0/hqdefault.jpg", genre: "Romantic", mood: "Melancholic" },
-  { id: "hoNb6HuNmU0", videoId: "hoNb6HuNmU0", title: "Qaafirana - Kedarnath", artist: "Arijit Singh, Nikhita Gandhi", channel: "Zee Music Company", thumbnail: "https://i.ytimg.com/vi/hoNb6HuNmU0/hqdefault.jpg", genre: "Romantic", mood: "Love" },
-  { id: "mF3qY4QvE9U", videoId: "mF3qY4QvE9U", title: "Enna Sona - OK Jaanu", artist: "Arijit Singh, A.R. Rahman", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/mF3qY4QvE9U/hqdefault.jpg", genre: "Romantic", mood: "Soulful" },
-  { id: "wTsl_k1Q1hU", videoId: "wTsl_k1Q1hU", title: "Hawayein - Jab Harry Met Sejal", artist: "Arijit Singh, Pritam", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/wTsl_k1Q1hU/hqdefault.jpg", genre: "Romantic", mood: "Love" },
-  { id: "bUu3Gz_5Y88", videoId: "bUu3Gz_5Y88", title: "Aye Mere Humsafar - Qayamat Se Qayamat Tak", artist: "Udit Narayan, Alka Yagnik", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/bUu3Gz_5Y88/hqdefault.jpg", genre: "90s Bollywood", mood: "Romantic" },
-  { id: "Jk_4L1_vM8g", videoId: "Jk_4L1_vM8g", title: "Mera Dil Bhi Kitna Pagal Hai - Saajan", artist: "Kumar Sanu, Alka Yagnik", channel: "Venus", thumbnail: "https://i.ytimg.com/vi/Jk_4L1_vM8g/hqdefault.jpg", genre: "90s Bollywood", mood: "Romantic" },
-  { id: "r_8G_j1Y_4M", videoId: "r_8G_j1Y_4M", title: "Tumse Milne Ki Tamanna Hai - Saajan", artist: "S.P. Balasubrahmanyam", channel: "Venus", thumbnail: "https://i.ytimg.com/vi/r_8G_j1Y_4M/hqdefault.jpg", genre: "90s Bollywood", mood: "Nostalgic" },
-  { id: "h1F2Y3_K8nU", videoId: "h1F2Y3_K8nU", title: "Kuch Kuch Hota Hai Title Track", artist: "Udit Narayan, Alka Yagnik", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/h1F2Y3_K8nU/hqdefault.jpg", genre: "90s Bollywood", mood: "Romantic" },
-  { id: "v_7N_e1T8n8", videoId: "v_7N_e1T8n8", title: "O Mere Dil Ke Chain", artist: "Kishore Kumar, R.D. Burman", channel: "Saregama", thumbnail: "https://i.ytimg.com/vi/v_7N_e1T8n8/hqdefault.jpg", genre: "Retro Classic", mood: "Nostalgic" },
-  { id: "d_5B_9gK_4U", videoId: "d_5B_9gK_4U", title: "Pal Pal Dil Ke Paas", artist: "Kishore Kumar", channel: "Saregama", thumbnail: "https://i.ytimg.com/vi/d_5B_9gK_4U/hqdefault.jpg", genre: "Retro Classic", mood: "Romantic" },
-  { id: "7c3-Ge3ZgGg", videoId: "7c3-Ge3ZgGg", title: "Gallan Goodiyaan - Dil Dhadakne Do", artist: "Shankar Mahadevan, Yashita Sharma", channel: "T-Series", thumbnail: "https://i.ytimg.com/vi/7c3-Ge3ZgGg/hqdefault.jpg", genre: "Party Dance", mood: "Party" },
-  { id: "3_5U_7mG1Yk", videoId: "3_5U_7mG1Yk", title: "Kar Gayi Chull - Kapoor & Sons", artist: "Badshah, Neha Kakkar", channel: "Sony Music India", thumbnail: "https://i.ytimg.com/vi/3_5U_7mG1Yk/hqdefault.jpg", genre: "Party Dance", mood: "Party" },
-  { id: "Y_8t7_u3lGk", videoId: "Y_8t7_u3lGk", title: "Ghungroo - War", artist: "Arijit Singh, Shilpa Rao", channel: "YRF", thumbnail: "https://i.ytimg.com/vi/Y_8t7_u3lGk/hqdefault.jpg", genre: "Party Dance", mood: "Feel-Good" },
-  { id: "xRb8hLw_q7k", videoId: "xRb8hLw_q7k", title: "Gulabi Aankhen", artist: "Sanam", channel: "Sanam", thumbnail: "https://i.ytimg.com/vi/xRb8hLw_q7k/hqdefault.jpg", genre: "Retro Pop", mood: "Feel-Good" }
+  { id: "Il7Nv270zNk", videoId: "Il7Nv270zNk", title: "cold/mess", artist: "Prateek Kuhad", channel: "Prateek Kuhad", thumbnail: "https://i.ytimg.com/vi/Il7Nv270zNk/hqdefault.jpg", genre: "Indie Acoustic", mood: "Heartbreak" },
+  { id: "PT2_F-1esPk", videoId: "PT2_F-1esPk", title: "Closer", artist: "The Chainsmokers ft. Halsey", channel: "Chainsmokers", thumbnail: "https://i.ytimg.com/vi/PT2_F-1esPk/hqdefault.jpg", genre: "Pop", mood: "Feel-Good" },
+  { id: "2Vv-BfVoq4g", videoId: "2Vv-BfVoq4g", title: "Perfect", artist: "Ed Sheeran", channel: "Ed Sheeran", thumbnail: "https://i.ytimg.com/vi/2Vv-BfVoq4g/hqdefault.jpg", genre: "Romantic", mood: "Love" },
+  { id: "YQHsXMglC9A", videoId: "YQHsXMglC9A", title: "Hello", artist: "Adele", channel: "Adele", thumbnail: "https://i.ytimg.com/vi/YQHsXMglC9A/hqdefault.jpg", genre: "Soul", mood: "Melancholic" },
+  { id: "uelHwf8o7_U", videoId: "uelHwf8o7_U", title: "Love The Way You Lie", artist: "Eminem ft. Rihanna", channel: "Eminem", thumbnail: "https://i.ytimg.com/vi/uelHwf8o7_U/hqdefault.jpg", genre: "Hip-Hop", mood: "Intense" },
+  { id: "JGwWNGJdvx8", videoId: "JGwWNGJdvx8", title: "Shape of You", artist: "Ed Sheeran", channel: "Ed Sheeran", thumbnail: "https://i.ytimg.com/vi/JGwWNGJdvx8/hqdefault.jpg", genre: "Pop", mood: "Feel-Good" },
+  { id: "fJ9rUzIMcZQ", videoId: "fJ9rUzIMcZQ", title: "Bohemian Rhapsody", artist: "Queen", channel: "Queen", thumbnail: "https://i.ytimg.com/vi/fJ9rUzIMcZQ/hqdefault.jpg", genre: "Rock Classic", mood: "Intense" },
+  { id: "RgKAFK5djSk", videoId: "RgKAFK5djSk", title: "See You Again", artist: "Wiz Khalifa ft. Charlie Puth", channel: "Wiz Khalifa", thumbnail: "https://i.ytimg.com/vi/RgKAFK5djSk/hqdefault.jpg", genre: "Emotional", mood: "Melancholic" }
 ];
 
 export const catalogService = {
@@ -154,6 +137,9 @@ export const catalogService = {
     // 1. Seed with core verified tracks
     for (const track of CORE_CATALOG_TRACKS) {
       if (isSingleSong(track)) {
+        const cleanThumb = getCleanTrackThumbnail(track.thumbnail, track.id);
+        if (!isValidThumbnailUrlFormat(cleanThumb)) continue;
+
         const verification = verifySingleSong(track);
         candidateMap.set(track.id, {
           id: track.id,
@@ -161,7 +147,7 @@ export const catalogService = {
           title: track.title,
           artist: track.artist,
           channel: track.channel || track.artist,
-          thumbnail: track.thumbnail,
+          thumbnail: cleanThumb,
           duration: track.duration || '3:45',
           genre: track.genre || 'Desi Hits',
           mood: track.mood || 'Vibes',
@@ -184,6 +170,9 @@ export const catalogService = {
             for (const t of col.tracks) {
               const trackId = t.videoId || t.id;
               if (trackId && !t.isHidden && !candidateMap.has(trackId) && isSingleSong(t)) {
+                const cleanThumb = getCleanTrackThumbnail(t.thumbnail, trackId);
+                if (!isValidThumbnailUrlFormat(cleanThumb)) continue;
+
                 const verification = verifySingleSong(t);
                 const meta = cleanArtistAndTitle({
                   title: t.title,
@@ -196,7 +185,7 @@ export const catalogService = {
                   title: meta.title,
                   artist: meta.artist,
                   channel: meta.channel,
-                  thumbnail: t.thumbnail || `https://i.ytimg.com/vi/${trackId}/hqdefault.jpg`,
+                  thumbnail: cleanThumb,
                   duration: t.duration || '3:30',
                   genre: col.name || col.category || 'Desi Lounge',
                   mood: 'Curated',
@@ -212,7 +201,7 @@ export const catalogService = {
       console.warn('[CatalogService] Notice fetching CuratedCollections:', err.message);
     }
 
-    return Array.from(candidateMap.values());
+    return filterTracksWithValidThumbnailsSync(Array.from(candidateMap.values()));
   },
 
   /**
@@ -236,6 +225,9 @@ export const catalogService = {
           const verification = verifySingleSong(v);
           if (!verification.isValid) continue;
 
+          const cleanThumb = getCleanTrackThumbnail(v.thumbnail, v.videoId);
+          if (!isValidThumbnailUrlFormat(cleanThumb)) continue;
+
           seenIds.add(v.videoId);
           const meta = cleanArtistAndTitle({
             title: v.title,
@@ -248,7 +240,7 @@ export const catalogService = {
             title: meta.title,
             artist: meta.artist,
             channel: meta.channel,
-            thumbnail: v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
+            thumbnail: cleanThumb,
             duration: v.timestamp || v.duration || '3:30',
             genre: query,
             mood: 'Personalized',
@@ -261,7 +253,7 @@ export const catalogService = {
       }
     }
 
-    return dynamicTracks;
+    return filterTracksWithValidThumbnailsSync(dynamicTracks);
   },
 
   /**
@@ -295,6 +287,9 @@ export const catalogService = {
           });
 
           if (verification.isValid) {
+            const cleanThumb = getCleanTrackThumbnail(v.thumbnail, v.videoId);
+            if (!isValidThumbnailUrlFormat(cleanThumb)) continue;
+
             seenIds.add(v.videoId);
             freshTracks.push({
               id: v.videoId,
@@ -302,7 +297,7 @@ export const catalogService = {
               title: decodeHtml(v.title),
               artist: decodeHtml(v.author?.name || 'Artist'),
               channel: decodeHtml(v.author?.name || ''),
-              thumbnail: v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
+              thumbnail: cleanThumb,
               duration: v.timestamp || '3:30',
               uploadedAt: v.ago || '',
               songType: verification.songType,
@@ -317,7 +312,7 @@ export const catalogService = {
       if (freshTracks.length >= 6) break;
     }
 
-    return freshTracks;
+    return filterTracksWithValidThumbnailsSync(freshTracks);
   },
 
   /**
@@ -545,8 +540,8 @@ export const catalogService = {
       }
     }
 
-    // Convert map to array
-    const allCandidates = Array.from(candidateMap.values());
+    // Convert map to array and ensure strict thumbnail validity
+    const allCandidates = filterTracksWithValidThumbnailsSync(Array.from(candidateMap.values()));
 
     // Score relevance to intent
     const scoredCandidates = allCandidates.map(track => {

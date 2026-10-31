@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { getCanonicalSongKey, TrackDeduplicator } from './recommendationHistoryService.js';
+import { getCleanTrackThumbnail, isValidThumbnailUrlFormat, filterTracksWithValidThumbnailsSync } from './thumbnailValidationService.js';
 
 // In-memory diagnostics accumulator (No sensitive data)
 export const geminiDiagnostics = {
@@ -51,11 +52,14 @@ export const geminiRecommendationService = {
       return null; // Will trigger graceful catalog fallback
     }
 
+    // Ensure all candidate tracks passed to Gemini AI have verified valid thumbnails
+    const validCandidates = filterTracksWithValidThumbnailsSync(candidates);
+
     // Build Candidate Lookup Map to validate all AI responses
     const candidateMap = new Map();
     const compactCandidates = [];
 
-    for (const c of candidates) {
+    for (const c of validCandidates) {
       const id = c.id || c.videoId;
       if (!id) continue;
       candidateMap.set(id, c);
@@ -160,11 +164,15 @@ Output strictly valid JSON complying with this structure.
           if (!trackId || !candidateMap.has(trackId)) continue;
 
           const fullTrack = candidateMap.get(trackId);
+          const cleanThumb = getCleanTrackThumbnail(fullTrack.thumbnail, trackId);
+          if (!isValidThumbnailUrlFormat(cleanThumb)) continue;
+
           if (globalDeduplicator.isDuplicate(fullTrack)) continue;
 
           globalDeduplicator.add(fullTrack);
           hydrated.push({
             ...fullTrack,
+            thumbnail: cleanThumb,
             reason: item?.reason || 'Recommended by Gemini AI',
             source: sectionSource
           });
@@ -175,9 +183,9 @@ Output strictly valid JSON complying with this structure.
       const hydratedMadeForYou = validateAndHydrate(parsed.madeForYou, 'gemini');
       let hydratedDailyMix = validateAndHydrate(parsed.dailyMix, 'gemini');
 
-      // Backfill dailyMix if empty from candidates without violating deduplication
+      // Backfill dailyMix if empty from valid candidates without violating deduplication
       if (hydratedDailyMix.length < 4) {
-        for (const cand of candidates) {
+        for (const cand of validCandidates) {
           if (globalDeduplicator.isDuplicate(cand)) continue;
           globalDeduplicator.add(cand);
           hydratedDailyMix.push({
@@ -191,9 +199,9 @@ Output strictly valid JSON complying with this structure.
 
       let distinctDiscover = validateAndHydrate(parsed.discover, 'gemini');
 
-      // Backfill discover from candidate pool if needed with novel tracks
+      // Backfill discover from valid candidate pool if needed with novel tracks
       if (distinctDiscover.length < 4) {
-        for (const cand of candidates) {
+        for (const cand of validCandidates) {
           if (globalDeduplicator.isDuplicate(cand)) continue;
           globalDeduplicator.add(cand);
           distinctDiscover.push({
@@ -208,7 +216,7 @@ Output strictly valid JSON complying with this structure.
       // Hydrate moreLikeRecent without violating deduplication
       let hydratedMoreLikeRecent = validateAndHydrate(parsed.moreLikeRecent, 'gemini');
       if (hydratedMoreLikeRecent.length < 3) {
-        for (const cand of candidates) {
+        for (const cand of validCandidates) {
           if (globalDeduplicator.isDuplicate(cand)) continue;
           globalDeduplicator.add(cand);
           hydratedMoreLikeRecent.push({
@@ -224,7 +232,7 @@ Output strictly valid JSON complying with this structure.
       const recentTrack = userProfile.recentTracks?.[0] || null;
       let becauseRecs = [];
       if (recentTrack) {
-        for (const cand of candidates) {
+        for (const cand of validCandidates) {
           if (globalDeduplicator.isDuplicate(cand)) continue;
           const art = (cand.artist || cand.channel || '').toLowerCase();
           const recentArt = (recentTrack.artist || '').toLowerCase();

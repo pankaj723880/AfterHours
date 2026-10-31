@@ -123,6 +123,10 @@ export default function CmsCuratedCollectionsRow({
       >
         {collections.map((col) => {
           const firstTrack = col.tracks?.[0];
+          const firstTrackId = firstTrack?.videoId || firstTrack?.id;
+          const coverImage = col.coverArt || (firstTrackId ? `https://i.ytimg.com/vi/${firstTrackId}/hqdefault.jpg` : '');
+          if (!coverImage) return null;
+
           return (
             <div
               key={col.id || col.slug}
@@ -131,11 +135,13 @@ export default function CmsCuratedCollectionsRow({
             >
               <div className="relative aspect-square rounded-xl overflow-hidden mb-3 bg-neutral-950">
                 <img
-                  src={col.coverArt || (firstTrack ? `https://i.ytimg.com/vi/${firstTrack.videoId || firstTrack.id}/hqdefault.jpg` : `https://ui-avatars.com/api/?name=${encodeURIComponent(col.name)}&background=1e1e1e&color=f59e0b&size=300`)}
+                  src={coverImage}
                   alt={col.name}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   onError={(e) => {
-                    e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(col.name)}&background=1e1e1e&color=f59e0b&size=300`;
+                    const target = e.currentTarget;
+                    const card = target.closest('.group');
+                    if (card) card.style.display = 'none';
                   }}
                 />
                 <span className="absolute top-2 left-2 text-[9px] uppercase font-bold text-amber-300 bg-neutral-950/80 backdrop-blur-md border border-amber-500/20 px-2 py-0.5 rounded-full">
