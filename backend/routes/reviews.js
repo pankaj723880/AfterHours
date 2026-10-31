@@ -23,6 +23,9 @@ const sanitizeText = (str = '') => {
  * Returns genuine summary statistics and separately configured editorial summary (if enabled).
  */
 router.get('/summary', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   try {
     const statsResult = await Review.aggregate([
       { $match: { source: 'user', status: 'published' } },
@@ -57,7 +60,7 @@ router.get('/summary', async (req, res) => {
     };
 
     const averageRating = stat.totalRatings > 0 
-      ? parseFloat((stat.sumRating / stat.totalRatings).toFixed(1)) 
+      ? parseFloat((stat.sumRating / stat.totalRatings).toFixed(4)) 
       : 0.0;
 
     const genuineSummary = {
@@ -69,32 +72,61 @@ router.get('/summary', async (req, res) => {
         2: stat.count2,
         3: stat.count3,
         4: stat.count4,
-        5: stat.count5
+        5: stat.count5,
+        count1: stat.count1,
+        count2: stat.count2,
+        count3: stat.count3,
+        count4: stat.count4,
+        count5: stat.count5
       }
     };
 
     // Load separate editorial/configured settings
     let editorialSummary = null;
+    let mode = 'genuine';
     try {
       const configDoc = await ConfiguredReviewsSettings.findOne({ key: 'default_configured_reviews' }).lean();
       if (configDoc && configDoc.enabled) {
+        mode = 'configured';
+        const dist = configDoc.distribution || {};
+        const c1 = Number(dist.count1 ?? dist['1'] ?? 0);
+        const c2 = Number(dist.count2 ?? dist['2'] ?? 0);
+        const c3 = Number(dist.count3 ?? dist['3'] ?? 0);
+        const c4 = Number(dist.count4 ?? dist['4'] ?? 0);
+        const c5 = Number(dist.count5 ?? dist['5'] ?? 0);
+        const total = c1 + c2 + c3 + c4 + c5;
+        const weightedSum = (1 * c1) + (2 * c2) + (3 * c3) + (4 * c4) + (5 * c5);
+        const calculatedAvg = total > 0 ? parseFloat((weightedSum / total).toFixed(4)) : 0.0;
+        const effectiveAvg = (configDoc.displayRating !== undefined && configDoc.displayRating > 0)
+          ? configDoc.displayRating
+          : calculatedAvg;
+        const effectiveTotal = (configDoc.displayCount !== undefined && configDoc.displayCount > 0)
+          ? configDoc.displayCount
+          : total;
+
         editorialSummary = {
           enabled: true,
-          displayRating: configDoc.displayRating,
-          displayCount: configDoc.displayCount,
+          displayRating: effectiveAvg,
+          displayCount: effectiveTotal,
           editorialLabel: configDoc.editorialLabel || 'Curated Editorial Highlights',
           distribution: {
-            1: configDoc.distribution?.count1 || 0,
-            2: configDoc.distribution?.count2 || 0,
-            3: configDoc.distribution?.count3 || 0,
-            4: configDoc.distribution?.count4 || 0,
-            5: configDoc.distribution?.count5 || 0
+            1: c1,
+            2: c2,
+            3: c3,
+            4: c4,
+            5: c5,
+            count1: c1,
+            count2: c2,
+            count3: c3,
+            count4: c4,
+            count5: c5
           }
         };
       }
     } catch (e) {}
 
     return res.json({
+      mode,
       ...genuineSummary,
       editorialSummary
     });
@@ -105,15 +137,18 @@ router.get('/summary', async (req, res) => {
 
 /**
  * GET /api/reviews
- * Paginated genuine reviews wall (5 reviews per page).
+ * Paginated reviews wall (5 reviews per page).
  */
 router.get('/', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(10, Math.max(1, parseInt(req.query.limit, 10) || 5));
     const skip = (page - 1) * limit;
 
-    const source = req.query.source === 'editorial' ? 'editorial' : 'user';
+    const source = (req.query.source === 'editorial' || req.query.source === 'configured') ? 'editorial' : 'user';
     const filter = {
       source,
       status: 'published',
@@ -125,7 +160,7 @@ router.get('/', async (req, res) => {
         .sort({ submittedAt: -1 })
         .skip(skip)
         .limit(limit)
-        .select('displayName username avatarUrl rating reviewText submittedAt userRole')
+        .select('displayName username avatarUrl rating reviewText submittedAt userRole status')
         .lean(),
       Review.countDocuments(filter)
     ]);
@@ -133,7 +168,7 @@ router.get('/', async (req, res) => {
     const totalPages = Math.ceil(total / limit) || 1;
 
     return res.json({
-      reviews,
+      reviews: reviews.map(r => ({ ...r, id: r._id.toString() })),
       page,
       limit,
       totalPages,
@@ -474,7 +509,7 @@ router.delete(['/admin/real/:id', '/real/:id'], authenticateToken, requireAdmin,
  * GET /api/admin/reviews/configured
  * Retrieves configured/editorial reviews and settings.
  */
-router.get(['/admin/configured', '/configured'], authenticateToken, requireAdmin, async (req, res) => {
+router.get(['/admin/configured', '/configured', '/admin/editorial', '/editorial'], authenticateToken, requireAdmin, async (req, res) => {
   try {
     let settings = await ConfiguredReviewsSettings.findOne({ key: 'default_configured_reviews' }).lean();
     if (!settings) {
@@ -491,7 +526,7 @@ router.get(['/admin/configured', '/configured'], authenticateToken, requireAdmin
 
     const reviews = await Review.find({ source: 'editorial' }).sort({ submittedAt: -1 }).lean();
 
-    return res.json({ settings, reviews });
+    return res.json({ settings, reviews: reviews.map(r => ({ ...r, id: r._id.toString() })) });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to fetch configured reviews: ' + err.message });
   }
@@ -501,7 +536,7 @@ router.get(['/admin/configured', '/configured'], authenticateToken, requireAdmin
  * POST /api/admin/reviews/configured
  * Adds a new configured/editorial review.
  */
-router.post(['/admin/configured', '/configured'], authenticateToken, requireAdmin, async (req, res) => {
+router.post(['/admin/configured', '/configured', '/admin/editorial', '/editorial'], authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { displayName, rating, reviewText, status = 'published' } = req.body;
     const ratingNum = parseInt(rating, 10);
@@ -533,7 +568,7 @@ router.post(['/admin/configured', '/configured'], authenticateToken, requireAdmi
  * PUT /api/admin/reviews/configured/:id
  * Updates an editorial/configured review.
  */
-router.put(['/admin/configured/:id', '/configured/:id'], authenticateToken, requireAdmin, async (req, res) => {
+router.put(['/admin/configured/:id', '/configured/:id', '/admin/editorial/:id', '/editorial/:id'], authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { displayName, rating, reviewText, status } = req.body;
     const updateData = {};
@@ -566,10 +601,37 @@ router.put(['/admin/configured/:id', '/configured/:id'], authenticateToken, requ
 });
 
 /**
+ * PATCH /api/admin/reviews/configured/:id/status
+ * Updates status of an editorial/configured review.
+ */
+router.patch(['/admin/configured/:id/status', '/configured/:id/status', '/admin/editorial/:id/status', '/editorial/:id/status'], authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!['published', 'hidden'].includes(status)) {
+      return res.status(400).json({ error: "Invalid status. Allowed: 'published', 'hidden'" });
+    }
+
+    const review = await Review.findOneAndUpdate(
+      { _id: req.params.id, source: 'editorial' },
+      { $set: { status } },
+      { new: true }
+    );
+
+    if (!review) {
+      return res.status(404).json({ error: 'Configured review not found' });
+    }
+
+    return res.json({ success: true, review });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to update configured review status: ' + err.message });
+  }
+});
+
+/**
  * DELETE /api/admin/reviews/configured/:id
  * Deletes an editorial/configured review.
  */
-router.delete(['/admin/configured/:id', '/configured/:id'], authenticateToken, requireAdmin, async (req, res) => {
+router.delete(['/admin/configured/:id', '/configured/:id', '/admin/editorial/:id', '/editorial/:id'], authenticateToken, requireAdmin, async (req, res) => {
   try {
     const review = await Review.findOneAndDelete({ _id: req.params.id, source: 'editorial' });
     if (!review) {
@@ -605,32 +667,14 @@ router.post(['/admin/configured-settings', '/configured-settings', '/admin/confi
       hasDistribution = true;
     }
 
-    let calculatedTotal = 0;
-    let calculatedAvg = 0.0;
-
-    if (hasDistribution) {
-      calculatedTotal = c1 + c2 + c3 + c4 + c5;
-      const weightedSum = (1 * c1) + (2 * c2) + (3 * c3) + (4 * c4) + (5 * c5);
-      calculatedAvg = calculatedTotal > 0 ? parseFloat((weightedSum / calculatedTotal).toFixed(1)) : 0.0;
-    } else {
-      calculatedTotal = displayCount !== undefined ? parseInt(displayCount, 10) : 0;
-      calculatedAvg = displayRating !== undefined ? parseFloat(displayRating) : 0.0;
-    }
-
-    if (isNaN(calculatedTotal) || calculatedTotal < 0) {
-      return res.status(400).json({ error: 'Display count must be a non-negative integer' });
-    }
-    if (isNaN(calculatedAvg) || calculatedAvg < 0 || calculatedAvg > 5) {
-      return res.status(400).json({ error: 'Display rating must be between 0.0 and 5.0' });
-    }
-
     const updateDoc = {
-      displayRating: calculatedAvg,
-      displayCount: calculatedTotal,
       updatedBy: req.user?.username || 'admin'
     };
 
     if (hasDistribution) {
+      const calculatedTotal = c1 + c2 + c3 + c4 + c5;
+      const weightedSum = (1 * c1) + (2 * c2) + (3 * c3) + (4 * c4) + (5 * c5);
+      const calculatedAvg = calculatedTotal > 0 ? parseFloat((weightedSum / calculatedTotal).toFixed(4)) : 0.0;
       updateDoc.distribution = {
         count1: c1,
         count2: c2,
@@ -638,6 +682,23 @@ router.post(['/admin/configured-settings', '/configured-settings', '/admin/confi
         count4: c4,
         count5: c5
       };
+      updateDoc.displayCount = calculatedTotal;
+      updateDoc.displayRating = calculatedAvg;
+    } else {
+      if (displayCount !== undefined) {
+        const parsedCount = parseInt(displayCount, 10);
+        if (isNaN(parsedCount) || parsedCount < 0) {
+          return res.status(400).json({ error: 'Display count must be a non-negative integer' });
+        }
+        updateDoc.displayCount = parsedCount;
+      }
+      if (displayRating !== undefined) {
+        const parsedRating = parseFloat(parseFloat(displayRating).toFixed(4));
+        if (isNaN(parsedRating) || parsedRating < 0 || parsedRating > 5) {
+          return res.status(400).json({ error: 'Display rating must be between 0.0 and 5.0' });
+        }
+        updateDoc.displayRating = parsedRating;
+      }
     }
 
     if (enabled !== undefined) {
@@ -645,6 +706,13 @@ router.post(['/admin/configured-settings', '/configured-settings', '/admin/confi
     }
     if (editorialLabel !== undefined) {
       updateDoc.editorialLabel = sanitizeText(editorialLabel) || 'Curated Editorial Highlights';
+    }
+
+    const existingDoc = await ConfiguredReviewsSettings.findOne({ key: 'default_configured_reviews' }).lean();
+    if (!existingDoc && updateDoc.displayCount === undefined) {
+      updateDoc.displayCount = 0;
+      updateDoc.displayRating = 0.0;
+      updateDoc.distribution = { count1: 0, count2: 0, count3: 0, count4: 0, count5: 0 };
     }
 
     const settings = await ConfiguredReviewsSettings.findOneAndUpdate(

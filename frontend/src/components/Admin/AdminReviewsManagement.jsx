@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { safeParseJsonResponse } from '../../utils/errorHandler';
 
-export default function AdminReviewsManagement({ token, backendUrl, showToast }) {
+export default function AdminReviewsManagement({ token, backendUrl, showToast, onReviewsUpdated }) {
   const [activeArea, setActiveArea] = useState('real'); // 'real' | 'configured'
 
   // --- Real Reviews State ---
@@ -144,7 +144,7 @@ export default function AdminReviewsManagement({ token, backendUrl, showToast })
       const c5 = nextDist.count5 || 0;
       const total = c1 + c2 + c3 + c4 + c5;
       const weightedSum = (1 * c1) + (2 * c2) + (3 * c3) + (4 * c4) + (5 * c5);
-      const avg = total > 0 ? parseFloat((weightedSum / total).toFixed(1)) : 0.0;
+      const avg = total > 0 ? parseFloat((weightedSum / total).toFixed(4)) : 0.0;
       return {
         ...prev,
         distribution: nextDist,
@@ -255,6 +255,7 @@ export default function AdminReviewsManagement({ token, backendUrl, showToast })
             }
           });
         }
+        onReviewsUpdated?.();
       } else {
         if (showToast) showToast(parsed.error, 'error');
       }
@@ -289,6 +290,34 @@ export default function AdminReviewsManagement({ token, backendUrl, showToast })
         setEditorialModalOpen(false);
         setEditorialForm({ id: null, displayName: '', rating: 5, reviewText: '', status: 'published' });
         fetchConfiguredData();
+        onReviewsUpdated?.();
+      } else {
+        if (showToast) showToast(parsed.error, 'error');
+      }
+    } catch (err) {
+      if (showToast) showToast(err.message, 'error');
+    }
+  };
+
+  // Toggle configured review visibility (publish / hide)
+  const handleToggleConfiguredStatus = async (review) => {
+    const nextStatus = review.status === 'published' ? 'hidden' : 'published';
+    try {
+      const res = await fetch(`${backendUrl}/api/admin/reviews/configured/${review._id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: nextStatus })
+      });
+      const parsed = await safeParseJsonResponse(res, 'Failed to update review status');
+      if (parsed.ok) {
+        if (showToast) showToast(`Configured review ${nextStatus === 'published' ? 'published' : 'unpublished'}`);
+        setConfiguredReviews(prev =>
+          prev.map(r => r._id === review._id ? { ...r, status: nextStatus } : r)
+        );
+        onReviewsUpdated?.();
       } else {
         if (showToast) showToast(parsed.error, 'error');
       }
@@ -308,6 +337,7 @@ export default function AdminReviewsManagement({ token, backendUrl, showToast })
       if (parsed.ok) {
         if (showToast) showToast('Editorial review deleted');
         fetchConfiguredData();
+        onReviewsUpdated?.();
       } else {
         if (showToast) showToast(parsed.error, 'error');
       }
@@ -832,32 +862,57 @@ export default function AdminReviewsManagement({ token, backendUrl, showToast })
                       </p>
                     </div>
 
-                    <div className="pt-2 border-t border-neutral-800 flex items-center justify-end gap-2">
+                    <div className="pt-2 border-t border-neutral-800 flex items-center justify-between gap-2">
                       <button
                         type="button"
-                        onClick={() => {
-                          setEditorialForm({
-                            id: rev._id,
-                            displayName: rev.displayName,
-                            rating: rev.rating,
-                            reviewText: rev.reviewText,
-                            status: rev.status
-                          });
-                          setEditorialModalOpen(true);
-                        }}
-                        className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
-                        title="Edit editorial review"
+                        onClick={() => handleToggleConfiguredStatus(rev)}
+                        className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-xl transition cursor-pointer ${
+                          rev.status === 'published'
+                            ? 'text-emerald-400 hover:text-amber-400 hover:bg-neutral-800'
+                            : 'text-neutral-400 hover:text-emerald-400 hover:bg-neutral-800'
+                        }`}
+                        title={rev.status === 'published' ? 'Click to unpublish review' : 'Click to publish review'}
                       >
-                        <Edit2 className="w-3.5 h-3.5" />
+                        {rev.status === 'published' ? (
+                          <>
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Published</span>
+                          </>
+                        ) : (
+                          <>
+                            <EyeOff className="w-3.5 h-3.5" />
+                            <span>Hidden</span>
+                          </>
+                        )}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteConfiguredReview(rev._id)}
-                        className="p-1.5 rounded-lg text-neutral-400 hover:text-red-400 hover:bg-neutral-800 transition cursor-pointer"
-                        title="Delete editorial review"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditorialForm({
+                              id: rev._id,
+                              displayName: rev.displayName,
+                              rating: rev.rating,
+                              reviewText: rev.reviewText,
+                              status: rev.status
+                            });
+                            setEditorialModalOpen(true);
+                          }}
+                          className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
+                          title="Edit editorial review"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteConfiguredReview(rev._id)}
+                          className="p-1.5 rounded-lg text-neutral-400 hover:text-red-400 hover:bg-neutral-800 transition cursor-pointer"
+                          title="Delete editorial review"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}

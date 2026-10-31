@@ -1,29 +1,82 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <!-- Homepage -->
   <url>
     <loc>https://loopra1.vercel.app/</loc>
+    <lastmod>2026-10-31</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
+
+  <!-- Discover Music & Search -->
   <url>
     <loc>https://loopra1.vercel.app/discover</loc>
+    <lastmod>2026-10-31</lastmod>
     <changefreq>daily</changefreq>
-    <priority>0.8</priority>
+    <priority>0.9</priority>
   </url>
+
+  <!-- Live Indian Radio & Regional FM -->
   <url>
     <loc>https://loopra1.vercel.app/radio</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <lastmod>2026-10-31</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
   </url>
+
+  <!-- Personalized AI Recommendations -->
   <url>
     <loc>https://loopra1.vercel.app/for-you</loc>
+    <lastmod>2026-10-31</lastmod>
     <changefreq>daily</changefreq>
-    <priority>0.7</priority>
+    <priority>0.8</priority>
   </url>
+
+  <!-- Offline Downloads & Music Exploration -->
   <url>
     <loc>https://loopra1.vercel.app/downloads</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
+    <lastmod>2026-10-31</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <!-- Mood & Ambient Soundscapes -->
+  <url>
+    <loc>https://loopra1.vercel.app/mood</loc>
+    <lastmod>2026-10-31</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <!-- Music Time Machine -->
+  <url>
+    <loc>https://loopra1.vercel.app/timemachine</loc>
+    <lastmod>2026-10-31</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <!-- Curated Station: Saloon Nostalgia -->
+  <url>
+    <loc>https://loopra1.vercel.app/barber</loc>
+    <lastmod>2026-10-31</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+
+  <!-- Curated Station: Highway Dhaba -->
+  <url>
+    <loc>https://loopra1.vercel.app/truck</loc>
+    <lastmod>2026-10-31</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+
+  <!-- Curated Station: Desi Theka -->
+  <url>
+    <loc>https://loopra1.vercel.app/pauwa</loc>
+    <lastmod>2026-10-31</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
   </url>
 </urlset>
-

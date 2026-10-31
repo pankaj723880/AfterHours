@@ -90,7 +90,7 @@ export default function OfflineLibraryView({
               IndexedDB Audio Storage
             </span>
           </div>
-          <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">Offline Library</h2>
+          <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">Offline Library</h1>
           <p className="text-xs text-neutral-400 mt-1 max-w-xl">
             Locally stored audio files. These tracks play seamlessly through Loopra without any active network connection.
           </p>

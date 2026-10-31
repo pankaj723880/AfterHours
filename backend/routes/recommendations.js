@@ -97,6 +97,18 @@ const handleListeningEvent = async (req, res) => {
       playSessionId
     });
 
+    const io = req.app_io || req.app?.get('io');
+    if (io && result.recorded) {
+      try {
+        io.to(`user_${userId.toString()}`).emit('listening_stats_updated', {
+          userId: userId.toString(),
+          trackId,
+          eventType,
+          isValidPlay: Boolean(result.isValidPlay)
+        });
+      } catch (e) {}
+    }
+
     res.json({
       success: true,
       ...result
@@ -183,6 +195,76 @@ router.get('/diagnostics', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to get diagnostics' });
+  }
+});
+
+/**
+ * 8. GET /api/recommendations/similar
+ * Returns genuine, verified playable tracks similar to a given song
+ */
+router.get('/similar', async (req, res) => {
+  try {
+    const trackId = (req.query.trackId || req.query.id || '').trim();
+    const title = (req.query.title || '').trim();
+    const artist = (req.query.artist || '').trim();
+    const genre = (req.query.genre || '').trim();
+
+    if (!title && !artist && !trackId) {
+      return res.status(400).json({ error: 'At least trackId, title, or artist is required' });
+    }
+
+    const cleanTitle = title.replace(/\(.*?\)|\[.*?\]/g, '').trim();
+    const cleanArtist = artist.replace(/vevo|official|channel|topic|records/gi, '').trim();
+
+    const searchQueries = [];
+    if (cleanArtist && cleanArtist.toLowerCase() !== 'unknown') {
+      searchQueries.push(`${cleanArtist} top songs`);
+    }
+    if (cleanTitle && cleanArtist) {
+      searchQueries.push(`${cleanTitle} ${cleanArtist} similar music`);
+    } else if (cleanTitle) {
+      searchQueries.push(`${cleanTitle} similar songs`);
+    }
+    if (genre) {
+      searchQueries.push(`${genre} music`);
+    }
+
+    const candidates = await catalogService.fetchDynamicCandidates(searchQueries, 8);
+    // Also include matching curated tracks from catalog
+    const curated = await catalogService.getCuratedTracks();
+    const matchingCurated = curated.filter(t => {
+      const matchArtist = cleanArtist && (t.artist || '').toLowerCase().includes(cleanArtist.toLowerCase());
+      const matchGenre = genre && (t.genre || '').toLowerCase().includes(genre.toLowerCase());
+      return matchArtist || matchGenre;
+    });
+
+    // Merge and deduplicate
+    const combined = [...candidates, ...matchingCurated];
+    const seen = new Set();
+    if (trackId) seen.add(trackId);
+
+    const results = [];
+    for (const track of combined) {
+      const id = track.id || track.videoId;
+      if (!id || seen.has(id)) continue;
+      // Do not recommend the exact same title
+      if (cleanTitle && (track.title || '').toLowerCase() === cleanTitle.toLowerCase()) continue;
+      seen.add(id);
+      results.push({
+        ...track,
+        reason: cleanArtist ? `Similar acoustic vibe to ${cleanArtist}` : 'Recommended based on this track'
+      });
+      if (results.length >= 12) break;
+    }
+
+    res.json({
+      success: true,
+      originalTrack: { id: trackId, title: cleanTitle || title, artist: cleanArtist || artist },
+      items: results
+    });
+  } catch (err) {
+    console.error('[Recommendations Similar Error]:', err.message);
+    res.status(500).json({ error: 'Failed to find similar songs: ' + err.message });
   }
 });
 

@@ -13,10 +13,10 @@ console.log('=== STARTING LOOPRA BROWSER TAB TITLE VERIFICATION SUITE ===\n');
 const indexHtmlPath = path.join(rootDir, 'frontend', 'index.html');
 const indexHtml = fs.readFileSync(indexHtmlPath, 'utf8');
 
-assert.ok(indexHtml.includes('<title>Loopra</title>'), 'index.html must have <title>Loopra</title>');
+assert.ok(indexHtml.includes('<title>Loopra'), 'index.html must have Loopra in title');
 assert.ok(!indexHtml.includes('AfterHours Mehfil'), 'index.html must NOT contain "AfterHours Mehfil"');
-assert.ok(indexHtml.includes('property="og:title" content="Loopra"'), 'index.html must have og:title Loopra');
-assert.ok(indexHtml.includes('name="twitter:title" content="Loopra"'), 'index.html must have twitter:title Loopra');
+assert.ok(indexHtml.includes('property="og:title" content="Loopra'), 'index.html must have og:title starting with Loopra');
+assert.ok(indexHtml.includes('name="twitter:title" content="Loopra'), 'index.html must have twitter:title starting with Loopra');
 console.log('✓ Test 1 Passed: index.html has exact title and OpenGraph/Twitter title metadata set to "Loopra"');
 
 // 2. Check public/manifest.json

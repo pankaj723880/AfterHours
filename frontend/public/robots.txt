@@ -1,7 +1,20 @@
 User-agent: *
 Allow: /
+Allow: /assets/
+Allow: /favicon.svg
+Allow: /favicon.png
+Allow: /og-image.png
+Allow: /manifest.json
+Allow: /sitemap.xml
+
+# Exclude private, administrative, and dynamic API endpoints
 Disallow: /admin
+Disallow: /admin/
 Disallow: /api/
+Disallow: /socket.io/
+Disallow: /library
+Disallow: /history
+Disallow: /playlists
+Disallow: /activity
 
 Sitemap: https://loopra1.vercel.app/sitemap.xml
-

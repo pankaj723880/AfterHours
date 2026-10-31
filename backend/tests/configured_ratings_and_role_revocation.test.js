@@ -74,7 +74,7 @@ async function main() {
     assert.strictEqual(saveRes.status, 200, `Save settings must return 200, got ${saveRes.status}`);
     assert.strictEqual(saveData.success, true);
     assert.strictEqual(saveData.settings.displayCount, 150, `Expected total 150, got ${saveData.settings.displayCount}`);
-    assert.strictEqual(saveData.settings.displayRating, 4.3, `Expected avg 4.3, got ${saveData.settings.displayRating}`);
+    assert.strictEqual(Math.round(saveData.settings.displayRating * 10) / 10, 4.3, `Expected avg 4.3, got ${saveData.settings.displayRating}`);
     assert.strictEqual(saveData.settings.distribution.count1, 5);
     assert.strictEqual(saveData.settings.distribution.count5, 90);
     console.log('✓ Configured settings calculated total=150, average=4.3 correctly!');
@@ -86,7 +86,7 @@ async function main() {
     const getData = await getRes.json();
     assert.strictEqual(getRes.status, 200);
     assert.strictEqual(getData.settings.displayCount, 150);
-    assert.strictEqual(getData.settings.displayRating, 4.3);
+    assert.strictEqual(Math.round(getData.settings.displayRating * 10) / 10, 4.3);
     assert.strictEqual(getData.settings.distribution.count1, 5);
     assert.strictEqual(getData.settings.distribution.count5, 90);
     assert.strictEqual(getData.settings.enabled, true);
@@ -143,7 +143,7 @@ async function main() {
     const pubSummaryEnabledRes = await fetch(`${BACKEND_URL}/api/reviews/summary`);
     const pubSummaryEnabled = await pubSummaryEnabledRes.json();
     assert.ok(pubSummaryEnabled.editorialSummary, 'editorialSummary must be present when enabled');
-    assert.strictEqual(pubSummaryEnabled.editorialSummary.displayRating, 4.3);
+    assert.strictEqual(Math.round(pubSummaryEnabled.editorialSummary.displayRating * 10) / 10, 4.3);
     assert.strictEqual(pubSummaryEnabled.editorialSummary.displayCount, 150);
     assert.strictEqual(pubSummaryEnabled.editorialSummary.distribution[1], 5);
     assert.strictEqual(pubSummaryEnabled.editorialSummary.distribution[5], 90);

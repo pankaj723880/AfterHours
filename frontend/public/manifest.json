@@ -1,19 +1,13 @@
 {
   "short_name": "Loopra",
   "name": "Loopra",
-  "description": "Stream music with immersive 3D visuals and rich audio experiences.",
+  "description": "Stream music with immersive 3D visuals, live Indian radio, curated stations, and AI-powered music exploration.",
   "icons": [
     {
-      "src": "/loopra-logo.png",
-      "type": "image/png",
-      "sizes": "192x192 512x512 1254x1254",
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
       "purpose": "any"
-    },
-    {
-      "src": "/loopra-logo.png",
-      "type": "image/png",
-      "sizes": "192x192 512x512 1254x1254",
-      "purpose": "maskable"
     },
     {
       "src": "/icon-192.png",
@@ -26,11 +20,19 @@
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/loopra-logo.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
     }
   ],
   "start_url": "/",
+  "scope": "/",
   "background_color": "#09090b",
   "theme_color": "#09090b",
   "display": "standalone",
-  "orientation": "portrait-primary"
+  "orientation": "portrait-primary",
+  "categories": ["music", "entertainment", "audio"]
 }

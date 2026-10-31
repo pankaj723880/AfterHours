@@ -46,7 +46,7 @@ import { safeParseJsonResponse } from '../../utils/errorHandler';
 import { DEFAULT_CMS_CONFIG, getCachedCmsConfig, normalizeCmsConfig, applyThemeToDom } from '../../services/cmsClient';
 import { BACKEND_URL } from '../../utils/apiUrl';
 
-export default function AdminDashboard({ user, token, backendUrl, onExit, onOpenAuth, showToast, onPreviewConfig, onUserUpdated }) {
+export default function AdminDashboard({ user, token, backendUrl, onExit, onOpenAuth, showToast, onPreviewConfig, onUserUpdated, onReviewsUpdated }) {
   const cleanBackendUrl = (backendUrl && backendUrl.trim().startsWith('http'))
     ? backendUrl.trim().replace(/\/+$/, '')
     : BACKEND_URL;
@@ -724,6 +724,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               token={token}
               backendUrl={cleanBackendUrl}
               showToast={showToast}
+              onReviewsUpdated={onReviewsUpdated}
             />
           )}
 

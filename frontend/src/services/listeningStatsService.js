@@ -122,16 +122,18 @@ export const listeningStatsService = {
    * Fetches genuine listening stats from backend for authenticated user,
    * with automatic fallback to guest stats or user-isolated local cache.
    */
-  async fetchStats({ backendUrl = '', token = null, user = null, forceRefresh = false, timezone = null } = {}) {
+  async fetchStats({ backendUrl = '', token = null, user = null, forceRefresh = false, timezone = null, month = null, year = null } = {}) {
     const tz = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
     const userId = user ? (user._id || user.userId || user.id) : null;
 
     if (token && userId && backendUrl) {
       const base = backendUrl.replace(/\/+$/, '');
+      const mParam = (month !== null && month !== undefined) ? `&month=${encodeURIComponent(month)}` : '';
+      const yParam = (year !== null && year !== undefined) ? `&year=${encodeURIComponent(year)}` : '';
       const endpoints = [
-        `${base}/api/analytics/overview?timezone=${encodeURIComponent(tz)}&forceRefresh=${Boolean(forceRefresh)}`,
-        `${base}/api/user/listening-stats?timezone=${encodeURIComponent(tz)}&forceRefresh=${Boolean(forceRefresh)}`,
-        `${base}/api/listening-stats?timezone=${encodeURIComponent(tz)}&forceRefresh=${Boolean(forceRefresh)}`
+        `${base}/api/analytics/overview?timezone=${encodeURIComponent(tz)}&forceRefresh=${Boolean(forceRefresh)}${mParam}${yParam}`,
+        `${base}/api/user/listening-stats?timezone=${encodeURIComponent(tz)}&forceRefresh=${Boolean(forceRefresh)}${mParam}${yParam}`,
+        `${base}/api/listening-stats?timezone=${encodeURIComponent(tz)}&forceRefresh=${Boolean(forceRefresh)}${mParam}${yParam}`
       ];
 
       for (const url of endpoints) {
@@ -323,19 +325,215 @@ export const listeningStatsService = {
       .sort((a, b) => b.count - a.count)
       .slice(0, 8);
 
+    const monthNamesList = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const curNow = new Date();
+    const activityOverTime = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(curNow.getFullYear(), curNow.getMonth() - i, 1);
+      const mIdx = d.getMonth();
+      const yr = d.getFullYear();
+      const mLabel = monthNamesList[mIdx];
+      activityOverTime.push({
+        dayIndex: 5 - i,
+        dayLabel: mLabel,
+        dayShort: `${mLabel} '${String(yr).slice(-2)}`,
+        year: yr,
+        month: mIdx,
+        seconds: 0,
+        hours: 0,
+        plays: 0,
+        isPeak: false
+      });
+    }
+
+    const totalValidAllTimeArtistPlays = Object.values(stats.artistPlayCounts || {}).reduce((a, b) => a + b, 0) || 1;
+    const formattedAllTimeTopArtists = Object.entries(stats.artistPlayCounts || {})
+      .map(([artist, count]) => ({
+        artist,
+        name: artist,
+        count,
+        plays: count,
+        percentage: Math.min(100, Math.round((count / totalValidAllTimeArtistPlays) * 100))
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+
     const allTimeStats = {
       totalListeningSeconds: totalSecs,
       totalMinutes: Math.round(totalSecs / 60),
       totalHours: (totalSecs / 3600).toFixed(1),
+      totalListeningHours: (totalSecs / 3600).toFixed(1),
       totalPlays: Object.values(stats.trackPlayCounts || {}).reduce((acc, t) => acc + (t.count || 0), 0),
       distinctTracksCount: Object.keys(stats.trackPlayCounts || {}).length,
       distinctArtistsCount: Object.keys(stats.artistPlayCounts || {}).length,
       topTracks: allTimeTopTracks,
-      topArtists: allTimeTopArtists,
+      topSongs: allTimeTopTracks,
+      topArtists: formattedAllTimeTopArtists,
+      activityOverTime,
       totalActiveWebsiteSeconds: 0,
       totalActiveWebsiteHours: '0.0',
       totalSessions: 0,
-      hasData: totalSecs > 0 || Object.keys(stats.trackPlayCounts || {}).length > 0
+      hasData: totalSecs > 0 || Object.keys(stats.trackPlayCounts || {}).length > 0,
+      isVerified: false
+    };
+
+    // Monthly calculation
+    const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const monthlyEvents = (stats.playEvents || []).filter(e => {
+      return e.timestamp && e.timestamp.startsWith(currentMonthPrefix);
+    });
+    let monthlySeconds = 0;
+    const monthlyTrackCounts = {};
+    const monthlyArtistCounts = {};
+    monthlyEvents.forEach(e => {
+      const sec = Math.max(0, Number(e.seconds) || 0);
+      monthlySeconds += sec;
+      if (sec >= 30 || e.eventType === 'completed') {
+        monthlyTrackCounts[e.trackId] = monthlyTrackCounts[e.trackId] || {
+          id: e.trackId,
+          videoId: e.trackId,
+          title: e.title || 'Unknown Track',
+          artist: e.artist || 'Unknown Artist',
+          thumbnail: e.thumbnail || '',
+          plays: 0,
+          seconds: 0
+        };
+        monthlyTrackCounts[e.trackId].plays += 1;
+        monthlyTrackCounts[e.trackId].seconds += sec;
+
+        if (e.artist) {
+          monthlyArtistCounts[e.artist] = (monthlyArtistCounts[e.artist] || 0) + 1;
+        }
+      }
+    });
+
+    const monthlyTopTracks = Object.values(monthlyTrackCounts)
+      .sort((a, b) => b.plays - a.plays || b.seconds - a.seconds)
+      .slice(0, 5);
+
+    const daysInCurMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const monthlyDailyActivity = [];
+    for (let d = 1; d <= daysInCurMonth; d++) {
+      monthlyDailyActivity.push({
+        dayIndex: d - 1,
+        dayNumber: d,
+        dayLabel: String(d),
+        dayShort: `${d} ${now.toLocaleString('en-US', { month: 'short' })}`,
+        seconds: 0,
+        hours: 0,
+        plays: 0,
+        isPeak: false
+      });
+    }
+
+    let monthlyValidPlays = 0;
+    monthlyEvents.forEach(e => {
+      const sec = Math.max(0, Number(e.seconds) || 0);
+      const isVal = sec >= 30 || e.eventType === 'completed';
+      if (isVal) monthlyValidPlays++;
+      const evD = new Date(e.timestamp);
+      const dayNum = evD.getDate();
+      if (monthlyDailyActivity[dayNum - 1]) {
+        monthlyDailyActivity[dayNum - 1].seconds += sec;
+        if (isVal) monthlyDailyActivity[dayNum - 1].plays += 1;
+      }
+    });
+
+    let maxMDaysSec = 0;
+    let peakMIdx = -1;
+    let peakMDay = 'None';
+    let peakMHours = '0.0';
+    monthlyDailyActivity.forEach((day, idx) => {
+      day.hours = parseFloat((day.seconds / 3600).toFixed(1));
+      if (day.seconds > maxMDaysSec) {
+        maxMDaysSec = day.seconds;
+        peakMIdx = idx;
+        peakMDay = day.dayShort;
+        peakMHours = day.hours.toFixed(1);
+      }
+    });
+    if (peakMIdx >= 0 && maxMDaysSec > 0) {
+      monthlyDailyActivity[peakMIdx].isPeak = true;
+    }
+
+    const totalValidMonthArtistPlays = Object.values(monthlyArtistCounts).reduce((a, b) => a + b, 0) || 1;
+    const monthlyTopArtists = Object.entries(monthlyArtistCounts)
+      .map(([name, plays]) => {
+        const sample = Object.values(monthlyTrackCounts).find(t => t.artist?.toLowerCase() === name.toLowerCase());
+        return {
+          artist: name,
+          name,
+          plays,
+          count: plays,
+          percentage: Math.min(100, Math.round((plays / totalValidMonthArtistPlays) * 100)),
+          avatar: sample?.thumbnail || ''
+        };
+      })
+      .sort((a, b) => b.plays - a.plays)
+      .slice(0, 5);
+
+    const monthLabelStr = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    const monthlyRecap = {
+      periodLabel: monthLabelStr,
+      monthLabel: monthLabelStr,
+      year: now.getFullYear(),
+      month: now.getMonth() + 1,
+      totalListeningSeconds: monthlySeconds,
+      totalListeningMinutes: Math.round(monthlySeconds / 60),
+      totalHours: (monthlySeconds / 3600).toFixed(1),
+      totalListeningHours: (monthlySeconds / 3600).toFixed(1),
+      totalPlays: monthlyValidPlays,
+      distinctTracksCount: Object.keys(monthlyTrackCounts).length,
+      distinctArtistsCount: Object.keys(monthlyArtistCounts).length,
+      peakDay: peakMDay,
+      peakDayHours: peakMHours,
+      dailyActivity: monthlyDailyActivity,
+      topTracks: monthlyTopTracks,
+      topSongs: monthlyTopTracks,
+      topArtists: monthlyTopArtists,
+      hasData: monthlyValidPlays > 0 || monthlySeconds >= 10,
+      isVerified: false
+    };
+
+    // Streaks calculation from dailySeconds
+    const activeDays = Object.keys(stats.dailySeconds || {}).filter(d => (stats.dailySeconds[d] || 0) > 0).sort();
+    let currentStreak = 0;
+    let longestStreak = 0;
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const yestDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const yesterdayStr = `${yestDate.getFullYear()}-${String(yestDate.getMonth() + 1).padStart(2, '0')}-${String(yestDate.getDate()).padStart(2, '0')}`;
+
+    const activeSet = new Set(activeDays);
+    if (activeSet.has(todayStr) || activeSet.has(yesterdayStr)) {
+      let d = activeSet.has(todayStr) ? new Date() : yestDate;
+      while (true) {
+        const dStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        if (activeSet.has(dStr)) {
+          currentStreak++;
+          d.setDate(d.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+    }
+    let tempStreak = 1;
+    for (let i = 1; i < activeDays.length; i++) {
+      const p = new Date(activeDays[i - 1]);
+      const c = new Date(activeDays[i]);
+      if (Math.round((c - p) / (1000 * 60 * 60 * 24)) === 1) {
+        tempStreak++;
+        if (tempStreak > longestStreak) longestStreak = tempStreak;
+      } else {
+        tempStreak = 1;
+      }
+    }
+    if (currentStreak > longestStreak) longestStreak = currentStreak;
+
+    const streaks = {
+      currentStreak,
+      longestStreak,
+      totalActiveDays: activeSet.size,
+      lastActiveDate: activeDays.length > 0 ? activeDays[activeDays.length - 1] : null
     };
 
     return {
@@ -343,7 +541,9 @@ export const listeningStatsService = {
       userId: userOrId ? (userOrId._id || userOrId.userId || userOrId.id || userOrId) : null,
       updatedAt: stats.updatedAt || new Date().toISOString(),
       weeklyRecap,
+      monthlyRecap,
       allTimeStats,
+      streaks,
       isLocal: true
     };
   },
@@ -581,8 +781,27 @@ export const listeningStatsService = {
       stats.artistPlayCounts[artist] = (stats.artistPlayCounts[artist] || 0) + 1;
     }
 
+    stats.playEvents = stats.playEvents || [];
+    stats.playEvents.unshift({
+      trackId,
+      title,
+      artist,
+      thumbnail,
+      timestamp: now.toISOString(),
+      seconds: Math.round(durationSeconds),
+      playSessionId: `local_${now.getTime()}`,
+      eventType: 'completed'
+    });
+    if (stats.playEvents.length > 100) stats.playEvents = stats.playEvents.slice(0, 100);
+
     stats.updatedAt = now.toISOString();
     saveStats(stats, userOrId);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('loopra_listening_stats_updated', {
+        detail: { trackId, user: userOrId, timestamp: now.toISOString() }
+      }));
+    }
   },
 
   clearStats(userOrId = null) {
@@ -599,3 +818,10 @@ export const listeningStatsService = {
     } catch (e) {}
   }
 };
+
+export const computeLocalStats = (userOrId) => listeningStatsService.computeLocalStats(userOrId);
+export const fetchStats = (opts) => listeningStatsService.fetchStats(opts);
+export const recordEvent = (opts) => listeningStatsService.recordEvent(opts);
+export const clearLocalStats = (userOrId) => listeningStatsService.clearLocalStats(userOrId);
+
+export default listeningStatsService;

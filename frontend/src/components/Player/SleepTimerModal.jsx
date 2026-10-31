@@ -7,7 +7,9 @@ export default function SleepTimerModal({
   onClose,
   activeTimerRemaining, // seconds or null
   onSetTimer, // (minutes) => void
-  onCancelTimer // () => void
+  onCancelTimer, // () => void
+  stopAfterCurrentTrack = false,
+  onToggleStopAfterCurrentTrack = () => {}
 }) {
   const [customMinutes, setCustomMinutes] = useState('');
 
@@ -80,7 +82,30 @@ export default function SleepTimerModal({
 
         {/* Presets */}
         <div className="p-4 sm:p-5 space-y-4">
-          <label className="text-xs font-bold text-neutral-400 uppercase tracking-wider block">Set Timer</label>
+          {/* Stop after current track option */}
+          <div className="p-3 bg-neutral-950/60 border border-neutral-800 rounded-2xl flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <span className="text-base">🎵</span>
+              <div>
+                <p className="text-xs font-semibold text-white">Stop after current track</p>
+                <p className="text-[10px] text-neutral-400">Pause automatically when this track ends</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onToggleStopAfterCurrentTrack()}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${stopAfterCurrentTrack ? 'bg-amber-500' : 'bg-neutral-800'}`}
+              role="switch"
+              aria-checked={stopAfterCurrentTrack}
+              aria-label="Toggle stop after current track"
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${stopAfterCurrentTrack ? 'translate-x-5' : 'translate-x-0'}`}
+              />
+            </button>
+          </div>
+
+          <label className="text-xs font-bold text-neutral-400 uppercase tracking-wider block">Timed Auto-Pause</label>
           <div className="grid grid-cols-2 gap-2">
             {TIMER_PRESETS.map((mins) => (
               <button

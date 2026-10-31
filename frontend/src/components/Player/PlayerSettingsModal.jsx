@@ -21,7 +21,9 @@ export default function PlayerSettingsModal({
   isGaplessEnabled,
   onToggleGapless,
   playbackSpeed,
-  onSetPlaybackSpeed
+  onSetPlaybackSpeed,
+  isDataSaverEnabled = false,
+  onToggleDataSaver = () => {}
 }) {
   const [customTimerMinutes, setCustomTimerMinutes] = useState('');
 
@@ -262,6 +264,36 @@ export default function PlayerSettingsModal({
           </div>
 
           <hr className="border-neutral-800/80" />
+
+          <hr className="border-neutral-800/80" />
+
+          {/* Section: Data Saver / Low-Bandwidth Mode */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-neutral-300 uppercase tracking-wider">Data Saver Mode</h4>
+                <p className="text-[11px] text-neutral-500">Reduce data usage & pause heavy visualizers</p>
+              </div>
+              <button
+                onClick={onToggleDataSaver}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  isDataSaverEnabled ? 'bg-amber-500' : 'bg-neutral-800'
+                }`}
+                role="switch"
+                aria-checked={isDataSaverEnabled}
+                aria-label="Toggle Data Saver Mode"
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    isDataSaverEnabled ? 'translate-x-5 bg-neutral-950' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+            <div className="p-2.5 rounded-xl bg-neutral-950/60 border border-neutral-800 text-[11px] text-neutral-400">
+              <span>{isDataSaverEnabled ? '🍃 Data Saver is active: Preserving bandwidth & battery on mobile.' : 'High-fidelity artwork and full spectrum visualizers enabled.'}</span>
+            </div>
+          </div>
 
           {/* Section: Playback Speed */}
           <div className="space-y-3">

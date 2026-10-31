@@ -268,9 +268,9 @@ export default function PersonalizedRecommendationsSection({
             )}
           </div>
 
-          <h2 className="text-lg sm:text-2xl font-display font-black text-white tracking-tight">
+          <h1 className="text-lg sm:text-2xl font-display font-black text-white tracking-tight">
             {isNewUser ? 'Discover Fresh Sounds' : 'Curated Just For You'}
-          </h2>
+          </h1>
 
           <p className="text-xs sm:text-sm text-neutral-400 mt-1 max-w-2xl">
             {data?.insights?.summary || (isNewUser

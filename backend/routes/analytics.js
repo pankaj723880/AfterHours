@@ -13,8 +13,10 @@ router.get('/overview', authenticateToken, async (req, res) => {
     const userId = req.user._id || req.user.userId || req.user.id;
     const timezone = req.query.timezone || 'UTC';
     const forceRefresh = req.query.forceRefresh === 'true';
+    const month = req.query.month;
+    const year = req.query.year;
 
-    const result = await analyticsService.getUnifiedOverview(userId, { timezone, forceRefresh });
+    const result = await analyticsService.getUnifiedOverview(userId, { timezone, forceRefresh, month, year });
     res.json(result);
   } catch (err) {
     console.error('[Analytics Overview Error]:', err.message);
@@ -37,6 +39,26 @@ router.get('/weekly', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('[Analytics Weekly Error]:', err.message);
     res.status(500).json({ error: 'Failed to retrieve weekly recap: ' + err.message });
+  }
+});
+
+/**
+ * 2b. GET /api/analytics/monthly
+ * Dedicated Monthly Recap statistics and daily activity.
+ */
+router.get('/monthly', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.userId || req.user.id;
+    const timezone = req.query.timezone || 'UTC';
+    const forceRefresh = req.query.forceRefresh === 'true';
+    const month = req.query.month;
+    const year = req.query.year;
+
+    const recap = await analyticsService.getMonthlyRecap(userId, { timezone, forceRefresh, month, year });
+    res.json({ success: true, userId, monthlyRecap: recap, updatedAt: new Date().toISOString() });
+  } catch (err) {
+    console.error('[Analytics Monthly Error]:', err.message);
+    res.status(500).json({ error: 'Failed to retrieve monthly recap: ' + err.message });
   }
 });
 
@@ -66,11 +88,15 @@ router.get('/top-songs', authenticateToken, async (req, res) => {
   try {
     const userId = req.user._id || req.user.userId || req.user.id;
     const timezone = req.query.timezone || 'UTC';
-    const range = req.query.range || 'weekly'; // 'weekly' | 'all-time'
+    const range = req.query.range || 'weekly'; // 'weekly' | 'monthly' | 'all-time'
+    const month = req.query.month;
+    const year = req.query.year;
 
     const data = range === 'all-time'
       ? await analyticsService.getAllTimeStats(userId, { timezone })
-      : await analyticsService.getWeeklyRecap(userId, { timezone });
+      : range === 'monthly'
+        ? await analyticsService.getMonthlyRecap(userId, { timezone, month, year })
+        : await analyticsService.getWeeklyRecap(userId, { timezone });
 
     res.json({ success: true, range, topSongs: data.topTracks || [] });
   } catch (err) {
@@ -88,10 +114,14 @@ router.get('/top-artists', authenticateToken, async (req, res) => {
     const userId = req.user._id || req.user.userId || req.user.id;
     const timezone = req.query.timezone || 'UTC';
     const range = req.query.range || 'weekly';
+    const month = req.query.month;
+    const year = req.query.year;
 
     const data = range === 'all-time'
       ? await analyticsService.getAllTimeStats(userId, { timezone })
-      : await analyticsService.getWeeklyRecap(userId, { timezone });
+      : range === 'monthly'
+        ? await analyticsService.getMonthlyRecap(userId, { timezone, month, year })
+        : await analyticsService.getWeeklyRecap(userId, { timezone });
 
     res.json({ success: true, range, topArtists: data.topArtists || [] });
   } catch (err) {
@@ -155,6 +185,17 @@ router.post('/playback-event', authenticateToken, async (req, res) => {
   try {
     const userId = req.user._id || req.user.userId || req.user.id;
     const result = await analyticsService.recordPlaybackEvent(userId, req.body);
+    const io = req.app?.get('io');
+    if (io && result.recorded) {
+      try {
+        io.to(`user_${userId.toString()}`).emit('listening_stats_updated', {
+          userId: userId.toString(),
+          trackId: req.body?.trackId,
+          eventType: req.body?.eventType,
+          isValidPlay: Boolean(result.isValidPlay)
+        });
+      } catch (e) {}
+    }
     res.json(result);
   } catch (err) {
     console.error('[Analytics Playback Event Error]:', err.message);

@@ -6,38 +6,87 @@
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     
     <!-- Title & App Identity -->
-    <title>Loopra</title>
-    <meta name="description" content="Stream music with immersive 3D visuals, live Indian radio, curated Hindi hits, and AI-powered music exploration." />
-    <link rel="canonical" href="https://loopra1.vercel.app/" />
+    <title>Loopra — Immersive Music Streaming, 3D Audio & AI Radio</title>
+    <meta name="description" content="Stream music with immersive 3D visuals, live Indian radio, curated Hindi hits, and AI-powered music exploration on Loopra." />
+    
+    <!-- Canonical URL (Always references primary domain) -->
+    <link rel="canonical" href="https://loopra1.vercel.app/" id="canonical-url" />
+    
+    <!-- App & Mobile Meta -->
     <meta name="application-name" content="Loopra" />
     <meta name="apple-mobile-web-app-title" content="Loopra" />
-    <meta property="og:title" content="Loopra" />
-    <meta property="og:site_name" content="Loopra" />
-    <meta property="og:description" content="Stream music with immersive 3D visuals, live Indian radio, and AI-powered music exploration on Loopra." />
-    <meta property="og:image" content="https://loopra1.vercel.app/loopra-logo.png" />
-    <meta property="og:url" content="https://loopra1.vercel.app/" />
-    <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Loopra" />
-    <meta name="twitter:description" content="Stream music with immersive 3D visuals, live Indian radio, and AI-powered music exploration on Loopra." />
-    <meta name="twitter:image" content="https://loopra1.vercel.app/loopra-logo.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#09090b" />
 
-    <!-- Standard Favicon -->
-    <link rel="icon" type="image/png" href="/loopra-logo.png" />
-    
-    <!-- Apple Touch Icon (iOS Home Screen) -->
-    <link rel="apple-touch-icon" href="/loopra-logo.png" />
+    <!-- Open Graph Metadata -->
+    <meta property="og:site_name" content="Loopra" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Loopra — Immersive Music Streaming, 3D Audio & AI Radio" />
+    <meta property="og:description" content="Stream music with immersive 3D visuals, live Indian radio, curated Hindi hits, and AI-powered music exploration on Loopra." />
+    <meta property="og:url" content="https://loopra1.vercel.app/" />
+    <meta property="og:image" content="https://loopra1.vercel.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Loopra Music Streaming & 3D Audio Visualizer" />
+
+    <!-- Twitter / X Card Metadata -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@loopra" />
+    <meta name="twitter:title" content="Loopra — Immersive Music Streaming, 3D Audio & AI Radio" />
+    <meta name="twitter:description" content="Stream music with immersive 3D visuals, live Indian radio, curated Hindi hits, and AI-powered music exploration on Loopra." />
+    <meta name="twitter:image" content="https://loopra1.vercel.app/og-image.png" />
+
+    <!-- Favicons & Touch Icons (Optimized Vector + Raster) -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 
     <!-- Web App Manifest for PWA Support -->
     <link rel="manifest" href="/manifest.json" />
 
-    <!-- Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- Google Fonts with Preconnect -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
 
-    <!-- Browser Address Bar Theme Color (Matches your Dark App Theme) -->
-    <meta name="theme-color" content="#09090b" />
+    <!-- Base JSON-LD Structured Data: WebSite & Organization -->
+    <script type="application/ld+json" id="schema-base">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "@id": "https://loopra1.vercel.app/#website",
+          "url": "https://loopra1.vercel.app/",
+          "name": "Loopra",
+          "alternateName": ["Loopra Music", "Loopra Audio Sanctuary"],
+          "description": "Stream music with immersive 3D visuals, live Indian radio, and AI exploration.",
+          "potentialAction": {
+            "@type": "SearchAction",
+            "target": {
+              "@type": "EntryPoint",
+              "urlTemplate": "https://loopra1.vercel.app/discover?q={search_term_string}"
+            },
+            "query-input": "required name=search_term_string"
+          }
+        },
+        {
+          "@type": "Organization",
+          "@id": "https://loopra1.vercel.app/#organization",
+          "name": "Loopra",
+          "url": "https://loopra1.vercel.app/",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://loopra1.vercel.app/loopra-logo.png",
+            "width": 512,
+            "height": 512
+          },
+          "description": "Next-generation music streaming sanctuary with immersive 3D audio visualizers, live Indian radio, and AI-powered music exploration."
+        }
+      ]
+    }
+    </script>
 
     <!-- Immediate Theme Application to prevent layout/color flash on load -->
     <script>
@@ -72,7 +121,57 @@
     </script>
   </head>
   <body style="background-color: #09090b; margin: 0; padding: 0; overflow-x: hidden;">
+    <noscript>
+      <!-- Semantic crawlable fallback for pre-hydration search bots -->
+      <div style="max-width: 900px; margin: 0 auto; padding: 2rem 1rem; color: #e4e4e7; font-family: sans-serif;">
+        <header style="text-align: center; margin-bottom: 2rem;">
+          <h1>Loopra — Immersive Music Streaming Sanctuary</h1>
+          <p style="font-size: 1rem; color: #a1a1aa; max-width: 650px; margin: 0 auto;">
+            Stream music with real-time 3D audio visualizers, live Indian radio stations, AI music intelligence, and offline music downloads.
+          </p>
+          <nav aria-label="Main Navigation" style="margin-top: 1.5rem;">
+            <ul style="list-style: none; display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem; padding: 0; margin: 0;">
+              <li><a href="/" style="color: #f59e0b; text-decoration: none; font-weight: 600;">Home</a></li>
+              <li><a href="/discover" style="color: #f59e0b; text-decoration: none; font-weight: 600;">Discover Music</a></li>
+              <li><a href="/radio" style="color: #f59e0b; text-decoration: none; font-weight: 600;">Live Indian Radio</a></li>
+              <li><a href="/for-you" style="color: #f59e0b; text-decoration: none; font-weight: 600;">For You</a></li>
+              <li><a href="/downloads" style="color: #f59e0b; text-decoration: none; font-weight: 600;">Offline Downloads</a></li>
+              <li><a href="/mood" style="color: #f59e0b; text-decoration: none; font-weight: 600;">Mood Soundscapes</a></li>
+              <li><a href="/timemachine" style="color: #f59e0b; text-decoration: none; font-weight: 600;">Time Machine</a></li>
+              <li><a href="/barber" style="color: #f59e0b; text-decoration: none; font-weight: 600;">Saloon Nostalgia</a></li>
+              <li><a href="/truck" style="color: #f59e0b; text-decoration: none; font-weight: 600;">Highway Dhaba</a></li>
+              <li><a href="/pauwa" style="color: #f59e0b; text-decoration: none; font-weight: 600;">Desi Theka</a></li>
+            </ul>
+          </nav>
+        </header>
+
+        <main style="display: grid; gap: 1.5rem; line-height: 1.6;">
+          <section style="background: rgba(24, 24, 27, 0.6); padding: 1.25rem; border-radius: 1rem; border: 1px solid rgba(255, 255, 255, 0.1);">
+            <h2 style="font-size: 1.25rem; color: #ffffff; margin-top: 0;">Endless Music with 3D Spatial Audio Visuals</h2>
+            <p style="color: #a1a1aa; margin-bottom: 0;">
+              Experience music like never before with solitary 3D vinyl visualizers, real-time waveform dynamics, studio audio equalizer, and seamless playback.
+            </p>
+          </section>
+
+          <section style="background: rgba(24, 24, 27, 0.6); padding: 1.25rem; border-radius: 1rem; border: 1px solid rgba(255, 255, 255, 0.1);">
+            <h2 style="font-size: 1.25rem; color: #ffffff; margin-top: 0;">Live Indian Radio & Regional FM Stations</h2>
+            <p style="color: #a1a1aa; margin-bottom: 0;">
+              Tune in to live Indian radio streams covering Bollywood retro, Punjabi beats, Ghazals, Sufi, Devotional, and regional FM channels around the clock.
+            </p>
+          </section>
+
+          <section style="background: rgba(24, 24, 27, 0.6); padding: 1.25rem; border-radius: 1rem; border: 1px solid rgba(255, 255, 255, 0.1);">
+            <h2 style="font-size: 1.25rem; color: #ffffff; margin-top: 0;">AI Music Companion & Smart Recommendations</h2>
+            <p style="color: #a1a1aa; margin-bottom: 0;">
+              Explore personalized recommendations tailored to your taste, discover new artists, and travel through musical eras with our Music Time Machine.
+            </p>
+          </section>
+        </main>
+      </div>
+    </noscript>
+
     <div id="root"></div>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

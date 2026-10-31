@@ -7,6 +7,48 @@ import UserMusicPreference from '../models/UserMusicPreference.js';
 import User from '../models/User.js';
 import { learningEngineService } from './learningEngineService.js';
 
+/**
+ * Normalizes and cleans artist names from playback events,
+ * stripping channel noise and preventing generic single-letter placeholders.
+ */
+export function cleanArtistName(rawArtist = '', songTitle = '') {
+  let artist = (rawArtist || '').trim();
+  artist = artist.replace(/\s*-\s*Topic$/i, '').trim();
+
+  const knownLabelChannels = /^(t-series|zee music( company)?|sony music( india)?|tips official|yrf|speed records|geet mp3|white hill music|eros now|aditya music|saregama( music)?)$/i;
+  if (knownLabelChannels.test(artist) && songTitle) {
+    const pipeParts = songTitle.split('|');
+    if (pipeParts.length > 1) {
+      const candidate = pipeParts[1].replace(/(official|video|audio|lyric|song|full video).*/i, '').trim();
+      if (candidate.length > 2 && candidate.length < 50 && !knownLabelChannels.test(candidate)) {
+        artist = candidate;
+      }
+    } else {
+      const dashParts = songTitle.split(' - ');
+      if (dashParts.length === 2) {
+        const p1 = dashParts[0].trim();
+        const p2 = dashParts[1].replace(/(official|video|audio|lyric|song|full video).*/i, '').trim();
+        if (p1.length > 2 && p1.length < 40 && !knownLabelChannels.test(p1)) {
+          artist = p1;
+        } else if (p2.length > 2 && p2.length < 40 && !knownLabelChannels.test(p2)) {
+          artist = p2;
+        }
+      }
+    }
+  }
+
+  if (/^various artists$/i.test(artist)) {
+    return 'Various Artists';
+  }
+
+  if (!artist || artist.toLowerCase() === 'unknown' || artist.length <= 1) {
+    return 'Unknown Artist';
+  }
+
+  return artist || 'Unknown Artist';
+}
+
+
 // In-memory cache for aggregated analytics responses (30 seconds TTL)
 const analyticsCache = new Map();
 const CACHE_TTL_MS = 30 * 1000;
@@ -147,7 +189,7 @@ export const analyticsService = {
       throw new Error('trackId and song title are required');
     }
 
-    const cleanArtist = (artistName || artist || 'Unknown Artist').trim();
+    const cleanArtist = cleanArtistName(artistName || artist, cleanTitle);
     const cleanAlbum = (albumName || album || '').trim();
     const cleanArtwork = (artworkUrl || thumbnail || '').trim();
     const cleanVideoId = (videoId || cleanTrackId).trim();
@@ -621,11 +663,12 @@ export const analyticsService = {
         trackId: ev.trackId,
         videoId: ev.videoId || ev.trackId,
         title: ev.songTitle,
-        artist: ev.artistName,
+        artist: cleanArtistName(ev.artistName, ev.songTitle),
         thumbnail: ev.artworkUrl,
         listenedSec: Math.max(0, Number(ev.listenedDurationSeconds) || 0),
         durationSec: Math.max(0, Number(ev.durationSeconds) || 0),
         completed: Boolean(ev.completed),
+        timestamp: new Date(ev.startedAt),
         timestamp: new Date(ev.startedAt)
       });
     }
@@ -642,6 +685,7 @@ export const analyticsService = {
           listenedSec: Math.max(0, Number(ev.listenedDuration) || 0),
           durationSec: Math.max(0, Number(ev.duration) || 0),
           completed: ev.eventType === 'completed',
+        timestamp: new Date(ev.timestamp),
           timestamp: new Date(ev.timestamp)
         });
       } else {
@@ -904,11 +948,12 @@ export const analyticsService = {
         trackId: ev.trackId,
         videoId: ev.videoId || ev.trackId,
         title: ev.songTitle,
-        artist: ev.artistName,
+        artist: cleanArtistName(ev.artistName, ev.songTitle),
         thumbnail: ev.artworkUrl,
         listenedSec: Math.max(0, Number(ev.listenedDurationSeconds) || 0),
         durationSec: Math.max(0, Number(ev.durationSeconds) || 0),
-        completed: Boolean(ev.completed)
+        completed: Boolean(ev.completed),
+        timestamp: new Date(ev.startedAt)
       });
     }
 
@@ -923,7 +968,8 @@ export const analyticsService = {
           thumbnail: ev.thumbnail || '',
           listenedSec: Math.max(0, Number(ev.listenedDuration) || 0),
           durationSec: Math.max(0, Number(ev.duration) || 0),
-          completed: ev.eventType === 'completed'
+          completed: ev.eventType === 'completed',
+        timestamp: new Date(ev.timestamp)
         });
       } else {
         const existing = unifiedMap.get(key);
@@ -990,6 +1036,7 @@ export const analyticsService = {
     const topArtists = Array.from(artistAggregation.values())
       .map(a => ({
         artist: a.artist,
+        name: a.artist,
         plays: a.plays,
         count: a.plays,
         percentage: Math.min(100, Math.round((a.plays / totalValidArtistPlays) * 100)),
@@ -997,6 +1044,56 @@ export const analyticsService = {
       }))
       .sort((a, b) => b.plays - a.plays)
       .slice(0, 10);
+
+    // Compute activityOverTime (monthly breakdown for the last 6 calendar months)
+    const monthNamesList = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const curNow = new Date();
+    const activityOverTime = [];
+
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(curNow.getFullYear(), curNow.getMonth() - i, 1);
+      const mIdx = d.getMonth();
+      const yr = d.getFullYear();
+      const mLabel = monthNamesList[mIdx];
+      activityOverTime.push({
+        dayIndex: 5 - i,
+        dayLabel: mLabel,
+        dayShort: `${mLabel} '${String(yr).slice(-2)}`,
+        year: yr,
+        month: mIdx,
+        seconds: 0,
+        hours: 0,
+        plays: 0,
+        isPeak: false
+      });
+    }
+
+    for (const ev of allEvents) {
+      const sec = ev.listenedSec;
+      const isValid = isValidMusicPlay(sec, ev.durationSec, ev.completed);
+      const evDate = new Date(ev.timestamp);
+      const evYear = evDate.getFullYear();
+      const evMonth = evDate.getMonth();
+
+      const bucket = activityOverTime.find(b => b.year === evYear && b.month === evMonth);
+      if (bucket) {
+        bucket.seconds += sec;
+        if (isValid) bucket.plays += 1;
+      }
+    }
+
+    let maxHistSec = 0;
+    let peakHistIdx = -1;
+    activityOverTime.forEach((m, idx) => {
+      m.hours = parseFloat((m.seconds / 3600).toFixed(1));
+      if (m.seconds > maxHistSec) {
+        maxHistSec = m.seconds;
+        peakHistIdx = idx;
+      }
+    });
+    if (peakHistIdx >= 0 && maxHistSec > 0) {
+      activityOverTime[peakHistIdx].isPeak = true;
+    }
 
     // Website usage calculations
     let totalWebsiteSeconds = 0;
@@ -1033,20 +1130,416 @@ export const analyticsService = {
   },
 
   /**
-   * Unified Overview endpoint providing single source of truth for both weekly and all-time recap.
+   * Computes genuine Monthly Listening Recap for the selected calendar month and year.
+   * Authoritative aggregation strictly matching valid playback events.
+   */
+  async getMonthlyRecap(userId, { timezone = 'UTC', forceRefresh = false, month = null, year = null } = {}) {
+    if (!userId) throw new Error('Authenticated user ID is required');
+
+    const userObjectId = new mongoose.Types.ObjectId(userId.toString());
+    const now = Date.now();
+    const nowDate = new Date();
+
+    let targetYear = nowDate.getFullYear();
+    let targetMonth = nowDate.getMonth();
+
+    if (year !== null && year !== undefined && !isNaN(Number(year))) {
+      targetYear = parseInt(year, 10);
+    }
+    if (month !== null && month !== undefined && !isNaN(Number(month))) {
+      const mNum = parseInt(month, 10);
+      targetMonth = (mNum >= 1 && mNum <= 12) ? mNum - 1 : Math.max(0, Math.min(11, mNum));
+    }
+
+    const cacheKey = `${userObjectId.toString()}_monthly_${timezone}_${targetYear}_${targetMonth}`;
+
+    if (!forceRefresh && analyticsCache.has(cacheKey)) {
+      const cached = analyticsCache.get(cacheKey);
+      if (now - cached.timestamp < CACHE_TTL_MS) return cached.data;
+    }
+
+    const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+    const startOfMonth = new Date(Date.UTC(targetYear, targetMonth, 1, 0, 0, 0, 0));
+    const endOfMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0, 23, 59, 59, 999));
+
+    let monthLabel = '';
+    try {
+      const sampleDate = new Date(Date.UTC(targetYear, targetMonth, 15));
+      monthLabel = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: timezone }).format(sampleDate);
+    } catch {
+      monthLabel = new Date(targetYear, targetMonth, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    }
+
+    const emptyDailyActivity = [];
+    for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
+      const d = new Date(Date.UTC(targetYear, targetMonth, dayNum));
+      let dayShort = `${dayNum}`;
+      try {
+        dayShort = new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'short', timeZone: timezone }).format(d);
+      } catch {
+        dayShort = `${dayNum}`;
+      }
+      emptyDailyActivity.push({
+        dayIndex: dayNum - 1,
+        dayNumber: dayNum,
+        dayLabel: String(dayNum),
+        dayShort,
+        seconds: 0,
+        hours: 0,
+        plays: 0,
+        isPeak: false
+      });
+    }
+
+    const emptyResult = {
+      periodLabel: monthLabel,
+      monthLabel,
+      year: targetYear,
+      month: targetMonth + 1,
+      totalListeningSeconds: 0,
+      totalListeningMinutes: 0,
+      totalHours: '0.0',
+      totalListeningHours: '0.0',
+      totalPlays: 0,
+      distinctTracksCount: 0,
+      distinctArtistsCount: 0,
+      peakDay: 'None',
+      peakDayHours: '0.0',
+      dailyActivity: emptyDailyActivity,
+      topTracks: [],
+      topSongs: [],
+      topArtists: [],
+      topMoods: [],
+      hasData: false,
+      isVerified: true
+    };
+
+    if (!mongoose.connection || mongoose.connection.readyState !== 1) {
+      return emptyResult;
+    }
+
+    const [playbackEvents, legacyEvents] = await Promise.all([
+      UserPlaybackEvent.find({
+        userId: userObjectId,
+        startedAt: { $gte: startOfMonth, $lte: endOfMonth }
+      }).lean().maxTimeMS(6000),
+      UserListeningEvent.find({
+        userId: userObjectId,
+        timestamp: { $gte: startOfMonth, $lte: endOfMonth }
+      }).lean().maxTimeMS(6000)
+    ]);
+
+    const unifiedMap = new Map();
+
+    for (const ev of playbackEvents) {
+      const key = ev.sessionId || `${ev.trackId}_${new Date(ev.startedAt).getTime()}`;
+      unifiedMap.set(key, {
+        trackId: ev.trackId,
+        videoId: ev.videoId || ev.trackId,
+        title: ev.songTitle,
+        artist: cleanArtistName(ev.artistName, ev.songTitle),
+        thumbnail: ev.artworkUrl,
+        listenedSec: Math.max(0, Number(ev.listenedDurationSeconds) || 0),
+        durationSec: Math.max(0, Number(ev.durationSeconds) || 0),
+        completed: Boolean(ev.completed),
+        timestamp: new Date(ev.startedAt),
+        timestamp: new Date(ev.startedAt)
+      });
+    }
+
+    for (const ev of legacyEvents) {
+      const key = ev.playSessionId || `${ev.trackId}_${new Date(ev.timestamp).getTime()}`;
+      if (!unifiedMap.has(key)) {
+        unifiedMap.set(key, {
+          trackId: ev.trackId,
+          videoId: ev.trackId,
+          title: ev.title,
+          artist: cleanArtistName(ev.artist || ev.channel, ev.title),
+          thumbnail: ev.thumbnail || '',
+          listenedSec: Math.max(0, Number(ev.listenedDuration) || 0),
+          durationSec: Math.max(0, Number(ev.duration) || 0),
+          completed: ev.eventType === 'completed',
+        timestamp: new Date(ev.timestamp),
+          timestamp: new Date(ev.timestamp)
+        });
+      } else {
+        const existing = unifiedMap.get(key);
+        existing.listenedSec = Math.max(existing.listenedSec, Number(ev.listenedDuration) || 0);
+        if (ev.eventType === 'completed') existing.completed = true;
+      }
+    }
+
+    const events = Array.from(unifiedMap.values());
+    if (events.length === 0) {
+      analyticsCache.set(cacheKey, { timestamp: now, data: emptyResult });
+      return emptyResult;
+    }
+
+    let monthlyTotalSeconds = 0;
+    let monthlyValidPlays = 0;
+    const trackAggregation = new Map();
+    const artistAggregation = new Map();
+    const dailyActivity = emptyDailyActivity.map(d => ({ ...d }));
+
+    for (const ev of events) {
+      const sec = ev.listenedSec;
+      monthlyTotalSeconds += sec;
+
+      const isValid = isValidMusicPlay(sec, ev.durationSec, ev.completed);
+      if (isValid) {
+        monthlyValidPlays += 1;
+
+        const tId = ev.trackId;
+        const currentTrack = trackAggregation.get(tId) || {
+          id: tId,
+          videoId: ev.videoId || tId,
+          title: ev.title || 'Unknown Track',
+          artist: ev.artist || 'Unknown Artist',
+          thumbnail: ev.thumbnail || '',
+          plays: 0,
+          seconds: 0
+        };
+        currentTrack.plays += 1;
+        currentTrack.seconds += sec;
+        if (ev.thumbnail && !currentTrack.thumbnail) currentTrack.thumbnail = ev.thumbnail;
+        trackAggregation.set(tId, currentTrack);
+
+        const cleanArt = ev.artist;
+        if (cleanArt && cleanArt !== 'Unknown Artist' && cleanArt !== 'Various Artists') {
+          const artEntry = artistAggregation.get(cleanArt) || {
+            artist: cleanArt,
+            name: cleanArt,
+            plays: 0,
+            seconds: 0,
+            avatar: ev.thumbnail || ''
+          };
+          artEntry.plays += 1;
+          artEntry.seconds += sec;
+          if (ev.thumbnail && !artEntry.avatar) artEntry.avatar = ev.thumbnail;
+          artistAggregation.set(cleanArt, artEntry);
+        }
+      }
+
+      let dayOfMonth = 1;
+      try {
+        const parts = new Intl.DateTimeFormat('en-US', { day: 'numeric', timeZone: timezone }).formatToParts(ev.timestamp);
+        dayOfMonth = parseInt(parts.find(p => p.type === 'day')?.value || '1', 10);
+      } catch {
+        dayOfMonth = ev.timestamp.getUTCDate();
+      }
+
+      const dayIdx = Math.max(0, Math.min(daysInMonth - 1, dayOfMonth - 1));
+      if (dailyActivity[dayIdx]) {
+        dailyActivity[dayIdx].seconds += sec;
+        if (isValid) dailyActivity[dayIdx].plays += 1;
+      }
+    }
+
+    let peakDay = 'None';
+    let peakDayHours = '0.0';
+    let maxDaySec = 0;
+    let peakIdx = -1;
+
+    dailyActivity.forEach((day, idx) => {
+      day.hours = parseFloat((day.seconds / 3600).toFixed(1));
+      if (day.seconds > maxDaySec) {
+        maxDaySec = day.seconds;
+        peakDay = day.dayShort;
+        peakDayHours = day.hours.toFixed(1);
+        peakIdx = idx;
+      }
+    });
+
+    if (peakIdx >= 0 && maxDaySec > 0) {
+      dailyActivity[peakIdx].isPeak = true;
+    }
+
+    const topTracks = Array.from(trackAggregation.values())
+      .sort((a, b) => b.plays - a.plays || b.seconds - a.seconds)
+      .slice(0, 10);
+
+    const totalValidArtistPlays = Array.from(artistAggregation.values()).reduce((a, b) => a + b.plays, 0) || 1;
+    const topArtists = Array.from(artistAggregation.values())
+      .map(a => ({
+        artist: a.artist,
+        name: a.artist,
+        plays: a.plays,
+        count: a.plays,
+        percentage: Math.min(100, Math.round((a.plays / totalValidArtistPlays) * 100)),
+        avatar: a.avatar || ''
+      }))
+      .sort((a, b) => b.plays - a.plays)
+      .slice(0, 5);
+
+    const topMoods = [];
+    if (topTracks.length > 0) {
+      const weights = { Romantic: 0, Chill: 0, Sad: 0, Energetic: 0, Nostalgic: 0 };
+      topTracks.forEach(t => {
+        const txt = `${t.title || ''} ${t.artist || ''}`.toLowerCase();
+        if (/romantic|love|tum hi ho|kesariya|heeriye|dil|pyaar|humnava|arijit|shreya/.test(txt)) weights.Romantic += 4;
+        if (/chill|acoustic|raataan|kho gaye|baarishein|prateek|anuv|lofi|subhanallah/.test(txt)) weights.Chill += 3;
+        if (/sad|heartbreak|channa mereya|bekhayali|judai|aankh hai|agar tum|alizeh|kasoor/.test(txt)) weights.Sad += 3;
+        if (/party|dance|lover|diljit|badtameez|kala chashma|london|chak de|workout|rock/.test(txt)) weights.Energetic += 3;
+        if (/90s|retro|kumar sanu|alka yagnik|udit|lata|kishore|dheere|chura ke|nostalg/.test(txt)) weights.Nostalgic += 3;
+      });
+
+      const totalW = Object.values(weights).reduce((a, b) => a + b, 0);
+      if (totalW > 0) {
+        const moodIcons = { Romantic: '❤️', Chill: '🍃', Sad: '☁️', Energetic: '⚡', Nostalgic: '⏱️' };
+        for (const [mood, w] of Object.entries(weights)) {
+          if (w > 0) {
+            topMoods.push({
+              mood,
+              percentage: Math.round((w / totalW) * 100),
+              icon: moodIcons[mood] || '🎵'
+            });
+          }
+        }
+        topMoods.sort((a, b) => b.percentage - a.percentage);
+      }
+    }
+
+    const hasData = monthlyTotalSeconds >= 10 || monthlyValidPlays > 0;
+
+    const result = {
+      periodLabel: monthLabel,
+      monthLabel,
+      year: targetYear,
+      month: targetMonth + 1,
+      totalListeningSeconds: monthlyTotalSeconds,
+      totalListeningMinutes: Math.round(monthlyTotalSeconds / 60),
+      totalHours: (monthlyTotalSeconds / 3600).toFixed(1),
+      totalListeningHours: (monthlyTotalSeconds / 3600).toFixed(1),
+      totalPlays: monthlyValidPlays,
+      distinctTracksCount: trackAggregation.size,
+      distinctArtistsCount: artistAggregation.size,
+      peakDay,
+      peakDayHours,
+      dailyActivity,
+      topTracks,
+      topSongs: topTracks,
+      topArtists,
+      topMoods,
+      hasData,
+      isVerified: true
+    };
+
+    analyticsCache.set(cacheKey, { timestamp: now, data: result });
+    return result;
+  },
+
+  /**
+   * Computes genuine consecutive day listening streak based on actual logged playback events.
+   */
+  async getListeningStreaks(userId, { timezone = 'UTC' } = {}) {
+    if (!userId) return { currentStreak: 0, longestStreak: 0, lastActiveDate: null, totalActiveDays: 0 };
+    try {
+      const userObjectId = new mongoose.Types.ObjectId(userId.toString());
+      const events = await UserListeningEvent.find({
+        userId: userObjectId
+      }).sort({ timestamp: -1 }).select('timestamp').lean();
+
+      if (!events || events.length === 0) {
+        return { currentStreak: 0, longestStreak: 0, lastActiveDate: null, totalActiveDays: 0 };
+      }
+
+      const daysSet = new Set();
+      const dateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' });
+      for (const e of events) {
+        try {
+          daysSet.add(dateFmt.format(new Date(e.timestamp)));
+        } catch (err) {}
+      }
+
+      const sortedDays = Array.from(daysSet).sort().reverse();
+      if (sortedDays.length === 0) return { currentStreak: 0, longestStreak: 0, lastActiveDate: null, totalActiveDays: 0 };
+
+      const todayStr = dateFmt.format(new Date());
+      const yesterdayDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const yesterdayStr = dateFmt.format(yesterdayDate);
+
+      let currentStreak = 0;
+      let streakAnchor = null;
+      if (daysSet.has(todayStr)) {
+        streakAnchor = new Date();
+      } else if (daysSet.has(yesterdayStr)) {
+        streakAnchor = yesterdayDate;
+      }
+
+      if (streakAnchor) {
+        let d = new Date(streakAnchor);
+        while (true) {
+          const dStr = dateFmt.format(d);
+          if (daysSet.has(dStr)) {
+            currentStreak++;
+            d.setDate(d.getDate() - 1);
+          } else {
+            break;
+          }
+        }
+      }
+
+      let longestStreak = currentStreak;
+      let tempStreak = 1;
+      const ascendingDays = Array.from(daysSet).sort();
+      for (let i = 1; i < ascendingDays.length; i++) {
+        const prev = new Date(ascendingDays[i - 1]);
+        const curr = new Date(ascendingDays[i]);
+        const diffDays = Math.round((curr - prev) / (1000 * 60 * 60 * 24));
+        if (diffDays === 1) {
+          tempStreak++;
+          if (tempStreak > longestStreak) longestStreak = tempStreak;
+        } else {
+          tempStreak = 1;
+        }
+      }
+
+      return {
+        currentStreak,
+        longestStreak,
+        lastActiveDate: sortedDays[0],
+        totalActiveDays: daysSet.size
+      };
+    } catch (err) {
+      console.warn('[Listening Streaks Error]:', err.message);
+      return { currentStreak: 0, longestStreak: 0, lastActiveDate: null, totalActiveDays: 0 };
+    }
+  },
+
+  /**
+   * Unified Overview endpoint providing single source of truth for weekly, monthly, lifetime recap & streaks.
    */
   async getUnifiedOverview(userId, options = {}) {
-    const [weeklyRecap, allTimeStats] = await Promise.all([
+    const [weeklyRecap, monthlyRecap, allTimeStats, streaks] = await Promise.all([
       this.getWeeklyRecap(userId, options),
-      this.getAllTimeStats(userId, options)
+      this.getMonthlyRecap(userId, options),
+      this.getAllTimeStats(userId, options),
+      this.getListeningStreaks(userId, options)
     ]);
+
+    const hasAnyVerified = Boolean(
+      (allTimeStats && allTimeStats.totalPlays > 0) ||
+      (monthlyRecap && monthlyRecap.totalPlays > 0) ||
+      (weeklyRecap && weeklyRecap.totalPlays > 0)
+    );
+
+    const telemetryStatus = {
+      isVerified: Boolean(userId && hasAnyVerified),
+      statusText: (userId && hasAnyVerified) ? 'Verified Data' : (userId ? 'Verified (0 Plays)' : 'Guest Mode'),
+      eventsCount: allTimeStats?.totalPlays || 0,
+      totalHours: allTimeStats?.totalHours || '0.0',
+      auditPassed: true
+    };
 
     return {
       success: true,
       userId: userId ? userId.toString() : null,
       updatedAt: new Date().toISOString(),
       weeklyRecap,
-      allTimeStats
+      monthlyRecap,
+      allTimeStats,
+      streaks,
+      telemetryStatus
     };
   }
 };

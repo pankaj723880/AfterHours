@@ -203,6 +203,7 @@ io.use(async (socket, next) => {
           if (user && user.status === 'active') {
             socket.user = user;
             activeUserSocketMap.set(socket.id, user._id.toString());
+            socket.join(`user_${user._id.toString()}`);
             if (user.role === 'admin') {
               socket.join('admin_room');
             }
@@ -331,6 +332,18 @@ app.get('/', (req, res) => {
   res.send('AfterHours API is running');
 });
 
+// GET /api/rooms - Active Listening Rooms listing
+app.get(['/api/rooms', '/rooms'], (req, res) => {
+  const roomsList = Array.from(listeningRooms.values()).map(r => ({
+    id: r.id,
+    name: r.name,
+    hostUsername: r.hostUsername,
+    currentSong: r.currentSong,
+    participantCount: r.participants ? r.participants.size : 0
+  }));
+  res.json({ success: true, rooms: roomsList });
+});
+
 app.get(['/health', '/api/health'], (req, res) => {
   const ready = isDatabaseReady();
   res.json({
@@ -342,6 +355,8 @@ app.get(['/health', '/api/health'], (req, res) => {
 });
 
 // Socket.io for Real-time Active Users & Admin Streams
+const listeningRooms = new Map();
+
 io.on('connection', (socket) => {
   const sessionId = socket.handshake.auth?.sessionId || 
     socket.handshake.query?.sessionId || 
@@ -440,8 +455,105 @@ io.on('connection', (socket) => {
     } catch (e) {}
   });
 
+  // --- Listening Rooms Handlers ---
+  socket.on('join_listening_room', ({ roomId, user }) => {
+    try {
+      if (!roomId) return;
+      socket.join(`room_${roomId}`);
+      let room = listeningRooms.get(roomId);
+      if (!room) {
+        room = {
+          id: roomId,
+          name: `${user?.displayName || user?.username || 'Host'}'s Session`,
+          hostUsername: user?.username || 'Host',
+          currentSong: null,
+          isPlaying: false,
+          seekTime: 0,
+          queue: [],
+          participants: new Map()
+        };
+        listeningRooms.set(roomId, room);
+      }
+      room.participants.set(socket.id, {
+        socketId: socket.id,
+        userId: user?._id || user?.userId || null,
+        username: user?.username || 'Listener',
+        displayName: user?.displayName || user?.username || 'Listener',
+        avatar: user?.avatarUrl || ''
+      });
+
+      socket.emit('listening_room_state', {
+        id: room.id,
+        name: room.name,
+        hostUsername: room.hostUsername,
+        currentSong: room.currentSong,
+        isPlaying: room.isPlaying,
+        seekTime: room.seekTime,
+        queue: room.queue,
+        participants: Array.from(room.participants.values())
+      });
+
+      io.to(`room_${roomId}`).emit('listening_room_participants', Array.from(room.participants.values()));
+    } catch (e) {
+      console.warn('[Listening Room Join Error]:', e.message);
+    }
+  });
+
+  socket.on('leave_listening_room', ({ roomId }) => {
+    try {
+      if (!roomId) return;
+      socket.leave(`room_${roomId}`);
+      const room = listeningRooms.get(roomId);
+      if (room) {
+        room.participants.delete(socket.id);
+        if (room.participants.size === 0) {
+          listeningRooms.delete(roomId);
+        } else {
+          io.to(`room_${roomId}`).emit('listening_room_participants', Array.from(room.participants.values()));
+        }
+      }
+    } catch (e) {}
+  });
+
+  socket.on('room_playback_sync', ({ roomId, currentSong, isPlaying, seekTime }) => {
+    try {
+      const room = listeningRooms.get(roomId);
+      if (room) {
+        if (currentSong !== undefined) room.currentSong = currentSong;
+        if (isPlaying !== undefined) room.isPlaying = isPlaying;
+        if (seekTime !== undefined) room.seekTime = seekTime;
+        socket.to(`room_${roomId}`).emit('room_playback_updated', {
+          currentSong: room.currentSong,
+          isPlaying: room.isPlaying,
+          seekTime: room.seekTime
+        });
+      }
+    } catch (e) {}
+  });
+
+  socket.on('room_queue_add', ({ roomId, track }) => {
+    try {
+      const room = listeningRooms.get(roomId);
+      if (room && track) {
+        room.queue.push(track);
+        io.to(`room_${roomId}`).emit('room_queue_updated', room.queue);
+      }
+    } catch (e) {}
+  });
+
   socket.on('disconnect', () => {
     metricsService.handleVisitorDisconnect(socket.id);
+    // Clean up listening rooms for this socket
+    for (const [rId, r] of listeningRooms.entries()) {
+      if (r.participants.has(socket.id)) {
+        r.participants.delete(socket.id);
+        if (r.participants.size === 0) {
+          listeningRooms.delete(rId);
+        } else {
+          io.to(`room_${rId}`).emit('listening_room_participants', Array.from(r.participants.values()));
+        }
+      }
+    }
     activeUserSocketMap.delete(socket.id);
     // If in Real Live Users mode, update public count immediately on disconnect
     if (liveUsersService.mode === 'real') {
@@ -911,7 +1023,10 @@ app.use(['/api/radio', '/radio'], radioRoutes);
 // Mount Gemini AI-Powered Personalized Recommendations & Listening Events
 app.use(['/api/recommendations', '/recommendations'], recommendationRoutes);
 app.use(['/api/analytics', '/analytics'], analyticsRoutes);
-app.post('/api/listening-events', authenticateToken, handleListeningEvent);
+app.post('/api/listening-events', authenticateToken, async (req, res, next) => {
+  req.app_io = io;
+  return handleListeningEvent(req, res, next);
+});
 app.get('/api/listening-stats', authenticateToken, async (req, res) => {
   try {
     const userId = req.user._id || req.user.userId || req.user.id;

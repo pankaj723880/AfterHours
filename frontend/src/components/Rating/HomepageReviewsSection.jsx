@@ -11,68 +11,124 @@ export default function HomepageReviewsSection({ refreshTrigger = 0, onOpenRatin
   const [isLoading, setIsLoading] = useState(true);
   const [isReviewsLoading, setIsReviewsLoading] = useState(false);
 
-  // Fetch genuine rating summary
-  const fetchSummary = useCallback(async () => {
+  // Coordinated data fetching to eliminate race conditions between summary & reviews
+  const loadRatingsAndReviews = useCallback(async (page = 1) => {
+    if (page === 1) setIsLoading(true);
+    setIsReviewsLoading(true);
+
     try {
-      const res = await fetch(getApiUrl('/api/reviews/summary'));
-      if (res.ok) {
-        const data = await res.json();
-        setSummary(data);
+      // 1. Fetch summary with cache buster
+      const summaryRes = await fetch(getApiUrl(`/api/reviews/summary?_t=${Date.now()}`), {
+        cache: 'no-store'
+      });
+      let freshSummary = null;
+      if (summaryRes.ok) {
+        freshSummary = await summaryRes.json();
+        setSummary(freshSummary);
+      }
+
+      // 2. Determine mode directly from fresh summary
+      const isConfigured = Boolean(freshSummary?.editorialSummary?.enabled);
+      const sourceQuery = isConfigured ? 'editorial' : 'user';
+
+      // 3. Fetch strictly corresponding reviews (strictly isolated, no fallback)
+      const reviewsRes = await fetch(
+        getApiUrl(`/api/reviews?page=${page}&limit=5&source=${sourceQuery}&_t=${Date.now()}`),
+        { cache: 'no-store' }
+      );
+
+      if (reviewsRes.ok) {
+        const reviewsData = await reviewsRes.json();
+        setReviews(reviewsData.reviews || []);
+        setCurrentPage(reviewsData.page || 1);
+        setTotalPages(reviewsData.totalPages || 1);
+        setTotalReviewsCount(reviewsData.totalReviews || 0);
+      } else {
+        setReviews([]);
+        setCurrentPage(1);
+        setTotalPages(1);
+        setTotalReviewsCount(0);
       }
     } catch (e) {
-      console.warn('[ReviewsSummary] Fetch notice:', e.message);
+      console.warn('[HomepageReviews] Load failed:', e.message);
     } finally {
       setIsLoading(false);
-    }
-  }, []);
-
-  // Fetch paginated reviews (strictly 5 per page)
-  const fetchReviewsPage = useCallback(async (pageToFetch = 1, isEditorial = false) => {
-    setIsReviewsLoading(true);
-    try {
-      const sourceQuery = isEditorial ? '&source=editorial' : '';
-      let res = await fetch(getApiUrl(`/api/reviews?page=${pageToFetch}&limit=5${sourceQuery}`));
-      if (res.ok) {
-        let data = await res.json();
-        // Fallback to general reviews if no editorial reviews found
-        if (isEditorial && (!data.reviews || data.reviews.length === 0)) {
-          res = await fetch(getApiUrl(`/api/reviews?page=${pageToFetch}&limit=5`));
-          if (res.ok) data = await res.json();
-        }
-        setReviews(data.reviews || []);
-        setCurrentPage(data.page || 1);
-        setTotalPages(data.totalPages || 1);
-        setTotalReviewsCount(data.totalReviews || 0);
-      }
-    } catch (e) {
-      console.warn('[ReviewsList] Fetch notice:', e.message);
-    } finally {
       setIsReviewsLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchSummary().then(() => {});
-  }, [fetchSummary, refreshTrigger]);
+  // Fetch reviews for a specific page without refetching summary
+  const handlePageChange = useCallback(async (newPage) => {
+    if (newPage < 1 || isReviewsLoading) return;
+    setIsReviewsLoading(true);
+
+    try {
+      const isConfigured = Boolean(summary?.editorialSummary?.enabled);
+      const sourceQuery = isConfigured ? 'editorial' : 'user';
+
+      const reviewsRes = await fetch(
+        getApiUrl(`/api/reviews?page=${newPage}&limit=5&source=${sourceQuery}&_t=${Date.now()}`),
+        { cache: 'no-store' }
+      );
+
+      if (reviewsRes.ok) {
+        const reviewsData = await reviewsRes.json();
+        setReviews(reviewsData.reviews || []);
+        setCurrentPage(reviewsData.page || newPage);
+        setTotalPages(reviewsData.totalPages || 1);
+        setTotalReviewsCount(reviewsData.totalReviews || 0);
+      }
+    } catch (e) {
+      console.warn('[HomepageReviews] Page change error:', e.message);
+    } finally {
+      setIsReviewsLoading(false);
+    }
+  }, [summary?.editorialSummary?.enabled, isReviewsLoading]);
+
+  const handlePrevPage = () => {
+    if (currentPage > 1) {
+      handlePageChange(currentPage - 1);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      handlePageChange(currentPage + 1);
+    }
+  };
 
   useEffect(() => {
-    const isEditorial = Boolean(summary?.editorialSummary?.enabled);
-    fetchReviewsPage(1, isEditorial);
-  }, [summary?.editorialSummary?.enabled, fetchReviewsPage, refreshTrigger]);
+    loadRatingsAndReviews(1);
+  }, [loadRatingsAndReviews, refreshTrigger]);
 
   const isConfigured = Boolean(summary?.editorialSummary?.enabled);
+  const editorial = summary?.editorialSummary;
+
   const activeRating = isConfigured 
-    ? (summary.editorialSummary.displayRating ?? 0.0) 
-    : (summary?.averageRating ?? 0.0);
+    ? (Number(editorial?.displayRating) || 0.0) 
+    : (Number(summary?.averageRating) || 0.0);
+
   const activeTotal = isConfigured 
-    ? (summary.editorialSummary.displayCount ?? 0) 
-    : (summary?.totalRatings ?? 0);
+    ? (Number(editorial?.displayCount) || 0) 
+    : (Number(summary?.totalRatings) || 0);
+
   const activeDistribution = isConfigured 
-    ? (summary.editorialSummary.distribution || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }) 
+    ? (editorial?.distribution || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }) 
     : (summary?.distribution || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 });
+
   const activeBadge = isConfigured 
-    ? (summary.editorialSummary.editorialLabel || 'Curated Editorial Highlights') 
+    ? (editorial?.editorialLabel || 'Curated Editorial Highlights') 
     : 'Listener Community';
+
+  const formatRatingDisplay = (val) => {
+    if (!val || val <= 0) return '0.0';
+    const num = Number(val);
+    if (Number.isInteger(num)) return `${num}.0`;
+    const str = num.toString();
+    const decimalParts = str.split('.')[1] || '';
+    if (decimalParts.length === 1) return num.toFixed(1);
+    return num.toFixed(2);
+  };
 
   const formatDate = (dateString) => {
     try {
@@ -117,8 +173,8 @@ export default function HomepageReviewsSection({ refreshTrigger = 0, onOpenRatin
             {isConfigured && (
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-neutral-900/80 border border-amber-500/30 text-[11px] text-neutral-300 shadow-sm">
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                <span className="text-neutral-400">{summary.editorialSummary.editorialLabel}:</span>
-                <span className="font-extrabold text-amber-400">{activeRating.toFixed(1)} ★</span>
+                <span className="text-neutral-400">{activeBadge}:</span>
+                <span className="font-extrabold text-amber-400">{formatRatingDisplay(activeRating)} ★</span>
                 <span className="text-neutral-400">({activeTotal.toLocaleString()})</span>
               </div>
             )}
@@ -151,7 +207,7 @@ export default function HomepageReviewsSection({ refreshTrigger = 0, onOpenRatin
           {/* Average Rating Hero Card */}
           <div className="md:col-span-5 flex flex-col justify-center items-center md:items-start text-center md:text-left space-y-3 md:border-r border-neutral-800/80 md:pr-8">
             <div className="text-5xl sm:text-6xl font-black text-white tracking-tight flex items-baseline gap-2">
-              <span>{activeRating > 0 ? activeRating.toFixed(1) : '0.0'}</span>
+              <span title={`Weighted Average: ${activeRating}`}>{formatRatingDisplay(activeRating)}</span>
               <span className="text-2xl text-neutral-400 font-semibold">/ 5</span>
             </div>
             
@@ -173,6 +229,11 @@ export default function HomepageReviewsSection({ refreshTrigger = 0, onOpenRatin
 
             <p className="text-xs text-neutral-400 font-medium">
               Based on <span className="font-bold text-white">{activeTotal.toLocaleString()}</span> {isConfigured ? 'curated' : 'genuine'} listener rating{activeTotal !== 1 ? 's' : ''}
+              {activeRating > 0 && (
+                <span className="ml-1 text-neutral-500 font-mono">
+                  ({activeRating.toFixed(4).replace(/\.?0+$/, '')} avg)
+                </span>
+              )}
             </p>
 
             <div className="pt-1 flex items-center gap-2">
@@ -195,10 +256,11 @@ export default function HomepageReviewsSection({ refreshTrigger = 0, onOpenRatin
           </div>
 
           {/* Rating Distribution Bars */}
-          <div className="md:col-span-7 flex flex-col justify-center space-y-2">
+          <div className="md:col-span-7 flex flex-col justify-center space-y-2.5">
             {[5, 4, 3, 2, 1].map((star) => {
-              const count = activeDistribution[star] || 0;
-              const percent = activeTotal > 0 ? Math.round((count / activeTotal) * 100) : 0;
+              const count = Number(activeDistribution[star] ?? activeDistribution[`count${star}`] ?? 0);
+              const percent = activeTotal > 0 ? (count / activeTotal) * 100 : 0;
+              const roundedPercent = Math.round(percent);
               return (
                 <div key={star} className="flex items-center gap-3 text-xs">
                   <div className="flex items-center gap-1 w-12 text-neutral-400 shrink-0 font-semibold">
@@ -211,8 +273,9 @@ export default function HomepageReviewsSection({ refreshTrigger = 0, onOpenRatin
                       style={{ width: `${percent}%` }}
                     />
                   </div>
-                  <div className="w-10 text-right text-neutral-400 font-mono text-[11px] shrink-0">
-                    {percent}%
+                  <div className="w-20 text-right text-neutral-400 font-mono text-[11px] shrink-0 flex items-center justify-end gap-1.5">
+                    <span className="text-neutral-300 font-semibold">{count}</span>
+                    <span className="text-neutral-500">({roundedPercent}%)</span>
                   </div>
                 </div>
               );
@@ -225,7 +288,7 @@ export default function HomepageReviewsSection({ refreshTrigger = 0, onOpenRatin
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
               <MessageSquare className="w-4 h-4 text-amber-400" />
-              <span>Listener Reviews</span>
+              <span>{isConfigured ? 'Curated Reviews' : 'Listener Reviews'}</span>
               {totalReviewsCount > 0 && (
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300">
                   {totalReviewsCount}
@@ -275,9 +338,13 @@ export default function HomepageReviewsSection({ refreshTrigger = 0, onOpenRatin
           {/* Reviews List */}
           {reviews.length === 0 ? (
             <div className="p-8 rounded-3xl bg-neutral-900/30 border border-neutral-800/80 text-center space-y-2">
-              <p className="text-sm font-semibold text-neutral-300">No written reviews yet</p>
+              <p className="text-sm font-semibold text-neutral-300">
+                {isConfigured ? 'No configured reviews published yet' : 'No written reviews yet'}
+              </p>
               <p className="text-xs text-neutral-400 max-w-sm mx-auto">
-                Be among the first listeners to share your review after experiencing Loopra's music sanctuary.
+                {isConfigured 
+                  ? 'Configured reviews published by the editorial team in the Admin Dashboard will appear here.'
+                  : 'Be among the first listeners to share your review after experiencing Loopra\'s music sanctuary.'}
               </p>
             </div>
           ) : (
@@ -333,4 +400,3 @@ export default function HomepageReviewsSection({ refreshTrigger = 0, onOpenRatin
     </section>
   );
 }
-

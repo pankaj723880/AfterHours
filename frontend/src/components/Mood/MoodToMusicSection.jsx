@@ -1,5 +1,14 @@
 import React, { useState, useCallback } from 'react';
 
+const ACTIVITY_SHORTCUTS = [
+  { id: 'studying', label: 'Studying', icon: '📚', prompt: 'Deep focus instrumental ambient lofi music for studying' },
+  { id: 'coding', label: 'Coding', icon: '💻', prompt: 'Calm synthwave electronic deep concentration flow state coding music' },
+  { id: 'gym', label: 'Gym & Workout', icon: '🏋️', prompt: 'High-intensity power cardio motivation workout gym tracks' },
+  { id: 'driving', label: 'Late Night Drive', icon: '🚗', prompt: 'Late night highway drive euphoric energetic indie travel songs' },
+  { id: 'relaxing', label: 'Relaxing', icon: '🧘', prompt: 'Calm acoustic peaceful unplugged meditation relaxing melodies' },
+  { id: 'sleeping', label: 'Sleeping', icon: '🌙', prompt: 'Ultra-calm sleep delta waves gentle soothing lofi ambient bedtime' }
+];
+
 const MOOD_SHORTCUTS = [
   { id: 'rainy', label: 'Rainy Day', icon: '🌧️', prompt: 'Raat mein baarish ho rahi hai, soothing rain Hindi songs' },
   { id: 'sad', label: 'Sad & Heartbreak', icon: '💔', prompt: 'Heartbreak sad emotional Hindi songs' },
@@ -61,6 +70,9 @@ export default function MoodToMusicSection({
   const [seed, setSeed] = useState(0);
   const [error, setError] = useState('');
   const [hasGenerated, setHasGenerated] = useState(false);
+  const [discoveryMode, setDiscoveryMode] = useState('mood'); // 'mood' | 'activity' | 'journey'
+  const [journeyStart, setJourneyStart] = useState('focus');
+  const [journeyEnd, setJourneyEnd] = useState('energetic');
 
   const fetchRecommendations = useCallback(async (currentSeed = 0, customPrompt = prompt) => {
     setLoading(true);
@@ -156,9 +168,9 @@ export default function MoodToMusicSection({
                 ✨
               </span>
               <div>
-                <h2 className="text-xl sm:text-2xl font-display font-extrabold text-white tracking-tight">
+                <h1 className="text-xl sm:text-2xl font-display font-extrabold text-white tracking-tight">
                   Mood-to-Music AI
-                </h2>
+                </h1>
                 <p className="text-xs text-amber-400/90 font-medium">
                   Natural language & multilingual mood engine for Hindi, Punjabi, Retro & Global melodies
                 </p>
@@ -194,13 +206,87 @@ export default function MoodToMusicSection({
               </button>
             </div>
 
-            {/* Quick Mood Shortcuts */}
+            {/* Mode Selector Tabs: Moods, Activities, Music Journey */}
+            <div className="flex items-center gap-2 pt-1 border-b border-neutral-800/60 pb-2">
+              <button
+                type="button"
+                onClick={() => setDiscoveryMode('mood')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  discoveryMode === 'mood'
+                    ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
+                    : 'bg-neutral-800/80 text-neutral-400 hover:text-white'
+                }`}
+              >
+                <span>🎭</span> Moods
+              </button>
+              <button
+                type="button"
+                onClick={() => setDiscoveryMode('activity')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  discoveryMode === 'activity'
+                    ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
+                    : 'bg-neutral-800/80 text-neutral-400 hover:text-white'
+                }`}
+              >
+                <span>⚡</span> Activities
+              </button>
+              <button
+                type="button"
+                onClick={() => setDiscoveryMode('journey')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  discoveryMode === 'journey'
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-300 text-neutral-950 shadow-md shadow-amber-500/20'
+                    : 'bg-neutral-800/80 text-neutral-400 hover:text-white'
+                }`}
+              >
+                <span>🚀</span> Music Journey
+              </button>
+            </div>
+
+            {/* Music Journey Controls */}
+            {discoveryMode === 'journey' && (
+              <div className="p-3 bg-neutral-950/70 border border-amber-500/30 rounded-2xl space-y-2">
+                <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                  <span>🌊</span> Music Journey: Gradual Mood Transition
+                </p>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <label className="text-[10px] uppercase font-mono text-neutral-400 block mb-1">Start Vibe</label>
+                    <select
+                      value={journeyStart}
+                      onChange={(e) => setJourneyStart(e.target.value)}
+                      className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-2.5 py-1.5 text-white"
+                    >
+                      <option value="relaxing">Relaxing / Chill</option>
+                      <option value="focus">Focus / Studying</option>
+                      <option value="rainy">Rainy / Melancholic</option>
+                      <option value="coding">Deep Flow / Coding</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase font-mono text-neutral-400 block mb-1">Destination Vibe</label>
+                    <select
+                      value={journeyEnd}
+                      onChange={(e) => setJourneyEnd(e.target.value)}
+                      className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-2.5 py-1.5 text-white"
+                    >
+                      <option value="energetic">High-Energy / Gym</option>
+                      <option value="party">Party / Dance</option>
+                      <option value="happy">Happy & Upbeat</option>
+                      <option value="sleeping">Calm Sleep Delta</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Quick Shortcuts */}
             <div className="space-y-1.5">
               <p className="text-[11px] font-mono uppercase tracking-wider text-neutral-400">
-                Popular Mood Shortcuts:
+                {discoveryMode === 'activity' ? 'Activity Filters:' : 'Popular Mood Shortcuts:'}
               </p>
               <div className="flex flex-wrap gap-2">
-                {MOOD_SHORTCUTS.map((s) => {
+                {(discoveryMode === 'activity' ? ACTIVITY_SHORTCUTS : MOOD_SHORTCUTS).map((s) => {
                   const isActive = selectedMood === s.id;
                   return (
                     <button

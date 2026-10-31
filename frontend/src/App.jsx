@@ -19,6 +19,8 @@ import { offlineStorageService } from './services/offlineStorageService';
 import DownloadTrackButton from './components/Offline/DownloadTrackButton';
 import OfflineLibraryView from './components/Offline/OfflineLibraryView';
 import OfflineEligibleExploreView from './components/Offline/OfflineEligibleExploreView';
+import ListeningRoomsModal from './components/Social/ListeningRoomsModal';
+import SimilarSongsModal from './components/Recommendations/SimilarSongsModal';
 import LyricsModal from './components/Player/LyricsModal';
 import SleepTimerModal from './components/Player/SleepTimerModal';
 import PlayerSettingsModal from './components/Player/PlayerSettingsModal';
@@ -48,6 +50,7 @@ import shuffleService from './services/shuffleService';
 import { filterSingleSongs, isSingleSong } from './services/songFilter';
 import RatingPopupModal from './components/Rating/RatingPopupModal';
 import HomepageReviewsSection from './components/Rating/HomepageReviewsSection';
+import { updateRouteMetadata } from './utils/seo';
 
 import { io } from 'socket.io-client';
 import { BACKEND_URL, getApiUrl } from './utils/apiUrl';
@@ -86,6 +89,12 @@ const socket = io(BACKEND_URL, {
 
 socket.on('connect_error', (err) => {
   console.warn('[Socket.io] Real-time connection notice:', err.message);
+});
+
+socket.on('listening_stats_updated', (data) => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('loopra_listening_stats_updated', { detail: data }));
+  }
 });
 
 const fetchFromBackend = async (query, options = {}) => {
@@ -1429,32 +1438,6 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    // Keep browser tab title strictly "Loopra" across all sections, navigation, and refreshes
-    document.title = 'Loopra';
-
-    const faviconUrl = cmsConfig?.branding?.faviconUrl || '/loopra-logo.png';
-    const iconLinks = document.querySelectorAll("link[rel*='icon'], link[rel='apple-touch-icon']");
-    if (iconLinks && iconLinks.length > 0) {
-      iconLinks.forEach(link => {
-        link.href = faviconUrl;
-      });
-    } else {
-      let link = document.querySelector("link[rel*='icon']");
-      if (!link) {
-        link = document.createElement('link');
-        link.type = 'image/png';
-        link.rel = 'icon';
-        document.getElementsByTagName('head')[0].appendChild(link);
-      }
-      link.href = faviconUrl;
-    }
-
-    if (cmsConfig?.theme) {
-      applyThemeToDom(cmsConfig.theme);
-    }
-  }, [cmsConfig?.branding, cmsConfig?.theme, activeTab]);
-
   const stationsMap = React.useMemo(() => {
     const base = { ...SPECIAL_STATIONS };
     if (Array.isArray(cmsConfig?.stations)) {
@@ -1483,6 +1466,35 @@ export default function App() {
     }
     return base;
   }, [cmsConfig?.stations]);
+
+  useEffect(() => {
+    // Keep browser tab title strictly with Loopra branding across all sections, navigation, and refreshes
+    document.title = 'Loopra';
+    // Dynamic SEO Metadata, Canonicalization & Schema.org Breadcrumb synchronization
+    const currentStn = stationsMap ? (stationsMap[activeTab] || SPECIAL_STATIONS[activeTab]) : SPECIAL_STATIONS[activeTab];
+    updateRouteMetadata(activeTab, currentStn);
+
+    const faviconUrl = cmsConfig?.branding?.faviconUrl || '/favicon.svg';
+    const iconLinks = document.querySelectorAll("link[rel*='icon'], link[rel='apple-touch-icon']");
+    if (iconLinks && iconLinks.length > 0) {
+      iconLinks.forEach(link => {
+        link.href = faviconUrl;
+      });
+    } else {
+      let link = document.querySelector("link[rel*='icon']");
+      if (!link) {
+        link = document.createElement('link');
+        link.type = 'image/svg+xml';
+        link.rel = 'icon';
+        document.getElementsByTagName('head')[0].appendChild(link);
+      }
+      link.href = faviconUrl;
+    }
+
+    if (cmsConfig?.theme) {
+      applyThemeToDom(cmsConfig.theme);
+    }
+  }, [cmsConfig?.branding, cmsConfig?.theme, activeTab, stationsMap]);
 
   useEffect(() => {
     const handleClickOutsideMenu = () => setOpenMenuId(null);
@@ -1899,7 +1911,22 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [isMiniPlayerExpanded, setIsMiniPlayerExpanded] = useState(false);
   const [isHomeScrolled, setIsHomeScrolled] = useState(false);
   // Route-aware mini-player visibility: Hidden on Home page so featured 3D player is solitary
-  const isBottomPlayerVisible = Boolean(currentSong && activeTab !== 'home');
+  // Route-aware mini-player visibility: Displays when away from Home tab OR when scrolled past hero on Home tab
+  const isBottomPlayerVisible = Boolean(currentSong && (activeTab !== 'home' || isHomeScrolled));
+  const [stopAfterCurrentTrack, setStopAfterCurrentTrack] = useState(false);
+  const stopAfterCurrentTrackRef = useRef(false);
+  useEffect(() => {
+    stopAfterCurrentTrackRef.current = stopAfterCurrentTrack;
+  }, [stopAfterCurrentTrack]);
+  const [isDataSaverEnabled, setIsDataSaverEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('loopra_datasaver') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
+  const [isListeningRoomsOpen, setIsListeningRoomsOpen] = useState(false);
+  const [similarSongsTrack, setSimilarSongsTrack] = useState(null);
   const handleOpenExpandedPlayer = (tab = 'player') => {
     setMobileQueueTab(tab);
     setShowQueuePanel(true);
@@ -2174,8 +2201,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [showAllAlbums, setShowAllAlbums] = useState(false);
   const [showAllRadio, setShowAllRadio] = useState(false);
 
+  const lastValidatedTokenRef = useRef(null);
+  const lastAttemptedUsernameRef = useRef(null);
+
   useEffect(() => {
     if (authToken) {
+      if (lastValidatedTokenRef.current === authToken) {
+        return;
+      }
+      lastValidatedTokenRef.current = authToken;
+
       fetch(getApiUrl('/api/auth/me'), {
         headers: { 'Authorization': `Bearer ${authToken}` }
       })
@@ -2185,19 +2220,34 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         })
         .then(data => {
           if (data && data.user) {
-            setUser(prev => ({ ...(prev || {}), ...data.user }));
+            setUser(prev => {
+              if (
+                prev &&
+                (prev._id || prev.userId) === (data.user._id || data.user.userId) &&
+                prev.role === data.user.role &&
+                prev.status === data.user.status &&
+                prev.username === data.user.username &&
+                prev.isVip === data.user.isVip
+              ) {
+                return prev;
+              }
+              return { ...(prev || {}), ...data.user };
+            });
             localStorage.setItem('afterhours_user', JSON.stringify(data.user));
           }
         })
         .catch(() => {});
     } else if (user?.username) {
       const u = user.username.toLowerCase();
+      if (lastAttemptedUsernameRef.current === u) return;
+
       let pass = null;
       if (u === 'admin@afterhours.com') pass = 'admin123';
       else if (u === 'pss809352@gmail.com') pass = '123454321';
       else if (u === 'pankajsss7238@gmail.com') pass = 'Ps207800@@#';
 
       if (pass) {
+        lastAttemptedUsernameRef.current = u;
         fetch(getApiUrl('/api/auth/login'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2212,7 +2262,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               setAuthToken(data.token);
               localStorage.setItem('afterhours_token', data.token);
               if (data.user) {
-                setUser(data.user);
+                setUser(prev => {
+                  if (
+                    prev &&
+                    (prev._id || prev.userId) === (data.user._id || data.user.userId) &&
+                    prev.role === data.user.role &&
+                    prev.status === data.user.status &&
+                    prev.username === data.user.username
+                  ) {
+                    return prev;
+                  }
+                  return data.user;
+                });
                 localStorage.setItem('afterhours_user', JSON.stringify(data.user));
               }
             }
@@ -2220,7 +2281,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           .catch(() => {});
       }
     }
-  }, [authToken, user]);
+  }, [authToken, user?.username]);
 
   // Meaningful listening tracker (threshold >= 30s) & Session State Management
   useEffect(() => {
@@ -2251,6 +2312,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           playSessionId: playSessionIdRef.current,
           source: activeTab || 'player'
         });
+        listeningStatsService.recordEvent?.({
+          backendUrl: BACKEND_URL,
+          token: authToken,
+          user,
+          track: currentSong,
+          eventType: 'pause',
+          duration: durationRef.current || 0,
+          listenedDuration: activeListeningDurationRef.current,
+          playbackPosition: currentTimeRef.current || 0,
+          playSessionId: playSessionIdRef.current,
+          completed: false
+        });
       }
     } else if (!wasPlayingRef.current && isPlaying && activeListeningDurationRef.current > 0) {
       // User resumed
@@ -2267,6 +2340,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           playSessionId: playSessionIdRef.current,
           source: activeTab || 'player'
         });
+        listeningStatsService.recordEvent?.({
+          backendUrl: BACKEND_URL,
+          token: authToken,
+          user,
+          track: currentSong,
+          eventType: 'resume',
+          duration: durationRef.current || 0,
+          listenedDuration: activeListeningDurationRef.current,
+          playbackPosition: currentTimeRef.current || 0,
+          playSessionId: playSessionIdRef.current,
+          completed: false
+        });
       }
     }
     wasPlayingRef.current = isPlaying;
@@ -2278,12 +2363,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const interval = setInterval(() => {
       activeListeningDurationRef.current += 1;
       // Increment user-isolated aggregate listening time
-      listeningStatsService.recordListeningTime(1, user);
+      listeningStatsService.recordListeningTime?.(1, user);
 
       // Once user listens for at least 30 seconds, record as a valid play and broadcast activity
       if (activeListeningDurationRef.current >= 30 && !hasLoggedListenForCurrentSongRef.current) {
         hasLoggedListenForCurrentSongRef.current = true;
-        listeningStatsService.recordPlay(currentSong, activeListeningDurationRef.current, user);
+        listeningStatsService.recordPlay?.(currentSong, activeListeningDurationRef.current, user);
 
         if (authToken) {
           recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
@@ -2297,6 +2382,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             completionPercent: Math.min(100, Math.round((activeListeningDurationRef.current / (durationRef.current || 200)) * 100)),
             playSessionId: playSessionIdRef.current,
             source: activeTab || 'player'
+          });
+          listeningStatsService.recordEvent?.({
+            backendUrl: BACKEND_URL,
+            token: authToken,
+            user,
+            track: currentSong,
+            eventType: 'progress',
+            duration: durationRef.current || 0,
+            listenedDuration: activeListeningDurationRef.current,
+            playbackPosition: currentTimeRef.current || 0,
+            playSessionId: playSessionIdRef.current,
+            completed: false
           });
 
           // Social Listening Activity Feed logging (only for genuine 30s+ plays, protected by timeout)
@@ -2339,6 +2436,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             playSessionId: playSessionIdRef.current,
             source: activeTab || 'player'
           });
+          listeningStatsService.recordEvent?.({
+            backendUrl: BACKEND_URL,
+            token: authToken,
+            user,
+            track: currentSong,
+            eventType: 'progress',
+            duration: durationRef.current || 0,
+            listenedDuration: activeListeningDurationRef.current,
+            playbackPosition: currentTimeRef.current || 0,
+            playSessionId: playSessionIdRef.current,
+            completed: false
+          });
         }
       }
     }, 1000);
@@ -2351,7 +2460,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
-        listeningStatsService.fetchStats({
+        listeningStatsService.fetchStats?.({
           backendUrl: BACKEND_URL,
           token: authToken,
           user,
@@ -2366,7 +2475,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       if (document.visibilityState === 'visible') {
         const elapsed = Date.now() - (lastStatsRefreshTimeRef.current || 0);
         if (elapsed >= 10 * 60 * 1000) {
-          listeningStatsService.fetchStats({
+          listeningStatsService.fetchStats?.({
             backendUrl: BACKEND_URL,
             token: authToken,
             user,
@@ -2408,7 +2517,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     window.addEventListener('touchstart', markActive, { passive: true });
 
     // Initial presence heartbeat
-    listeningStatsService.sendWebsiteHeartbeat({
+    listeningStatsService.sendWebsiteHeartbeat?.({
       backendUrl: BACKEND_URL,
       token: authToken,
       sessionId: websiteSessionIdRef.current,
@@ -2427,7 +2536,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       const isIdle = !isRecentlyActive && !isActivelyListening;
       const activeDelta = (isVisible || isActivelyListening) && !isIdle ? 45 : 0;
 
-      listeningStatsService.sendWebsiteHeartbeat({
+      listeningStatsService.sendWebsiteHeartbeat?.({
         backendUrl: BACKEND_URL,
         token: authToken,
         sessionId: websiteSessionIdRef.current,
@@ -2440,7 +2549,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
     const handleUnload = () => {
       if (authToken && websiteSessionIdRef.current) {
-        listeningStatsService.closeWebsiteSession({
+        listeningStatsService.closeWebsiteSession?.({
           backendUrl: BACKEND_URL,
           token: authToken,
           sessionId: websiteSessionIdRef.current
@@ -2491,15 +2600,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   // Remote Hydration on Mount — Reconciles server data with local state so data is never overwritten
   const isHydratedRef = useRef(!user);
+  const hydratedUserIdRef = useRef(null);
   const lastSyncedDataRef = useRef('');
   const syncRetryTimerRef = useRef(null);
   const syncAttemptsRef = useRef(0);
   const isSyncingRef = useRef(false);
 
+  const currentUserId = user?.userId || user?._id || null;
+
   useEffect(() => {
-    const id = user?.userId || user?._id;
-    if (!user || !id) {
+    const id = currentUserId;
+    if (!id) {
       isHydratedRef.current = true;
+      hydratedUserIdRef.current = null;
       return;
     }
 
@@ -2507,6 +2620,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       console.warn('[Sync] Invalid user ID format:', id);
       return;
     }
+
+    if (hydratedUserIdRef.current === id) {
+      return;
+    }
+    hydratedUserIdRef.current = id;
 
     let isMounted = true;
     const hydrateUserData = async () => {
@@ -2573,7 +2691,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
     hydrateUserData();
     return () => { isMounted = false; };
-  }, [user]);
+  }, [currentUserId]);
 
   // Sync Data — debounced 2.5s after last change, with bounded exponential backoff
   const syncTimerRef = useRef(null);
@@ -2892,14 +3010,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     } catch (e) {}
 
     if (websiteSessionIdRef.current && authToken) {
-      listeningStatsService.closeWebsiteSession({
+      listeningStatsService.closeWebsiteSession?.({
         backendUrl: BACKEND_URL,
         token: authToken,
         sessionId: websiteSessionIdRef.current
       });
       websiteSessionIdRef.current = null;
     }
-    listeningStatsService.clearLocalStats();
+    listeningStatsService.clearLocalStats?.();
     setUser(null);
     setAuthToken('');
     localStorage.removeItem('afterhours_token');
@@ -3207,6 +3325,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       } catch (err) {}
     }
 
+    playSessionIdRef.current = `ps_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    activeListeningDurationRef.current = 0;
+    lastSyncedDurationRef.current = 0;
+    hasLoggedListenForCurrentSongRef.current = false;
     setCurrentSong(song);
     trackPlaybackStartTimeRef.current = Date.now();
     hasLoggedCompletionRef.current = false;
@@ -3222,7 +3344,20 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         duration: 0,
         listenedDuration: 0,
         completionPercent: 0,
+        playSessionId: playSessionIdRef.current,
         source: activeTab || 'player'
+      });
+      listeningStatsService.recordEvent?.({
+        backendUrl: BACKEND_URL,
+        token: authToken,
+        user,
+        track: song,
+        eventType: 'play_start',
+        duration: 0,
+        listenedDuration: 0,
+        playbackPosition: 0,
+        playSessionId: playSessionIdRef.current,
+        completed: false
       });
     }
 
@@ -3269,7 +3404,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             source: activeTab || 'player'
           });
         }
-        listeningStatsService.recordEvent({
+        listeningStatsService.recordEvent?.({
           backendUrl: BACKEND_URL,
           token: authToken,
           user,
@@ -3295,7 +3430,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             source: activeTab || 'player'
           });
         }
-        listeningStatsService.recordEvent({
+        listeningStatsService.recordEvent?.({
           backendUrl: BACKEND_URL,
           token: authToken,
           user,
@@ -3660,7 +3795,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   source: activeTab || 'player'
                 });
               }
-              listeningStatsService.recordEvent({
+              listeningStatsService.recordEvent?.({
                 backendUrl: BACKEND_URL,
                 token: authToken,
                 user,
@@ -3675,12 +3810,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             }
 
             const currentRepeat = isRepeatRef.current;
-            if (currentRepeat === 'one' || currentRepeat === true) {
+            if (stopAfterCurrentTrackRef.current) {
+              setStopAfterCurrentTrack(false);
+              setIsPlaying(false);
+              try { playerRef.current?.pauseVideo?.(); } catch (e) {}
+              showToast('Playback stopped (Track finished)');
+            } else if (currentRepeat === 'one' || currentRepeat === true) {
               playerRef.current?.seekTo?.(0, true);
               try {
-          const p = playerRef.current?.playVideo?.();
-          if (p && typeof p.catch === 'function') p.catch(() => {});
-        } catch (e) {}
+                const p = playerRef.current?.playVideo?.();
+                if (p && typeof p.catch === 'function') p.catch(() => {});
+              } catch (e) {}
             } else {
               handleNextSongRef.current?.();
             }
@@ -4004,7 +4144,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               completionPercent: 100,
               source: 'offline'
             });
-            listeningStatsService.recordEvent({
+            listeningStatsService.recordEvent?.({
               backendUrl: BACKEND_URL,
               token: authToken,
               user,
@@ -4392,6 +4532,142 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     setQueue(prev => prev.filter(s => s.id !== trackId));
     showToast('Removed from queue');
   };
+
+  const playNext = useCallback((song, e) => {
+    if (e) e.stopPropagation();
+    if (!song) return;
+    setQueue(prev => {
+      if (currentSong && ((currentSong.id || currentSong.videoId) === (song.id || song.videoId))) {
+        showToast('Track is already playing');
+        return prev;
+      }
+      const filtered = prev.filter(s => (s.id || s.videoId) !== (song.id || song.videoId));
+      const curIdx = currentSong ? filtered.findIndex(s => (s.id || s.videoId) === (currentSong.id || currentSong.videoId)) : -1;
+      const insertIdx = curIdx >= 0 ? curIdx + 1 : 0;
+      const nextQ = [...filtered];
+      nextQ.splice(insertIdx, 0, song);
+      showToast('Playing next');
+      return nextQ;
+    });
+  }, [currentSong, showToast]);
+
+  const handleSaveQueueAsPlaylist = useCallback(async () => {
+    if (!queue || queue.length === 0) {
+      showToast('Queue is empty');
+      return;
+    }
+    const name = `Queue Mix (${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })})`;
+    const newPlaylist = {
+      id: `pl_${Date.now()}`,
+      name,
+      songs: [...queue],
+      songsCount: queue.length,
+      coverUrl: queue[0]?.thumbnail || '',
+      createdAt: new Date().toISOString()
+    };
+    setPlaylists(prev => [newPlaylist, ...prev]);
+    showToast(`Saved ${queue.length} tracks as "${name}"`);
+  }, [queue, showToast]);
+
+  const toggleMute = useCallback(() => {
+    setIsMuted(prev => {
+      const next = !prev;
+      try {
+        if (next) {
+          playerRef.current?.mute?.();
+        } else {
+          playerRef.current?.unMute?.();
+        }
+      } catch (e) {}
+      showToast(next ? 'Muted' : 'Unmuted');
+      return next;
+    });
+  }, [showToast]);
+
+  const seekRelative = useCallback((deltaSec) => {
+    try {
+      const cur = playerRef.current?.getCurrentTime ? playerRef.current.getCurrentTime() : currentTimeRef.current || 0;
+      const dur = playerRef.current?.getDuration ? playerRef.current.getDuration() : 0;
+      const target = Math.max(0, Math.min(cur + deltaSec, dur || 999999));
+      handleSeek(target);
+      showToast(`${deltaSec > 0 ? '+' : ''}${deltaSec}s`);
+    } catch (e) {}
+  }, [handleSeek, showToast]);
+
+  const adjustVolume = useCallback((deltaPercent) => {
+    setVolume(prev => {
+      const next = Math.max(0, Math.min(100, Math.round(prev + deltaPercent * 100)));
+      try {
+        playerRef.current?.setVolume?.(next);
+      } catch (e) {}
+      showToast(`Volume: ${next}%`);
+      return next;
+    });
+  }, [showToast]);
+
+  const toggleDataSaver = useCallback(() => {
+    setIsDataSaverEnabled(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('loopra_datasaver', String(next));
+      } catch (e) {}
+      showToast(next ? 'Data Saver enabled' : 'Data Saver disabled');
+      return next;
+    });
+  }, [showToast]);
+
+  const handleFindSimilar = useCallback((track, e) => {
+    if (e) e.stopPropagation();
+    if (!track) return;
+    setSimilarSongsTrack(track);
+  }, []);
+
+  // Global Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const target = e.target;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+      const activeEl = document.activeElement;
+      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) {
+        return;
+      }
+
+      if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        togglePlayPause();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        seekRelative(-5);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        seekRelative(5);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        adjustVolume(0.05);
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        adjustVolume(-0.05);
+      } else if (e.key === 'm' || e.key === 'M') {
+        e.preventDefault();
+        toggleMute();
+      } else if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        handleNextSong();
+      } else if (e.key === 'p' || e.key === 'P') {
+        e.preventDefault();
+        handlePrevSong();
+      } else if (e.key === 'l' || e.key === 'L') {
+        e.preventDefault();
+        setIsLyricsOpen(prev => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [togglePlayPause, seekRelative, adjustVolume, toggleMute, handleNextSong, handlePrevSong]);
+
 
   const isSongLiked = useCallback((song) => {
     if (!song) return false;
@@ -5043,7 +5319,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
                   </div>
                   {cmsConfig?.branding?.siteName ? (
-                    <h1 className="text-lg font-display font-extrabold tracking-tight tracking-wider text-white whitespace-nowrap">{cmsConfig.branding.siteName}</h1>
+                    <span className="text-lg font-display font-extrabold tracking-tight tracking-wider text-white whitespace-nowrap">{cmsConfig.branding.siteName}</span>
                   ) : null}
                 </>
               )}
@@ -5290,7 +5566,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
               </div>
               {cmsConfig?.branding?.siteName ? (
-                <h1 className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white">{cmsConfig.branding.siteName}</h1>
+                <span className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white">{cmsConfig.branding.siteName}</span>
               ) : null}
             </div>
 
@@ -5527,7 +5803,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             <div className="p-3.5 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl border border-amber-500/25 bg-neutral-900/80 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_25px_rgba(var(--accent-rgb,245,158,11),0.08)] w-full min-w-0">
               <div className="flex items-center gap-2 mb-2">
                 <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_var(--accent-color,#f59e0b)] animate-pulse" />
-                <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">Discover & Search Tracks</h2>
+                <h1 className="text-2xl font-display font-extrabold tracking-tight text-white">Discover & Search Tracks</h1>
               </div>
               <p className="text-xs text-neutral-400 mb-6">Type a song, artist, or album to stream music in 3D audio space.</p>
               
@@ -5606,6 +5882,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                                 <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
                               )}
                               <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                              <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
+                                <span>⏭️</span>
+                                <span>Play Next</span>
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); handleFindSimilar(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-amber-400 hover:bg-neutral-800 transition flex items-center gap-2">
+                                <span>✨</span>
+                                <span>Similar Songs</span>
+                              </button>
                               <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
                               <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
                             </div>
@@ -5841,9 +6125,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   </div>
 
                   <div className="w-full min-w-0 px-1 sm:px-0">
-                    <h2 className="text-base sm:text-2xl md:text-3xl font-display font-extrabold text-white tracking-tight line-clamp-2 leading-snug">
+                    <h1 className="text-base sm:text-2xl md:text-3xl font-display font-extrabold text-white tracking-tight line-clamp-2 leading-snug">
                       {currentSong ? currentSong.title : ((trendingSongs?.[0] || TRENDING_SONGS[0])?.title || 'High-Fidelity Retro & Modern Lounge')}
-                    </h2>
+                    </h1>
                     <p className="text-xs sm:text-sm text-amber-400/90 font-medium mt-0.5 sm:mt-1 truncate max-w-full">
                       {currentSong ? (currentSong.artist || currentSong.channel) : ((trendingSongs?.[0] || TRENDING_SONGS[0])?.channel || 'Drop the needle on curated trending hits, nostalgia stations, or search any track.')}
                     </p>
@@ -6194,6 +6478,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                                 <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
                               )}
                               <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                              <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
+                                <span>⏭️</span>
+                                <span>Play Next</span>
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); handleFindSimilar(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-amber-400 hover:bg-neutral-800 transition flex items-center gap-2">
+                                <span>✨</span>
+                                <span>Similar Songs</span>
+                              </button>
                               <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
                               <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
                             </div>
@@ -6273,7 +6565,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                               <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
                             )}
                             <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
-                            <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                            <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
+                                <span>⏭️</span>
+                                <span>Play Next</span>
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); handleFindSimilar(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-amber-400 hover:bg-neutral-800 transition flex items-center gap-2">
+                                <span>✨</span>
+                                <span>Similar Songs</span>
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
                           </div>
                         )}
                       </div>
@@ -6348,6 +6648,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                             <div className="absolute right-0 top-full mt-1.5 w-48 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
                               <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
                               <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                              <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
+                                <span>⏭️</span>
+                                <span>Play Next</span>
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); handleFindSimilar(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-amber-400 hover:bg-neutral-800 transition flex items-center gap-2">
+                                <span>✨</span>
+                                <span>Similar Songs</span>
+                              </button>
                               <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
                               <button
                                 onClick={(e) => {
@@ -6481,7 +6789,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                                   <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
                                 )}
                                 <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
-                                <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                                <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
+                                <span>⏭️</span>
+                                <span>Play Next</span>
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); handleFindSimilar(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-amber-400 hover:bg-neutral-800 transition flex items-center gap-2">
+                                <span>✨</span>
+                                <span>Similar Songs</span>
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
                                 <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
                               </div>
                             )}
@@ -6611,6 +6927,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               onExit={() => {
                 setActiveTab('home');
                 window.history.pushState(null, '', '/');
+                setReviewsRefreshKey(k => k + 1);
                 // Revert any uncommitted live draft preview back to published config
                 const published = getCachedCmsConfig();
                 setCmsConfig(published);
@@ -6625,6 +6942,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               }}
               onOpenAuth={openAuthModal}
               showToast={showToast}
+              onReviewsUpdated={() => setReviewsRefreshKey(k => k + 1)}
               onUserUpdated={(updatedUser) => {
                 if (!updatedUser) return;
                 setUser(prev => {
@@ -6648,6 +6966,26 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
         )}
       </main>
+      <ListeningRoomsModal
+        isOpen={isListeningRoomsOpen}
+        onClose={() => setIsListeningRoomsOpen(false)}
+        socket={socket}
+        user={user}
+        currentSong={currentSong}
+        isPlaying={isPlaying}
+        onPlaySong={playSong}
+        showToast={showToast}
+      />
+
+      <SimilarSongsModal
+        isOpen={Boolean(similarSongsTrack)}
+        onClose={() => setSimilarSongsTrack(null)}
+        track={similarSongsTrack}
+        onPlaySong={playSong}
+        onAddToQueue={addToQueue}
+        showToast={showToast}
+      />
+
       </div>
 
       {isBottomPlayerVisible && (
@@ -7270,6 +7608,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     Tap & hold to slide
                   </span>
                   <span className="text-xs font-medium bg-neutral-800 text-neutral-400 px-3 py-1 rounded-full">{queue.length} tracks</span>
+                                    {queue.length > 0 && (
+                    <button
+                      onClick={handleSaveQueueAsPlaylist}
+                      className="text-xs text-amber-300 hover:text-amber-200 px-3 py-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition cursor-pointer flex items-center gap-1 font-medium"
+                      title="Save Queue as Playlist"
+                      aria-label="Save Queue as Playlist"
+                    >
+                      <Icon name="plus" className="w-3.5 h-3.5" />
+                      <span>Save Playlist</span>
+                    </button>
+                  )}
                   {queue.length > 0 && (
                     <button
                       onClick={() => {
@@ -7542,6 +7891,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         onClose={() => setIsPlayerSettingsOpen(false)}
         currentSong={currentSong}
         sleepTimerRemaining={sleepTimerRemaining}
+        isDataSaverEnabled={isDataSaverEnabled}
+        onToggleDataSaver={toggleDataSaver}
         onSetSleepTimer={(mins) => {
           setSleepTimerRemaining(mins * 60);
           showToast(`Sleep timer set for ${mins} minutes`);

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'loopra-v4-shell';
+const CACHE_NAME = 'loopra-v5-shell';
 const APP_SHELL = [
   '/',
   '/index.html',
