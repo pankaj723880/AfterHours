@@ -29,6 +29,15 @@ import UserProfileModal from './components/Profile/UserProfileModal';
 import UserAvatar from './components/Common/UserAvatar';
 import { getAvatarUrl } from './utils/avatar';
 import DiscoverSwipe from './components/Discover/DiscoverSwipe';
+import DiscoverView from './components/Discover/DiscoverView';
+import {
+  initNavigation,
+  pushNavigation,
+  popNavigation,
+  syncPopState,
+  canGoBack,
+  buildPath
+} from './utils/navigationManager';
 import RecommendedRow from './components/Common/RecommendedRow';
 import HomeHero from './components/Home/HomeHero';
 import FeatureShortcuts from './components/Home/FeatureShortcuts';
@@ -55,9 +64,7 @@ import { updateRouteMetadata } from './utils/seo';
 import { TrackDeduplicator, getCanonicalSongKey } from './utils/trackIdentity';
 import {
   isThumbnailUrlFormatValid,
-  getCleanThumbnail,
-  isVideoIdInvalid,
-  invalidateVideoIdClient
+  getCleanThumbnail
 } from './utils/thumbnailValidator';
 
 import { io } from 'socket.io-client';
@@ -386,8 +393,7 @@ const handleImageError = (e, fallbackTitle, explicitId) => {
   target.dataset.errorAttempts = (attempts + 1).toString();
 
   const ytMatch = currentSrc.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})\//) || (safeId ? [null, safeId] : null);
-  const isInvalid = typeof isVideoIdInvalid === 'function' && ytMatch && ytMatch[1] ? isVideoIdInvalid(ytMatch[1]) : false;
-  if (ytMatch && ytMatch[1] && typeof ytMatch[1] === 'string' && !isInvalid && !currentSrc.includes('mqdefault.jpg')) {
+  if (ytMatch && ytMatch[1] && typeof ytMatch[1] === 'string' && !currentSrc.includes('mqdefault.jpg')) {
     target.src = `https://i.ytimg.com/vi/${ytMatch[1]}/mqdefault.jpg`;
     return;
   }
@@ -1295,20 +1301,20 @@ const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlled
   );
 };
 export default function App() {
-  const [activeTab, setActiveTab] = useState(() => {
+  const initialNav = useMemo(() => {
     if (typeof window !== 'undefined') {
-      const path = window.location.pathname;
-      const params = new URLSearchParams(window.location.search);
-      if (path === '/admin') return 'admin';
-      if (path === '/discover' || params.get('q')) return 'discover';
-      if (path === '/downloads/explore' || path === '/downloads-explore') return 'downloads';
-      if (path === '/for-you' || path === '/recommendations') return 'for-you';
-      if (['/library', '/history', '/playlists', '/downloads', '/barber', '/truck', '/pauwa', '/mood', '/timemachine', '/activity', '/radio', '/indian-radio'].includes(path)) {
-        return path === '/indian-radio' ? 'radio' : path.replace('/', '');
-      }
+      return initNavigation(window.location.pathname, window.location.search);
     }
-    return 'home';
-  });
+    return { currentRoute: { tab: 'home', path: '/' }, stack: [{ tab: 'home', path: '/' }] };
+  }, []);
+
+  const [activeTab, setActiveTab] = useState(() => initialNav.currentRoute.tab);
+  const [navigationStack, setNavigationStack] = useState(() => initialNav.stack);
+  const navigationStackRef = useRef(initialNav.stack);
+  useEffect(() => {
+    navigationStackRef.current = navigationStack;
+  }, [navigationStack]);
+  const navigationHistory = navigationStack;
 
   const [offlineSubView, setOfflineSubView] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -1508,7 +1514,6 @@ export default function App() {
   }, []);
 
   const [openMenuId, setOpenMenuId] = useState(null);
-  const [navigationHistory, setNavigationHistory] = useState([]);
 
   const validateAndSanitizeItems = (raw, fallback) => {
     try {
@@ -2946,8 +2951,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const trimmed = (artistName || '').trim();
     if (!trimmed) return;
     setSearchQuery(trimmed);
-    handleStationSelect('discover');
-    window.history.pushState({ tab: 'discover', q: trimmed }, '', `/discover?q=${encodeURIComponent(trimmed)}`);
+    handleStationSelect('discover', { q: trimmed });
     fetchYouTubeMusic(trimmed);
   };
 
@@ -4404,33 +4408,48 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const mainScrollRef = useRef(null);
   const scrollPositions = useRef({});
 
-  const handleStationSelect = (stationKey) => {
+  const handleStationSelect = (stationKey, extraParams = {}) => {
     setShowQueuePanel(false);
     if (mainScrollRef.current) {
       scrollPositions.current[activeTab] = mainScrollRef.current.scrollTop;
     }
-    setNavigationHistory(prev => {
-      if (activeTab === stationKey) return prev;
-      return [...prev, activeTab];
-    });
+
+    const targetRoute = {
+      tab: stationKey,
+      params: extraParams,
+      path: buildPath(stationKey, extraParams)
+    };
+
+    const { entry, stack: newStack } = pushNavigation(navigationStackRef.current, targetRoute);
+    navigationStackRef.current = newStack;
+    setNavigationStack(newStack);
+
     setActiveTab(stationKey);
     if (stationKey === 'downloads') {
-      setOfflineSubView('library');
+      setOfflineSubView(extraParams.subView || 'library');
+    } else if (stationKey === 'playlists' && !extraParams.id) {
+      setSelectedPlaylistForView(null);
     }
+
+    if (stationKey === 'home' && !extraParams.showAll) {
+      setShowAllTrending(false);
+      setShowAllArtists(false);
+      setShowAllAlbums(false);
+      setShowAllRadio(false);
+    }
+
     setCurrentBgIndex(0);
     setIsSidebarOpen(false);
 
     // Sync browser URL
-    if (stationKey === 'discover') {
-      const q = searchQuery.trim();
-      const url = q ? `/discover?q=${encodeURIComponent(q)}` : '/discover';
-      window.history.pushState({ tab: 'discover', q }, '', url);
-    } else if (stationKey === 'admin') {
-      window.history.pushState({ tab: 'admin' }, '', '/admin');
-    } else if (stationKey === 'home') {
-      window.history.pushState({ tab: 'home' }, '', '/');
-    } else {
-      window.history.pushState({ tab: stationKey }, '', `/${stationKey}`);
+    if (typeof window !== 'undefined') {
+      try {
+        window.history.pushState(
+          { ...entry, loopraNavIdx: newStack.length - 1, loopraInit: true },
+          '',
+          entry.path
+        );
+      } catch (e) {}
     }
 
     if (videoModalSong) {
@@ -4442,48 +4461,141 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       } else if (mainScrollRef.current) {
         mainScrollRef.current.scrollTop = 0;
       }
-    }, 50);
+    }, 40);
   };
 
   const handleGoBack = () => {
     setShowQueuePanel(false);
+
+    // If on Home with any "See all" expanded, collapse it first
     if (activeTab === "home" && (showAllTrending || showAllArtists || showAllAlbums || showAllRadio)) {
       setShowAllTrending(false);
       setShowAllArtists(false);
       setShowAllAlbums(false);
       setShowAllRadio(false);
+      const { target, stack: newStack } = popNavigation(navigationStackRef.current);
+      navigationStackRef.current = newStack;
+      setNavigationStack(newStack);
+      if (typeof window !== 'undefined') {
+        window.history.replaceState({ ...target, loopraInit: true }, '', target.path || '/');
+      }
       return;
     }
 
-    setNavigationHistory(prev => {
-      const newHistory = [...prev];
-      const prevTab = newHistory.pop();
-      if (prevTab) {
-        if (mainScrollRef.current) {
-          scrollPositions.current[activeTab] = mainScrollRef.current.scrollTop;
-        }
-        setActiveTab(prevTab);
-        setCurrentBgIndex(0);
-
-        if (prevTab === 'home') {
-          window.history.pushState({ tab: 'home' }, '', '/');
-
-        } else if (prevTab === 'discover') {
-          const q = searchQuery.trim();
-          const url = q ? `/discover?q=${encodeURIComponent(q)}` : '/discover';
-          window.history.pushState({ tab: 'discover', q }, '', url);
-        } else if (prevTab === 'admin') {
-          window.history.pushState({ tab: 'admin' }, '', '/admin');
-        }
-
-        setTimeout(() => {
-          if (mainScrollRef.current && scrollPositions.current[prevTab] !== undefined) {
-            mainScrollRef.current.scrollTop = scrollPositions.current[prevTab];
-          }
-        }, 50);
+    // If inside playlist view, go back to playlists list
+    if (selectedPlaylistForView) {
+      setSelectedPlaylistForView(null);
+      const { target, stack: newStack } = popNavigation(navigationStackRef.current);
+      navigationStackRef.current = newStack;
+      setNavigationStack(newStack);
+      if (typeof window !== 'undefined') {
+        window.history.replaceState({ ...target, loopraInit: true }, '', target.path || '/playlists');
       }
-      return newHistory;
-    });
+      return;
+    }
+
+    // If inside downloads explore view, go back to downloads library
+    if (offlineSubView === 'explore') {
+      setOfflineSubView('library');
+      const { target, stack: newStack } = popNavigation(navigationStackRef.current);
+      navigationStackRef.current = newStack;
+      setNavigationStack(newStack);
+      if (typeof window !== 'undefined') {
+        window.history.replaceState({ ...target, loopraInit: true }, '', target.path || '/downloads');
+      }
+      return;
+    }
+
+    // Standard in-app back popping
+    const { target, stack: newStack } = popNavigation(navigationStackRef.current);
+    navigationStackRef.current = newStack;
+    setNavigationStack(newStack);
+
+    if (mainScrollRef.current) {
+      scrollPositions.current[activeTab] = mainScrollRef.current.scrollTop;
+    }
+
+    setActiveTab(target.tab);
+    setCurrentBgIndex(0);
+
+    // Restore destination parameters
+    if (target.tab === 'discover') {
+      const q = target.params?.q || '';
+      setSearchQuery(q);
+      if (q) {
+        fetchYouTubeMusic(q);
+      }
+    } else if (target.tab === 'downloads') {
+      setOfflineSubView(target.params?.subView || 'library');
+    } else if (target.tab === 'playlists') {
+      if (!target.params?.id) {
+        setSelectedPlaylistForView(null);
+      }
+    } else if (target.tab === 'home') {
+      setShowAllTrending(target.params?.showAll === 'trending');
+      setShowAllArtists(target.params?.showAll === 'artists');
+      setShowAllAlbums(target.params?.showAll === 'albums');
+      setShowAllRadio(target.params?.showAll === 'radio');
+    }
+
+    // Sync browser URL
+    if (typeof window !== 'undefined') {
+      try {
+        window.history.replaceState(
+          { ...target, loopraNavIdx: newStack.length - 1, loopraInit: true },
+          '',
+          target.path || '/'
+        );
+      } catch (e) {}
+    }
+
+    setTimeout(() => {
+      if (mainScrollRef.current && scrollPositions.current[target.tab] !== undefined) {
+        mainScrollRef.current.scrollTop = scrollPositions.current[target.tab];
+      } else if (mainScrollRef.current) {
+        mainScrollRef.current.scrollTop = 0;
+      }
+    }, 40);
+  };
+
+  const handleSetShowAllTrending = (val) => {
+    const next = typeof val === 'function' ? val(showAllTrending) : val;
+    if (next && !showAllTrending) {
+      handleStationSelect('home', { showAll: 'trending' });
+      setShowAllTrending(true);
+    } else if (!next && showAllTrending) {
+      handleGoBack();
+    }
+  };
+
+  const handleSetShowAllArtists = (val) => {
+    const next = typeof val === 'function' ? val(showAllArtists) : val;
+    if (next && !showAllArtists) {
+      handleStationSelect('home', { showAll: 'artists' });
+      setShowAllArtists(true);
+    } else if (!next && showAllArtists) {
+      handleGoBack();
+    }
+  };
+
+  const handleSetShowAllAlbums = (val) => {
+    const next = typeof val === 'function' ? val(showAllAlbums) : val;
+    if (next && !showAllAlbums) {
+      handleStationSelect('home', { showAll: 'albums' });
+      setShowAllAlbums(true);
+    } else if (!next && showAllAlbums) {
+      handleGoBack();
+    }
+  };
+
+  const handleSetShowAllRadio = (val) => {
+    const next = typeof val === 'function' ? val(showAllRadio) : val;
+    if (next && !showAllRadio) {
+      handleStationSelect('home', { showAll: 'radio' });
+      setShowAllRadio(true);
+    } else if (!next && showAllRadio) {
+      handleGoBack();
+    }
   };
 
   useEffect(() => {
@@ -5075,35 +5187,37 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   useEffect(() => {
     const handlePopState = () => {
       if (typeof window === 'undefined') return;
-      const path = window.location.pathname;
-      const params = new URLSearchParams(window.location.search);
-      const q = (params.get('q') || '').trim();
+      const { pathname, search } = window.location;
+      const { target, stack: newStack } = syncPopState(navigationStackRef.current, pathname, search);
+      navigationStackRef.current = newStack;
+      setNavigationStack(newStack);
 
-      if (path === '/admin') {
-        setActiveTab('admin');
-      } else if (path === '/discover' || q) {
-        setActiveTab('discover');
+      setActiveTab(target.tab);
+
+      if (target.tab === 'discover') {
+        const q = target.params?.q || '';
+        setSearchQuery(q);
         if (q) {
-          setSearchQuery(q);
           fetchYouTubeMusic(q);
         } else {
-          setSearchQuery('');
+          setSearchResults([]);
         }
-      } else if (path === '/downloads/explore' || path === '/downloads-explore') {
-        setActiveTab('downloads');
-        setOfflineSubView('explore');
-      } else if (['/library', '/history', '/playlists', '/downloads', '/barber', '/truck', '/pauwa', '/mood', '/timemachine', '/activity', '/radio', '/indian-radio'].includes(path)) {
-        setActiveTab(path === '/indian-radio' ? 'radio' : path.replace('/', ''));
-        if (path === '/downloads') {
-          setOfflineSubView('library');
+      } else if (target.tab === 'downloads') {
+        setOfflineSubView(target.params?.subView || 'library');
+      } else if (target.tab === 'playlists') {
+        if (!target.params?.id) {
+          setSelectedPlaylistForView(null);
         }
-      } else if (path === '/' || path === '') {
-        setActiveTab('home');
+      } else if (target.tab === 'home') {
+        setShowAllTrending(target.params?.showAll === 'trending');
+        setShowAllArtists(target.params?.showAll === 'artists');
+        setShowAllAlbums(target.params?.showAll === 'albums');
+        setShowAllRadio(target.params?.showAll === 'radio');
       }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [fetchYouTubeMusic]);
 
   const currentStation = stationsMap[activeTab] || SPECIAL_STATIONS[activeTab];
   const currentBgImage = currentStation?.bgImages?.[currentBgIndex] || currentStation?.bgImages?.[0];
@@ -5598,12 +5712,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 <span className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white">{cmsConfig.branding.siteName}</span>
               ) : null}
             </div>
-
-            {/* Desktop Clock */}
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-neutral-900/80 backdrop-blur-xl border border-neutral-800 text-xs font-mono text-amber-300 shadow-md">
-              <span>⏳</span>
-              <span>{clockString || "00:00:00"}</span>
-            </div>
           </div>
 
           {/* CENTER (Desktop only): ACTIVE USERS */}
@@ -5778,11 +5886,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 <span className="hidden sm:inline">Login</span>
               </button>
             )}
-
-            {/* Mobile Clock */}
-            <div className="md:hidden px-2 py-1 rounded-xl bg-neutral-900/80 backdrop-blur-xl border border-neutral-800 font-mono text-[10px] sm:text-[11px] text-amber-300">
-              {clockString || "00:00"}
-            </div>
           </div>
         </header>
 
@@ -5805,11 +5908,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
 
 
-        {((navigationHistory.length > 0 && activeTab !== 'home') || (activeTab === 'home' && (showAllTrending || showAllArtists || showAllAlbums || showAllRadio))) && (
+        {canGoBack(navigationStack, activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio, selectedPlaylistForView, offlineSubView }) && (
           <div className="relative z-20 mb-6 flex justify-start">
             <button
               onClick={handleGoBack}
-              className="flex items-center gap-2 px-4 py-2 bg-neutral-900/80 hover:bg-neutral-800 backdrop-blur-xl border border-neutral-700/50 rounded-2xl text-neutral-300 hover:text-white transition shadow-lg group"
+              className="flex items-center gap-2 px-4 py-2 bg-neutral-900/80 hover:bg-neutral-800 backdrop-blur-xl border border-neutral-700/50 rounded-2xl text-neutral-300 hover:text-white transition shadow-lg group cursor-pointer active:scale-95"
             >
               <Icon name="arrowLeft" className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
               <span className="text-sm font-medium tracking-wide">Back</span>
@@ -5818,214 +5921,51 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'discover' && (
-          <div className="max-w-4xl mx-auto space-y-6 relative z-10">
-            <div className="p-3.5 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl border border-amber-500/25 bg-neutral-900/80 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_25px_rgba(var(--accent-rgb,245,158,11),0.08)] w-full min-w-0">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_var(--accent-color,#f59e0b)] animate-pulse" />
-                <h1 className="text-2xl font-display font-extrabold tracking-tight text-white">Discover & Search Tracks</h1>
-              </div>
-              <p className="text-xs text-neutral-400 mb-6">Type a song, artist, or album to stream music in 3D audio space.</p>
-              
-              <HomeSearchBar
-                onSearch={(queryText) => {
-                  const trimmed = (queryText || '').trim();
-                  if (!trimmed) return;
-                  setSearchQuery(trimmed);
-                  fetchYouTubeMusic(trimmed);
-                }}
-                onSelectSong={playSong}
-                onPlaySong={playSong}
-                placeholder={cmsConfig?.searchPage?.placeholder || "Search song, artist, or album..."}
-                showQuickTags={false}
-                user={user}
-                token={authToken}
-                backendUrl={BACKEND_URL}
-              />
-            </div>
-
-            {searchResults.length > 0 && (
-              <div className="space-y-3">
-                <div className="flex justify-between items-center px-1">
-                  <h3 className="text-lg font-display font-extrabold tracking-tight text-white flex items-center gap-2">
-                    <span className="text-amber-500">⚡</span>
-                    Search Results
-                  </h3>
-                  <span className="text-xs text-neutral-400 font-mono">Showing {searchResults.length} {searchResults.length === 1 ? 'song' : 'songs'}</span>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2.5">
-                  {searchResults.map((track, i) => {
-                    const isCurrent = currentSong?.id === track.id;
-                    const isMenuOpen = openMenuId === `${track.id}-${i}`;
-                    return (
-                      <div
-                        key={`${track.id}-${i}`}
-                        onClick={() => playSong(track)}
-                        className={`p-3.5 rounded-2xl border flex items-center justify-between cursor-pointer transition-all duration-200 backdrop-blur-xl relative hover:-translate-y-0.5 ${
-                          isMenuOpen ? 'z-30' : 'z-auto'
-                        } ${
-                          isCurrent
-                            ? 'bg-gradient-to-r from-amber-500/20 via-orange-500/10 to-neutral-900/70 border-amber-500/80 shadow-[0_0_25px_rgba(var(--accent-rgb,245,158,11),0.25)]'
-                            : 'bg-neutral-900/40 border-neutral-800/80 hover:bg-neutral-850 hover:border-amber-500/40 hover:shadow-[0_8px_30px_rgba(0,0,0,0.6)]'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3.5 min-w-0">
-                          <span className="text-xs font-mono text-neutral-400 w-6 text-center">{i + 1}</span>
-                          <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0 shadow-md" onError={(e) => handleImageError(e, track.title, track.id)} />
-                          <div className="min-w-0">
-                            <h4 className={`font-bold text-xs truncate ${isCurrent ? 'text-amber-400' : 'text-white'}`}>
-                              {track.title}
-                            </h4>
-                            <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
-                          </div>
-                        </div>
-
-                        <div className={`flex items-center gap-2 shrink-0 relative ${isMenuOpen ? 'z-40' : ''}`}>
-                          <button onClick={(e) => handleOpenVideo(track, e)} className="p-1.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition flex items-center shrink-0" title="See Video">
-                            <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
-                          </button>
-                          
-                          <button 
-                            onClick={(e) => { 
-                              e.stopPropagation(); 
-                              setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); 
-                            }} 
-                            className="p-1 text-neutral-500 hover:text-white transition shrink-0"
-                          >
-                            <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
-                          </button>
-
-                          {isMenuOpen && (
-                            <div className="absolute right-0 top-full mt-1.5 w-44 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
-                              {currentSong?.id !== track.id && (
-                                <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
-                              )}
-                              <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
-                              <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
-                                <span>⏭️</span>
-                                <span>Play Next</span>
-                              </button>
-                              <button onClick={(e) => { e.stopPropagation(); handleFindSimilar(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-amber-400 hover:bg-neutral-800 transition flex items-center gap-2">
-                                <span>✨</span>
-                                <span>Similar Songs</span>
-                              </button>
-                              <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
-                              <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Pagination Controls */}
-                <div className="text-center pt-6 pb-4 space-y-2">
-                  {searchLoadMoreError && (
-                    <div className="text-xs text-rose-400 bg-rose-950/40 border border-rose-800/60 rounded-xl px-4 py-2 inline-block max-w-md">
-                      <span>{searchLoadMoreError}</span>
-                    </div>
-                  )}
-
-                  {isLoadingMoreSearch ? (
-                    <button
-                      type="button"
-                      disabled
-                      className="px-6 py-3 rounded-2xl bg-neutral-800 text-xs font-bold text-amber-400/70 border border-neutral-700/60 shadow-xl inline-flex items-center justify-center gap-2 cursor-not-allowed opacity-80"
-                    >
-                      <Icon name="sparkles" className="w-3.5 h-3.5 animate-spin text-amber-400" />
-                      <span>Loading...</span>
-                    </button>
-                  ) : searchLoadMoreError ? (
-                    <button
-                      type="button"
-                      onClick={handleLoadMoreSearchResults}
-                      className="px-6 py-3 rounded-2xl bg-neutral-800 hover:bg-neutral-700 active:scale-[0.98] text-xs font-bold text-amber-400 border border-rose-500/50 hover:border-amber-500/60 transition shadow-xl cursor-pointer inline-flex items-center justify-center gap-2"
-                    >
-                      <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Retry</span>
-                    </button>
-                  ) : hasMoreSearchResults ? (
-                    <button
-                      type="button"
-                      onClick={handleLoadMoreSearchResults}
-                      className="px-6 py-3 rounded-2xl bg-neutral-800 hover:bg-neutral-700 active:scale-[0.98] text-xs font-bold text-amber-400 border border-neutral-700 hover:border-amber-500/50 transition shadow-xl cursor-pointer inline-flex items-center justify-center gap-2"
-                    >
-                      <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Load More</span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled
-                      className="px-6 py-3 rounded-2xl bg-neutral-900/60 text-xs font-medium text-neutral-500 border border-neutral-800/80 cursor-default inline-flex items-center justify-center gap-2"
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-neutral-600" />
-                      <span>End of results</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Loading Skeletons */}
-            {isLoading && (
-              <div className="space-y-3 pt-2 animate-pulse">
-                <div className="h-4 bg-neutral-800 rounded w-1/4"></div>
-                <div className="grid grid-cols-1 gap-2">
-                  {[1, 2, 3, 4, 5].map(n => (
-                    <div key={n} className="p-3.5 rounded-2xl border border-neutral-800/60 bg-neutral-900/40 flex items-center justify-between">
-                      <div className="flex items-center gap-3.5 flex-1">
-                        <div className="w-12 h-12 rounded-2xl bg-neutral-800 shrink-0"></div>
-                        <div className="space-y-2 flex-1">
-                          <div className="h-3.5 bg-neutral-800 rounded w-3/5"></div>
-                          <div className="h-2.5 bg-neutral-800/60 rounded w-2/5"></div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Error State */}
-            {!isLoading && searchError && (
-              <div className="p-8 rounded-3xl border border-rose-500/30 bg-rose-950/20 text-center space-y-3">
-                <div className="w-12 h-12 mx-auto rounded-full bg-rose-500/10 flex items-center justify-center text-rose-400">
-                  <Icon name="sparkles" className="w-6 h-6" />
-                </div>
-                <h3 className="text-base font-bold text-white">Search Encountered an Issue</h3>
-                <p className="text-xs text-rose-300/80 max-w-md mx-auto">{searchError}</p>
-                <button
-                  type="button"
-                  onClick={() => fetchYouTubeMusic(searchQuery)}
-                  className="px-5 py-2.5 rounded-2xl bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-white transition inline-flex items-center gap-2 border border-neutral-700"
-                >
-                  <Icon name="sparkles" className="w-3.5 h-3.5" />
-                  <span>Retry Search</span>
-                </button>
-              </div>
-            )}
-
-            {/* Empty State */}
-            {!isLoading && !searchError && hasSearched && searchResults.length === 0 && (
-              <div className="p-10 rounded-3xl border border-neutral-800/80 bg-neutral-900/40 text-center space-y-3">
-                <div className="w-12 h-12 mx-auto rounded-full bg-neutral-800 flex items-center justify-center text-neutral-400">
-                  <Icon name="search" className="w-6 h-6" />
-                </div>
-                <h3 className="text-base font-bold text-white">No Tracks Found</h3>
-                <p className="text-xs text-neutral-400 max-w-sm mx-auto">
-                  We couldn't find any tracks matching "{searchQuery}". Try different keywords, artist names, or movie titles.
-                </p>
-              </div>
-            )}
-
+          <div key="page-discover" className="page-transition w-full relative z-10">
+            <DiscoverView
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              searchResults={searchResults}
+              fetchYouTubeMusic={fetchYouTubeMusic}
+              isLoading={isLoading}
+              searchError={searchError}
+              hasSearched={hasSearched}
+              isLoadingMoreSearch={isLoadingMoreSearch}
+              hasMoreSearchResults={hasMoreSearchResults}
+              searchLoadMoreError={searchLoadMoreError}
+              handleLoadMoreSearchResults={handleLoadMoreSearchResults}
+              currentSong={currentSong}
+              playSong={playSong}
+              openMenuId={openMenuId}
+              setOpenMenuId={setOpenMenuId}
+              handleOpenVideo={handleOpenVideo}
+              queue={queue}
+              addToQueue={addToQueue}
+              removeFromQueue={removeFromQueue}
+              likedSongs={likedSongs}
+              toggleLike={toggleLike}
+              playNext={playNext}
+              handleFindSimilar={handleFindSimilar}
+              handleAddToPlaylistClick={handleAddToPlaylistClick}
+              showToast={showToast}
+              handleImageError={handleImageError}
+              trendingSongs={trendingSongs}
+              popularAlbums={popularAlbums}
+              user={user}
+              authToken={authToken}
+              backendUrl={BACKEND_URL}
+              cmsConfig={cmsConfig}
+              onNavigate={(tab) => {
+                handleStationSelect(tab);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+            />
             <DisclaimerFooter footer={cmsConfig?.footer} />
           </div>
         )}
 
         {activeTab === 'swipe' && (
-          <div className="max-w-2xl mx-auto space-y-6 relative z-10 py-2 sm:py-4">
+          <div key="page-swipe" className="page-transition max-w-2xl mx-auto space-y-6 relative z-10 py-2 sm:py-4">
             <DiscoverSwipe
               onPlaySong={playSong}
               onTogglePlay={togglePlayPause}
@@ -6040,10 +5980,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
         )}
 
-
-
         {activeTab === 'for-you' && (
-          <div className="max-w-7xl mx-auto px-0 md:px-4 pt-1 md:pt-6 space-y-6 md:space-y-10 w-full min-w-0">
+          <div key="page-for-you" className="page-transition max-w-7xl mx-auto px-0 md:px-4 pt-1 md:pt-6 space-y-6 md:space-y-10 w-full min-w-0">
             <PersonalizedRecommendationsSection
               backendUrl={BACKEND_URL}
               authToken={authToken}
@@ -6062,7 +6000,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'home' && (
-          <div className="max-w-7xl mx-auto px-0 md:px-4 pt-0.5 md:pt-2 space-y-4 md:space-y-6 w-full min-w-0">
+          <div key={`page-home-${showAllTrending ? 'trending' : showAllArtists ? 'artists' : showAllAlbums ? 'albums' : showAllRadio ? 'radio' : 'main'}`} className="page-transition max-w-7xl mx-auto px-0 md:px-4 pt-0.5 md:pt-2 space-y-4 md:space-y-6 w-full min-w-0">
             {/* Promotional Hero Banner if configured in CMS */}
             <CmsHeroBanner 
               banner={cmsConfig?.banner} 
@@ -6079,6 +6017,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
             {/* Cinematic Hero Banner with Integrated Voice Search & Quick Tags */}
             <HomeHero 
+              clockString={clockString}
               onSearch={handleSearchFromHome}
               onSelectSong={playSong}
               onPlaySong={playSong}
@@ -6279,7 +6218,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         items={uniqueTrendingSongs}
                         fallbackItems={[]}
                         showAll={showAllTrending}
-                        setShowAll={setShowAllTrending}
+                        setShowAll={handleSetShowAllTrending}
                         renderItem={(song) => (
                           <div 
                             onClick={() => handlePlayTrending(song.query || song.title, song, uniqueTrendingSongs)} 
@@ -6330,7 +6269,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         subtitle={sec.subtitle || "Find your favorite singers"}
                         items={POPULAR_ARTISTS}
                         showAll={showAllArtists}
-                        setShowAll={setShowAllArtists}
+                        setShowAll={handleSetShowAllArtists}
                         renderItem={(artist) => (
                           <div onClick={() => handleArtistClick(artist.name)} className="group cursor-pointer flex flex-col items-center">
                             <div className="relative mb-2 md:mb-3 w-full aspect-square rounded-full overflow-hidden shadow-lg border-2 border-transparent group-hover:border-amber-500 transition-all duration-300">
@@ -6355,7 +6294,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         items={popularAlbums}
                         fallbackItems={POPULAR_ALBUMS}
                         showAll={showAllAlbums}
-                        setShowAll={setShowAllAlbums}
+                        setShowAll={handleSetShowAllAlbums}
                         renderItem={(album) => (
                           <div onClick={() => handlePlayTrending(album.query || album.title, album, popularAlbums)} className="group cursor-pointer">
                             <div className="relative mb-2 md:mb-3">
@@ -6382,7 +6321,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         items={popularRadio}
                         fallbackItems={POPULAR_RADIO}
                         showAll={showAllRadio}
-                        setShowAll={setShowAllRadio}
+                        setShowAll={handleSetShowAllRadio}
                         renderItem={(radio) => (
                           <div onClick={() => handlePlayTrending(radio.query || radio.title, radio, popularRadio)} className="group cursor-pointer">
                             <div className="relative mb-2 md:mb-3">
@@ -6417,7 +6356,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {Boolean(currentStation && activeTab !== 'home') && (
-          <div className="max-w-4xl mx-auto space-y-6 relative z-10">
+          <div key={`page-station-${activeTab}`} className="page-transition max-w-4xl mx-auto space-y-6 relative z-10">
             <div className="p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl border border-neutral-700/50 relative overflow-hidden shadow-2xl backdrop-blur-md bg-neutral-900/40 w-full min-w-0">
               <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
                 <div className="space-y-3">
@@ -6537,7 +6476,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'library' && (
-          <div className="max-w-4xl mx-auto space-y-6 relative z-10">
+          <div key="page-library" className="page-transition max-w-4xl mx-auto space-y-6 relative z-10">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">Liked Songs Collection</h2>
               {likedSongs.length > 0 && (
@@ -6602,7 +6541,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'history' && (
-          <div className="max-w-4xl mx-auto space-y-6 relative z-10">
+          <div key="page-history" className="page-transition max-w-4xl mx-auto space-y-6 relative z-10">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">Listening History</h2>
@@ -6710,7 +6649,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'playlists' && (
-          <div className="max-w-4xl mx-auto space-y-6 relative z-10">
+          <div key={`page-playlists-${selectedPlaylistForView?.id || 'list'}`} className="page-transition max-w-4xl mx-auto space-y-6 relative z-10">
             {!selectedPlaylistForView ? (
               <>
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -6743,7 +6682,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   {playlists.map(pl => (
                     <div 
                       key={pl.id} 
-                      onClick={() => setSelectedPlaylistForView(pl)}
+                      onClick={() => {
+                        setSelectedPlaylistForView(pl);
+                        handleStationSelect('playlists', { id: pl.id });
+                      }}
                       className="p-4 rounded-2xl border bg-neutral-900/50 hover:bg-neutral-800 active:scale-[0.98] border-neutral-800 cursor-pointer flex flex-col items-center justify-center gap-3 transition group text-center aspect-square"
                     >
                       <div className="w-16 h-16 rounded-2xl bg-neutral-800 group-hover:bg-amber-500/20 text-neutral-500 group-hover:text-amber-500 flex items-center justify-center transition">
@@ -6761,8 +6703,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               <>
                 <div className="flex items-center gap-4">
                   <button 
-                    onClick={() => setSelectedPlaylistForView(null)}
-                    className="p-2 rounded-2xl bg-neutral-800 hover:bg-neutral-700 text-white transition flex items-center justify-center"
+                    onClick={handleGoBack}
+                    className="p-2 rounded-2xl bg-neutral-800 hover:bg-neutral-700 text-white transition flex items-center justify-center cursor-pointer active:scale-95"
+                    title="Back to Playlists"
+                    aria-label="Back to Playlists"
                   >
                     <Icon name="skipPrev" className="w-4 h-4 rotate-180" />
                   </button>
@@ -6828,13 +6772,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'downloads' && (
-          <div className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+          <div key={`page-downloads-${offlineSubView}`} className="page-transition flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
             {offlineSubView === 'explore' ? (
               <OfflineEligibleExploreView
-                onBack={() => {
-                  setOfflineSubView('library');
-                  window.history.pushState(null, '', '/downloads');
-                }}
+                onBack={handleGoBack}
                 onPlayTrack={(track, list) => {
                   playSong(track, list || [track]);
                 }}
@@ -6853,7 +6794,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 showToast={showToast}
                 onExploreAuthorizedTracks={() => {
                   setOfflineSubView('explore');
-                  window.history.pushState(null, '', '/downloads/explore');
+                  handleStationSelect('downloads', { subView: 'explore' });
                 }}
               />
             )}
@@ -6862,7 +6803,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'mood' && (
-          <div className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+          <div key="page-mood" className="page-transition flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
             <MoodToMusicSection
               onPlaySong={playSong}
               onAddToQueue={(track) => addToQueue(track)}
@@ -6888,7 +6829,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {(activeTab === 'radio' || activeTab === 'indian-radio') && (
-          <div className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+          <div key="page-radio" className="page-transition flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
             <IndianRadioView
               currentSong={currentSong}
               isPlaying={isPlaying}
@@ -6901,7 +6842,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'timemachine' && (
-          <div className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+          <div key="page-timemachine" className="page-transition flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
             <TimeMachineRadio
               cmsConfig={cmsConfig}
               onPlaySong={playSong}
@@ -6917,7 +6858,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'activity' && (
-          <div className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+          <div key="page-activity" className="page-transition flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
             <ActivityFeed
               user={user}
               token={authToken}
@@ -6934,14 +6875,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'admin' && (
-          <div className="fixed inset-0 z-[60] bg-neutral-950 overflow-y-auto">
+          <div key="page-admin" className="page-transition fixed inset-0 z-[60] bg-neutral-950 overflow-y-auto">
             <AdminDashboard
               user={user}
               token={authToken}
               backendUrl={BACKEND_URL}
               onExit={() => {
-                setActiveTab('home');
-                window.history.pushState(null, '', '/');
+                handleGoBack();
                 setReviewsRefreshKey(k => k + 1);
                 // Revert any uncommitted live draft preview back to published config
                 const published = getCachedCmsConfig();

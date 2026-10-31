@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { recommendationsClient } from '../../services/recommendationsClient';
 import { TrackDeduplicator } from '../../utils/trackIdentity';
-import { getCleanThumbnail, isThumbnailUrlFormatValid, invalidateVideoIdClient, isVideoIdInvalid } from '../../utils/thumbnailValidator';
+import { getCleanThumbnail, isThumbnailUrlFormatValid } from '../../utils/thumbnailValidator';
+
+// Track-level runtime failed image cache for graceful component fallbacks
+const locallyFailedVideoIds = new Set();
 
 export default function PersonalizedRecommendationsSection({
   backendUrl,
@@ -265,7 +268,7 @@ export default function PersonalizedRecommendationsSection({
   const handleTrackImageFailure = useCallback((failedTrack, sectionKey) => {
     const failedId = failedTrack?.id || failedTrack?.videoId;
     if (!failedId || !sectionKey) return;
-    invalidateVideoIdClient(failedId);
+    locallyFailedVideoIds.add(failedId);
 
     setData(prev => {
       if (!prev) return prev;
@@ -406,8 +409,7 @@ export default function PersonalizedRecommendationsSection({
             onError={(e) => {
               const target = e.currentTarget;
               const attempts = parseInt(target.dataset.attempts || '0', 10);
-              const isInvalidId = typeof isVideoIdInvalid === 'function' ? isVideoIdInvalid(trackId) : false;
-              if (attempts === 0 && trackId && !target.src.includes('mqdefault') && !isInvalidId) {
+              if (attempts === 0 && trackId && !target.src.includes('mqdefault') && !locallyFailedVideoIds.has(trackId)) {
                 target.dataset.attempts = '1';
                 target.src = `https://i.ytimg.com/vi/${trackId}/mqdefault.jpg`;
               } else {

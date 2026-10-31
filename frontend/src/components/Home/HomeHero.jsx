@@ -1,8 +1,8 @@
 import React from 'react';
 import HomeSearchBar from '../Search/HomeSearchBar';
-import { Radio, Sparkles, History, BarChart3 } from 'lucide-react';
 
 export default function HomeHero({
+  clockString,
   onSearch,
   onSelectSong,
   onPlaySong,
@@ -14,13 +14,6 @@ export default function HomeHero({
   onNavigate,
   onOpenInsights
 }) {
-  const highlights = [
-    { label: 'Radio', icon: Radio, tab: 'radio' },
-    { label: 'AI Assistant', icon: Sparkles, tab: 'mood' },
-    { label: 'Nostalgia Stations', icon: History, tab: 'barber' },
-    { label: 'Listening Insights', icon: BarChart3, action: onOpenInsights }
-  ];
-
   return (
     <div className="relative w-full rounded-3xl p-5 sm:p-8 md:p-10 bg-gradient-to-br from-neutral-900/95 via-neutral-950/90 to-neutral-950/95 border border-amber-500/25 shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_35px_rgba(245,158,11,0.1)] overflow-hidden">
       {/* Background Cinematic Visual with Smooth Vignette Blend */}
@@ -35,7 +28,13 @@ export default function HomeHero({
       <div className="absolute -top-16 -left-16 w-80 h-80 rounded-full bg-amber-500/15 blur-[100px] pointer-events-none" />
       <div className="absolute -bottom-20 right-10 w-96 h-96 rounded-full bg-orange-500/10 blur-[120px] pointer-events-none" />
 
-      <div className="relative z-10 max-w-4xl mx-auto flex flex-col items-center text-center space-y-4 sm:space-y-6">
+      {/* Top-Left Live Digital Clock */}
+      <div className="absolute top-3.5 left-3.5 sm:top-5 sm:left-6 z-20 flex items-center gap-1.5 sm:gap-2 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-2xl bg-neutral-900/85 backdrop-blur-xl border border-neutral-800 text-[11px] sm:text-xs font-mono text-amber-300 shadow-md select-none pointer-events-none">
+        <span aria-hidden="true">⏳</span>
+        <span>{clockString || "00:00:00"}</span>
+      </div>
+
+      <div className="relative z-10 max-w-4xl mx-auto flex flex-col items-center text-center space-y-4 sm:space-y-6 pt-7 sm:pt-0">
         {/* Welcome Pill */}
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold tracking-wide shadow-sm backdrop-blur-md">
           <span className="relative flex h-2 w-2">
@@ -57,29 +56,8 @@ export default function HomeHero({
           </p>
         </div>
 
-        {/* Feature Highlights Pills */}
-        <div className="flex flex-wrap items-center justify-center gap-2 pt-1 pb-2">
-          {highlights.map((h, i) => {
-            const IconComp = h.icon;
-            return (
-              <button
-                key={i}
-                type="button"
-                onClick={() => {
-                  if (h.action) h.action();
-                  else if (h.tab && onNavigate) onNavigate(h.tab);
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 hover:border-amber-500/40 text-[11px] sm:text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm"
-              >
-                <IconComp className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>{h.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
         {/* Integrated Search Bar */}
-        <div className="w-full pt-1">
+        <div className="w-full pt-2 sm:pt-3">
           <HomeSearchBar
             onSearch={onSearch}
             onSelectSong={onSelectSong}
