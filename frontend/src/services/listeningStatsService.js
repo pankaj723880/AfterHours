@@ -1,8 +1,19 @@
 /**
  * Loopra Listening Statistics & Recap Service
  * Handles user-isolated playback telemetry, real-time tracking,
- * 5-minute auto-reconciliation, and dynamic weekly & lifetime recap queries.
+ * 5-minute auto-reconciliation, and dynamic daily, weekly, monthly & lifetime recap queries.
  */
+
+/**
+ * Formats listening hours to exactly two decimal places across the application.
+ */
+export function formatListeningHours(secondsOrHours, isSeconds = false) {
+  if (secondsOrHours === null || secondsOrHours === undefined) return '0.00';
+  const num = Number(secondsOrHours);
+  if (isNaN(num) || num <= 0) return '0.00';
+  const hours = isSeconds ? num / 3600 : num;
+  return hours.toFixed(2);
+}
 
 const STORAGE_KEY_GUEST = 'loopra_guest_listening_stats';
 
@@ -253,15 +264,15 @@ export const listeningStatsService = {
     });
 
     let peakDay = 'None';
-    let peakDayHours = '0.0';
+    let peakDayHours = '0.00';
     let maxDaySec = 0;
     let peakIndex = -1;
     dailyActivity.forEach((day, idx) => {
-      day.hours = parseFloat((day.seconds / 3600).toFixed(1));
+      day.hours = parseFloat((day.seconds / 3600).toFixed(2));
       if (day.seconds > maxDaySec) {
         maxDaySec = day.seconds;
         peakDay = day.dayLabel;
-        peakDayHours = day.hours.toFixed(1);
+        peakDayHours = (day.seconds / 3600).toFixed(2);
         peakIndex = idx;
       }
     });
@@ -298,7 +309,8 @@ export const listeningStatsService = {
       dateRangeLabel,
       totalListeningSeconds: weeklySeconds,
       totalListeningMinutes: Math.round(weeklySeconds / 60),
-      totalHours: (weeklySeconds / 3600).toFixed(1),
+      totalHours: formatListeningHours(weeklySeconds, true),
+      totalListeningHours: formatListeningHours(weeklySeconds, true),
       hoursTrend: null,
       distinctTracksCount: Object.keys(weeklyTrackCounts).length,
       tracksTrend: null,
@@ -361,8 +373,8 @@ export const listeningStatsService = {
     const allTimeStats = {
       totalListeningSeconds: totalSecs,
       totalMinutes: Math.round(totalSecs / 60),
-      totalHours: (totalSecs / 3600).toFixed(1),
-      totalListeningHours: (totalSecs / 3600).toFixed(1),
+      totalHours: formatListeningHours(totalSecs, true),
+      totalListeningHours: formatListeningHours(totalSecs, true),
       totalPlays: Object.values(stats.trackPlayCounts || {}).reduce((acc, t) => acc + (t.count || 0), 0),
       distinctTracksCount: Object.keys(stats.trackPlayCounts || {}).length,
       distinctArtistsCount: Object.keys(stats.artistPlayCounts || {}).length,
@@ -371,7 +383,7 @@ export const listeningStatsService = {
       topArtists: formattedAllTimeTopArtists,
       activityOverTime,
       totalActiveWebsiteSeconds: 0,
-      totalActiveWebsiteHours: '0.0',
+      totalActiveWebsiteHours: '0.00',
       totalSessions: 0,
       hasData: totalSecs > 0 || Object.keys(stats.trackPlayCounts || {}).length > 0,
       isVerified: false
@@ -442,14 +454,14 @@ export const listeningStatsService = {
     let maxMDaysSec = 0;
     let peakMIdx = -1;
     let peakMDay = 'None';
-    let peakMHours = '0.0';
+    let peakMHours = '0.00';
     monthlyDailyActivity.forEach((day, idx) => {
-      day.hours = parseFloat((day.seconds / 3600).toFixed(1));
+      day.hours = parseFloat((day.seconds / 3600).toFixed(2));
       if (day.seconds > maxMDaysSec) {
         maxMDaysSec = day.seconds;
         peakMIdx = idx;
         peakMDay = day.dayShort;
-        peakMHours = day.hours.toFixed(1);
+        peakMHours = (day.seconds / 3600).toFixed(2);
       }
     });
     if (peakMIdx >= 0 && maxMDaysSec > 0) {
@@ -480,8 +492,8 @@ export const listeningStatsService = {
       month: now.getMonth() + 1,
       totalListeningSeconds: monthlySeconds,
       totalListeningMinutes: Math.round(monthlySeconds / 60),
-      totalHours: (monthlySeconds / 3600).toFixed(1),
-      totalListeningHours: (monthlySeconds / 3600).toFixed(1),
+      totalHours: formatListeningHours(monthlySeconds, true),
+      totalListeningHours: formatListeningHours(monthlySeconds, true),
       totalPlays: monthlyValidPlays,
       distinctTracksCount: Object.keys(monthlyTrackCounts).length,
       distinctArtistsCount: Object.keys(monthlyArtistCounts).length,
@@ -492,6 +504,125 @@ export const listeningStatsService = {
       topSongs: monthlyTopTracks,
       topArtists: monthlyTopArtists,
       hasData: monthlyValidPlays > 0 || monthlySeconds >= 10,
+      isVerified: false
+    };
+
+    // Daily calculation (today)
+    const todayPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const dailyEvents = (stats.playEvents || []).filter(e => e.timestamp && e.timestamp.startsWith(todayPrefix));
+    let dailySeconds = 0;
+    const dailyTrackCounts = {};
+    const dailyArtistCounts = {};
+    let dailyValidPlays = 0;
+
+    // 24 hourly buckets
+    const hourlyActivity = [];
+    for (let h = 0; h < 24; h++) {
+      const ampm = h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`;
+      hourlyActivity.push({
+        hourIndex: h,
+        hourLabel: ampm,
+        hour24: `${String(h).padStart(2, '0')}:00`,
+        seconds: 0,
+        hours: 0,
+        plays: 0,
+        isPeak: false
+      });
+    }
+
+    dailyEvents.forEach(e => {
+      const sec = Math.max(0, Number(e.seconds) || 0);
+      dailySeconds += sec;
+      const isValid = sec >= 30 || e.eventType === 'completed';
+      if (isValid) {
+        dailyValidPlays += 1;
+        dailyTrackCounts[e.trackId] = dailyTrackCounts[e.trackId] || {
+          id: e.trackId,
+          videoId: e.trackId,
+          title: e.title || 'Unknown Track',
+          artist: e.artist || 'Unknown Artist',
+          thumbnail: e.thumbnail || '',
+          plays: 0,
+          seconds: 0
+        };
+        dailyTrackCounts[e.trackId].plays += 1;
+        dailyTrackCounts[e.trackId].seconds += sec;
+
+        if (e.artist && e.artist !== 'Unknown Artist') {
+          dailyArtistCounts[e.artist] = (dailyArtistCounts[e.artist] || 0) + 1;
+        }
+      }
+
+      const evD = new Date(e.timestamp);
+      const hIdx = evD.getHours();
+      if (hourlyActivity[hIdx]) {
+        hourlyActivity[hIdx].seconds += sec;
+        if (isValid) hourlyActivity[hIdx].plays += 1;
+      }
+    });
+
+    let peakHour = 'None';
+    let peakHourHours = '0.00';
+    let peakHourPlays = 0;
+    let maxHourSec = 0;
+    let peakHIdx = -1;
+    hourlyActivity.forEach((h, idx) => {
+      h.hours = parseFloat((h.seconds / 3600).toFixed(2));
+      if (h.seconds > maxHourSec) {
+        maxHourSec = h.seconds;
+        peakHour = h.hourLabel;
+        peakHourHours = (h.seconds / 3600).toFixed(2);
+        peakHourPlays = h.plays;
+        peakHIdx = idx;
+      }
+    });
+    if (peakHIdx >= 0 && maxHourSec > 0) {
+      hourlyActivity[peakHIdx].isPeak = true;
+    }
+
+    const dailyTopTracks = Object.values(dailyTrackCounts)
+      .sort((a, b) => b.plays - a.plays || b.seconds - a.seconds)
+      .slice(0, 5);
+
+    const totalValidDailyArtistPlays = Object.values(dailyArtistCounts).reduce((a, b) => a + b, 0) || 1;
+    const dailyTopArtists = Object.entries(dailyArtistCounts)
+      .map(([name, plays]) => ({
+        artist: name,
+        name,
+        plays,
+        count: plays,
+        percentage: Math.min(100, Math.round((plays / totalValidDailyArtistPlays) * 100))
+      }))
+      .sort((a, b) => b.plays - a.plays)
+      .slice(0, 5);
+
+    const dailyTotalHours = formatListeningHours(dailySeconds, true);
+    let dailySummary = '';
+    if (dailyValidPlays > 0 || dailySeconds > 0) {
+      dailySummary = `Today you listened for ${dailyTotalHours} hours across ${dailyValidPlays} verified play${dailyValidPlays === 1 ? '' : 's'} and discovered ${Object.keys(dailyTrackCounts).length} unique track${Object.keys(dailyTrackCounts).length === 1 ? '' : 's'}.`;
+    } else {
+      dailySummary = 'No music listened to yet today. Start playing your favourite tracks to build your daily recap!';
+    }
+
+    const dailyRecap = {
+      periodLabel: 'Today',
+      dateRangeLabel: 'Today',
+      totalListeningSeconds: dailySeconds,
+      totalListeningMinutes: Math.round(dailySeconds / 60),
+      totalHours: dailyTotalHours,
+      totalListeningHours: dailyTotalHours,
+      totalPlays: dailyValidPlays,
+      distinctTracksCount: Object.keys(dailyTrackCounts).length,
+      distinctArtistsCount: Object.keys(dailyArtistCounts).length,
+      peakHour,
+      peakHourHours,
+      peakHourPlays,
+      hourlyActivity,
+      topTracks: dailyTopTracks,
+      topSongs: dailyTopTracks,
+      topArtists: dailyTopArtists,
+      dailySummary,
+      hasData: dailyValidPlays > 0 || dailySeconds >= 10,
       isVerified: false
     };
 
@@ -540,6 +671,7 @@ export const listeningStatsService = {
       success: true,
       userId: userOrId ? (userOrId._id || userOrId.userId || userOrId.id || userOrId) : null,
       updatedAt: stats.updatedAt || new Date().toISOString(),
+      dailyRecap,
       weeklyRecap,
       monthlyRecap,
       allTimeStats,
@@ -816,6 +948,10 @@ export const listeningStatsService = {
       localStorage.removeItem(STORAGE_KEY_GUEST);
       localStorage.removeItem('loopra_cached_stats_data');
     } catch (e) {}
+  },
+
+  formatListeningHours(secondsOrHours, isSeconds = false) {
+    return formatListeningHours(secondsOrHours, isSeconds);
   }
 };
 

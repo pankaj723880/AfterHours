@@ -1474,17 +1474,21 @@ export default function App() {
     const currentStn = stationsMap ? (stationsMap[activeTab] || SPECIAL_STATIONS[activeTab]) : SPECIAL_STATIONS[activeTab];
     updateRouteMetadata(activeTab, currentStn);
 
-    const faviconUrl = cmsConfig?.branding?.faviconUrl || '/favicon.svg';
+    const rawFavicon = cmsConfig?.branding?.faviconUrl || '/loopra-logo.png';
+    const faviconUrl = rawFavicon.includes('?') ? rawFavicon : `${rawFavicon}?v=3`;
     const iconLinks = document.querySelectorAll("link[rel*='icon'], link[rel='apple-touch-icon']");
     if (iconLinks && iconLinks.length > 0) {
       iconLinks.forEach(link => {
         link.href = faviconUrl;
+        if (link.getAttribute('type') === 'image/svg+xml') {
+          link.setAttribute('type', 'image/png');
+        }
       });
     } else {
       let link = document.querySelector("link[rel*='icon']");
       if (!link) {
         link = document.createElement('link');
-        link.type = 'image/svg+xml';
+        link.type = 'image/png';
         link.rel = 'icon';
         document.getElementsByTagName('head')[0].appendChild(link);
       }

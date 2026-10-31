@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { listeningStatsService } from '../../services/listeningStatsService';
+import { listeningStatsService, formatListeningHours } from '../../services/listeningStatsService';
 
 export default function ListeningStatsModal({
   isOpen,
@@ -12,8 +12,9 @@ export default function ListeningStatsModal({
   currentSong = null,
   isPlaying = false
 }) {
-  const [activeTab, setActiveTab] = useState('recap'); // 'recap' | 'monthly' | 'all-time'
+  const [activeTab, setActiveTab] = useState('daily'); // 'daily' | 'recap' | 'monthly' | 'all-time'
   const [stats, setStats] = useState(null);
+  const [dailyRecap, setDailyRecap] = useState(null);
   const [weeklyRecap, setWeeklyRecap] = useState(null);
   const [monthlyRecap, setMonthlyRecap] = useState(null);
   const [streaks, setStreaks] = useState(null);
@@ -25,6 +26,11 @@ export default function ListeningStatsModal({
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isGeneratingShare, setIsGeneratingShare] = useState(false);
   const [shareDataUrl, setShareDataUrl] = useState(null);
+
+  // Helper to format any hour value strictly to two decimal places
+  const fmtHours = useCallback((val, isSec = false) => {
+    return formatListeningHours(val, isSec);
+  }, []);
 
   // Month & year selection for Monthly Recap (defaults to current date e.g. Oct 2026)
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth() + 1);
@@ -54,6 +60,7 @@ export default function ListeningStatsModal({
       }
 
       if (data) {
+        setDailyRecap(data.dailyRecap || null);
         setWeeklyRecap(data.weeklyRecap || null);
         setMonthlyRecap(data.monthlyRecap || null);
         setStats(data.allTimeStats || null);
@@ -86,6 +93,7 @@ export default function ListeningStatsModal({
       ? listeningStatsService.computeLocalStats(user)
       : null;
     if (local) {
+      if (local.dailyRecap) setDailyRecap(local.dailyRecap);
       if (local.weeklyRecap) setWeeklyRecap(local.weeklyRecap);
       if (local.monthlyRecap) setMonthlyRecap(local.monthlyRecap);
       if (local.allTimeStats) setStats(local.allTimeStats);
@@ -190,13 +198,25 @@ export default function ListeningStatsModal({
 
       ctx.fillStyle = '#a3a3a3';
       ctx.font = '600 30px Inter, sans-serif';
-      const recapCategoryLabel = activeTab === 'monthly' ? (monthlyRecap?.monthLabel?.toUpperCase() || 'MONTHLY RECAP') : activeTab === 'all-time' ? 'ALL-TIME STATS' : 'WEEKLY RECAP';
+      const recapCategoryLabel = activeTab === 'daily'
+        ? 'DAILY RECAP'
+        : activeTab === 'monthly'
+        ? (monthlyRecap?.monthLabel?.toUpperCase() || 'MONTHLY RECAP')
+        : activeTab === 'all-time'
+        ? 'ALL-TIME STATS'
+        : 'WEEKLY RECAP';
       ctx.fillText(recapCategoryLabel, 90, 185);
 
       // 3. Hero Header
       ctx.fillStyle = '#ffffff';
       ctx.font = '800 84px Outfit, Inter, sans-serif';
-      const storyTitlePrefix = activeTab === 'monthly' ? (monthlyRecap?.monthLabel || 'Your Month') : activeTab === 'all-time' ? 'All-Time' : 'Your Week';
+      const storyTitlePrefix = activeTab === 'daily'
+        ? 'Your Day'
+        : activeTab === 'monthly'
+        ? (monthlyRecap?.monthLabel || 'Your Month')
+        : activeTab === 'all-time'
+        ? 'All-Time'
+        : 'Your Week';
       ctx.fillText(storyTitlePrefix, 90, 310);
       const inMusicGrad = ctx.createLinearGradient(90, 390, 450, 390);
       inMusicGrad.addColorStop(0, '#f59e0b');
@@ -231,45 +251,55 @@ export default function ListeningStatsModal({
         ctx.fillText(sub, x + 40, y + 180);
       };
 
-      const hrs = activeTab === 'recap'
-        ? (weeklyRecap?.totalHours || '0.0')
+      const hrs = activeTab === 'daily'
+        ? fmtHours(dailyRecap?.totalHours)
+        : activeTab === 'recap'
+        ? fmtHours(weeklyRecap?.totalHours)
         : activeTab === 'monthly'
-        ? (monthlyRecap?.totalHours || monthlyRecap?.totalListeningHours || '0.0')
-        : (stats?.totalHours || '0.0');
+        ? fmtHours(monthlyRecap?.totalHours || monthlyRecap?.totalListeningHours)
+        : fmtHours(stats?.totalHours);
 
-      const plays = activeTab === 'recap'
+      const plays = activeTab === 'daily'
+        ? (dailyRecap?.totalPlays || 0)
+        : activeTab === 'recap'
         ? (weeklyRecap?.totalPlays || 0)
         : activeTab === 'monthly'
         ? (monthlyRecap?.totalPlays || 0)
         : (stats?.totalPlays || 0);
 
-      const tracks = activeTab === 'recap'
+      const tracks = activeTab === 'daily'
+        ? (dailyRecap?.distinctTracksCount || 0)
+        : activeTab === 'recap'
         ? (weeklyRecap?.distinctTracksCount || 0)
         : activeTab === 'monthly'
         ? (monthlyRecap?.distinctTracksCount || 0)
         : (stats?.distinctTracksCount || 0);
 
-      const peak = activeTab === 'recap'
+      const peak = activeTab === 'daily'
+        ? (dailyRecap?.peakHour && dailyRecap.peakHour !== 'None' ? dailyRecap.peakHour : 'None')
+        : activeTab === 'recap'
         ? (weeklyRecap?.peakDay && weeklyRecap.peakDay !== 'None' ? weeklyRecap.peakDay : 'None')
         : activeTab === 'monthly'
         ? (monthlyRecap?.peakDay && monthlyRecap.peakDay !== 'None' ? monthlyRecap.peakDay : 'None')
-        : `${stats?.totalActiveWebsiteHours || '0.0'}h Web`;
+        : `${fmtHours(stats?.totalActiveWebsiteHours)}h Web`;
 
-      const peakSub = activeTab === 'all-time'
+      const peakSub = activeTab === 'daily'
+        ? `${dailyRecap?.peakHourPlays || 0} plays today`
+        : activeTab === 'all-time'
         ? `${stats?.totalSessions || 0} active sessions`
         : activeTab === 'monthly'
-        ? `${monthlyRecap?.peakDayHours || '0.0'}h peak`
-        : `${weeklyRecap?.peakDayHours || '0.0'}h peak`;
+        ? `${fmtHours(monthlyRecap?.peakDayHours)}h peak`
+        : `${fmtHours(weeklyRecap?.peakDayHours)}h peak`;
 
-      const peakLabel = activeTab === 'all-time' ? 'Web Usage' : 'Peak Day';
+      const peakLabel = activeTab === 'daily' ? 'Peak Hour' : activeTab === 'all-time' ? 'Web Usage' : 'Peak Day';
 
-      renderStatBox(90, 520, 420, 220, 'Hours Listened', `${hrs}h`, activeTab === 'monthly' ? (monthlyRecap?.monthLabel || 'This month') : activeTab === 'all-time' ? 'Lifetime' : 'This week');
+      renderStatBox(90, 520, 420, 220, 'Hours Listened', `${hrs}h`, activeTab === 'daily' ? 'Today' : activeTab === 'monthly' ? (monthlyRecap?.monthLabel || 'This month') : activeTab === 'all-time' ? 'Lifetime' : 'This week');
       renderStatBox(570, 520, 420, 220, 'Total Plays', `${plays}`, 'Valid Plays');
       renderStatBox(90, 780, 420, 220, 'Unique Tracks', `${tracks}`, 'Diverse taste');
       renderStatBox(570, 780, 420, 220, peakLabel, `${peak}`, peakSub);
 
       // 5. Top Song Banner
-      const currentTopTracks = activeTab === 'recap' ? (weeklyRecap?.topTracks || []) : activeTab === 'monthly' ? (monthlyRecap?.topTracks || []) : (stats?.topTracks || []);
+      const currentTopTracks = activeTab === 'daily' ? (dailyRecap?.topTracks || []) : activeTab === 'recap' ? (weeklyRecap?.topTracks || []) : activeTab === 'monthly' ? (monthlyRecap?.topTracks || []) : (stats?.topTracks || []);
       const topSong = currentTopTracks[0];
 
       ctx.fillStyle = 'rgba(24, 24, 27, 0.8)';
@@ -282,7 +312,7 @@ export default function ListeningStatsModal({
 
       ctx.fillStyle = '#f59e0b';
       ctx.font = '700 26px Inter, sans-serif';
-      ctx.fillText(activeTab === 'monthly' ? `#1 TOP SONG (${monthlyRecap?.monthLabel?.toUpperCase() || 'THIS MONTH'})` : activeTab === 'all-time' ? '#1 TOP SONG (ALL-TIME)' : '#1 TOP SONG THIS WEEK', 140, 1115);
+      ctx.fillText(activeTab === 'daily' ? '#1 TOP SONG TODAY' : activeTab === 'monthly' ? `#1 TOP SONG (${monthlyRecap?.monthLabel?.toUpperCase() || 'THIS MONTH'})` : activeTab === 'all-time' ? '#1 TOP SONG (ALL-TIME)' : '#1 TOP SONG THIS WEEK', 140, 1115);
 
       ctx.fillStyle = '#ffffff';
       ctx.font = '800 48px Outfit, Inter, sans-serif';
@@ -295,7 +325,7 @@ export default function ListeningStatsModal({
       ctx.fillText(songArtist.length > 30 ? songArtist.slice(0, 29) + '...' : songArtist, 140, 1245);
 
       // 6. Top Artist Banner
-      const currentTopArtists = activeTab === 'recap' ? (weeklyRecap?.topArtists || []) : activeTab === 'monthly' ? (monthlyRecap?.topArtists || []) : (stats?.topArtists || []);
+      const currentTopArtists = activeTab === 'daily' ? (dailyRecap?.topArtists || []) : activeTab === 'recap' ? (weeklyRecap?.topArtists || []) : activeTab === 'monthly' ? (monthlyRecap?.topArtists || []) : (stats?.topArtists || []);
       const topArtist = currentTopArtists[0];
 
       ctx.fillStyle = 'rgba(24, 24, 27, 0.8)';
@@ -308,7 +338,7 @@ export default function ListeningStatsModal({
 
       ctx.fillStyle = '#ea580c';
       ctx.font = '700 26px Inter, sans-serif';
-      ctx.fillText(activeTab === 'monthly' ? `TOP ARTIST (${monthlyRecap?.monthLabel?.toUpperCase() || 'THIS MONTH'})` : activeTab === 'all-time' ? 'TOP ARTIST (ALL-TIME)' : 'TOP ARTIST THIS WEEK', 140, 1415);
+      ctx.fillText(activeTab === 'daily' ? 'TOP ARTIST TODAY' : activeTab === 'monthly' ? `TOP ARTIST (${monthlyRecap?.monthLabel?.toUpperCase() || 'THIS MONTH'})` : activeTab === 'all-time' ? 'TOP ARTIST (ALL-TIME)' : 'TOP ARTIST THIS WEEK', 140, 1415);
 
       ctx.fillStyle = '#ffffff';
       ctx.font = '800 48px Outfit, Inter, sans-serif';
@@ -353,11 +383,13 @@ export default function ListeningStatsModal({
 
   const handleNativeShare = async () => {
     if (!shareDataUrl) return;
-    const currentHrs = activeTab === 'recap'
-      ? (weeklyRecap?.totalHours || '0.0')
+    const currentHrs = activeTab === 'daily'
+      ? fmtHours(dailyRecap?.totalHours)
+      : activeTab === 'recap'
+      ? fmtHours(weeklyRecap?.totalHours)
       : activeTab === 'monthly'
-      ? (monthlyRecap?.totalHours || monthlyRecap?.totalListeningHours || '0.0')
-      : (stats?.totalHours || '0.0');
+      ? fmtHours(monthlyRecap?.totalHours || monthlyRecap?.totalListeningHours)
+      : fmtHours(stats?.totalHours);
 
     try {
       const res = await fetch(shareDataUrl);
@@ -374,23 +406,25 @@ export default function ListeningStatsModal({
       }
     } catch (e) {}
 
-    const summaryText = `🎶 My Loopra ${activeTab === 'monthly' ? monthlyRecap?.monthLabel : activeTab === 'all-time' ? 'All-Time' : 'Weekly'} Recap:\n⏱️ ${currentHrs} hrs listened\nCheck out loopra1.vercel.app!`;
+    const summaryText = `🎶 My Loopra ${activeTab === 'daily' ? 'Daily' : activeTab === 'monthly' ? monthlyRecap?.monthLabel : activeTab === 'all-time' ? 'All-Time' : 'Weekly'} Recap:\n⏱️ ${currentHrs} hrs listened\nCheck out loopra1.vercel.app!`;
     navigator.clipboard?.writeText(summaryText);
     if (showToast) showToast('Recap text copied to clipboard!');
   };
 
   // Synchronized lists for the active period
   const topTracksList = useMemo(() => {
+    if (activeTab === 'daily') return dailyRecap?.topTracks || [];
     if (activeTab === 'recap') return weeklyRecap?.topTracks || [];
     if (activeTab === 'monthly') return monthlyRecap?.topTracks || [];
     return stats?.topTracks || [];
-  }, [activeTab, weeklyRecap, monthlyRecap, stats]);
+  }, [activeTab, dailyRecap, weeklyRecap, monthlyRecap, stats]);
 
   const topArtistsList = useMemo(() => {
+    if (activeTab === 'daily') return dailyRecap?.topArtists || [];
     if (activeTab === 'recap') return weeklyRecap?.topArtists || [];
     if (activeTab === 'monthly') return monthlyRecap?.topArtists || [];
     return stats?.topArtists || [];
-  }, [activeTab, weeklyRecap, monthlyRecap, stats]);
+  }, [activeTab, dailyRecap, weeklyRecap, monthlyRecap, stats]);
 
   const moodsList = useMemo(() => {
     if (activeTab === 'monthly') return monthlyRecap?.topMoods || weeklyRecap?.topMoods || [];
@@ -399,6 +433,24 @@ export default function ListeningStatsModal({
 
   // Period-aware daily activity bars for the chart
   const dailyBars = useMemo(() => {
+    if (activeTab === 'daily') {
+      if (dailyRecap?.hourlyActivity && dailyRecap.hourlyActivity.length === 24) {
+        return dailyRecap.hourlyActivity;
+      }
+      return Array.from({ length: 24 }, (_, h) => {
+        const ampm = h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`;
+        return {
+          hourIndex: h,
+          dayLabel: ampm,
+          dayShort: `${String(h).padStart(2, '0')}:00`,
+          hours: 0,
+          plays: 0,
+          seconds: 0,
+          isPeak: false
+        };
+      });
+    }
+
     if (activeTab === 'recap') {
       if (weeklyRecap?.dailyActivity && weeklyRecap.dailyActivity.length === 7) {
         return weeklyRecap.dailyActivity;
@@ -445,7 +497,7 @@ export default function ListeningStatsModal({
       seconds: 0,
       isPeak: false
     }));
-  }, [activeTab, weeklyRecap, monthlyRecap, stats, selectedMonth, selectedYear]);
+  }, [activeTab, dailyRecap, weeklyRecap, monthlyRecap, stats, selectedMonth, selectedYear]);
 
   const maxChartValue = useMemo(() => {
     if (activityMetric === 'hours') {
@@ -555,6 +607,16 @@ export default function ListeningStatsModal({
           {/* Tab buttons */}
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setActiveTab('daily')}
+              className={`px-4 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'daily'
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 shadow-md shadow-amber-500/20'
+                  : 'bg-neutral-900/80 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
+              }`}
+            >
+              <span>Daily Recap</span>
+            </button>
+            <button
               onClick={() => setActiveTab('recap')}
               className={`px-4 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'recap'
@@ -632,7 +694,9 @@ export default function ListeningStatsModal({
             <div className="text-xs text-neutral-400 font-mono flex items-center gap-1.5 bg-neutral-900/60 px-3 py-1 rounded-lg border border-neutral-800/60">
               <span>📅</span>
               <span>
-                {activeTab === 'recap'
+                {activeTab === 'daily'
+                  ? (dailyRecap?.dateRangeLabel || 'Today')
+                  : activeTab === 'recap'
                   ? (weeklyRecap?.dateRangeLabel || 'Current Week')
                   : activeTab === 'monthly'
                   ? (monthlyRecap?.monthLabel || 'This Month')
@@ -644,6 +708,14 @@ export default function ListeningStatsModal({
 
         {/* 3. MAIN DASHBOARD CONTENT */}
         <div className="p-4 sm:p-5 overflow-y-auto space-y-4 max-h-[calc(92vh-130px)] custom-scrollbar">
+          {/* Daily Listening Summary Banner */}
+          {activeTab === 'daily' && dailyRecap?.dailySummary && (
+            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-orange-500/15 border border-amber-500/30 flex items-center gap-3 text-xs text-amber-200 shadow-sm animate-fadeIn">
+              <span className="text-xl">✨</span>
+              <p className="font-medium leading-relaxed">{dailyRecap.dailySummary}</p>
+            </div>
+          )}
+
           {/* TOP SECTION: HERO BANNER + 4 STAT CARDS */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
             {/* Hero Banner (30% on desktop) */}
@@ -652,7 +724,9 @@ export default function ListeningStatsModal({
 
               <div>
                 <h2 className="text-2xl sm:text-3xl font-black text-white font-display tracking-tight leading-tight">
-                  {activeTab === 'recap' ? (
+                  {activeTab === 'daily' ? (
+                    <>Your Day <br /></>
+                  ) : activeTab === 'recap' ? (
                     <>Your Week <br /></>
                   ) : activeTab === 'monthly' ? (
                     <>{monthlyRecap?.monthLabel || 'Your Month'} <br /></>
@@ -664,7 +738,9 @@ export default function ListeningStatsModal({
                   </span>
                 </h2>
                 <p className="text-xs text-neutral-400 mt-1.5 max-w-[220px] leading-relaxed">
-                  {activeTab === 'recap'
+                  {activeTab === 'daily'
+                    ? 'Genuine beats and memories from your playback today.'
+                    : activeTab === 'recap'
                     ? 'Genuine beats and memories from your weekly playback.'
                     : activeTab === 'monthly'
                     ? `Authentic playback memories across ${monthlyRecap?.monthLabel || 'this month'}.`
@@ -692,20 +768,24 @@ export default function ListeningStatsModal({
               <div className="bg-[#101118]/80 hover:bg-[#13141f]/90 border border-neutral-800 hover:border-amber-500/30 rounded-2xl p-3.5 flex flex-col justify-between transition-all duration-300 shadow-sm relative overflow-hidden group">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">
-                    {activeTab === 'recap' ? 'Listening Hours' : activeTab === 'monthly' ? 'Monthly Hours' : 'Lifetime Hours'}
+                    {activeTab === 'daily' ? "Today's Hours" : activeTab === 'recap' ? 'Listening Hours' : activeTab === 'monthly' ? 'Monthly Hours' : 'Lifetime Hours'}
                   </span>
                   <span className="text-amber-400 text-sm">🎧</span>
                 </div>
                 <div className="my-1.5">
                   <p className="text-2xl sm:text-3xl font-black text-white font-display">
-                    {activeTab === 'recap'
-                      ? (weeklyRecap?.totalHours || '0.0')
+                    {activeTab === 'daily'
+                      ? fmtHours(dailyRecap?.totalHours)
+                      : activeTab === 'recap'
+                      ? fmtHours(weeklyRecap?.totalHours)
                       : activeTab === 'monthly'
-                      ? (monthlyRecap?.totalHours || monthlyRecap?.totalListeningHours || '0.0')
-                      : (stats?.totalHours || '0.0')}h
+                      ? fmtHours(monthlyRecap?.totalHours || monthlyRecap?.totalListeningHours)
+                      : fmtHours(stats?.totalHours)}h
                   </p>
                   <p className="text-[11px] text-neutral-400 font-medium flex items-center gap-1 mt-0.5">
-                    {activeTab === 'recap'
+                    {activeTab === 'daily'
+                      ? `${dailyRecap?.totalListeningMinutes || Math.round(Number(dailyRecap?.totalListeningSeconds || 0) / 60)} minutes today`
+                      : activeTab === 'recap'
                       ? (weeklyRecap?.hoursTrend ? <span className="text-emerald-400 font-bold">{weeklyRecap.hoursTrend} vs last week</span> : 'Current week')
                       : activeTab === 'monthly'
                       ? `${monthlyRecap?.totalListeningMinutes || Math.round(Number(monthlyRecap?.totalListeningSeconds || 0) / 60)} minutes`
@@ -721,20 +801,24 @@ export default function ListeningStatsModal({
               <div className="bg-[#101118]/80 hover:bg-[#13141f]/90 border border-neutral-800 hover:border-amber-500/30 rounded-2xl p-3.5 flex flex-col justify-between transition-all duration-300 shadow-sm relative overflow-hidden group">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">
-                    {activeTab === 'recap' ? 'Total Plays' : activeTab === 'monthly' ? 'Monthly Plays' : 'Lifetime Plays'}
+                    {activeTab === 'daily' ? "Today's Plays" : activeTab === 'recap' ? 'Total Plays' : activeTab === 'monthly' ? 'Monthly Plays' : 'Lifetime Plays'}
                   </span>
                   <span className="text-amber-400 text-sm">▶️</span>
                 </div>
                 <div className="my-1.5">
                   <p className="text-2xl sm:text-3xl font-black text-white font-display">
-                    {activeTab === 'recap'
+                    {activeTab === 'daily'
+                      ? (dailyRecap?.totalPlays || 0)
+                      : activeTab === 'recap'
                       ? (weeklyRecap?.totalPlays || 0)
                       : activeTab === 'monthly'
                       ? (monthlyRecap?.totalPlays || 0)
                       : (stats?.totalPlays || 0)}
                   </p>
                   <p className="text-[11px] text-neutral-400 font-medium flex items-center gap-1 mt-0.5">
-                    {activeTab === 'recap'
+                    {activeTab === 'daily'
+                      ? 'Verified plays today'
+                      : activeTab === 'recap'
                       ? (weeklyRecap?.playsTrend ? <span className="text-emerald-400 font-bold">{weeklyRecap.playsTrend} vs last week</span> : 'Valid (≥30s)')
                       : 'Verified plays'}
                   </p>
@@ -754,14 +838,18 @@ export default function ListeningStatsModal({
                 </div>
                 <div className="my-1.5">
                   <p className="text-2xl sm:text-3xl font-black text-white font-display">
-                    {activeTab === 'recap'
+                    {activeTab === 'daily'
+                      ? (dailyRecap?.distinctTracksCount || 0)
+                      : activeTab === 'recap'
                       ? (weeklyRecap?.distinctTracksCount || 0)
                       : activeTab === 'monthly'
                       ? (monthlyRecap?.distinctTracksCount || 0)
                       : (stats?.distinctTracksCount || 0)}
                   </p>
                   <p className="text-[11px] text-neutral-400 font-medium flex items-center gap-1 mt-0.5">
-                    {activeTab === 'recap'
+                    {activeTab === 'daily'
+                      ? 'Songs today'
+                      : activeTab === 'recap'
                       ? (weeklyRecap?.tracksTrend ? <span className="text-emerald-400 font-bold">{weeklyRecap.tracksTrend} vs last week</span> : 'Distinct songs')
                       : activeTab === 'monthly'
                       ? 'Songs this month'
@@ -773,8 +861,26 @@ export default function ListeningStatsModal({
                 </svg>
               </div>
 
-              {/* 4. Peak Day (Weekly & Monthly) OR Web Usage (All-Time) */}
-              {activeTab === 'recap' || activeTab === 'monthly' ? (
+              {/* 4. Peak Hour (Daily) / Peak Day (Weekly & Monthly) OR Web Usage (All-Time) */}
+              {activeTab === 'daily' ? (
+                <div className="bg-[#101118]/80 hover:bg-[#13141f]/90 border border-neutral-800 hover:border-amber-500/30 rounded-2xl p-3.5 flex flex-col justify-between transition-all duration-300 shadow-sm relative overflow-hidden group">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Peak Hour</span>
+                    <span className="text-amber-400 text-sm">⏱️</span>
+                  </div>
+                  <div className="my-1.5">
+                    <p className="text-2xl sm:text-3xl font-black text-amber-400 font-display">
+                      {dailyRecap?.peakHour && dailyRecap.peakHour !== 'None' ? dailyRecap.peakHour : 'None'}
+                    </p>
+                    <p className="text-[11px] text-neutral-300 font-medium mt-0.5">
+                      {dailyRecap?.peakHourHours && Number(dailyRecap.peakHourHours) > 0 ? `${fmtHours(dailyRecap.peakHourHours)}h peak` : '0.00h peak'}
+                    </p>
+                  </div>
+                  <div className="text-[9px] text-neutral-400 font-mono">
+                    Highest activity today
+                  </div>
+                </div>
+              ) : activeTab === 'recap' || activeTab === 'monthly' ? (
                 <div className="bg-[#101118]/80 hover:bg-[#13141f]/90 border border-neutral-800 hover:border-amber-500/30 rounded-2xl p-3.5 flex flex-col justify-between transition-all duration-300 shadow-sm relative overflow-hidden group">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Peak Day</span>
@@ -788,8 +894,8 @@ export default function ListeningStatsModal({
                     </p>
                     <p className="text-[11px] text-neutral-300 font-medium mt-0.5">
                       {activeTab === 'recap'
-                        ? (weeklyRecap?.peakDayHours && weeklyRecap.totalListeningSeconds > 0 ? `${weeklyRecap.peakDayHours}h peak` : '0.0h peak')
-                        : (monthlyRecap?.peakDayHours && monthlyRecap.totalListeningSeconds > 0 ? `${monthlyRecap.peakDayHours}h peak` : '0.0h peak')}
+                        ? (weeklyRecap?.peakDayHours && weeklyRecap.totalListeningSeconds > 0 ? `${fmtHours(weeklyRecap.peakDayHours)}h peak` : '0.00h peak')
+                        : (monthlyRecap?.peakDayHours && monthlyRecap.totalListeningSeconds > 0 ? `${fmtHours(monthlyRecap.peakDayHours)}h peak` : '0.00h peak')}
                     </p>
                   </div>
                   <div className="text-[9px] text-neutral-400 font-mono">
@@ -804,7 +910,7 @@ export default function ListeningStatsModal({
                   </div>
                   <div className="my-1.5">
                     <p className="text-2xl sm:text-3xl font-black text-amber-400 font-display">
-                      {stats?.totalActiveWebsiteHours || '0.0'}h
+                      {fmtHours(stats?.totalActiveWebsiteHours)}h
                     </p>
                     <p className="text-[11px] text-neutral-300 font-medium mt-0.5">
                       {stats?.totalSessions || 0} active sessions
@@ -826,7 +932,9 @@ export default function ListeningStatsModal({
                 <div className="flex items-center gap-2">
                   <span className="text-amber-400">📊</span>
                   <h4 className="text-xs sm:text-sm font-bold text-white">
-                    {activeTab === 'recap'
+                    {activeTab === 'daily'
+                      ? 'Hourly Activity (Today)'
+                      : activeTab === 'recap'
                       ? 'Weekly Listening Activity'
                       : activeTab === 'monthly'
                       ? `Daily Activity (${monthlyRecap?.monthLabel || 'Month'})`
@@ -866,20 +974,20 @@ export default function ListeningStatsModal({
                     const heightPct = val > 0 ? Math.max(10, Math.min(100, Math.round((val / maxChartValue) * 100))) : 4;
                     const isPeak = Boolean(d.isPeak && val > 0);
 
-                    // For monthly charts with 28-31 bars, render compact labels
-                    const showLabel = activeTab !== 'monthly' || (i % 5 === 0) || (i === dailyBars.length - 1);
+                    // For monthly charts with 28-31 bars or daily with 24 bars, render compact labels
+                    const showLabel = activeTab === 'recap' || activeTab === 'all-time' || (i % (activeTab === 'daily' ? 4 : 5) === 0) || (i === dailyBars.length - 1);
 
                     return (
                       <div key={d.dayLabel || i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end group">
                         {/* Tooltip value */}
-                        <span className={`text-[8px] font-mono transition font-semibold ${isPeak ? 'text-amber-400' : 'text-neutral-400'} ${activeTab === 'monthly' && val === 0 ? 'invisible group-hover:visible' : ''}`}>
-                          {activityMetric === 'hours' ? `${d.hours}h` : d.plays}
+                        <span className={`text-[8px] font-mono transition font-semibold ${isPeak ? 'text-amber-400' : 'text-neutral-400'} ${(activeTab === 'monthly' || activeTab === 'daily') && val === 0 ? 'invisible group-hover:visible' : ''}`}>
+                          {activityMetric === 'hours' ? `${fmtHours(d.hours)}h` : d.plays}
                         </span>
 
                         {/* Bar */}
                         <div
                           style={{ height: `${heightPct}%` }}
-                          title={`${d.dayShort || d.dayLabel}: ${d.hours}h (${d.plays} plays)`}
+                          title={`${d.dayShort || d.dayLabel}: ${fmtHours(d.hours)}h (${d.plays} plays)`}
                           className={`w-full rounded-t-sm sm:rounded-t-md transition-all duration-500 ${
                             isPeak
                               ? 'bg-gradient-to-t from-orange-600 via-amber-500 to-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.5)]'
@@ -906,12 +1014,14 @@ export default function ListeningStatsModal({
                 <span className="text-neutral-300 font-medium flex items-center gap-1.5 truncate pr-2">
                   <span>🔥</span>
                   <span className="truncate">
-                    {activeTab === 'all-time' ? (
-                      <>Lifetime: <strong className="text-amber-300">{stats?.totalHours || '0.0'}h</strong> across {stats?.totalPlays || 0} plays • Web: <strong className="text-amber-300">{stats?.totalActiveWebsiteHours || '0.0'}h</strong></>
+                    {activeTab === 'daily' ? (
+                      <>Today: <strong className="text-amber-300">{fmtHours(dailyRecap?.totalHours)}h</strong> across {dailyRecap?.totalPlays || 0} plays</>
+                    ) : activeTab === 'all-time' ? (
+                      <>Lifetime: <strong className="text-amber-300">{fmtHours(stats?.totalHours)}h</strong> across {stats?.totalPlays || 0} plays • Web: <strong className="text-amber-300">{fmtHours(stats?.totalActiveWebsiteHours)}h</strong></>
                     ) : activeTab === 'monthly' ? (
-                      <>Listened <strong className="text-amber-300">{monthlyRecap?.totalHours || monthlyRecap?.totalListeningHours || '0.0'}h</strong> in {monthlyRecap?.monthLabel || 'this month'}</>
+                      <>Listened <strong className="text-amber-300">{fmtHours(monthlyRecap?.totalHours || monthlyRecap?.totalListeningHours)}h</strong> in {monthlyRecap?.monthLabel || 'this month'}</>
                     ) : (
-                      <>Listened <strong className="text-amber-300">{weeklyRecap?.totalHours || '0.0'}h</strong> this week</>
+                      <>Listened <strong className="text-amber-300">{fmtHours(weeklyRecap?.totalHours)}h</strong> this week</>
                     )}
                   </span>
                 </span>
@@ -931,7 +1041,9 @@ export default function ListeningStatsModal({
                 <div className="flex items-center gap-2">
                   <span className="text-amber-400">🎵</span>
                   <h4 className="text-xs sm:text-sm font-bold text-white">
-                    {activeTab === 'recap'
+                    {activeTab === 'daily'
+                      ? 'Top Songs Today'
+                      : activeTab === 'recap'
                       ? 'Top Songs This Week'
                       : activeTab === 'monthly'
                       ? `Top Songs (${monthlyRecap?.monthLabel || 'This Month'})`
@@ -1034,7 +1146,9 @@ export default function ListeningStatsModal({
                 <div className="flex items-center gap-2">
                   <span className="text-amber-400">👤</span>
                   <h4 className="text-xs sm:text-sm font-bold text-white">
-                    {activeTab === 'recap'
+                    {activeTab === 'daily'
+                      ? 'Top Artists Today'
+                      : activeTab === 'recap'
                       ? 'Top Artists This Week'
                       : activeTab === 'monthly'
                       ? `Top Artists (${monthlyRecap?.monthLabel || 'This Month'})`

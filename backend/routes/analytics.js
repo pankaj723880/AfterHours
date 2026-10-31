@@ -25,6 +25,25 @@ router.get('/overview', authenticateToken, async (req, res) => {
 });
 
 /**
+ * 1b. GET /api/analytics/daily
+ * Dedicated Daily Recap statistics and hourly breakdown.
+ */
+router.get('/daily', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.userId || req.user.id;
+    const timezone = req.query.timezone || 'UTC';
+    const forceRefresh = req.query.forceRefresh === 'true';
+    const date = req.query.date;
+
+    const recap = await analyticsService.getDailyRecap(userId, { timezone, forceRefresh, date });
+    res.json({ success: true, userId, dailyRecap: recap, updatedAt: new Date().toISOString() });
+  } catch (err) {
+    console.error('[Analytics Daily Error]:', err.message);
+    res.status(500).json({ error: 'Failed to retrieve daily recap: ' + err.message });
+  }
+});
+
+/**
  * 2. GET /api/analytics/weekly
  * Dedicated Weekly Recap statistics and daily breakdown.
  */
@@ -88,15 +107,18 @@ router.get('/top-songs', authenticateToken, async (req, res) => {
   try {
     const userId = req.user._id || req.user.userId || req.user.id;
     const timezone = req.query.timezone || 'UTC';
-    const range = req.query.range || 'weekly'; // 'weekly' | 'monthly' | 'all-time'
+    const range = req.query.range || 'weekly'; // 'daily' | 'weekly' | 'monthly' | 'all-time'
     const month = req.query.month;
     const year = req.query.year;
+    const date = req.query.date;
 
-    const data = range === 'all-time'
-      ? await analyticsService.getAllTimeStats(userId, { timezone })
-      : range === 'monthly'
-        ? await analyticsService.getMonthlyRecap(userId, { timezone, month, year })
-        : await analyticsService.getWeeklyRecap(userId, { timezone });
+    const data = range === 'daily'
+      ? await analyticsService.getDailyRecap(userId, { timezone, date })
+      : range === 'all-time'
+        ? await analyticsService.getAllTimeStats(userId, { timezone })
+        : range === 'monthly'
+          ? await analyticsService.getMonthlyRecap(userId, { timezone, month, year })
+          : await analyticsService.getWeeklyRecap(userId, { timezone });
 
     res.json({ success: true, range, topSongs: data.topTracks || [] });
   } catch (err) {
@@ -113,15 +135,18 @@ router.get('/top-artists', authenticateToken, async (req, res) => {
   try {
     const userId = req.user._id || req.user.userId || req.user.id;
     const timezone = req.query.timezone || 'UTC';
-    const range = req.query.range || 'weekly';
+    const range = req.query.range || 'weekly'; // 'daily' | 'weekly' | 'monthly' | 'all-time'
     const month = req.query.month;
     const year = req.query.year;
+    const date = req.query.date;
 
-    const data = range === 'all-time'
-      ? await analyticsService.getAllTimeStats(userId, { timezone })
-      : range === 'monthly'
-        ? await analyticsService.getMonthlyRecap(userId, { timezone, month, year })
-        : await analyticsService.getWeeklyRecap(userId, { timezone });
+    const data = range === 'daily'
+      ? await analyticsService.getDailyRecap(userId, { timezone, date })
+      : range === 'all-time'
+        ? await analyticsService.getAllTimeStats(userId, { timezone })
+        : range === 'monthly'
+          ? await analyticsService.getMonthlyRecap(userId, { timezone, month, year })
+          : await analyticsService.getWeeklyRecap(userId, { timezone });
 
     res.json({ success: true, range, topArtists: data.topArtists || [] });
   } catch (err) {

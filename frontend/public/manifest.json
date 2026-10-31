@@ -4,27 +4,33 @@
   "description": "Stream music with immersive 3D visuals, live Indian radio, curated stations, and AI-powered music exploration.",
   "icons": [
     {
-      "src": "/favicon.svg",
-      "type": "image/svg+xml",
-      "sizes": "any",
+      "src": "/loopra-logo.png?v=3",
+      "type": "image/png",
+      "sizes": "192x192 512x512 1254x1254",
       "purpose": "any"
     },
     {
-      "src": "/icon-192.png",
+      "src": "/loopra-logo.png?v=3",
+      "type": "image/png",
+      "sizes": "192x192 512x512 1254x1254",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-192.png?v=3",
       "type": "image/png",
       "sizes": "192x192",
       "purpose": "any maskable"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/icon-512.png?v=3",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any maskable"
     },
     {
-      "src": "/loopra-logo.png",
+      "src": "/favicon.png?v=3",
       "type": "image/png",
-      "sizes": "512x512",
+      "sizes": "64x64",
       "purpose": "any"
     }
   ],

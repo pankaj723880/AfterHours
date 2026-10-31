@@ -1,12 +1,14 @@
-const CACHE_NAME = 'loopra-v5-shell';
+const CACHE_NAME = 'loopra-v6-shell';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/manifest.json',
+  '/favicon.ico',
   '/favicon.png',
   '/icon-192.png',
   '/icon-512.png',
-  '/loopra-logo.png'
+  '/loopra-logo.png',
+  '/apple-touch-icon.png'
 ];
 
 // Install event - precache core shell
@@ -20,13 +22,14 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Activate event - clean up old caches
+// Activate event - clean up all old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
           if (key !== CACHE_NAME) {
+            console.log('[SW] Clearing outdated cache:', key);
             return caches.delete(key);
           }
         })
@@ -67,7 +70,7 @@ self.addEventListener('fetch', (event) => {
         if (
           networkResponse &&
           networkResponse.status === 200 &&
-          (url.pathname.startsWith('/assets/') || url.pathname.endsWith('.png') || url.pathname.endsWith('.svg') || url.pathname.endsWith('.css') || url.pathname.endsWith('.js'))
+          (url.pathname.startsWith('/assets/') || url.pathname.endsWith('.png') || url.pathname.endsWith('.svg') || url.pathname.endsWith('.ico') || url.pathname.endsWith('.css') || url.pathname.endsWith('.js'))
         ) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));

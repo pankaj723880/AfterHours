@@ -20,7 +20,8 @@ assert.ok(indexHtml.includes('<link rel="canonical" href="https://loopra1.vercel
 assert.ok(indexHtml.includes('property="og:title"'), 'Must have og:title');
 assert.ok(indexHtml.includes('property="og:image" content="https://loopra1.vercel.app/og-image.png"'), 'Must have 1200x630 og:image');
 assert.ok(indexHtml.includes('name="twitter:card" content="summary_large_image"'), 'Must have twitter:card summary_large_image');
-assert.ok(indexHtml.includes('type="image/svg+xml" href="/favicon.svg"'), 'Must support vector favicon.svg');
+assert.ok(indexHtml.includes('href="/loopra-logo.png'), 'Must have approved Loopra logo favicon');
+assert.ok(indexHtml.includes('href="/favicon.ico'), 'Must have approved favicon.ico');
 assert.ok(indexHtml.includes('type="application/ld+json"'), 'Must have JSON-LD script');
 
 // Extract and parse JSON-LD

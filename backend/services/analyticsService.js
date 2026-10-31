@@ -126,6 +126,65 @@ export function getWeekStartInTimezone(timezone = 'UTC') {
 }
 
 /**
+ * Calculates start and end of a calendar day in user's timezone.
+ */
+export function getDayBoundsInTimezone(timezone = 'UTC', targetDate = null) {
+  try {
+    const baseDate = targetDate ? new Date(targetDate) : new Date();
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+      hour12: false
+    });
+
+    const parts = formatter.formatToParts(baseDate);
+    const p = {};
+    for (const part of parts) {
+      p[part.type] = part.value;
+    }
+
+    const localNow = new Date(Date.UTC(
+      parseInt(p.year, 10),
+      parseInt(p.month, 10) - 1,
+      parseInt(p.day, 10),
+      parseInt(p.hour, 10) % 24,
+      parseInt(p.minute, 10),
+      parseInt(p.second, 10)
+    ));
+
+    const offsetMs = localNow.getTime() - baseDate.getTime();
+    const startOfDayLocalMs = Date.UTC(
+      localNow.getUTCFullYear(),
+      localNow.getUTCMonth(),
+      localNow.getUTCDate(),
+      0, 0, 0, 0
+    );
+
+    const startOfDayUtc = new Date(startOfDayLocalMs - offsetMs);
+    const endOfDayUtc = new Date(startOfDayUtc.getTime() + 24 * 60 * 60 * 1000 - 1);
+    return { startOfDay: startOfDayUtc, endOfDay: endOfDayUtc, localDate: localNow };
+  } catch (e) {
+    const d = targetDate ? new Date(targetDate) : new Date();
+    d.setHours(0, 0, 0, 0);
+    const end = new Date(d.getTime() + 24 * 60 * 60 * 1000 - 1);
+    return { startOfDay: d, endOfDay: end, localDate: d };
+  }
+}
+
+/**
+ * Standard utility to format listening hours to exactly two decimal places.
+ */
+export function formatHours(seconds = 0) {
+  const s = Math.max(0, Number(seconds) || 0);
+  return (s / 3600).toFixed(2);
+}
+
+/**
  * Validates whether an event qualifies as a valid music play.
  * Rule: At least 30 seconds of genuine listening, OR marked completed, OR listened to >= 50% of track.
  */
@@ -569,6 +628,279 @@ export const analyticsService = {
   },
 
   /**
+   * Authoritative Daily Recap calculation for user's selected day (defaults to today in user timezone).
+   * Returns: periodLabel, dateRangeLabel, totalListeningSeconds, totalHours (2 decimals), totalPlays,
+   * distinctTracksCount, distinctArtistsCount, peakHour, peakHourHours, hourlyActivity (24 hours),
+   * topTracks, topArtists, dailySummary, hasData.
+   */
+  async getDailyRecap(userId, { timezone = 'UTC', forceRefresh = false, date = null } = {}) {
+    if (!userId) throw new Error('Authenticated user ID is required');
+
+    const userObjectId = new mongoose.Types.ObjectId(userId.toString());
+    const dateKey = date ? new Date(date).toISOString().slice(0, 10) : 'today';
+    const cacheKey = `${userObjectId.toString()}_daily_${timezone}_${dateKey}`;
+    const now = Date.now();
+
+    if (!forceRefresh && analyticsCache.has(cacheKey)) {
+      const cached = analyticsCache.get(cacheKey);
+      if (now - cached.timestamp < CACHE_TTL_MS) return cached.data;
+    }
+
+    const { startOfDay, endOfDay, localDate } = getDayBoundsInTimezone(timezone, date);
+
+    // 24 hourly buckets
+    const emptyHourlyActivity = [];
+    for (let h = 0; h < 24; h++) {
+      const ampm = h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`;
+      emptyHourlyActivity.push({
+        hourIndex: h,
+        hourLabel: ampm,
+        hour24: `${String(h).padStart(2, '0')}:00`,
+        seconds: 0,
+        hours: 0,
+        plays: 0,
+        isPeak: false
+      });
+    }
+
+    let dateRangeLabel = 'Today';
+    try {
+      dateRangeLabel = new Intl.DateTimeFormat('en-US', {
+        weekday: 'short',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        timeZone: timezone
+      }).format(localDate);
+    } catch {}
+
+    const emptyResult = {
+      periodLabel: 'Today',
+      dateRangeLabel,
+      totalListeningSeconds: 0,
+      totalListeningMinutes: 0,
+      totalHours: '0.00',
+      totalListeningHours: '0.00',
+      totalPlays: 0,
+      distinctTracksCount: 0,
+      distinctArtistsCount: 0,
+      peakHour: 'None',
+      peakHourHours: '0.00',
+      peakHourPlays: 0,
+      hourlyActivity: emptyHourlyActivity,
+      topTracks: [],
+      topSongs: [],
+      topArtists: [],
+      dailySummary: 'No music listened to yet today. Start playing your favourite tracks to build your daily recap!',
+      hasData: false
+    };
+
+    if (!mongoose.connection || mongoose.connection.readyState !== 1) {
+      return emptyResult;
+    }
+
+    const [playbackEvents, legacyEvents] = await Promise.all([
+      UserPlaybackEvent.find({
+        userId: userObjectId,
+        startedAt: { $gte: startOfDay, $lte: endOfDay }
+      }).lean().maxTimeMS(6000),
+      UserListeningEvent.find({
+        userId: userObjectId,
+        timestamp: { $gte: startOfDay, $lte: endOfDay }
+      }).lean().maxTimeMS(6000)
+    ]);
+
+    const unifiedMap = new Map();
+
+    for (const ev of playbackEvents) {
+      const key = ev.sessionId || `${ev.trackId}_${new Date(ev.startedAt).getTime()}`;
+      const durSec = Math.max(0, Number(ev.durationSeconds ?? ev.duration) || 0);
+      let listenedSec = Math.max(0, Number(ev.listenedDurationSeconds ?? ev.listenedDuration) || 0);
+      if (listenedSec === 0 && (ev.completed || ev.eventType === 'completed') && durSec > 0) {
+        listenedSec = durSec;
+      }
+      unifiedMap.set(key, {
+        trackId: ev.trackId,
+        videoId: ev.videoId || ev.trackId,
+        title: ev.songTitle,
+        artist: cleanArtistName(ev.artistName, ev.songTitle),
+        thumbnail: ev.artworkUrl,
+        listenedSec,
+        durationSec: durSec,
+        completed: Boolean(ev.completed || ev.eventType === 'completed'),
+        timestamp: new Date(ev.startedAt)
+      });
+    }
+
+    for (const ev of legacyEvents) {
+      const key = ev.playSessionId || `${ev.trackId}_${new Date(ev.timestamp).getTime()}`;
+      const durSec = Math.max(0, Number(ev.duration ?? ev.durationSeconds) || 0);
+      let listenedSec = Math.max(0, Number(ev.listenedDuration ?? ev.listenedDurationSeconds) || 0);
+      if (listenedSec === 0 && (ev.completed || ev.eventType === 'completed') && durSec > 0) {
+        listenedSec = durSec;
+      }
+      if (!unifiedMap.has(key)) {
+        unifiedMap.set(key, {
+          trackId: ev.trackId,
+          videoId: ev.trackId,
+          title: ev.title,
+          artist: cleanArtistName(ev.artist || ev.channel, ev.title),
+          thumbnail: ev.thumbnail || '',
+          listenedSec,
+          durationSec: durSec,
+          completed: ev.eventType === 'completed' || Boolean(ev.completed),
+          timestamp: new Date(ev.timestamp)
+        });
+      } else {
+        const existing = unifiedMap.get(key);
+        existing.listenedSec = Math.max(existing.listenedSec, listenedSec);
+        if (ev.eventType === 'completed' || ev.completed) existing.completed = true;
+      }
+    }
+
+    const events = Array.from(unifiedMap.values());
+    if (events.length === 0) {
+      analyticsCache.set(cacheKey, { timestamp: now, data: emptyResult });
+      return emptyResult;
+    }
+
+    let dailyTotalSeconds = 0;
+    let dailyValidPlays = 0;
+    const trackAggregation = new Map();
+    const artistAggregation = new Map();
+    const hourlyActivity = emptyHourlyActivity.map(h => ({ ...h }));
+
+    for (const ev of events) {
+      const sec = ev.listenedSec;
+      dailyTotalSeconds += sec;
+
+      const isValid = isValidMusicPlay(sec, ev.durationSec, ev.completed);
+      if (isValid) {
+        dailyValidPlays += 1;
+
+        const tId = ev.trackId;
+        const currentTrack = trackAggregation.get(tId) || {
+          id: tId,
+          videoId: ev.videoId || tId,
+          title: ev.title || 'Unknown Track',
+          artist: ev.artist || 'Unknown Artist',
+          thumbnail: ev.thumbnail || '',
+          plays: 0,
+          seconds: 0
+        };
+        currentTrack.plays += 1;
+        currentTrack.seconds += sec;
+        if (ev.thumbnail && !currentTrack.thumbnail) currentTrack.thumbnail = ev.thumbnail;
+        trackAggregation.set(tId, currentTrack);
+
+        const cleanArt = ev.artist;
+        if (cleanArt && cleanArt !== 'Unknown Artist' && cleanArt !== 'Various Artists') {
+          const artEntry = artistAggregation.get(cleanArt) || {
+            artist: cleanArt,
+            name: cleanArt,
+            plays: 0,
+            seconds: 0,
+            avatar: ev.thumbnail || ''
+          };
+          artEntry.plays += 1;
+          artEntry.seconds += sec;
+          if (ev.thumbnail && !artEntry.avatar) artEntry.avatar = ev.thumbnail;
+          artistAggregation.set(cleanArt, artEntry);
+        }
+      }
+
+      // Hourly breakdown
+      if (sec > 0 || isValid) {
+        let hourIdx = 0;
+        try {
+          const parts = new Intl.DateTimeFormat('en-US', { hour: 'numeric', hour12: false, timeZone: timezone }).formatToParts(ev.timestamp);
+          hourIdx = parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10) % 24;
+        } catch {
+          hourIdx = ev.timestamp.getHours();
+        }
+
+        if (hourlyActivity[hourIdx]) {
+          hourlyActivity[hourIdx].seconds += sec;
+          if (isValid) hourlyActivity[hourIdx].plays += 1;
+        }
+      }
+    }
+
+    let peakHour = 'None';
+    let peakHourHours = '0.00';
+    let peakHourPlays = 0;
+    let maxHourSec = 0;
+    let peakIdx = -1;
+
+    hourlyActivity.forEach((hour, idx) => {
+      hour.hours = parseFloat((hour.seconds / 3600).toFixed(2));
+      if (hour.seconds > maxHourSec) {
+        maxHourSec = hour.seconds;
+        peakHour = hour.hourLabel;
+        peakHourHours = (hour.seconds / 3600).toFixed(2);
+        peakHourPlays = hour.plays;
+        peakIdx = idx;
+      }
+    });
+
+    if (peakIdx >= 0 && maxHourSec > 0) {
+      hourlyActivity[peakIdx].isPeak = true;
+    }
+
+    const topTracks = Array.from(trackAggregation.values())
+      .sort((a, b) => b.plays - a.plays || b.seconds - a.seconds)
+      .slice(0, 10);
+
+    const totalValidArtistPlays = Array.from(artistAggregation.values()).reduce((a, b) => a + b.plays, 0) || 1;
+    const topArtists = Array.from(artistAggregation.values())
+      .map(a => ({
+        artist: a.artist,
+        name: a.artist,
+        plays: a.plays,
+        count: a.plays,
+        percentage: Math.min(100, Math.round((a.plays / totalValidArtistPlays) * 100)),
+        avatar: a.avatar || ''
+      }))
+      .sort((a, b) => b.plays - a.plays)
+      .slice(0, 5);
+
+    const totalHoursFormatted = (dailyTotalSeconds / 3600).toFixed(2);
+    let dailySummary = '';
+    if (dailyValidPlays > 0 || dailyTotalSeconds > 0) {
+      dailySummary = `Today you listened for ${totalHoursFormatted} hours across ${dailyValidPlays} verified play${dailyValidPlays === 1 ? '' : 's'} and discovered ${trackAggregation.size} unique track${trackAggregation.size === 1 ? '' : 's'}.`;
+    } else {
+      dailySummary = 'No music listened to yet today. Start playing your favourite tracks to build your daily recap!';
+    }
+
+    const hasData = dailyTotalSeconds >= 10 || dailyValidPlays > 0;
+
+    const result = {
+      periodLabel: 'Today',
+      dateRangeLabel,
+      totalListeningSeconds: dailyTotalSeconds,
+      totalListeningMinutes: Math.round(dailyTotalSeconds / 60),
+      totalHours: totalHoursFormatted,
+      totalListeningHours: totalHoursFormatted,
+      totalPlays: dailyValidPlays,
+      distinctTracksCount: trackAggregation.size,
+      distinctArtistsCount: artistAggregation.size,
+      peakHour,
+      peakHourHours,
+      peakHourPlays,
+      hourlyActivity,
+      topTracks,
+      topSongs: topTracks,
+      topArtists,
+      dailySummary,
+      hasData,
+      isVerified: true
+    };
+
+    analyticsCache.set(cacheKey, { timestamp: now, data: result });
+    return result;
+  },
+
+  /**
    * Authoritative Weekly Recap calculation.
    * Returns: totalListeningSeconds, totalHours, totalPlays, distinctTracksCount, peakDay, dailyActivity, topTracks, topArtists, moods, trends.
    */
@@ -620,13 +952,13 @@ export const analyticsService = {
       dateRangeLabel,
       totalListeningSeconds: 0,
       totalListeningMinutes: 0,
-      totalHours: '0.0',
-      totalListeningHours: '0.0',
+      totalHours: '0.00',
+      totalListeningHours: '0.00',
       totalPlays: 0,
       distinctTracksCount: 0,
       distinctArtistsCount: 0,
       peakDay: 'None',
-      peakDayHours: '0.0',
+      peakDayHours: '0.00',
       dailyActivity: emptyDailyActivity,
       topTracks: [],
       topSongs: [],
@@ -659,40 +991,47 @@ export const analyticsService = {
 
     for (const ev of playbackEvents) {
       const key = ev.sessionId || `${ev.trackId}_${new Date(ev.startedAt).getTime()}`;
+      const durSec = Math.max(0, Number(ev.durationSeconds ?? ev.duration) || 0);
+      let listenedSec = Math.max(0, Number(ev.listenedDurationSeconds ?? ev.listenedDuration) || 0);
+      if (listenedSec === 0 && (ev.completed || ev.eventType === 'completed') && durSec > 0) {
+        listenedSec = durSec;
+      }
       unifiedMap.set(key, {
         trackId: ev.trackId,
         videoId: ev.videoId || ev.trackId,
         title: ev.songTitle,
         artist: cleanArtistName(ev.artistName, ev.songTitle),
         thumbnail: ev.artworkUrl,
-        listenedSec: Math.max(0, Number(ev.listenedDurationSeconds) || 0),
-        durationSec: Math.max(0, Number(ev.durationSeconds) || 0),
-        completed: Boolean(ev.completed),
-        timestamp: new Date(ev.startedAt),
+        listenedSec,
+        durationSec: durSec,
+        completed: Boolean(ev.completed || ev.eventType === 'completed'),
         timestamp: new Date(ev.startedAt)
       });
     }
 
     for (const ev of legacyEvents) {
       const key = ev.playSessionId || `${ev.trackId}_${new Date(ev.timestamp).getTime()}`;
+      const durSec = Math.max(0, Number(ev.duration ?? ev.durationSeconds) || 0);
+      let listenedSec = Math.max(0, Number(ev.listenedDuration ?? ev.listenedDurationSeconds) || 0);
+      if (listenedSec === 0 && (ev.completed || ev.eventType === 'completed') && durSec > 0) {
+        listenedSec = durSec;
+      }
       if (!unifiedMap.has(key)) {
         unifiedMap.set(key, {
           trackId: ev.trackId,
           videoId: ev.trackId,
           title: ev.title,
-          artist: ev.artist || ev.channel || 'Unknown Artist',
+          artist: cleanArtistName(ev.artist || ev.channel, ev.title),
           thumbnail: ev.thumbnail || '',
-          listenedSec: Math.max(0, Number(ev.listenedDuration) || 0),
-          durationSec: Math.max(0, Number(ev.duration) || 0),
-          completed: ev.eventType === 'completed',
-        timestamp: new Date(ev.timestamp),
+          listenedSec,
+          durationSec: durSec,
+          completed: ev.eventType === 'completed' || Boolean(ev.completed),
           timestamp: new Date(ev.timestamp)
         });
       } else {
-        // Merge max listened duration
         const existing = unifiedMap.get(key);
-        existing.listenedSec = Math.max(existing.listenedSec, Number(ev.listenedDuration) || 0);
-        if (ev.eventType === 'completed') existing.completed = true;
+        existing.listenedSec = Math.max(existing.listenedSec, listenedSec);
+        if (ev.eventType === 'completed' || ev.completed) existing.completed = true;
       }
     }
 
@@ -769,16 +1108,16 @@ export const analyticsService = {
 
     // Determine peak day strictly from actual daily seconds
     let peakDay = 'None';
-    let peakDayHours = '0.0';
+    let peakDayHours = '0.00';
     let maxDaySec = 0;
     let peakIdx = -1;
 
     dailyActivity.forEach((day, idx) => {
-      day.hours = parseFloat((day.seconds / 3600).toFixed(1));
+      day.hours = parseFloat((day.seconds / 3600).toFixed(2));
       if (day.seconds > maxDaySec) {
         maxDaySec = day.seconds;
         peakDay = day.dayLabel;
-        peakDayHours = day.hours.toFixed(1);
+        peakDayHours = (day.seconds / 3600).toFixed(2);
         peakIdx = idx;
       }
     });
@@ -869,8 +1208,8 @@ export const analyticsService = {
       dateRangeLabel,
       totalListeningSeconds: weeklyTotalSeconds,
       totalListeningMinutes: Math.round(weeklyTotalSeconds / 60),
-      totalHours: (weeklyTotalSeconds / 3600).toFixed(1),
-      totalListeningHours: (weeklyTotalSeconds / 3600).toFixed(1),
+      totalHours: (weeklyTotalSeconds / 3600).toFixed(2),
+      totalListeningHours: (weeklyTotalSeconds / 3600).toFixed(2),
       totalPlays: weeklyValidPlays,
       distinctTracksCount: trackAggregation.size,
       distinctArtistsCount: artistAggregation.size,
@@ -910,8 +1249,8 @@ export const analyticsService = {
     const emptyResult = {
       totalListeningSeconds: 0,
       totalMinutes: 0,
-      totalHours: '0.0',
-      totalListeningHours: '0.0',
+      totalHours: '0.00',
+      totalListeningHours: '0.00',
       totalPlays: 0,
       distinctTracksCount: 0,
       uniqueTracks: 0,
@@ -921,7 +1260,7 @@ export const analyticsService = {
       topSongs: [],
       topArtists: [],
       totalActiveWebsiteSeconds: 0,
-      totalActiveWebsiteHours: '0.0',
+      totalActiveWebsiteHours: '0.00',
       totalSessions: 0,
       longestSessionSeconds: 0,
       longestSessionFormatted: '0m 0s',
@@ -944,37 +1283,47 @@ export const analyticsService = {
     const unifiedMap = new Map();
     for (const ev of playbackEvents) {
       const key = ev.sessionId || `${ev.trackId}_${new Date(ev.startedAt).getTime()}`;
+      const durSec = Math.max(0, Number(ev.durationSeconds ?? ev.duration) || 0);
+      let listenedSec = Math.max(0, Number(ev.listenedDurationSeconds ?? ev.listenedDuration) || 0);
+      if (listenedSec === 0 && (ev.completed || ev.eventType === 'completed') && durSec > 0) {
+        listenedSec = durSec;
+      }
       unifiedMap.set(key, {
         trackId: ev.trackId,
         videoId: ev.videoId || ev.trackId,
         title: ev.songTitle,
         artist: cleanArtistName(ev.artistName, ev.songTitle),
         thumbnail: ev.artworkUrl,
-        listenedSec: Math.max(0, Number(ev.listenedDurationSeconds) || 0),
-        durationSec: Math.max(0, Number(ev.durationSeconds) || 0),
-        completed: Boolean(ev.completed),
+        listenedSec,
+        durationSec: durSec,
+        completed: Boolean(ev.completed || ev.eventType === 'completed'),
         timestamp: new Date(ev.startedAt)
       });
     }
 
     for (const ev of legacyEvents) {
       const key = ev.playSessionId || `${ev.trackId}_${new Date(ev.timestamp).getTime()}`;
+      const durSec = Math.max(0, Number(ev.duration ?? ev.durationSeconds) || 0);
+      let listenedSec = Math.max(0, Number(ev.listenedDuration ?? ev.listenedDurationSeconds) || 0);
+      if (listenedSec === 0 && (ev.completed || ev.eventType === 'completed') && durSec > 0) {
+        listenedSec = durSec;
+      }
       if (!unifiedMap.has(key)) {
         unifiedMap.set(key, {
           trackId: ev.trackId,
           videoId: ev.trackId,
           title: ev.title,
-          artist: ev.artist || ev.channel || 'Unknown Artist',
+          artist: cleanArtistName(ev.artist || ev.channel, ev.title),
           thumbnail: ev.thumbnail || '',
-          listenedSec: Math.max(0, Number(ev.listenedDuration) || 0),
-          durationSec: Math.max(0, Number(ev.duration) || 0),
-          completed: ev.eventType === 'completed',
-        timestamp: new Date(ev.timestamp)
+          listenedSec,
+          durationSec: durSec,
+          completed: ev.eventType === 'completed' || Boolean(ev.completed),
+          timestamp: new Date(ev.timestamp)
         });
       } else {
         const existing = unifiedMap.get(key);
-        existing.listenedSec = Math.max(existing.listenedSec, Number(ev.listenedDuration) || 0);
-        if (ev.eventType === 'completed') existing.completed = true;
+        existing.listenedSec = Math.max(existing.listenedSec, listenedSec);
+        if (ev.eventType === 'completed' || ev.completed) existing.completed = true;
       }
     }
 
@@ -1085,7 +1434,7 @@ export const analyticsService = {
     let maxHistSec = 0;
     let peakHistIdx = -1;
     activityOverTime.forEach((m, idx) => {
-      m.hours = parseFloat((m.seconds / 3600).toFixed(1));
+      m.hours = parseFloat((m.seconds / 3600).toFixed(2));
       if (m.seconds > maxHistSec) {
         maxHistSec = m.seconds;
         peakHistIdx = idx;
@@ -1106,8 +1455,8 @@ export const analyticsService = {
     const result = {
       totalListeningSeconds: lifetimeSeconds,
       totalMinutes: Math.round(lifetimeSeconds / 60),
-      totalHours: (lifetimeSeconds / 3600).toFixed(1),
-      totalListeningHours: (lifetimeSeconds / 3600).toFixed(1),
+      totalHours: (lifetimeSeconds / 3600).toFixed(2),
+      totalListeningHours: (lifetimeSeconds / 3600).toFixed(2),
       totalPlays: lifetimeValidPlays,
       distinctTracksCount: trackAggregation.size,
       uniqueTracks: trackAggregation.size,
@@ -1118,9 +1467,9 @@ export const analyticsService = {
       topArtists,
       longestSessionSeconds: longestSessionSec,
       longestSessionFormatted: `${Math.floor(longestSessionSec / 60)}m ${longestSessionSec % 60}s`,
-      activityOverTime: [],
+      activityOverTime,
       totalActiveWebsiteSeconds: totalWebsiteSeconds,
-      totalActiveWebsiteHours: (totalWebsiteSeconds / 3600).toFixed(1),
+      totalActiveWebsiteHours: (totalWebsiteSeconds / 3600).toFixed(2),
       totalSessions: websiteSessions.length,
       hasData
     };
@@ -1198,13 +1547,13 @@ export const analyticsService = {
       month: targetMonth + 1,
       totalListeningSeconds: 0,
       totalListeningMinutes: 0,
-      totalHours: '0.0',
-      totalListeningHours: '0.0',
+      totalHours: '0.00',
+      totalListeningHours: '0.00',
       totalPlays: 0,
       distinctTracksCount: 0,
       distinctArtistsCount: 0,
       peakDay: 'None',
-      peakDayHours: '0.0',
+      peakDayHours: '0.00',
       dailyActivity: emptyDailyActivity,
       topTracks: [],
       topSongs: [],
@@ -1233,22 +1582,31 @@ export const analyticsService = {
 
     for (const ev of playbackEvents) {
       const key = ev.sessionId || `${ev.trackId}_${new Date(ev.startedAt).getTime()}`;
+      const durSec = Math.max(0, Number(ev.durationSeconds ?? ev.duration) || 0);
+      let listenedSec = Math.max(0, Number(ev.listenedDurationSeconds ?? ev.listenedDuration) || 0);
+      if (listenedSec === 0 && (ev.completed || ev.eventType === 'completed') && durSec > 0) {
+        listenedSec = durSec;
+      }
       unifiedMap.set(key, {
         trackId: ev.trackId,
         videoId: ev.videoId || ev.trackId,
         title: ev.songTitle,
         artist: cleanArtistName(ev.artistName, ev.songTitle),
         thumbnail: ev.artworkUrl,
-        listenedSec: Math.max(0, Number(ev.listenedDurationSeconds) || 0),
-        durationSec: Math.max(0, Number(ev.durationSeconds) || 0),
-        completed: Boolean(ev.completed),
-        timestamp: new Date(ev.startedAt),
+        listenedSec,
+        durationSec: durSec,
+        completed: Boolean(ev.completed || ev.eventType === 'completed'),
         timestamp: new Date(ev.startedAt)
       });
     }
 
     for (const ev of legacyEvents) {
       const key = ev.playSessionId || `${ev.trackId}_${new Date(ev.timestamp).getTime()}`;
+      const durSec = Math.max(0, Number(ev.duration ?? ev.durationSeconds) || 0);
+      let listenedSec = Math.max(0, Number(ev.listenedDuration ?? ev.listenedDurationSeconds) || 0);
+      if (listenedSec === 0 && (ev.completed || ev.eventType === 'completed') && durSec > 0) {
+        listenedSec = durSec;
+      }
       if (!unifiedMap.has(key)) {
         unifiedMap.set(key, {
           trackId: ev.trackId,
@@ -1256,16 +1614,15 @@ export const analyticsService = {
           title: ev.title,
           artist: cleanArtistName(ev.artist || ev.channel, ev.title),
           thumbnail: ev.thumbnail || '',
-          listenedSec: Math.max(0, Number(ev.listenedDuration) || 0),
-          durationSec: Math.max(0, Number(ev.duration) || 0),
-          completed: ev.eventType === 'completed',
-        timestamp: new Date(ev.timestamp),
+          listenedSec,
+          durationSec: durSec,
+          completed: ev.eventType === 'completed' || Boolean(ev.completed),
           timestamp: new Date(ev.timestamp)
         });
       } else {
         const existing = unifiedMap.get(key);
-        existing.listenedSec = Math.max(existing.listenedSec, Number(ev.listenedDuration) || 0);
-        if (ev.eventType === 'completed') existing.completed = true;
+        existing.listenedSec = Math.max(existing.listenedSec, listenedSec);
+        if (ev.eventType === 'completed' || ev.completed) existing.completed = true;
       }
     }
 
@@ -1336,16 +1693,16 @@ export const analyticsService = {
     }
 
     let peakDay = 'None';
-    let peakDayHours = '0.0';
+    let peakDayHours = '0.00';
     let maxDaySec = 0;
     let peakIdx = -1;
 
     dailyActivity.forEach((day, idx) => {
-      day.hours = parseFloat((day.seconds / 3600).toFixed(1));
+      day.hours = parseFloat((day.seconds / 3600).toFixed(2));
       if (day.seconds > maxDaySec) {
         maxDaySec = day.seconds;
         peakDay = day.dayShort;
-        peakDayHours = day.hours.toFixed(1);
+        peakDayHours = (day.seconds / 3600).toFixed(2);
         peakIdx = idx;
       }
     });
@@ -1408,8 +1765,8 @@ export const analyticsService = {
       month: targetMonth + 1,
       totalListeningSeconds: monthlyTotalSeconds,
       totalListeningMinutes: Math.round(monthlyTotalSeconds / 60),
-      totalHours: (monthlyTotalSeconds / 3600).toFixed(1),
-      totalListeningHours: (monthlyTotalSeconds / 3600).toFixed(1),
+      totalHours: (monthlyTotalSeconds / 3600).toFixed(2),
+      totalListeningHours: (monthlyTotalSeconds / 3600).toFixed(2),
       totalPlays: monthlyValidPlays,
       distinctTracksCount: trackAggregation.size,
       distinctArtistsCount: artistAggregation.size,
@@ -1507,10 +1864,11 @@ export const analyticsService = {
   },
 
   /**
-   * Unified Overview endpoint providing single source of truth for weekly, monthly, lifetime recap & streaks.
+   * Unified Overview endpoint providing single source of truth for daily, weekly, monthly, lifetime recap & streaks.
    */
   async getUnifiedOverview(userId, options = {}) {
-    const [weeklyRecap, monthlyRecap, allTimeStats, streaks] = await Promise.all([
+    const [dailyRecap, weeklyRecap, monthlyRecap, allTimeStats, streaks] = await Promise.all([
+      this.getDailyRecap(userId, options),
       this.getWeeklyRecap(userId, options),
       this.getMonthlyRecap(userId, options),
       this.getAllTimeStats(userId, options),
@@ -1518,6 +1876,7 @@ export const analyticsService = {
     ]);
 
     const hasAnyVerified = Boolean(
+      (dailyRecap && dailyRecap.totalPlays > 0) ||
       (allTimeStats && allTimeStats.totalPlays > 0) ||
       (monthlyRecap && monthlyRecap.totalPlays > 0) ||
       (weeklyRecap && weeklyRecap.totalPlays > 0)
@@ -1527,7 +1886,7 @@ export const analyticsService = {
       isVerified: Boolean(userId && hasAnyVerified),
       statusText: (userId && hasAnyVerified) ? 'Verified Data' : (userId ? 'Verified (0 Plays)' : 'Guest Mode'),
       eventsCount: allTimeStats?.totalPlays || 0,
-      totalHours: allTimeStats?.totalHours || '0.0',
+      totalHours: allTimeStats?.totalHours || '0.00',
       auditPassed: true
     };
 
@@ -1535,6 +1894,7 @@ export const analyticsService = {
       success: true,
       userId: userId ? userId.toString() : null,
       updatedAt: new Date().toISOString(),
+      dailyRecap,
       weeklyRecap,
       monthlyRecap,
       allTimeStats,

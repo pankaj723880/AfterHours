@@ -255,7 +255,7 @@ async function run() {
         `Daily activity seconds sum (${dailySumSeconds}) strictly equals totalListeningSeconds (${data.weeklyRecap.totalListeningSeconds})`);
 
       for (const day of data.weeklyRecap.dailyActivity) {
-        const expectedHours = parseFloat((day.seconds / 3600).toFixed(1));
+        const expectedHours = parseFloat((day.seconds / 3600).toFixed(2));
         assert.strictEqual(day.hours, expectedHours, `Day ${day.day} hours (${day.hours}) equals seconds/3600 (${expectedHours})`);
       }
 
