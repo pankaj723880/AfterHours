@@ -13,8 +13,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   </GoogleOAuthProvider>
 );
 
-// Register the Service Worker for PWA support
-if ('serviceWorker' in navigator) {
+// Register the Service Worker for PWA support in production
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
       .then((reg) => console.log('Service Worker Registered!', reg))

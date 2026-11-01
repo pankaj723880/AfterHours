@@ -1,0 +1,484 @@
+/**
+ * Loopra Voice Agent Command Registry & Action Mapper
+ * Multi-lingual (English, Hindi, Hinglish), context-aware local command parsing.
+ * Strictly isolates administrative operations from the Voice Agent for security.
+ */
+
+export function parseVoiceCommandLocally(rawText = '', context = {}) {
+  if (!rawText || typeof rawText !== 'string') return null;
+  let text = rawText.trim();
+  let lower = text.toLowerCase().trim();
+  const currentSong = context.currentSong || context.lastPlayedTrack || null;
+
+  // Strip leading wake phrase if present
+  const wakePrefixes = ['hey loopra, ', 'hey loopra ', 'ok loopra, ', 'ok loopra ', 'loopra, ', 'loopra '];
+  for (const wp of wakePrefixes) {
+    if (lower.startsWith(wp)) {
+      text = text.slice(wp.length).trim();
+      lower = text.toLowerCase().trim();
+      break;
+    }
+  }
+
+  // Pure wake phrase
+  if (/^(hey loopra|ok loopra|hello loopra|loopra|namaste loopra)$/i.test(lower)) {
+    return {
+      type: 'wake_ping',
+      action: 'wake_ping',
+      speechResponse: 'Listening! Tell me what you want to play or open.',
+      description: 'Listening for command...'
+    };
+  }
+
+  // Deactivation / Stop Continuous Voice Session
+  if (
+    /^(done loopra|stop listening|bye loopra|alvida loopra|chup ho jao|band karo|exit voice|close voice|sleep)$/i.test(lower) ||
+    /\b(done loopra|stop listening|stop voice|close voice agent)\b/i.test(lower)
+  ) {
+    return {
+      type: 'stop_continuous',
+      action: 'stop_continuous',
+      speechResponse: 'Stopping voice session. Call Hey Loopra anytime!',
+      description: 'Session stopped'
+    };
+  }
+
+  // -------------------------------------------------------------
+  // SECURITY REQUIREMENT: STRICT ADMIN DASHBOARD ISOLATION
+  // -------------------------------------------------------------
+  if (
+    /\b(admin|administrator|admin dashboard|cms|user management|audit logs?|system metrics|diagnostics|database|feature toggle|rollout|server logs)\b/i.test(lower)
+  ) {
+    return {
+      type: 'security_blocked',
+      action: 'security_blocked',
+      speechResponse: 'Admin Dashboard and administrative operations are strictly isolated and not accessible via Voice Agent.',
+      description: 'Action blocked: Administrative security isolation'
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 1. PLAYBACK: PAUSE / STOP
+  // -------------------------------------------------------------
+  if (
+    /^(pause|stop|hold on|ruk jao|rok do|gaana roko|pause karo|chup ho jao)$/i.test(lower) ||
+    /\b(pause music|stop music|music roko|pause the song)\b/i.test(lower)
+  ) {
+    return {
+      type: 'playback',
+      action: 'pause',
+      speechResponse: 'Pausing music',
+      description: 'Pause playback'
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 2. PLAYBACK: RESUME / PLAY
+  // -------------------------------------------------------------
+  if (
+    /^(resume|play|continue|unpause|shuru karo|chalao|bajao|start playing)$/i.test(lower) ||
+    /\b(resume music|unpause song|play music|chalu karo)\b/i.test(lower)
+  ) {
+    return {
+      type: 'playback',
+      action: 'resume',
+      speechResponse: 'Resuming playback',
+      description: 'Resume playback'
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 3. PLAYBACK: NEXT TRACK / SKIP
+  // -------------------------------------------------------------
+  if (
+    /\b(next track|next song|skip song|skip track|agla gaana|agla song|aage badhao|change song)\b/i.test(lower) ||
+    /^(next|skip|agla)$/i.test(lower)
+  ) {
+    return {
+      type: 'playback',
+      action: 'next',
+      speechResponse: 'Playing next track',
+      description: 'Skip to next track'
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 4. PLAYBACK: PREVIOUS TRACK
+  // -------------------------------------------------------------
+  if (
+    /\b(previous track|previous song|prev song|pichla gaana|pichla track|pichla song|piche karo)\b/i.test(lower) ||
+    /^(previous|prev|pichla)$/i.test(lower)
+  ) {
+    return {
+      type: 'playback',
+      action: 'previous',
+      speechResponse: 'Playing previous track',
+      description: 'Back to previous track'
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 5. PLAYBACK: SHUFFLE
+  // -------------------------------------------------------------
+  if (
+    /\b(shuffle|shuffle mode|random play|shuffle on|turn shuffle on|shuffle off|mix karo)\b/i.test(lower)
+  ) {
+    return {
+      type: 'playback',
+      action: 'shuffle',
+      speechResponse: 'Toggling shuffle mode',
+      description: 'Toggle shuffle mode'
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 6. PLAYBACK: REPEAT / LOOP
+  // -------------------------------------------------------------
+  if (
+    /\b(repeat|repeat mode|loop this|repeat this song|loop karo|baar baar bajao|set repeat)\b/i.test(lower)
+  ) {
+    return {
+      type: 'playback',
+      action: 'repeat',
+      speechResponse: 'Toggling repeat mode',
+      description: 'Toggle repeat mode'
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 7. VOLUME: MUTE / UNMUTE
+  // -------------------------------------------------------------
+  if (/\b(mute|silent|awaaz band|chup karo)\b/i.test(lower)) {
+    return {
+      type: 'playback',
+      action: 'mute',
+      speechResponse: 'Audio muted',
+      description: 'Mute volume'
+    };
+  }
+  if (/\b(unmute|awaaz kholo|awaaz on)\b/i.test(lower)) {
+    return {
+      type: 'playback',
+      action: 'unmute',
+      speechResponse: 'Audio unmuted',
+      description: 'Unmute volume'
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 8. VOLUME: UP / DOWN / SET
+  // -------------------------------------------------------------
+  if (/\b(volume up|increase volume|louder|awaaz badhao|thoda tej karo|awaaz tej)\b/i.test(lower)) {
+    return {
+      type: 'playback',
+      action: 'volume_up',
+      speechResponse: 'Increasing volume',
+      description: 'Volume up (+15%)'
+    };
+  }
+  if (/\b(volume down|decrease volume|lower volume|softer|awaaz kam karo|thoda dheere karo)\b/i.test(lower)) {
+    return {
+      type: 'playback',
+      action: 'volume_down',
+      speechResponse: 'Decreasing volume',
+      description: 'Volume down (-15%)'
+    };
+  }
+  const volumeMatch = lower.match(/(?:set\s+)?volume\s+(?:to\s+)?(\d{1,3})/i) || lower.match(/awaaz\s+(\d{1,3})/i);
+  if (volumeMatch && volumeMatch[1]) {
+    const val = Math.min(100, Math.max(0, parseInt(volumeMatch[1], 10)));
+    return {
+      type: 'playback',
+      action: 'set_volume',
+      value: val,
+      speechResponse: `Setting volume to ${val} percent`,
+      description: `Set volume to ${val}%`
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 9. LIBRARY: LIKE / UNLIKE CURRENT SONG
+  // -------------------------------------------------------------
+  if (
+    /\b(like this song|like this track|like it|add to favourites|add to favorites|add to liked|add that song to my favorites|dil de do|pasand aaya|favourite karo|usko like karo)\b/i.test(lower) ||
+    /^(like|favourite|favorite)$/i.test(lower)
+  ) {
+    return {
+      type: 'library',
+      action: 'like_current',
+      target: currentSong,
+      speechResponse: currentSong ? `Added ${currentSong.title || 'track'} to your Liked Songs` : 'Adding to Liked Songs',
+      description: `Like "${currentSong?.title || 'Current Song'}"`
+    };
+  }
+
+  if (/\b(unlike|remove from favourites|remove from liked|unlike this song)\b/i.test(lower)) {
+    return {
+      type: 'library',
+      action: 'unlike_current',
+      target: currentSong,
+      speechResponse: `Removed from your Liked Songs`,
+      description: `Unlike current track`
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 10. LIBRARY: ADD TO PLAYLIST
+  // -------------------------------------------------------------
+  if (/\b(add to playlist|playlist me daalo|add this to my playlist|add that song to my favorites)\b/i.test(lower)) {
+    return {
+      type: 'library',
+      action: 'add_to_playlist',
+      target: currentSong,
+      speechResponse: 'Opening playlist selector',
+      description: `Add current track to playlist`
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 11. NAVIGATION: QUEUE & NOW PLAYING (Check before general play/search)
+  // -------------------------------------------------------------
+  if (
+    /\b(open playback queue|playback queue|open queue|show queue|view queue|queue dikhao|up next songs|now playing queue|queue panel)\b/i.test(lower) ||
+    /^(queue)$/i.test(lower)
+  ) {
+    return {
+      type: 'navigation',
+      action: 'open_queue',
+      speechResponse: 'Opening playback queue',
+      description: 'Open Queue panel'
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 12. NAVIGATION: SYNCHRONIZED LYRICS
+  // -------------------------------------------------------------
+  if (
+    /\b(open lyrics|show lyrics|view lyrics|lyrics kholo|lyrics dikhao|lyrics)\b/i.test(lower) ||
+    /^(lyrics)$/i.test(lower)
+  ) {
+    return {
+      type: 'navigation',
+      action: 'open_lyrics',
+      speechResponse: 'Opening synchronized lyrics',
+      description: 'Open Lyrics modal'
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 13. CONTEXT: OPEN CURRENT ARTIST'S PROFILE
+  // -------------------------------------------------------------
+  if (
+    /\b(open this artist profile|open the artist profile|open its artist profile|open this artist|artist profile|who is the singer|artist ka profile|open artist|is artist ke saare songs)\b/i.test(lower)
+  ) {
+    const artistName = context.lastArtist || currentSong?.artist || currentSong?.channel || null;
+    return {
+      type: 'navigation',
+      action: 'open_artist',
+      target: artistName,
+      speechResponse: artistName ? `Opening ${artistName}'s profile` : 'Opening artist profile',
+      description: `Open profile of ${artistName || 'artist'}`
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 14. CONTEXT: FOLLOW ARTIST
+  // -------------------------------------------------------------
+  if (/\b(follow artist|follow this artist|artist ko follow karo)\b/i.test(lower)) {
+    const artistName = context.lastArtist || currentSong?.artist || currentSong?.channel || null;
+    return {
+      type: 'library',
+      action: 'follow_artist',
+      target: artistName,
+      speechResponse: artistName ? `Following ${artistName}` : 'Following artist',
+      description: `Follow ${artistName || 'artist'}`
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 15. NAVIGATION: GO BACK
+  // -------------------------------------------------------------
+  if (/\b(go back|back jao|piche jao|previous page|wapas jao)\b/i.test(lower) || /^(back)$/i.test(lower)) {
+    return {
+      type: 'navigation',
+      action: 'go_back',
+      speechResponse: 'Going back',
+      description: 'Go to previous page'
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 16. NAVIGATION: LISTENING INSIGHTS & RECAP
+  // -------------------------------------------------------------
+  if (/\b(listening insights|weekly recap|my recap|stats|statistics|listening stats|mera recap|mera stats|insights kholo|insights)\b/i.test(lower)) {
+    return {
+      type: 'navigation',
+      action: 'open_insights',
+      speechResponse: 'Opening your Listening Insights & Weekly Recap',
+      description: 'Open Listening Insights & Recap'
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 17. NAVIGATION: PAGES (Home, Discover, Radio, Liked/Library, History, Playlists)
+  // -------------------------------------------------------------
+  if (/\b(go home|open home|home page|ghar jao|main page)\b/i.test(lower) || /^(home)$/i.test(lower)) {
+    return {
+      type: 'navigation',
+      action: 'navigate_page',
+      target: 'home',
+      speechResponse: 'Opening Home',
+      description: 'Navigate to Home'
+    };
+  }
+
+  if (/\b(open discover|go to discover|discover page|explore music|khojo|explore)\b/i.test(lower) || /^(discover)$/i.test(lower)) {
+    return {
+      type: 'navigation',
+      action: 'navigate_page',
+      target: 'discover',
+      speechResponse: 'Opening Discover & Search',
+      description: 'Navigate to Discover'
+    };
+  }
+
+  if (/\b(open radio|live radio|indian radio|radio stations?|fm sunao|radio)\b/i.test(lower) || /^(radio)$/i.test(lower)) {
+    return {
+      type: 'navigation',
+      action: 'navigate_page',
+      target: 'radio',
+      speechResponse: 'Opening Indian Live Radio',
+      description: 'Navigate to Live Radio'
+    };
+  }
+
+  if (/\b(liked songs|my liked songs|open liked|favourites?|pasandida gaane|library)\b/i.test(lower)) {
+    return {
+      type: 'navigation',
+      action: 'navigate_page',
+      target: 'library',
+      speechResponse: 'Opening Liked Songs Collection',
+      description: 'Navigate to Liked Songs'
+    };
+  }
+
+  if (/\b(listening history|recently played|recent songs|history kholo|history page)\b/i.test(lower) || /^(history)$/i.test(lower)) {
+    return {
+      type: 'navigation',
+      action: 'navigate_page',
+      target: 'history',
+      speechResponse: 'Opening Listening History',
+      description: 'Navigate to History'
+    };
+  }
+
+  if (/\b(open playlists|my playlists|playlists dekho|playlists)\b/i.test(lower) || /^(playlists)$/i.test(lower)) {
+    return {
+      type: 'navigation',
+      action: 'navigate_page',
+      target: 'playlists',
+      speechResponse: 'Opening Playlists',
+      description: 'Navigate to Playlists'
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 18. NAVIGATION: SPECIFIC ARTIST BY NAME
+  // -------------------------------------------------------------
+  const artistMatch = lower.match(/(?:open|show|view)?\s*artist\s+([a-zA-Z0-9\s.]+)/i) ||
+                      lower.match(/([a-zA-Z0-9\s.]+)\s+(?:ka\s+profile|ka\s+page)/i);
+  if (artistMatch && artistMatch[1]) {
+    const rawName = artistMatch[1].trim();
+    if (rawName && !['profile', 'page', 'songs', 'queue', 'music'].includes(rawName)) {
+      return {
+        type: 'navigation',
+        action: 'open_artist',
+        target: rawName,
+        speechResponse: `Opening ${rawName}'s profile`,
+        description: `Open artist profile for "${rawName}"`
+      };
+    }
+  }
+
+  // -------------------------------------------------------------
+  // 19. PLAY INTENT: DIRECT SONG OR ARTIST SEARCH & PLAY
+  // -------------------------------------------------------------
+  const playPrefixes = [
+    'play song ',
+    'play track ',
+    'play ',
+    'bajao gaana ',
+    'bajao ',
+    'chalao song ',
+    'chalao ',
+    'sunao gaana ',
+    'sunao ',
+    'gana bajao ',
+    'gaana bajao '
+  ];
+  for (const prefix of playPrefixes) {
+    if (lower.startsWith(prefix)) {
+      const query = text.slice(prefix.length).trim();
+      if (query.toLowerCase() === 'this song' || query.toLowerCase() === 'this track') {
+        return {
+          type: 'playback',
+          action: 'resume',
+          speechResponse: 'Resuming current track',
+          description: 'Play current song'
+        };
+      }
+      if (query) {
+        return {
+          type: 'playback',
+          action: 'play_search',
+          query,
+          speechResponse: `Searching and playing ${query}`,
+          description: `Play "${query}"`
+        };
+      }
+    }
+  }
+
+  // -------------------------------------------------------------
+  // 20. SEARCH INTENT
+  // -------------------------------------------------------------
+  const searchPrefixes = [
+    'search for ',
+    'search ',
+    'find song ',
+    'find ',
+    'look up ',
+    'dhundo ',
+    'khojo '
+  ];
+  for (const prefix of searchPrefixes) {
+    if (lower.startsWith(prefix)) {
+      const query = text.slice(prefix.length).trim();
+      if (query) {
+        return {
+          type: 'navigation',
+          action: 'search',
+          query,
+          speechResponse: `Searching for ${query}`,
+          description: `Search for "${query}"`
+        };
+      }
+    }
+  }
+
+  // 21. Default fallback: query search and play
+  return {
+    type: 'playback',
+    action: 'play_search',
+    query: text,
+    speechResponse: `Searching for ${text}`,
+    description: `Play "${text}"`
+  };
+}
+
+export {
+  splitVoiceInstructionIntoClauses,
+  resolveStepReferences,
+  parseMultiStepInstruction,
+  executeTaskPipeline
+} from './voiceTaskEngine.js';

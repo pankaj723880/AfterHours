@@ -87,9 +87,32 @@ export default function LoopraAiCompanion({
   isLiked,
   onAddToPlaylist,
   showToast,
-  isBottomPlayerVisible = false
+  isBottomPlayerVisible = false,
+  isOpen: controlledIsOpen,
+  onToggleOpen,
+  onClose,
+  hideFloatingButton = false
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [uncontrolledIsOpen, setUncontrolledIsOpen] = useState(false);
+  const isControlled = controlledIsOpen !== undefined;
+  const isOpen = isControlled ? controlledIsOpen : uncontrolledIsOpen;
+
+  const handleButtonClick = () => {
+    if (isControlled) {
+      onToggleOpen?.(!isOpen);
+    } else {
+      setUncontrolledIsOpen(prev => !prev);
+    }
+  };
+
+  const handlePanelClose = () => {
+    if (isControlled) {
+      onClose?.();
+    } else {
+      setUncontrolledIsOpen(false);
+    }
+  };
+
   const [dimensions, setDimensions] = useState(loadSavedDimensions);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 768);
   const [isResizing, setIsResizing] = useState(false);
@@ -541,10 +564,6 @@ export default function LoopraAiCompanion({
     } catch (err) {}
   };
 
-  const handleButtonClick = () => {
-    setIsOpen(prev => !prev);
-  };
-
   if (typeof document === 'undefined') return null;
 
   return ReactDOM.createPortal(
@@ -599,7 +618,7 @@ export default function LoopraAiCompanion({
 
               <button
                 type="button"
-                onClick={() => setIsOpen(false)}
+                onClick={handlePanelClose}
                 className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-lg text-xs transition cursor-pointer"
                 title="Close assistant panel"
               >
@@ -942,41 +961,43 @@ export default function LoopraAiCompanion({
         {/* 2. FLOATING ASSISTANT BUTTON                                  */}
         {/* Strictly fixed at bottom-right of viewport via CSS class      */}
         {/* ------------------------------------------------------------- */}
-        <button
-          type="button"
-          onClick={handleButtonClick}
-          style={{
-            '--ai-button-bottom': bottomOffsets.btnBottom
-          }}
-          className={`ai-assistant-floating-button group relative flex items-center justify-center w-14 h-14 rounded-full shadow-2xl active:scale-95 cursor-pointer pointer-events-auto transition-colors duration-150 ${
-            isOpen
-              ? 'bg-amber-500 text-black shadow-amber-500/40'
-              : 'bg-neutral-900/95 text-amber-400 hover:text-white border border-amber-500/40 hover:border-amber-400 shadow-amber-500/20 backdrop-blur-2xl'
-          }`}
-          aria-label="Toggle Loopra AI Music Companion"
-          title="Loopra AI Assistant"
-        >
-          {isOpen ? (
-            <svg className="w-6 h-6 pointer-events-none transition-transform duration-200 rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          ) : (
-            <div className="relative flex items-center justify-center pointer-events-none">
-              <span className="absolute -inset-1.5 rounded-full bg-gradient-to-r from-amber-500/40 via-orange-500/30 to-amber-500/40 blur-sm animate-pulse" />
-              <div className="relative flex items-end gap-1 h-5 px-1">
-                <span className={`w-1 bg-amber-400 rounded-full transition-all duration-300 ${isPlaying ? 'h-5 animate-pulse' : 'h-3'}`} />
-                <span className={`w-1 bg-amber-300 rounded-full transition-all duration-300 ${isPlaying ? 'h-3 animate-ping' : 'h-4'}`} />
-                <span className={`w-1 bg-amber-400 rounded-full transition-all duration-300 ${isPlaying ? 'h-4 animate-pulse' : 'h-2'}`} />
+        {!hideFloatingButton && (
+          <button
+            type="button"
+            onClick={handleButtonClick}
+            style={{
+              '--ai-button-bottom': bottomOffsets.btnBottom
+            }}
+            className={`ai-assistant-floating-button group relative flex items-center justify-center w-14 h-14 rounded-full shadow-2xl active:scale-95 cursor-pointer pointer-events-auto transition-colors duration-150 ${
+              isOpen
+                ? 'bg-amber-500 text-black shadow-amber-500/40'
+                : 'bg-neutral-900/95 text-amber-400 hover:text-white border border-amber-500/40 hover:border-amber-400 shadow-amber-500/20 backdrop-blur-2xl'
+            }`}
+            aria-label="Toggle Loopra AI Music Companion"
+            title="Loopra AI Assistant"
+          >
+            {isOpen ? (
+              <svg className="w-6 h-6 pointer-events-none transition-transform duration-200 rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <div className="relative flex items-center justify-center pointer-events-none">
+                <span className="absolute -inset-1.5 rounded-full bg-gradient-to-r from-amber-500/40 via-orange-500/30 to-amber-500/40 blur-sm animate-pulse" />
+                <div className="relative flex items-end gap-1 h-5 px-1">
+                  <span className={`w-1 bg-amber-400 rounded-full transition-all duration-300 ${isPlaying ? 'h-5 animate-pulse' : 'h-3'}`} />
+                  <span className={`w-1 bg-amber-300 rounded-full transition-all duration-300 ${isPlaying ? 'h-3 animate-ping' : 'h-4'}`} />
+                  <span className={`w-1 bg-amber-400 rounded-full transition-all duration-300 ${isPlaying ? 'h-4 animate-pulse' : 'h-2'}`} />
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {!isOpen && (
-            <span className="absolute right-16 top-1/2 -translate-y-1/2 hidden md:group-hover:inline-block px-3 py-1.5 bg-neutral-900/95 border border-amber-500/30 text-amber-300 text-xs font-semibold rounded-lg shadow-xl whitespace-nowrap pointer-events-none backdrop-blur-md">
-              Loopra AI • Music Companion
-            </span>
-          )}
-        </button>
+            {!isOpen && (
+              <span className="absolute right-16 top-1/2 -translate-y-1/2 hidden md:group-hover:inline-block px-3 py-1.5 bg-neutral-900/95 border border-amber-500/30 text-amber-300 text-xs font-semibold rounded-lg shadow-xl whitespace-nowrap pointer-events-none backdrop-blur-md">
+                Loopra AI • Music Companion
+              </span>
+            )}
+          </button>
+        )}
       </>,
       document.body
     );

@@ -46,6 +46,7 @@ import { listeningStatsService } from './services/listeningStatsService';
 import MoodToMusicSection from './components/Mood/MoodToMusicSection';
 import PersonalizedRecommendationsSection from './components/Recommendations/PersonalizedRecommendationsSection';
 import LoopraAiCompanion from './components/AiMusicCompanion/LoopraAiCompanion';
+import VoiceAgentModal from './components/VoiceAgent/VoiceAgentModal';
 import { recommendationsClient } from './services/recommendationsClient';
 import { learningIntelligenceClient } from './services/learningIntelligenceClient';
 import LoopraCanvas from './components/Player/LoopraCanvas';
@@ -343,6 +344,13 @@ const handleImageError = (e, fallbackTitle, explicitId) => {
   const safeId = typeof explicitId === 'string' ? explicitId : (explicitId?.videoId || null);
   if (safeId) {
     invalidateVideoIdClient(safeId);
+  }
+
+  // Graceful fallback for artist profile pictures without video ID
+  if (!explicitId && fallbackTitle) {
+    target.onerror = null;
+    target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(fallbackTitle)}&background=1e1e1e&color=f59e0b&size=300`;
+    return;
   }
 
   const attempts = parseInt(target.dataset.errorAttempts || '0', 10);
@@ -1952,6 +1960,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [isCanvasOpen, setIsCanvasOpen] = useState(false);
   const [sleepTimerRemaining, setSleepTimerRemaining] = useState(null); // seconds
   const [isStatsOpen, setIsStatsOpen] = useState(false);
+  const [activeAssistantPanel, setActiveAssistantPanel] = useState(null); // null | 'ai' | 'voice'
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef(null);
@@ -6432,7 +6441,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         renderItem={(artist) => (
                           <div onClick={() => handleArtistClick(artist.name)} className="group cursor-pointer flex flex-col items-center">
                             <div className="relative mb-2 md:mb-3 w-full aspect-square rounded-full overflow-hidden shadow-lg border-2 border-transparent group-hover:border-amber-500 transition-all duration-300">
-                              <img src={artist.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(artist.name)}&background=1e1e1e&color=f59e0b&size=300`} alt={artist.name} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" onError={(e) => handleImageError(e, artist.name)} />
+                              <img src={artist.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(artist.name)}&background=1e1e1e&color=f59e0b&size=300`} alt={artist.name} referrerPolicy="no-referrer" loading="lazy" className="w-full h-full object-cover group-hover:scale-110 transition duration-500" onError={(e) => handleImageError(e, artist.name)} />
                               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
                                 <Icon name="search" className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-white drop-shadow-md transform scale-90 group-hover:scale-100 transition" />
                               </div>
@@ -8073,6 +8082,66 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         onAddToPlaylist={handleAddToPlaylistClick}
         showToast={showToast}
         isBottomPlayerVisible={isBottomPlayerVisible}
+        isOpen={activeAssistantPanel === 'ai'}
+        onToggleOpen={(open) => setActiveAssistantPanel(open ? 'ai' : null)}
+        onClose={() => setActiveAssistantPanel(null)}
+        hideFloatingButton={true}
+      />
+
+      {/* Loopra Dedicated Voice Agent & Shared Floating Assistant Action Bar */}
+      <VoiceAgentModal
+        user={user}
+        token={authToken}
+        backendUrl={BACKEND_URL}
+        currentSong={currentSong}
+        isPlaying={isPlaying}
+        volume={volume}
+        isSongLiked={isSongLiked}
+        isBottomPlayerVisible={isBottomPlayerVisible}
+        activeTab={activeTab}
+        isAiOpen={activeAssistantPanel === 'ai'}
+        onToggleAi={() => setActiveAssistantPanel(prev => prev === 'ai' ? null : 'ai')}
+        isPanelOpen={activeAssistantPanel === 'voice'}
+        onOpenPanel={() => setActiveAssistantPanel('voice')}
+        onClosePanel={() => setActiveAssistantPanel(null)}
+        onPlayTrack={(track) => playSong(track)}
+        onTogglePlayPause={togglePlayPause}
+        onNextTrack={handleNextSong}
+        onPrevTrack={handlePrevSong}
+        onToggleShuffle={toggleShuffle}
+        onToggleRepeat={toggleRepeatMode}
+        onSetVolume={(vol) => {
+          setVolume(vol);
+          try { playerRef.current?.setVolume?.(vol); } catch (_) {}
+        }}
+        onToggleLike={(track) => toggleLike(track || currentSong)}
+        onAddToPlaylist={(track) => handleAddToPlaylistClick(track || currentSong)}
+        onNavigate={(page, extra) => {
+          if (page === 'home') {
+            window.history.pushState(null, '', '/');
+            handleStationSelect('home');
+          } else if (page === 'discover') {
+            if (extra?.query) {
+              handleSearchFromHome(extra.query);
+            } else {
+              handleStationSelect('discover');
+            }
+          } else {
+            handleStationSelect(page, extra);
+          }
+        }}
+        onOpenInsights={() => setIsStatsOpen(true)}
+        onOpenQueue={() => {
+          if (typeof handleOpenExpandedPlayer === 'function') {
+            handleOpenExpandedPlayer('queue');
+          } else {
+            setShowQueuePanel(true);
+          }
+        }}
+        onOpenLyrics={() => setIsLyricsOpen(true)}
+        onGoBack={handleGoBack}
+        onOpenArtist={(artistName) => handleArtistClick(artistName)}
+        showToast={showToast}
       />
 
       {/* Automatic 5-Minute Active Usage & Direct Rate/Review Modal */}

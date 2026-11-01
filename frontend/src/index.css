@@ -212,25 +212,70 @@ body {
   border: 0;
 }
 
-/* Loopra Floating AI Music Assistant Fixed Positioning */
-.ai-assistant-floating-button {
+/* ============================================================= */
+/* Loopra Shared Floating Action Container (Both Assistant Icons)*/
+/* Vertically arranged column with aligned centers               */
+/* ============================================================= */
+.loopra-floating-assistants-bar {
   position: fixed !important;
   right: 24px !important;
   bottom: var(--ai-button-bottom, 24px) !important;
   left: auto !important;
   top: auto !important;
-  transform: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 12px !important;
+  z-index: 2147483646 !important;
+  pointer-events: auto !important;
   margin: 0 !important;
-  z-index: 2147483647 !important;
+  padding: 0 !important;
+  width: 56px !important;
+  height: auto !important;
 }
 
 @media (max-width: 768px) {
-  .ai-assistant-floating-button {
+  .loopra-floating-assistants-bar {
     right: 16px !important;
     bottom: var(--ai-button-bottom, calc(72px + env(safe-area-inset-bottom, 0px))) !important;
-    left: auto !important;
-    top: auto !important;
+    gap: 10px !important;
+    width: 56px !important;
   }
+}
+
+/* Loopra Floating AI Music Assistant Positioning */
+.ai-assistant-floating-button {
+  position: relative !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  top: auto !important;
+  transform: none !important;
+  margin: 0 !important;
+  width: 56px !important;
+  height: 56px !important;
+  min-width: 56px !important;
+  min-height: 56px !important;
+  flex-shrink: 0 !important;
+  z-index: 2147483647 !important;
+}
+
+/* Loopra Floating Voice Agent Fixed Positioning */
+.voice-agent-floating-button {
+  position: relative !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  top: auto !important;
+  transform: none !important;
+  margin: 0 !important;
+  width: 56px !important;
+  height: 56px !important;
+  min-width: 56px !important;
+  min-height: 56px !important;
+  flex-shrink: 0 !important;
+  z-index: 2147483646 !important;
 }
 
 /* Loopra Floating AI Assistant Chat Panel (Anchored Above & Left of Button) */
@@ -259,5 +304,28 @@ body {
     max-width: calc(100vw - 24px) !important;
     height: var(--chat-panel-height, 58vh) !important;
     max-height: var(--chat-panel-max-height, calc(100dvh - 150px - env(safe-area-inset-bottom, 0px))) !important;
+  }
+}
+
+/* Loopra Voice Agent Floating HUD (Anchored Above Floating Bar) */
+.voice-agent-hud-panel {
+  position: fixed !important;
+  right: 24px !important;
+  bottom: var(--ai-panel-bottom, calc(24px + 56px + 12px)) !important;
+  left: auto !important;
+  top: auto !important;
+  transform: none !important;
+  margin: 0 !important;
+  z-index: 2147483647 !important;
+  max-width: 384px !important;
+  width: 100% !important;
+}
+
+@media (max-width: 768px) {
+  .voice-agent-hud-panel {
+    right: 16px !important;
+    left: 16px !important;
+    bottom: var(--ai-panel-bottom, calc(72px + 56px + 12px + env(safe-area-inset-bottom, 0px))) !important;
+    max-width: calc(100vw - 32px) !important;
   }
 }

@@ -26,6 +26,16 @@ export const getAvatarUrl = (userOrUrl) => {
 
   if (!rawUrl) return '';
 
+  // Filter out non-existent placeholder test domains and raw 'avatar.jpg' filename
+  if (
+    rawUrl.includes('example.com') ||
+    rawUrl.includes('dummy.com') ||
+    rawUrl === 'avatar.jpg' ||
+    rawUrl === '/avatar.jpg'
+  ) {
+    return '';
+  }
+
   // Base64 data and blob URLs
   if (rawUrl.startsWith('data:image/') || rawUrl.startsWith('blob:')) {
     return rawUrl;
