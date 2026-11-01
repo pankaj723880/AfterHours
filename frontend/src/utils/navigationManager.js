@@ -25,6 +25,10 @@ export function buildPath(tab, params = {}) {
     }
     return '/discover';
   }
+  if (tab === 'artist') {
+    const artistId = params?.id || params?.slug || encodeURIComponent(params?.name || '');
+    return `/artist/${artistId}`;
+  }
   if (tab === 'playlists') {
     if (params?.id) {
       return `/playlists?id=${encodeURIComponent(params.id)}`;
@@ -77,6 +81,11 @@ export function parseRoute(pathname = '/', search = '') {
   }
   if (cleanPath === '/indian-radio' || cleanPath === '/radio') {
     return { tab: 'radio', path: '/radio', params: {} };
+  }
+  if (cleanPath.startsWith('/artist/')) {
+    const rawArtistId = pathname.replace(/^\/artist\//i, '').split('/')[0].split('?')[0];
+    const decoded = decodeURIComponent(rawArtistId);
+    return { tab: 'artist', path: `/artist/${rawArtistId}`, params: { id: decoded, slug: decoded } };
   }
   if (cleanPath.startsWith('/station/')) {
     const stationId = cleanPath.replace('/station/', '');
@@ -201,6 +210,14 @@ export function pushNavigation(currentStack = [], target) {
 
   const stack = Array.isArray(currentStack) ? [...currentStack] : [];
 
+  // If navigating directly to the Home root, Home is the final destination:
+  // Reset stack cleanly to [Home root] to prevent history buildup or loops
+  if (entry.tab === 'home' && !entry.params?.showAll) {
+    const rootHome = { tab: 'home', path: '/', params: {} };
+    saveStoredStack([rootHome]);
+    return { entry: rootHome, stack: [rootHome] };
+  }
+
   // Deduplication: if exact same entry as current top, return existing stack without duplicate
   if (stack.length > 0) {
     const top = stack[stack.length - 1];
@@ -254,6 +271,13 @@ export function syncPopState(currentStack = [], pathname = '/', search = '') {
   const destination = parseRoute(pathname, search);
   const stack = Array.isArray(currentStack) ? [...currentStack] : [];
 
+  // If destination is Home root, reset stack strictly to [Home root]
+  if (destination.tab === 'home' && !destination.params?.showAll) {
+    const rootHome = { tab: 'home', path: '/', params: {} };
+    saveStoredStack([rootHome]);
+    return { target: rootHome, stack: [rootHome] };
+  }
+
   // Look for destination in the stack from top down
   let foundIndex = -1;
   for (let i = stack.length - 1; i >= 0; i--) {
@@ -275,19 +299,37 @@ export function syncPopState(currentStack = [], pathname = '/', search = '') {
 }
 
 /**
- * Determines whether the user can navigate back
+ * Determines whether current route represents the root Home page.
+ * Returns true ONLY when on Home with NO expanded "See all" sub-views.
+ */
+export function isHomePage(activeTab = 'home', extraState = {}) {
+  if (activeTab !== 'home') return false;
+  if (
+    extraState.showAllTrending ||
+    extraState.showAllArtists ||
+    extraState.showAllAlbums ||
+    extraState.showAllRadio ||
+    extraState.selectedPlaylistForView ||
+    extraState.offlineSubView === 'explore'
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Authoritative Back Button visibility checker:
+ * - Completely hides the Back button on the Home page (`/`).
+ * - Displays the Back button on every non-Home page where back navigation is applicable.
+ * - Displays the Back button on expanded "See all" sub-views on Home to return to Home root.
  */
 export function canGoBack(stack = [], activeTab = 'home', extraState = {}) {
-  if (activeTab !== 'home') return true;
-  if (extraState.showAllTrending || extraState.showAllArtists || extraState.showAllAlbums || extraState.showAllRadio) {
-    return true;
+  // 1. Home page root view: absolutely hide the Back button (Home is final destination)
+  if (isHomePage(activeTab, extraState)) {
+    return false;
   }
-  if (extraState.selectedPlaylistForView || extraState.offlineSubView === 'explore') {
-    return true;
-  }
-  if (Array.isArray(stack) && stack.length > 1) {
-    return true;
-  }
-  return false;
+
+  // 2. All other pages & sub-views: Back button is visible
+  return true;
 }
 

@@ -37,6 +37,7 @@ import learningRoutes from './routes/learningIntelligence.js';
 import { learningEngineService } from './services/learningEngineService.js';
 import { CORE_CATALOG_TRACKS } from './services/catalogService.js';
 import reviewsRoutes from './routes/reviews.js';
+import artistRoutes from './routes/artist.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -933,7 +934,8 @@ app.get(['/api/user/:id', '/user/:id'], async (req, res) => {
       history: user.history || [],
       searchHistory: user.searchHistory || [],
       playlists: user.playlists || [],
-      queue: user.queue || []
+      queue: user.queue || [],
+      followedArtists: user.followedArtists || []
     });
   } catch (err) {
     console.error('[User GET Error]:', err.message);
@@ -949,13 +951,14 @@ app.post(['/api/user/:id/sync', '/user/:id/sync'], async (req, res) => {
     return res.status(400).json({ error: 'Invalid user ID format' });
   }
   try {
-    const { likedSongs, history, searchHistory, playlists, queue } = req.body || {};
+    const { likedSongs, history, searchHistory, playlists, queue, followedArtists } = req.body || {};
     const update = {};
     if (Array.isArray(likedSongs)) update.likedSongs = likedSongs.slice(0, 500);
     if (Array.isArray(history)) update.history = history.slice(0, 100);
     if (Array.isArray(searchHistory)) update.searchHistory = searchHistory.slice(0, 50);
     if (Array.isArray(playlists)) update.playlists = playlists.slice(0, 100);
     if (Array.isArray(queue)) update.queue = queue.slice(0, 200);
+    if (Array.isArray(followedArtists)) update.followedArtists = followedArtists.slice(0, 200);
 
     const user = await User.findByIdAndUpdate(
       req.params.id,
@@ -998,6 +1001,9 @@ app.post(['/api/user/:id/sync', '/user/:id/sync'], async (req, res) => {
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/cms', adminCmsRoutes);
 app.use('/api/admin/reviews', reviewsRoutes);
+
+// Mount Dedicated Artist Profile System
+app.use(['/api/artists', '/artists', '/api/artist', '/artist'], artistRoutes);
 
 // Mount Public Ratings & Reviews
 app.use(['/api/reviews', '/reviews'], reviewsRoutes);

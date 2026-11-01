@@ -21,6 +21,7 @@ const userSchema = new mongoose.Schema({
   shareListeningActivity: { type: Boolean, default: false },
   followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  followedArtists: { type: [String], default: [] },
 
   // Rating & Review popup status
   ratingPopupStatus: {

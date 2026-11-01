@@ -36,6 +36,12 @@ assert.equal(playlistRoute.tab, 'playlists');
 assert.equal(playlistRoute.params.id, 'pl_123');
 assert.equal(playlistRoute.path, '/playlists?id=pl_123');
 
+const artistRoute = parseRoute('/artist/arijit-singh', '');
+assert.equal(artistRoute.tab, 'artist');
+assert.equal(artistRoute.params.id, 'arijit-singh');
+assert.equal(artistRoute.path, '/artist/arijit-singh');
+assert.equal(buildPath('artist', { id: 'arijit-singh' }), '/artist/arijit-singh');
+
 console.log('✅ Test 1 Passed: Routes parsed accurately\n');
 
 // 2. Direct Deep Link Initialization (Requirement 2 & 9D)

@@ -36,6 +36,7 @@ import {
   popNavigation,
   syncPopState,
   canGoBack,
+  isHomePage,
   buildPath
 } from './utils/navigationManager';
 import RecommendedRow from './components/Common/RecommendedRow';
@@ -57,6 +58,7 @@ if (typeof window !== 'undefined') {
 import ActivityFeed from './components/Activity/ActivityFeed';
 import MobileBottomNav from './components/Navigation/MobileBottomNav';
 import LoopraFooter from './components/Navigation/LoopraFooter';
+import ArtistProfileView from './components/Artist/ArtistProfileView';
 import shuffleService from './services/shuffleService';
 import { filterSingleSongs, isSingleSong } from './services/songFilter';
 import RatingPopupModal from './components/Rating/RatingPopupModal';
@@ -227,8 +229,10 @@ const DisclaimerFooter = React.memo(({
   onNavigate,
   onOpenInsights,
   onOpenRatingModal,
-  onScrollToTop
+  onScrollToTop,
+  isVisible = true
 }) => {
+  if (!isVisible) return null;
   return (
     <LoopraFooter
       footer={footer}
@@ -1291,6 +1295,10 @@ export default function App() {
     return 'library';
   });
 
+  const [selectedArtistId, setSelectedArtistId] = useState(() => {
+    return initialNav.currentRoute?.params?.id || initialNav.currentRoute?.params?.slug || null;
+  });
+
   const [cmsConfig, setCmsConfig] = useState(() => {
     const cached = getCachedCmsConfig();
     applyThemeToDom(cached.theme, false);
@@ -1750,6 +1758,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [searchLoadMoreError, setSearchLoadMoreError] = useState('');
   const activeSearchQueryRef = useRef('');
   const searchRequestIdRef = useRef(0);
+  const fetchYouTubeMusicRef = useRef(null);
   const [stationVisibleCounts, setStationVisibleCounts] = useState({ barber: 50, truck: 50, pauwa: 50 });
   const stationVisibleCount = stationVisibleCounts[activeTab] || 50;
   const [isLoadingMoreStation, setIsLoadingMoreStation] = useState(false);
@@ -2928,12 +2937,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   };
 
 
-  const handleArtistClick = (artistName) => {
-    const trimmed = (artistName || '').trim();
+  const handleArtistClick = (artistNameOrId) => {
+    const trimmed = (artistNameOrId || '').trim();
     if (!trimmed) return;
-    setSearchQuery(trimmed);
-    handleStationSelect('discover', { q: trimmed });
-    fetchYouTubeMusic(trimmed);
+    const primaryArtist = trimmed.split(/,|&|feat\.|ft\./i)[0].trim();
+    const slug = primaryArtist
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-');
+
+    setSelectedArtistId(slug);
+    handleStationSelect('artist', { id: slug, name: primaryArtist });
   };
 
   const handleAuth = async (e) => {
@@ -4427,6 +4442,58 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const mainScrollRef = useRef(null);
   const scrollPositions = useRef({});
 
+  const applyNavRoute = useCallback((target) => {
+    if (!target) return;
+
+    if (mainScrollRef.current) {
+      scrollPositions.current[activeTab] = mainScrollRef.current.scrollTop;
+    }
+
+    setActiveTab(target.tab);
+    setCurrentBgIndex(0);
+
+    // Restore destination parameters
+    if (target.tab === 'discover') {
+      const q = target.params?.q || '';
+      setSearchQuery(q);
+      if (q) {
+        if (typeof fetchYouTubeMusicRef.current === 'function') {
+          fetchYouTubeMusicRef.current(q);
+        }
+      } else {
+        setSearchResults([]);
+      }
+    } else if (target.tab === 'artist') {
+      setSelectedArtistId(target.params?.id || target.params?.slug || 'arijit-singh');
+    } else if (target.tab === 'downloads') {
+      setOfflineSubView(target.params?.subView || 'library');
+    } else if (target.tab === 'playlists') {
+      if (!target.params?.id) {
+        setSelectedPlaylistForView(null);
+      }
+    } else if (target.tab === 'home') {
+      setShowAllTrending(target.params?.showAll === 'trending');
+      setShowAllArtists(target.params?.showAll === 'artists');
+      setShowAllAlbums(target.params?.showAll === 'albums');
+      setShowAllRadio(target.params?.showAll === 'radio');
+    }
+
+    if (target.tab !== 'home') {
+      setShowAllTrending(false);
+      setShowAllArtists(false);
+      setShowAllAlbums(false);
+      setShowAllRadio(false);
+    }
+
+    setTimeout(() => {
+      if (mainScrollRef.current && scrollPositions.current[target.tab] !== undefined) {
+        mainScrollRef.current.scrollTop = scrollPositions.current[target.tab];
+      } else if (mainScrollRef.current) {
+        mainScrollRef.current.scrollTop = 0;
+      }
+    }, 40);
+  }, [activeTab]);
+
   const handleStationSelect = (stationKey, extraParams = {}) => {
     setShowQueuePanel(false);
     if (mainScrollRef.current) {
@@ -4443,21 +4510,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     navigationStackRef.current = newStack;
     setNavigationStack(newStack);
 
-    setActiveTab(stationKey);
-    if (stationKey === 'downloads') {
-      setOfflineSubView(extraParams.subView || 'library');
-    } else if (stationKey === 'playlists' && !extraParams.id) {
-      setSelectedPlaylistForView(null);
-    }
-
-    if (stationKey === 'home' && !extraParams.showAll) {
-      setShowAllTrending(false);
-      setShowAllArtists(false);
-      setShowAllAlbums(false);
-      setShowAllRadio(false);
-    }
-
-    setCurrentBgIndex(0);
+    applyNavRoute(entry);
     setIsSidebarOpen(false);
 
     // Sync browser URL
@@ -4474,19 +4527,24 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     if (videoModalSong) {
       setIsPipActive(true);
     }
-    setTimeout(() => {
-      if (mainScrollRef.current && scrollPositions.current[stationKey] !== undefined) {
-        mainScrollRef.current.scrollTop = scrollPositions.current[stationKey];
-      } else if (mainScrollRef.current) {
-        mainScrollRef.current.scrollTop = 0;
-      }
-    }, 40);
   };
 
   const handleGoBack = () => {
     setShowQueuePanel(false);
 
-    // If on Home with any "See all" expanded, collapse it first
+    // Home is the authoritative final navigation destination:
+    // Completely prevent back navigation when on the Home root page
+    if (isHomePage(activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio })) {
+      return;
+    }
+
+    // If video modal is open, back closes it
+    if (videoModalSong && !isPipActive) {
+      handleCloseVideo();
+      return;
+    }
+
+    // If on Home with any "See all" expanded, collapse it back to Home root
     if (activeTab === "home" && (showAllTrending || showAllArtists || showAllAlbums || showAllRadio)) {
       setShowAllTrending(false);
       setShowAllArtists(false);
@@ -4496,7 +4554,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       navigationStackRef.current = newStack;
       setNavigationStack(newStack);
       if (typeof window !== 'undefined') {
-        window.history.replaceState({ ...target, loopraInit: true }, '', target.path || '/');
+        window.history.replaceState({ ...target, loopraNavIdx: 0, loopraInit: true }, '', target.path || '/');
       }
       return;
     }
@@ -4525,39 +4583,20 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       return;
     }
 
-    // Standard in-app back popping
+    // Check if browser history has an internal navigation step
+    const navIdx = (typeof window !== 'undefined' && window.history?.state?.loopraNavIdx) || 0;
+    if (navIdx > 0 && typeof window !== 'undefined' && window.history?.back) {
+      window.history.back();
+      return;
+    }
+
+    // Fallback: direct in-app navigation pop
     const { target, stack: newStack } = popNavigation(navigationStackRef.current);
     navigationStackRef.current = newStack;
     setNavigationStack(newStack);
 
-    if (mainScrollRef.current) {
-      scrollPositions.current[activeTab] = mainScrollRef.current.scrollTop;
-    }
+    applyNavRoute(target);
 
-    setActiveTab(target.tab);
-    setCurrentBgIndex(0);
-
-    // Restore destination parameters
-    if (target.tab === 'discover') {
-      const q = target.params?.q || '';
-      setSearchQuery(q);
-      if (q) {
-        fetchYouTubeMusic(q);
-      }
-    } else if (target.tab === 'downloads') {
-      setOfflineSubView(target.params?.subView || 'library');
-    } else if (target.tab === 'playlists') {
-      if (!target.params?.id) {
-        setSelectedPlaylistForView(null);
-      }
-    } else if (target.tab === 'home') {
-      setShowAllTrending(target.params?.showAll === 'trending');
-      setShowAllArtists(target.params?.showAll === 'artists');
-      setShowAllAlbums(target.params?.showAll === 'albums');
-      setShowAllRadio(target.params?.showAll === 'radio');
-    }
-
-    // Sync browser URL
     if (typeof window !== 'undefined') {
       try {
         window.history.replaceState(
@@ -4567,14 +4606,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         );
       } catch (e) {}
     }
-
-    setTimeout(() => {
-      if (mainScrollRef.current && scrollPositions.current[target.tab] !== undefined) {
-        mainScrollRef.current.scrollTop = scrollPositions.current[target.tab];
-      } else if (mainScrollRef.current) {
-        mainScrollRef.current.scrollTop = 0;
-      }
-    }, 40);
   };
 
   const handleSetShowAllTrending = (val) => {
@@ -5174,12 +5205,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       setIsLoadingMoreSearch(false);
     }
   };
+  fetchYouTubeMusicRef.current = fetchYouTubeMusic;
 
   const handleSearchSubmit = (e) => {
     if (e && e.preventDefault) e.preventDefault();
     const trimmed = searchQuery.trim();
     if (!trimmed) return;
-    window.history.pushState({ tab: 'discover', q: trimmed }, '', `/discover?q=${encodeURIComponent(trimmed)}`);
+    handleStationSelect('discover', { q: trimmed });
     fetchYouTubeMusic(trimmed);
   };
 
@@ -5187,8 +5219,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const trimmed = (queryText || '').trim();
     if (!trimmed) return;
     setSearchQuery(trimmed);
-    setActiveTab('discover');
-    window.history.pushState({ tab: 'discover', q: trimmed }, '', `/discover?q=${encodeURIComponent(trimmed)}`);
+    handleStationSelect('discover', { q: trimmed });
     fetchYouTubeMusic(trimmed);
   };
 
@@ -5211,32 +5242,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       navigationStackRef.current = newStack;
       setNavigationStack(newStack);
 
-      setActiveTab(target.tab);
-
-      if (target.tab === 'discover') {
-        const q = target.params?.q || '';
-        setSearchQuery(q);
-        if (q) {
-          fetchYouTubeMusic(q);
-        } else {
-          setSearchResults([]);
-        }
-      } else if (target.tab === 'downloads') {
-        setOfflineSubView(target.params?.subView || 'library');
-      } else if (target.tab === 'playlists') {
-        if (!target.params?.id) {
-          setSelectedPlaylistForView(null);
-        }
-      } else if (target.tab === 'home') {
-        setShowAllTrending(target.params?.showAll === 'trending');
-        setShowAllArtists(target.params?.showAll === 'artists');
-        setShowAllAlbums(target.params?.showAll === 'albums');
-        setShowAllRadio(target.params?.showAll === 'radio');
-      }
+      applyNavRoute(target);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [fetchYouTubeMusic]);
+  }, [applyNavRoute]);
 
   const currentStation = stationsMap[activeTab] || SPECIAL_STATIONS[activeTab];
   const currentBgImage = currentStation?.bgImages?.[currentBgIndex] || currentStation?.bgImages?.[0];
@@ -5352,13 +5362,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
   }, []);
 
+  const isActualHomeRoute = activeTab === 'home' && !showAllTrending && !showAllArtists && !showAllAlbums && !showAllRadio;
+
   const commonFooterProps = {
     footer: cmsConfig?.footer,
     branding: cmsConfig?.branding,
     onNavigate: handleStationSelect,
     onOpenInsights: () => setIsStatsOpen(true),
     onOpenRatingModal: handleOpenRatingModal,
-    onScrollToTop: handleScrollToTop
+    onScrollToTop: handleScrollToTop,
+    isVisible: isActualHomeRoute
   };
 
   return (
@@ -5983,7 +5996,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
 
 
-        {canGoBack(navigationStack, activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio, selectedPlaylistForView, offlineSubView }) && (
+        {canGoBack(navigationStack, activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio, selectedPlaylistForView, offlineSubView }) && activeTab !== 'artist' && (
           <div className="relative z-20 mb-6 flex justify-start">
             <button
               onClick={handleGoBack}
@@ -5992,6 +6005,37 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               <Icon name="arrowLeft" className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
               <span className="text-sm font-medium tracking-wide">Back</span>
             </button>
+          </div>
+        )}
+
+        {activeTab === 'artist' && (
+          <div key={`page-artist-${selectedArtistId}`} className="page-transition max-w-7xl mx-auto px-0 md:px-4 pt-0.5 md:pt-2 w-full min-w-0">
+            <ArtistProfileView
+              artistId={selectedArtistId || 'arijit-singh'}
+              backendUrl={BACKEND_URL}
+              authToken={authToken}
+              user={user}
+              currentSong={currentSong}
+              isPlaying={isPlaying}
+              onPlaySong={(track, trackQueue) => {
+                if (trackQueue && trackQueue.length > 0) {
+                  setQueue(trackQueue);
+                }
+                playSong(track);
+              }}
+              onTogglePlayPause={togglePlayPause}
+              onToggleLike={toggleLike}
+              isLiked={isSongLiked}
+              onAddToPlaylist={handleAddToPlaylistClick}
+              onAddToQueue={(track) => {
+                setQueue(prev => [...prev, track]);
+                showToast(`Added "${track.title}" to queue`);
+              }}
+              onArtistClick={handleArtistClick}
+              onGoBack={handleGoBack}
+              showToast={showToast}
+            />
+            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6030,12 +6074,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               authToken={authToken}
               backendUrl={BACKEND_URL}
               cmsConfig={cmsConfig}
-              onNavigate={(tab) => {
-                handleStationSelect(tab);
+              onNavigate={(tab, extraParams) => {
+                handleStationSelect(tab, extraParams);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
+              onArtistClick={handleArtistClick}
             />
-            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6051,7 +6095,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               showToast={showToast}
               fetchTracks={handleFetchDiscoveryTracks}
             />
-            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6069,8 +6112,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               isLiked={isSongLiked}
               onAddToPlaylist={handleAddToPlaylistClick}
               showToast={showToast}
+              onArtistClick={handleArtistClick}
             />
-            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6144,7 +6187,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     <h1 className="text-base sm:text-2xl md:text-3xl font-display font-extrabold text-white tracking-tight line-clamp-2 leading-snug">
                       {currentSong ? currentSong.title : ((trendingSongs?.[0] || TRENDING_SONGS[0])?.title || 'High-Fidelity Retro & Modern Lounge')}
                     </h1>
-                    <p className="text-xs sm:text-sm text-amber-400/90 font-medium mt-0.5 sm:mt-1 truncate max-w-full">
+                    <p
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const artistToOpen = currentSong ? (currentSong.artist || currentSong.channel) : ((trendingSongs?.[0] || TRENDING_SONGS[0])?.channel);
+                        if (artistToOpen) handleArtistClick(artistToOpen);
+                      }}
+                      className="text-xs sm:text-sm text-amber-400/90 font-medium mt-0.5 sm:mt-1 truncate max-w-full hover:underline hover:text-amber-300 cursor-pointer"
+                      title="View artist profile"
+                    >
                       {currentSong ? (currentSong.artist || currentSong.channel) : ((trendingSongs?.[0] || TRENDING_SONGS[0])?.channel || 'Drop the needle on curated trending hits, nostalgia stations, or search any track.')}
                     </p>
                   </div>
@@ -6283,6 +6334,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               onAddToPlaylist={handleAddToPlaylistClick}
               showToast={showToast}
               onTracksRendered={handlePersonalizedTracksRendered}
+              onArtistClick={handleArtistClick}
             />
 
             {/* Dynamic Homepage Sections from CMS Configuration */}
@@ -6445,7 +6497,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               onOpenRatingModal={handleOpenRatingModal} 
             />
 
-            <DisclaimerFooter {...commonFooterProps} />
+            {/* Loopra Footer — Strictly visible on the Home Page ONLY */}
+            {isActualHomeRoute && <DisclaimerFooter {...commonFooterProps} />}
           </div>
         )}
 
@@ -6564,8 +6617,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 )}
               </>
             )}
-
-            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6630,7 +6681,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 })
               )}
             </div>
-            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6737,8 +6787,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 </button>
               </div>
             )}
-
-            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6892,7 +6940,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 }}
               />
             )}
-            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6918,7 +6965,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 showToast(`Saved mood playlist "${name}" (${playlistTracks.length} tracks)`);
               }}
             />
-            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6931,7 +6977,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               onTogglePlay={togglePlayPause}
               apiBase={BACKEND_URL}
             />
-            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6947,7 +6992,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               isPlaying={isPlaying}
               backendUrl={BACKEND_URL}
             />
-            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -6964,7 +7008,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               isPlaying={isPlaying}
               backendUrl={BACKEND_URL}
             />
-            <DisclaimerFooter {...commonFooterProps} />
           </div>
         )}
 
@@ -7090,7 +7133,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </div>
               <div className="min-w-0 flex-1">
                 <h4 className="font-bold text-xs text-white truncate group-hover:text-amber-300 transition-colors">{currentSong.title}</h4>
-                <p className="text-[10px] text-amber-400 truncate">{currentSong.channel}</p>
+                <p onClick={(e) => { e.stopPropagation(); handleArtistClick(currentSong.channel || currentSong.artist); }} className="text-[10px] text-amber-400 truncate hover:underline hover:text-amber-300 cursor-pointer" title="View artist profile">{currentSong.channel || currentSong.artist}</p>
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-2" onClick={(e) => e.stopPropagation()}>
                 <button 
@@ -7225,7 +7268,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </div>
               <div className="min-w-0 flex-1">
                 <h4 className="font-bold text-xs text-white truncate leading-tight">{currentSong.title}</h4>
-                <p className="text-[10px] text-amber-400 truncate mt-0.5">{currentSong.channel}</p>
+                <p onClick={(e) => { e.stopPropagation(); handleArtistClick(currentSong.channel || currentSong.artist); }} className="text-[10px] text-amber-400 truncate mt-0.5 hover:underline hover:text-amber-300 cursor-pointer" title="View artist profile">{currentSong.channel || currentSong.artist}</p>
               </div>
             </div>
 
@@ -7403,7 +7446,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   <h2 className="text-base sm:text-lg md:text-xl font-display font-bold text-white line-clamp-2 leading-snug">
                     {currentSong.title}
                   </h2>
-                  <p className="text-xs sm:text-sm text-amber-500 font-medium truncate max-w-full">
+                  <p
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsExpandedPlayerOpen(false);
+                      handleArtistClick(currentSong.channel || currentSong.artist);
+                    }}
+                    className="text-xs sm:text-sm text-amber-500 font-medium truncate max-w-full hover:underline hover:text-amber-400 cursor-pointer"
+                    title="View artist profile"
+                  >
                     {currentSong.channel || currentSong.artist}
                   </p>
                 </div>

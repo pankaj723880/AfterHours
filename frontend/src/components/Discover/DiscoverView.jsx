@@ -66,7 +66,8 @@ export default function DiscoverView({
   authToken,
   backendUrl,
   cmsConfig,
-  onNavigate
+  onNavigate,
+  onArtistClick
 }) {
   const [selectedChip, setSelectedChip] = useState(null);
   const searchInputRef = useRef(null);
@@ -81,26 +82,29 @@ export default function DiscoverView({
   };
 
   return (
-    <div className="w-full max-w-5xl mx-auto px-3 sm:px-4 md:px-6 space-y-6 sm:space-y-8 pb-32 md:pb-20 relative z-10 overflow-x-hidden">
+    <div className="w-full max-w-5xl mx-auto px-3 sm:px-4 md:px-6 space-y-6 sm:space-y-8 pb-32 md:pb-20 relative z-10">
       
       {/* =========================================================================
           SECTION 1: DISCOVER PAGE HERO (Mobile-First, Compact & Cinematic)
           ========================================================================= */}
       <section
         aria-label="Discover & Search Hero"
-        className="relative w-full rounded-2xl sm:rounded-3xl p-4 sm:p-7 md:p-9 bg-gradient-to-br from-neutral-900/95 via-neutral-950/95 to-neutral-950 border border-amber-500/25 shadow-[0_15px_40px_rgba(0,0,0,0.85),0_0_30px_rgba(245,158,11,0.08)] overflow-hidden"
+        className="relative z-30 w-full rounded-2xl sm:rounded-3xl p-4 sm:p-7 md:p-9 bg-gradient-to-br from-neutral-900/95 via-neutral-950/95 to-neutral-950 border border-amber-500/25 shadow-[0_15px_40px_rgba(0,0,0,0.85),0_0_30px_rgba(245,158,11,0.08)] overflow-visible"
       >
-        {/* Background Cinematic Visual with Smooth Ambient Glow */}
-        <div
-          className="absolute inset-0 bg-cover bg-right sm:bg-center opacity-25 mix-blend-screen pointer-events-none scale-105"
-          style={{ backgroundImage: `url('/hero-cinematic.png')` }}
-        />
-        <div className="absolute inset-0 bg-gradient-to-r from-neutral-950 via-neutral-950/85 to-transparent pointer-events-none" />
-        <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/40 to-transparent pointer-events-none" />
+        {/* Background Visual Container: strictly clips ambient artwork without clipping search dropdown */}
+        <div className="absolute inset-0 rounded-2xl sm:rounded-3xl overflow-hidden pointer-events-none">
+          {/* Background Cinematic Visual with Smooth Ambient Glow */}
+          <div
+            className="absolute inset-0 bg-cover bg-right sm:bg-center opacity-25 mix-blend-screen pointer-events-none scale-105"
+            style={{ backgroundImage: `url('/hero-cinematic.png')` }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-neutral-950 via-neutral-950/85 to-transparent pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/40 to-transparent pointer-events-none" />
 
-        {/* Ambient Golden Light Orbs */}
-        <div className="absolute -top-12 -left-12 w-64 h-64 rounded-full bg-amber-500/15 blur-[90px] pointer-events-none" />
-        <div className="absolute -bottom-16 right-0 w-72 h-72 rounded-full bg-orange-500/10 blur-[100px] pointer-events-none" />
+          {/* Ambient Golden Light Orbs */}
+          <div className="absolute -top-12 -left-12 w-64 h-64 rounded-full bg-amber-500/15 blur-[90px] pointer-events-none" />
+          <div className="absolute -bottom-16 right-0 w-72 h-72 rounded-full bg-orange-500/10 blur-[100px] pointer-events-none" />
+        </div>
 
         <div className="relative z-10 flex flex-col items-start sm:items-center text-left sm:text-center space-y-3 sm:space-y-4 max-w-2xl sm:mx-auto">
           {/* Welcome Pill */}
@@ -146,7 +150,7 @@ export default function DiscoverView({
       {/* =========================================================================
           SECTION 2: POPULAR SEARCHES (Horizontal Scrollable Chips)
           ========================================================================= */}
-      <section aria-label="Popular Searches" className="space-y-2.5">
+      <section aria-label="Popular Searches" className="space-y-2.5 relative z-10">
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-1.5 text-xs font-bold text-neutral-400 uppercase tracking-wider">
             <Flame className="w-3.5 h-3.5 text-amber-500" />
@@ -245,7 +249,13 @@ export default function DiscoverView({
                       <h4 className={`font-bold text-xs sm:text-sm truncate ${isCurrent ? 'text-amber-400 font-extrabold' : 'text-white'}`}>
                         {track.title}
                       </h4>
-                      <p className="text-[11px] sm:text-xs text-neutral-400 truncate mt-0.5">
+                      <p
+                        className="text-[11px] sm:text-xs text-neutral-400 truncate mt-0.5 hover:text-amber-300 hover:underline cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onArtistClick?.(track.channel || track.artist);
+                        }}
+                      >
                         {track.channel || track.artist || 'Loopra Music'}
                       </p>
                     </div>
@@ -520,7 +530,13 @@ export default function DiscoverView({
                       <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">
                         {track.title}
                       </h4>
-                      <p className="text-[11px] text-neutral-400 truncate mt-0.5">
+                      <p
+                        className="text-[11px] text-neutral-400 truncate mt-0.5 hover:text-amber-300 hover:underline cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onArtistClick?.(track.artist || track.channel);
+                        }}
+                      >
                         {track.artist || track.channel}
                       </p>
                     </div>
@@ -589,7 +605,13 @@ export default function DiscoverView({
                       <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">
                         {album.title}
                       </h4>
-                      <p className="text-[11px] text-neutral-400 truncate mt-0.5">
+                      <p
+                        className="text-[11px] text-neutral-400 truncate mt-0.5 hover:text-amber-300 hover:underline cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onArtistClick?.(album.artist || 'Bollywood Classic');
+                        }}
+                      >
                         {album.artist || 'Bollywood Classic'}
                       </p>
                     </div>

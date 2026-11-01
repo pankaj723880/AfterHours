@@ -262,7 +262,12 @@ export default function HomeSearchBar({
   const showDropdown = isOpen && (hasSuggestions || hasRecentSearches || (query.trim().length > 0 && isSearching));
 
   return (
-    <div ref={containerRef} className="w-full max-w-4xl mx-auto mb-5 sm:mb-8 px-0 min-w-0 relative">
+    <div
+      ref={containerRef}
+      className={`w-full max-w-4xl mx-auto mb-5 sm:mb-8 px-0 min-w-0 relative ${
+        showDropdown ? 'z-50' : 'z-20'
+      }`}
+    >
       <div
         className={`relative rounded-2xl sm:rounded-3xl p-1 sm:p-1.5 transition-all duration-300 ${
           isFocused || isOpen
@@ -370,7 +375,8 @@ export default function HomeSearchBar({
             id="loopra-search-autocomplete-list"
             role="listbox"
             aria-label={query.trim() ? "Autocomplete suggestions" : "Recent searches"}
-            className="absolute left-0 right-0 top-full mt-2 z-50 rounded-2xl bg-neutral-900/95 backdrop-blur-2xl border border-amber-500/25 shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_25px_rgba(var(--accent-rgb,245,158,11),0.12)] overflow-hidden animate-fadeIn max-h-[380px] overflow-y-auto box-border"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+            className="absolute left-0 right-0 top-full mt-2 z-[100] rounded-2xl bg-neutral-900/98 backdrop-blur-2xl border border-amber-500/40 shadow-[0_20px_50px_rgba(0,0,0,0.95),0_0_25px_rgba(var(--accent-rgb,245,158,11),0.2)] overflow-hidden animate-fadeIn max-h-[min(380px,50vh)] overflow-y-auto box-border"
           >
             {/* Mode A: Matching Song Autocomplete Suggestions */}
             {query.trim().length > 0 && (

@@ -16,7 +16,8 @@ export default function PersonalizedRecommendationsSection({
   isLiked,
   onAddToPlaylist,
   showToast,
-  onTracksRendered
+  onTracksRendered,
+  onArtistClick
 }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -441,7 +442,14 @@ export default function PersonalizedRecommendationsSection({
         <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-amber-400 transition" title={track.title}>
           {track.title}
         </h4>
-        <p className="text-[11px] sm:text-xs text-neutral-400 truncate mt-0.5" title={cleanArtist}>
+        <p
+          className="text-[11px] sm:text-xs text-neutral-400 truncate mt-0.5 hover:text-amber-300 hover:underline cursor-pointer"
+          title={cleanArtist}
+          onClick={(e) => {
+            e.stopPropagation();
+            onArtistClick?.(cleanArtist);
+          }}
+        >
           {cleanArtist}
         </p>
 
