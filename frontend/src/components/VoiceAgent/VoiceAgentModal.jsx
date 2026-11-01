@@ -25,6 +25,14 @@ import {
 } from 'lucide-react';
 import { voiceControlService } from '../../services/voiceControlService';
 import {
+  matchWakeWord,
+  classifyAudioEnergy,
+  InactivityController,
+  SESSION_STATES,
+  INACTIVITY_TIMEOUT_MS,
+  checkWakeWordBrowserSupport
+} from '../../services/wakeWordService';
+import {
   parseVoiceCommandLocally,
   parseMultiStepInstruction,
   executeTaskPipeline
@@ -80,8 +88,9 @@ export default function VoiceAgentModal({
 
   // Voice session state (Independent of panel visibility)
   const [isSessionActive, setIsSessionActive] = useState(false);
+  const [sessionState, setSessionState] = useState(SESSION_STATES.OFF);
   const [isListening, setIsListening] = useState(false);
-  const [status, setStatus] = useState('idle'); // 'idle' | 'listening' | 'executing' | 'success' | 'error'
+  const [status, setStatus] = useState('idle'); // 'idle' | 'listening' | 'executing' | 'success' | 'error' | 'wake_word_detected'
   const [statusMessage, setStatusMessage] = useState('Say "Hey Loopra" to begin');
   const [activeActionLabel, setActiveActionLabel] = useState('');
   const [transcript, setTranscript] = useState('');
@@ -89,6 +98,7 @@ export default function VoiceAgentModal({
   const [manualText, setManualText] = useState('');
   const [selectedLang, setSelectedLang] = useState('en-IN');
   const [voiceVolumeScale, setVoiceVolumeScale] = useState(0);
+  const [autoDeactivatedNotice, setAutoDeactivatedNotice] = useState(false);
 
   // AudioContext & Analyser refs for real microphone activity
   const audioContextRef = useRef(null);
@@ -103,6 +113,9 @@ export default function VoiceAgentModal({
   const isExecutingRef = useRef(false);
   const restartTimerRef = useRef(null);
   const lastExecutedRef = useRef({ text: '', timestamp: 0 });
+
+  // 60-Second Inactivity Controller
+  const inactivityControllerRef = useRef(null);
 
   // Persistent task context across consecutive voice inputs
   const persistentContextRef = useRef({
@@ -138,15 +151,33 @@ export default function VoiceAgentModal({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Initialize 60-second inactivity controller
+  useEffect(() => {
+    inactivityControllerRef.current = new InactivityController({
+      timeoutMs: INACTIVITY_TIMEOUT_MS,
+      onTimeout: () => {
+        // Automatically deactivate session when 60s inactivity threshold is reached
+        if (isSessionActiveRef.current && !isExecutingRef.current) {
+          handleStopSession('auto');
+        }
+      }
+    });
+
+    return () => {
+      inactivityControllerRef.current?.clear();
+    };
+  }, []);
+
   // 1. Permission subscription via voiceControlService
   useEffect(() => {
     const unsub = voiceControlService.subscribe((state) => {
       const allowed = user ? voiceControlService.evaluateLocalAccess(state, user) : Boolean(state.allowed);
       setHasAccess(allowed);
       if (!allowed && isSessionActiveRef.current) {
-        handleStopSession();
+        handleStopSession('manual');
       }
     });
+
     return unsub;
   }, [user]);
 
@@ -210,7 +241,7 @@ export default function VoiceAgentModal({
     setVoiceVolumeScale(0);
   };
 
-  // 3. Speech Recognition Engine
+  // 3. Speech Recognition Engine (Handles both Standby Wake Word & Active Commands)
   const initSpeechRecognition = useCallback(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return null;
@@ -223,8 +254,15 @@ export default function VoiceAgentModal({
 
     recognition.onstart = () => {
       setIsListening(true);
-      setStatus('listening');
-      setStatusMessage('Listening... (Say commands or "Done Loopra")');
+      if (isSessionActiveRef.current) {
+        setStatus('listening');
+        setSessionState(SESSION_STATES.LISTENING);
+        setStatusMessage('Listening... (Say commands or "Done Loopra")');
+      } else {
+        setStatus('idle');
+        setSessionState(SESSION_STATES.OFF);
+        setStatusMessage('Say "Hey Loopra" to begin');
+      }
     };
 
     recognition.onresult = (event) => {
@@ -248,7 +286,55 @@ export default function VoiceAgentModal({
         const cleaned = finalTranscript.trim();
         setTranscript(cleaned);
         setInterimText('');
-        handleProcessUtterance(cleaned);
+
+        // CASE 1: Voice Mode is currently OFF -> Only wake word activates it
+        if (!isSessionActiveRef.current) {
+          const wakeCheck = matchWakeWord(cleaned);
+          if (wakeCheck.matched) {
+            // Wake word detected! Transition through explicit states
+            setSessionState(SESSION_STATES.WAKE_WORD_DETECTED);
+            setStatus('wake_word_detected');
+            setStatusMessage('Hey Loopra detected! Listening...');
+            showToast?.('Hey Loopra detected! Voice Control active.');
+
+            // Activate session
+            setIsSessionActive(true);
+            isSessionActiveRef.current = true;
+            setAutoDeactivatedNotice(false);
+
+            // Start 60-second inactivity controller
+            inactivityControllerRef.current?.start();
+
+            // If utterance has follow-up command (e.g. "Hey Loopra play Kesariya"), process it
+            if (wakeCheck.remainingText) {
+              setSessionState(SESSION_STATES.PROCESSING);
+              handleProcessUtterance(wakeCheck.remainingText);
+            } else {
+              setSessionState(SESSION_STATES.LISTENING);
+              setStatus('listening');
+            }
+          } else {
+            // Irrelevant noise, ambient speech, or command without wake phrase while OFF -> Remain OFF
+            // Do not store, transmit, or process.
+          }
+          return;
+        }
+
+        // CASE 2: Voice Mode is currently ACTIVE
+        // Check if utterance starts with wake word (e.g. user repeats "Hey Loopra play Kesariya")
+        const wakeCheck = matchWakeWord(cleaned);
+        const commandText = wakeCheck.matched && wakeCheck.remainingText ? wakeCheck.remainingText : cleaned;
+        
+        // Pure "Hey Loopra" ping while already active -> just acknowledge & reset timer
+        if (wakeCheck.matched && !wakeCheck.remainingText) {
+          setStatus('listening');
+          setSessionState(SESSION_STATES.LISTENING);
+          setStatusMessage('Listening! What would you like to play?');
+          inactivityControllerRef.current?.resetOnValidCommand();
+          return;
+        }
+
+        handleProcessUtterance(commandText);
       }
     };
 
@@ -256,16 +342,19 @@ export default function VoiceAgentModal({
       if (event.error === 'no-speech') return;
       if (event.error === 'aborted') return;
       console.warn('[VoiceAgent] SpeechRecognition error:', event.error);
-      setStatus('error');
-      setStatusMessage(`Speech error: ${event.error}`);
+      if (isSessionActiveRef.current) {
+        setStatus('error');
+        setStatusMessage(`Speech error: ${event.error}`);
+      }
     };
 
     recognition.onend = () => {
       setIsListening(false);
-      if (isSessionActiveRef.current && !isExecutingRef.current) {
+      // Keep listening in background as long as user has access and not actively executing
+      if (hasAccess && !isExecutingRef.current) {
         clearTimeout(restartTimerRef.current);
         restartTimerRef.current = setTimeout(() => {
-          if (isSessionActiveRef.current) {
+          if (hasAccess && !isExecutingRef.current) {
             try {
               recognitionRef.current?.start();
             } catch (_) {}
@@ -275,7 +364,7 @@ export default function VoiceAgentModal({
     };
 
     return recognition;
-  }, [selectedLang]);
+  }, [selectedLang, hasAccess, showToast]);
 
   // Catalog search helper
   const searchCatalog = async (query = '') => {
@@ -335,15 +424,20 @@ export default function VoiceAgentModal({
 
     if (steps.length === 0) {
       setStatus('idle');
+      setSessionState(SESSION_STATES.ACTIVE_IDLE);
       setStatusMessage('Command not recognized. Say "Hey Loopra" to try again.');
       isExecutingRef.current = false;
+      // Do NOT reset inactivity timer for unparseable noise or non-commands
       if (isSessionActiveRef.current) {
         try { recognitionRef.current?.start(); } catch (_) {}
       }
       return;
     }
 
+    // Meaningful command parsed! Pause inactivity timer during execution so long tasks never get interrupted
+    inactivityControllerRef.current?.pauseForExecution();
     setStatus('executing');
+    setSessionState(SESSION_STATES.EXECUTING);
     setActiveActionLabel(`Executing ${steps.length} action${steps.length > 1 ? 's' : ''}...`);
 
     // Execute through real application pipeline
@@ -375,10 +469,13 @@ export default function VoiceAgentModal({
       setStatus('success');
       setStatusMessage(pipelineResult.message);
       showToast?.(pipelineResult.message);
+      // Valid command executed successfully! Resume fresh 60s inactivity window
+      inactivityControllerRef.current?.resumeAfterExecution();
     } else {
       setStatus('error');
       setStatusMessage(pipelineResult.message);
       showToast?.(pipelineResult.message, 'error');
+      inactivityControllerRef.current?.resumeAfterExecution();
     }
 
     // Resume listening after execution
@@ -387,12 +484,14 @@ export default function VoiceAgentModal({
       setActiveActionLabel('');
       if (isSessionActiveRef.current) {
         setStatus('listening');
+        setSessionState(SESSION_STATES.ACTIVE_IDLE);
         setStatusMessage('Listening... (Say commands or "Done Loopra")');
         try {
           recognitionRef.current?.start();
         } catch (_) {}
       } else {
         setStatus('idle');
+        setSessionState(SESSION_STATES.OFF);
       }
     }, 2200);
   };
@@ -401,9 +500,14 @@ export default function VoiceAgentModal({
   const startContinuousSession = async () => {
     setIsSessionActive(true);
     isSessionActiveRef.current = true;
+    setAutoDeactivatedNotice(false);
     setStatus('listening');
+    setSessionState(SESSION_STATES.LISTENING);
     setStatusMessage('Voice active! Say "Hey Loopra" or any music command');
     showToast?.('Voice Agent: ON (Listening)');
+
+    // Start 60s inactivity timer
+    inactivityControllerRef.current?.start();
 
     await startAudioVisualizer();
 
@@ -416,15 +520,27 @@ export default function VoiceAgentModal({
     } catch (_) {}
   };
 
-  const handleStopSession = () => {
+  const handleStopSession = (reason = 'manual') => {
     setIsSessionActive(false);
     isSessionActiveRef.current = false;
     clearTimeout(restartTimerRef.current);
-    setStatus('idle');
-    setStatusMessage('Voice Agent is paused. Click icon to resume.');
-    setActiveActionLabel('');
-    showToast?.('Voice Agent: OFF');
+    inactivityControllerRef.current?.clear();
 
+    if (reason === 'auto') {
+      setStatus('idle');
+      setSessionState(SESSION_STATES.AUTO_DEACTIVATED);
+      setStatusMessage('Voice Control turned off due to inactivity.');
+      setAutoDeactivatedNotice(true);
+      showToast?.('Voice Control turned off due to inactivity.', 'info');
+    } else {
+      setStatus('idle');
+      setSessionState(SESSION_STATES.MANUALLY_DEACTIVATED);
+      setStatusMessage('Voice Agent is paused. Click icon or say "Hey Loopra" to resume.');
+      setAutoDeactivatedNotice(false);
+      showToast?.('Voice Agent: OFF');
+    }
+
+    setActiveActionLabel('');
     stopAudioVisualizer();
 
     if (recognitionRef.current) {
@@ -432,11 +548,42 @@ export default function VoiceAgentModal({
         recognitionRef.current.abort();
       } catch (_) {}
     }
+
+    // Keep standby wake word recognition active if user has access
+    if (hasAccess) {
+      setTimeout(() => {
+        if (!isSessionActiveRef.current && hasAccess) {
+          try {
+            recognitionRef.current?.start();
+          } catch (_) {}
+        }
+      }, 400);
+    }
   };
+
+  // 6. Standby Wake Word & Speech Recognition initialization
+  useEffect(() => {
+    if (!hasAccess) return;
+
+    if (!recognitionRef.current) {
+      recognitionRef.current = initSpeechRecognition();
+    }
+
+    try {
+      recognitionRef.current?.start();
+    } catch (_) {}
+
+    return () => {
+      clearTimeout(restartTimerRef.current);
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch (_) {}
+      }
+    };
+  }, [hasAccess, initSpeechRecognition]);
 
   const handleToggleVoiceMode = () => {
     if (isSessionActive) {
-      handleStopSession();
+      handleStopSession('manual');
     } else {
       startContinuousSession();
     }
@@ -525,7 +672,6 @@ export default function VoiceAgentModal({
     handleProcessUtterance(text);
   };
 
-  if (!hasAccess) return null;
   if (typeof document === 'undefined') return null;
 
   // Responsive button bottom offset
@@ -534,8 +680,8 @@ export default function VoiceAgentModal({
     : (isMobile ? 'calc(70px + env(safe-area-inset-bottom, 0px))' : '24px');
 
   const panelBottomOffset = isBottomPlayerVisible
-    ? (isMobile ? 'calc(136px + 124px + 10px + env(safe-area-inset-bottom, 0px))' : 'calc(88px + 124px + 12px)')
-    : (isMobile ? 'calc(70px + 124px + 10px + env(safe-area-inset-bottom, 0px))' : 'calc(24px + 124px + 12px)');
+    ? (isMobile ? `calc(136px + ${hasAccess ? '124px' : '56px'} + 10px + env(safe-area-inset-bottom, 0px))` : `calc(88px + ${hasAccess ? '124px' : '56px'} + 12px)`)
+    : (isMobile ? `calc(70px + ${hasAccess ? '124px' : '56px'} + 10px + env(safe-area-inset-bottom, 0px))` : `calc(24px + ${hasAccess ? '124px' : '56px'} + 12px)`);
 
   const dynamicScale = 1.0 + voiceVolumeScale * 0.22;
   const dynamicGlowOpacity = Math.min(1.0, 0.45 + voiceVolumeScale * 0.55);
@@ -560,6 +706,7 @@ export default function VoiceAgentModal({
         }}
       >
         {/* 1. Voice Control Agent Floating Icon */}
+        {hasAccess && (
         <button
           type="button"
           onPointerDown={handleVoicePointerDown}
@@ -634,9 +781,10 @@ export default function VoiceAgentModal({
 
           {/* Desktop Hover Label */}
           <span className="absolute right-16 top-1/2 -translate-y-1/2 hidden md:group-hover:inline-block px-3 py-1.5 bg-neutral-900/95 border border-amber-500/40 text-amber-300 text-xs font-bold rounded-xl shadow-xl whitespace-nowrap pointer-events-none backdrop-blur-md">
-            {isSessionActive ? 'Voice Mode: ON (Click to Off • Long-press for Panel)' : 'Voice Mode: OFF (Click to Start • Long-press for Panel)'}
+            {isSessionActive ? 'Voice Mode: ON (Click to Off • Auto-off in 60s)' : 'Voice Mode: OFF (Say "Hey Loopra" • Click to Start)'}
           </span>
         </button>
+        )}
 
         {/* 2. Loopra AI Floating Assistant Icon */}
         <button
@@ -677,7 +825,7 @@ export default function VoiceAgentModal({
       {/* VOICE CONTROL AGENT PANEL (HUD)                                */}
       {/* Displayed ONLY when isPanelOpen is true (Single panel exclusivity)*/}
       {/* ============================================================= */}
-      {isPanelOpen && (
+      {isPanelOpen && hasAccess && (
         <div
           style={{
             '--ai-panel-bottom': panelBottomOffset
@@ -699,10 +847,12 @@ export default function VoiceAgentModal({
                       ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                       : 'bg-neutral-800 text-neutral-400 border-neutral-700'
                   }`}>
-                    {isSessionActive ? 'Live Continuous' : 'Session Inactive'}
+                    {isSessionActive ? 'Live Continuous' : 'Wake Standby'}
                   </span>
                 </h4>
-                <p className="text-[10px] text-neutral-400">Natural Language Music Agent</p>
+                <p className="text-[10px] text-neutral-400">
+                  {isSessionActive ? '60s auto-deactivation active' : 'Say "Hey Loopra" anytime'}
+                </p>
               </div>
             </div>
 

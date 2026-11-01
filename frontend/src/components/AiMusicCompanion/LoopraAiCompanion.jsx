@@ -97,6 +97,23 @@ export default function LoopraAiCompanion({
   const isControlled = controlledIsOpen !== undefined;
   const isOpen = isControlled ? controlledIsOpen : uncontrolledIsOpen;
 
+  const [hasVoiceAccess, setHasVoiceAccess] = useState(() => {
+    try {
+      const state = voiceControlService.getAccessState();
+      return user ? voiceControlService.evaluateLocalAccess(state, user) : Boolean(state.allowed);
+    } catch (_) {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    const unsub = voiceControlService.subscribe((state) => {
+      const allowed = user ? voiceControlService.evaluateLocalAccess(state, user) : Boolean(state.allowed);
+      setHasVoiceAccess(allowed);
+    });
+    return unsub;
+  }, [user]);
+
   const handleButtonClick = () => {
     if (isControlled) {
       onToggleOpen?.(!isOpen);
@@ -120,6 +137,7 @@ export default function LoopraAiCompanion({
   // Dynamic clearance for bottom player and mobile navigation
   const bottomOffsets = useMemo(() => {
     const isMob = typeof window !== 'undefined' && window.innerWidth <= 768;
+    const barHeight = hasVoiceAccess ? '124px' : '56px';
     if (isMob) {
       // MobileBottomNav is 56px (h-14).
       // Bottom mini player (when active) is ~64px + 8px gap.
@@ -127,19 +145,19 @@ export default function LoopraAiCompanion({
         ? 'calc(136px + env(safe-area-inset-bottom, 0px))'
         : 'calc(70px + env(safe-area-inset-bottom, 0px))';
       const panelBottom = isBottomPlayerVisible
-        ? 'calc(136px + 124px + 10px + env(safe-area-inset-bottom, 0px))'
-        : 'calc(70px + 124px + 10px + env(safe-area-inset-bottom, 0px))';
+        ? `calc(136px + ${barHeight} + 10px + env(safe-area-inset-bottom, 0px))`
+        : `calc(70px + ${barHeight} + 10px + env(safe-area-inset-bottom, 0px))`;
       const maxH = isBottomPlayerVisible
-        ? 'calc(100dvh - 280px - env(safe-area-inset-bottom, 0px))'
-        : 'calc(100dvh - 215px - env(safe-area-inset-bottom, 0px))';
+        ? `calc(100dvh - ${hasVoiceAccess ? '280px' : '215px'} - env(safe-area-inset-bottom, 0px))`
+        : `calc(100dvh - ${hasVoiceAccess ? '215px' : '150px'} - env(safe-area-inset-bottom, 0px))`;
       return { btnBottom, panelBottom, maxH };
     }
     // Desktop:
     const btnBottom = isBottomPlayerVisible ? '88px' : '24px';
-    const panelBottom = isBottomPlayerVisible ? 'calc(88px + 124px + 12px)' : 'calc(24px + 124px + 12px)';
-    const maxH = isBottomPlayerVisible ? 'calc(100vh - 235px)' : 'calc(100vh - 175px)';
+    const panelBottom = isBottomPlayerVisible ? `calc(88px + ${barHeight} + 12px)` : `calc(24px + ${barHeight} + 12px)`;
+    const maxH = isBottomPlayerVisible ? `calc(100vh - ${hasVoiceAccess ? '235px' : '170px'})` : `calc(100vh - ${hasVoiceAccess ? '175px' : '110px'})`;
     return { btnBottom, panelBottom, maxH };
-  }, [isBottomPlayerVisible]);
+  }, [isBottomPlayerVisible, hasVoiceAccess]);
 
   const resizeRef = useRef({
     isResizing: false,

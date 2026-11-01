@@ -40,6 +40,8 @@ import reviewsRoutes from './routes/reviews.js';
 import artistRoutes from './routes/artist.js';
 import featureFlagsRouter from './routes/featureFlags.js';
 import voiceAgentRouter from './routes/voiceAgent.js';
+import musicValidationRouter from './routes/musicValidation.js';
+import musicValidationService from './services/musicValidationService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1005,6 +1007,7 @@ app.use('/api/admin/cms', adminCmsRoutes);
 app.use('/api/admin/reviews', reviewsRoutes);
 app.use(['/api/admin/features', '/api/features', '/api/admin/voice-control', '/api/voice-control', '/features'], featureFlagsRouter);
 app.use(['/api/voice-agent', '/api/features/voice-agent', '/voice-agent'], voiceAgentRouter);
+app.use(['/api/music', '/music', '/api/features/music'], musicValidationRouter);
 
 // Mount Dedicated Artist Profile System
 app.use(['/api/artists', '/artists', '/api/artist', '/artist'], artistRoutes);
@@ -1294,7 +1297,18 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
           });
 
           const singleSongs = filterSingleSongs(rawMapped);
-          const finalTracks = (singleSongs.length > 0 ? singleSongs : rawMapped).slice(0, limit);
+          const musicValidated = [];
+          for (const item of singleSongs) {
+            const vRes = await musicValidationService.validateTrack(item);
+            if (vRes.eligible) {
+              musicValidated.push({
+                ...item,
+                isMusic: true,
+                musicCategory: vRes.category
+              });
+            }
+          }
+          const finalTracks = musicValidated.slice(0, limit);
           const items = finalTracks.map(item => ({
             id: { videoId: item.id },
             snippet: {
@@ -1368,13 +1382,19 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
 
         if (incoming.length > 0) {
           const singleSongs = filterSingleSongs(incoming);
-          const toAdd = singleSongs.length > 0 ? singleSongs : incoming;
           const seenIds = new Set(cachedPool.videos.map(v => v.id || v.videoId));
-          for (const v of toAdd) {
+          for (const v of singleSongs) {
             const vid = v.id || v.videoId;
             if (vid && !seenIds.has(vid)) {
-              seenIds.add(vid);
-              cachedPool.videos.push(v);
+              const vRes = await musicValidationService.validateTrack(v);
+              if (vRes.eligible) {
+                seenIds.add(vid);
+                cachedPool.videos.push({
+                  ...v,
+                  isMusic: true,
+                  musicCategory: vRes.category
+                });
+              }
             }
           }
         }

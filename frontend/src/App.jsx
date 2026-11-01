@@ -49,6 +49,7 @@ import LoopraAiCompanion from './components/AiMusicCompanion/LoopraAiCompanion';
 import VoiceAgentModal from './components/VoiceAgent/VoiceAgentModal';
 import { recommendationsClient } from './services/recommendationsClient';
 import { learningIntelligenceClient } from './services/learningIntelligenceClient';
+import { validatePlaybackTrack } from './services/musicValidationClient';
 import LoopraCanvas from './components/Player/LoopraCanvas';
 import TimeMachineRadio from './components/Radio/TimeMachineRadio';
 import IndianRadioView from './components/Radio/IndianRadioView';
@@ -3317,154 +3318,181 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
   };
 
-  const playSong = useCallback((song) => {
+  const playSong = useCallback((song, options = {}) => {
     if (!song) return;
-    isInitialMountRef.current = false;
-    setVideoModalSong(prev => (prev ? song : null));
-    if (silentAudioRef.current) {
-      silentAudioRef.current.play().catch(() => {});
-    }
+    const targetVideoId = song.id || song.videoId;
 
-    if (currentSong?.id === song.id) {
-      if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
+    // Inner executor: runs only once track is verified through Layer 4 gate
+    const executeVerifiedPlayback = () => {
+      isInitialMountRef.current = false;
+      setVideoModalSong(prev => (prev ? song : null));
+      if (silentAudioRef.current) {
+        silentAudioRef.current.play().catch(() => {});
+      }
+
+      if (currentSong?.id === song.id) {
+        if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
+          try {
+            const p = playerRef.current.playVideo();
+            if (p && typeof p.catch === 'function') p.catch(() => {});
+          } catch (e) {}
+        }
+        if (!song?.isRadio) {
+          setIsPlaying(true);
+        }
+        return;
+      }
+
+      try {
+        localStorage.setItem('afterhours_current_time', '0');
+      } catch (e) {}
+
+      // Explicitly pause and clean up previous radio or offline audio to avoid audio overlap
+      if (radioAudioRef.current) {
         try {
-          const p = playerRef.current.playVideo();
-          if (p && typeof p.catch === 'function') p.catch(() => {});
+          radioAudioRef.current.pause();
+          radioAudioRef.current.removeAttribute('src');
+          radioAudioRef.current.load();
         } catch (e) {}
       }
+      if (offlineAudioRef.current) {
+        try {
+          offlineAudioRef.current.pause();
+          offlineAudioRef.current.src = '';
+        } catch (e) {}
+      }
+      if (hlsRef.current) {
+        try { hlsRef.current.destroy(); } catch (e) {}
+        hlsRef.current = null;
+      }
+
+      if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
+        try { playerRef.current.stopVideo(); } catch (e) {}
+      }
+
+      // Direct synchronous YouTube iframe invocation if player exists and is online
+      if (playerRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline && !song?.isRadio && targetVideoId) {
+        try {
+          playerRef.current.loadVideoById({ videoId: targetVideoId });
+          const p = playerRef.current.playVideo();
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+          loadedVideoIdRef.current = targetVideoId;
+        } catch (err) {}
+      }
+
+      // Flush outgoing track listening duration before switching sessions to preserve every listened second
+      if (currentSongRef.current && activeListeningDurationRef.current > 0 && playSessionIdRef.current && authToken) {
+        const outgoingSong = currentSongRef.current;
+        const outgoingListened = activeListeningDurationRef.current;
+        const outgoingTotalDur = durationRef.current || 200;
+        const outgoingPct = Math.min(100, Math.round((outgoingListened / outgoingTotalDur) * 100));
+
+        recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+          trackId: outgoingSong.id || outgoingSong.videoId,
+          title: outgoingSong.title,
+          artist: outgoingSong.artist || outgoingSong.channel || 'Unknown Artist',
+          channel: outgoingSong.channel || '',
+          thumbnail: outgoingSong.thumbnail || outgoingSong.image || '',
+          eventType: 'track_change',
+          duration: outgoingTotalDur,
+          listenedDuration: outgoingListened,
+          completionPercent: outgoingPct,
+          playSessionId: playSessionIdRef.current,
+          source: activeTab || 'player'
+        });
+
+        listeningStatsService.recordEvent?.({
+          backendUrl: BACKEND_URL,
+          token: authToken,
+          user,
+          track: outgoingSong,
+          eventType: 'track_change',
+          duration: outgoingTotalDur,
+          listenedDuration: outgoingListened,
+          playSessionId: playSessionIdRef.current,
+          completed: false
+        });
+      }
+
+      playSessionIdRef.current = `ps_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      activeListeningDurationRef.current = 0;
+      lastSyncedDurationRef.current = 0;
+      hasLoggedListenForCurrentSongRef.current = false;
+      setCurrentSong(song);
+      trackPlaybackStartTimeRef.current = Date.now();
+      hasLoggedCompletionRef.current = false;
+
+      if (authToken && song) {
+        recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+          trackId: song.id || song.videoId,
+          title: song.title,
+          artist: song.artist || song.channel || 'Unknown Artist',
+          channel: song.channel || '',
+          thumbnail: song.thumbnail || song.image || '',
+          eventType: 'play_start',
+          duration: 0,
+          listenedDuration: 0,
+          completionPercent: 0,
+          playSessionId: playSessionIdRef.current,
+          source: activeTab || 'player'
+        });
+        listeningStatsService.recordEvent?.({
+          backendUrl: BACKEND_URL,
+          token: authToken,
+          user,
+          track: song,
+          eventType: 'play_start',
+          duration: 0,
+          listenedDuration: 0,
+          playbackPosition: 0,
+          playSessionId: playSessionIdRef.current,
+          completed: false
+        });
+      }
+
       if (!song?.isRadio) {
         setIsPlaying(true);
       }
-      return;
-    }
 
-    try {
-      localStorage.setItem('afterhours_current_time', '0');
-    } catch (e) {}
-
-    // Explicitly pause and clean up previous radio or offline audio to avoid audio overlap
-    if (radioAudioRef.current) {
       try {
-        radioAudioRef.current.pause();
-        radioAudioRef.current.removeAttribute('src');
-        radioAudioRef.current.load();
+        fetch(getApiUrl('/api/admin/telemetry/event'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'play_start', trackId: song?.id, title: song?.title })
+        }).catch(() => {});
       } catch (e) {}
-    }
-    if (offlineAudioRef.current) {
-      try {
-        offlineAudioRef.current.pause();
-        offlineAudioRef.current.src = '';
-      } catch (e) {}
-    }
-    if (hlsRef.current) {
-      try { hlsRef.current.destroy(); } catch (e) {}
-      hlsRef.current = null;
-    }
 
-    if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
-      try { playerRef.current.stopVideo(); } catch (e) {}
-    }
-
-    // Direct synchronous YouTube iframe invocation if player exists and is online
-    const targetVideoId = song.id || song.videoId;
-    if (playerRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline && !song?.isRadio && targetVideoId) {
-      try {
-        playerRef.current.loadVideoById({ videoId: targetVideoId });
-        const p = playerRef.current.playVideo();
-        if (p && typeof p.catch === 'function') p.catch(() => {});
-        loadedVideoIdRef.current = targetVideoId;
-      } catch (err) {}
-    }
-
-    // Flush outgoing track listening duration before switching sessions to preserve every listened second
-    if (currentSongRef.current && activeListeningDurationRef.current > 0 && playSessionIdRef.current && authToken) {
-      const outgoingSong = currentSongRef.current;
-      const outgoingListened = activeListeningDurationRef.current;
-      const outgoingTotalDur = durationRef.current || 200;
-      const outgoingPct = Math.min(100, Math.round((outgoingListened / outgoingTotalDur) * 100));
-
-      recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
-        trackId: outgoingSong.id || outgoingSong.videoId,
-        title: outgoingSong.title,
-        artist: outgoingSong.artist || outgoingSong.channel || 'Unknown Artist',
-        channel: outgoingSong.channel || '',
-        thumbnail: outgoingSong.thumbnail || outgoingSong.image || '',
-        eventType: 'track_change',
-        duration: outgoingTotalDur,
-        listenedDuration: outgoingListened,
-        completionPercent: outgoingPct,
-        playSessionId: playSessionIdRef.current,
-        source: activeTab || 'player'
-      });
-
-      listeningStatsService.recordEvent?.({
-        backendUrl: BACKEND_URL,
-        token: authToken,
-        user,
-        track: outgoingSong,
-        eventType: 'track_change',
-        duration: outgoingTotalDur,
-        listenedDuration: outgoingListened,
-        playSessionId: playSessionIdRef.current,
-        completed: false
-      });
-    }
-
-    playSessionIdRef.current = `ps_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-    activeListeningDurationRef.current = 0;
-    lastSyncedDurationRef.current = 0;
-    hasLoggedListenForCurrentSongRef.current = false;
-    setCurrentSong(song);
-    trackPlaybackStartTimeRef.current = Date.now();
-    hasLoggedCompletionRef.current = false;
-
-    if (authToken && song) {
-      recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
-        trackId: song.id || song.videoId,
-        title: song.title,
-        artist: song.artist || song.channel || 'Unknown Artist',
-        channel: song.channel || '',
-        thumbnail: song.thumbnail || song.image || '',
-        eventType: 'play_start',
-        duration: 0,
-        listenedDuration: 0,
-        completionPercent: 0,
-        playSessionId: playSessionIdRef.current,
-        source: activeTab || 'player'
-      });
-      listeningStatsService.recordEvent?.({
-        backendUrl: BACKEND_URL,
-        token: authToken,
-        user,
-        track: song,
-        eventType: 'play_start',
-        duration: 0,
-        listenedDuration: 0,
-        playbackPosition: 0,
-        playSessionId: playSessionIdRef.current,
-        completed: false
-      });
-    }
-
-    if (!song?.isRadio) {
-      setIsPlaying(true);
-    }
-
-    try {
-      fetch(getApiUrl('/api/admin/telemetry/event'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'play_start', trackId: song?.id, title: song?.title })
-      }).catch(() => {});
-    } catch (e) {}
-
-    if (['home', 'barber', 'truck', 'pauwa'].includes(activeTab)) {
-      const station = stationsMap[activeTab] || SPECIAL_STATIONS[activeTab];
-      if (station && station.bgImages && station.bgImages.length > 0) {
-        setCurrentBgIndex(prev => (prev + 1) % station.bgImages.length);
+      if (['home', 'barber', 'truck', 'pauwa'].includes(activeTab)) {
+        const station = stationsMap[activeTab] || SPECIAL_STATIONS[activeTab];
+        if (station && station.bgImages && station.bgImages.length > 0) {
+          setCurrentBgIndex(prev => (prev + 1) % station.bgImages.length);
+        }
       }
+    };
+
+    // LAYER 4: PLAYBACK-LEVEL VALIDATION GATE
+    // Only genuine songs may enter Loopra's audio pipeline
+    if (!song?.isRadio && !song?.streamUrl && !song?.isInternalAudio && targetVideoId) {
+      validatePlaybackTrack(song, BACKEND_URL)
+        .then(validation => {
+          if (!validation.eligible) {
+            console.warn('[PlaybackGate] Blocked non-music playback request:', targetVideoId, validation.reason);
+            showToast?.(`Playback blocked: Video is not verified music (${validation.reason})`, 'error');
+            if (options.isAutoAdvance || options.fromQueue) {
+              handleNextSongRef.current?.();
+            }
+            return;
+          }
+          executeVerifiedPlayback();
+        })
+        .catch(err => {
+          console.error('[PlaybackGate] Validation network notice, running fallback:', err);
+          executeVerifiedPlayback();
+        });
+    } else {
+      executeVerifiedPlayback();
     }
-  }, [activeTab, currentSong, stationsMap, authToken]);
+  }, [activeTab, currentSong, stationsMap, authToken, showToast, BACKEND_URL, user]);
 
   const handleNextSong = useCallback(() => {
     // Log skip or completed listen signal for AI recommendations and listening insights
@@ -5592,6 +5620,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 configuredItems.forEach(item => {
                   if (!item || !item.id || item.id === 'profile' || item.id === 'equalizer') return;
                   if (item.enabled === false || disabledIds.has(item.id)) return;
+                  if (item.id === 'admin' && !isAdmin) return;
                   const group = canonicalGroup(item.id, item.group);
                   navMap.set(item.id, {
                     ...item,
@@ -5828,18 +5857,20 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               <span className="hidden sm:inline">Install App</span>
             </button>
 
-            {/* Mobile Shield Button */}
-            <button
-              onClick={() => {
-                setActiveTab('admin');
-                window.history.pushState({ tab: 'admin' }, '', '/admin');
-              }}
-              aria-label="Admin / Security"
-              title="Admin / Security"
-              className="md:hidden w-8 h-8 rounded-full flex items-center justify-center bg-neutral-900 border border-amber-500/40 text-amber-400 shadow-md active:scale-95 transition shrink-0 cursor-pointer"
-            >
-              <Icon name="shield" className="w-4 h-4 text-amber-400" />
-            </button>
+            {/* Mobile Shield Button (Admin Only) */}
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  setActiveTab('admin');
+                  window.history.pushState({ tab: 'admin' }, '', '/admin');
+                }}
+                aria-label="Admin / Security"
+                title="Admin / Security"
+                className="md:hidden w-8 h-8 rounded-full flex items-center justify-center bg-neutral-900 border border-amber-500/40 text-amber-400 shadow-md active:scale-95 transition shrink-0 cursor-pointer"
+              >
+                <Icon name="shield" className="w-4 h-4 text-amber-400" />
+              </button>
+            )}
             
             {user ? (
               <div className="flex items-center gap-2 relative" ref={accountMenuRef}>
