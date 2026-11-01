@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { voiceControlService } from '../../services/voiceControlService';
 
 // Supported recognition languages
 const SUPPORTED_LANGUAGES = [
@@ -13,7 +14,12 @@ export default function VoiceSearchButton({
   onPlaySong,
   onTranscriptChange,
   className = '',
-  disabled = false
+  disabled = false,
+  allowed = null, // Can be explicitly passed or resolved via service
+  user = null,
+  token = null,
+  backendUrl = '',
+  onAccessRevoked = null
 }) {
   const [isSupported, setIsSupported] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -24,9 +30,55 @@ export default function VoiceSearchButton({
   const [errorMessage, setErrorMessage] = useState(null);
   const [detectedCommand, setDetectedCommand] = useState(null); // 'play' | 'search' | null
 
+  // Centralized feature access state
+  const [hasAccess, setHasAccess] = useState(() => {
+    if (typeof allowed === 'boolean') return allowed;
+    const initial = voiceControlService.getAccessState();
+    if (user) {
+      return voiceControlService.evaluateLocalAccess(initial, user);
+    }
+    return Boolean(initial.allowed);
+  });
+
   const recognitionRef = useRef(null);
   const menuRef = useRef(null);
   const timeoutRef = useRef(null);
+  const isListeningRef = useRef(false);
+  isListeningRef.current = isListening;
+
+  // Subscribe to central voice control feature service
+  useEffect(() => {
+    // If explicitly controlled via prop, respect prop
+    if (typeof allowed === 'boolean') {
+      setHasAccess(allowed);
+      if (!allowed && isListeningRef.current) {
+        abortListening('Voice control access was revoked by administrator.');
+      }
+      return;
+    }
+
+    const unsubscribe = voiceControlService.subscribe((state) => {
+      const allowedNow = user
+        ? voiceControlService.evaluateLocalAccess(state, user)
+        : Boolean(state.allowed);
+
+      setHasAccess(allowedNow);
+      if (!allowedNow && isListeningRef.current) {
+        abortListening('Voice control access was revoked by administrator.');
+        onAccessRevoked?.();
+      }
+    });
+
+    // Initial check on mount
+    voiceControlService.checkAccess({ token, user, backendUrl }).then((state) => {
+      const allowedNow = user
+        ? voiceControlService.evaluateLocalAccess(state, user)
+        : Boolean(state.allowed);
+      setHasAccess(allowedNow);
+    });
+
+    return () => unsubscribe();
+  }, [allowed, user, token, backendUrl, onAccessRevoked]);
 
   // Check browser support
   useEffect(() => {
@@ -66,6 +118,22 @@ export default function VoiceSearchButton({
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, []);
+
+  const abortListening = (reason = null) => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch {
+        // ignore
+      }
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (reason) {
+      setErrorMessage(reason);
+    }
+  };
 
   const parseVoiceCommand = (text) => {
     if (!text) return { command: 'search', query: '' };
@@ -108,11 +176,27 @@ export default function VoiceSearchButton({
     return { command: 'search', query: text.trim() };
   };
 
-  const startListening = () => {
+  const startListening = async () => {
     setErrorMessage(null);
     setInterimTranscript('');
     setFinalTranscript('');
     setDetectedCommand(null);
+
+    // Live permission check before starting voice recognition
+    try {
+      const liveState = await voiceControlService.checkAccess({ token, user, backendUrl });
+      const canProceed = user
+        ? voiceControlService.evaluateLocalAccess(liveState, user)
+        : Boolean(liveState.allowed);
+
+      if (!canProceed) {
+        setHasAccess(false);
+        setErrorMessage('Voice control is currently not available for your account.');
+        return;
+      }
+    } catch {
+      // If network fails, rely on cached permission
+    }
 
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -182,9 +266,21 @@ export default function VoiceSearchButton({
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
       };
 
-      recognition.onend = () => {
+      recognition.onend = async () => {
         setIsListening(false);
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+        // Recheck permissions before executing any parsed voice command
+        const currentState = voiceControlService.getAccessState();
+        const canExecute = user
+          ? voiceControlService.evaluateLocalAccess(currentState, user)
+          : Boolean(currentState.allowed);
+
+        if (!canExecute) {
+          setHasAccess(false);
+          setErrorMessage('Voice control access was revoked before command execution.');
+          return;
+        }
 
         // Process final speech
         const speechToProcess = finalTranscript || interimTranscript;
@@ -230,6 +326,11 @@ export default function VoiceSearchButton({
     }
   };
 
+  // If user does not have access to Voice Control, hide the button completely!
+  if (!hasAccess) {
+    return null;
+  }
+
   return (
     <div className={`relative inline-flex items-center ${className}`}>
       {/* Mic trigger button */}
@@ -240,133 +341,111 @@ export default function VoiceSearchButton({
         title={
           !isSupported
             ? 'Voice search is not supported in this browser'
-            : isListening
-            ? 'Listening... Click to stop'
             : `Search with voice (${SUPPORTED_LANGUAGES.find((l) => l.code === selectedLang)?.label || 'Voice'})`
         }
         aria-label={isListening ? 'Stop voice listening' : 'Start voice search'}
-        className={`relative p-2 sm:p-2.5 rounded-full transition-all duration-300 flex items-center justify-center shrink-0 cursor-pointer ${
-          !isSupported
-            ? 'opacity-40 cursor-not-allowed text-neutral-500'
-            : isListening
-            ? 'bg-red-500/20 text-red-400 ring-2 ring-red-500/80 shadow-[0_0_20px_rgba(239,68,68,0.5)] animate-pulse'
-            : 'text-neutral-400 hover:text-amber-400 hover:bg-white/5 active:scale-95'
-        }`}
+        className={`p-2 sm:p-2.5 rounded-full transition-all duration-300 flex items-center justify-center shrink-0 cursor-pointer ${
+          isListening
+            ? 'bg-red-500 text-white shadow-[0_0_15px_rgba(239,68,68,0.7)] animate-pulse scale-105'
+            : 'text-neutral-400 hover:text-amber-400 hover:bg-neutral-800/80 active:scale-95'
+        } ${disabled || !isSupported ? 'opacity-40 cursor-not-allowed' : ''}`}
       >
         {isListening ? (
-          <>
-            {/* Pulsing ring animation */}
-            <span className="absolute -inset-1 rounded-full bg-red-500/30 animate-ping opacity-75" />
-            <svg className="w-4 h-4 sm:w-5 sm:h-5 relative z-10 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+          <span className="relative flex h-4 w-4 sm:h-5 sm:w-5 items-center justify-center">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+            <svg className="relative w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
             </svg>
-          </>
+          </span>
         ) : (
           <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
           </svg>
         )}
       </button>
 
-      {/* Language menu button when supported */}
-      {isSupported && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setShowLanguageMenu((prev) => !prev);
-          }}
-          className="text-[10px] font-semibold text-neutral-400 hover:text-amber-300 px-1 py-0.5 rounded transition-colors hidden sm:inline-flex items-center gap-0.5"
-          title="Change voice language"
-          aria-label="Select voice language"
-        >
-          <span>{SUPPORTED_LANGUAGES.find((l) => l.code === selectedLang)?.flag}</span>
-          <svg className="w-2.5 h-2.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-      )}
+      {/* Language badge trigger */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowLanguageMenu((prev) => !prev);
+        }}
+        className="ml-0.5 text-[10px] font-bold text-neutral-400 hover:text-amber-400 px-1 py-0.5 rounded bg-neutral-800/50 hover:bg-neutral-800 border border-neutral-700/50 transition cursor-pointer"
+        title="Change voice language"
+        aria-label="Select voice language"
+      >
+        {SUPPORTED_LANGUAGES.find((l) => l.code === selectedLang)?.flag || '🌐'}
+      </button>
 
-      {/* Language dropdown modal / popover */}
+      {/* Language Selector Dropdown */}
       {showLanguageMenu && (
         <div
           ref={menuRef}
           className="absolute right-0 top-full mt-2 w-48 bg-neutral-900 border border-neutral-700/80 rounded-xl shadow-2xl p-1.5 z-50 text-xs backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
         >
-          <div className="px-2 py-1 text-[10px] font-bold tracking-wider uppercase text-neutral-400 border-b border-neutral-800">
+          <div className="px-2 py-1 text-[10px] uppercase font-bold text-neutral-400 tracking-wider border-b border-neutral-800 mb-1">
             Voice Language
           </div>
-          <div className="py-1">
-            {SUPPORTED_LANGUAGES.map((lang) => (
-              <button
-                key={lang.code}
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setSelectedLang(lang.code);
-                  setShowLanguageMenu(false);
-                }}
-                className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-left transition-colors ${
-                  selectedLang === lang.code
-                    ? 'bg-amber-500/20 text-amber-300 font-semibold'
-                    : 'text-neutral-300 hover:bg-neutral-800'
-                }`}
-              >
-                <span className="flex items-center gap-1.5">
-                  <span>{lang.flag}</span>
-                  <span>{lang.label}</span>
-                </span>
-                {selectedLang === lang.code && (
-                  <svg className="w-3.5 h-3.5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-              </button>
-            ))}
-          </div>
+          {SUPPORTED_LANGUAGES.map((lang) => (
+            <button
+              key={lang.code}
+              type="button"
+              onClick={() => {
+                setSelectedLang(lang.code);
+                setShowLanguageMenu(false);
+              }}
+              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition ${
+                selectedLang === lang.code
+                  ? 'bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30'
+                  : 'text-neutral-300 hover:bg-neutral-800 hover:text-white'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <span>{lang.flag}</span>
+                <span>{lang.label}</span>
+              </span>
+              {selectedLang === lang.code && <span className="text-amber-400">✓</span>}
+            </button>
+          ))}
         </div>
       )}
 
       {/* Live Voice Search Floating Overlay Dialog when active */}
       {isListening && (
-        <div className="fixed inset-x-4 top-20 sm:top-24 max-w-lg mx-auto bg-neutral-950/95 border border-amber-500/40 rounded-2xl p-4 sm:p-5 shadow-[0_10px_40px_rgba(0,0,0,0.8)] backdrop-blur-2xl z-[90] animate-in fade-in slide-in-from-top-4 duration-200">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2.5">
+        <div className="absolute left-1/2 -translate-x-1/2 top-full mt-3 w-80 sm:w-96 bg-neutral-950/95 border border-amber-500/40 rounded-2xl p-4 shadow-[0_10px_40px_rgba(0,0,0,0.9),0_0_20px_rgba(245,158,11,0.2)] z-50 backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-200">
+          <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+            <div className="flex items-center gap-2">
               <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
               </span>
-              <span className="text-xs sm:text-sm font-bold uppercase tracking-wider text-amber-400">
-                Listening in {SUPPORTED_LANGUAGES.find((l) => l.code === selectedLang)?.label}...
+              <span className="text-xs font-bold text-white uppercase tracking-wider">
+                Listening... ({SUPPORTED_LANGUAGES.find((l) => l.code === selectedLang)?.label})
               </span>
             </div>
-
             <button
               type="button"
               onClick={stopListening}
-              className="text-xs text-neutral-400 hover:text-white px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 transition-colors"
+              className="text-neutral-400 hover:text-white text-xs px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 transition"
             >
               Cancel
             </button>
           </div>
 
-          {/* Real-time transcript display */}
-          <div className="min-h-[50px] p-3 rounded-xl bg-neutral-900/90 border border-neutral-800 flex items-center justify-center text-center">
-            {interimTranscript || finalTranscript ? (
-              <p className="text-sm sm:text-base text-white font-medium break-words">
-                {finalTranscript}{' '}
-                <span className="text-amber-400/80 italic">{interimTranscript}</span>
+          <div className="py-4 text-center">
+            {finalTranscript || interimTranscript ? (
+              <p className="text-sm font-semibold text-amber-200 break-words leading-relaxed">
+                "{finalTranscript || interimTranscript}"
               </p>
             ) : (
-              <p className="text-xs sm:text-sm text-neutral-500 italic flex items-center gap-2">
-                <span>Say something like "Play Kesariya", "Arijit Singh hits", or "Sunao Sidhu Moosewala"...</span>
+              <p className="text-xs text-neutral-400 italic">
+                Speak now... e.g. "Play Kesariya", "Arijit Singh hits", "gana bajao"
               </p>
             )}
           </div>
 
-          {/* Detected intent pill */}
           {detectedCommand && (
             <div className="mt-2.5 flex items-center justify-between text-xs text-neutral-400">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 font-medium">

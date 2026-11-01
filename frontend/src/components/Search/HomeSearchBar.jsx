@@ -37,7 +37,8 @@ export default function HomeSearchBar({
   showQuickTags = true,
   user = null,
   token = null,
-  backendUrl = ''
+  backendUrl = '',
+  voiceControlAllowed = null
 }) {
   const activeSuggestions = (Array.isArray(suggestions) && suggestions.length > 0) ? suggestions : SUGGESTIONS;
   const [query, setQuery] = useState('');
@@ -341,6 +342,10 @@ export default function HomeSearchBar({
           {/* Voice Search Mic Button */}
           <VoiceSearchButton
             className="mr-1 sm:mr-2"
+            user={user}
+            token={token}
+            backendUrl={backendUrl}
+            allowed={voiceControlAllowed}
             onTranscriptChange={(text) => {
               setQuery(text);
               setIsOpen(true);

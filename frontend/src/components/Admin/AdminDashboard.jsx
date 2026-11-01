@@ -25,6 +25,7 @@ import {
   X,
   AlertCircle,
   Menu,
+  Mic,
   Star
 } from 'lucide-react';
 import AccessDenied from './AccessDenied';
@@ -42,6 +43,7 @@ import CmsMusicManager from './CmsMusicManager';
 import CmsMediaLibrary from './CmsMediaLibrary';
 import CmsPublishingHistory from './CmsPublishingHistory';
 import AiLearningIntelligence from './AiLearningIntelligence';
+import VoiceControlManagement from './VoiceControlManagement';
 import { safeParseJsonResponse } from '../../utils/errorHandler';
 import { DEFAULT_CMS_CONFIG, getCachedCmsConfig, normalizeCmsConfig, applyThemeToDom } from '../../services/cmsClient';
 import { BACKEND_URL } from '../../utils/apiUrl';
@@ -367,6 +369,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
 
   const operationsNavItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'voice_control', label: 'Voice Control', icon: Mic, badge: 'Rollout' },
     { id: 'reviews', label: 'Ratings & Reviews', icon: Star, badge: 'Community' },
     { id: 'ai_learning', label: 'AI Learning Engine', icon: Brain, badge: 'Intelligence' },
     { id: 'traffic', label: 'Live Traffic', icon: Activity, badge: isSocketConnected ? 'LIVE' : null },
@@ -713,6 +716,14 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               metrics={metrics} 
               health={health} 
               onNavigate={setActiveSubTab} 
+              token={token}
+              backendUrl={cleanBackendUrl}
+              showToast={showToast}
+            />
+          )}
+
+          {activeSubTab === 'voice_control' && (
+            <VoiceControlManagement
               token={token}
               backendUrl={cleanBackendUrl}
               showToast={showToast}

@@ -59,6 +59,7 @@ import ActivityFeed from './components/Activity/ActivityFeed';
 import MobileBottomNav from './components/Navigation/MobileBottomNav';
 import LoopraFooter from './components/Navigation/LoopraFooter';
 import ArtistProfileView from './components/Artist/ArtistProfileView';
+import { voiceControlService } from './services/voiceControlService';
 import shuffleService from './services/shuffleService';
 import { filterSingleSongs, isSingleSong } from './services/songFilter';
 import RatingPopupModal from './components/Rating/RatingPopupModal';
@@ -1328,6 +1329,11 @@ export default function App() {
     setIsRatingModalOpen(true);
   }, []);
 
+  // Synchronize voice control access on auth changes
+  useEffect(() => {
+    voiceControlService.checkAccess({ token: authToken, user, backendUrl: BACKEND_URL });
+  }, [authToken, user]);
+
   // Synchronize authenticated socket session & live presence with backend
   useEffect(() => {
     const sid = getOrCreateSessionId();
@@ -2124,11 +2130,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
     socket.on('user_role_changed', handleRoleChanged);
     socket.on('admin_access_revoked', handleAdminRevoked);
+    const handleFeatureFlagUpdate = (data) => {
+      if (data?.featureKey === 'voice_control') {
+        voiceControlService.handleSocketFlagUpdate(data, userRef.current);
+      }
+    };
+    socket.on('feature_flag_updated', handleFeatureFlagUpdate);
     socket.on('connect', syncCurrentUserState);
 
     return () => {
       socket.off('user_role_changed', handleRoleChanged);
       socket.off('admin_access_revoked', handleAdminRevoked);
+      socket.off('feature_flag_updated', handleFeatureFlagUpdate);
       socket.off('connect', syncCurrentUserState);
     };
   }, [showToast]);

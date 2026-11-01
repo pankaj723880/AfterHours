@@ -38,6 +38,7 @@ import { learningEngineService } from './services/learningEngineService.js';
 import { CORE_CATALOG_TRACKS } from './services/catalogService.js';
 import reviewsRoutes from './routes/reviews.js';
 import artistRoutes from './routes/artist.js';
+import featureFlagsRouter from './routes/featureFlags.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1001,6 +1002,7 @@ app.post(['/api/user/:id/sync', '/user/:id/sync'], async (req, res) => {
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/cms', adminCmsRoutes);
 app.use('/api/admin/reviews', reviewsRoutes);
+app.use(['/api/admin/features', '/api/features', '/features'], featureFlagsRouter);
 
 // Mount Dedicated Artist Profile System
 app.use(['/api/artists', '/artists', '/api/artist', '/artist'], artistRoutes);

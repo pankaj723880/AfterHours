@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { aiMusicCompanionClient } from '../../services/aiMusicCompanionClient';
+import { voiceControlService } from '../../services/voiceControlService';
 
 const STORAGE_KEY_DESKTOP = 'loopra_ai_chat_dims_desktop';
 const STORAGE_KEY_MOBILE = 'loopra_ai_chat_dims_mobile';
@@ -390,8 +391,28 @@ export default function LoopraAiCompanion({
     }
   };
 
+  // Revoke active speech recognition if access is turned off in real-time
+  useEffect(() => {
+    const unsub = voiceControlService.subscribe((state) => {
+      const allowed = user ? voiceControlService.evaluateLocalAccess(state, user) : Boolean(state.allowed);
+      if (!allowed && isVoiceListening) {
+        if (speechRecognitionRef.current) {
+          try { speechRecognitionRef.current.stop(); } catch (e) {}
+        }
+        setIsVoiceListening(false);
+      }
+    });
+    return () => unsub();
+  }, [user, isVoiceListening]);
+
   // Speech-to-Text Voice Query
   const toggleVoiceInput = () => {
+    const access = voiceControlService.getAccessState();
+    const canUseVoice = user ? voiceControlService.evaluateLocalAccess(access, user) : Boolean(access.allowed);
+    if (!canUseVoice) {
+      if (showToast) showToast('Voice input is restricted by administrator', 'warning');
+      return;
+    }
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       if (showToast) showToast('Speech recognition not supported in this browser');
