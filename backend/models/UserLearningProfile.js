@@ -166,7 +166,9 @@ const userLearningProfileSchema = new mongoose.Schema({
   }
 }, {
   timestamps: true,
-  collection: 'user_learning_profiles'
+  collection: 'user_learning_profiles',
+  optimisticConcurrency: false,
+  versionKey: false
 });
 
 userLearningProfileSchema.index({ userId: 1 }, { unique: true });
