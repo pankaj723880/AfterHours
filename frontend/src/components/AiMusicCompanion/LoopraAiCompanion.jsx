@@ -127,17 +127,17 @@ export default function LoopraAiCompanion({
         ? 'calc(136px + env(safe-area-inset-bottom, 0px))'
         : 'calc(70px + env(safe-area-inset-bottom, 0px))';
       const panelBottom = isBottomPlayerVisible
-        ? 'calc(136px + 56px + 10px + env(safe-area-inset-bottom, 0px))'
-        : 'calc(70px + 56px + 10px + env(safe-area-inset-bottom, 0px))';
+        ? 'calc(136px + 124px + 10px + env(safe-area-inset-bottom, 0px))'
+        : 'calc(70px + 124px + 10px + env(safe-area-inset-bottom, 0px))';
       const maxH = isBottomPlayerVisible
-        ? 'calc(100dvh - 215px - env(safe-area-inset-bottom, 0px))'
-        : 'calc(100dvh - 150px - env(safe-area-inset-bottom, 0px))';
+        ? 'calc(100dvh - 280px - env(safe-area-inset-bottom, 0px))'
+        : 'calc(100dvh - 215px - env(safe-area-inset-bottom, 0px))';
       return { btnBottom, panelBottom, maxH };
     }
     // Desktop:
     const btnBottom = isBottomPlayerVisible ? '88px' : '24px';
-    const panelBottom = isBottomPlayerVisible ? 'calc(88px + 56px + 12px)' : 'calc(24px + 56px + 12px)';
-    const maxH = isBottomPlayerVisible ? 'calc(100vh - 170px)' : 'calc(100vh - 110px)';
+    const panelBottom = isBottomPlayerVisible ? 'calc(88px + 124px + 12px)' : 'calc(24px + 124px + 12px)';
+    const maxH = isBottomPlayerVisible ? 'calc(100vh - 235px)' : 'calc(100vh - 175px)';
     return { btnBottom, panelBottom, maxH };
   }, [isBottomPlayerVisible]);
 

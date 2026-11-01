@@ -311,7 +311,7 @@ body {
 .voice-agent-hud-panel {
   position: fixed !important;
   right: 24px !important;
-  bottom: var(--ai-panel-bottom, calc(24px + 56px + 12px)) !important;
+  bottom: var(--ai-panel-bottom, calc(24px + 124px + 12px)) !important;
   left: auto !important;
   top: auto !important;
   transform: none !important;
@@ -325,7 +325,7 @@ body {
   .voice-agent-hud-panel {
     right: 16px !important;
     left: 16px !important;
-    bottom: var(--ai-panel-bottom, calc(72px + 56px + 12px + env(safe-area-inset-bottom, 0px))) !important;
+    bottom: var(--ai-panel-bottom, calc(72px + 124px + 12px + env(safe-area-inset-bottom, 0px))) !important;
     max-width: calc(100vw - 32px) !important;
   }
 }

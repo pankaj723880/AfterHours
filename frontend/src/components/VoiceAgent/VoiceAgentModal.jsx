@@ -534,8 +534,8 @@ export default function VoiceAgentModal({
     : (isMobile ? 'calc(70px + env(safe-area-inset-bottom, 0px))' : '24px');
 
   const panelBottomOffset = isBottomPlayerVisible
-    ? (isMobile ? 'calc(136px + 56px + 10px + env(safe-area-inset-bottom, 0px))' : 'calc(88px + 56px + 12px)')
-    : (isMobile ? 'calc(70px + 56px + 10px + env(safe-area-inset-bottom, 0px))' : 'calc(24px + 56px + 12px)');
+    ? (isMobile ? 'calc(136px + 124px + 10px + env(safe-area-inset-bottom, 0px))' : 'calc(88px + 124px + 12px)')
+    : (isMobile ? 'calc(70px + 124px + 10px + env(safe-area-inset-bottom, 0px))' : 'calc(24px + 124px + 12px)');
 
   const dynamicScale = 1.0 + voiceVolumeScale * 0.22;
   const dynamicGlowOpacity = Math.min(1.0, 0.45 + voiceVolumeScale * 0.55);
@@ -544,12 +544,19 @@ export default function VoiceAgentModal({
     <>
       {/* ============================================================= */}
       {/* SHARED FLOATING ACTION CONTAINER (Both Assistant Icons)       */}
-      {/* Strictly aligned side by side on the exact same horizontal row*/}
+      {/* Vertically arranged column with aligned centers               */}
       {/* ============================================================= */}
       <div
-        className="loopra-floating-assistants-bar"
+        className="loopra-floating-assistants-bar flex flex-col items-center justify-end gap-3 w-14 h-auto pointer-events-auto"
         style={{
-          '--ai-button-bottom': buttonBottomOffset
+          '--ai-button-bottom': buttonBottomOffset,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          gap: '12px',
+          width: '56px',
+          height: 'auto'
         }}
       >
         {/* 1. Voice Control Agent Floating Icon */}
