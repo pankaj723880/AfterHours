@@ -1002,7 +1002,7 @@ app.post(['/api/user/:id/sync', '/user/:id/sync'], async (req, res) => {
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/cms', adminCmsRoutes);
 app.use('/api/admin/reviews', reviewsRoutes);
-app.use(['/api/admin/features', '/api/features', '/features'], featureFlagsRouter);
+app.use(['/api/admin/features', '/api/features', '/api/admin/voice-control', '/api/voice-control', '/features'], featureFlagsRouter);
 
 // Mount Dedicated Artist Profile System
 app.use(['/api/artists', '/artists', '/api/artist', '/artist'], artistRoutes);

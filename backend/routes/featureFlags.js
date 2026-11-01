@@ -53,7 +53,7 @@ router.get(['/voice-control/status', '/voice-control-status', '/status'], async 
 /**
  * Admin: Get Voice Control management configuration & real-time rollout statistics
  */
-router.get(['/admin/voice-control', '/voice-control'], authenticateToken, requireAdmin, async (req, res) => {
+router.get(['/admin/voice-control', '/voice-control', '/'], authenticateToken, requireAdmin, async (req, res) => {
   try {
     const config = await featureFlagService.getFeatureConfig('voice_control');
     const stats = await featureFlagService.getVoiceControlRolloutStats();
@@ -73,7 +73,7 @@ router.get(['/admin/voice-control', '/voice-control'], authenticateToken, requir
 /**
  * Admin: Update Voice Control configuration toggles
  */
-router.put(['/admin/voice-control', '/voice-control'], authenticateToken, requireAdmin, async (req, res) => {
+router.put(['/admin/voice-control', '/voice-control', '/'], authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { enabled, globalRollout, adminAccess } = req.body;
 
