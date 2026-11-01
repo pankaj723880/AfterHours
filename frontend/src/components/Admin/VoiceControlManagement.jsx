@@ -382,3 +382,4 @@ export default function VoiceControlManagement({ token, backendUrl, showToast })
     </div>
   );
 }
+
