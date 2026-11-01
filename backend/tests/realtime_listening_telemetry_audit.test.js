@@ -214,7 +214,7 @@ async function runAudit() {
     const sepRecap = await analyticsService.getMonthlyRecap(userAId, { month: 9, year: 2026, forceRefresh: true });
     assert.strictEqual(sepRecap.dailyActivity.length, 30, 'September must have 30 daily activity items');
     assert.strictEqual(sepRecap.totalPlays, 0, 'September must have 0 plays');
-    assert.strictEqual(sepRecap.totalHours, '0.0', 'September must have 0.0 hours');
+    assert.strictEqual(sepRecap.totalHours, '0.00', 'September must have 0.00 hours');
     assert.strictEqual(sepRecap.hasData, false, 'September hasData must be false');
     console.log('✓ TEST 5 PASSED: Monthly recap has correct days, period boundaries, and empty state.\n');
 

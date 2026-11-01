@@ -2547,6 +2547,22 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }, 45000);
 
     const handleUnload = () => {
+      if (authToken && currentSongRef.current && activeListeningDurationRef.current > 0 && playSessionIdRef.current) {
+        const outSong = currentSongRef.current;
+        const outListened = activeListeningDurationRef.current;
+        const outDur = durationRef.current || 200;
+        listeningStatsService.recordEvent?.({
+          backendUrl: BACKEND_URL,
+          token: authToken,
+          user,
+          track: outSong,
+          eventType: 'pause',
+          duration: outDur,
+          listenedDuration: outListened,
+          playSessionId: playSessionIdRef.current,
+          completed: false
+        });
+      }
       if (authToken && websiteSessionIdRef.current) {
         listeningStatsService.closeWebsiteSession?.({
           backendUrl: BACKEND_URL,
@@ -3323,6 +3339,40 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       } catch (err) {}
     }
 
+    // Flush outgoing track listening duration before switching sessions to preserve every listened second
+    if (currentSongRef.current && activeListeningDurationRef.current > 0 && playSessionIdRef.current && authToken) {
+      const outgoingSong = currentSongRef.current;
+      const outgoingListened = activeListeningDurationRef.current;
+      const outgoingTotalDur = durationRef.current || 200;
+      const outgoingPct = Math.min(100, Math.round((outgoingListened / outgoingTotalDur) * 100));
+
+      recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+        trackId: outgoingSong.id || outgoingSong.videoId,
+        title: outgoingSong.title,
+        artist: outgoingSong.artist || outgoingSong.channel || 'Unknown Artist',
+        channel: outgoingSong.channel || '',
+        thumbnail: outgoingSong.thumbnail || outgoingSong.image || '',
+        eventType: 'track_change',
+        duration: outgoingTotalDur,
+        listenedDuration: outgoingListened,
+        completionPercent: outgoingPct,
+        playSessionId: playSessionIdRef.current,
+        source: activeTab || 'player'
+      });
+
+      listeningStatsService.recordEvent?.({
+        backendUrl: BACKEND_URL,
+        token: authToken,
+        user,
+        track: outgoingSong,
+        eventType: 'track_change',
+        duration: outgoingTotalDur,
+        listenedDuration: outgoingListened,
+        playSessionId: playSessionIdRef.current,
+        completed: false
+      });
+    }
+
     playSessionIdRef.current = `ps_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
     activeListeningDurationRef.current = 0;
     lastSyncedDurationRef.current = 0;
@@ -3778,33 +3828,35 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           } else if (e.data === 0) { // Ended
             if (currentSongRef.current && !hasLoggedCompletionRef.current) {
               const dur = durationRef.current || 200;
-              const actualListened = activeListeningDurationRef.current || dur;
-              if (authToken) {
-                recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
-                  trackId: currentSongRef.current.id || currentSongRef.current.videoId,
-                  title: currentSongRef.current.title,
-                  artist: currentSongRef.current.artist || currentSongRef.current.channel,
-                  thumbnail: currentSongRef.current.thumbnail,
+              const actualListened = activeListeningDurationRef.current;
+              if (actualListened > 0) {
+                if (authToken) {
+                  recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+                    trackId: currentSongRef.current.id || currentSongRef.current.videoId,
+                    title: currentSongRef.current.title,
+                    artist: currentSongRef.current.artist || currentSongRef.current.channel,
+                    thumbnail: currentSongRef.current.thumbnail,
+                    eventType: 'completed',
+                    duration: dur,
+                    listenedDuration: actualListened,
+                    completionPercent: Math.min(100, Math.round((actualListened / dur) * 100)),
+                    playSessionId: playSessionIdRef.current,
+                    source: activeTab || 'player'
+                  });
+                }
+                listeningStatsService.recordEvent?.({
+                  backendUrl: BACKEND_URL,
+                  token: authToken,
+                  user,
+                  track: currentSongRef.current,
                   eventType: 'completed',
                   duration: dur,
                   listenedDuration: actualListened,
-                  completionPercent: 100,
                   playSessionId: playSessionIdRef.current,
                   source: activeTab || 'player'
                 });
+                hasLoggedCompletionRef.current = true;
               }
-              listeningStatsService.recordEvent?.({
-                backendUrl: BACKEND_URL,
-                token: authToken,
-                user,
-                track: currentSongRef.current,
-                eventType: 'completed',
-                duration: dur,
-                listenedDuration: actualListened,
-                playSessionId: playSessionIdRef.current,
-                source: activeTab || 'player'
-              });
-              hasLoggedCompletionRef.current = true;
             }
 
             const currentRepeat = isRepeatRef.current;
@@ -4130,30 +4182,32 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         audio.onended = () => {
           if (currentSongRef.current && authToken && !hasLoggedCompletionRef.current) {
             const dur = audio.duration || 200;
-            const actualListened = activeListeningDurationRef.current || dur;
-            recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
-              trackId: currentSongRef.current.id || currentSongRef.current.videoId,
-              title: currentSongRef.current.title,
-              artist: currentSongRef.current.artist || currentSongRef.current.channel,
-              thumbnail: currentSongRef.current.thumbnail,
-              eventType: 'completed',
-              duration: dur,
-              listenedDuration: actualListened,
-              completionPercent: 100,
-              source: 'offline'
-            });
-            listeningStatsService.recordEvent?.({
-              backendUrl: BACKEND_URL,
-              token: authToken,
-              user,
-              track: currentSongRef.current,
-              eventType: 'completed',
-              duration: dur,
-              listenedDuration: actualListened,
-              playSessionId: playSessionIdRef.current,
-              source: 'offline'
-            });
-            hasLoggedCompletionRef.current = true;
+            const actualListened = activeListeningDurationRef.current;
+            if (actualListened > 0) {
+              recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+                trackId: currentSongRef.current.id || currentSongRef.current.videoId,
+                title: currentSongRef.current.title,
+                artist: currentSongRef.current.artist || currentSongRef.current.channel,
+                thumbnail: currentSongRef.current.thumbnail,
+                eventType: 'completed',
+                duration: dur,
+                listenedDuration: actualListened,
+                completionPercent: Math.min(100, Math.round((actualListened / dur) * 100)),
+                source: 'offline'
+              });
+              listeningStatsService.recordEvent?.({
+                backendUrl: BACKEND_URL,
+                token: authToken,
+                user,
+                track: currentSongRef.current,
+                eventType: 'completed',
+                duration: dur,
+                listenedDuration: actualListened,
+                playSessionId: playSessionIdRef.current,
+                source: 'offline'
+              });
+              hasLoggedCompletionRef.current = true;
+            }
           }
 
           const currentRepeat = isRepeatRef.current;

@@ -186,12 +186,16 @@ export function formatHours(seconds = 0) {
 
 /**
  * Validates whether an event qualifies as a valid music play.
- * Rule: At least 30 seconds of genuine listening, OR marked completed, OR listened to >= 50% of track.
+ * Rule: At least 30 seconds of genuine listening, OR listened to >= 50% of track (min 15s),
+ * OR marked completed with at least 15 seconds. Never qualifies 0-second events.
  */
 export function isValidMusicPlay(listenedSec = 0, totalDurSec = 0, completed = false) {
-  if (completed) return true;
-  if (listenedSec >= 30) return true;
-  if (totalDurSec > 0 && listenedSec >= 15 && (listenedSec / totalDurSec) >= 0.5) return true;
+  const l = Math.max(0, Number(listenedSec) || 0);
+  const d = Math.max(0, Number(totalDurSec) || 0);
+  if (l <= 0) return false;
+  if (l >= 30) return true;
+  if (completed && l >= 15) return true;
+  if (d > 0 && l >= 15 && (l / d) >= 0.5) return true;
   return false;
 }
 
@@ -715,10 +719,7 @@ export const analyticsService = {
     for (const ev of playbackEvents) {
       const key = ev.sessionId || `${ev.trackId}_${new Date(ev.startedAt).getTime()}`;
       const durSec = Math.max(0, Number(ev.durationSeconds ?? ev.duration) || 0);
-      let listenedSec = Math.max(0, Number(ev.listenedDurationSeconds ?? ev.listenedDuration) || 0);
-      if (listenedSec === 0 && (ev.completed || ev.eventType === 'completed') && durSec > 0) {
-        listenedSec = durSec;
-      }
+      const listenedSec = Math.max(0, Number(ev.listenedDurationSeconds ?? ev.listenedDuration) || 0);
       unifiedMap.set(key, {
         trackId: ev.trackId,
         videoId: ev.videoId || ev.trackId,
@@ -735,10 +736,7 @@ export const analyticsService = {
     for (const ev of legacyEvents) {
       const key = ev.playSessionId || `${ev.trackId}_${new Date(ev.timestamp).getTime()}`;
       const durSec = Math.max(0, Number(ev.duration ?? ev.durationSeconds) || 0);
-      let listenedSec = Math.max(0, Number(ev.listenedDuration ?? ev.listenedDurationSeconds) || 0);
-      if (listenedSec === 0 && (ev.completed || ev.eventType === 'completed') && durSec > 0) {
-        listenedSec = durSec;
-      }
+      const listenedSec = Math.max(0, Number(ev.listenedDuration ?? ev.listenedDurationSeconds) || 0);
       if (!unifiedMap.has(key)) {
         unifiedMap.set(key, {
           trackId: ev.trackId,
@@ -992,10 +990,7 @@ export const analyticsService = {
     for (const ev of playbackEvents) {
       const key = ev.sessionId || `${ev.trackId}_${new Date(ev.startedAt).getTime()}`;
       const durSec = Math.max(0, Number(ev.durationSeconds ?? ev.duration) || 0);
-      let listenedSec = Math.max(0, Number(ev.listenedDurationSeconds ?? ev.listenedDuration) || 0);
-      if (listenedSec === 0 && (ev.completed || ev.eventType === 'completed') && durSec > 0) {
-        listenedSec = durSec;
-      }
+      const listenedSec = Math.max(0, Number(ev.listenedDurationSeconds ?? ev.listenedDuration) || 0);
       unifiedMap.set(key, {
         trackId: ev.trackId,
         videoId: ev.videoId || ev.trackId,
@@ -1012,10 +1007,7 @@ export const analyticsService = {
     for (const ev of legacyEvents) {
       const key = ev.playSessionId || `${ev.trackId}_${new Date(ev.timestamp).getTime()}`;
       const durSec = Math.max(0, Number(ev.duration ?? ev.durationSeconds) || 0);
-      let listenedSec = Math.max(0, Number(ev.listenedDuration ?? ev.listenedDurationSeconds) || 0);
-      if (listenedSec === 0 && (ev.completed || ev.eventType === 'completed') && durSec > 0) {
-        listenedSec = durSec;
-      }
+      const listenedSec = Math.max(0, Number(ev.listenedDuration ?? ev.listenedDurationSeconds) || 0);
       if (!unifiedMap.has(key)) {
         unifiedMap.set(key, {
           trackId: ev.trackId,
@@ -1284,10 +1276,7 @@ export const analyticsService = {
     for (const ev of playbackEvents) {
       const key = ev.sessionId || `${ev.trackId}_${new Date(ev.startedAt).getTime()}`;
       const durSec = Math.max(0, Number(ev.durationSeconds ?? ev.duration) || 0);
-      let listenedSec = Math.max(0, Number(ev.listenedDurationSeconds ?? ev.listenedDuration) || 0);
-      if (listenedSec === 0 && (ev.completed || ev.eventType === 'completed') && durSec > 0) {
-        listenedSec = durSec;
-      }
+      const listenedSec = Math.max(0, Number(ev.listenedDurationSeconds ?? ev.listenedDuration) || 0);
       unifiedMap.set(key, {
         trackId: ev.trackId,
         videoId: ev.videoId || ev.trackId,
@@ -1304,10 +1293,7 @@ export const analyticsService = {
     for (const ev of legacyEvents) {
       const key = ev.playSessionId || `${ev.trackId}_${new Date(ev.timestamp).getTime()}`;
       const durSec = Math.max(0, Number(ev.duration ?? ev.durationSeconds) || 0);
-      let listenedSec = Math.max(0, Number(ev.listenedDuration ?? ev.listenedDurationSeconds) || 0);
-      if (listenedSec === 0 && (ev.completed || ev.eventType === 'completed') && durSec > 0) {
-        listenedSec = durSec;
-      }
+      const listenedSec = Math.max(0, Number(ev.listenedDuration ?? ev.listenedDurationSeconds) || 0);
       if (!unifiedMap.has(key)) {
         unifiedMap.set(key, {
           trackId: ev.trackId,
@@ -1583,10 +1569,7 @@ export const analyticsService = {
     for (const ev of playbackEvents) {
       const key = ev.sessionId || `${ev.trackId}_${new Date(ev.startedAt).getTime()}`;
       const durSec = Math.max(0, Number(ev.durationSeconds ?? ev.duration) || 0);
-      let listenedSec = Math.max(0, Number(ev.listenedDurationSeconds ?? ev.listenedDuration) || 0);
-      if (listenedSec === 0 && (ev.completed || ev.eventType === 'completed') && durSec > 0) {
-        listenedSec = durSec;
-      }
+      const listenedSec = Math.max(0, Number(ev.listenedDurationSeconds ?? ev.listenedDuration) || 0);
       unifiedMap.set(key, {
         trackId: ev.trackId,
         videoId: ev.videoId || ev.trackId,
@@ -1603,10 +1586,7 @@ export const analyticsService = {
     for (const ev of legacyEvents) {
       const key = ev.playSessionId || `${ev.trackId}_${new Date(ev.timestamp).getTime()}`;
       const durSec = Math.max(0, Number(ev.duration ?? ev.durationSeconds) || 0);
-      let listenedSec = Math.max(0, Number(ev.listenedDuration ?? ev.listenedDurationSeconds) || 0);
-      if (listenedSec === 0 && (ev.completed || ev.eventType === 'completed') && durSec > 0) {
-        listenedSec = durSec;
-      }
+      const listenedSec = Math.max(0, Number(ev.listenedDuration ?? ev.listenedDurationSeconds) || 0);
       if (!unifiedMap.has(key)) {
         unifiedMap.set(key, {
           trackId: ev.trackId,
@@ -1792,20 +1772,42 @@ export const analyticsService = {
     if (!userId) return { currentStreak: 0, longestStreak: 0, lastActiveDate: null, totalActiveDays: 0 };
     try {
       const userObjectId = new mongoose.Types.ObjectId(userId.toString());
-      const events = await UserListeningEvent.find({
-        userId: userObjectId
-      }).sort({ timestamp: -1 }).select('timestamp').lean();
-
-      if (!events || events.length === 0) {
-        return { currentStreak: 0, longestStreak: 0, lastActiveDate: null, totalActiveDays: 0 };
-      }
+      const [playbackEvents, legacyEvents] = await Promise.all([
+        UserPlaybackEvent.find({ userId: userObjectId })
+          .select('startedAt listenedDurationSeconds durationSeconds completed eventType')
+          .lean().maxTimeMS(4000),
+        UserListeningEvent.find({ userId: userObjectId })
+          .select('timestamp listenedDuration duration completed eventType')
+          .lean().maxTimeMS(4000)
+      ]);
 
       const daysSet = new Set();
       const dateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' });
-      for (const e of events) {
-        try {
-          daysSet.add(dateFmt.format(new Date(e.timestamp)));
-        } catch (err) {}
+
+      for (const e of (playbackEvents || [])) {
+        const sec = Math.max(0, Number(e.listenedDurationSeconds) || 0);
+        const dur = Math.max(0, Number(e.durationSeconds) || 0);
+        const comp = Boolean(e.completed || e.eventType === 'completed');
+        if (isValidMusicPlay(sec, dur, comp)) {
+          try {
+            daysSet.add(dateFmt.format(new Date(e.startedAt)));
+          } catch (err) {}
+        }
+      }
+
+      for (const e of (legacyEvents || [])) {
+        const sec = Math.max(0, Number(e.listenedDuration) || 0);
+        const dur = Math.max(0, Number(e.duration) || 0);
+        const comp = Boolean(e.completed || e.eventType === 'completed');
+        if (isValidMusicPlay(sec, dur, comp)) {
+          try {
+            daysSet.add(dateFmt.format(new Date(e.timestamp)));
+          } catch (err) {}
+        }
+      }
+
+      if (daysSet.size === 0) {
+        return { currentStreak: 0, longestStreak: 0, lastActiveDate: null, totalActiveDays: 0 };
       }
 
       const sortedDays = Array.from(daysSet).sort().reverse();

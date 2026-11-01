@@ -281,17 +281,17 @@ export default function ListeningStatsModal({
         ? (weeklyRecap?.peakDay && weeklyRecap.peakDay !== 'None' ? weeklyRecap.peakDay : 'None')
         : activeTab === 'monthly'
         ? (monthlyRecap?.peakDay && monthlyRecap.peakDay !== 'None' ? monthlyRecap.peakDay : 'None')
-        : `${fmtHours(stats?.totalActiveWebsiteHours)}h Web`;
+        : `${stats?.distinctArtistsCount || stats?.uniqueArtists || 0}`;
 
       const peakSub = activeTab === 'daily'
         ? `${dailyRecap?.peakHourPlays || 0} plays today`
         : activeTab === 'all-time'
-        ? `${stats?.totalSessions || 0} active sessions`
+        ? 'Artists Explored'
         : activeTab === 'monthly'
         ? `${fmtHours(monthlyRecap?.peakDayHours)}h peak`
         : `${fmtHours(weeklyRecap?.peakDayHours)}h peak`;
 
-      const peakLabel = activeTab === 'daily' ? 'Peak Hour' : activeTab === 'all-time' ? 'Web Usage' : 'Peak Day';
+      const peakLabel = activeTab === 'daily' ? 'Peak Hour' : activeTab === 'all-time' ? 'Unique Artists' : 'Peak Day';
 
       renderStatBox(90, 520, 420, 220, 'Hours Listened', `${hrs}h`, activeTab === 'daily' ? 'Today' : activeTab === 'monthly' ? (monthlyRecap?.monthLabel || 'This month') : activeTab === 'all-time' ? 'Lifetime' : 'This week');
       renderStatBox(570, 520, 420, 220, 'Total Plays', `${plays}`, 'Valid Plays');
@@ -905,19 +905,19 @@ export default function ListeningStatsModal({
               ) : (
                 <div className="bg-[#101118]/80 hover:bg-[#13141f]/90 border border-neutral-800 hover:border-amber-500/30 rounded-2xl p-3.5 flex flex-col justify-between transition-all duration-300 shadow-sm relative overflow-hidden group">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Web Usage</span>
-                    <span className="text-amber-400 text-sm">💻</span>
+                    <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Unique Artists</span>
+                    <span className="text-amber-400 text-sm">🎤</span>
                   </div>
                   <div className="my-1.5">
                     <p className="text-2xl sm:text-3xl font-black text-amber-400 font-display">
-                      {fmtHours(stats?.totalActiveWebsiteHours)}h
+                      {stats?.distinctArtistsCount || stats?.uniqueArtists || 0}
                     </p>
                     <p className="text-[11px] text-neutral-300 font-medium mt-0.5">
-                      {stats?.totalSessions || 0} active sessions
+                      Artists Explored
                     </p>
                   </div>
                   <div className="text-[9px] text-neutral-400 font-mono">
-                    App presence (distinct from music)
+                    All-time artist diversity
                   </div>
                 </div>
               )}
