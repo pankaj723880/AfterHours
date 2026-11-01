@@ -4,7 +4,7 @@
  * 
  * Features:
  * - Multi-action compound sentence splitting (English, Hindi, Hinglish)
- * - Pronoun & reference resolution ("it", "that song", "its artist", "the first song")
+ * - Pronoun & reference resolution ("it", "that song", "its artist", "the first song", "last played song")
  * - Sequential dependent execution passing results between steps
  * - Real application function verification
  * - Immediate abort on middle-step failure with exact step error reporting
@@ -15,7 +15,7 @@
 import { parseVoiceCommandLocally } from './voiceAgentRegistry.js';
 export { parseVoiceCommandLocally };
 
-// Recognized action verbs for compound sentence splitting
+// Recognized action verbs at the start of a clause (English / SVO)
 const ACTION_VERB_PATTERNS = [
   // Playback
   /^(play|chalao|bajao|start playing|resume|continue|unpause)\b/i,
@@ -44,11 +44,17 @@ const ACTION_VERB_PATTERNS = [
 ];
 
 /**
- * Checks if a string segment starts with an action indicator.
+ * Checks if a string segment is an independent action clause.
+ * Supports English SVO (verb at start) and Hindi/Hinglish SOV (verb at end).
  */
-function startsWithActionVerb(str = '') {
+function isActionClause(str = '') {
   const trimmed = str.trim();
-  return ACTION_VERB_PATTERNS.some(pat => pat.test(trimmed));
+  if (!trimmed) return false;
+  if (ACTION_VERB_PATTERNS.some(pat => pat.test(trimmed))) return true;
+
+  // Hindi / SOV trailing verbs: "search karo", "play karo", "bajao", "dikhao", "kholo", "like karo", "karo"
+  const hindiVerbEndPattern = /(?:play\s+karo|search\s+karo|bajao|chalao|sunao|dikhao|kholo|like\s+karo|daalo|karo|batao)$/i;
+  return hindiVerbEndPattern.test(trimmed);
 }
 
 /**
@@ -81,8 +87,8 @@ export function splitVoiceInstructionIntoClauses(rawText = '') {
     if (!buffer) {
       buffer = cleanChunk;
     } else {
-      // Check if the cleaned chunk begins with a recognized action verb
-      if (startsWithActionVerb(cleanChunk)) {
+      // Check if the cleaned chunk represents an action clause
+      if (isActionClause(cleanChunk)) {
         clauses.push(buffer);
         buffer = cleanChunk;
       } else {
@@ -100,7 +106,7 @@ export function splitVoiceInstructionIntoClauses(rawText = '') {
 }
 
 /**
- * Resolves follow-up pronoun references ("it", "this song", "that song", "its artist")
+ * Resolves follow-up pronoun references ("it", "this song", "that song", "its artist", "last played song")
  * using the current or inherited task context.
  */
 export function resolveStepReferences(parsedStep, taskContext = {}) {
@@ -133,8 +139,8 @@ export function resolveStepReferences(parsedStep, taskContext = {}) {
   }
 
   // 3. Play track from search results index ("play the first song", "play second track")
-  if (resolved.action === 'play_search') {
-    const queryLower = (resolved.query || '').toLowerCase().trim();
+  if (resolved.action === 'play_search' && resolved.query) {
+    const queryLower = resolved.query.toLowerCase().trim();
     const ordinalMatch = queryLower.match(/\b(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th|pehla|doosra|teesra)\b/i);
     if (ordinalMatch && Array.isArray(taskContext.lastSearchResults) && taskContext.lastSearchResults.length > 0) {
       const ordWord = ordinalMatch[1].toLowerCase();
@@ -149,6 +155,13 @@ export function resolveStepReferences(parsedStep, taskContext = {}) {
       if (matchedTrack) {
         resolved.action = 'play_direct';
         resolved.track = matchedTrack;
+      }
+    } else if (/\b(last played song|last played track|last song|pichla gaana|previous song)\b/i.test(queryLower)) {
+      // 4. Resolve "last played song"
+      const target = taskContext.lastPlayedTrack || taskContext.currentSong;
+      if (target) {
+        resolved.action = 'play_direct';
+        resolved.track = target;
       }
     }
   }
@@ -202,11 +215,6 @@ export function parseMultiStepInstruction(rawText = '', taskContext = {}) {
 /**
  * Executes a sequence of steps through real application handlers with dependency passing
  * and immediate failure isolation.
- * 
- * @param {Array} steps Array of parsed action objects
- * @param {Object} initialContext Persistent task context
- * @param {Object} handlers Real application functions
- * @returns {Promise<Object>} Execution result summary
  */
 export async function executeTaskPipeline(steps = [], initialContext = {}, handlers = {}) {
   const {
@@ -285,7 +293,6 @@ export async function executeTaskPipeline(steps = [], initialContext = {}, handl
         }
 
         if (!track) {
-          // If query specified, synthesize track or throw if empty
           if (!step.query || !step.query.trim()) {
             throw new Error('No song or artist specified to play.');
           }
@@ -398,9 +405,9 @@ export async function executeTaskPipeline(steps = [], initialContext = {}, handl
 
       // 13. Library: Add to Playlist
       else if (step.action === 'add_to_playlist') {
-        const targetTrack = currentContext.currentSong || currentContext.lastPlayedTrack;
+        const targetTrack = step.target || currentContext.currentSong || currentContext.lastPlayedTrack;
         if (!targetTrack) {
-          throw new Error('No song currently playing to add to playlist.');
+          throw new Error('No song specified or currently playing to add to playlist.');
         }
         if (!onAddToPlaylist) throw new Error('Playlist handler unavailable.');
         await onAddToPlaylist(targetTrack);
@@ -448,7 +455,7 @@ export async function executeTaskPipeline(steps = [], initialContext = {}, handl
         stepResult = { description: `Navigated to ${step.target}` };
       }
 
-      // 19. Search
+      // 19. Search (Search only, NEVER auto-play)
       else if (step.action === 'search') {
         if (typeof searchCatalog === 'function') {
           const results = await searchCatalog(step.query);
@@ -473,13 +480,17 @@ export async function executeTaskPipeline(steps = [], initialContext = {}, handl
         stepResult = { description: 'Navigated back' };
       }
 
+      // 21. Clarify (Intent Ambiguity)
+      else if (step.action === 'clarify') {
+        stepResult = { description: step.speechResponse || 'Clarification required' };
+      }
+
       // Wake/Stop
       else if (step.action === 'wake_ping') {
         stepResult = { description: 'Hey Loopra is active and listening' };
       } else if (step.action === 'stop_continuous') {
         stepResult = { description: 'Voice session stopped' };
       } else {
-        // Fallback for recognized passive commands
         stepResult = { description: step.description || `Executed ${step.action}` };
       }
 
@@ -497,7 +508,6 @@ export async function executeTaskPipeline(steps = [], initialContext = {}, handl
     } catch (err) {
       // IMMEDIATE FAILURE ISOLATION:
       // Stop execution immediately. Do NOT run remaining steps.
-      // Report exact step index, action name, and error message.
       const errorMsg = err.message || 'Operation failed';
       currentContext.failedStep = {
         index: i,

@@ -1,7 +1,11 @@
 /**
  * Loopra Voice Agent Command Registry & Action Mapper
- * Multi-lingual (English, Hindi, Hinglish), context-aware local command parsing.
- * Strictly isolates administrative operations from the Voice Agent for security.
+ * Hybrid Intent Understanding & Native Tool Mapper
+ * 
+ * Complies strictly with:
+ * 1. STRICT PLAYBACK INTENT GATE: Never plays music unless explicit playback verb is present.
+ * 2. Strict Administrative Isolation: Block any access to admin/database/rollout.
+ * 3. Multi-lingual support: English, Hindi, and Hinglish.
  */
 
 export function parseVoiceCommandLocally(rawText = '', context = {}) {
@@ -10,7 +14,7 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
   let lower = text.toLowerCase().trim();
   const currentSong = context.currentSong || context.lastPlayedTrack || null;
 
-  // Strip leading wake phrase if present
+  // Strip leading wake phrase if present (e.g. "hey loopra play kesariya" -> "play kesariya")
   const wakePrefixes = ['hey loopra, ', 'hey loopra ', 'ok loopra, ', 'ok loopra ', 'loopra, ', 'loopra '];
   for (const wp of wakePrefixes) {
     if (lower.startsWith(wp)) {
@@ -32,7 +36,7 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
 
   // Deactivation / Stop Continuous Voice Session
   if (
-    /^(done loopra|stop listening|bye loopra|alvida loopra|chup ho jao|band karo|exit voice|close voice|sleep)$/i.test(lower) ||
+    /^(done loopra|stop listening|bye loopra|alvida loopra|band karo voice|exit voice|close voice|sleep)$/i.test(lower) ||
     /\b(done loopra|stop listening|stop voice|close voice agent)\b/i.test(lower)
   ) {
     return {
@@ -61,8 +65,8 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
   // 1. PLAYBACK: PAUSE / STOP
   // -------------------------------------------------------------
   if (
-    /^(pause|stop|hold on|ruk jao|rok do|gaana roko|pause karo|chup ho jao)$/i.test(lower) ||
-    /\b(pause music|stop music|music roko|pause the song)\b/i.test(lower)
+    /^(pause|stop|hold on|ruk jao|rok do|gaana roko|gana roko|pause karo|chup ho jao|pause music|stop music)(?:\s+(?:bhai|yaar|abhi|karo|please))?$/i.test(lower) ||
+    /\b(pause music|stop music|music roko|gaana roko|gana roko|pause the song)\b/i.test(lower)
   ) {
     return {
       type: 'playback',
@@ -73,10 +77,10 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
   }
 
   // -------------------------------------------------------------
-  // 2. PLAYBACK: RESUME / PLAY
+  // 2. PLAYBACK: RESUME / PLAY CURRENT
   // -------------------------------------------------------------
   if (
-    /^(resume|play|continue|unpause|shuru karo|chalao|bajao|start playing)$/i.test(lower) ||
+    /^(resume|play|continue|unpause|shuru karo|chalao|bajao|start playing|resume music|play music)$/i.test(lower) ||
     /\b(resume music|unpause song|play music|chalu karo)\b/i.test(lower)
   ) {
     return {
@@ -91,8 +95,8 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
   // 3. PLAYBACK: NEXT TRACK / SKIP
   // -------------------------------------------------------------
   if (
-    /\b(next track|next song|skip song|skip track|agla gaana|agla song|aage badhao|change song)\b/i.test(lower) ||
-    /^(next|skip|agla)$/i.test(lower)
+    /\b(next track|next song|skip song|skip track|agla gaana|agla song|agla track|agla chalao|aage badhao|change song)\b/i.test(lower) ||
+    /^(next|skip|agla|agla chalao)(?:\s+(?:bhai|yaar|abhi|karo|please))?$/i.test(lower)
   ) {
     return {
       type: 'playback',
@@ -168,23 +172,9 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
   // -------------------------------------------------------------
   // 8. VOLUME: UP / DOWN / SET
   // -------------------------------------------------------------
-  if (/\b(volume up|increase volume|louder|awaaz badhao|thoda tej karo|awaaz tej)\b/i.test(lower)) {
-    return {
-      type: 'playback',
-      action: 'volume_up',
-      speechResponse: 'Increasing volume',
-      description: 'Volume up (+15%)'
-    };
-  }
-  if (/\b(volume down|decrease volume|lower volume|softer|awaaz kam karo|thoda dheere karo)\b/i.test(lower)) {
-    return {
-      type: 'playback',
-      action: 'volume_down',
-      speechResponse: 'Decreasing volume',
-      description: 'Volume down (-15%)'
-    };
-  }
-  const volumeMatch = lower.match(/(?:set\s+)?volume\s+(?:to\s+)?(\d{1,3})/i) || lower.match(/awaaz\s+(\d{1,3})/i);
+  const volumeMatch = lower.match(/(?:set\s+)?volume\s+(?:to\s+)?(\d{1,3})/i) ||
+                      lower.match(/awaaz\s+(\d{1,3})/i) ||
+                      lower.match(/volume\s+(\d{1,3})\s+karo/i);
   if (volumeMatch && volumeMatch[1]) {
     const val = Math.min(100, Math.max(0, parseInt(volumeMatch[1], 10)));
     return {
@@ -193,6 +183,22 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
       value: val,
       speechResponse: `Setting volume to ${val} percent`,
       description: `Set volume to ${val}%`
+    };
+  }
+  if (/\b(volume up|increase volume|louder|awaaz badhao|thoda tej karo|awaaz tej|volume tej|awaaz thoda tej|thoda tej)\b/i.test(lower)) {
+    return {
+      type: 'playback',
+      action: 'volume_up',
+      speechResponse: 'Increasing volume',
+      description: 'Volume up (+15%)'
+    };
+  }
+  if (/\b(volume down|decrease volume|lower volume|softer|awaaz kam karo|thoda dheere karo|awaaz dheere karo|awaaz dheere|dheere karo)\b/i.test(lower)) {
+    return {
+      type: 'playback',
+      action: 'volume_down',
+      speechResponse: 'Decreasing volume',
+      description: 'Volume down (-15%)'
     };
   }
 
@@ -225,18 +231,23 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
   // -------------------------------------------------------------
   // 10. LIBRARY: ADD TO PLAYLIST
   // -------------------------------------------------------------
-  if (/\b(add to playlist|playlist me daalo|add this to my playlist|add that song to my favorites)\b/i.test(lower)) {
+  if (/\b(add to playlist|playlist me daalo|add this to my playlist|add (.+?) to (?:my\s+)?playlist)\b/i.test(lower)) {
+    const specificMatch = lower.match(/add\s+(.+?)\s+to\s+(?:my\s+)?playlist/i);
+    const target = specificMatch && specificMatch[1] && !['this', 'it', 'song', 'track'].includes(specificMatch[1])
+      ? { title: specificMatch[1].trim() }
+      : currentSong;
+
     return {
       type: 'library',
       action: 'add_to_playlist',
-      target: currentSong,
+      target,
       speechResponse: 'Opening playlist selector',
-      description: `Add current track to playlist`
+      description: `Add ${target?.title || 'track'} to playlist`
     };
   }
 
   // -------------------------------------------------------------
-  // 11. NAVIGATION: QUEUE & NOW PLAYING (Check before general play/search)
+  // 11. NAVIGATION: QUEUE & NOW PLAYING
   // -------------------------------------------------------------
   if (
     /\b(open playback queue|playback queue|open queue|show queue|view queue|queue dikhao|up next songs|now playing queue|queue panel)\b/i.test(lower) ||
@@ -320,7 +331,7 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
   }
 
   // -------------------------------------------------------------
-  // 17. NAVIGATION: PAGES (Home, Discover, Radio, Liked/Library, History, Playlists)
+  // 17. NAVIGATION: TOP-LEVEL PAGES
   // -------------------------------------------------------------
   if (/\b(go home|open home|home page|ghar jao|main page)\b/i.test(lower) || /^(home)$/i.test(lower)) {
     return {
@@ -332,7 +343,7 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
     };
   }
 
-  if (/\b(open discover|go to discover|discover page|explore music|khojo|explore)\b/i.test(lower) || /^(discover)$/i.test(lower)) {
+  if (/\b(open discover|go to discover|discover page|discover kholo|discover khojo|explore music|explore)\b/i.test(lower) || /^(discover|khojo)$/i.test(lower)) {
     return {
       type: 'navigation',
       action: 'navigate_page',
@@ -352,7 +363,7 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
     };
   }
 
-  if (/\b(liked songs|my liked songs|open liked|favourites?|pasandida gaane|library)\b/i.test(lower)) {
+  if (/\b(liked songs|my liked songs|open liked|favourites?|pasandida gaane|mera liked songs kholo|meri liked songs|library)\b/i.test(lower)) {
     return {
       type: 'navigation',
       action: 'navigate_page',
@@ -362,7 +373,7 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
     };
   }
 
-  if (/\b(listening history|recently played|recent songs|history kholo|history page)\b/i.test(lower) || /^(history)$/i.test(lower)) {
+  if (/\b(listening history|recently played|recent songs|history kholo|open listening history|history page|mera listening history)\b/i.test(lower) || /^(history)$/i.test(lower)) {
     return {
       type: 'navigation',
       action: 'navigate_page',
@@ -383,7 +394,22 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
   }
 
   // -------------------------------------------------------------
-  // 18. NAVIGATION: SPECIFIC ARTIST BY NAME
+  // 18. NAVIGATION: ALBUM
+  // -------------------------------------------------------------
+  const albumMatch = lower.match(/^(?:open\s+)?album\s+(.+)$/i) || lower.match(/^open\s+(.+?)\s+album$/i);
+  if (albumMatch && albumMatch[1]) {
+    const albumName = albumMatch[1].trim();
+    return {
+      type: 'navigation',
+      action: 'search',
+      query: `${albumName} album`,
+      speechResponse: `Opening album "${albumName}"`,
+      description: `Open album "${albumName}"`
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 19. NAVIGATION: SPECIFIC ARTIST BY NAME
   // -------------------------------------------------------------
   const artistMatch = lower.match(/(?:open|show|view)?\s*artist\s+([a-zA-Z0-9\s.]+)/i) ||
                       lower.match(/([a-zA-Z0-9\s.]+)\s+(?:ka\s+profile|ka\s+page)/i);
@@ -401,8 +427,82 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
   }
 
   // -------------------------------------------------------------
-  // 19. PLAY INTENT: DIRECT SONG OR ARTIST SEARCH & PLAY
+  // 20. DISCOVERY: SHOW SONGS BY ARTIST (SEARCH / DISPLAY ONLY, NEVER AUTO-PLAY)
   // -------------------------------------------------------------
+  // e.g. "Show songs by Arijit Singh", "Arijit Singh ke songs dikhao"
+  const showSongsByMatch = lower.match(/^(?:show|display)\s+songs\s+(?:by|of)\s+(.+)$/i);
+  if (showSongsByMatch && showSongsByMatch[1]) {
+    const artist = text.slice(text.length - showSongsByMatch[1].length).trim();
+    return {
+      type: 'navigation',
+      action: 'search',
+      query: artist,
+      speechResponse: `Displaying songs by ${artist}`,
+      description: `Show songs by "${artist}"`
+    };
+  }
+
+  const hindiShowSongs = lower.match(/^(.+?)\s+ke\s+(?:songs|gaane)\s+dikhao$/i);
+  if (hindiShowSongs && hindiShowSongs[1]) {
+    const artist = text.slice(0, hindiShowSongs[1].length).trim();
+    return {
+      type: 'navigation',
+      action: 'search',
+      query: artist,
+      speechResponse: `Displaying songs by ${artist}`,
+      description: `Show songs by "${artist}"`
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 21. DISCOVERY: SEARCH ONLY (SEARCH CATALOG, NEVER AUTO-PLAY)
+  // -------------------------------------------------------------
+  // e.g. "Search Headlights", "Find Headlights", "Search for Coke Studio"
+  const searchPrefixes = [
+    'search for ',
+    'search ',
+    'find song ',
+    'find track ',
+    'find ',
+    'look up ',
+    'dhundo ',
+    'dhoondho ',
+    'khojo '
+  ];
+  for (const prefix of searchPrefixes) {
+    if (lower.startsWith(prefix)) {
+      const query = text.slice(prefix.length).trim();
+      if (query) {
+        return {
+          type: 'navigation',
+          action: 'search',
+          query,
+          speechResponse: `Searching for ${query}`,
+          description: `Search for "${query}"`
+        };
+      }
+    }
+  }
+
+  // Suffix search: "Arijit Singh search karo", "Headlights dhundo"
+  const hindiSuffixSearch = lower.match(/^(.+?)\s+(?:search\s+karo|dhundo|dhoondho|khojo)$/i);
+  if (hindiSuffixSearch && hindiSuffixSearch[1]) {
+    const query = text.slice(0, hindiSuffixSearch[1].length).trim();
+    if (query) {
+      return {
+        type: 'navigation',
+        action: 'search',
+        query,
+        speechResponse: `Searching for ${query}`,
+        description: `Search for "${query}"`
+      };
+    }
+  }
+
+  // -------------------------------------------------------------
+  // 22. PLAYBACK: EXPLICIT PLAY INTENT GATE ONLY
+  // -------------------------------------------------------------
+  // Prefix play: "play Headlights", "bajao Pasoori", "chalao Kesariya"
   const playPrefixes = [
     'play song ',
     'play track ',
@@ -439,40 +539,47 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
     }
   }
 
-  // -------------------------------------------------------------
-  // 20. SEARCH INTENT
-  // -------------------------------------------------------------
-  const searchPrefixes = [
-    'search for ',
-    'search ',
-    'find song ',
-    'find ',
-    'look up ',
-    'dhundo ',
-    'khojo '
-  ];
-  for (const prefix of searchPrefixes) {
-    if (lower.startsWith(prefix)) {
-      const query = text.slice(prefix.length).trim();
-      if (query) {
-        return {
-          type: 'navigation',
-          action: 'search',
-          query,
-          speechResponse: `Searching for ${query}`,
-          description: `Search for "${query}"`
-        };
-      }
+  // Suffix play: "Headlights play karo", "Headlights bajao", "Kesariya chalao"
+  const hindiSuffixPlay = lower.match(/^(.+?)\s+(?:play\s+karo|bajao|chalao|sunao)$/i);
+  if (hindiSuffixPlay && hindiSuffixPlay[1]) {
+    const query = text.slice(0, hindiSuffixPlay[1].length).trim();
+    if (query) {
+      return {
+        type: 'playback',
+        action: 'play_search',
+        query,
+        speechResponse: `Playing "${query}"`,
+        description: `Play "${query}"`
+      };
     }
   }
 
-  // 21. Default fallback: query search and play
+  // -------------------------------------------------------------
+  // 23. AMBIGUOUS "OPEN <ENTITY>" CLARIFICATION GATE (NEVER AUTO-PLAY)
+  // -------------------------------------------------------------
+  // e.g. "Open Headlights" -> Clarify whether user wants song, album, or search
+  const openAmbiguous = lower.match(/^open\s+([a-zA-Z0-9\s]+)$/i);
+  if (openAmbiguous && openAmbiguous[1]) {
+    const entity = openAmbiguous[1].trim();
+    if (!['discover', 'radio', 'history', 'home', 'playlists', 'queue', 'lyrics', 'insights', 'library'].includes(entity)) {
+      return {
+        type: 'clarify',
+        action: 'clarify',
+        speechResponse: `Would you like to play the song "${entity}", view the album, or search for it?`,
+        description: `Clarify intent for "${entity}"`
+      };
+    }
+  }
+
+  // -------------------------------------------------------------
+  // 24. STRICT DEFAULT GATE (UNKNOWN / AMBIGUOUS)
+  // -------------------------------------------------------------
+  // STRICT RULE: Never use playback as fallback!
   return {
-    type: 'playback',
-    action: 'play_search',
-    query: text,
-    speechResponse: `Searching for ${text}`,
-    description: `Play "${text}"`
+    type: 'clarify',
+    action: 'clarify',
+    speechResponse: `I did not catch that command. What would you like to play or open?`,
+    description: `Clarify command: "${text}"`
   };
 }
 

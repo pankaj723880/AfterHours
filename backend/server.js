@@ -39,6 +39,7 @@ import { CORE_CATALOG_TRACKS } from './services/catalogService.js';
 import reviewsRoutes from './routes/reviews.js';
 import artistRoutes from './routes/artist.js';
 import featureFlagsRouter from './routes/featureFlags.js';
+import voiceAgentRouter from './routes/voiceAgent.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1003,6 +1004,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/admin/cms', adminCmsRoutes);
 app.use('/api/admin/reviews', reviewsRoutes);
 app.use(['/api/admin/features', '/api/features', '/api/admin/voice-control', '/api/voice-control', '/features'], featureFlagsRouter);
+app.use(['/api/voice-agent', '/api/features/voice-agent', '/voice-agent'], voiceAgentRouter);
 
 // Mount Dedicated Artist Profile System
 app.use(['/api/artists', '/artists', '/api/artist', '/artist'], artistRoutes);
