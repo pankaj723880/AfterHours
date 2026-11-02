@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { recommendationsClient } from '../../services/recommendationsClient';
 import { TrackDeduplicator } from '../../utils/trackIdentity';
 import { getCleanThumbnail, isThumbnailUrlFormatValid } from '../../utils/thumbnailValidator';
+import { CURATED_STATION_TRACKS } from '../../constants/curatedPlaylists';
 
 // Track-level runtime failed image cache for graceful component fallbacks
 const locallyFailedVideoIds = new Set();
@@ -169,6 +170,9 @@ export default function PersonalizedRecommendationsSection({
         };
 
         setData(formatted);
+        try {
+          localStorage.setItem('loopra_cached_recs', JSON.stringify(formatted));
+        } catch (_) {}
         onTracksRendered?.(allRendered);
 
         if (typeof rawData.recommendationsEnabled === 'boolean') {
@@ -180,8 +184,50 @@ export default function PersonalizedRecommendationsSection({
         refillBackupPool(allRendered);
       }
     } catch (err) {
-      console.warn('[PersonalizedRecommendations] Notice:', err.message);
-      setError(err.message || 'Unable to load personalized recommendations');
+      console.warn('[PersonalizedRecommendations] Network error, applying resilient fallback:', err.message);
+      
+      // 1. Try local storage cache
+      try {
+        const cached = localStorage.getItem('loopra_cached_recs');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && (parsed.madeForYou?.length || parsed.dailyMix?.length)) {
+            setData(parsed);
+            setError(null);
+            return;
+          }
+        }
+      } catch (_) {}
+
+      // 2. Try guest discovery
+      try {
+        const discRes = await recommendationsClient.getDiscover(backendUrl, null, { limit: 25 });
+        const items = sanitizeThumbnailTracks(discRes.items || []);
+        if (items.length > 0) {
+          const formatted = {
+            madeForYou: items.slice(0, 6),
+            dailyMix: items.slice(6, 12),
+            discover: items.slice(12, 18),
+            isGuest: true
+          };
+          setData(formatted);
+          setError(null);
+          return;
+        }
+      } catch (_) {}
+
+      // 3. Fallback to guaranteed curated station tracks
+      const allCurated = Object.values(CURATED_STATION_TRACKS || {}).flat();
+      if (allCurated.length > 0) {
+        const formatted = {
+          madeForYou: allCurated.slice(0, 6),
+          dailyMix: allCurated.slice(6, 12),
+          discover: allCurated.slice(12, 18),
+          isGuest: true
+        };
+        setData(formatted);
+        setError(null);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -543,18 +589,18 @@ export default function PersonalizedRecommendationsSection({
     );
   }
 
-  if (error && !data) {
-    return (
-      <div className="rounded-3xl p-6 bg-neutral-900/50 border border-red-500/20 text-center">
-        <p className="text-xs sm:text-sm text-red-400 mb-3">{error}</p>
-        <button
-          onClick={() => fetchRecommendations(true)}
-          className="px-4 py-2 text-xs font-bold bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl transition cursor-pointer"
-        >
-          Retry Loading Recommendations
-        </button>
-      </div>
-    );
+  if (!data) {
+    // If data is temporarily empty, populate instant curated fallback
+    const allCurated = Object.values(CURATED_STATION_TRACKS || {}).flat();
+    if (allCurated.length > 0) {
+      const fallbackData = {
+        madeForYou: allCurated.slice(0, 6),
+        dailyMix: allCurated.slice(6, 12),
+        discover: allCurated.slice(12, 18),
+        isGuest: true
+      };
+      setData(fallbackData);
+    }
   }
 
   const isGeminiPowered = data?.source === 'gemini';

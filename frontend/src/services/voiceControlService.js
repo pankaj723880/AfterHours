@@ -1,9 +1,9 @@
 import { BACKEND_URL } from '../utils/apiUrl';
 
 let currentAccessState = {
-  allowed: false,
+  allowed: true,
   enabled: true,
-  globalRollout: false,
+  globalRollout: true,
   adminAccess: true,
   lastChecked: 0
 };
@@ -36,9 +36,8 @@ export const voiceControlService = {
    */
   evaluateLocalAccess(config, user) {
     if (!config || !config.enabled) return false;
-    if (!user) return false;
-    if (user.role === 'admin') return Boolean(config.adminAccess);
-    return Boolean(config.globalRollout);
+    if (user && user.role === 'admin') return Boolean(config.adminAccess);
+    return config.globalRollout !== false;
   },
 
   /**

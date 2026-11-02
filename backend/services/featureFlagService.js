@@ -2,11 +2,11 @@ import FeatureFlag from '../models/FeatureFlag.js';
 import AuditLog from '../models/AuditLog.js';
 import User from '../models/User.js';
 
-// Default initial config for voice_control (Admin-Only Beta)
+// Default initial config for voice_control (Active for all users)
 const DEFAULT_VOICE_CONTROL_CONFIG = {
   featureKey: 'voice_control',
   enabled: true,
-  globalRollout: false,
+  globalRollout: true,
   adminAccess: true,
   updatedBy: 'system',
   updatedByUsername: 'System Default',

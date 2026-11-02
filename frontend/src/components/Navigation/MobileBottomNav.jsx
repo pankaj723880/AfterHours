@@ -94,6 +94,7 @@ export default function MobileBottomNav({
           return (
             <button
               key={item.id}
+              data-nav-id={item.id}
               type="button"
               onClick={item.onClick}
               aria-label={item.label}

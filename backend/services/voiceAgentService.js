@@ -16,11 +16,11 @@ export const LOOPRA_TOOLS = [
   {
     name: 'navigate_to_page',
     category: 'NAVIGATION',
-    description: 'Navigate to a top-level page in Loopra',
+    description: 'Navigate to a top-level page or station in Loopra. "barber" is Saloon FM, "truck" is Horn Ok Please, "pauwa" is Theka Session, "timemachine" is Time Machine Radio.',
     parameters: {
       page: {
         type: 'string',
-        enum: ['home', 'discover', 'radio', 'library', 'history', 'playlists', 'downloads', 'mood', 'timemachine', 'activity']
+        enum: ['home', 'discover', 'radio', 'library', 'history', 'playlists', 'downloads', 'mood', 'timemachine', 'activity', 'barber', 'truck', 'pauwa', 'swipe', 'for-you']
       }
     }
   },
@@ -694,7 +694,12 @@ SERVER CONTEXT:
 - ${currentTrackSummary}
 
 AVAILABLE LOOPRA TOOLS:
-- navigate_to_page(page: "home" | "discover" | "radio" | "library" | "history" | "playlists" | "downloads" | "mood" | "timemachine" | "activity")
+- navigate_to_page(page: "home" | "discover" | "radio" | "library" | "history" | "playlists" | "downloads" | "mood" | "timemachine" | "activity" | "barber" | "truck" | "pauwa" | "swipe" | "for-you")
+  * NOTE: "Saloon FM" / "Saloon" MUST ALWAYS map to page: "barber". NEVER map Saloon FM to timemachine!
+  * "Horn Ok Please" / "Truck" maps to page: "truck".
+  * "Theka Session" / "Desi Theka" maps to page: "pauwa".
+  * "Time Machine Radio" maps to page: "timemachine".
+  * "Indian Live Radio" maps to page: "radio".
 - open_artist_profile(artist: string)
 - open_album(album: string)
 - open_playlist(playlistName?: string)

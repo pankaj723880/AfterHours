@@ -109,17 +109,17 @@ export function isThumbnailUrlFormatValid(url) {
  * Returns empty string if no valid thumbnail URL can be determined.
  */
 export function getCleanThumbnail(itemOrUrl, explicitId) {
-  if (!itemOrUrl && !explicitId) return '';
+  if (!itemOrUrl && !explicitId) return null;
 
   let url = typeof itemOrUrl === 'string'
     ? itemOrUrl
-    : (itemOrUrl?.thumbnail || itemOrUrl?.coverArt || itemOrUrl?.image || itemOrUrl?.snippet?.thumbnails?.high?.url || itemOrUrl?.snippet?.thumbnails?.medium?.url || '');
+    : (itemOrUrl?.thumbnail || itemOrUrl?.coverArt || itemOrUrl?.image || itemOrUrl?.snippet?.thumbnails?.high?.url || itemOrUrl?.snippet?.thumbnails?.medium?.url || null);
 
   const rawId = explicitId || (typeof itemOrUrl === 'object' ? (itemOrUrl?.videoId || itemOrUrl?.id) : null);
   const id = typeof rawId === 'string' ? rawId.trim() : (rawId?.videoId ? String(rawId.videoId).trim() : null);
 
   if (id && KNOWN_INVALID_VIDEO_IDS.has(id)) {
-    return '';
+    return null;
   }
 
   // If explicit YouTube video ID exists and is 11-chars
@@ -131,9 +131,10 @@ export function getCleanThumbnail(itemOrUrl, explicitId) {
 
   if (typeof url === 'string') {
     url = url.trim();
+    if (!url) return null;
 
     for (const pattern of PROHIBITED_PATTERNS) {
-      if (pattern.test(url)) return '';
+      if (pattern.test(url)) return null;
     }
 
     if (url.includes('ytimg.com') || url.includes('ggpht.com')) {
@@ -143,13 +144,13 @@ export function getCleanThumbnail(itemOrUrl, explicitId) {
         .replace(/\/maxresdefault\.(?:jpg|webp)(?:\?.*)?$/i, '/hqdefault.jpg')
         .replace(/\?.*$/i, '');
 
-      return isThumbnailUrlFormatValid(normalized) ? normalized : '';
+      return isThumbnailUrlFormatValid(normalized) ? normalized : null;
     }
 
-    return isThumbnailUrlFormatValid(url) ? url : '';
+    return isThumbnailUrlFormatValid(url) ? url : null;
   }
 
-  return '';
+  return null;
 }
 
 /**

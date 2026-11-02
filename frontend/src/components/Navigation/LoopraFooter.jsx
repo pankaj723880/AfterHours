@@ -153,101 +153,51 @@ export default function LoopraFooter({
   ];
 
   return (
-    <footer className="w-full mt-12 pt-10 pb-8 bg-gradient-to-b from-[#111111] via-[#0d0d0d] to-[#070707] border-t border-neutral-800/80 text-neutral-300 relative select-none">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8 space-y-8">
+    <footer className="w-full mt-6 sm:mt-12 pt-5 sm:pt-10 pb-4 sm:pb-8 bg-gradient-to-b from-[#111111] via-[#0d0d0d] to-[#070707] border-t border-neutral-800/80 text-neutral-300 relative select-none">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 md:px-8 space-y-4 sm:space-y-8">
         
         {/* 1. BRAND SECTION */}
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 pb-8 border-b border-neutral-800/70">
-          <div className="space-y-3 max-w-2xl">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-neutral-900 border border-amber-500/40 p-1 flex items-center justify-center shadow-lg shadow-amber-500/10 shrink-0">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 sm:gap-6 pb-4 sm:pb-8 border-b border-neutral-800/70">
+          <div className="space-y-2 sm:space-y-3 max-w-2xl">
+            <div className="flex items-center gap-2.5 sm:gap-3">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-neutral-900 border border-amber-500/40 p-1 flex items-center justify-center shadow-lg shadow-amber-500/10 shrink-0">
                 <img src={logoUrl} alt={siteName} className="w-full h-full object-contain" />
               </div>
               <div>
-                <span className="text-xl sm:text-2xl font-display font-black tracking-wider text-white uppercase flex items-center gap-1.5">
+                <span className="text-lg sm:text-2xl font-display font-black tracking-wider text-white uppercase flex items-center gap-1.5">
                   <span>{siteName}</span>
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_8px_#f59e0b]" />
                 </span>
               </div>
             </div>
 
-            <p className="text-xs sm:text-sm font-semibold text-amber-300/90 font-display tracking-wide">
+            <p className="text-[11px] sm:text-sm font-semibold text-amber-300/90 font-display tracking-wide">
               More Than Music — Stream. Discover. Relive. Repeat.
             </p>
 
-            <p className="text-xs text-neutral-400 leading-relaxed max-w-xl">
+            <p className="text-[11px] sm:text-xs text-neutral-400 leading-relaxed max-w-xl">
               Your personal destination for music discovery, live radio, AI-powered recommendations and nostalgic listening experiences. Explore music that matches your mood, memories and moments.
             </p>
           </div>
 
-          {/* Social Connection & Back to Top Header */}
-          <div className="flex flex-col sm:flex-row md:flex-col items-start sm:items-center md:items-end gap-3.5 shrink-0 w-full sm:w-auto">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5 font-mono">
-              <span className="text-amber-400">⚡</span>
-              <span>Connect With Loopra</span>
-            </span>
-
-            <div className="flex items-center gap-2.5">
-              {/* Instagram */}
-              <a
-                href="https://instagram.com/loopra.in"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-9 h-9 rounded-full bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-800 hover:border-pink-500/50 text-neutral-400 hover:text-pink-400 flex items-center justify-center transition shadow-md group cursor-pointer"
-                title="Follow Loopra on Instagram"
-                aria-label="Instagram"
-              >
-                <svg className="w-4 h-4 fill-current group-hover:scale-110 transition-transform" viewBox="0 0 24 24">
-                  <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
-                </svg>
-              </a>
-
-              {/* YouTube */}
-              <a
-                href="https://youtube.com/@loopra"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-9 h-9 rounded-full bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-800 hover:border-red-500/50 text-neutral-400 hover:text-red-500 flex items-center justify-center transition shadow-md group cursor-pointer"
-                title="Subscribe to Loopra on YouTube"
-                aria-label="YouTube"
-              >
-                <svg className="w-4 h-4 fill-current group-hover:scale-110 transition-transform" viewBox="0 0 24 24">
-                  <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-                </svg>
-              </a>
-
-              {/* Facebook */}
-              <a
-                href="https://facebook.com/loopra.in"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-9 h-9 rounded-full bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-800 hover:border-blue-500/50 text-neutral-400 hover:text-blue-400 flex items-center justify-center transition shadow-md group cursor-pointer"
-                title="Connect with Loopra on Facebook"
-                aria-label="Facebook"
-              >
-                <svg className="w-4 h-4 fill-current group-hover:scale-110 transition-transform" viewBox="0 0 24 24">
-                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-                </svg>
-              </a>
-
-              {/* Back to Top Quick Button */}
-              <button
-                type="button"
-                onClick={handleTopClick}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-800 hover:border-amber-500/40 text-neutral-300 hover:text-amber-400 text-xs font-semibold transition cursor-pointer shadow-md active:scale-95 ml-2"
-                title="Back to Top"
-                aria-label="Back to top"
-              >
-                <ArrowUp className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden min-[400px]:inline">Top</span>
-              </button>
-            </div>
+          {/* Back to Top Quick Action */}
+          <div className="flex items-center justify-end shrink-0 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={handleTopClick}
+              className="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-full bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-800 hover:border-amber-500/40 text-neutral-300 hover:text-amber-400 text-[11px] sm:text-xs font-semibold transition cursor-pointer shadow-md active:scale-95"
+              title="Back to Top"
+              aria-label="Back to top"
+            >
+              <ArrowUp className="w-3.5 h-3.5 text-amber-400" />
+              <span>Back to Top</span>
+            </button>
           </div>
         </div>
 
         {/* 2. NAVIGATION CATEGORIES */}
-        {/* Mobile Accordion View (< sm) */}
-        <div className="sm:hidden space-y-2">
+        {/* Mobile Accordion View (< sm) - Compact phone layout */}
+        <div className="sm:hidden space-y-1.5">
           {navigationGroups.map((group) => {
             const IconComp = group.icon;
             const isOpen = openAccordion === group.key;
@@ -255,34 +205,34 @@ export default function LoopraFooter({
             return (
               <div
                 key={group.key}
-                className="rounded-2xl border border-neutral-800/80 bg-neutral-900/50 overflow-hidden transition-all duration-200"
+                className="rounded-xl border border-neutral-800/80 bg-neutral-900/50 overflow-hidden transition-all duration-200"
               >
                 <button
                   type="button"
                   onClick={() => toggleAccordion(group.key)}
                   aria-expanded={isOpen}
-                  className="w-full flex items-center justify-between px-4 py-3 min-h-[46px] text-left text-sm font-bold text-neutral-200 hover:text-white transition active:bg-neutral-800/50 cursor-pointer"
+                  className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-bold text-neutral-200 hover:text-white transition active:bg-neutral-800/50 cursor-pointer"
                 >
-                  <div className="flex items-center gap-2.5">
-                    <IconComp className="w-4 h-4 text-amber-400 shrink-0" />
+                  <div className="flex items-center gap-2">
+                    <IconComp className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                     <span>{group.title}</span>
                   </div>
                   {isOpen ? (
-                    <ChevronUp className="w-4 h-4 text-amber-400 shrink-0" />
+                    <ChevronUp className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                   ) : (
-                    <ChevronDown className="w-4 h-4 text-neutral-500 shrink-0" />
+                    <ChevronDown className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
                   )}
                 </button>
 
                 {isOpen && (
-                  <div className="px-4 pb-3.5 pt-1 border-t border-neutral-800/60 bg-neutral-950/40 space-y-1 animate-in fade-in duration-150">
+                  <div className="px-3 pb-2.5 pt-1 border-t border-neutral-800/60 bg-neutral-950/40 space-y-0.5 animate-in fade-in duration-150">
                     {group.links.map((link, idx) => {
                       if (link.href) {
                         return (
                           <a
                             key={idx}
                             href={link.href}
-                            className="block py-2 text-xs font-medium text-neutral-400 hover:text-amber-300 active:text-amber-400 transition cursor-pointer"
+                            className="block py-1 text-[11px] font-medium text-neutral-400 hover:text-amber-300 active:text-amber-400 transition cursor-pointer"
                           >
                             {link.label}
                           </a>
@@ -293,7 +243,7 @@ export default function LoopraFooter({
                           key={idx}
                           type="button"
                           onClick={(e) => handleLinkClick(e, link.action)}
-                          className="w-full text-left py-2 text-xs font-medium text-neutral-400 hover:text-amber-300 active:text-amber-400 transition cursor-pointer"
+                          className="w-full text-left py-1 text-[11px] font-medium text-neutral-400 hover:text-amber-300 active:text-amber-400 transition cursor-pointer"
                         >
                           {link.label}
                         </button>

@@ -331,7 +331,7 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
   }
 
   // -------------------------------------------------------------
-  // 17. NAVIGATION: TOP-LEVEL PAGES
+  // 17. NAVIGATION: TOP-LEVEL PAGES & STATIONS
   // -------------------------------------------------------------
   if (/\b(go home|open home|home page|ghar jao|main page)\b/i.test(lower) || /^(home)$/i.test(lower)) {
     return {
@@ -340,6 +340,72 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
       target: 'home',
       speechResponse: 'Opening Home',
       description: 'Navigate to Home'
+    };
+  }
+
+  // Station: Saloon FM / Lune FM / Barber
+  if (/\b(saloon|salon|lune\s*fm|luna\s*fm|barber|saloon\s*fm|salon\s*fm|saloon\s*nostalgia|90s\s*saloon)\b/i.test(lower)) {
+    return {
+      type: 'navigation',
+      action: 'navigate_page',
+      target: 'barber',
+      speechResponse: 'Opening Saloon FM Station',
+      description: 'Navigate to Saloon FM'
+    };
+  }
+
+  // Station: Horn Ok Please / Dhaba
+  if (/\b(horn\s*ok\s*please|truck\s*melodies|highway\s*truck|dhaba|highway)\b/i.test(lower)) {
+    return {
+      type: 'navigation',
+      action: 'navigate_page',
+      target: 'truck',
+      speechResponse: 'Opening Horn Ok Please Station',
+      description: 'Navigate to Horn Ok Please'
+    };
+  }
+
+  // Station: Desi Theka / Theka Session
+  if (/\b(desi\s*theka|theka\s*session|theka|pauwa)\b/i.test(lower)) {
+    return {
+      type: 'navigation',
+      action: 'navigate_page',
+      target: 'pauwa',
+      speechResponse: 'Opening Desi Theka Station',
+      description: 'Navigate to Desi Theka'
+    };
+  }
+
+  // Station: Time Machine Radio
+  if (/\b(time\s*machine|retro\s*era)\b/i.test(lower)) {
+    return {
+      type: 'navigation',
+      action: 'navigate_page',
+      target: 'timemachine',
+      speechResponse: 'Opening Time Machine Radio',
+      description: 'Navigate to Time Machine'
+    };
+  }
+
+  // Station: Mood to Music
+  if (/\b(mood\s*to\s*music|mood\s*music)\b/i.test(lower)) {
+    return {
+      type: 'navigation',
+      action: 'navigate_page',
+      target: 'mood',
+      speechResponse: 'Opening Mood to Music',
+      description: 'Navigate to Mood to Music'
+    };
+  }
+
+  // Curated Just For You
+  if (/\b(for\s*you|curated\s*for\s*you|curated\s*just\s*for\s*you)\b/i.test(lower)) {
+    return {
+      type: 'navigation',
+      action: 'navigate_page',
+      target: 'for-you',
+      speechResponse: 'Opening Curated For You',
+      description: 'Navigate to Curated For You'
     };
   }
 
@@ -450,6 +516,19 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
       action: 'search',
       query: artist,
       speechResponse: `Displaying songs by ${artist}`,
+      description: `Show songs by "${artist}"`
+    };
+  }
+
+  // Numbered or descriptive song listing: "5 songs of Arijit Singh", "songs by KK", "songs of Atif Aslam"
+  const songListMatch = lower.match(/^(?:(?:\d+|top|best|popular)\s+)?songs?\s+(?:by|of|from)\s+(.+)$/i);
+  if (songListMatch && songListMatch[1]) {
+    const artist = text.slice(text.toLowerCase().indexOf(songListMatch[1])).trim();
+    return {
+      type: 'navigation',
+      action: 'search',
+      query: artist,
+      speechResponse: `Showing songs by ${artist}`,
       description: `Show songs by "${artist}"`
     };
   }

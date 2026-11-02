@@ -466,13 +466,16 @@ OUTPUT FORMAT (Strict JSON):
 `;
 
     try {
-      const response = await client.models.generateContent({
-        model: modelName,
-        contents: systemPrompt,
-        config: {
-          responseMimeType: 'application/json'
-        }
-      });
+      const response = await Promise.race([
+        client.models.generateContent({
+          model: modelName,
+          contents: systemPrompt,
+          config: {
+            responseMimeType: 'application/json'
+          }
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('GEMINI_TIMEOUT_EXCEEDED')), 3500))
+      ]);
 
       const latency = Date.now() - startTime;
       aiCompanionDiagnostics.lastLatencyMs = latency;

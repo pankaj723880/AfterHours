@@ -36,9 +36,24 @@ import {
   popNavigation,
   syncPopState,
   canGoBack,
-  isHomePage,
   buildPath
 } from './utils/navigationManager';
+
+// Helper to determine if current route is root Home
+const isHomePage = (tab = 'home', extra = {}) => {
+  if (tab !== 'home') return false;
+  if (
+    extra?.showAllTrending ||
+    extra?.showAllArtists ||
+    extra?.showAllAlbums ||
+    extra?.showAllRadio ||
+    extra?.selectedPlaylistForView ||
+    extra?.offlineSubView === 'explore'
+  ) {
+    return false;
+  }
+  return true;
+};
 import RecommendedRow from './components/Common/RecommendedRow';
 import HomeHero from './components/Home/HomeHero';
 import FeatureShortcuts from './components/Home/FeatureShortcuts';
@@ -5618,7 +5633,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               if (configuredItems.length > 0) {
                 // Admin configuration is present: add configured enabled items
                 configuredItems.forEach(item => {
-                  if (!item || !item.id || item.id === 'profile' || item.id === 'equalizer') return;
+                  if (!item || !item.id || item.id === 'profile' || item.id === 'equalizer' || item.id === 'custom-vip-lounge' || item.id === 'vip-lounge' || item.label === 'Ultra VIP Lounge') return;
                   if (item.enabled === false || disabledIds.has(item.id)) return;
                   if (item.id === 'admin' && !isAdmin) return;
                   const group = canonicalGroup(item.id, item.group);
@@ -5706,6 +5721,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       return (
                         <button
                           key={item.id}
+                          data-nav-id={item.id}
                           onClick={() => {
                             if (item.id === 'stats') {
                               setIsStatsOpen(true);

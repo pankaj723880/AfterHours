@@ -8,7 +8,7 @@ import { BACKEND_URL } from './apiUrl';
  * 4. Strips malformed or empty URLs to prevent broken image renders.
  */
 export const getAvatarUrl = (userOrUrl) => {
-  if (!userOrUrl) return '';
+  if (!userOrUrl) return null;
 
   let rawUrl = '';
   if (typeof userOrUrl === 'string') {
@@ -24,7 +24,7 @@ export const getAvatarUrl = (userOrUrl) => {
     ).trim();
   }
 
-  if (!rawUrl) return '';
+  if (!rawUrl) return null;
 
   // Filter out non-existent placeholder test domains and raw 'avatar.jpg' filename
   if (
@@ -33,7 +33,7 @@ export const getAvatarUrl = (userOrUrl) => {
     rawUrl === 'avatar.jpg' ||
     rawUrl === '/avatar.jpg'
   ) {
-    return '';
+    return null;
   }
 
   // Base64 data and blob URLs

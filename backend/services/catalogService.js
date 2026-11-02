@@ -212,44 +212,51 @@ export const catalogService = {
     if (!Array.isArray(queries) || queries.length === 0) return [];
     const dynamicTracks = [];
     const seenIds = new Set();
+    const activeQueries = queries.slice(0, 3).filter(q => q && typeof q === 'string');
 
-    for (const query of queries.slice(0, 3)) {
-      if (!query || typeof query !== 'string') continue;
-      try {
-        const searchResult = await ytSearch({ query: query.trim(), page: 1 });
-        const videos = (searchResult?.videos || []).slice(0, 10);
-        const filtered = filterSingleSongs(videos);
+    const searchPromises = activeQueries.map(query => {
+      const trimmed = query.trim();
+      return Promise.race([
+        ytSearch({ query: trimmed, page: 1 }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 1200))
+      ]).then(res => ({ query: trimmed, res })).catch(err => ({ query: trimmed, err }));
+    });
 
-        for (const v of filtered.slice(0, maxPerQuery)) {
-          if (!v.videoId || seenIds.has(v.videoId)) continue;
-          const verification = verifySingleSong(v);
-          if (!verification.isValid) continue;
+    const searchResults = await Promise.allSettled(searchPromises);
 
-          const cleanThumb = getCleanTrackThumbnail(v.thumbnail, v.videoId);
-          if (!isValidThumbnailUrlFormat(cleanThumb)) continue;
+    for (const item of searchResults) {
+      if (item.status !== 'fulfilled' || !item.value?.res) continue;
+      const { query, res: searchResult } = item.value;
+      const videos = (searchResult?.videos || []).slice(0, 10);
+      const filtered = filterSingleSongs(videos);
 
-          seenIds.add(v.videoId);
-          const meta = cleanArtistAndTitle({
-            title: v.title,
-            artist: v.artist || v.author?.name,
-            channel: v.channel || v.author?.name
-          });
-          dynamicTracks.push({
-            id: v.videoId,
-            videoId: v.videoId,
-            title: meta.title,
-            artist: meta.artist,
-            channel: meta.channel,
-            thumbnail: cleanThumb,
-            duration: v.timestamp || v.duration || '3:30',
-            genre: query,
-            mood: 'Personalized',
-            songType: verification.songType,
-            verificationStatus: verification.verificationStatus
-          });
-        }
-      } catch (err) {
-        console.warn(`[CatalogService] Query notice for "${query}":`, err.message);
+      for (const v of filtered.slice(0, maxPerQuery)) {
+        if (!v.videoId || seenIds.has(v.videoId)) continue;
+        const verification = verifySingleSong(v);
+        if (!verification.isValid) continue;
+
+        const cleanThumb = getCleanTrackThumbnail(v.thumbnail, v.videoId);
+        if (!isValidThumbnailUrlFormat(cleanThumb)) continue;
+
+        seenIds.add(v.videoId);
+        const meta = cleanArtistAndTitle({
+          title: v.title,
+          artist: v.artist || v.author?.name,
+          channel: v.channel || v.author?.name
+        });
+        dynamicTracks.push({
+          id: v.videoId,
+          videoId: v.videoId,
+          title: meta.title,
+          artist: meta.artist,
+          channel: meta.channel,
+          thumbnail: cleanThumb,
+          duration: v.timestamp || v.duration || '3:30',
+          genre: query,
+          mood: 'Personalized',
+          songType: verification.songType,
+          verificationStatus: verification.verificationStatus
+        });
       }
     }
 
@@ -272,42 +279,52 @@ export const catalogService = {
     const freshTracks = [];
     const seenIds = new Set();
 
-    for (const term of searchTerms) {
-      try {
-        const searchResult = await ytSearch({ query: term, page: 1 });
-        const videos = (searchResult?.videos || []).slice(0, 8);
-        for (const v of videos) {
-          if (!v.videoId || seenIds.has(v.videoId)) continue;
-          const verification = verifySingleSong({
-            id: v.videoId,
-            title: v.title,
-            description: v.description,
-            duration: v.timestamp || v.seconds,
-            channel: v.author?.name
-          });
+    const searchPromises = searchTerms.map(term =>
+      Promise.race([
+        ytSearch({ query: term, page: 1 }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 1200))
+      ]).catch(() => null)
+    );
 
-          if (verification.isValid) {
-            const cleanThumb = getCleanTrackThumbnail(v.thumbnail, v.videoId);
-            if (!isValidThumbnailUrlFormat(cleanThumb)) continue;
+    const results = await Promise.all(searchPromises);
 
+    for (const searchResult of results) {
+      if (!searchResult) continue;
+      const videos = (searchResult?.videos || []).slice(0, 8);
+      for (const v of videos) {
+        if (!v.videoId || seenIds.has(v.videoId)) continue;
+        const verification = verifySingleSong({
+          id: v.videoId,
+          title: v.title,
+          description: v.description,
+          duration: v.timestamp || v.seconds,
+          channel: v.author?.name
+        });
+
+        if (verification.isValid) {
+          const cleanThumb = getCleanTrackThumbnail(v.thumbnail, v.videoId);
+          if (isValidThumbnailUrlFormat(cleanThumb)) {
             seenIds.add(v.videoId);
+            const meta = cleanArtistAndTitle({
+              title: v.title,
+              artist: v.author?.name,
+              channel: v.author?.name
+            });
             freshTracks.push({
               id: v.videoId,
               videoId: v.videoId,
-              title: decodeHtml(v.title),
-              artist: decodeHtml(v.author?.name || 'Artist'),
-              channel: decodeHtml(v.author?.name || ''),
+              title: meta.title,
+              artist: meta.artist,
+              channel: meta.channel,
               thumbnail: cleanThumb,
               duration: v.timestamp || '3:30',
-              uploadedAt: v.ago || '',
+              genre: 'Latest Release',
+              mood: 'Trending',
               songType: verification.songType,
               verificationStatus: verification.verificationStatus
             });
-            if (freshTracks.length >= 6) break;
           }
         }
-      } catch (err) {
-        console.warn(`[CatalogService] Fresh release search notice for "${term}":`, err.message);
       }
       if (freshTracks.length >= 6) break;
     }
