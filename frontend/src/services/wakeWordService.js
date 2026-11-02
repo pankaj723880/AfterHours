@@ -1,58 +1,30 @@
 /**
- * Loopra Wake Word & Inactivity Session Service
+ * Loopra Voice Session & Inactivity Service
  * 
- * Provides:
- * 1. Dedicated "Hey Loopra" On-Device Wake Word Detection Engine
- *    - Operates even when Voice Mode is OFF (standby mode).
- *    - Does NOT stream audio to Gemini, LLM or cloud services.
- *    - Uses a lightweight local keyword spotting mechanism using Web Audio API + SpeechRecognition grammar/VAD.
- *    - Never bypasses browser/OS permissions; requests microphone explicitly.
- *    - Cleans wake word phrase from utterances so "Hey Loopra" is never treated as a song name.
- * 
- * 2. Smart 60-Second Inactivity Controller
- *    - Strictly enforces 60s timeout for:
- *      A. No command issued after activation.
- *      B. 60 seconds of continuous silence.
- *      C. 60 seconds of environmental noise/music/traffic without a valid command.
- *      D. Repeated failed/unintelligible recognition without a valid command.
- *    - Does NOT reset timer merely on microphone energy or random noise.
- *    - Resets timer ONLY when a meaningful, valid command is recognized and executed.
- *    - Starts a fresh 60s window after each command execution completes.
- *    - Does NOT interrupt multi-step tasks in progress.
- * 
- * 3. Session State Machine:
- *    - 'OFF': Wake-word detection standby (or fully stopped if permissions not granted).
- *    - 'WAKE_WORD_DETECTED': Wake phrase recognized.
- *    - 'LISTENING': Waiting for actual command.
- *    - 'PROCESSING': Understanding command.
- *    - 'EXECUTING': Performing the action.
- *    - 'ACTIVE_IDLE': Command completed; waiting for next command within 60s.
- *    - 'AUTO_DEACTIVATED': Session ended because of 60s inactivity.
- *    - 'MANUALLY_DEACTIVATED': User explicitly turned it OFF.
+ * NOTE: Automatic background wake-word listening ("Hey Loopra") has been completely removed.
+ * Voice Control activates ONLY through explicit manual user interaction.
+ * Zero microphone monitoring runs while Voice Control is OFF.
  */
 
-export const SESSION_STATES = {
-  OFF: 'OFF',
-  WAKE_WORD_DETECTED: 'WAKE_WORD_DETECTED',
-  LISTENING: 'LISTENING',
-  PROCESSING: 'PROCESSING',
-  EXECUTING: 'EXECUTING',
-  ACTIVE_IDLE: 'ACTIVE_IDLE',
-  AUTO_DEACTIVATED: 'AUTO_DEACTIVATED',
-  MANUALLY_DEACTIVATED: 'MANUALLY_DEACTIVATED'
-};
+import {
+  SESSION_STATES,
+  INACTIVITY_TIMEOUT_MS,
+  voiceSessionService
+} from './voiceSessionService.js';
 
-export const INACTIVITY_TIMEOUT_MS = 60 * 1000; // 60 seconds
+export { SESSION_STATES, INACTIVITY_TIMEOUT_MS, voiceSessionService };
 
 /**
- * Checks if raw text contains the wake phrase "Hey Loopra" (or common acoustic variations)
+ * Text utility helper to strip leading greeting prefixes (e.g. "hey loopra play kesariya" -> "play kesariya")
+ * when processing already-captured voice utterances.
+ * Does NOT run background audio detection.
  */
 export function matchWakeWord(text = '') {
   if (!text || typeof text !== 'string') return { matched: false, remainingText: '' };
   const clean = text.trim();
   const lower = clean.toLowerCase();
 
-  // Pattern matches: "hey loopra", "ay loopra", "he loopra", "ok loopra", "hello loopra", "hai loopra"
+  // Strip greeting prefixes: "hey loopra", "ok loopra", "hello loopra", "loopra"
   const wakeRegex = /^(hey|he|ay|hai|ok|okay|hello)\s+(loopra|lupra|lubra|lukra)\b/i;
   const match = lower.match(wakeRegex);
 
@@ -65,7 +37,6 @@ export function matchWakeWord(text = '') {
     };
   }
 
-  // Also match standalone "loopra" if isolated at start
   const standaloneRegex = /^(loopra|lupra)\b/i;
   const standMatch = lower.match(standaloneRegex);
   if (standMatch) {
@@ -81,19 +52,15 @@ export function matchWakeWord(text = '') {
 }
 
 /**
- * Lightweight Voice Activity & Sound Energy Estimator
- * Distinguishes between Silence, Environmental Noise, and Human Speech energy.
+ * Audio Energy & Voice Activity Classifier
  */
 export function classifyAudioEnergy(averageVolume = 0, peakVolume = 0) {
-  // Normalize 0.0 to 1.0
   if (averageVolume < 0.03) {
     return 'silence';
   }
-  // Low sustained energy without peak variance -> background hum/noise
   if (averageVolume < 0.12 && (peakVolume - averageVolume) < 0.06) {
     return 'noise';
   }
-  // Higher energy or high dynamic variance -> human speech candidate
   if (averageVolume >= 0.12 || (peakVolume - averageVolume) >= 0.08) {
     return 'speech_candidate';
   }
@@ -102,7 +69,6 @@ export function classifyAudioEnergy(averageVolume = 0, peakVolume = 0) {
 
 /**
  * Inactivity Timer Controller
- * Decoupled controller that can be unit-tested without browser dependencies.
  */
 export class InactivityController {
   constructor({ onTimeout, timeoutMs = INACTIVITY_TIMEOUT_MS }) {
@@ -110,7 +76,7 @@ export class InactivityController {
     this.timeoutMs = timeoutMs;
     this.timerId = null;
     this.startTime = null;
-    this.isPaused = false; // paused while executing multi-step tasks
+    this.isPaused = false;
   }
 
   start() {
@@ -124,10 +90,6 @@ export class InactivityController {
     }, this.timeoutMs);
   }
 
-  /**
-   * Reset timer only upon recognition of a VALID, MEANINGFUL command.
-   * Microphone noise or speech candidate does NOT reset this timer.
-   */
   resetOnValidCommand() {
     this.start();
   }
@@ -142,7 +104,7 @@ export class InactivityController {
 
   resumeAfterExecution() {
     this.isPaused = false;
-    this.start(); // Begin a fresh 60s inactivity window
+    this.start();
   }
 
   clear() {
@@ -162,7 +124,7 @@ export class InactivityController {
 }
 
 /**
- * Detects whether browser environment supports wake word listening
+ * Checks whether browser environment supports Web Speech & MediaDevices
  */
 export function checkWakeWordBrowserSupport() {
   if (typeof window === 'undefined') {

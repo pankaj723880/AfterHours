@@ -25,13 +25,9 @@ import {
 } from 'lucide-react';
 import { voiceControlService } from '../../services/voiceControlService';
 import {
-  matchWakeWord,
-  classifyAudioEnergy,
-  InactivityController,
-  SESSION_STATES,
-  INACTIVITY_TIMEOUT_MS,
-  checkWakeWordBrowserSupport
-} from '../../services/wakeWordService';
+  voiceSessionService,
+  SESSION_STATES
+} from '../../services/voiceSessionService';
 import {
   parseVoiceCommandLocally,
   parseMultiStepInstruction,
@@ -77,7 +73,7 @@ export default function VoiceAgentModal({
   onOpenArtist,
   showToast
 }) {
-  // Permission state
+  // 1. Permission check via voiceControlService
   const [hasAccess, setHasAccess] = useState(() => {
     const initial = voiceControlService.getAccessState();
     if (user) {
@@ -86,36 +82,17 @@ export default function VoiceAgentModal({
     return Boolean(initial.allowed);
   });
 
-  // Voice session state (Independent of panel visibility)
-  const [isSessionActive, setIsSessionActive] = useState(false);
+  // 2. Authoritative voice session state synchronized from voiceSessionService
   const [sessionState, setSessionState] = useState(SESSION_STATES.OFF);
+  const [isSessionActive, setIsSessionActive] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [status, setStatus] = useState('idle'); // 'idle' | 'listening' | 'executing' | 'success' | 'error' | 'wake_word_detected'
-  const [statusMessage, setStatusMessage] = useState('Say "Hey Loopra" to begin');
+  const [statusMessage, setStatusMessage] = useState('Voice Agent: OFF (Click mic to speak)');
   const [activeActionLabel, setActiveActionLabel] = useState('');
   const [transcript, setTranscript] = useState('');
   const [interimText, setInterimText] = useState('');
   const [manualText, setManualText] = useState('');
   const [selectedLang, setSelectedLang] = useState('en-IN');
   const [voiceVolumeScale, setVoiceVolumeScale] = useState(0);
-  const [autoDeactivatedNotice, setAutoDeactivatedNotice] = useState(false);
-
-  // AudioContext & Analyser refs for real microphone activity
-  const audioContextRef = useRef(null);
-  const mediaStreamRef = useRef(null);
-  const analyserRef = useRef(null);
-  const animFrameRef = useRef(null);
-
-  // Recognition refs
-  const recognitionRef = useRef(null);
-  const isSessionActiveRef = useRef(false);
-  isSessionActiveRef.current = isSessionActive;
-  const isExecutingRef = useRef(false);
-  const restartTimerRef = useRef(null);
-  const lastExecutedRef = useRef({ text: '', timestamp: 0 });
-
-  // 60-Second Inactivity Controller
-  const inactivityControllerRef = useRef(null);
 
   // Persistent task context across consecutive voice inputs
   const persistentContextRef = useRef({
@@ -151,223 +128,20 @@ export default function VoiceAgentModal({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Initialize 60-second inactivity controller
-  useEffect(() => {
-    inactivityControllerRef.current = new InactivityController({
-      timeoutMs: INACTIVITY_TIMEOUT_MS,
-      onTimeout: () => {
-        // Automatically deactivate session when 60s inactivity threshold is reached
-        if (isSessionActiveRef.current && !isExecutingRef.current) {
-          handleStopSession('auto');
-        }
-      }
-    });
-
-    return () => {
-      inactivityControllerRef.current?.clear();
-    };
-  }, []);
-
-  // 1. Permission subscription via voiceControlService
+  // Permission subscription
   useEffect(() => {
     const unsub = voiceControlService.subscribe((state) => {
       const allowed = user ? voiceControlService.evaluateLocalAccess(state, user) : Boolean(state.allowed);
       setHasAccess(allowed);
-      if (!allowed && isSessionActiveRef.current) {
-        handleStopSession('manual');
+      if (!allowed && voiceSessionService.isSessionActive) {
+        voiceSessionService.stopSession('permission_revoked');
       }
     });
-
     return unsub;
   }, [user]);
 
-  // 2. Audio Visualizer Setup (Real Microphone Input via Web Audio API)
-  const startAudioVisualizer = async () => {
-    try {
-      if (!navigator.mediaDevices?.getUserMedia) return;
-      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        audioContextRef.current = new AudioCtx();
-      }
-      if (audioContextRef.current.state === 'suspended') {
-        await audioContextRef.current.resume();
-      }
-
-      if (!mediaStreamRef.current) {
-        mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true }
-        });
-      }
-
-      const source = audioContextRef.current.createMediaStreamSource(mediaStreamRef.current);
-      const analyser = audioContextRef.current.createAnalyser();
-      analyser.fftSize = 64;
-      analyser.smoothingTimeConstant = 0.65;
-      source.connect(analyser);
-      analyserRef.current = analyser;
-
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      const updateVolume = () => {
-        if (!analyserRef.current) return;
-        analyserRef.current.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          sum += dataArray[i];
-        }
-        const avg = sum / dataArray.length;
-        const normalized = Math.min(1.0, Math.max(0.0, (avg - 10) / 100));
-        setVoiceVolumeScale(normalized);
-        animFrameRef.current = requestAnimationFrame(updateVolume);
-      };
-      animFrameRef.current = requestAnimationFrame(updateVolume);
-    } catch (err) {
-      console.warn('[VoiceAgent] AudioContext visualizer init note:', err.message);
-    }
-  };
-
-  const stopAudioVisualizer = () => {
-    if (animFrameRef.current) {
-      cancelAnimationFrame(animFrameRef.current);
-      animFrameRef.current = null;
-    }
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(t => t.stop());
-      mediaStreamRef.current = null;
-    }
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      try { audioContextRef.current.close(); } catch (_) {}
-      audioContextRef.current = null;
-    }
-    setVoiceVolumeScale(0);
-  };
-
-  // 3. Speech Recognition Engine (Handles both Standby Wake Word & Active Commands)
-  const initSpeechRecognition = useCallback(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return null;
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = selectedLang;
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = () => {
-      setIsListening(true);
-      if (isSessionActiveRef.current) {
-        setStatus('listening');
-        setSessionState(SESSION_STATES.LISTENING);
-        setStatusMessage('Listening... (Say commands or "Done Loopra")');
-      } else {
-        setStatus('idle');
-        setSessionState(SESSION_STATES.OFF);
-        setStatusMessage('Say "Hey Loopra" to begin');
-      }
-    };
-
-    recognition.onresult = (event) => {
-      let finalTranscript = '';
-      let interim = '';
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const text = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalTranscript += text;
-        } else {
-          interim += text;
-        }
-      }
-
-      if (interim) {
-        setInterimText(interim);
-      }
-
-      if (finalTranscript) {
-        const cleaned = finalTranscript.trim();
-        setTranscript(cleaned);
-        setInterimText('');
-
-        // CASE 1: Voice Mode is currently OFF -> Only wake word activates it
-        if (!isSessionActiveRef.current) {
-          const wakeCheck = matchWakeWord(cleaned);
-          if (wakeCheck.matched) {
-            // Wake word detected! Transition through explicit states
-            setSessionState(SESSION_STATES.WAKE_WORD_DETECTED);
-            setStatus('wake_word_detected');
-            setStatusMessage('Hey Loopra detected! Listening...');
-            showToast?.('Hey Loopra detected! Voice Control active.');
-
-            // Activate session
-            setIsSessionActive(true);
-            isSessionActiveRef.current = true;
-            setAutoDeactivatedNotice(false);
-
-            // Start 60-second inactivity controller
-            inactivityControllerRef.current?.start();
-
-            // If utterance has follow-up command (e.g. "Hey Loopra play Kesariya"), process it
-            if (wakeCheck.remainingText) {
-              setSessionState(SESSION_STATES.PROCESSING);
-              handleProcessUtterance(wakeCheck.remainingText);
-            } else {
-              setSessionState(SESSION_STATES.LISTENING);
-              setStatus('listening');
-            }
-          } else {
-            // Irrelevant noise, ambient speech, or command without wake phrase while OFF -> Remain OFF
-            // Do not store, transmit, or process.
-          }
-          return;
-        }
-
-        // CASE 2: Voice Mode is currently ACTIVE
-        // Check if utterance starts with wake word (e.g. user repeats "Hey Loopra play Kesariya")
-        const wakeCheck = matchWakeWord(cleaned);
-        const commandText = wakeCheck.matched && wakeCheck.remainingText ? wakeCheck.remainingText : cleaned;
-        
-        // Pure "Hey Loopra" ping while already active -> just acknowledge & reset timer
-        if (wakeCheck.matched && !wakeCheck.remainingText) {
-          setStatus('listening');
-          setSessionState(SESSION_STATES.LISTENING);
-          setStatusMessage('Listening! What would you like to play?');
-          inactivityControllerRef.current?.resetOnValidCommand();
-          return;
-        }
-
-        handleProcessUtterance(commandText);
-      }
-    };
-
-    recognition.onerror = (event) => {
-      if (event.error === 'no-speech') return;
-      if (event.error === 'aborted') return;
-      console.warn('[VoiceAgent] SpeechRecognition error:', event.error);
-      if (isSessionActiveRef.current) {
-        setStatus('error');
-        setStatusMessage(`Speech error: ${event.error}`);
-      }
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-      // Keep listening in background as long as user has access and not actively executing
-      if (hasAccess && !isExecutingRef.current) {
-        clearTimeout(restartTimerRef.current);
-        restartTimerRef.current = setTimeout(() => {
-          if (hasAccess && !isExecutingRef.current) {
-            try {
-              recognitionRef.current?.start();
-            } catch (_) {}
-          }
-        }, 300);
-      }
-    };
-
-    return recognition;
-  }, [selectedLang, hasAccess, showToast]);
-
   // Catalog search helper
-  const searchCatalog = async (query = '') => {
+  const searchCatalog = useCallback(async (query = '') => {
     if (!query) return [];
     try {
       const cleanUrl = (backendUrl || '').replace(/\/+$/, '');
@@ -375,7 +149,7 @@ export default function VoiceAgentModal({
       if (res.ok) {
         const data = await res.json();
         const items = data.items || [];
-        return items.map(item => ({
+        return items.map((item) => ({
           id: item.id?.videoId || item.id,
           title: item.snippet?.title || query,
           artist: item.snippet?.channelTitle || 'Loopra Audio',
@@ -386,36 +160,20 @@ export default function VoiceAgentModal({
       console.warn('[VoiceAgent] Catalog search network error:', e.message);
     }
     return [];
-  };
+  }, [backendUrl]);
 
-  // 4. Multi-Step Execution Handler
-  const handleProcessUtterance = async (rawUtterance = '') => {
+  // 3. Multi-Step Execution Handler
+  // CRITICAL: Does NOT stop the microphone! Speech recognition stays active for subsequent commands.
+  const handleProcessUtterance = useCallback(async (rawUtterance = '') => {
     if (!rawUtterance || typeof rawUtterance !== 'string') return;
     const text = rawUtterance.trim();
     if (!text) return;
 
-    // Deduplication check: prevent identical utterances within 3.0s
-    const now = Date.now();
-    if (
-      lastExecutedRef.current.text === text &&
-      now - lastExecutedRef.current.timestamp < 3000
-    ) {
-      return;
-    }
-    lastExecutedRef.current = { text, timestamp: now };
-
-    // Pause recognition during execution
-    isExecutingRef.current = true;
-    try {
-      recognitionRef.current?.stop();
-    } catch (_) {}
-
-    // Check for deactivation commands
+    // Check for deactivation commands (e.g. "stop listening", "done loopra", "bye loopra")
     const singleParse = parseVoiceCommandLocally(text, persistentContextRef.current);
     if (singleParse && singleParse.action === 'stop_continuous') {
-      handleStopSession();
+      voiceSessionService.stopSession('manual');
       showToast?.('Voice session stopped');
-      isExecutingRef.current = false;
       return;
     }
 
@@ -423,170 +181,120 @@ export default function VoiceAgentModal({
     const steps = parseMultiStepInstruction(text, persistentContextRef.current);
 
     if (steps.length === 0) {
-      setStatus('idle');
-      setSessionState(SESSION_STATES.ACTIVE_IDLE);
-      setStatusMessage('Command not recognized. Say "Hey Loopra" to try again.');
-      isExecutingRef.current = false;
-      // Do NOT reset inactivity timer for unparseable noise or non-commands
-      if (isSessionActiveRef.current) {
-        try { recognitionRef.current?.start(); } catch (_) {}
-      }
+      voiceSessionService.notifyExecutionFinish('Command not recognized. Speak your music command.');
       return;
     }
 
-    // Meaningful command parsed! Pause inactivity timer during execution so long tasks never get interrupted
-    inactivityControllerRef.current?.pauseForExecution();
-    setStatus('executing');
-    setSessionState(SESSION_STATES.EXECUTING);
-    setActiveActionLabel(`Executing ${steps.length} action${steps.length > 1 ? 's' : ''}...`);
+    // Inform session controller that execution has started (transitions state to EXECUTING)
+    const execLabel = `Executing ${steps.length} action${steps.length > 1 ? 's' : ''}...`;
+    voiceSessionService.notifyExecutionStart(execLabel);
+    setActiveActionLabel(execLabel);
 
-    // Execute through real application pipeline
-    const pipelineResult = await executeTaskPipeline(steps, persistentContextRef.current, {
-      onPlayTrack,
-      onTogglePlayPause,
-      onNextTrack,
-      onPrevTrack,
-      onToggleShuffle,
-      onToggleRepeat,
-      onSetVolume,
-      onToggleLike,
-      onAddToPlaylist,
-      onNavigate,
-      onOpenInsights,
-      onOpenQueue,
-      onOpenLyrics,
-      onGoBack,
-      onOpenArtist,
-      searchCatalog
+    try {
+      const pipelineResult = await executeTaskPipeline(steps, persistentContextRef.current, {
+        onPlayTrack,
+        onTogglePlayPause,
+        onNextTrack,
+        onPrevTrack,
+        onToggleShuffle,
+        onToggleRepeat,
+        onSetVolume,
+        onToggleLike,
+        onAddToPlaylist,
+        onNavigate,
+        onOpenInsights,
+        onOpenQueue,
+        onOpenLyrics,
+        onGoBack,
+        onOpenArtist,
+        searchCatalog
+      });
+
+      if (pipelineResult.taskContext) {
+        persistentContextRef.current = pipelineResult.taskContext;
+      }
+
+      if (pipelineResult.success) {
+        showToast?.(pipelineResult.message);
+        voiceSessionService.notifyExecutionFinish(pipelineResult.message);
+      } else {
+        showToast?.(pipelineResult.message, 'error');
+        voiceSessionService.notifyExecutionFinish(pipelineResult.message);
+      }
+    } catch (err) {
+      console.error('[VoiceAgent] Execution error:', err);
+      voiceSessionService.notifyExecutionFinish('Execution failed. Please try again.');
+    } finally {
+      setTimeout(() => {
+        setActiveActionLabel('');
+      }, 2000);
+    }
+  }, [
+    onPlayTrack,
+    onTogglePlayPause,
+    onNextTrack,
+    onPrevTrack,
+    onToggleShuffle,
+    onToggleRepeat,
+    onSetVolume,
+    onToggleLike,
+    onAddToPlaylist,
+    onNavigate,
+    onOpenInsights,
+    onOpenQueue,
+    onOpenLyrics,
+    onGoBack,
+    onOpenArtist,
+    searchCatalog,
+    showToast
+  ]);
+
+  // 4. Subscribe to the Voice Session Controller
+  useEffect(() => {
+    const unsub = voiceSessionService.subscribe((snapshot) => {
+      setSessionState(snapshot.state);
+      setIsSessionActive(snapshot.isSessionActive);
+      setIsListening(snapshot.isListening);
+      if (snapshot.statusMessage) setStatusMessage(snapshot.statusMessage);
+      if (snapshot.volumeScale !== undefined) setVoiceVolumeScale(snapshot.volumeScale);
+      if (snapshot.interimText !== undefined) setInterimText(snapshot.interimText);
+
+      // Finalized transcript received from recognition engine
+      if (snapshot.event === 'final_transcript' && snapshot.transcript) {
+        setTranscript(snapshot.transcript);
+        handleProcessUtterance(snapshot.transcript);
+      }
     });
 
-    // Update persistent context
-    if (pipelineResult.taskContext) {
-      persistentContextRef.current = pipelineResult.taskContext;
-    }
-
-    if (pipelineResult.success) {
-      setStatus('success');
-      setStatusMessage(pipelineResult.message);
-      showToast?.(pipelineResult.message);
-      // Valid command executed successfully! Resume fresh 60s inactivity window
-      inactivityControllerRef.current?.resumeAfterExecution();
-    } else {
-      setStatus('error');
-      setStatusMessage(pipelineResult.message);
-      showToast?.(pipelineResult.message, 'error');
-      inactivityControllerRef.current?.resumeAfterExecution();
-    }
-
-    // Resume listening after execution
-    setTimeout(() => {
-      isExecutingRef.current = false;
-      setActiveActionLabel('');
-      if (isSessionActiveRef.current) {
-        setStatus('listening');
-        setSessionState(SESSION_STATES.ACTIVE_IDLE);
-        setStatusMessage('Listening... (Say commands or "Done Loopra")');
-        try {
-          recognitionRef.current?.start();
-        } catch (_) {}
-      } else {
-        setStatus('idle');
-        setSessionState(SESSION_STATES.OFF);
-      }
-    }, 2200);
-  };
-
-  // 5. Start / Stop Continuous Voice Session (Controls Voice Mode independently)
-  const startContinuousSession = async () => {
-    setIsSessionActive(true);
-    isSessionActiveRef.current = true;
-    setAutoDeactivatedNotice(false);
-    setStatus('listening');
-    setSessionState(SESSION_STATES.LISTENING);
-    setStatusMessage('Voice active! Say "Hey Loopra" or any music command');
-    showToast?.('Voice Agent: ON (Listening)');
-
-    // Start 60s inactivity timer
-    inactivityControllerRef.current?.start();
-
-    await startAudioVisualizer();
-
-    if (!recognitionRef.current) {
-      recognitionRef.current = initSpeechRecognition();
-    }
-
-    try {
-      recognitionRef.current?.start();
-    } catch (_) {}
-  };
-
-  const handleStopSession = (reason = 'manual') => {
-    setIsSessionActive(false);
-    isSessionActiveRef.current = false;
-    clearTimeout(restartTimerRef.current);
-    inactivityControllerRef.current?.clear();
-
-    if (reason === 'auto') {
-      setStatus('idle');
-      setSessionState(SESSION_STATES.AUTO_DEACTIVATED);
-      setStatusMessage('Voice Control turned off due to inactivity.');
-      setAutoDeactivatedNotice(true);
-      showToast?.('Voice Control turned off due to inactivity.', 'info');
-    } else {
-      setStatus('idle');
-      setSessionState(SESSION_STATES.MANUALLY_DEACTIVATED);
-      setStatusMessage('Voice Agent is paused. Click icon or say "Hey Loopra" to resume.');
-      setAutoDeactivatedNotice(false);
-      showToast?.('Voice Agent: OFF');
-    }
-
-    setActiveActionLabel('');
-    stopAudioVisualizer();
-
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.abort();
-      } catch (_) {}
-    }
-
-    // Keep standby wake word recognition active if user has access
-    if (hasAccess) {
-      setTimeout(() => {
-        if (!isSessionActiveRef.current && hasAccess) {
-          try {
-            recognitionRef.current?.start();
-          } catch (_) {}
-        }
-      }, 400);
-    }
-  };
-
-  // 6. Standby Wake Word & Speech Recognition initialization
-  useEffect(() => {
-    if (!hasAccess) return;
-
-    if (!recognitionRef.current) {
-      recognitionRef.current = initSpeechRecognition();
-    }
-
-    try {
-      recognitionRef.current?.start();
-    } catch (_) {}
-
     return () => {
-      clearTimeout(restartTimerRef.current);
-      if (recognitionRef.current) {
-        try { recognitionRef.current.abort(); } catch (_) {}
+      unsub();
+    };
+  }, [handleProcessUtterance]);
+
+  // Clean deactivation on unmount
+  useEffect(() => {
+    return () => {
+      if (voiceSessionService.isSessionActive) {
+        voiceSessionService.stopSession('unmount');
       }
     };
-  }, [hasAccess, initSpeechRecognition]);
+  }, []);
 
-  const handleToggleVoiceMode = () => {
-    if (isSessionActive) {
-      handleStopSession('manual');
+  // 5. Manual Start / Stop (Controls Voice Mode)
+  const handleToggleVoiceMode = async () => {
+    if (voiceSessionService.isSessionActive) {
+      voiceSessionService.stopSession('manual');
+      showToast?.('Voice Agent: OFF');
     } else {
-      startContinuousSession();
+      showToast?.('Voice Agent: ON (Listening)');
+      await voiceSessionService.startSession({ lang: selectedLang });
     }
+  };
+
+  const handleLanguageChange = (e) => {
+    const newLang = e.target.value;
+    setSelectedLang(newLang);
+    voiceSessionService.setLanguage(newLang);
   };
 
   // 6. Interaction: Click vs Long Press Handling
@@ -599,7 +307,7 @@ export default function VoiceAgentModal({
   const POINTER_MOVE_TOLERANCE_PX = 8;
 
   const handleVoicePointerDown = (e) => {
-    if (e.button !== undefined && e.button !== 0) return; // Only left click or primary touch
+    if (e.button !== undefined && e.button !== 0) return;
     pointerStartPosRef.current = { x: e.clientX, y: e.clientY };
     didLongPressRef.current = false;
     isPointerDownRef.current = true;
@@ -609,7 +317,6 @@ export default function VoiceAgentModal({
       if (isPointerDownRef.current) {
         didLongPressRef.current = true;
         try { navigator.vibrate?.([40]); } catch (_) {}
-        // Open full panel without changing voice mode
         onOpenPanel?.();
       }
     }, LONG_PRESS_THRESHOLD_MS);
@@ -630,7 +337,6 @@ export default function VoiceAgentModal({
     isPointerDownRef.current = false;
 
     if (didLongPressRef.current) {
-      // Long press already opened the panel; do NOT toggle voice mode
       e.preventDefault();
       e.stopPropagation();
       didLongPressRef.current = false;
@@ -651,11 +357,9 @@ export default function VoiceAgentModal({
   const handleVoiceKeyDown = (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       if (e.shiftKey || e.altKey) {
-        // Shift+Enter / Alt+V opens panel
         e.preventDefault();
         onOpenPanel?.();
       } else {
-        // Space / Enter toggles voice
         e.preventDefault();
         handleToggleVoiceMode();
       }
@@ -683,8 +387,8 @@ export default function VoiceAgentModal({
     ? (isMobile ? `calc(136px + ${hasAccess ? '124px' : '56px'} + 10px + env(safe-area-inset-bottom, 0px))` : `calc(88px + ${hasAccess ? '124px' : '56px'} + 12px)`)
     : (isMobile ? `calc(70px + ${hasAccess ? '124px' : '56px'} + 10px + env(safe-area-inset-bottom, 0px))` : `calc(24px + ${hasAccess ? '124px' : '56px'} + 12px)`);
 
-  const dynamicScale = 1.0 + voiceVolumeScale * 0.22;
-  const dynamicGlowOpacity = Math.min(1.0, 0.45 + voiceVolumeScale * 0.55);
+  const dynamicScale = isSessionActive ? Math.min(1.4, 1.0 + voiceVolumeScale * 0.45) : 1.0;
+  const dynamicGlowOpacity = isSessionActive ? Math.min(0.95, 0.45 + voiceVolumeScale * 0.5) : 0.35;
 
   return ReactDOM.createPortal(
     <>
@@ -707,83 +411,81 @@ export default function VoiceAgentModal({
       >
         {/* 1. Voice Control Agent Floating Icon */}
         {hasAccess && (
-        <button
-          type="button"
-          onPointerDown={handleVoicePointerDown}
-          onPointerMove={handleVoicePointerMove}
-          onPointerUp={handleVoicePointerUp}
-          onPointerCancel={handleVoicePointerCancel}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            onOpenPanel?.();
-          }}
-          onKeyDown={handleVoiceKeyDown}
-          className={`voice-agent-floating-button group relative flex items-center justify-center w-14 h-14 rounded-full active:scale-95 cursor-pointer pointer-events-auto transition-transform duration-150 select-none ${
-            isSessionActive ? 'scale-105' : 'hover:scale-105'
-          }`}
-          aria-label={`Loopra Voice Agent (${isSessionActive ? 'Active' : 'Inactive'}). Click to toggle, long-press to open panel.`}
-          title={`Voice Agent: ${isSessionActive ? 'ON' : 'OFF'} (Click: Toggle | Long-press: Panel)`}
-        >
-          {/* Dynamic Voice Activity Glowing Halo */}
-          <span
-            style={{
-              transform: `scale(${dynamicScale})`,
-              opacity: isSessionActive ? dynamicGlowOpacity : 0.35
+          <button
+            type="button"
+            onPointerDown={handleVoicePointerDown}
+            onPointerMove={handleVoicePointerMove}
+            onPointerUp={handleVoicePointerUp}
+            onPointerCancel={handleVoicePointerCancel}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              onOpenPanel?.();
             }}
-            className={`absolute -inset-2 rounded-full blur-md transition-all duration-75 pointer-events-none ${
-              status === 'listening'
-                ? 'bg-gradient-to-tr from-amber-500 via-orange-400 to-amber-300'
-                : status === 'executing'
-                ? 'bg-gradient-to-tr from-cyan-500 via-blue-400 to-cyan-300 animate-spin-slow'
-                : status === 'success'
-                ? 'bg-gradient-to-tr from-emerald-500 to-teal-400'
-                : status === 'error'
-                ? 'bg-gradient-to-tr from-rose-500 to-red-400'
-                : isSessionActive
-                ? 'bg-emerald-500/30'
-                : 'bg-amber-500/20'
+            onKeyDown={handleVoiceKeyDown}
+            className={`voice-agent-floating-button group relative flex items-center justify-center w-14 h-14 rounded-full active:scale-95 cursor-pointer pointer-events-auto transition-transform duration-150 select-none ${
+              isSessionActive ? 'scale-105' : 'hover:scale-105'
             }`}
-          />
-
-          {/* Central Swirling Glass Sphere */}
-          <div className={`relative w-full h-full rounded-full bg-neutral-950/95 border-2 shadow-2xl overflow-hidden flex items-center justify-center transition-colors ${
-            isSessionActive ? 'border-emerald-400/80 shadow-emerald-500/20' : 'border-amber-400/60 shadow-amber-500/20'
-          }`}>
-            <div
+            aria-label={`Loopra Voice Agent (${isSessionActive ? 'Active' : 'Inactive'}). Click to toggle, long-press to open panel.`}
+            title={`Voice Agent: ${isSessionActive ? 'ON' : 'OFF'} (Click: Toggle | Long-press: Panel)`}
+          >
+            {/* Dynamic Voice Activity Glowing Halo */}
+            <span
               style={{
-                transform: `scale(${1 + voiceVolumeScale * 0.25}) rotate(${isListening ? '45deg' : '0deg'})`
+                transform: `scale(${dynamicScale})`,
+                opacity: isSessionActive ? dynamicGlowOpacity : 0.35
               }}
-              className={`absolute inset-0 bg-gradient-to-br from-amber-500/40 via-orange-500/30 to-amber-600/40 opacity-80 transition-transform duration-100 ${
-                isSessionActive ? 'animate-pulse' : ''
+              className={`absolute -inset-2 rounded-full blur-md transition-all duration-75 pointer-events-none ${
+                sessionState === SESSION_STATES.LISTENING
+                  ? 'bg-gradient-to-tr from-amber-500 via-orange-400 to-amber-300'
+                  : sessionState === SESSION_STATES.EXECUTING || sessionState === SESSION_STATES.PROCESSING
+                  ? 'bg-gradient-to-tr from-cyan-500 via-blue-400 to-cyan-300 animate-spin-slow'
+                  : sessionState === SESSION_STATES.ERROR
+                  ? 'bg-gradient-to-tr from-rose-500 to-red-400'
+                  : isSessionActive
+                  ? 'bg-emerald-500/30'
+                  : 'bg-amber-500/20'
               }`}
             />
 
-            {/* Central Icon */}
-            <div className="relative z-10 flex items-center justify-center">
-              {status === 'executing' ? (
-                <Sparkles className="w-6 h-6 animate-spin text-cyan-300 drop-shadow-md" />
-              ) : status === 'success' ? (
-                <CheckCircle2 className="w-6 h-6 text-emerald-300 drop-shadow-md" />
-              ) : status === 'error' ? (
-                <AlertTriangle className="w-6 h-6 text-rose-300 drop-shadow-md" />
-              ) : isSessionActive ? (
-                <Mic className="w-6 h-6 text-emerald-300 animate-pulse drop-shadow-md" />
-              ) : (
-                <Mic className="w-5 h-5 text-amber-400/90 group-hover:text-amber-300 transition-colors" />
+            {/* Central Glass Sphere */}
+            <div
+              className={`relative w-full h-full rounded-full bg-neutral-950/95 border-2 shadow-2xl overflow-hidden flex items-center justify-center transition-colors ${
+                isSessionActive ? 'border-emerald-400/80 shadow-emerald-500/20' : 'border-amber-400/60 shadow-amber-500/20'
+              }`}
+            >
+              <div
+                style={{
+                  transform: `scale(${1 + voiceVolumeScale * 0.25}) rotate(${isListening ? '45deg' : '0deg'})`
+                }}
+                className={`absolute inset-0 bg-gradient-to-br from-amber-500/40 via-orange-500/30 to-amber-600/40 opacity-80 transition-transform duration-100 ${
+                  isSessionActive ? 'animate-pulse' : ''
+                }`}
+              />
+
+              {/* Central Icon */}
+              <div className="relative z-10 flex items-center justify-center">
+                {sessionState === SESSION_STATES.EXECUTING || sessionState === SESSION_STATES.PROCESSING ? (
+                  <Sparkles className="w-6 h-6 animate-spin text-cyan-300 drop-shadow-md" />
+                ) : sessionState === SESSION_STATES.ERROR ? (
+                  <AlertTriangle className="w-6 h-6 text-rose-300 drop-shadow-md" />
+                ) : isSessionActive ? (
+                  <Mic className="w-6 h-6 text-emerald-300 animate-pulse drop-shadow-md" />
+                ) : (
+                  <Mic className="w-5 h-5 text-amber-400/90 group-hover:text-amber-300 transition-colors" />
+                )}
+              </div>
+
+              {/* Active Green Status Indicator Dot */}
+              {isSessionActive && (
+                <span className="absolute bottom-1 w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/80 animate-ping" />
               )}
             </div>
 
-            {/* Active Green Status Indicator Dot */}
-            {isSessionActive && (
-              <span className="absolute bottom-1 w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/80 animate-ping" />
-            )}
-          </div>
-
-          {/* Desktop Hover Label */}
-          <span className="absolute right-16 top-1/2 -translate-y-1/2 hidden md:group-hover:inline-block px-3 py-1.5 bg-neutral-900/95 border border-amber-500/40 text-amber-300 text-xs font-bold rounded-xl shadow-xl whitespace-nowrap pointer-events-none backdrop-blur-md">
-            {isSessionActive ? 'Voice Mode: ON (Click to Off • Auto-off in 60s)' : 'Voice Mode: OFF (Say "Hey Loopra" • Click to Start)'}
-          </span>
-        </button>
+            {/* Desktop Hover Label */}
+            <span className="absolute right-16 top-1/2 -translate-y-1/2 hidden md:group-hover:inline-block px-3 py-1.5 bg-neutral-900/95 border border-amber-500/40 text-amber-300 text-xs font-bold rounded-xl shadow-xl whitespace-nowrap pointer-events-none backdrop-blur-md">
+              {isSessionActive ? 'Voice Mode: ON (Click to Off • Auto-off in 60s)' : 'Voice Mode: OFF (Click mic to Start)'}
+            </span>
+          </button>
         )}
 
         {/* 2. Loopra AI Floating Assistant Icon */}
@@ -841,17 +543,19 @@ export default function VoiceAgentModal({
               </span>
               <div>
                 <h4 className="text-xs font-extrabold text-white tracking-tight flex items-center gap-1.5">
-                  <span>Hey Loopra</span>
-                  <span className={`text-[9px] uppercase font-bold px-1.5 py-0.2 rounded border ${
-                    isSessionActive
-                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                      : 'bg-neutral-800 text-neutral-400 border-neutral-700'
-                  }`}>
-                    {isSessionActive ? 'Live Continuous' : 'Wake Standby'}
+                  <span>Voice Control</span>
+                  <span
+                    className={`text-[9px] uppercase font-bold px-1.5 py-0.2 rounded border ${
+                      isSessionActive
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                        : 'bg-neutral-800 text-neutral-400 border-neutral-700'
+                    }`}
+                  >
+                    {isSessionActive ? 'Listening' : 'OFF'}
                   </span>
                 </h4>
                 <p className="text-[10px] text-neutral-400">
-                  {isSessionActive ? '60s auto-deactivation active' : 'Say "Hey Loopra" anytime'}
+                  {isSessionActive ? 'Continuous listening active • Tap mic to stop' : 'Tap microphone button to start voice control'}
                 </p>
               </div>
             </div>
@@ -860,7 +564,7 @@ export default function VoiceAgentModal({
               {/* Language Selector */}
               <select
                 value={selectedLang}
-                onChange={(e) => setSelectedLang(e.target.value)}
+                onChange={handleLanguageChange}
                 className="bg-neutral-900 text-neutral-300 text-[10px] font-semibold rounded-lg px-2 py-1 border border-neutral-800 outline-none cursor-pointer"
                 title="Recognition Language"
               >
@@ -908,12 +612,12 @@ export default function VoiceAgentModal({
                     key={idx}
                     style={{ height: `${barHeight}px` }}
                     className={`w-1 rounded-full transition-all duration-75 ${
-                      status === 'listening'
+                      sessionState === SESSION_STATES.LISTENING
                         ? 'bg-amber-400 shadow-sm shadow-amber-400/50'
-                        : status === 'executing'
+                        : sessionState === SESSION_STATES.EXECUTING || sessionState === SESSION_STATES.PROCESSING
                         ? 'bg-cyan-400 shadow-sm shadow-cyan-400/50'
-                        : status === 'success'
-                        ? 'bg-emerald-400'
+                        : sessionState === SESSION_STATES.ERROR
+                        ? 'bg-rose-400 shadow-sm shadow-rose-400/50'
                         : 'bg-neutral-700'
                     }`}
                   />
