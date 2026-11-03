@@ -284,55 +284,89 @@ export default function ThreeDCharacter({
       metalness: 0.05
     });
 
-    // 1. Torso & Hoodie
+    // 1. Torso & Hoodie (Sleek streetwear fit, lowered to keep neck and chin clear)
     const torsoGroup = new THREE.Group();
     torsoGroup.position.set(0, 0, 0);
     proceduralGroup.add(torsoGroup);
 
-    const chestGeo = new THREE.CylinderGeometry(0.24, 0.20, 0.52, 24);
+    const chestGeo = new THREE.CylinderGeometry(0.22, 0.18, 0.44, 24);
     const chestMesh = new THREE.Mesh(chestGeo, hoodieMat);
-    chestMesh.position.set(0, 0.22, 0);
+    chestMesh.position.set(0, 0.14, 0);
     torsoGroup.add(chestMesh);
 
+    // Hoodie Collar / Neckline Trim
+    const collarGeo = new THREE.TorusGeometry(0.115, 0.022, 12, 24);
+    const collarMesh = new THREE.Mesh(collarGeo, hoodieMat);
+    collarMesh.rotation.x = Math.PI / 2.3;
+    collarMesh.position.set(0, 0.355, 0.015);
+    torsoGroup.add(collarMesh);
+
     // Hoodie Accent Zipper / Neon Stripe
-    const stripeGeo = new THREE.BoxGeometry(0.018, 0.48, 0.02);
+    const stripeGeo = new THREE.BoxGeometry(0.016, 0.38, 0.02);
     const stripeMesh = new THREE.Mesh(stripeGeo, accentMat);
-    stripeMesh.position.set(0, 0.22, 0.19);
+    stripeMesh.position.set(0, 0.16, 0.20);
     torsoGroup.add(stripeMesh);
 
-    // 2. Head & Facial Geometry
+    // Visible Graceful Neck (Skin-toned cylinder connecting chest and head)
+    const neckGeo = new THREE.CylinderGeometry(0.065, 0.075, 0.16, 24);
+    const neckMesh = new THREE.Mesh(neckGeo, skinMat);
+    neckMesh.position.set(0, 0.42, 0);
+    torsoGroup.add(neckMesh);
+
+    // 2. Head & Facial Geometry (Positioned at y = 0.58 so neck, chin, lips, and nose are completely visible)
     const headGroup = new THREE.Group();
-    headGroup.position.set(0, 0.52, 0);
+    headGroup.position.set(0, 0.58, 0);
     torsoGroup.add(headGroup);
 
-    // Skull & Face
-    const headGeo = new THREE.SphereGeometry(0.20, 32, 28);
+    // Skull & Cute Anime Face
+    const headGeo = new THREE.SphereGeometry(0.185, 32, 28);
     const headMesh = new THREE.Mesh(headGeo, skinMat);
-    headMesh.scale.set(1.0, 1.15, 1.05);
+    headMesh.scale.set(1.0, 1.10, 1.02);
     headGroup.add(headMesh);
 
-    // 3D Nose
-    const noseGeo = new THREE.ConeGeometry(0.025, 0.065, 12);
+    // Sculpted Chin / Jaw Taper
+    const jawGeo = new THREE.ConeGeometry(0.075, 0.08, 16);
+    const jawMesh = new THREE.Mesh(jawGeo, skinMat);
+    jawMesh.rotation.x = Math.PI;
+    jawMesh.position.set(0, -0.15, 0.06);
+    headGroup.add(jawMesh);
+
+    // 3D Anime Nose (Delicate, Clear & Prominent)
+    const noseGeo = new THREE.ConeGeometry(0.020, 0.055, 12);
     const noseMesh = new THREE.Mesh(noseGeo, skinMat);
     noseMesh.rotation.x = -Math.PI / 2.3;
-    noseMesh.position.set(0, 0.015, 0.21);
+    noseMesh.position.set(0, 0.015, 0.195);
     headGroup.add(noseMesh);
 
-    // Eyes with pupil and blink eyelids
+    // Eyes with white sclera, pupil, iris, and eyelid
     const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const pupilMat = new THREE.MeshBasicMaterial({ color: 0x3d2314 });
+    const irisMat = new THREE.MeshStandardMaterial({ color: 0x4a2810, roughness: 0.3 });
+    const pupilMat = new THREE.MeshBasicMaterial({ color: 0x120a06 });
+    const sparkleMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const eyelidMat = new THREE.MeshStandardMaterial({ color: 0xf0c4aa, roughness: 0.6 });
+    const lipsMat = new THREE.MeshStandardMaterial({ color: 0xdb2777, roughness: 0.4 }); // Soft rose lips
 
     const createEye = (xPos) => {
       const eyeG = new THREE.Group();
-      eyeG.position.set(xPos, 0.045, 0.185);
+      eyeG.position.set(xPos, 0.052, 0.172);
 
       const eyeMesh = new THREE.Mesh(new THREE.SphereGeometry(0.038, 16, 16), eyeWhiteMat);
+      eyeMesh.scale.set(1.1, 0.9, 0.5);
       eyeG.add(eyeMesh);
 
-      const pupilMesh = new THREE.Mesh(new THREE.SphereGeometry(0.024, 16, 16), pupilMat);
-      pupilMesh.position.set(0, 0, 0.02);
+      const irisMesh = new THREE.Mesh(new THREE.SphereGeometry(0.024, 16, 16), irisMat);
+      irisMesh.position.set(0, 0, 0.016);
+      irisMesh.scale.set(1.0, 1.0, 0.4);
+      eyeG.add(irisMesh);
+
+      const pupilMesh = new THREE.Mesh(new THREE.SphereGeometry(0.014, 16, 16), pupilMat);
+      pupilMesh.position.set(0, 0, 0.022);
       eyeG.add(pupilMesh);
+
+      // Cute white anime eye sparkle reflection
+      const sparkle = new THREE.Mesh(new THREE.SphereGeometry(0.006, 8, 8), sparkleMat);
+      sparkle.position.set(xPos > 0 ? -0.008 : 0.008, 0.008, 0.028);
+      eyeG.add(sparkle);
 
       const eyelid = new THREE.Mesh(new THREE.SphereGeometry(0.042, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2), eyelidMat);
       eyelid.rotation.x = -Math.PI / 2;
@@ -342,110 +376,143 @@ export default function ThreeDCharacter({
       return { eyeGroup: eyeG, eyelid, pupilMesh };
     };
 
-    const eyeL = createEye(-0.075);
-    const eyeR = createEye(0.075);
+    const eyeL = createEye(-0.068);
+    const eyeR = createEye(0.068);
     headGroup.add(eyeL.eyeGroup);
     headGroup.add(eyeR.eyeGroup);
 
-    // Dynamic Lip-Sync Mouth
-    const mouthGeo = new THREE.BoxGeometry(0.055, 0.018, 0.02);
-    const mouthMat = new THREE.MeshBasicMaterial({ color: 0x882233 });
-    const mouthMesh = new THREE.Mesh(mouthGeo, mouthMat);
-    mouthMesh.position.set(0, -0.075, 0.19);
-    headGroup.add(mouthMesh);
+    // Cute Anime Eyebrows
+    const browGeo = new THREE.BoxGeometry(0.042, 0.007, 0.01);
+    const browL = new THREE.Mesh(browGeo, hairMat);
+    browL.position.set(-0.068, 0.105, 0.178);
+    browL.rotation.z = -0.08;
+    headGroup.add(browL);
 
-    // Cheerful anime cheek blush highlights (identifies friendly character)
+    const browR = new THREE.Mesh(browGeo, hairMat);
+    browR.position.set(0.068, 0.105, 0.178);
+    browR.rotation.z = 0.08;
+    headGroup.add(browR);
+
+    // Beautiful, Clearly Visible Lips & Mouth
+    const lipsGroup = new THREE.Group();
+    lipsGroup.position.set(0, -0.065, 0.188);
+
+    // Upper Lip
+    const upperLipGeo = new THREE.BoxGeometry(0.042, 0.010, 0.012);
+    const upperLip = new THREE.Mesh(upperLipGeo, lipsMat);
+    upperLip.position.set(0, 0.006, 0);
+    lipsGroup.add(upperLip);
+
+    // Lower Lip (Plump soft anime bottom lip)
+    const lowerLipGeo = new THREE.BoxGeometry(0.038, 0.012, 0.012);
+    const lowerLip = new THREE.Mesh(lowerLipGeo, lipsMat);
+    lowerLip.position.set(0, -0.006, 0);
+    lipsGroup.add(lowerLip);
+
+    // Dynamic Talking Lip-Sync Aperture Mesh (Opens smoothly when speaking)
+    const mouthGeo = new THREE.BoxGeometry(0.036, 0.018, 0.015);
+    const mouthMat = new THREE.MeshBasicMaterial({ color: 0x581c24 });
+    const mouthMesh = new THREE.Mesh(mouthGeo, mouthMat);
+    mouthMesh.position.set(0, 0, 0.002);
+    mouthMesh.scale.set(1.0, 0.1, 1.0); // resting closed
+    lipsGroup.add(mouthMesh);
+
+    headGroup.add(lipsGroup);
+
+    // Cheerful anime cheek blush highlights
     const blushMat = new THREE.MeshBasicMaterial({
       color: 0xf43f5e,
       transparent: true,
       opacity: 0.35
     });
-    const blushGeo = new THREE.PlaneGeometry(0.045, 0.025);
+    const blushGeo = new THREE.PlaneGeometry(0.042, 0.022);
     const blushL = new THREE.Mesh(blushGeo, blushMat);
-    blushL.position.set(-0.11, -0.03, 0.19);
+    blushL.position.set(-0.105, 0.010, 0.182);
     headGroup.add(blushL);
 
     const blushR = new THREE.Mesh(blushGeo, blushMat);
-    blushR.position.set(0.11, -0.03, 0.19);
+    blushR.position.set(0.105, 0.010, 0.182);
     headGroup.add(blushR);
 
-    // Hair Style (High bun + styled front bangs + side strands)
+    // Hair Style (High bun + wispy front bangs that stay ABOVE eyes/nose + side strands)
     const hairGroup = new THREE.Group();
-    const hairCapGeo = new THREE.SphereGeometry(0.215, 24, 20);
+    const hairCapGeo = new THREE.SphereGeometry(0.192, 24, 20);
     const hairCap = new THREE.Mesh(hairCapGeo, hairMat);
-    hairCap.position.set(0, 0.04, -0.02);
+    hairCap.position.set(0, 0.04, -0.025);
     hairGroup.add(hairCap);
 
-    // Front bangs (makes front face immediately and unmistakably recognizable)
-    const bangsGeo = new THREE.CylinderGeometry(0.19, 0.20, 0.08, 16, 1, false, -Math.PI / 2, Math.PI);
+    // High Messy Bun (Positioned gracefully at top back)
+    const hairBunGeo = new THREE.SphereGeometry(0.10, 20, 20);
+    const hairBun = new THREE.Mesh(hairBunGeo, hairMat);
+    hairBun.position.set(0, 0.23, -0.06);
+    hairGroup.add(hairBun);
+
+    // Cute Wispy Bangs (Positioned at y = 0.13, well ABOVE the eyes, nose, and lips!)
+    const bangsGeo = new THREE.BoxGeometry(0.14, 0.035, 0.04);
     const bangsMesh = new THREE.Mesh(bangsGeo, hairMat);
-    bangsMesh.rotation.x = 0.32;
-    bangsMesh.position.set(0, 0.12, 0.08);
+    bangsMesh.position.set(0, 0.13, 0.165);
+    bangsMesh.rotation.x = -0.15;
     hairGroup.add(bangsMesh);
 
-    // Side hair strands framing cheeks
-    const strandGeo = new THREE.ConeGeometry(0.022, 0.16, 12);
+    // Delicate Side hair strands framing cheeks without covering lips or nose
+    const strandGeo = new THREE.ConeGeometry(0.016, 0.18, 12);
     const strandL = new THREE.Mesh(strandGeo, hairMat);
-    strandL.position.set(-0.16, -0.02, 0.14);
+    strandL.position.set(-0.16, -0.02, 0.11);
     strandL.rotation.z = 0.12;
     hairGroup.add(strandL);
 
     const strandR = new THREE.Mesh(strandGeo, hairMat);
-    strandR.position.set(0.16, -0.02, 0.14);
+    strandR.position.set(0.16, -0.02, 0.11);
     strandR.rotation.z = -0.12;
     hairGroup.add(strandR);
 
-    const hairBunGeo = new THREE.SphereGeometry(0.11, 20, 20);
-    const hairBun = new THREE.Mesh(hairBunGeo, hairMat);
-    hairBun.position.set(0, 0.24, -0.06);
-    hairGroup.add(hairBun);
     headGroup.add(hairGroup);
 
-    // Over-Ear DJ Headphones with Glowing Ring
+    // Over-Ear DJ Headphones with Glowing Ring (Positioned neatly on ears at y = 0.04)
     const hpGroup = new THREE.Group();
-    const hpBandGeo = new THREE.TorusGeometry(0.23, 0.022, 12, 32, Math.PI);
+    const hpBandGeo = new THREE.TorusGeometry(0.21, 0.018, 12, 32, Math.PI);
     const hpBand = new THREE.Mesh(hpBandGeo, hoodieMat);
-    hpBand.position.set(0, 0.03, 0);
+    hpBand.position.set(0, 0.04, 0);
     hpGroup.add(hpBand);
 
     const createEarCup = (xPos) => {
-      const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.04, 24), hoodieMat);
+      const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.035, 24), hoodieMat);
       cup.rotation.z = Math.PI / 2;
-      cup.position.set(xPos, 0.02, 0);
+      cup.position.set(xPos, 0.03, 0);
 
-      const glowRing = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.009, 12, 24), accentMat);
+      const glowRing = new THREE.Mesh(new THREE.TorusGeometry(0.050, 0.008, 12, 24), accentMat);
       glowRing.rotation.y = Math.PI / 2;
-      glowRing.position.set(xPos > 0 ? 0.022 : -0.022, 0, 0);
+      glowRing.position.set(xPos > 0 ? 0.020 : -0.020, 0, 0);
       cup.add(glowRing);
 
       return cup;
     };
-    hpGroup.add(createEarCup(-0.21));
-    hpGroup.add(createEarCup(0.21));
+    hpGroup.add(createEarCup(-0.195));
+    hpGroup.add(createEarCup(0.195));
     headGroup.add(hpGroup);
 
-    // 3. Arms (Shoulder & Forearm Rig)
+    // 3. Arms & Shoulders (Lowered to match shoulder height at y = 0.32)
     const armL = new THREE.Group();
     const armR = new THREE.Group();
-    armL.position.set(-0.28, 0.42, 0);
-    armR.position.set(0.28, 0.42, 0);
+    armL.position.set(-0.25, 0.32, 0);
+    armR.position.set(0.25, 0.32, 0);
     torsoGroup.add(armL);
     torsoGroup.add(armR);
 
-    const armGeo = new THREE.CylinderGeometry(0.06, 0.05, 0.48, 16);
+    const armGeo = new THREE.CylinderGeometry(0.055, 0.046, 0.44, 16);
     const armLMesh = new THREE.Mesh(armGeo, hoodieMat);
     const armRMesh = new THREE.Mesh(armGeo, hoodieMat);
-    armLMesh.position.set(0, -0.22, 0);
-    armRMesh.position.set(0, -0.22, 0);
+    armLMesh.position.set(0, -0.20, 0);
+    armRMesh.position.set(0, -0.20, 0);
     armL.add(armLMesh);
     armR.add(armRMesh);
 
     // Hands
-    const handGeo = new THREE.SphereGeometry(0.048, 16, 16);
+    const handGeo = new THREE.SphereGeometry(0.042, 16, 16);
     const handL = new THREE.Mesh(handGeo, skinMat);
     const handR = new THREE.Mesh(handGeo, skinMat);
-    handL.position.set(0, -0.46, 0);
-    handR.position.set(0, -0.46, 0);
+    handL.position.set(0, -0.42, 0);
+    handR.position.set(0, -0.42, 0);
     armL.add(handL);
     armR.add(handR);
 
@@ -530,9 +597,10 @@ export default function ThreeDCharacter({
         else fadeToAction('idle', 0.35);
       }
 
-      // Head-Only Cursor Tracking Logic:
-      // Limits: yaw max ±25° (±0.436 rad), pitch max ±15° (±0.262 rad)
-      // Dead zone: movements < 0.04 are centered
+      // Head-Only Subtle Cursor Tracking Logic:
+      // "only a liitle up down face movement and left right movement"
+      // Limits: subtle gentle yaw max ±8° (0.14 rad), pitch max ±5° (0.087 rad)
+      // Dead zone: movements < 0.05 are centered
       // 3-second cursor idle: smoothly returns to neutral (0, 0)
       const now = Date.now();
       const isCursorIdle = (now - lastMouseMoveTime) > 3000;
@@ -540,18 +608,18 @@ export default function ThreeDCharacter({
       let rawX = stateRef.current.cursorX || 0;
       let rawY = stateRef.current.cursorY || 0;
 
-      if (Math.abs(rawX) < 0.04) rawX = 0;
-      if (Math.abs(rawY) < 0.04) rawY = 0;
+      if (Math.abs(rawX) < 0.05) rawX = 0;
+      if (Math.abs(rawY) < 0.05) rawY = 0;
 
-      const maxYawRad = 25 * (Math.PI / 180);
-      const maxPitchRad = 15 * (Math.PI / 180);
+      const maxYawRad = 8 * (Math.PI / 180); // Subtle ±8° left/right
+      const maxPitchRad = 5 * (Math.PI / 180); // Subtle ±5° up/down
 
       const targetYaw = isCursorIdle ? 0 : THREE.MathUtils.clamp(rawX * maxYawRad, -maxYawRad, maxYawRad);
       const targetPitch = isCursorIdle ? 0 : THREE.MathUtils.clamp(-rawY * maxPitchRad, -maxPitchRad, maxPitchRad);
 
-      // Smooth interpolation with lerp factor 0.05
-      currentHeadYaw = THREE.MathUtils.lerp(currentHeadYaw, targetYaw, 0.05);
-      currentHeadPitch = THREE.MathUtils.lerp(currentHeadPitch, targetPitch, 0.05);
+      // Smooth gentle interpolation with lerp factor 0.04
+      currentHeadYaw = THREE.MathUtils.lerp(currentHeadYaw, targetYaw, 0.04);
+      currentHeadPitch = THREE.MathUtils.lerp(currentHeadPitch, targetPitch, 0.04);
 
       // Apply strictly to GLB head bone if active
       if (glbHeadBone) {
@@ -568,13 +636,13 @@ export default function ThreeDCharacter({
         torsoGroup.rotation.y = 0; // Body stays strictly facing forward
         torsoGroup.rotation.x = 0;
 
-        // 2. Cursor Gaze Tracking (Targeting strictly head)
+        // 2. Subtle Head Gaze Tracking (Targeting strictly head/neck)
         headGroup.rotation.y = currentHeadYaw;
         headGroup.rotation.x = currentHeadPitch;
 
         // Eyes can follow slightly more (pupil tracking)
-        const pupilShiftX = currentHeadYaw * 0.022;
-        const pupilShiftY = -currentHeadPitch * 0.018;
+        const pupilShiftX = currentHeadYaw * 0.025;
+        const pupilShiftY = -currentHeadPitch * 0.020;
         if (eyeL?.pupilMesh && eyeR?.pupilMesh) {
           eyeL.pupilMesh.position.x = pupilShiftX;
           eyeL.pupilMesh.position.y = pupilShiftY;
@@ -592,16 +660,20 @@ export default function ThreeDCharacter({
         eyeL.eyelid.rotation.x = THREE.MathUtils.lerp(eyeL.eyelid.rotation.x, blinkRot, 0.3);
         eyeR.eyelid.rotation.x = THREE.MathUtils.lerp(eyeR.eyelid.rotation.x, blinkRot, 0.3);
 
-        // 4. Lip-Sync Mouth Modulation (Speaking State)
+        // 4. Lip-Sync Mouth & Lips Articulation (Speaking State)
         if (isSpeakingNow || curState === 'speaking') {
           const speechFreq = time * 20;
           const aperture = (0.2 + Math.abs(Math.sin(speechFreq)) * 0.8) * Math.max(0.4, vol);
-          mouthMesh.scale.set(1.0 + aperture * 0.8, 1.0 + aperture * 2.8, 1.0);
-          headGroup.position.y = 0.52 + Math.sin(time * 6) * 0.012;
-          armR.rotation.z = -0.15 + Math.sin(time * 4) * 0.1;
+          mouthMesh.scale.set(1.0 + aperture * 0.5, 1.0 + aperture * 2.2, 1.0);
+          lowerLip.position.y = -0.006 - aperture * 0.012;
+          upperLip.position.y = 0.006 + aperture * 0.006;
+          headGroup.position.y = 0.58 + Math.sin(time * 6) * 0.008;
+          armR.rotation.z = -0.15 + Math.sin(time * 4) * 0.08;
         } else {
-          mouthMesh.scale.set(1.0, 1.0, 1.0);
-          headGroup.position.y = 0.52;
+          mouthMesh.scale.set(1.0, 0.1, 1.0);
+          lowerLip.position.y = -0.006;
+          upperLip.position.y = 0.006;
+          headGroup.position.y = 0.58;
           armR.rotation.z = THREE.MathUtils.lerp(armR.rotation.z, 0, 0.1);
         }
 
