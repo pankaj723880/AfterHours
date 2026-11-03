@@ -249,7 +249,7 @@ body {
 .loopra-character-dock-container {
   position: fixed !important;
   z-index: 2147483640 !important;
-  pointer-events: none !important;
+  pointer-events: auto !important;
   touch-action: none;
 }
 

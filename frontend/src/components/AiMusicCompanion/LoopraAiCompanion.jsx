@@ -11,7 +11,7 @@ import {
 } from '../../services/voiceTaskEngine';
 import { chatBuddyLearningClient } from '../../services/chatBuddyLearningService';
 import { chatBuddyClient } from '../../services/chatBuddyClient';
-import { Volume2, VolumeX, ChevronDown, ChevronUp } from 'lucide-react';
+import { Volume2, VolumeX, ChevronDown, ChevronUp, MessageSquare, X } from 'lucide-react';
 
 const STORAGE_KEY_DESKTOP = 'loopra_ai_chat_dims_desktop';
 const STORAGE_KEY_MOBILE = 'loopra_ai_chat_dims_mobile';
@@ -485,6 +485,13 @@ export default function LoopraAiCompanion({
     setInputText('');
     setIsTyping(true);
     setStreamingText('');
+
+    // In mobile mode: automatically close chatbox immediately after successful command submission
+    // Does not wait for task to finish; preserves conversation history for when reopened
+    const isMobileMode = typeof window !== 'undefined' && window.innerWidth <= 768;
+    if (isMobileMode) {
+      handlePanelClose();
+    }
 
     // 0. Check for Multi-Step Compound Commands (e.g. "Open Saloon FM and play a song")
     const clauses = splitVoiceInstructionIntoClauses(text);
@@ -1479,42 +1486,40 @@ export default function LoopraAiCompanion({
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* 2. FLOATING ASSISTANT BUTTON                                  */}
-        {/* Strictly fixed at bottom-right of viewport via CSS class      */}
+        {/* 2. FLOATING SEPARATE AI CHAT BUTTON                           */}
+        {/* Strictly fixed at bottom-right of viewport                   */}
         {/* ------------------------------------------------------------- */}
         {!hideFloatingButton && (
           <button
             type="button"
+            id="loopra-ai-chat-toggle-button"
             onClick={handleButtonClick}
             style={{
-              '--ai-button-bottom': bottomOffsets.btnBottom
+              position: 'fixed',
+              bottom: bottomOffsets.btnBottom,
+              right: isMobile ? '14px' : '20px',
+              zIndex: 2147483642
             }}
-            className={`ai-assistant-floating-button group relative flex items-center justify-center w-14 h-14 rounded-full shadow-2xl active:scale-95 cursor-pointer pointer-events-auto transition-colors duration-150 ${
+            className={`group relative flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 rounded-full shadow-2xl active:scale-95 cursor-pointer pointer-events-auto transition-all duration-200 border ${
               isOpen
-                ? 'bg-amber-500 text-black shadow-amber-500/40'
-                : 'bg-neutral-900/95 text-amber-400 hover:text-white border border-amber-500/40 hover:border-amber-400 shadow-amber-500/20 backdrop-blur-2xl'
+                ? 'bg-amber-500 text-neutral-950 border-amber-400 shadow-amber-500/40'
+                : 'bg-neutral-950/90 text-amber-400 hover:text-white border-amber-500/40 hover:border-amber-400 shadow-lg shadow-black/80 hover:shadow-amber-500/20 backdrop-blur-xl'
             }`}
-            aria-label="Toggle Loopra AI Music Companion"
-            title="Loopra AI Assistant"
+            aria-label="Toggle Loopra AI Chatbox"
+            title={isOpen ? "Close Loopra AI Chat" : "Open Loopra AI Chat"}
           >
             {isOpen ? (
-              <svg className="w-6 h-6 pointer-events-none transition-transform duration-200 rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X className="w-5 h-5 pointer-events-none transition-transform duration-200" />
             ) : (
               <div className="relative flex items-center justify-center pointer-events-none">
-                <span className="absolute -inset-1.5 rounded-full bg-gradient-to-r from-amber-500/40 via-orange-500/30 to-amber-500/40 blur-sm animate-pulse" />
-                <div className="relative flex items-end gap-1 h-5 px-1">
-                  <span className={`w-1 bg-amber-400 rounded-full transition-all duration-300 ${isPlaying ? 'h-5 animate-pulse' : 'h-3'}`} />
-                  <span className={`w-1 bg-amber-300 rounded-full transition-all duration-300 ${isPlaying ? 'h-3 animate-ping' : 'h-4'}`} />
-                  <span className={`w-1 bg-amber-400 rounded-full transition-all duration-300 ${isPlaying ? 'h-4 animate-pulse' : 'h-2'}`} />
-                </div>
+                <span className="absolute -inset-1 rounded-full bg-amber-500/30 blur-sm animate-pulse" />
+                <MessageSquare className="w-5 h-5 text-amber-400 relative" />
               </div>
             )}
 
             {!isOpen && (
-              <span className="absolute right-16 top-1/2 -translate-y-1/2 hidden md:group-hover:inline-block px-3 py-1.5 bg-neutral-900/95 border border-amber-500/30 text-amber-300 text-xs font-semibold rounded-lg shadow-xl whitespace-nowrap pointer-events-none backdrop-blur-md">
-                Loopra AI • Music Companion
+              <span className="absolute right-14 top-1/2 -translate-y-1/2 hidden md:group-hover:inline-block px-2.5 py-1 bg-neutral-900/95 border border-amber-500/30 text-amber-300 text-xs font-semibold rounded-lg shadow-xl whitespace-nowrap pointer-events-none backdrop-blur-md">
+                AI Chat
               </span>
             )}
           </button>
