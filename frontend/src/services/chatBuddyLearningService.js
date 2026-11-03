@@ -99,3 +99,4 @@ class ChatBuddyLearningClient {
 
 export const chatBuddyLearningClient = new ChatBuddyLearningClient();
 export default chatBuddyLearningClient;
+
