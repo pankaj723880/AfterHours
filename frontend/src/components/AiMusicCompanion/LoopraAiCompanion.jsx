@@ -4,6 +4,7 @@ import { aiMusicCompanionClient } from '../../services/aiMusicCompanionClient';
 import { voiceControlService } from '../../services/voiceControlService';
 import { voiceBuddyService } from '../../services/voiceBuddyService';
 import { parseCommandToAction, INTENT_CATEGORIES } from '../../services/commandActionEngine';
+import { chatBuddyLearningClient } from '../../services/chatBuddyLearningService';
 import { Volume2, VolumeX, ChevronDown, ChevronUp } from 'lucide-react';
 
 const STORAGE_KEY_DESKTOP = 'loopra_ai_chat_dims_desktop';
@@ -415,16 +416,33 @@ export default function LoopraAiCompanion({
     setIsTyping(true);
     setStreamingText('');
 
-    // 1. First, evaluate against the local fast Command-to-Action engine
+    // 1. Evaluate against local fast Command-to-Action engine ONLY for explicit tasks (NOT general conversation)
     const directAction = parseCommandToAction(text, getCommandContext());
 
-    if (directAction) {
+    if (directAction && directAction.intent !== INTENT_CATEGORIES.GENERAL_QUESTION) {
       try {
         let replyText = '';
         let actionTrack = null;
 
-        // A. OPEN_PAGE (e.g. Saloon FM, Horn Ok Please, Theka, Home, Discover)
-        if (directAction.intent === INTENT_CATEGORIES.OPEN_PAGE) {
+        // A. OPEN_INSIGHTS (Recap & Stats Modal)
+        if (
+          directAction.intent === INTENT_CATEGORIES.OPEN_INSIGHTS ||
+          (directAction.intent === INTENT_CATEGORIES.OPEN_PAGE && (directAction.target === 'stats' || directAction.target === 'insights' || directAction.target === 'recap_stats'))
+        ) {
+          if (onOpenInsights) onOpenInsights();
+          replyText = 'Listening Stats & Recap open kar rahi hoon...';
+          chatBuddyLearningClient.recordExecution({
+            userPhrase: text,
+            intent: 'open_insights',
+            actionType: 'OPEN_STATS',
+            target: 'stats',
+            handler: 'onOpenInsights',
+            backendUrl,
+            token: authToken
+          });
+        }
+        // B. OPEN_PAGE (e.g. Activity, History, Saloon FM, Theka, Home, Discover)
+        else if (directAction.intent === INTENT_CATEGORIES.OPEN_PAGE) {
           const targetId = directAction.target;
           const targetName = directAction.item?.name || targetId;
 
@@ -496,8 +514,15 @@ export default function LoopraAiCompanion({
         } else if (directAction.intent === INTENT_CATEGORIES.LIKE_SONG) {
           if (onToggleLike) onToggleLike(currentSong);
           replyText = voiceBuddyService.generateFriendReply('like', { title: currentSong?.title || 'Song' });
-        } else {
-          replyText = "Loopra command executed!";
+        } else if (directAction.intent === 'unlike_song' || directAction.intent === INTENT_CATEGORIES.UNLIKE_SONG) {
+          if (onToggleLike) onToggleLike(currentSong);
+          replyText = voiceBuddyService.generateFriendReply('unlike', { title: currentSong?.title || 'Song' });
+        } else if (directAction.intent === 'avatar_action' || directAction.intent === INTENT_CATEGORIES.AVATAR_ACTION) {
+          const gesture = directAction.gesture || 'dance';
+          if (typeof window !== 'undefined' && typeof window.__loopraPlayGesture === 'function') {
+            window.__loopraPlayGesture(gesture, 2500);
+          }
+          replyText = voiceBuddyService.generateFriendReply('avatar_action', { action: gesture });
         }
 
         const aiMsg = {
@@ -557,10 +582,44 @@ export default function LoopraAiCompanion({
       setMessages(prev => [...prev, aiMsg]);
       setStreamingText('');
 
-      // Playback action resolution
-      if (res.action?.type === 'PLAY_TRACK' && res.action?.track) {
-        onPlayTrack(res.action.track);
-        if (showToast) showToast(`Now playing: ${res.action.track.title}`);
+      // Action resolution from Gemini AI response
+      if (res.action) {
+        const act = res.action;
+        if (act.type === 'PLAY_TRACK') {
+          const trackToPlay = act.track || res.tracks?.[0];
+          if (trackToPlay && onPlayTrack) {
+            onPlayTrack(trackToPlay);
+            if (showToast) showToast(`Now playing: ${trackToPlay.title}`);
+          }
+        } else if (act.type === 'OPEN_STATS') {
+          if (onOpenInsights) onOpenInsights();
+        } else if (act.type === 'NAVIGATE' && act.target) {
+          if (onNavigate) onNavigate(act.target);
+        } else if (act.type === 'VOLUME' && act.value !== undefined) {
+          if (onSetVolume) onSetVolume(act.value);
+        } else if (act.type === 'NEXT') {
+          if (onNextTrack) onNextTrack();
+        } else if (act.type === 'PREV') {
+          if (onPrevTrack) onPrevTrack();
+        } else if (act.type === 'LIKE') {
+          if (onToggleLike) onToggleLike(currentSong);
+        } else if (act.type === 'UNLIKE') {
+          if (onToggleLike && isLiked) onToggleLike(currentSong);
+        } else if (act.type === 'AVATAR_ACTION') {
+          if (typeof window !== 'undefined' && typeof window.__loopraPlayGesture === 'function') {
+            window.__loopraPlayGesture(act.target || 'dance', 2500);
+          }
+        }
+        chatBuddyLearningClient.recordExecution({
+          userPhrase: text,
+          intent: act.type,
+          actionType: act.type,
+          target: act.target,
+          query: act.query,
+          value: act.value,
+          backendUrl,
+          token: authToken
+        });
       }
 
       // Speak response if voice output enabled and music not playing
@@ -639,25 +698,89 @@ export default function LoopraAiCompanion({
 
     try {
       const recognition = new SpeechRecognition();
-      recognition.lang = 'en-US';
-      recognition.interimResults = false;
+      recognition.lang = 'en-IN';
+      recognition.interimResults = true;
       recognition.maxAlternatives = 1;
 
-      recognition.onstart = () => setIsVoiceListening(true);
+      let silenceTimer = null;
+      let accumulatedTranscript = '';
+      let speechStartedAt = 0;
+
+      const finalizeInput = () => {
+        clearTimeout(silenceTimer);
+        silenceTimer = null;
+        const textToProcess = accumulatedTranscript.trim();
+        if (textToProcess) {
+          setInputText(textToProcess);
+          handleSendMessage(textToProcess);
+        }
+        try { recognition.stop(); } catch (_) {}
+        setIsVoiceListening(false);
+      };
+
+      recognition.onstart = () => {
+        setIsVoiceListening(true);
+        accumulatedTranscript = '';
+        speechStartedAt = 0;
+      };
+
       recognition.onresult = (event) => {
-        const transcript = event.results[0]?.[0]?.transcript;
-        if (transcript) {
-          setInputText(transcript);
-          handleSendMessage(transcript);
+        let interim = '';
+        let finalPart = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const res = event.results[i];
+          if (res.isFinal) finalPart += res[0].transcript;
+          else interim += res[0].transcript;
+        }
+
+        // Immediate user interruption of any currently playing TTS
+        if (interim.trim() || finalPart.trim()) {
+          if (voiceBuddyService.isSpeaking) {
+            voiceBuddyService.stopSpeech();
+          }
+        }
+
+        if (finalPart) {
+          accumulatedTranscript = (accumulatedTranscript + ' ' + finalPart).trim();
+          setInputText(accumulatedTranscript);
+        } else if (interim) {
+          setInputText((accumulatedTranscript + ' ' + interim).trim());
+        }
+
+        if (!speechStartedAt) speechStartedAt = Date.now();
+
+        // Voice Activity Detection (VAD): 1200ms silence threshold, max 2000ms
+        clearTimeout(silenceTimer);
+        const elapsed = Date.now() - speechStartedAt;
+        if (elapsed >= 2000 && accumulatedTranscript) {
+          finalizeInput();
+        } else {
+          silenceTimer = setTimeout(() => {
+            if (accumulatedTranscript || interim) {
+              if (interim && !accumulatedTranscript) accumulatedTranscript = interim;
+              finalizeInput();
+            }
+          }, 1200);
         }
       };
+
       recognition.onerror = (e) => {
+        clearTimeout(silenceTimer);
         setIsVoiceListening(false);
         if (e.error === 'not-allowed' && showToast) {
           showToast('Microphone access was denied for voice input');
         }
       };
-      recognition.onend = () => setIsVoiceListening(false);
+
+      recognition.onend = () => {
+        clearTimeout(silenceTimer);
+        if (accumulatedTranscript) {
+          finalizeInput();
+        } else {
+          setIsVoiceListening(false);
+        }
+      };
 
       speechRecognitionRef.current = recognition;
       recognition.start();

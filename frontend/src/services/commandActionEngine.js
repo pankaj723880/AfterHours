@@ -230,10 +230,23 @@ export function parseCommandToAction(rawInput = '', context = {}) {
     };
   }
 
+  // Explicit Listening History Routing
+  if (
+    /\b(listening history|history kholo|open listening history|purane songs)\b/i.test(cleanLower) ||
+    /^(history)$/i.test(cleanLower)
+  ) {
+    return {
+      intent: INTENT_CATEGORIES.OPEN_PAGE,
+      action: 'navigate_page',
+      target: 'history',
+      description: 'Open Listening History'
+    };
+  }
+
   // Explicit Listening Activity Routing
   if (
-    /\b(listening activity|listening history|recently played|recent songs|history kholo|open listening history|activity kholo|activity page|recent activity)\b/i.test(cleanLower) ||
-    /^(activity|history)$/i.test(cleanLower)
+    /\b(listening activity|recently played|recent songs|activity kholo|activity page|recent activity)\b/i.test(cleanLower) ||
+    /^(activity)$/i.test(cleanLower)
   ) {
     return {
       intent: INTENT_CATEGORIES.OPEN_PAGE,

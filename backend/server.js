@@ -42,6 +42,8 @@ import featureFlagsRouter from './routes/featureFlags.js';
 import voiceAgentRouter from './routes/voiceAgent.js';
 import musicValidationRouter from './routes/musicValidation.js';
 import musicValidationService from './services/musicValidationService.js';
+import chatBuddyLearningRouter from './routes/chatBuddyLearning.js';
+import { chatBuddyLearningService } from './services/chatBuddyLearningService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -240,6 +242,7 @@ mongoose.connect(MONGODB_URI, {
     cmsService.initDefaults();
     liveUsersService.init({ io, metricsService });
     learningEngineService.init();
+  chatBuddyLearningService.loadFromDatabase();
   })
   .catch((err) => {
     isMongoConnected = false;
@@ -1056,6 +1059,7 @@ app.get('/api/listening-stats', authenticateToken, async (req, res) => {
 
 // Mount Loopra AI Music Companion & External Song Recognition
 app.use(['/api/ai-music', '/ai-music'], aiMusicRoutes);
+app.use(['/api/chatbuddy/learning', '/chatbuddy/learning'], chatBuddyLearningRouter);
 
 // Mount AI Learning Intelligence Engine (Passive Observation & Admin Intelligence)
 app.use(['/api/learning-intelligence', '/learning-intelligence'], learningRoutes);

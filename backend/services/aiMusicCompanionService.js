@@ -4,6 +4,7 @@ import { listeningEventService } from './listeningEventService.js';
 import { verifySingleSong, isSingleSong } from './songFilter.js';
 import { recommendationHistoryService, getCanonicalSongKey, cleanSongTitle } from './recommendationHistoryService.js';
 import { getCleanTrackThumbnail, isValidThumbnailUrlFormat } from './thumbnailValidationService.js';
+import { chatBuddyLearningService } from './chatBuddyLearningService.js';
 
 export const aiCompanionDiagnostics = {
   totalChats: 0,
@@ -131,7 +132,19 @@ export const aiMusicCompanionService = {
    */
   detectPlaybackRequest(message = '', history = [], candidatePool = []) {
     const lower = message.toLowerCase().trim();
-    const playKeywords = ['play', 'start', 'listen to', 'put on', 'stream', 'resume'];
+
+    // 1. Negative or cancellation check: NEVER play if negative modifier is present
+    if (/\b(don'?t|do\s+not|never|stop|hatao|delete|remove|unlike|dislike|na\s+karo|mat\s+(chalao|play|karo)|band\s+karo|pause)\b/i.test(lower)) {
+      return null;
+    }
+
+    // 2. Question or conversational check: if asking an opinion or general question, do NOT trigger playback
+    if (/\b(kya|kyun|why|how|kaise|kaisa\s+hai|kaisi\s+hai|achha\s+hai\s+na|pasand\s+hai)\b/i.test(lower) || (lower.endsWith('?') && !/^(play|chalao|chala do|laga do|baja do)\b/i.test(lower))) {
+      return null;
+    }
+
+    // 3. Play keywords in English and Hindi
+    const playKeywords = ['play', 'start', 'listen to', 'put on', 'stream', 'resume', 'chalao', 'chala do', 'chala de', 'laga do', 'laga de', 'baja do', 'sunao'];
     const hasPlayIntent = playKeywords.some(kw => lower.includes(kw));
 
     if (!hasPlayIntent) return null;
@@ -201,6 +214,31 @@ export const aiMusicCompanionService = {
     }
 
     const clientKey = userId || (user ? (user._id ? user._id.toString() : String(user.id || user)) : (sessionKey || 'guest'));
+
+    // 0. FAST PATH: Action Memory Check (0ms verified learned pattern lookup)
+    const learnedMatch = chatBuddyLearningService.resolveFromMemory(cleanMessage, clientKey);
+    if (learnedMatch && learnedMatch.actionType !== 'NONE') {
+      let reply = "Executing request...";
+      if (learnedMatch.actionType === 'OPEN_STATS') {
+        reply = "Listening Stats & Recap open kar rahi hoon...";
+      } else if (learnedMatch.actionType === 'NAVIGATE' && learnedMatch.target === 'activity') {
+        reply = "Aapki listening activity page open kar rahi hoon...";
+      } else if (learnedMatch.actionType === 'NAVIGATE' && learnedMatch.target === 'history') {
+        reply = "Listening history open kar rahi hoon...";
+      } else if (learnedMatch.actionType === 'NAVIGATE') {
+        reply = `${learnedMatch.target.replace('_', ' ')} open kar rahi hoon...`;
+      }
+      return {
+        reply,
+        tracks: [],
+        action: {
+          type: learnedMatch.actionType,
+          target: learnedMatch.target,
+          query: learnedMatch.query,
+          value: learnedMatch.value
+        }
+      };
+    }
 
     // 1. FAST PATH: Check for direct playback intent FIRST ("play the 2nd one", "play Kesariya", etc.)
     const directTrackToPlay = this.detectPlaybackRequest(cleanMessage, history, []);
@@ -405,7 +443,8 @@ export const aiMusicCompanionService = {
     }));
 
     const systemPrompt = `
-You are Loopra AI, the cultured, witty, and deeply accurate personal music companion for Loopra streaming sanctuary.
+You are Loopra AI, the natural, witty, empathetic, and culturally tuned personal music companion for Loopra.
+Speak warmly and casually, exactly like a close friend in a natural ChatGPT conversation.
 
 SERVER TIME & DATE CONTEXT:
 - Today's Date: ${dateTimeInfo.local}
@@ -416,7 +455,7 @@ SERVER TIME & DATE CONTEXT:
 CURRENT PLAYER STATUS:
 ${currentTrackContext}
 
-VERIFIED CANDIDATE PLAYABLE TRACKS (Intent Matched & Unrecommended):
+VERIFIED CANDIDATE PLAYABLE TRACKS:
 ${JSON.stringify(compactCandidates, null, 2)}
 
 USER PREFERENCES:
@@ -429,38 +468,42 @@ ${JSON.stringify(compactHistory, null, 2)}
 USER MESSAGE:
 "${cleanMessage}"
 
-CRITICAL INSTRUCTIONS & ACCURACY MANDATES:
-1. NEVER REPEAT RECENT RECOMMENDATIONS:
-   - Pick ONLY fresh tracks from the "VERIFIED CANDIDATE PLAYABLE TRACKS" list above.
-   - Do not repeat tracks previously recommended in the conversation.
-   - Do not return generic responses; align your recommendation directly with the user's specific request.
+CONVERSATION & INTENT RULES:
+1. NATURAL HUMAN CONVERSATION:
+   - Talk naturally in Hindi, Hinglish, Roman Hindi, or casual English according to user input.
+   - Avoid robotic, scripted, or repetitive stock phrases.
+   - Understand jokes, greetings, opinions, follow-ups ("aur?", "kyun?", "ye song kaisa laga?"), and casual queries.
+   - For normal conversations, greetings, and questions, provide a warm answer with "action": null. Do NOT trigger playback.
 
-2. CURRENT-DATE AWARENESS:
-   - Today's date is strictly ${dateTimeInfo.local}. Use this dynamic date context.
-   - For questions about current music releases, trending songs, or events, state the relevant date context.
-   - Do NOT treat pre-trained knowledge as live current information.
-   - If current information or a specific fact cannot be verified, state honestly that it cannot be verified rather than fabricating release dates, chart positions, or credits.
+2. INTELLIGENT INTENT DETECTION:
+   - "CONVERSATION": User is chatting, asking opinions, or discussing artists. "action": null.
+   - "RECOMMENDATION": User asks "Aaj kaunsa song sunu?" or "Suggest some songs". Recommend tracks in "selectedTrackIds" without auto-playing. "action": null.
+   - "TASK": User explicitly commands an action:
+     * "Arijit Singh ka song play kar" / "chala do" -> action: { "type": "PLAY_TRACK", "query": "Arijit Singh" }
+     * "Isko play kar" -> action: { "type": "PLAY_TRACK" }
+     * "Next song laga" -> action: { "type": "NEXT" }
+     * "Volume kam kar" -> action: { "type": "VOLUME", "value": -15 }
+     * "Recap and stats dikha" -> action: { "type": "OPEN_STATS" }
+     * "Listening activity khol" -> action: { "type": "NAVIGATE", "target": "activity" }
+     * "History khol" -> action: { "type": "NAVIGATE", "target": "history" }
+   - "CLARIFICATION": If request is ambiguous ("kuch badal do"), ask a short clarification question instead of guessing.
 
-3. STRICT INDIVIDUAL SINGLE SONGS ONLY:
-   - Recommend ONLY individual, complete songs.
-   - NEVER recommend mashups, medleys, jukeboxes, non-stop collections, compilations, best-of collections, top 10/20 song collections, DJ mixes, continuous mixes, or playlist videos.
-   - Pick tracks STRICTLY from the "VERIFIED CANDIDATE PLAYABLE TRACKS" list above.
-   - NEVER invent or hallucinate YouTube IDs. Only use IDs from the candidate list.
-
-4. ACCURATE SONG CREDITS:
-   - Distinguish strictly between:
-     * Original Singer (vocalist)
-     * Composer / Music Director (creator of melody and score)
-     * Lyricist (writer of the poetry/lyrics)
-     * Album / Movie
-     * Release Year
-     * Original vs Cover/Remake
+3. STRICT INDIVIDUAL SINGLE SONGS:
+   - When recommending songs, pick ONLY from the VERIFIED CANDIDATE PLAYABLE TRACKS list above.
+   - Never recommend mashups, continuous mixes, or non-stop jukeboxes.
 
 OUTPUT FORMAT (Strict JSON):
 {
-  "reply": "Warm, concise conversational response with musical trivia and accurate credits (2-4 sentences max)",
+  "reply": "Warm, natural conversational response in user's language (Hindi, Hinglish, or English)",
+  "intent": "CONVERSATION" | "TASK" | "CLARIFICATION" | "MIXED",
+  "action": null | {
+    "type": "PLAY_TRACK" | "NAVIGATE" | "OPEN_STATS" | "VOLUME" | "NEXT" | "PREV" | "LIKE" | "UNLIKE",
+    "target": "activity" | "history" | "favorites" | "playlists" | null,
+    "query": "string or null",
+    "value": number or null
+  },
   "selectedTrackIds": [
-    { "id": "candidate_id", "reason": "Short 1-sentence reason for recommending this single song" }
+    { "id": "candidate_id", "reason": "1-sentence musical vibe explanation" }
   ]
 }
 `;
@@ -554,10 +597,16 @@ OUTPUT FORMAT (Strict JSON):
         await recommendationHistoryService.recordRecommendations(clientKey, hydratedTracks, cleanMessage);
       }
 
+      // Wire action to first hydrated track if PLAY_TRACK
+      let actionToReturn = parsed.action || null;
+      if (actionToReturn && actionToReturn.type === 'PLAY_TRACK' && !actionToReturn.track && hydratedTracks.length > 0) {
+        actionToReturn.track = hydratedTracks[0];
+      }
+
       return {
-        reply: parsed.reply || `Here are verified single songs handpicked for you as of ${dateTimeInfo.local}:`,
+        reply: parsed.reply || `Here are single songs handpicked for you:`,
         tracks: hydratedTracks,
-        action: null
+        action: actionToReturn
       };
     } catch (err) {
       aiCompanionDiagnostics.lastError = err.message;
