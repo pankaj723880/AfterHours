@@ -10,6 +10,7 @@
  */
 
 import { GoogleGenAI } from '@google/genai';
+import { executeGeminiOperation, createGeminiClient, isGeminiConfigured, sanitizeLogMessage } from './geminiKeyManager.js';
 
 export const LOOPRA_TOOLS = [
   // Navigation
@@ -225,16 +226,11 @@ export const LOOPRA_TOOLS = [
 
 export const voiceAgentService = {
   getClient() {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '') {
-      return null;
-    }
-    return new GoogleGenAI({ apiKey: apiKey.trim() });
+    return createGeminiClient();
   },
 
   isGeminiConfigured() {
-    const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    return Boolean(key && typeof key === 'string' && key.trim().length > 10);
+    return isGeminiConfigured();
   },
 
   /**
@@ -281,25 +277,30 @@ export const voiceAgentService = {
     }
 
     // 3. GEMINI AI SEMANTIC INTENT CLASSIFICATION & PLANNER
-    const client = this.getClient();
-    if (client) {
+    if (isGeminiConfigured()) {
       try {
         const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-        const aiPlan = await this.queryGeminiIntent({
-          client,
+        const execResult = await executeGeminiOperation(async ({ client, modelName: selectedModel }) => {
+          return await this.queryGeminiIntent({
+            client,
+            modelName: selectedModel,
+            utterance: cleanText,
+            currentTrack,
+            activeTab,
+            history
+          });
+        }, {
           modelName,
-          utterance: cleanText,
-          currentTrack,
-          activeTab,
-          history
+          timeoutMs: 8000,
+          operationName: 'VoiceAgentIntent'
         });
 
-        if (aiPlan && Array.isArray(aiPlan.steps) && aiPlan.steps.length > 0) {
-          aiPlan.latencyMs = Date.now() - startTime;
-          return aiPlan;
+        if (execResult.success && execResult.data && Array.isArray(execResult.data.steps) && execResult.data.steps.length > 0) {
+          execResult.data.latencyMs = Date.now() - startTime;
+          return execResult.data;
         }
       } catch (err) {
-        console.warn('[VoiceAgentService] Gemini classification notice:', err.message);
+        console.warn('[VoiceAgentService] Gemini classification notice:', sanitizeLogMessage(err.message));
       }
     }
 

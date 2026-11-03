@@ -309,8 +309,9 @@ class VoiceBuddyService {
       return `Volume set kar di hai ${details.value || 50}% par.`;
     }
 
-    if (cleanAction === 'play_search' || cleanAction === 'play') {
-      return 'Haan bilkul! Song play kar diya hai, suniye!';
+    if (cleanAction === 'play_search' || cleanAction === 'play' || cleanAction === 'play_artist' || cleanAction === 'play_song') {
+      const name = details.artist || details.query || details.title || '';
+      return name ? `Haan bilkul! "${name}" play kar diya hai, suniye!` : 'Haan bilkul! Song play kar diya hai, suniye!';
     }
 
     if (typeof details === 'string' && details.length > 5) {

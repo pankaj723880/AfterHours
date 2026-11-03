@@ -207,20 +207,15 @@ class VoiceSessionController {
         window.voiceBuddyService.subscribe((payload) => {
           const evt = typeof payload === 'string' ? payload : payload?.event;
           if (evt === 'speech_start') {
-            console.log('[VoiceSession:WebSpeech] Avatar TTS started -> pausing mic to prevent echo');
+            console.log('[VoiceSession:WebSpeech] Avatar TTS started -> maintaining continuous listening for full-duplex barge-in');
             this.isSpeakingTts = true;
             this.ttsStartTime = Date.now();
             clearTimeout(this.ttsResumeTimer);
-            if (this.recognition && this.isRecognizing) {
-              try {
-                this.recognition.abort();
-              } catch (_) {}
-            }
             if (this.isSessionActive) {
               this.setState(SESSION_STATES.SPEAKING, 'Loopra speaking...');
             }
           } else if (evt === 'speech_end') {
-            console.log('[VoiceSession:WebSpeech] Avatar TTS ended -> 800ms cooldown before resuming mic');
+            console.log('[VoiceSession:WebSpeech] Avatar TTS ended -> resuming listening mode');
             clearTimeout(this.ttsResumeTimer);
             this.ttsResumeTimer = setTimeout(() => {
               this.isSpeakingTts = false;
@@ -228,7 +223,7 @@ class VoiceSessionController {
                 this.setState(SESSION_STATES.LISTENING, 'Listening... (Speak your music command)');
                 this.safeStartRecognition();
               }
-            }, 800);
+            }, 300);
           }
         });
         return true;
@@ -473,19 +468,21 @@ class VoiceSessionController {
         isFinal: !!finalTranscript
       });
 
-      // Immediate user interruption: If user explicitly speaks after TTS has already begun speaking (>800ms), silence TTS
-      if (this.isSpeakingTts && Date.now() - (this.ttsStartTime || 0) > 800) {
-        if (interim.trim() || finalTranscript.trim()) {
-          if (typeof window !== 'undefined' && window.voiceBuddyService?.isSpeaking) {
-            console.log('[VoiceSession:WebSpeech] User interrupted TTS -> stopping speech');
+      // Full-Duplex Barge-In: If user speaks while TTS is playing, instantly silence TTS and process user speech
+      if (this.isSpeakingTts) {
+        const spokenContent = (interim || finalTranscript || '').trim();
+        if (spokenContent.length >= 2) {
+          console.log('[VoiceSession:WebSpeech] Barge-in detected -> silencing TTS and prioritizing user command');
+          if (typeof window !== 'undefined' && window.voiceBuddyService) {
             window.voiceBuddyService.stopSpeech();
           }
+          this.isSpeakingTts = false;
+          if (this.isSessionActive) {
+            this.setState(SESSION_STATES.LISTENING, 'Listening...');
+          }
+        } else {
+          return;
         }
-      }
-
-      // If avatar is actively outputting speech, suppress recognition input to prevent hearing itself
-      if (this.isSpeakingTts) {
-        return;
       }
 
       if (interim) {

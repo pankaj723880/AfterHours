@@ -20,6 +20,7 @@ const PlayerSettingsModal = lazy(() => import('./components/Player/PlayerSetting
 const ListeningStatsModal = lazy(() => import('./components/Stats/ListeningStatsModal'));
 const UserProfileModal = lazy(() => import('./components/Profile/UserProfileModal'));
 const DiscoverSwipe = lazy(() => import('./components/Discover/DiscoverSwipe'));
+import CinematicVideoPlayer from './components/Player/CinematicVideoPlayer';
 import AppSplashScreen from './components/Common/AppSplashScreen';
 import CmsAnnouncementBar from './components/Common/CmsAnnouncementBar';
 import CmsHeroBanner from './components/Common/CmsHeroBanner';
@@ -3878,8 +3879,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       videoId: videoId,
       playerVars: { 
         autoplay: shouldAutoPlay ? 1 : 0, 
-        controls: 1, 
-        disablekb: 0, 
+        controls: 0, 
+        rel: 0,
+        iv_load_policy: 3,
+        fs: 0,
+        disablekb: 1, 
         modestbranding: 1,
         enablejsapi: 1,
         playsinline: 1,
@@ -4773,11 +4777,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   }, []);
 
   const handleVolumeChange = (e) => {
-    const newVol = parseInt(e.target.value, 10);
+    const raw = (e && typeof e === 'object' && e.target) ? e.target.value : e;
+    const newVol = parseInt(raw, 10);
+    if (isNaN(newVol)) return;
     setVolume(newVol);
     try {
       playerRef.current?.setVolume?.(newVol);
-    } catch (e) {}
+    } catch (err) {}
   };
 
   const addToQueue = (song, e) => {
@@ -5492,71 +5498,41 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" 
       />
       
-      {/* Persistent Single-Engine YouTube Player & Video Mode Presentation */}
-      <div 
-        onClick={(e) => {
-          if (videoModalSong && !isPipActive && e.target === e.currentTarget) {
-            handleCloseVideo();
-          }
+      {/* Persistent Single-Engine YouTube Player & Loopra Cinematic Video Experience */}
+      <CinematicVideoPlayer
+        videoModalSong={videoModalSong}
+        currentSong={currentSong}
+        isPlaying={isPlaying}
+        currentTime={currentTimeRef.current || 0}
+        duration={durationRef.current || 0}
+        volume={volume}
+        isMuted={isMuted}
+        isPipActive={isPipActive}
+        setIsPipActive={setIsPipActive}
+        onClose={handleCloseVideo}
+        onTogglePlayPause={togglePlayPause}
+        onSeek={handleSeek}
+        onSeekRelative={seekRelative}
+        onVolumeChange={handleVolumeChange}
+        onToggleMute={toggleMute}
+        onToggleLike={toggleLike}
+        isLiked={isSongLiked(videoModalSong || currentSong)}
+        onAddToPlaylist={handleAddToPlaylistClick}
+        onShare={handleShareTrack}
+        playbackSpeed={playbackSpeed}
+        onPlaybackSpeedChange={(speed) => {
+          setPlaybackSpeed(speed);
+          try {
+            if (playerRef.current?.isReady && typeof playerRef.current.setPlaybackRate === 'function') {
+              playerRef.current.setPlaybackRate(speed);
+            }
+          } catch (e) {}
         }}
-        className={
-          !videoModalSong
-            ? "fixed top-0 left-0 w-1 h-1 opacity-0 pointer-events-none -z-50 overflow-hidden"
-            : isPipActive
-              ? "fixed bottom-24 right-4 z-[9999] w-72 max-w-[calc(100vw-2rem)] sm:w-80 bg-neutral-900 border border-neutral-700 rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 opacity-100 pointer-events-auto"
-              : "fixed top-14 md:top-16 inset-x-0 bottom-0 z-[9999] bg-neutral-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 transition-all duration-300 opacity-100 pointer-events-auto"
-        }
-      >
-        <div className={
-          !videoModalSong
-            ? "w-full h-full"
-            : `w-full bg-neutral-900 ${isPipActive ? '' : 'max-w-4xl border border-neutral-800 rounded-3xl'} overflow-hidden shadow-2xl relative flex flex-col`
-        }>
-          {/* Header Bar */}
-          <div className={videoModalSong ? "p-3 bg-neutral-900/90 border-b border-neutral-800 flex items-center justify-between gap-2 overflow-visible" : "hidden"}>
-            <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
-              <Icon name="video" className="w-4 h-4 text-amber-400 shrink-0" />
-              <h3 className="font-bold text-xs text-white truncate">{videoModalSong?.title || currentSong?.title || ''}</h3>
-            </div>
-            
-            <div className="flex items-center gap-1.5 shrink-0 z-10">
-              <button
-                onClick={() => setIsPipActive(!isPipActive)}
-                className="p-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition shrink-0 inline-flex items-center justify-center cursor-pointer"
-                title={isPipActive ? "Expand Fullscreen" : "Minimize to PiP"}
-              >
-                <Icon name={isPipActive ? "expand" : "collapse"} className="w-4 h-4 shrink-0" />
-              </button>
-              <button
-                onClick={handleCloseVideo}
-                className="p-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition shrink-0 inline-flex items-center justify-center cursor-pointer"
-                title="Switch to Music Mode (Audio continues in background)"
-              >
-                <Icon name="close" className="w-4 h-4 shrink-0" />
-              </button>
-            </div>
-          </div>
-          
-          {/* Video Player Frame Container (Persistent DOM - Never unmounted) */}
-          <div className={videoModalSong ? "relative w-full aspect-video bg-neutral-950" : "w-full h-full"}>
-            <div ref={ytContainerRef} className="w-full h-full">
-              <div id="yt-player-instance"></div>
-            </div>
-          </div>
-
-          {/* Footer Bar */}
-          <div className={videoModalSong && !isPipActive ? "p-4 bg-neutral-900 flex items-center justify-between gap-4" : "hidden"}>
-            <span className="text-xs text-neutral-400 truncate flex-1 min-w-0">{videoModalSong?.channel || currentSong?.channel || ''}</span>
-            <button
-              onClick={handleCloseVideo}
-              className="px-4 py-2 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white font-medium tracking-wide text-xs flex items-center gap-1.5 transition shrink-0 shadow-md cursor-pointer"
-            >
-              <Icon name="music" className="w-4 h-4 shrink-0" />
-              <span>Switch to Music Mode</span>
-            </button>
-          </div>
-        </div>
-      </div>
+        playerRef={playerRef}
+        ytContainerRef={ytContainerRef}
+        showToast={showToast}
+        cmsConfig={cmsConfig}
+      />
 
       {isSidebarOpen && (
         <div 

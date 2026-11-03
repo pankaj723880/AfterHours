@@ -15,6 +15,7 @@
  */
 
 import { GoogleGenAI } from '@google/genai';
+import { executeGeminiOperation, sanitizeLogMessage, isGeminiConfigured } from './geminiKeyManager.js';
 
 export const CHATBUDDY_SYSTEM_PROMPT = `
 You are Loopra ChatBuddy, a culturally tuned, friendly, and accurate personal AI music assistant.
@@ -186,7 +187,7 @@ export function sanitizeAndParseJson(text = '') {
 /**
  * Fallback intent classifier when no LLM key is set or when API times out.
  */
-export function fallbackHeuristicClassifier(message = '') {
+export function fallbackHeuristicClassifier(message = '', geminiError = null) {
   const lower = message.toLowerCase().trim();
 
   // Negative play guard: NEVER play if negative words exist
@@ -255,25 +256,35 @@ export function fallbackHeuristicClassifier(message = '') {
     }
   }
 
-  // Default to pure chat (NO action)
+  // Default to pure chat (NO action) - Only triggered when Gemini fails or is unconfigured
+  let fallbackReply = 'AI service se connect nahi ho pa raha hai. Kripya thodi der mein try karein!';
+  if (geminiError === 'ALL_KEYS_FAILED' || geminiError === 'RESOURCE_EXHAUSTED' || geminiError === 'QUOTA_EXHAUSTED') {
+    fallbackReply = 'AI service quota exceed ho gaya hai. Kripya thodi der baad try karein ya secondary key check karein!';
+  } else if (geminiError === 'NO_KEYS_CONFIGURED') {
+    fallbackReply = 'Gemini API key configure nahi hai backend mein. Kripya GEMINI_API_KEY set karein.';
+  } else if (geminiError === 'PRIMARY_KEY_FAILED') {
+    fallbackReply = 'AI service temporarily unavailable hai. Kripya secondary key set karein ya thodi der baad try karein.';
+  }
+
   return {
     type: 'chat',
     action: 'none',
     params: {},
-    reply: 'Main yahin hoon! Kuch chat karni ho ya koi gaana sunna ho, bataiye.'
+    reply: fallbackReply,
+    isFallback: true,
+    error: geminiError || 'AI_UNAVAILABLE'
   };
 }
 
 /**
- * Call Gemini Free Tier API with conversation history.
+ * Call Gemini with multi-key automatic fallback and conversation history.
  */
-async function callGeminiApi(message, history = []) {
-  const apiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
-  if (!apiKey || apiKey.length < 10) return null;
+export async function callGeminiApi(message, history = []) {
+  if (!isGeminiConfigured()) {
+    return { success: false, error: 'NO_KEYS_CONFIGURED', message: 'No Gemini API keys configured.' };
+  }
 
-  const client = new GoogleGenAI({ apiKey });
-  const modelName = 'gemini-2.5-flash';
-
+  const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
   const historyContext = history.slice(-10).map(h => ({
     role: h.role === 'model' || h.role === 'assistant' ? 'assistant' : 'user',
     content: h.text || h.content || h.reply || ''
@@ -285,23 +296,53 @@ async function callGeminiApi(message, history = []) {
     `USER MESSAGE:\n"${message}"\n\nSTRICT JSON OUTPUT:`
   ].join('\n');
 
-  const response = await Promise.race([
-    client.models.generateContent({
-      model: modelName,
-      contents,
-      config: {
-        responseMimeType: 'application/json'
+  const execResult = await executeGeminiOperation(async ({ client, modelName: selectedModel }) => {
+    try {
+      return await client.models.generateContent({
+        model: selectedModel,
+        contents,
+        config: {
+          responseMimeType: 'application/json'
+        }
+      });
+    } catch (modelErr) {
+      // If primary model 404s, try fallback model
+      if (modelErr.status === 404 || String(modelErr.message).includes('not found')) {
+        console.warn(`[ChatBuddyLLM] Model ${selectedModel} not found. Retrying with gemini-2.0-flash...`);
+        return await client.models.generateContent({
+          model: 'gemini-2.0-flash',
+          contents,
+          config: {
+            responseMimeType: 'application/json'
+          }
+        });
       }
-    }),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('GEMINI_TIMEOUT')), 4000))
-  ]);
+      throw modelErr;
+    }
+  }, {
+    modelName,
+    timeoutMs: 12000,
+    operationName: 'ChatBuddyMessage'
+  });
 
+  if (!execResult.success) {
+    return execResult;
+  }
+
+  const response = execResult.data;
   let raw = response.text || '';
   if (!raw && response.candidates?.[0]?.content?.parts?.[0]?.text) {
     raw = response.candidates[0].content.parts[0].text;
   }
 
-  return sanitizeAndParseJson(raw);
+  const parsed = sanitizeAndParseJson(raw);
+  if (parsed) {
+    parsed.keyUsed = execResult.keyLabel;
+    parsed.failedOver = Boolean(execResult.failedOver);
+    return parsed;
+  }
+
+  return { success: false, error: 'JSON_PARSE_ERROR', raw };
 }
 
 /**
@@ -356,9 +397,11 @@ async function callGroqApi(message, history = []) {
 
 /**
  * Master ChatBuddy Handler:
- * 1. Tries Gemini (if configured)
+ * 1. Tries Gemini with automatic GEMINI_API_KEY -> GEMINI_API_KEY_2 failover
  * 2. Tries Groq (if configured)
- * 3. Falls back to deterministic rule-based classifier
+ * 3. Falls back to deterministic rule-based classifier:
+ *    - Explicit music / control actions are executed so playback never breaks
+ *    - Casual conversations return honest error status instead of fake repeated sentences
  */
 export async function processChatBuddyMessage({ message = '', history = [] }) {
   const cleanMsg = (message || '').trim();
@@ -371,28 +414,39 @@ export async function processChatBuddyMessage({ message = '', history = [] }) {
     };
   }
 
-  // 1. Try Gemini Free Tier
+  let geminiError = null;
+
+  // 1. Try Gemini Multi-Key Engine
   try {
     const geminiRes = await callGeminiApi(cleanMsg, history);
-    if (geminiRes) return geminiRes;
+    if (geminiRes && geminiRes.reply && !geminiRes.error) {
+      return geminiRes;
+    }
+    if (geminiRes && geminiRes.error) {
+      geminiError = geminiRes.error;
+    }
   } catch (err) {
-    console.warn('[ChatBuddyLLM] Gemini call fallback:', err.message);
+    geminiError = err.message;
+    console.warn('[ChatBuddyLLM] Gemini call failed:', sanitizeLogMessage(err.message));
   }
 
-  // 2. Try Groq Free Tier
+  // 2. Try Groq Free Tier (if configured)
   try {
     const groqRes = await callGroqApi(cleanMsg, history);
-    if (groqRes) return groqRes;
+    if (groqRes && groqRes.reply) return groqRes;
   } catch (err) {
     console.warn('[ChatBuddyLLM] Groq call fallback:', err.message);
   }
 
-  // 3. Fallback heuristic (graceful with 0 errors)
-  return fallbackHeuristicClassifier(cleanMsg);
+  // 3. Fallback heuristic:
+  // If user issued a music / player / nav command, execute it!
+  // If user asked a casual question, return clear error without fake repetition.
+  return fallbackHeuristicClassifier(cleanMsg, geminiError);
 }
 
 export default {
   processChatBuddyMessage,
+  callGeminiApi,
   fallbackHeuristicClassifier,
   sanitizeAndParseJson,
   CHATBUDDY_SYSTEM_PROMPT

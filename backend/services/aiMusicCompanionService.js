@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { executeGeminiOperation, createGeminiClient, isGeminiConfigured } from './geminiKeyManager.js';
 import { catalogService } from './catalogService.js';
 import { listeningEventService } from './listeningEventService.js';
 import { verifySingleSong, isSingleSong } from './songFilter.js';
@@ -76,16 +77,11 @@ export const aiMusicCompanionService = {
    * Initializes GoogleGenAI safely.
    */
   getClient() {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '') {
-      return null;
-    }
-    return new GoogleGenAI({ apiKey: apiKey.trim() });
+    return createGeminiClient();
   },
 
   isGeminiConfigured() {
-    const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    return Boolean(key && typeof key === 'string' && key.trim().length > 10);
+    return isGeminiConfigured();
   },
 
   /**
@@ -509,17 +505,25 @@ OUTPUT FORMAT (Strict JSON):
 `;
 
     try {
-      const response = await Promise.race([
-        client.models.generateContent({
-          model: modelName,
+      const execResult = await executeGeminiOperation(async ({ client, modelName: selectedModel }) => {
+        return await client.models.generateContent({
+          model: selectedModel,
           contents: systemPrompt,
           config: {
             responseMimeType: 'application/json'
           }
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('GEMINI_TIMEOUT_EXCEEDED')), 3500))
-      ]);
+        });
+      }, {
+        modelName,
+        timeoutMs: 10000,
+        operationName: 'AiMusicCompanionChat'
+      });
 
+      if (!execResult.success) {
+        throw new Error(execResult.message || 'Gemini companion generation failed');
+      }
+
+      const response = execResult.data;
       const latency = Date.now() - startTime;
       aiCompanionDiagnostics.lastLatencyMs = latency;
       aiCompanionDiagnostics.successfulAiChats += 1;

@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { createGeminiClient, isGeminiConfigured } from './geminiKeyManager.js';
 import { getCanonicalSongKey, TrackDeduplicator } from './recommendationHistoryService.js';
 import { getCleanTrackThumbnail, isValidThumbnailUrlFormat, filterTracksWithValidThumbnailsSync } from './thumbnailValidationService.js';
 
@@ -18,22 +19,17 @@ export const geminiDiagnostics = {
 
 export const geminiRecommendationService = {
   /**
-   * Initializes GoogleGenAI client safely.
+   * Initializes GoogleGenAI client safely with multi-key support.
    */
   getClient() {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '') {
-      return null;
-    }
-    return new GoogleGenAI({ apiKey: apiKey.trim() });
+    return createGeminiClient();
   },
 
   /**
    * Checks if Gemini API key is configured and available.
    */
   isConfigured() {
-    const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    return Boolean(key && typeof key === 'string' && key.trim().length > 10);
+    return isGeminiConfigured();
   },
 
   /**

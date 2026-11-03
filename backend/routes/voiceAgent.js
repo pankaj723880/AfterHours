@@ -329,7 +329,8 @@ const handleTtsRequest = async (req, res) => {
   }
 
   // 1. Intelligent Indian Hindi / Hinglish Identification
-  const isHindiDetected = HINDI_DETECT_REGEX.test(cleanText);
+  const hasDevanagari = /[\u0900-\u097F]/.test(cleanText);
+  const isHindiDetected = hasDevanagari || HINDI_DETECT_REGEX.test(cleanText);
   const detectedLang = isHindiDetected ? 'hi-IN' : 'en-IN';
 
   // 2. Select appropriate 100% natural Indian female voice (Strictly NO male voices)
@@ -386,7 +387,7 @@ const handleTtsRequest = async (req, res) => {
   } catch (err) {
     console.warn('[VoiceAgentTTS] Edge Neural TTS notice, retrying with fallback Indian voice:', err.message);
     try {
-      const fallbackVoice = hasDevanagari ? 'hi-IN-SwaraNeural' : 'en-IN-NeerjaExpressiveNeural';
+      const fallbackVoice = isHindiDetected ? 'hi-IN-SwaraNeural' : 'en-IN-NeerjaExpressiveNeural';
       const tts2 = new MsEdgeTTS();
       await tts2.setMetadata(fallbackVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
       const readable2 = tts2.toStream(speechText || cleanText);

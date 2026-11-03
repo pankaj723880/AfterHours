@@ -20,6 +20,7 @@ export const INTENT_CATEGORIES = {
   SEARCH_ARTIST: 'SEARCH_ARTIST',
   SEARCH_ALBUM: 'SEARCH_ALBUM',
   PLAY_SONG: 'PLAY_SONG',
+  PLAY_MUSIC: 'PLAY_SONG',
   PLAY_SEARCH_RESULT: 'PLAY_SEARCH_RESULT',
   PAUSE_PLAYBACK: 'PAUSE_PLAYBACK',
   RESUME_PLAYBACK: 'RESUME_PLAYBACK',
@@ -51,13 +52,24 @@ export function parseCommandToAction(rawInput = '', context = {}) {
   // 0. NEGATIVE PLAY INTENT GUARD:
   // Catches phrases like: "don't play", "do not play", "mat chalao", "mat bajana", "without playing", "bina play kare"
   const hasNegativePlayModifier = (
-    /\b(don'?t|do not|mat|na|bina|without|except|never)\s+(?:play|chalao|bajao|sunao|shuru)/i.test(cleanLower) ||
-    /\b(?:play|chalao|bajao|sunao)\s+(?:mat|na|nahi)\b/i.test(cleanLower) ||
+    /\b(don'?t|do not|mat|na|bina|without|except|never)\s+(?:play|chalao|chala|bajao|baja|sunao|suna|lagao|laga|shuru)/i.test(cleanLower) ||
+    /\b(?:play|chalao|chala|bajao|baja|sunao|suna|lagao|laga)\s+(?:mat|na|nahi)\b/i.test(cleanLower) ||
     /\b(?:don'?t|do not)\s+play\b/i.test(cleanLower) ||
     /don'?t\s+play\s+them/i.test(cleanLower)
   );
 
-  // 1. Playback: Next Track (Checked before generic play matching to prevent "play the next song" -> play search)
+  // 1. Playback: Replay / Repeat / Resume Previous Song (e.g. "Woh jo abhi baj raha tha, dobara chala")
+  if (
+    /\b(dobara chala|phir se chala|wapas chala|repeat karo|repeat gaana|replay karo|replay song|woh jo abhi baj raha tha|dobara sunao|phir se bajao|phir se play karo|dobara play karo)\b/i.test(cleanLower)
+  ) {
+    return {
+      intent: INTENT_CATEGORIES.RESUME_PLAYBACK,
+      action: 'resume',
+      description: 'Replay previous song'
+    };
+  }
+
+  // 1B. Playback: Next Track (Checked before generic play matching to prevent "play the next song" -> play search)
   if (
     /\b(next song|next track|agla gaana|skip song|aage badhao|next|agla|play (?:the )?next song|next song play karo|agla gaana chalao|agla track bajao)\b/i.test(cleanLower)
   ) {
@@ -120,14 +132,14 @@ export function parseCommandToAction(rawInput = '', context = {}) {
       description: `Set volume to ${val}%`
     };
   }
-  if (/\b(volume kam karo|awaaz kam karo|thoda dheere karo|lower volume|volume down|dheere karo|awaaz dheere)\b/i.test(cleanLower)) {
+  if (/\b(volume\s+(?:thoda\s+)?kam|awaaz\s+(?:thodi\s+)?kam|thoda\s+kam\s+kar|thoda\s+kam\s+karo|kam\s+karo|kam\s+kar|thoda dheere karo|dheere\s+kar|lower volume|volume down|dheere karo|awaaz dheere)\b/i.test(cleanLower)) {
     return {
       intent: INTENT_CATEGORIES.CHANGE_VOLUME,
       action: 'volume_down',
       description: 'Decrease volume'
     };
   }
-  if (/\b(volume badhao|awaaz badhao|thoda tej karo|increase volume|volume up|tej karo|volume tej|awaaz tej)\b/i.test(cleanLower)) {
+  if (/\b(volume\s+(?:thoda\s+)?badhao|volume\s+(?:thoda\s+)?badha|awaaz\s+(?:thodi\s+)?badhao|awaaz\s+(?:thodi\s+)?badha|thoda tej karo|tej\s+kar|increase volume|volume up|tej karo|volume tej|awaaz tej)\b/i.test(cleanLower)) {
     return {
       intent: INTENT_CATEGORIES.CHANGE_VOLUME,
       action: 'volume_up',
@@ -166,7 +178,9 @@ export function parseCommandToAction(rawInput = '', context = {}) {
   }
 
   // 8. Library: Add to favourites / Like
-  if (/\b(like this song|add to favorites|add to favourites|add to liked|dil de do|pasand aaya|like karo|like it|favourite me daalo|favorites me daalo)\b/i.test(cleanLower)) {
+  if (
+    /\b(favourite\s+kar\s+(?:de|do)|favorite\s+kar\s+(?:de|do)|is\s+gaane\s+ko\s+favourite|is\s+gaane\s+ko\s+like|favourite\s+bana\s+(?:de|do)|like this song|add to favorites|add to favourites|add to liked|dil de do|pasand aaya|like karo|like it|favourite me daalo|favorites me daalo)\b/i.test(cleanLower)
+  ) {
     return {
       intent: INTENT_CATEGORIES.ADD_TO_FAVOURITES,
       action: 'toggle_like',
@@ -291,12 +305,13 @@ export function parseCommandToAction(rawInput = '', context = {}) {
 
   // 11. Song Search vs Playback Gate:
   // ONLY if explicit playback verb is present AND NO negative play modifier exists
-  const hasPlayVerb = !hasNegativePlayModifier && /\b(play|chalao|bajao|sunao|shuru karo)\b/i.test(cleanLower);
+  const playVerbPattern = /\b(play|chalao|chala de|chala do|chala|bajao|baja de|baja do|baja|sunao|suna de|suna do|suna|lagao|laga de|laga do|laga|shuru karo|shuru kar)\b/i;
+  const hasPlayVerb = !hasNegativePlayModifier && playVerbPattern.test(cleanLower);
 
   // Clean trailing negative play modifiers or clauses (e.g. ", don't play them", "don't play")
   const searchInput = cleanLower
     .replace(/,\s*(?:don'?t|do not|mat|bina)\s+.*$/i, '')
-    .replace(/\s+(?:don'?t|do not|mat|bina)\s+(?:play|chalao|bajao|sunao).*$/i, '')
+    .replace(/\s+(?:don'?t|do not|mat|bina)\s+(?:play|chalao|chala|bajao|baja|sunao|suna|lagao|laga).*$/i, '')
     .trim();
 
   // Search pattern: "5 songs of Arijit Singh", "find 5 songs by Arijit Singh", "Arijit Singh ke gaane"
@@ -307,7 +322,7 @@ export function parseCommandToAction(rawInput = '', context = {}) {
   if (searchPattern) {
     const rawArtist = (searchPattern[2] || searchPattern[1] || '').trim();
     const artist = rawArtist
-      .replace(/\b(search|karo|dhoondho|dikhao|batao|don'?t|play|them|mat|chalao|bina)\b/gi, '')
+      .replace(/\b(search|karo|dhoondho|dikhao|batao|don'?t|play|them|mat|chalao|chala|bina|lagao|laga)\b/gi, '')
       .trim();
 
     // If negative play modifier was detected, it is GUARANTEED to be SEARCH ONLY!
@@ -328,10 +343,40 @@ export function parseCommandToAction(rawInput = '', context = {}) {
     }
   }
 
-  // Single Song Playback: e.g. "Play Kesariya" (ONLY if hasPlayVerb is explicitly true)
+  // Single Song / Mood / Artist Playback: e.g. "Play Kesariya", "Arijit ka koi gaana chala", "Koi romantic song laga"
   if (hasPlayVerb) {
+    // Pattern A: "<Artist/Theme> ka/ki/ke koi gaana chala", "Arijit ka koi gaana chala", "party ka music chala"
+    const artistGaanaMatch = cleanLower.match(/^(?:koi\s+)?(.+?)\s+(?:ka|ki|ke)\s*(?:koi\s+)?(?:gaana|gaane|song|songs|music|track)\s*(?:play|chalao|chala de|chala do|chala|bajao|baja de|baja do|baja|sunao|suna de|suna do|suna|lagao|laga de|laga do|laga|shuru karo|shuru kar)?$/i);
+    if (artistGaanaMatch && artistGaanaMatch[1]) {
+      const q = artistGaanaMatch[1].replace(/^(?:koi|thoda)\s+/i, '').trim();
+      if (q && q !== 'them' && q !== 'music') {
+        return {
+          intent: INTENT_CATEGORIES.PLAY_SONG,
+          action: 'play_search',
+          query: q,
+          description: `Play songs of ${q}`
+        };
+      }
+    }
+
+    // Pattern B: "Koi romantic song laga", "Thoda party mood ka music chala"
+    const moodSongMatch = cleanLower.match(/^(?:koi|thoda|ek)\s+(.+?)\s+(?:play|chalao|chala de|chala do|chala|bajao|baja de|baja do|baja|sunao|suna de|suna do|suna|lagao|laga de|laga do|laga|shuru karo|shuru kar)$/i);
+    if (moodSongMatch && moodSongMatch[1]) {
+      const q = moodSongMatch[1].trim();
+      if (q && q !== 'them' && q !== 'music') {
+        return {
+          intent: INTENT_CATEGORIES.PLAY_SONG,
+          action: 'play_search',
+          query: q,
+          description: `Play "${q}"`
+        };
+      }
+    }
+
+    // Pattern C: Standard Play target e.g. "Play Kesariya", "Kesariya chalao"
     const playTarget = cleanLower
-      .replace(/\b(play|chalao|bajao|sunao|shuru karo|song|gaana)\b/gi, '')
+      .replace(new RegExp('\\b(play|chalao|chala de|chala do|chala|bajao|baja de|baja do|baja|sunao|suna de|suna do|suna|lagao|laga de|laga do|laga|shuru karo|shuru kar|song|gaana|music)\\b', 'gi'), '')
+      .replace(/^(?:koi|thoda|ek)\s+/i, '')
       .trim();
     if (playTarget && playTarget !== 'them' && playTarget !== 'music') {
       return {

@@ -403,7 +403,7 @@ export default function ThreeDCharacter({
       const danceRoutine = Math.floor((time / 12) % 4);
 
       // =========================================================================
-      // D. ANATOMICALLY NATURAL KINEMATICS & STANDING ORIENTATION
+      // D. ANATOMICALLY NATURAL KINEMATICS & SKELETAL ANIMATION SYSTEM
       // =========================================================================
       if (curState === 'dancing' || curState === 'dance') {
         if (danceRoutine === 0) {
@@ -415,6 +415,12 @@ export default function ThreeDCharacter({
           setBoneRot('rightarm', 0.44, -Math.cos(dancePhase) * 0.25 * intensity, -0.08 - sway * 0.25 * intensity, 0.25);
           setBoneRot('leftforearm', 0, 0, 0.28, 0.25);
           setBoneRot('rightforearm', 0, 0, -0.28, 0.25);
+          const leftStep = Math.max(0, Math.sin(dancePhase) * 0.35);
+          const rightStep = Math.max(0, -Math.sin(dancePhase) * 0.35);
+          setBoneRot('leftupleg', leftStep * 0.45, 0, 0.06 + leftStep * 0.12, 0.25);
+          setBoneRot('leftleg', -leftStep * 0.55, 0, 0, 0.25);
+          setBoneRot('rightupleg', rightStep * 0.45, 0, -0.06 - rightStep * 0.12, 0.25);
+          setBoneRot('rightleg', -rightStep * 0.55, 0, 0, 0.25);
         } else if (danceRoutine === 1) {
           const beat = Math.sin(dancePhase * 1.4);
           const bob = Math.abs(Math.sin(dancePhase * 1.4)) * 0.045 * intensity;
@@ -424,6 +430,11 @@ export default function ThreeDCharacter({
           setBoneRot('rightarm', 0.38 - beat * 0.15 * intensity, -0.15, -0.35 - beat * 0.18 * intensity, 0.25);
           setBoneRot('leftforearm', 0, 0, 0.45 + beat * 0.15, 0.25);
           setBoneRot('rightforearm', 0, 0, -0.45 - beat * 0.15, 0.25);
+          const kneeFlex = -bob * 3.8;
+          setBoneRot('leftupleg', 0.08, 0, 0.08, 0.25);
+          setBoneRot('rightupleg', 0.08, 0, -0.08, 0.25);
+          setBoneRot('leftleg', kneeFlex, 0, 0, 0.25);
+          setBoneRot('rightleg', kneeFlex, 0, 0, 0.25);
         } else if (danceRoutine === 2) {
           const wave = Math.sin(dancePhase * 0.9);
           setBonePos('hips', wave * 0.04 * intensity, 0, 0, 0.25);
@@ -432,6 +443,10 @@ export default function ThreeDCharacter({
           setBoneRot('rightarm', 0.42, 0, -0.35 - Math.sin(dancePhase) * 0.25 * intensity, 0.25);
           setBoneRot('leftforearm', 0, 0, 0.22, 0.25);
           setBoneRot('rightforearm', 0, 0, -0.22, 0.25);
+          setBoneRot('leftupleg', 0.10, 0, 0.15 * intensity, 0.25);
+          setBoneRot('rightupleg', 0.10, 0, -0.15 * intensity, 0.25);
+          setBoneRot('leftleg', -0.20, 0, 0, 0.25);
+          setBoneRot('rightleg', -0.20, 0, 0, 0.25);
         } else {
           const roll = Math.sin(dancePhase * 0.85);
           setBonePos('hips', 0, breath * 0.01, 0, 0.25);
@@ -440,6 +455,10 @@ export default function ThreeDCharacter({
           setBoneRot('rightarm', 0.45, -0.1, -0.15 - Math.sin(dancePhase) * 0.20 * intensity, 0.25);
           setBoneRot('leftforearm', 0, 0, 0.18, 0.25);
           setBoneRot('rightforearm', 0, 0, -0.18, 0.25);
+          setBoneRot('leftupleg', Math.sin(dancePhase * 0.85) * 0.15, 0, 0.04, 0.25);
+          setBoneRot('rightupleg', -Math.sin(dancePhase * 0.85) * 0.15, 0, -0.04, 0.25);
+          setBoneRot('leftleg', -Math.abs(Math.sin(dancePhase * 0.85)) * 0.25, 0, 0, 0.25);
+          setBoneRot('rightleg', -Math.abs(Math.cos(dancePhase * 0.85)) * 0.25, 0, 0, 0.25);
         }
       } else if (curState === 'walking' || curState === 'walk') {
         const stride = Math.sin(time * 7.5);
@@ -454,85 +473,151 @@ export default function ThreeDCharacter({
         setBoneRot('leftforearm', 0, 0, 0.18, 0.25);
         setBoneRot('rightforearm', 0, 0, -0.18, 0.25);
       } else if (curState === 'sitting' || curState === 'sit') {
-        // Natural relaxed seated pose without inverted leg distortion
+        // Safe natural seated posture without inverted leg distortion
         setBonePos('hips', 0, -0.15, 0, 0.15);
         setBoneRot('spine', 0.02, 0, 0, 0.15);
-        setBoneRot('leftupleg', 0.22, 0.02, 0.02, 0.15);
-        setBoneRot('rightupleg', 0.22, -0.02, -0.02, 0.15);
-        setBoneRot('leftleg', 0.18, 0, 0, 0.15);
-        setBoneRot('rightleg', 0.18, 0, 0, 0.15);
+        setBoneRot('leftupleg', 0.35, 0, 0.04, 0.15);
+        setBoneRot('rightupleg', 0.35, 0, -0.04, 0.15);
+        setBoneRot('leftleg', -0.35, 0, 0, 0.15);
+        setBoneRot('rightleg', -0.35, 0, 0, 0.15);
         setBoneRot('leftfoot', 0, 0, 0, 0.15);
         setBoneRot('rightfoot', 0, 0, 0, 0.15);
-        setBoneRot('leftarm', 0.44, 0, 0.08, 0.15);
-        setBoneRot('rightarm', 0.44, 0, -0.08, 0.15);
-        setBoneRot('leftforearm', 0, 0, 0.15, 0.15);
-        setBoneRot('rightforearm', 0, 0, -0.15, 0.15);
+        setBoneRot('leftarm', 0.15, 0, 0.06, 0.15);
+        setBoneRot('rightarm', 0.15, 0, -0.06, 0.15);
+        setBoneRot('leftforearm', 0, 0, 0.10, 0.15);
+        setBoneRot('rightforearm', 0, 0, -0.10, 0.15);
       } else if (curState === 'standing') {
         // Relaxed natural standing posture with both legs straight and feet flat
-        setBonePos('hips', 0.01, breath * 0.005, 0, 0.15);
-        setBoneRot('spine', 0, 0, -0.02, 0.15);
-        setBoneRot('leftupleg', 0, 0, 0.02, 0.15);
-        setBoneRot('rightupleg', 0, 0, -0.02, 0.15);
+        setBonePos('hips', 0, breath * 0.003, 0, 0.15);
+        setBoneRot('spine', breath * 0.015, 0, 0, 0.15);
+        setBoneRot('leftupleg', 0, 0, 0, 0.15);
+        setBoneRot('rightupleg', 0, 0, 0, 0.15);
         setBoneRot('leftleg', 0, 0, 0, 0.15);
         setBoneRot('rightleg', 0, 0, 0, 0.15);
-        setBoneRot('leftarm', 0.46, 0, 0.06, 0.15);
-        setBoneRot('rightarm', 0.44, 0, -0.04, 0.15);
-        setBoneRot('leftforearm', 0, 0, 0.12, 0.15);
-        setBoneRot('rightforearm', 0, 0, -0.18, 0.15);
+        setBoneRot('leftfoot', 0, 0, 0, 0.15);
+        setBoneRot('rightfoot', 0, 0, 0, 0.15);
+        setBoneRot('leftarm', breath * 0.015, 0, 0.02, 0.15);
+        setBoneRot('rightarm', breath * 0.015, 0, -0.02, 0.15);
+        setBoneRot('leftforearm', 0, 0, 0, 0.15);
+        setBoneRot('rightforearm', 0, 0, 0, 0.15);
       } else if (curState === 'listening') {
-        setBonePos('hips', 0, breath * 0.005, 0, 0.15);
-        setBoneRot('spine', 0.04, 0, 0, 0.15);
-        setBoneRot('head', currentHeadPitch - 0.05, currentHeadYaw, 0.13, 0.15);
-        setBoneRot('leftarm', 0.46, 0, 0.04, 0.15);
-        setBoneRot('rightarm', 0.46, 0, -0.04, 0.15);
-        setBoneRot('leftforearm', 0, 0, 0.15, 0.15);
-        setBoneRot('rightforearm', 0, 0, -0.15, 0.15);
+        // Attentive upright standing pose with subtle curious head tilt and relaxed arms
+        setBonePos('hips', 0, breath * 0.003, 0, 0.15);
+        setBoneRot('spine', 0.02, 0, 0, 0.15);
+        setBoneRot('head', currentHeadPitch - 0.04, currentHeadYaw, 0.08, 0.15);
+        setBoneRot('leftarm', 0, 0, 0.02, 0.15);
+        setBoneRot('rightarm', 0, 0, -0.02, 0.15);
+        setBoneRot('leftforearm', 0, 0, 0.04, 0.15);
+        setBoneRot('rightforearm', 0, 0, -0.04, 0.15);
+        setBoneRot('leftupleg', 0, 0, 0, 0.15);
+        setBoneRot('rightupleg', 0, 0, 0, 0.15);
+        setBoneRot('leftleg', 0, 0, 0, 0.15);
+        setBoneRot('rightleg', 0, 0, 0, 0.15);
+        setBoneRot('leftfoot', 0, 0, 0, 0.15);
+        setBoneRot('rightfoot', 0, 0, 0, 0.15);
       } else if (curState === 'thinking') {
-        setBonePos('hips', 0, breath * 0.005, 0, 0.15);
+        // Natural thoughtful standing pose with hand lightly towards chin, head tilted
+        setBonePos('hips', 0, breath * 0.003, 0, 0.15);
         setBoneRot('spine', 0, 0, 0.02, 0.15);
-        setBoneRot('head', currentHeadPitch - 0.08, currentHeadYaw + 0.1, 0.08, 0.15);
-        setBoneRot('leftarm', 0.46, 0, 0.04, 0.15);
-        setBoneRot('rightarm', 0.22, -0.32, -0.65, 0.15);
-        setBoneRot('rightforearm', 0, 0, -0.75, 0.15);
+        setBoneRot('head', currentHeadPitch - 0.06, currentHeadYaw + 0.08, 0.05, 0.15);
+        setBoneRot('leftarm', 0, 0, 0.02, 0.15);
+        setBoneRot('leftforearm', 0, 0, 0, 0.15);
+        setBoneRot('rightarm', 0.22, -0.15, -0.32, 0.15);
+        setBoneRot('rightforearm', 0, 0, -0.35, 0.15);
+        setBoneRot('leftupleg', 0, 0, 0, 0.15);
+        setBoneRot('rightupleg', 0, 0, 0, 0.15);
+        setBoneRot('leftleg', 0, 0, 0, 0.15);
+        setBoneRot('rightleg', 0, 0, 0, 0.15);
+        setBoneRot('leftfoot', 0, 0, 0, 0.15);
+        setBoneRot('rightfoot', 0, 0, 0, 0.15);
       } else if (curState === 'executing') {
-        const execPulse = Math.sin(time * 8);
-        setBonePos('hips', 0, Math.sin(time * 4) * 0.008, 0, 0.20);
-        setBoneRot('spine', 0.04, 0, 0, 0.20);
-        setBoneRot('head', currentHeadPitch + 0.04, currentHeadYaw, 0, 0.20);
-        setBoneRot('leftarm', 0.38 + execPulse * 0.07, 0.15, 0.35, 0.20);
-        setBoneRot('rightarm', 0.38 - execPulse * 0.07, -0.15, -0.35, 0.20);
-        setBoneRot('leftforearm', 0, 0, 0.45, 0.20);
-        setBoneRot('rightforearm', 0, 0, -0.45, 0.20);
+        // Natural attentive posture with subtle nod & gentle forward gesture (never crossed over face)
+        setBonePos('hips', 0, Math.sin(time * 4) * 0.005, 0, 0.20);
+        setBoneRot('spine', 0.02, 0, 0, 0.20);
+        setBoneRot('head', currentHeadPitch + Math.sin(time * 5) * 0.03, currentHeadYaw, 0, 0.20);
+        setBoneRot('leftarm', 0.08, 0, 0.04, 0.20);
+        setBoneRot('rightarm', 0.12, -0.08, -0.12, 0.20);
+        setBoneRot('leftforearm', 0, 0, 0.05, 0.20);
+        setBoneRot('rightforearm', 0, 0, -0.12, 0.20);
+        setBoneRot('leftupleg', 0, 0, 0, 0.20);
+        setBoneRot('rightupleg', 0, 0, 0, 0.20);
+        setBoneRot('leftleg', 0, 0, 0, 0.20);
+        setBoneRot('rightleg', 0, 0, 0, 0.20);
+        setBoneRot('leftfoot', 0, 0, 0, 0.20);
+        setBoneRot('rightfoot', 0, 0, 0, 0.20);
       } else if (curState === 'speaking') {
-        setBonePos('hips', 0, breath * 0.005, 0, 0.15);
+        // Expressive conversational standing posture with head and right hand cadence
+        setBonePos('hips', 0, breath * 0.003, 0, 0.15);
         setBoneRot('spine', 0, 0, 0, 0.15);
-        setBoneRot('head', currentHeadPitch + Math.sin(time * 6) * 0.05 * Math.max(0.4, vol), currentHeadYaw, 0, 0.15);
-        setBoneRot('leftarm', 0.46, 0, 0.04, 0.15);
-        setBoneRot('rightarm', 0.34, -0.22, -0.32 + Math.sin(time * 3.5) * 0.15, 0.15);
-        setBoneRot('rightforearm', 0, 0, -0.45, 0.15);
+        setBoneRot('head', currentHeadPitch + Math.sin(time * 6) * 0.04 * Math.max(0.4, vol), currentHeadYaw, 0, 0.15);
+        setBoneRot('leftarm', 0, 0, 0.02, 0.15);
+        setBoneRot('leftforearm', 0, 0, 0, 0.15);
+        setBoneRot('rightarm', 0.18 + Math.sin(time * 3) * 0.06, -0.10, -0.20, 0.15);
+        setBoneRot('rightforearm', 0, 0, -0.25, 0.15);
+        setBoneRot('leftupleg', 0, 0, 0, 0.15);
+        setBoneRot('rightupleg', 0, 0, 0, 0.15);
+        setBoneRot('leftleg', 0, 0, 0, 0.15);
+        setBoneRot('rightleg', 0, 0, 0, 0.15);
+        setBoneRot('leftfoot', 0, 0, 0, 0.15);
+        setBoneRot('rightfoot', 0, 0, 0, 0.15);
+      } else if (curState === 'idle') {
+        // Natural Upright Relaxed Standing (Strict Straight Posture, Arms Naturally at Sides, Feet Flat)
+        setBonePos('hips', 0, breath * 0.003, 0, 0.15);
+        setBoneRot('spine', breath * 0.015, 0, 0, 0.15);
+        setBoneRot('leftarm', breath * 0.015, 0, 0.02, 0.15);
+        setBoneRot('rightarm', breath * 0.015, 0, -0.02, 0.15);
+        setBoneRot('leftforearm', 0, 0, 0, 0.15);
+        setBoneRot('rightforearm', 0, 0, 0, 0.15);
+        setBoneRot('leftupleg', 0, 0, 0, 0.15);
+        setBoneRot('rightupleg', 0, 0, 0, 0.15);
+        setBoneRot('leftleg', 0, 0, 0, 0.15);
+        setBoneRot('rightleg', 0, 0, 0, 0.15);
+        setBoneRot('leftfoot', 0, 0, 0, 0.15);
+        setBoneRot('rightfoot', 0, 0, 0, 0.15);
       } else if (curState === 'wave') {
         const wave = Math.sin(time * 14) * 0.35;
         setBoneRot('rightarm', 0.18, -0.15, -1.35 + wave * 0.35, 0.25);
         setBoneRot('rightforearm', 0, 0, -0.45, 0.25);
+        setBoneRot('leftarm', 0, 0, 0.02, 0.15);
+        setBoneRot('leftforearm', 0, 0, 0, 0.15);
+        setBoneRot('leftupleg', 0, 0, 0, 0.15);
+        setBoneRot('rightupleg', 0, 0, 0, 0.15);
+        setBoneRot('leftleg', 0, 0, 0, 0.15);
+        setBoneRot('rightleg', 0, 0, 0, 0.15);
+        setBoneRot('leftfoot', 0, 0, 0, 0.15);
+        setBoneRot('rightfoot', 0, 0, 0, 0.15);
       } else if (curState === 'jump') {
         const jumpPhase = Math.sin(time * 10);
         const jumpY = Math.max(0, jumpPhase * 0.22);
         setBonePos('hips', 0, jumpY, 0, 0.25);
+        const kneeBend = jumpY > 0 ? 0 : -0.15;
+        setBoneRot('leftupleg', 0.1, 0, 0, 0.25);
+        setBoneRot('rightupleg', 0.1, 0, 0, 0.25);
+        setBoneRot('leftleg', kneeBend, 0, 0, 0.25);
+        setBoneRot('rightleg', kneeBend, 0, 0, 0.25);
+        setBoneRot('leftarm', 0, 0, 0.15, 0.25);
+        setBoneRot('rightarm', 0, 0, -0.15, 0.25);
       } else if (curState === 'running' || curState === 'run') {
         const stride = Math.sin(time * 16);
         setBonePos('hips', 0, Math.abs(stride) * 0.05, 0, 0.25);
-        setBoneRot('leftarm', 0.46, 0, -stride * 0.55, 0.25);
-        setBoneRot('rightarm', 0.46, 0, stride * 0.55, 0.25);
-        setBoneRot('leftforearm', 0, 0, 0.25, 0.25);
-        setBoneRot('rightforearm', 0, 0, -0.25, 0.25);
+        setBoneRot('leftarm', 0.20, 0, -stride * 0.45, 0.25);
+        setBoneRot('rightarm', 0.20, 0, stride * 0.45, 0.25);
+        setBoneRot('leftforearm', 0, 0, 0.20, 0.25);
+        setBoneRot('rightforearm', 0, 0, -0.20, 0.25);
+        setBoneRot('leftupleg', stride * 0.35, 0, 0, 0.25);
+        setBoneRot('rightupleg', -stride * 0.35, 0, 0, 0.25);
+        setBoneRot('leftleg', Math.min(0, -stride * 0.35), 0, 0, 0.25);
+        setBoneRot('rightleg', Math.min(0, stride * 0.35), 0, 0, 0.25);
+        setBoneRot('leftfoot', 0, 0, 0, 0.25);
+        setBoneRot('rightfoot', 0, 0, 0, 0.25);
       } else {
-        // Default Natural Upright Standing Idle (Strict Straight Posture, Arms at Sides)
-        setBonePos('hips', 0, breath * 0.005, 0, 0.15);
+        // Default Natural Upright Standing (Straight Posture, Feet Flat on Ground)
+        setBonePos('hips', 0, breath * 0.003, 0, 0.15);
         setBoneRot('spine', breath * 0.015, 0, 0, 0.15);
-        setBoneRot('leftarm', 0.46 + breath * 0.02, 0, 0.04, 0.15);
-        setBoneRot('rightarm', 0.46 + breath * 0.02, 0, -0.04, 0.15);
-        setBoneRot('leftforearm', 0, 0, 0.15, 0.15);
-        setBoneRot('rightforearm', 0, 0, -0.15, 0.15);
+        setBoneRot('leftarm', breath * 0.015, 0, 0.02, 0.15);
+        setBoneRot('rightarm', breath * 0.015, 0, -0.02, 0.15);
+        setBoneRot('leftforearm', 0, 0, 0, 0.15);
+        setBoneRot('rightforearm', 0, 0, 0, 0.15);
         setBoneRot('leftupleg', 0, 0, 0, 0.15);
         setBoneRot('rightupleg', 0, 0, 0, 0.15);
         setBoneRot('leftleg', 0, 0, 0, 0.15);

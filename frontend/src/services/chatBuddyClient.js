@@ -11,6 +11,7 @@ import { parseCommandToAction, INTENT_CATEGORIES } from './commandActionEngine.j
 class ChatBuddyClient {
   constructor() {
     this.history = []; // Keep last 10 messages
+    this.inFlightRequests = new Map();
   }
 
   getHistory() {
@@ -99,58 +100,74 @@ class ChatBuddyClient {
       };
     }
 
-    // 1. LAYER A: Fast Local Rule Engine (0ms, No API Call)
-    const localResult = this.evaluateLocalCommand(cleanText, context);
-    if (localResult) {
-      this.addHistory('user', cleanText);
-      this.addHistory('model', localResult.reply);
-      return localResult;
+    // Deduplication guard: if identical request is currently in-flight, reuse promise
+    const dedupeKey = cleanText.toLowerCase();
+    if (this.inFlightRequests.has(dedupeKey)) {
+      return this.inFlightRequests.get(dedupeKey);
     }
 
-    // 2. LAYER B: LLM Engine via /api/chat
-    const cleanBase = (backendUrl || '').replace(/\/+$/, '');
-    const endpoint = cleanBase ? `${cleanBase}/api/chat` : '/api/chat';
-
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: cleanText,
-          history: this.getHistory()
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data && (data.type === 'chat' || data.type === 'command')) {
-          this.addHistory('user', cleanText);
-          this.addHistory('model', data.reply);
-          return {
-            isLocalFast: false,
-            type: data.type,
-            action: data.action || 'none',
-            params: data.params || {},
-            reply: data.reply
-          };
-        }
+    const requestPromise = (async () => {
+      // 1. LAYER A: Fast Local Rule Engine (0ms, No API Call)
+      const localResult = this.evaluateLocalCommand(cleanText, context);
+      if (localResult) {
+        this.addHistory('user', cleanText);
+        this.addHistory('model', localResult.reply);
+        return localResult;
       }
-    } catch (err) {
-      console.warn('[ChatBuddyClient] /api/chat error, using graceful fallback:', err.message);
+
+      // 2. LAYER B: LLM Engine via /api/chat
+      const cleanBase = (backendUrl || '').replace(/\/+$/, '');
+      const endpoint = cleanBase ? `${cleanBase}/api/chat` : '/api/chat';
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: cleanText,
+            history: this.getHistory()
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data && (data.type === 'chat' || data.type === 'command')) {
+            this.addHistory('user', cleanText);
+            this.addHistory('model', data.reply);
+            return {
+              isLocalFast: false,
+              type: data.type,
+              action: data.action || 'none',
+              params: data.params || {},
+              reply: data.reply,
+              isError: Boolean(data.isError || data.isFallback),
+              error: data.error
+            };
+          }
+        }
+      } catch (err) {
+        console.warn('[ChatBuddyClient] /api/chat error, using graceful fallback:', err.message);
+      }
+
+      // 3. Graceful Fallback if LLM endpoint fails or network error
+      const fallbackReply = 'AI service se connect nahi ho pa raha hai. Kripya thodi der baad try karein!';
+      return {
+        isLocalFast: false,
+        type: 'chat',
+        action: 'none',
+        params: {},
+        reply: fallbackReply,
+        isError: true,
+        error: 'NETWORK_ERROR'
+      };
+    })();
+
+    this.inFlightRequests.set(dedupeKey, requestPromise);
+    try {
+      return await requestPromise;
+    } finally {
+      this.inFlightRequests.delete(dedupeKey);
     }
-
-    // 3. Graceful Fallback if LLM endpoint fails or network error
-    const fallbackReply = 'Main abhi theek se sun nahi paayi, kripya dobara bataiye!';
-    this.addHistory('user', cleanText);
-    this.addHistory('model', fallbackReply);
-
-    return {
-      isLocalFast: false,
-      type: 'chat',
-      action: 'none',
-      params: {},
-      reply: fallbackReply
-    };
   }
 }
 

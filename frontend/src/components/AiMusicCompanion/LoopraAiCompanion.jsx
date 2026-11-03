@@ -615,8 +615,14 @@ export default function LoopraAiCompanion({
           if (onNavigate) onNavigate('discover', { query: q });
           replyText = voiceBuddyService.generateFriendReply('search', { query: q });
         }
-        // D. PLAY_MUSIC (e.g. Arijit Singh, specific track)
-        else if (directAction.intent === INTENT_CATEGORIES.PLAY_MUSIC) {
+        // D. PLAY_SONG (e.g. Arijit Singh, Kesariya, specific track)
+        else if (
+          directAction.intent === INTENT_CATEGORIES.PLAY_SONG ||
+          directAction.intent === INTENT_CATEGORIES.PLAY_MUSIC ||
+          directAction.intent === 'PLAY_SONG' ||
+          directAction.intent === INTENT_CATEGORIES.PLAY_SEARCH_RESULT ||
+          directAction.intent === 'PLAY_MUSIC'
+        ) {
           const q = directAction.query || '';
           try {
             const cleanUrl = (backendUrl || '').replace(/\/+$/, '');
@@ -648,20 +654,38 @@ export default function LoopraAiCompanion({
         } else if (directAction.intent === INTENT_CATEGORIES.NEXT_TRACK) {
           if (onNextTrack) onNextTrack();
           replyText = voiceBuddyService.generateFriendReply('next');
-        } else if (directAction.intent === INTENT_CATEGORIES.PREV_TRACK) {
+        } else if (
+          directAction.intent === INTENT_CATEGORIES.PREVIOUS_TRACK ||
+          directAction.intent === 'PREVIOUS_TRACK' ||
+          directAction.intent === 'PREV_TRACK'
+        ) {
           if (onPrevTrack) onPrevTrack();
           replyText = voiceBuddyService.generateFriendReply('prev');
         } else if (directAction.intent === INTENT_CATEGORIES.CHANGE_VOLUME) {
-          if (onSetVolume && directAction.value !== undefined) {
+          if (directAction.action === 'volume_down') {
+            if (onSetVolume) onSetVolume(Math.max(0, (currentVolume || 50) - 15));
+            replyText = voiceBuddyService.generateFriendReply('volume_down');
+          } else if (directAction.action === 'volume_up') {
+            if (onSetVolume) onSetVolume(Math.min(100, (currentVolume || 50) + 15));
+            replyText = voiceBuddyService.generateFriendReply('volume_up');
+          } else if (onSetVolume && directAction.value !== undefined) {
             onSetVolume(directAction.value);
-            replyText = voiceBuddyService.generateFriendReply('volume', { level: directAction.value });
+            replyText = voiceBuddyService.generateFriendReply('set_volume', { value: directAction.value });
           }
-        } else if (directAction.intent === INTENT_CATEGORIES.LIKE_SONG) {
+        } else if (
+          directAction.intent === INTENT_CATEGORIES.ADD_TO_FAVOURITES ||
+          directAction.intent === 'ADD_TO_FAVOURITES' ||
+          directAction.intent === 'LIKE_SONG'
+        ) {
           if (onToggleLike) onToggleLike(currentSong);
-          replyText = voiceBuddyService.generateFriendReply('like', { title: currentSong?.title || 'Song' });
-        } else if (directAction.intent === 'unlike_song' || directAction.intent === INTENT_CATEGORIES.UNLIKE_SONG) {
+          replyText = voiceBuddyService.generateFriendReply('like', { target: currentSong?.title || 'Song' });
+        } else if (
+          directAction.intent === INTENT_CATEGORIES.REMOVE_FROM_FAVOURITES ||
+          directAction.intent === 'REMOVE_FROM_FAVOURITES' ||
+          directAction.intent === 'unlike_song'
+        ) {
           if (onToggleLike) onToggleLike(currentSong);
-          replyText = voiceBuddyService.generateFriendReply('unlike', { title: currentSong?.title || 'Song' });
+          replyText = voiceBuddyService.generateFriendReply('unlike', { target: currentSong?.title || 'Song' });
         } else if (directAction.intent === 'avatar_action' || directAction.intent === INTENT_CATEGORIES.AVATAR_ACTION) {
           const gesture = directAction.gesture || 'dance';
           if (typeof window !== 'undefined' && typeof window.__loopraPlayGesture === 'function') {

@@ -806,10 +806,9 @@ export default function VoiceAgentModal({
       voiceBuddyService.speak(stopReply);
       showToast?.('Voice Agent: OFF');
     } else {
-      showToast?.('Voice Agent: ON (Listening)');
+      showToast?.('Voice Agent: Listening...');
+      // Zero-delay instant mic session activation without blocking spoken greeting
       await voiceSessionService.startSession({ lang: 'en-IN' });
-      const welcomeMsg = voiceBuddyService.generateWelcomeGreeting();
-      voiceBuddyService.speak(welcomeMsg);
     }
   };
 
@@ -849,6 +848,7 @@ export default function VoiceAgentModal({
             onToggleVoiceMode={handleToggleVoiceMode}
             onToggleChat={onToggleAi}
             onCloseAvatar={() => onToggleAvatar?.(false)}
+            isBottomPlayerVisible={isBottomPlayerVisible}
           />
         </div>
       )}

@@ -35,7 +35,8 @@ export default function CharacterBuddy({
   voiceVolumeScale = 0,
   onToggleVoiceMode = () => {},
   onToggleChat = () => {},
-  onCloseAvatar = () => {}
+  onCloseAvatar = () => {},
+  isBottomPlayerVisible = false
 }) {
   const character = CHARACTERS.female;
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -56,8 +57,8 @@ export default function CharacterBuddy({
 
   // Base full-body dimensions (unscaled 1.0x):
   // Responsive 0.605 aspect ratio accommodating complete wingspan, hands, legs, and feet
-  const BASE_WIDTH = isMobileScreen ? 180 : 215;
-  const BASE_HEIGHT = isMobileScreen ? 300 : 355;
+  const BASE_WIDTH = isMobileScreen ? 140 : 200;
+  const BASE_HEIGHT = isMobileScreen ? 230 : 330;
   const MIN_SCALE = 0.65;
   const MAX_SCALE = 1.60;
 
@@ -99,34 +100,51 @@ export default function CharacterBuddy({
   const [currentLang, setCurrentLang] = useState(() => voiceSessionService.lang || 'hi-IN');
   const bubbleDismissTimerRef = useRef(null);
 
-  // Position & Dragging State
+  const [isCustomPos, setIsCustomPos] = useState(false);
+
+  // Position & Dragging State (Default origin strictly in Lower Right Corner, right above mobile navbar)
   const getDefaultPosition = useCallback(() => {
     if (typeof window === 'undefined') return { x: 20, y: 70 };
-    const defaultX = Math.max(12, window.innerWidth - (isMobileScreen ? 145 : 185) - 20);
-    const defaultY = isMobileScreen ? 60 : 70;
+    const rightMargin = isMobileScreen ? 8 : 24;
+    const bottomMargin = isMobileScreen
+      ? (isBottomPlayerVisible ? 134 : 64)
+      : (isBottomPlayerVisible ? 96 : 20);
+    const defaultX = Math.max(8, window.innerWidth - characterWidth - rightMargin);
+    const defaultY = Math.max(50, window.innerHeight - characterHeight - bottomMargin);
     return { x: defaultX, y: defaultY };
-  }, [isMobileScreen]);
+  }, [isMobileScreen, characterWidth, characterHeight, isBottomPlayerVisible]);
 
   const [avatarPos, setAvatarPos] = useState(() => {
     if (typeof window !== 'undefined') {
-      try {
-        const saved = sessionStorage.getItem('loopra_avatar_position');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (typeof parsed.x === 'number' && typeof parsed.y === 'number' && parsed.x > 0) {
-            return parsed;
-          }
-        }
-      } catch (_) {}
-      const defaultX = Math.max(12, window.innerWidth - (window.innerWidth < 768 ? 145 : 185) - 20);
-      const defaultY = window.innerWidth < 768 ? 60 : 70;
+      const isMobile = window.innerWidth < 768;
+      const charW = isMobile ? 140 : 200;
+      const charH = isMobile ? 230 : 330;
+      const rightMargin = isMobile ? 8 : 24;
+      const bottomMargin = isMobile
+        ? (isBottomPlayerVisible ? 134 : 64)
+        : (isBottomPlayerVisible ? 96 : 20);
+      const defaultX = Math.max(8, window.innerWidth - charW - rightMargin);
+      const defaultY = Math.max(50, window.innerHeight - charH - bottomMargin);
       return { x: defaultX, y: defaultY };
     }
     return { x: 20, y: 70 };
   });
 
+  // Clear any legacy/stale position from sessionStorage to guarantee lower-right corner origin
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem('loopra_avatar_position');
+      sessionStorage.removeItem('loopra_avatar_custom_pos');
+    } catch (_) {}
+  }, []);
+
   // Clamp position when dimensions change to prevent viewport overflow
   useEffect(() => {
+    if (!isCustomPos) {
+      const def = getDefaultPosition();
+      setAvatarPos(def);
+      return;
+    }
     setAvatarPos((prev) => {
       if (typeof window === 'undefined') return prev;
       const minX = 8;
@@ -140,24 +158,26 @@ export default function CharacterBuddy({
       }
       return prev;
     });
-  }, [characterWidth, characterHeight]);
+  }, [isCustomPos, getDefaultPosition, characterWidth, characterHeight]);
 
-  // Initialize position once window is ready if pos is 0,0
+  // Sync avatar dock position globally for chatbox anchoring
   useEffect(() => {
-    if (avatarPos.x === 0 && avatarPos.y === 0 && typeof window !== 'undefined') {
-      const def = getDefaultPosition();
-      setAvatarPos(def);
-    }
-    // Strict singleton cleanup: ensure no duplicate container exists in DOM
-    if (typeof document !== 'undefined') {
-      const existing = document.querySelectorAll('#loopra-3d-character-container');
-      if (existing.length > 1) {
-        for (let i = 0; i < existing.length - 1; i++) {
-          existing[i].remove();
-        }
-      }
-    }
-  }, [getDefaultPosition, avatarPos.x, avatarPos.y]);
+    const rightMargin = isMobileScreen ? 8 : 24;
+    const bottomMargin = isMobileScreen 
+      ? (isBottomPlayerVisible ? 134 : 64) 
+      : (isBottomPlayerVisible ? 96 : 20);
+    const curX = isCustomPos 
+      ? avatarPos.x 
+      : (typeof window !== 'undefined' ? window.innerWidth - characterWidth - rightMargin : 0);
+    const curY = isCustomPos 
+      ? avatarPos.y 
+      : (typeof window !== 'undefined' ? window.innerHeight - characterHeight - bottomMargin : 0);
+    
+    window.__loopraAvatarPosition = { x: curX, y: curY, width: characterWidth, height: characterHeight };
+    window.dispatchEvent(new CustomEvent('loopra:avatar-position', {
+      detail: window.__loopraAvatarPosition
+    }));
+  }, [isCustomPos, avatarPos, characterWidth, characterHeight, isMobileScreen, isBottomPlayerVisible]);
 
   // Centralized Animation & Task Priority States
   const [autonomousSubState, setAutonomousSubState] = useState('idle');
@@ -520,13 +540,24 @@ export default function CharacterBuddy({
       );
     }
 
+    const rightMargin = isMobileScreen ? 8 : 24;
+    const bottomMargin = isMobileScreen 
+      ? (isBottomPlayerVisible ? 134 : 64) 
+      : (isBottomPlayerVisible ? 96 : 20);
+    const curLeft = isCustomPos 
+      ? avatarPos.x 
+      : (walkerRef.current?.getBoundingClientRect?.().left ?? (window.innerWidth - characterWidth - rightMargin));
+    const curTop = isCustomPos 
+      ? avatarPos.y 
+      : (walkerRef.current?.getBoundingClientRect?.().top ?? (window.innerHeight - characterHeight - bottomMargin));
+
     dragRef.current = {
       isDragging: false,
       hasMoved: false,
       startPointerX: clientX,
       startPointerY: clientY,
-      startPosX: avatarPos.x,
-      startPosY: avatarPos.y,
+      startPosX: curLeft,
+      startPosY: curTop,
       startYaw: rotationRef.current.yaw,
       startPitch: rotationRef.current.pitch
     };
@@ -651,9 +682,14 @@ export default function CharacterBuddy({
       setAutonomousSubState('idle');
       resetAutonomousTimer();
 
-      const topSnap = { x: Math.max(8, window.innerWidth - characterWidth - 20), y: isMobileScreen ? 60 : 70 };
-      const botRightSnap = { x: Math.max(8, window.innerWidth - characterWidth - 20), y: Math.max(50, window.innerHeight - characterHeight - 85) };
-      const botLeftSnap = { x: 20, y: Math.max(50, window.innerHeight - characterHeight - 85) };
+      const bottomMargin = isMobileScreen 
+        ? (isBottomPlayerVisible ? 134 : 64) 
+        : (isBottomPlayerVisible ? 96 : 20);
+      const rightMargin = isMobileScreen ? 8 : 24;
+
+      const topSnap = { x: Math.max(8, window.innerWidth - characterWidth - rightMargin), y: isMobileScreen ? 60 : 70 };
+      const botRightSnap = { x: Math.max(8, window.innerWidth - characterWidth - rightMargin), y: Math.max(50, window.innerHeight - characterHeight - bottomMargin) };
+      const botLeftSnap = { x: 20, y: Math.max(50, window.innerHeight - characterHeight - bottomMargin) };
 
       let snappedPos = avatarPos;
       const snapThreshold = 95;
@@ -661,6 +697,10 @@ export default function CharacterBuddy({
         snappedPos = topSnap;
       } else if (Math.hypot(avatarPos.x - botRightSnap.x, avatarPos.y - botRightSnap.y) < snapThreshold) {
         snappedPos = botRightSnap;
+        setIsCustomPos(false);
+        try {
+          sessionStorage.removeItem('loopra_avatar_position');
+        } catch (_) {}
       } else if (Math.hypot(avatarPos.x - botLeftSnap.x, avatarPos.y - botLeftSnap.y) < snapThreshold) {
         snappedPos = botLeftSnap;
       }
@@ -721,7 +761,8 @@ export default function CharacterBuddy({
 
   // Reset Position and scale back to default navbar dock
   const handleResetPosition = (e) => {
-    e.stopPropagation();
+    e?.stopPropagation?.();
+    setIsCustomPos(false);
     try {
       sessionStorage.removeItem('loopra_avatar_position');
       sessionStorage.removeItem('loopra_avatar_scale');
@@ -729,6 +770,7 @@ export default function CharacterBuddy({
     updateAvatarScale(1.0);
     const def = getDefaultPosition();
     setAvatarPos(def);
+    smoothReturnToFront();
     playTransientGesture('wave', 1200);
   };
 
@@ -844,13 +886,27 @@ export default function CharacterBuddy({
       {/* ============================================================= */}
       <div
         id="loopra-3d-character-container"
-        style={{
-          left: `${avatarPos.x}px`,
-          top: `${avatarPos.y}px`,
-          width: `${characterWidth}px`,
-          height: `${characterHeight}px`,
-          touchAction: 'none'
-        }}
+        style={
+          isCustomPos
+            ? {
+                left: `${avatarPos.x}px`,
+                top: `${avatarPos.y}px`,
+                width: `${characterWidth}px`,
+                height: `${characterHeight}px`,
+                touchAction: 'none'
+              }
+            : {
+                right: isMobileScreen ? '8px' : '24px',
+                bottom: isMobileScreen 
+                  ? (isBottomPlayerVisible 
+                      ? 'calc(134px + env(safe-area-inset-bottom, 0px))' 
+                      : 'calc(64px + env(safe-area-inset-bottom, 0px))') 
+                  : (isBottomPlayerVisible ? '96px' : '20px'),
+                width: `${characterWidth}px`,
+                height: `${characterHeight}px`,
+                touchAction: 'none'
+              }
+        }
         className="fixed select-none pointer-events-auto flex flex-col items-center z-[2147483640] transition-[opacity,transform] duration-300 animate-in fade-in zoom-in-95"
       >
         {/* Subtle Avatar Header Controls (Reset Size & Position, Hide) */}
