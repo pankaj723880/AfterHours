@@ -169,6 +169,7 @@ export default function ThreeDCharacter({
     gltfLoader.setDRACOLoader(dracoLoader);
 
     let isGlbActive = false;
+    let glbHeadBone = null;
     const glbModelGroup = new THREE.Group();
     charRoot.add(glbModelGroup);
 
@@ -180,8 +181,17 @@ export default function ThreeDCharacter({
         const model = gltf.scene;
         model.scale.set(0.9, 0.9, 0.9);
         model.position.set(0, -0.96, 0);
+        // Face the front camera: Mixamo / standard GLTF models look down -Z by default
+        model.rotation.y = Math.PI;
 
         model.traverse((child) => {
+          if (child.isBone && !glbHeadBone) {
+            const lower = child.name.toLowerCase();
+            if (lower.includes('head') || lower.includes('neck')) {
+              glbHeadBone = child;
+              console.log('[ThreeDCharacter] Bound head tracking bone:', child.name);
+            }
+          }
           if (child.isMesh && child.material) {
             child.material.roughness = Math.max(0.2, child.material.roughness || 0.5);
             child.material.metalness = Math.min(0.8, child.material.metalness || 0.1);
@@ -329,7 +339,7 @@ export default function ThreeDCharacter({
       eyelid.position.set(0, 0, 0.01);
       eyeG.add(eyelid);
 
-      return { eyeGroup: eyeG, eyelid };
+      return { eyeGroup: eyeG, eyelid, pupilMesh };
     };
 
     const eyeL = createEye(-0.075);
@@ -344,12 +354,46 @@ export default function ThreeDCharacter({
     mouthMesh.position.set(0, -0.075, 0.19);
     headGroup.add(mouthMesh);
 
-    // Hair Style (High bun + styled bangs)
+    // Cheerful anime cheek blush highlights (identifies friendly character)
+    const blushMat = new THREE.MeshBasicMaterial({
+      color: 0xf43f5e,
+      transparent: true,
+      opacity: 0.35
+    });
+    const blushGeo = new THREE.PlaneGeometry(0.045, 0.025);
+    const blushL = new THREE.Mesh(blushGeo, blushMat);
+    blushL.position.set(-0.11, -0.03, 0.19);
+    headGroup.add(blushL);
+
+    const blushR = new THREE.Mesh(blushGeo, blushMat);
+    blushR.position.set(0.11, -0.03, 0.19);
+    headGroup.add(blushR);
+
+    // Hair Style (High bun + styled front bangs + side strands)
     const hairGroup = new THREE.Group();
     const hairCapGeo = new THREE.SphereGeometry(0.215, 24, 20);
     const hairCap = new THREE.Mesh(hairCapGeo, hairMat);
     hairCap.position.set(0, 0.04, -0.02);
     hairGroup.add(hairCap);
+
+    // Front bangs (makes front face immediately and unmistakably recognizable)
+    const bangsGeo = new THREE.CylinderGeometry(0.19, 0.20, 0.08, 16, 1, false, -Math.PI / 2, Math.PI);
+    const bangsMesh = new THREE.Mesh(bangsGeo, hairMat);
+    bangsMesh.rotation.x = 0.32;
+    bangsMesh.position.set(0, 0.12, 0.08);
+    hairGroup.add(bangsMesh);
+
+    // Side hair strands framing cheeks
+    const strandGeo = new THREE.ConeGeometry(0.022, 0.16, 12);
+    const strandL = new THREE.Mesh(strandGeo, hairMat);
+    strandL.position.set(-0.16, -0.02, 0.14);
+    strandL.rotation.z = 0.12;
+    hairGroup.add(strandL);
+
+    const strandR = new THREE.Mesh(strandGeo, hairMat);
+    strandR.position.set(0.16, -0.02, 0.14);
+    strandR.rotation.z = -0.12;
+    hairGroup.add(strandR);
 
     const hairBunGeo = new THREE.SphereGeometry(0.11, 20, 20);
     const hairBun = new THREE.Mesh(hairBunGeo, hairMat);
@@ -431,13 +475,21 @@ export default function ThreeDCharacter({
     legR.add(shoeR);
 
     // =========================================================================
-    // C. 60 FPS ANIMATION LOOP WITH TAB VISIBILITY PAUSE
+    // C. 60 FPS ANIMATION LOOP WITH TAB VISIBILITY PAUSE & HEAD TRACKING
     // =========================================================================
     let reqId;
     let clock = new THREE.Clock();
     let isTabVisible = true;
     let blinkTimer = 0;
     let isBlinking = false;
+    let lastMouseMoveTime = Date.now();
+    let currentHeadYaw = 0;
+    let currentHeadPitch = 0;
+
+    const handlePointerTrack = () => {
+      lastMouseMoveTime = Date.now();
+    };
+    window.addEventListener('mousemove', handlePointerTrack, { passive: true });
 
     const handleVisibilityChange = () => {
       isTabVisible = !document.hidden;
@@ -478,18 +530,57 @@ export default function ThreeDCharacter({
         else fadeToAction('idle', 0.35);
       }
 
+      // Head-Only Cursor Tracking Logic:
+      // Limits: yaw max ±25° (±0.436 rad), pitch max ±15° (±0.262 rad)
+      // Dead zone: movements < 0.04 are centered
+      // 3-second cursor idle: smoothly returns to neutral (0, 0)
+      const now = Date.now();
+      const isCursorIdle = (now - lastMouseMoveTime) > 3000;
+
+      let rawX = stateRef.current.cursorX || 0;
+      let rawY = stateRef.current.cursorY || 0;
+
+      if (Math.abs(rawX) < 0.04) rawX = 0;
+      if (Math.abs(rawY) < 0.04) rawY = 0;
+
+      const maxYawRad = 25 * (Math.PI / 180);
+      const maxPitchRad = 15 * (Math.PI / 180);
+
+      const targetYaw = isCursorIdle ? 0 : THREE.MathUtils.clamp(rawX * maxYawRad, -maxYawRad, maxYawRad);
+      const targetPitch = isCursorIdle ? 0 : THREE.MathUtils.clamp(-rawY * maxPitchRad, -maxPitchRad, maxPitchRad);
+
+      // Smooth interpolation with lerp factor 0.05
+      currentHeadYaw = THREE.MathUtils.lerp(currentHeadYaw, targetYaw, 0.05);
+      currentHeadPitch = THREE.MathUtils.lerp(currentHeadPitch, targetPitch, 0.05);
+
+      // Apply strictly to GLB head bone if active
+      if (glbHeadBone) {
+        glbHeadBone.rotation.y = currentHeadYaw;
+        glbHeadBone.rotation.x = currentHeadPitch;
+      }
+
       // Procedural 3D Kinematics (Runs if GLB is absent or blends with baseline)
       if (!isGlbActive) {
-        // 1. Natural Breathing (Idle)
+        // 1. Natural Breathing & Weight Shift (Idle)
         const breath = Math.sin(time * 2.6);
         torsoGroup.position.y = breath * 0.012;
         torsoGroup.scale.y = 1.0 + breath * 0.015;
+        torsoGroup.rotation.y = 0; // Body stays strictly facing forward
+        torsoGroup.rotation.x = 0;
 
-        // 2. Cursor Gaze Tracking
-        const targetGazeX = (stateRef.current.cursorX || 0) * 0.25;
-        const targetGazeY = -(stateRef.current.cursorY || 0) * 0.18;
-        headGroup.rotation.y = THREE.MathUtils.lerp(headGroup.rotation.y, targetGazeX, 0.08);
-        headGroup.rotation.x = THREE.MathUtils.lerp(headGroup.rotation.x, targetGazeY, 0.08);
+        // 2. Cursor Gaze Tracking (Targeting strictly head)
+        headGroup.rotation.y = currentHeadYaw;
+        headGroup.rotation.x = currentHeadPitch;
+
+        // Eyes can follow slightly more (pupil tracking)
+        const pupilShiftX = currentHeadYaw * 0.022;
+        const pupilShiftY = -currentHeadPitch * 0.018;
+        if (eyeL?.pupilMesh && eyeR?.pupilMesh) {
+          eyeL.pupilMesh.position.x = pupilShiftX;
+          eyeL.pupilMesh.position.y = pupilShiftY;
+          eyeR.pupilMesh.position.x = pupilShiftX;
+          eyeR.pupilMesh.position.y = pupilShiftY;
+        }
 
         // 3. Natural Eye Blinking (Every 3.5s for 120ms)
         blinkTimer += delta;
@@ -575,6 +666,7 @@ export default function ThreeDCharacter({
     // Cleanup on unmount
     return () => {
       cancelAnimationFrame(reqId);
+      window.removeEventListener('mousemove', handlePointerTrack);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);

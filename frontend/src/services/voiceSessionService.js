@@ -17,6 +17,7 @@ export const SESSION_STATES = {
   CONNECTING: 'CONNECTING',
   LISTENING: 'LISTENING',
   PROCESSING: 'PROCESSING',
+  SPEAKING: 'SPEAKING',
   EXECUTING: 'EXECUTING',
   ERROR: 'ERROR'
 };
@@ -28,7 +29,7 @@ class VoiceSessionController {
     this.state = SESSION_STATES.OFF;
     this.statusMessage = 'Voice Agent: OFF (Click mic to speak)';
     this.errorMessage = '';
-    this.lang = 'en-IN';
+    this.lang = 'hi-IN'; // Default Hindi per requirements (toggle for en-IN)
     
     // Hardware & Audio references
     this.mediaStream = null;
@@ -48,6 +49,8 @@ class VoiceSessionController {
     this.isStarting = false;
     this.isManualStopping = false;
     this.isExecuting = false;
+    this.isSpeakingTts = false;
+    this.ttsResumeTimer = null;
 
     // Timers
     this.restartTimer = null;
@@ -64,6 +67,7 @@ class VoiceSessionController {
 
     // Mobile & Tab Resiliency Listeners
     this.initEnvironmentListeners();
+    this.bindVoiceBuddyTtsListener();
   }
 
   initEnvironmentListeners() {
@@ -130,12 +134,26 @@ class VoiceSessionController {
   }
 
   getSnapshot() {
+    // Distinct mic state indicators: Listening / Processing / Speaking / Idle
+    let micState = 'Idle';
+    if (this.isSpeakingTts || this.state === SESSION_STATES.SPEAKING) {
+      micState = 'Speaking';
+    } else if (this.state === SESSION_STATES.PROCESSING || this.state === SESSION_STATES.EXECUTING || this.isExecuting) {
+      micState = 'Processing';
+    } else if (this.isSessionActive && this.state === SESSION_STATES.LISTENING) {
+      micState = 'Listening';
+    } else {
+      micState = 'Idle';
+    }
+
     return {
       state: this.state,
+      micState,
       statusMessage: this.statusMessage,
       errorMessage: this.errorMessage,
       isSessionActive: this.isSessionActive,
-      isListening: this.isRecognizing && this.state === SESSION_STATES.LISTENING,
+      isListening: this.isRecognizing && this.state === SESSION_STATES.LISTENING && !this.isSpeakingTts,
+      isSpeakingTts: this.isSpeakingTts,
       lang: this.lang
     };
   }
@@ -149,6 +167,7 @@ class VoiceSessionController {
 
   setLanguage(newLang) {
     if (!newLang || newLang === this.lang) return;
+    console.log('[VoiceSession:WebSpeech] Changing language to:', newLang);
     this.lang = newLang;
     if (this.recognition) {
       try {
@@ -156,6 +175,52 @@ class VoiceSessionController {
       } catch (_) {}
     }
     this.notifySubscribers('language_change');
+  }
+
+  toggleLanguage() {
+    const nextLang = this.lang === 'hi-IN' ? 'en-IN' : 'hi-IN';
+    this.setLanguage(nextLang);
+    return nextLang;
+  }
+
+  bindVoiceBuddyTtsListener() {
+    if (typeof window === 'undefined') return;
+
+    const attach = () => {
+      if (window.voiceBuddyService && typeof window.voiceBuddyService.subscribe === 'function') {
+        window.voiceBuddyService.subscribe((event) => {
+          if (event === 'speech_start') {
+            console.log('[VoiceSession:WebSpeech] Avatar TTS started -> pausing mic to prevent echo');
+            this.isSpeakingTts = true;
+            clearTimeout(this.ttsResumeTimer);
+            if (this.recognition && this.isRecognizing) {
+              try {
+                this.recognition.abort();
+              } catch (_) {}
+            }
+            if (this.isSessionActive) {
+              this.setState(SESSION_STATES.SPEAKING, 'Loopra speaking...');
+            }
+          } else if (event === 'speech_end') {
+            console.log('[VoiceSession:WebSpeech] Avatar TTS ended -> 800ms cooldown before resuming mic');
+            clearTimeout(this.ttsResumeTimer);
+            this.ttsResumeTimer = setTimeout(() => {
+              this.isSpeakingTts = false;
+              if (this.isSessionActive && !this.isManualStopping) {
+                this.setState(SESSION_STATES.LISTENING, 'Listening... (Speak your music command)');
+                this.safeStartRecognition();
+              }
+            }, 800);
+          }
+        });
+        return true;
+      }
+      return false;
+    };
+
+    if (!attach()) {
+      setTimeout(attach, 400);
+    }
   }
 
   // -------------------------------------------------------------
@@ -423,6 +488,7 @@ class VoiceSessionController {
   initSpeechRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
+      console.warn('[VoiceSession:WebSpeech] SpeechRecognition API not supported in this browser.');
       return null;
     }
 
@@ -433,11 +499,36 @@ class VoiceSessionController {
     recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
+      console.log('[VoiceSession:WebSpeech] onstart - recognition engine active (lang:', this.lang, ')');
       this.isRecognizing = true;
       this.isStarting = false;
-      if (this.isSessionActive && !this.isExecuting) {
+      if (this.isSessionActive && !this.isExecuting && !this.isSpeakingTts) {
         this.setState(SESSION_STATES.LISTENING, 'Listening... (Speak your music command)');
       }
+    };
+
+    recognition.onaudiostart = () => {
+      console.log('[VoiceSession:WebSpeech] onaudiostart - audio stream receiving input');
+    };
+
+    recognition.onsoundstart = () => {
+      console.log('[VoiceSession:WebSpeech] onsoundstart - sound waveform detected');
+    };
+
+    recognition.onspeechstart = () => {
+      console.log('[VoiceSession:WebSpeech] onspeechstart - speech pattern identified');
+    };
+
+    recognition.onspeechend = () => {
+      console.log('[VoiceSession:WebSpeech] onspeechend - speech segment concluded');
+    };
+
+    recognition.onsoundend = () => {
+      console.log('[VoiceSession:WebSpeech] onsoundend - sound stopped');
+    };
+
+    recognition.onaudioend = () => {
+      console.log('[VoiceSession:WebSpeech] onaudioend - audio recording stopped');
     };
 
     recognition.onresult = (event) => {
@@ -453,13 +544,22 @@ class VoiceSessionController {
         }
       }
 
-      // IMMEDIATE SPEECH INTERRUPTION:
-      // If user speaks while Loopra TTS is talking, immediately silence TTS audio
-      // without stopping the microphone or cancelling existing valid tasks.
+      console.log('[VoiceSession:WebSpeech] onresult:', {
+        interim: interim || undefined,
+        final: finalTranscript || undefined,
+        isFinal: !!finalTranscript
+      });
+
+      // Immediate user interruption: If user speaks while TTS is playing, silence TTS immediately
       if (interim.trim() || finalTranscript.trim()) {
         if (typeof window !== 'undefined' && window.voiceBuddyService?.isSpeaking) {
           window.voiceBuddyService.stopSpeech();
         }
+      }
+
+      // If avatar is actively outputting speech, suppress recognition input to prevent hearing itself
+      if (this.isSpeakingTts) {
+        return;
       }
 
       if (interim) {
@@ -472,21 +572,17 @@ class VoiceSessionController {
 
         if (!cleaned) return;
 
-        // Deduplicate rapid repeat triggers within 2500ms
+        // Deduplicate rapid repeat triggers within 2000ms
         const now = Date.now();
         if (
           this.lastExecuted.text === cleaned &&
-          (now - this.lastExecuted.timestamp) < 2500
+          (now - this.lastExecuted.timestamp) < 2000
         ) {
           return;
         }
         this.lastExecuted = { text: cleaned, timestamp: now };
 
-        // Valid speech captured: reset inactivity window
         this.resetInactivityOnValidCommand();
-
-        // Switch state to PROCESSING, but KEEP RECOGNITION ALIVE!
-        // Do NOT stop speech recognition here!
         this.setState(SESSION_STATES.PROCESSING, `Processing: "${cleaned}"`);
         this.emitFinalTranscript(cleaned);
       }
@@ -494,22 +590,21 @@ class VoiceSessionController {
 
     recognition.onerror = (event) => {
       const err = event.error;
-      // Benign non-fatal events:
+      console.log('[VoiceSession:WebSpeech] onerror:', err);
+
       if (err === 'no-speech') {
-        // Natural silence between sentences: remain in LISTENING
+        // Natural pause between spoken words: remain in LISTENING
         return;
       }
       if (err === 'aborted') {
-        // Expected when stopping or cleaning up
+        // Expected on reset, stop, or TTS pause
         return;
       }
-
-      console.warn('[VoiceSessionController] SpeechRecognition error:', err);
 
       if (err === 'not-allowed' || err === 'service-not-allowed') {
         this.setState(
           SESSION_STATES.ERROR,
-          'Microphone permission denied. Please allow microphone access in your browser settings.',
+          'Microphone permission denied. Please allow microphone access in your browser address bar.',
           err
         );
         this.stopSession('permission_denied');
@@ -519,49 +614,44 @@ class VoiceSessionController {
       if (err === 'audio-capture') {
         this.setState(
           SESSION_STATES.ERROR,
-          'Microphone hardware not available or in use by another app.',
+          'Microphone hardware not available or in use by another application.',
           err
         );
         this.stopSession('hardware_error');
         return;
       }
 
-      if (err === 'network') {
-        // Speech service network timeout - retry gracefully if session is still active
-        if (this.isSessionActive && !this.isManualStopping) {
-          this.setState(
-            SESSION_STATES.LISTENING,
-            'Speech service reconnected. Listening...',
-            err
-          );
+      // For network or non-fatal errors: auto-restart gracefully if session active
+      if (this.isSessionActive && !this.isManualStopping) {
+        if (err === 'network') {
+          this.setState(SESSION_STATES.LISTENING, 'Speech network reconnected. Listening...', err);
         }
-        return;
-      }
-
-      // Other generic errors
-      if (this.isSessionActive) {
-        this.setState(
-          SESSION_STATES.ERROR,
-          `Speech recognition note: ${err}`,
-          err
-        );
+        clearTimeout(this.restartTimer);
+        this.restartTimer = setTimeout(() => {
+          if (this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts) {
+            this.safeStartRecognition();
+          }
+        }, 350);
       }
     };
 
     recognition.onend = () => {
+      console.log('[VoiceSession:WebSpeech] onend - recognition instance stopped');
       this.isRecognizing = false;
       this.isStarting = false;
 
-      // Handle natural browser termination while session is still meant to be ON
-      if (this.isSessionActive && !this.isManualStopping) {
+      // Robust auto-restart on 'end' when session is active and not stopped or muted for TTS
+      if (this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts) {
         clearTimeout(this.restartTimer);
         this.restartTimer = setTimeout(() => {
           if (
             this.isSessionActive &&
             !this.isManualStopping &&
             !this.isRecognizing &&
-            !this.isStarting
+            !this.isStarting &&
+            !this.isSpeakingTts
           ) {
+            console.log('[VoiceSession:WebSpeech] Auto-restarting continuous recognition on end');
             this.safeStartRecognition();
           }
         }, 180);
@@ -572,7 +662,7 @@ class VoiceSessionController {
   }
 
   safeStartRecognition() {
-    if (!this.isSessionActive || this.isManualStopping) return;
+    if (!this.isSessionActive || this.isManualStopping || this.isSpeakingTts) return;
     if (this.isRecognizing || this.isStarting) return;
 
     if (!this.recognition) {
@@ -674,10 +764,18 @@ class VoiceSessionController {
     this.isExecuting = false;
     this.resumeInactivityAfterExecution();
     if (this.isSessionActive) {
-      this.setState(
-        SESSION_STATES.LISTENING,
-        message || 'Listening... (Speak your music command)'
-      );
+      if (this.isSpeakingTts) {
+        this.setState(
+          SESSION_STATES.SPEAKING,
+          'Loopra speaking...'
+        );
+      } else {
+        this.setState(
+          SESSION_STATES.LISTENING,
+          message || 'Listening... (Speak your music command)'
+        );
+        this.safeStartRecognition();
+      }
     }
   }
 

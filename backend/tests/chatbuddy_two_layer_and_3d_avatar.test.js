@@ -165,3 +165,4 @@ describe('4. Voice Input & Live Feedback Verification', () => {
     assert.ok(companionCode.includes('speakWithNativeOrEdgeTts'), 'Must support speech out loud');
   });
 });
+

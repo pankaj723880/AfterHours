@@ -156,3 +156,4 @@ class ChatBuddyClient {
 
 export const chatBuddyClient = new ChatBuddyClient();
 export default chatBuddyClient;
+

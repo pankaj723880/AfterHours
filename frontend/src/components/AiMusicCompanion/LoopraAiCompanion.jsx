@@ -423,6 +423,10 @@ export default function LoopraAiCompanion({
 
     // 1. Evaluate against local fast Command-to-Action engine ONLY for explicit tasks (NOT general conversation)
     const directAction = parseCommandToAction(text, getCommandContext());
+    if (typeof window !== 'undefined' && typeof window.__loopraRecordCommandDisplay === 'function') {
+      const act = directAction && directAction.intent !== INTENT_CATEGORIES.GENERAL_QUESTION ? (directAction.action || directAction.intent) : null;
+      window.__loopraRecordCommandDisplay(text, act);
+    }
 
     if (directAction && directAction.intent !== INTENT_CATEGORIES.GENERAL_QUESTION) {
       try {

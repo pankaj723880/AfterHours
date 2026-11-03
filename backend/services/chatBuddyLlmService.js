@@ -179,7 +179,7 @@ export function sanitizeAndParseJson(text = '') {
         reply: parsed.reply || (parsed.type === 'chat' ? 'Haanji, batao!' : 'Sure, on it!')
       };
     }
-  } catch (_) {}
+  } catch (_) { }
   return null;
 }
 
@@ -397,3 +397,4 @@ export default {
   sanitizeAndParseJson,
   CHATBUDDY_SYSTEM_PROMPT
 };
+

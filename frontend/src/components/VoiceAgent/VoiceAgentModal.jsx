@@ -165,6 +165,10 @@ export default function VoiceAgentModal({
       const directAction = parseCommandToAction(text, persistentContextRef.current);
 
       if (directAction && directAction.intent !== INTENT_CATEGORIES.GENERAL_QUESTION) {
+        if (typeof window !== 'undefined' && typeof window.__loopraRecordCommandDisplay === 'function') {
+          window.__loopraRecordCommandDisplay(text, directAction.action || directAction.intent);
+        }
+
         // 0. OPEN_INSIGHTS: Strictly opens Recap & Stats modal (NEVER routes to activity)
         if (directAction.intent === INTENT_CATEGORIES.OPEN_INSIGHTS || directAction.action === 'open_insights') {
           if (onOpenInsights) {

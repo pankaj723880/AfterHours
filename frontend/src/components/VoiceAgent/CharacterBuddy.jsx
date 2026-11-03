@@ -1,17 +1,21 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { voiceBuddyService, CHARACTERS } from '../../services/voiceBuddyService';
+import { voiceSessionService, SESSION_STATES } from '../../services/voiceSessionService';
 import ThreeDCharacter from './ThreeDCharacter';
+import { Mic, Volume2, Globe, History, ChevronUp, ChevronDown, CheckCircle2, Sparkles } from 'lucide-react';
 
 /**
  * CharacterBuddy
  * Unified Persistent Loopra AI Female Companion Avatar
  * 
- * Interactions:
- * - Left-Click / Single Tap: Wave gesture + Toggle Voice Mode (listening)
- * - Double-Click / Double Tap: Wink gesture
- * - Right-Click (Desktop) / Long-Press (Mobile): Opens Unified AI Chat Assistant
- * - Faster & Smoother physical website navigation (bipedal running to DOM targets)
- * - Subtle Loopra amber/gold audio waveform when speaking (replaces old SPEAKING label)
+ * Features & Fixes:
+ * - Realtime Live Command & Transcript Bubble (updates interim words live as user speaks)
+ * - Verbatim display: exact words locked on final with Action tag (e.g. "Heard: '...' → Action: play_song")
+ * - 5-Command history dropdown with timestamps
+ * - Hindi (hi-IN) / English (en-IN) language toggle
+ * - Clear mic state indicators: Listening / Processing / Speaking / Idle
+ * - Strict face cleanliness: ZERO text or badges overlay the character's face!
+ * - Head tracking with strict yaw (±25°) and pitch (±15°) limits and 3s idle return
  */
 export default function CharacterBuddy({
   isSessionActive = false,
@@ -24,6 +28,17 @@ export default function CharacterBuddy({
 }) {
   const character = CHARACTERS.female;
   const [isSpeaking, setIsSpeaking] = useState(false);
+
+  // Realtime Live Transcript & Command Display State
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const [isInterim, setIsInterim] = useState(false);
+  const [lastActionTag, setLastActionTag] = useState(null);
+  const [commandHistory, setCommandHistory] = useState([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isBubbleVisible, setIsBubbleVisible] = useState(false);
+  const [micState, setMicState] = useState(() => voiceSessionService.getSnapshot?.().micState || 'Idle');
+  const [currentLang, setCurrentLang] = useState(() => voiceSessionService.lang || 'hi-IN');
+  const bubbleDismissTimerRef = useRef(null);
 
   // Responsive dimensions: ~240px tall on desktop, ~170px tall on mobile
   const [isMobileScreen, setIsMobileScreen] = useState(() => {
@@ -47,6 +62,77 @@ export default function CharacterBuddy({
   const [walkFacing, setWalkFacing] = useState('left');
   const [moveTransition, setMoveTransition] = useState('transform 0.3s ease-out');
   const [tapRipple, setTapRipple] = useState(null);
+
+  // Record command into display and 5-item rolling history
+  const recordCommandDisplay = useCallback((text, actionTag = null) => {
+    if (!text || !text.trim()) return;
+    const cleanText = text.trim();
+
+    clearTimeout(bubbleDismissTimerRef.current);
+    setIsInterim(false);
+    setLiveTranscript(cleanText);
+    const validAction = actionTag && actionTag !== 'none' && actionTag !== 'GENERAL_QUESTION' ? actionTag : null;
+    setLastActionTag(validAction);
+    setIsBubbleVisible(true);
+
+    setCommandHistory((prev) => {
+      const entry = {
+        id: Date.now(),
+        text: cleanText,
+        action: validAction,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      // Keep strictly the last 5 commands
+      return [entry, ...prev.slice(0, 4)];
+    });
+
+    // Auto-dismiss bubble after 10s of inactivity
+    bubbleDismissTimerRef.current = setTimeout(() => {
+      setIsBubbleVisible(false);
+    }, 10000);
+  }, []);
+
+  // Expose command recorder globally for typed messages and task pipeline
+  useEffect(() => {
+    window.__loopraRecordCommandDisplay = recordCommandDisplay;
+    return () => {
+      delete window.__loopraRecordCommandDisplay;
+    };
+  }, [recordCommandDisplay]);
+
+  // Subscribe to voiceSessionService for live Web Speech events
+  useEffect(() => {
+    const unsub = voiceSessionService.subscribe((snapshot) => {
+      if (snapshot.micState) setMicState(snapshot.micState);
+      if (snapshot.lang) setCurrentLang(snapshot.lang);
+
+      if (snapshot.event === 'interim_transcript') {
+        const text = snapshot.interimText || '';
+        if (text) {
+          clearTimeout(bubbleDismissTimerRef.current);
+          setIsInterim(true);
+          setLiveTranscript(text);
+          setIsBubbleVisible(true);
+        }
+      } else if (snapshot.event === 'final_transcript') {
+        const text = snapshot.transcript || '';
+        if (text) {
+          recordCommandDisplay(text, null);
+        }
+      } else if (snapshot.event === 'language_change') {
+        setCurrentLang(voiceSessionService.lang);
+      }
+    });
+
+    return unsub;
+  }, [recordCommandDisplay]);
+
+  // Language toggle handler: hi-IN <-> en-IN
+  const handleToggleLang = (e) => {
+    e.stopPropagation();
+    const next = voiceSessionService.toggleLanguage();
+    setCurrentLang(next);
+  };
 
   // Mouse / cursor tracking offset for interactive gaze
   const [cursorOffset, setCursorOffset] = useState({ x: 0, y: 0 });
@@ -329,7 +415,142 @@ export default function CharacterBuddy({
         }`}
       >
         {/* ======================================================= */}
-        {/* LAYER: INDEPENDENT 2D PUPPET CHARACTER WALKER          */}
+        {/* REALTIME COMMAND & LIVE TRANSCRIPT DISPLAY BUBBLE       */}
+        {/* Positioned strictly ABOVE avatar head - NEVER on face! */}
+        {/* ======================================================= */}
+        {(isBubbleVisible || isListening || isSpeaking || isSessionActive) && (
+          <div
+            className="absolute bottom-[104%] mb-2 z-[999999] w-64 md:w-72 left-1/2 -translate-x-1/2 flex flex-col gap-1.5 p-2.5 rounded-2xl bg-neutral-950/95 border border-amber-500/30 backdrop-blur-xl shadow-2xl shadow-amber-500/10 pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-200"
+          >
+            {/* Top Bar: Mic State Indicator + Language Toggle + History Toggle */}
+            <div className="flex items-center justify-between gap-1 text-[10px] pb-1.5 border-b border-white/10">
+              <div className="flex items-center gap-1.5 font-bold">
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    micState === 'Listening'
+                      ? 'bg-red-500 animate-ping'
+                      : micState === 'Processing'
+                      ? 'bg-amber-400 animate-pulse'
+                      : micState === 'Speaking'
+                      ? 'bg-emerald-400'
+                      : 'bg-neutral-500'
+                  }`}
+                />
+                <span
+                  className={
+                    micState === 'Listening'
+                      ? 'text-red-400 uppercase tracking-wider'
+                      : micState === 'Processing'
+                      ? 'text-amber-400 uppercase tracking-wider'
+                      : micState === 'Speaking'
+                      ? 'text-emerald-400 uppercase tracking-wider'
+                      : 'text-neutral-400'
+                  }
+                >
+                  {micState}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1">
+                {/* Language Switcher Toggle */}
+                <button
+                  type="button"
+                  onClick={handleToggleLang}
+                  className="px-2 py-0.5 rounded-md bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 hover:border-amber-400/50 text-[9.5px] font-black uppercase text-amber-300 transition cursor-pointer flex items-center gap-1"
+                  title="Toggle Language: Hindi (hi-IN) / English (en-IN)"
+                >
+                  <Globe className="w-2.5 h-2.5 text-amber-400" />
+                  <span>{currentLang === 'hi-IN' ? 'HI' : 'EN'}</span>
+                </button>
+
+                {/* Last 5 Commands History Dropdown Button */}
+                {commandHistory.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setIsHistoryOpen(!isHistoryOpen)}
+                    className={`px-1.5 py-0.5 rounded-md text-[9.5px] font-bold transition cursor-pointer flex items-center gap-0.5 ${
+                      isHistoryOpen
+                        ? 'bg-amber-500 text-black'
+                        : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-800'
+                    }`}
+                    title="View last 5 voice/text commands"
+                  >
+                    <History className="w-2.5 h-2.5" />
+                    <span>{commandHistory.length}</span>
+                    {isHistoryOpen ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
+                  </button>
+                )}
+
+                {/* Dismiss Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsBubbleVisible(false)}
+                  className="p-0.5 text-neutral-400 hover:text-white rounded hover:bg-neutral-800 text-[10px] cursor-pointer ml-1"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Live Transcript / Final Locked Command Display */}
+            <div className="flex flex-col gap-1 py-0.5">
+              {isInterim ? (
+                <div className="flex items-start gap-1.5 text-xs text-amber-300 italic">
+                  <Mic className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5 animate-pulse" />
+                  <p className="break-words font-medium">
+                    I heard: <span className="text-white font-semibold">"{liveTranscript}"</span>
+                  </p>
+                </div>
+              ) : liveTranscript ? (
+                <div className="flex flex-col gap-1">
+                  <div className="text-xs text-neutral-200 font-semibold break-words">
+                    Heard: <span className="text-white">"{liveTranscript}"</span>
+                  </div>
+                  {/* Detected Action Tag below verbatim text */}
+                  {lastActionTag && (
+                    <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-lg w-fit">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                      <span>→ Action: {lastActionTag}</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-[11px] text-neutral-400 flex items-center gap-1.5">
+                  <Sparkles className="w-3 h-3 text-amber-400" />
+                  <span>Click avatar or say "Loopra" to command</span>
+                </div>
+              )}
+            </div>
+
+            {/* Expandable Last 5 Commands History Panel */}
+            {isHistoryOpen && commandHistory.length > 0 && (
+              <div className="mt-1 pt-1.5 border-t border-white/10 flex flex-col gap-1 max-h-36 overflow-y-auto">
+                <span className="text-[9px] uppercase font-bold text-neutral-400 tracking-wider">
+                  Recent Commands (Last 5):
+                </span>
+                {commandHistory.map((cmd) => (
+                  <div
+                    key={cmd.id}
+                    className="p-1.5 rounded-lg bg-neutral-900/90 border border-neutral-800 text-[10.5px] flex flex-col gap-0.5"
+                  >
+                    <div className="flex items-center justify-between text-neutral-300">
+                      <span className="truncate font-medium">"{cmd.text}"</span>
+                      <span className="text-[8.5px] text-neutral-500 shrink-0 ml-1">{cmd.time}</span>
+                    </div>
+                    {cmd.action && (
+                      <span className="text-[9px] font-mono text-emerald-400 font-bold">
+                        → Action: {cmd.action}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ======================================================= */}
+        {/* LAYER: INDEPENDENT 2D/3D CHARACTER WALKER               */}
         {/* ======================================================= */}
         <div
           ref={walkerRef}
@@ -350,15 +571,14 @@ export default function CharacterBuddy({
           }}
           title="Loopra AI • Left-Click: Wave & Voice • Right-Click / Hold: Chat Assistant"
         >
-          {/* Subtle Loopra Amber Audio Waveform (shown ONLY when Loopra is actively speaking) */}
-          {/* Replaces any old text SPEAKING label with 60% opacity gold equalizer */}
+          {/* Subtle Loopra Amber Audio Waveform (shown above head, NOT on face!) */}
           {isSpeaking && (
             <div
               style={{
                 opacity: 0.85,
                 borderColor: 'rgba(245, 158, 11, 0.4)'
               }}
-              className="absolute -top-3 left-6 px-2.5 py-1.5 rounded-full bg-neutral-950/60 border backdrop-blur-md shadow-lg shadow-amber-500/10 flex items-center gap-1 z-50 pointer-events-none transition-opacity duration-200"
+              className="absolute -top-3.5 left-4 px-2.5 py-1 rounded-full bg-neutral-950/60 border backdrop-blur-md shadow-lg shadow-amber-500/10 flex items-center gap-1 z-50 pointer-events-none transition-opacity duration-200"
             >
               {[0.4, 0.9, 1.4, 0.7, 1.2, 0.6, 1.0].map((mult, idx) => (
                 <span
@@ -391,7 +611,7 @@ export default function CharacterBuddy({
             />
           </div>
 
-          {/* Name & Role Badge (travels with character) */}
+          {/* Name & Role Badge (strictly below feet, NEVER on face) */}
           <div
             style={{ borderColor: `${character.color}80` }}
             className="absolute -bottom-1.5 px-3.5 py-1 rounded-full bg-neutral-950/95 border text-[10.5px] font-black uppercase tracking-wider text-white shadow-2xl flex items-center gap-1.5 backdrop-blur-md"
