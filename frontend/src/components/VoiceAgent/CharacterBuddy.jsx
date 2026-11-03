@@ -36,11 +36,67 @@ export default function CharacterBuddy({
   onToggleVoiceMode = () => {},
   onToggleChat = () => {},
   onCloseAvatar = () => {},
-  isBottomPlayerVisible = false
+  isBottomPlayerVisible = false,
+  isVisible = true
 }) {
   const character = CHARACTERS.female;
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [internalVolume, setInternalVolume] = useState(0);
+
+  // Smooth Fade & Subtle Scale/Position Transition State
+  const [isDOMVisible, setIsDOMVisible] = useState(isVisible);
+  const [isFadedIn, setIsFadedIn] = useState(isVisible);
+  const transitionTimerRef = useRef(null);
+  const rafTimerRef = useRef(null);
+  const isInitialMountRef = useRef(true);
+
+  useEffect(() => {
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      if (!isVisible) {
+        setIsDOMVisible(false);
+        setIsFadedIn(false);
+        return;
+      }
+    }
+
+    if (transitionTimerRef.current) {
+      clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = null;
+    }
+    if (rafTimerRef.current) {
+      cancelAnimationFrame(rafTimerRef.current);
+      rafTimerRef.current = null;
+    }
+
+    if (isVisible) {
+      // Reveal: set visible in DOM first, then animate in on next frames
+      setIsDOMVisible(true);
+      rafTimerRef.current = requestAnimationFrame(() => {
+        rafTimerRef.current = requestAnimationFrame(() => {
+          setIsFadedIn(true);
+        });
+      });
+    } else {
+      // Dismiss / Close: fade out smoothly first, then hide DOM after transition ends
+      setIsFadedIn(false);
+      transitionTimerRef.current = setTimeout(() => {
+        setIsDOMVisible(false);
+        transitionTimerRef.current = null;
+      }, 350); // Matches the 350ms exit transition
+    }
+
+    return () => {
+      if (transitionTimerRef.current) {
+        clearTimeout(transitionTimerRef.current);
+        transitionTimerRef.current = null;
+      }
+      if (rafTimerRef.current) {
+        cancelAnimationFrame(rafTimerRef.current);
+        rafTimerRef.current = null;
+      }
+    };
+  }, [isVisible]);
 
   // Responsive dimensions detection
   const [isMobileScreen, setIsMobileScreen] = useState(() => {
@@ -100,12 +156,10 @@ export default function CharacterBuddy({
   const [currentLang, setCurrentLang] = useState(() => voiceSessionService.lang || 'hi-IN');
   const bubbleDismissTimerRef = useRef(null);
 
-  const [isCustomPos, setIsCustomPos] = useState(false);
-
   // Position & Dragging State (Default origin strictly in Lower Right Corner, right above mobile navbar)
   const getDefaultPosition = useCallback(() => {
     if (typeof window === 'undefined') return { x: 20, y: 70 };
-    const rightMargin = isMobileScreen ? 8 : 24;
+    const rightMargin = isMobileScreen ? 68 : 84;
     const bottomMargin = isMobileScreen
       ? (isBottomPlayerVisible ? 134 : 64)
       : (isBottomPlayerVisible ? 96 : 20);
@@ -114,12 +168,37 @@ export default function CharacterBuddy({
     return { x: defaultX, y: defaultY };
   }, [isMobileScreen, characterWidth, characterHeight, isBottomPlayerVisible]);
 
+  // Active custom position is only true if user actively dragged the avatar in the current session
+  const [isCustomPos, setIsCustomPos] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedPos = sessionStorage.getItem('loopra_avatar_drag_pos');
+        if (savedPos) {
+          const parsed = JSON.parse(savedPos);
+          if (parsed && typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+            return true;
+          }
+        }
+      } catch (_) {}
+    }
+    return false;
+  });
+
   const [avatarPos, setAvatarPos] = useState(() => {
     if (typeof window !== 'undefined') {
+      try {
+        const saved = sessionStorage.getItem('loopra_avatar_drag_pos');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+            return parsed;
+          }
+        }
+      } catch (_) {}
       const isMobile = window.innerWidth < 768;
       const charW = isMobile ? 140 : 200;
       const charH = isMobile ? 230 : 330;
-      const rightMargin = isMobile ? 8 : 24;
+      const rightMargin = isMobile ? 68 : 84;
       const bottomMargin = isMobile
         ? (isBottomPlayerVisible ? 134 : 64)
         : (isBottomPlayerVisible ? 96 : 20);
@@ -130,7 +209,7 @@ export default function CharacterBuddy({
     return { x: 20, y: 70 };
   });
 
-  // Clear any legacy/stale position from sessionStorage to guarantee lower-right corner origin
+  // Discard any legacy/stale position from older sessions that left avatar stuck in the center
   useEffect(() => {
     try {
       sessionStorage.removeItem('loopra_avatar_position');
@@ -162,7 +241,7 @@ export default function CharacterBuddy({
 
   // Sync avatar dock position globally for chatbox anchoring
   useEffect(() => {
-    const rightMargin = isMobileScreen ? 8 : 24;
+    const rightMargin = isMobileScreen ? 68 : 84;
     const bottomMargin = isMobileScreen 
       ? (isBottomPlayerVisible ? 134 : 64) 
       : (isBottomPlayerVisible ? 96 : 20);
@@ -540,7 +619,7 @@ export default function CharacterBuddy({
       );
     }
 
-    const rightMargin = isMobileScreen ? 8 : 24;
+    const rightMargin = isMobileScreen ? 68 : 84;
     const bottomMargin = isMobileScreen 
       ? (isBottomPlayerVisible ? 134 : 64) 
       : (isBottomPlayerVisible ? 96 : 20);
@@ -576,17 +655,6 @@ export default function CharacterBuddy({
         try { navigator.vibrate?.([40]); } catch (_) {}
       }
     }, 500);
-
-    // Keep longPressTimerRef compatibility for mobile chat assistant fallback
-    clearTimeout(longPressTimerRef.current);
-    longPressTimerRef.current = setTimeout(() => {
-      if (isPointerDownRef.current && !dragRef.current.hasMoved && !pinchRef.current.isPinching && !isResizeMode) {
-        didLongPressRef.current = true;
-        try { navigator.vibrate?.([40]); } catch (_) {}
-        playTransientGesture('pose', 1500);
-        onToggleChat();
-      }
-    }, 450);
   };
 
   const handlePointerMove = useCallback((e) => {
@@ -626,30 +694,39 @@ export default function CharacterBuddy({
     const deltaY = clientY - dragRef.current.startPointerY;
     const distance = Math.hypot(deltaX, deltaY);
 
-    if (distance > 4) {
+    if (distance > 6) {
       dragRef.current.hasMoved = true;
+      dragRef.current.isDragging = true;
       clearTimeout(resizeHoldTimerRef.current);
-      clearTimeout(longPressTimerRef.current);
 
       if (e.cancelable && e.preventDefault) {
-        e.preventDefault(); // Prevent touch scrolling during rotation/drag
+        e.preventDefault(); // Prevent touch scrolling during drag
       }
 
-      // 360-Degree Interactive Drag-to-Rotate & Subtle Viewing Pitch Tilt
-      isRotatingRef.current = true;
-      const sensitivityYaw = 0.015;
-      const sensitivityPitch = 0.009;
-      const nextYaw = dragRef.current.startYaw + deltaX * sensitivityYaw;
-      const nextPitch = Math.max(-0.25, Math.min(0.25, dragRef.current.startPitch - deltaY * sensitivityPitch));
-      rotationRef.current = { yaw: nextYaw, pitch: nextPitch };
-      setRotationYaw(nextYaw);
-      setRotationPitch(nextPitch);
+      setIsCustomPos(true);
+
+      const rawX = dragRef.current.startPosX + deltaX;
+      const rawY = dragRef.current.startPosY + deltaY;
+
+      const minX = 8;
+      const maxX = Math.max(minX, window.innerWidth - characterWidth - 8);
+      const minY = 50;
+      const bottomMargin = isMobileScreen 
+        ? (isBottomPlayerVisible ? 134 : 64) 
+        : (isBottomPlayerVisible ? 96 : 20);
+      const maxY = Math.max(minY, window.innerHeight - characterHeight - bottomMargin);
+
+      const clampedX = Math.max(minX, Math.min(maxX, rawX));
+      const clampedY = Math.max(minY, Math.min(maxY, rawY));
+
+      setAvatarPos({ x: clampedX, y: clampedY });
+      setAutonomousSubState('walking');
+      resetAutonomousTimer();
     }
-  }, [characterWidth, characterHeight, isResizeMode, updateAvatarScale]);
+  }, [characterWidth, characterHeight, isResizeMode, updateAvatarScale, isMobileScreen, isBottomPlayerVisible, resetAutonomousTimer]);
 
   const handlePointerUp = useCallback((e) => {
     clearTimeout(resizeHoldTimerRef.current);
-    clearTimeout(longPressTimerRef.current);
 
     if (pinchRef.current.isPinching) {
       pinchRef.current.isPinching = false;
@@ -665,50 +742,28 @@ export default function CharacterBuddy({
       return; // Do NOT trigger click, tap, speech or navigation
     }
 
-    if (isRotatingRef.current) {
-      isRotatingRef.current = false;
-      dragRef.current.hasMoved = false;
-      if (e.preventDefault) e.preventDefault();
-      // Temporarily preserve user-rotated orientation (~3.5s), then smoothly return to front-facing
-      clearTimeout(autoReturnTimerRef.current);
-      autoReturnTimerRef.current = setTimeout(() => {
-        smoothReturnToFront();
-      }, 3500);
-      return;
-    }
-
     if (dragRef.current.isDragging) {
       dragRef.current.isDragging = false;
       setAutonomousSubState('idle');
       resetAutonomousTimer();
 
+      const minX = 8;
+      const maxX = Math.max(minX, window.innerWidth - characterWidth - 8);
+      const minY = 50;
       const bottomMargin = isMobileScreen 
         ? (isBottomPlayerVisible ? 134 : 64) 
         : (isBottomPlayerVisible ? 96 : 20);
-      const rightMargin = isMobileScreen ? 8 : 24;
+      const maxY = Math.max(minY, window.innerHeight - characterHeight - bottomMargin);
 
-      const topSnap = { x: Math.max(8, window.innerWidth - characterWidth - rightMargin), y: isMobileScreen ? 60 : 70 };
-      const botRightSnap = { x: Math.max(8, window.innerWidth - characterWidth - rightMargin), y: Math.max(50, window.innerHeight - characterHeight - bottomMargin) };
-      const botLeftSnap = { x: 20, y: Math.max(50, window.innerHeight - characterHeight - bottomMargin) };
+      const finalPos = {
+        x: Math.max(minX, Math.min(maxX, avatarPos.x)),
+        y: Math.max(minY, Math.min(maxY, avatarPos.y))
+      };
 
-      let snappedPos = avatarPos;
-      const snapThreshold = 95;
-      if (Math.hypot(avatarPos.x - topSnap.x, avatarPos.y - topSnap.y) < snapThreshold) {
-        snappedPos = topSnap;
-      } else if (Math.hypot(avatarPos.x - botRightSnap.x, avatarPos.y - botRightSnap.y) < snapThreshold) {
-        snappedPos = botRightSnap;
-        setIsCustomPos(false);
-        try {
-          sessionStorage.removeItem('loopra_avatar_position');
-        } catch (_) {}
-      } else if (Math.hypot(avatarPos.x - botLeftSnap.x, avatarPos.y - botLeftSnap.y) < snapThreshold) {
-        snappedPos = botLeftSnap;
-      }
-
-      setAvatarPos(snappedPos);
+      setAvatarPos(finalPos);
 
       try {
-        sessionStorage.setItem('loopra_avatar_position', JSON.stringify(snappedPos));
+        sessionStorage.setItem('loopra_avatar_drag_pos', JSON.stringify(finalPos));
       } catch (_) {}
 
       if (e.preventDefault) e.preventDefault();
@@ -765,6 +820,8 @@ export default function CharacterBuddy({
     setIsCustomPos(false);
     try {
       sessionStorage.removeItem('loopra_avatar_position');
+      sessionStorage.removeItem('loopra_avatar_custom_pos');
+      sessionStorage.removeItem('loopra_avatar_drag_pos');
       sessionStorage.removeItem('loopra_avatar_scale');
     } catch (_) {}
     updateAvatarScale(1.0);
@@ -776,86 +833,258 @@ export default function CharacterBuddy({
 
   /**
    * Ground-Based Physical Movement & Tapping Engine (Promise-based)
+   * Real-user UI Navigation:
+   * - Mobile Case B: Target in lower navbar -> directly moves & taps lower navbar item without opening sidebar.
+   * - Mobile Case A: Target in sidebar -> moves to hamburger -> taps & opens sidebar -> moves to sidebar item -> taps -> closes & returns.
+   * - Desktop: Moves directly to target element.
    */
-  const walkToTargetAndTap = useCallback((targetNavId, label = '', onFinished) => {
+  const isNavigatingRef = useRef(false);
+
+  const walkToTargetAndTap = useCallback((targetNavId, label = '', onFinished = null) => {
     return new Promise((resolve) => {
-      if (typeof document === 'undefined') {
-        onFinished?.();
-        resolve();
-        return;
-      }
-
-      const cleanTarget = (targetNavId || '').toLowerCase().trim();
-      let targetEl = document.querySelector(`[data-nav-id="${cleanTarget}"]`);
-      if (!targetEl) targetEl = document.querySelector(`[data-nav-id="${cleanTarget === 'saloon' ? 'barber' : cleanTarget}"]`);
-      if (!targetEl) targetEl = document.querySelector(`a[href*="${cleanTarget}"]`);
-      if (!targetEl) {
-        const candidates = Array.from(document.querySelectorAll('button, a, div[role="button"]'));
-        targetEl = candidates.find(el => {
-          const text = (el.innerText || el.getAttribute('title') || el.getAttribute('aria-label') || '').toLowerCase();
-          return text.includes(cleanTarget) || (label && text.includes(label.toLowerCase()));
-        });
-      }
-
-      if (!targetEl) {
-        onFinished?.();
-        resolve();
-        return;
-      }
-
-      const targetRect = targetEl.getBoundingClientRect();
-      const characterEl = document.getElementById('loopra-3d-character-walker') || document.getElementById('loopra-3d-character-container');
-      const startRect = characterEl
-        ? characterEl.getBoundingClientRect()
-        : { left: avatarPos.x, top: avatarPos.y, width: characterWidth, height: characterHeight };
-
-      const deltaX = (targetRect.left + targetRect.width / 2) - (startRect.left + startRect.width / 2);
-      const deltaY = (targetRect.top + targetRect.height / 2) - (startRect.top + startRect.height * 0.7);
-
-      const distance = Math.hypot(deltaX, deltaY);
-      const travelDuration = Math.round(Math.max(500, Math.min(1400, (distance / 750) * 1000)));
-      const isRun = distance > 160;
-
-      setWalkFacing(deltaX < 0 ? 'left' : 'right');
-      setAnimationState(isRun ? 'running' : 'walking');
-      setMoveTransition(`transform ${travelDuration}ms cubic-bezier(0.25, 0.1, 0.25, 1)`);
-      setWalkOffset({ x: deltaX, y: deltaY });
-
-      // Physical travel completes -> Avatar reaches target button -> Taps with energy ripple
-      setTimeout(() => {
-        setAnimationState('tapping');
-        setTapRipple({
-          x: targetRect.left + targetRect.width / 2,
-          y: targetRect.top + targetRect.height / 2
-        });
-
-        // Trigger action exactly when the avatar arrives and taps
+      const finalize = () => {
         try {
-          onFinished?.();
+          if (typeof onFinished === 'function') onFinished();
         } catch (_) {}
         resolve();
+      };
 
-        setTimeout(() => {
-          setTapRipple(null);
-          setAnimationState('celebrating');
-        }, 350);
+      if (typeof document === 'undefined') {
+        finalize();
+        return;
+      }
 
-        setTimeout(() => {
-          const returnFacing = deltaX < 0 ? 'right' : 'left';
-          setWalkFacing(returnFacing);
-          setAnimationState(isRun ? 'running' : 'walking');
-          setMoveTransition(`transform ${travelDuration}ms cubic-bezier(0.25, 0.1, 0.25, 1)`);
-          setWalkOffset({ x: 0, y: 0 });
+      if (isNavigatingRef.current) {
+        finalize();
+        return;
+      }
+      isNavigatingRef.current = true;
 
-          setTimeout(() => {
-            setAnimationState('idle');
-            setWalkFacing('front');
-            setMoveTransition('transform 0.3s ease-out');
-          }, travelDuration + 60);
-        }, 750);
-      }, travelDuration);
+      (async () => {
+        try {
+          const isMobile = isMobileScreen || (typeof window !== 'undefined' && window.innerWidth < 768);
+          const cleanTarget = (targetNavId || '').toLowerCase().trim();
+
+          // Canonical lower navbar destination mappings
+          const bottomNavTargets = new Set(['home', 'discover', 'library', 'liked', 'playlists', 'radio', 'indian-radio']);
+          const isBottomTarget = bottomNavTargets.has(cleanTarget) || ['liked songs', 'live radio'].includes(cleanTarget);
+
+          // Alias mapping helper
+          const resolveAlias = (id) => {
+            if (id === 'saloon' || id === 'salon') return 'barber';
+            if (id === 'theka') return 'pauwa';
+            if (id === 'horn' || id === 'dhaba') return 'truck';
+            if (id === 'favorites' || id === 'favourite' || id === 'liked songs') return 'library';
+            return id;
+          };
+
+          const resolvedTarget = resolveAlias(cleanTarget);
+
+          // Helper for smooth movement to any DOM element and tapping it
+          const executeMoveAndTap = (element) => {
+            return new Promise((resolveMove) => {
+              if (!element) {
+                resolveMove();
+                return;
+              }
+
+              const targetRect = element.getBoundingClientRect();
+              const walkerEl = walkerRef.current;
+              const currentWalkerRect = walkerEl
+                ? walkerEl.getBoundingClientRect()
+                : { left: avatarPos.x, top: avatarPos.y, width: characterWidth, height: characterHeight };
+
+              const targetCenterX = targetRect.left + targetRect.width / 2;
+              const targetCenterY = targetRect.top + targetRect.height / 2;
+
+              const curCenterX = currentWalkerRect.left + currentWalkerRect.width / 2;
+              const curCenterY = currentWalkerRect.top + currentWalkerRect.height * 0.7;
+
+              const stepDeltaX = targetCenterX - curCenterX;
+              const stepDeltaY = targetCenterY - curCenterY;
+
+              setWalkOffset((prevOffset) => {
+                const nextX = prevOffset.x + stepDeltaX;
+                const nextY = prevOffset.y + stepDeltaY;
+
+                // Clamping to stay strictly inside viewport
+                const containerEl = document.getElementById('loopra-3d-character-container');
+                const contRect = containerEl ? containerEl.getBoundingClientRect() : { left: avatarPos.x, top: avatarPos.y };
+                const baseLeft = contRect.left - prevOffset.x;
+                const baseTop = contRect.top - prevOffset.y;
+
+                const minX = 8 - baseLeft;
+                const maxX = (window.innerWidth - characterWidth - 8) - baseLeft;
+                const minY = 10 - baseTop;
+                const maxY = (window.innerHeight - characterHeight - 10) - baseTop;
+
+                const clampedX = Math.max(minX, Math.min(maxX, nextX));
+                const clampedY = Math.max(minY, Math.min(maxY, nextY));
+
+                const dist = Math.hypot(clampedX - prevOffset.x, clampedY - prevOffset.y);
+                const duration = Math.round(Math.max(400, Math.min(1100, (dist / 650) * 1000)));
+                const isRun = dist > 140;
+
+                setWalkFacing(stepDeltaX < 0 ? 'left' : 'right');
+                setAnimationState(isRun ? 'running' : 'walking');
+                setMoveTransition(`transform ${duration}ms cubic-bezier(0.25, 0.1, 0.25, 1)`);
+
+                setTimeout(() => {
+                  setAnimationState('tapping');
+                  setTapRipple({ x: targetCenterX, y: targetCenterY });
+
+                  setTimeout(() => {
+                    setTapRipple(null);
+                    resolveMove();
+                  }, 320);
+                }, duration);
+
+                return { x: clampedX, y: clampedY };
+              });
+            });
+          };
+
+          // Helper to return avatar back to resting base position
+          const executeReturnHome = () => {
+            return new Promise((resolveReturn) => {
+              setWalkOffset((currentOffset) => {
+                const dist = Math.hypot(currentOffset.x, currentOffset.y);
+                if (dist < 4) {
+                  setAnimationState('idle');
+                  setWalkFacing('front');
+                  resolveReturn();
+                  return { x: 0, y: 0 };
+                }
+
+                const duration = Math.round(Math.max(450, Math.min(1000, (dist / 650) * 1000)));
+                setWalkFacing(currentOffset.x > 0 ? 'left' : 'right');
+                setAnimationState('walking');
+                setMoveTransition(`transform ${duration}ms cubic-bezier(0.25, 0.1, 0.25, 1)`);
+
+                setTimeout(() => {
+                  setAnimationState('idle');
+                  setWalkFacing('front');
+                  setMoveTransition('transform 0.3s ease-out');
+                  resolveReturn();
+                }, duration + 50);
+
+                return { x: 0, y: 0 };
+              });
+            });
+          };
+
+          // =====================================================================
+          // CASE B: MOBILE & TARGET IN LOWER NAVBAR (Home, Discover, Liked, Playlists, Radio)
+          // "If target exists in lower navbar, DO NOT open sidebar. Move directly."
+          // =====================================================================
+          if (isMobile && isBottomTarget) {
+            let bottomEl = null;
+            if (resolvedTarget === 'library' || resolvedTarget === 'liked') {
+              bottomEl = document.querySelector('nav[aria-label="Mobile Navigation"] [data-nav-id="liked"]') ||
+                         document.querySelector('[data-nav-id="liked"]');
+            } else if (resolvedTarget === 'radio' || resolvedTarget === 'indian-radio') {
+              bottomEl = document.querySelector('nav[aria-label="Mobile Navigation"] [data-nav-id="radio"]') ||
+                         document.querySelector('[data-nav-id="radio"]');
+            } else {
+              bottomEl = document.querySelector(`nav[aria-label="Mobile Navigation"] [data-nav-id="${resolvedTarget}"]`) ||
+                         document.querySelector(`nav [data-nav-id="${resolvedTarget}"]`);
+            }
+
+            if (bottomEl) {
+              await executeMoveAndTap(bottomEl);
+              try {
+                bottomEl.click();
+              } catch (_) {}
+              finalize();
+              await executeReturnHome();
+              return;
+            }
+          }
+
+          // =====================================================================
+          // CASE A: MOBILE & TARGET IN SIDEBAR
+          // "1. Move to hamburger button, 2. Tap hamburger, 3. Sidebar opens,
+          //  4. Locate destination, 5. Tap item, 6. Page opens, 7. Return to position."
+          // =====================================================================
+          if (isMobile && !isBottomTarget) {
+            const hamburgerBtn = document.getElementById('loopra-mobile-hamburger-btn') ||
+                                 document.querySelector('[data-nav-id="hamburger"]') ||
+                                 document.querySelector('header button[aria-label="Toggle Menu"]');
+
+            const asideEl = document.querySelector('aside');
+            const isAlreadyOpen = asideEl ? asideEl.classList.contains('translate-x-0') : false;
+
+            if (hamburgerBtn && !isAlreadyOpen) {
+              // 1. Avatar moves to upper hamburger button
+              await executeMoveAndTap(hamburgerBtn);
+              // 2. Visibly taps hamburger button -> 3. Sidebar opens
+              try {
+                hamburgerBtn.click();
+              } catch (_) {}
+              // Wait for sidebar slide-in transition (350ms)
+              await new Promise((r) => setTimeout(r, 350));
+            }
+
+            // 4. Locate requested destination inside the sidebar
+            let sidebarItem = document.querySelector(`aside [data-nav-id="${resolvedTarget}"]`);
+            if (!sidebarItem) {
+              const asideButtons = Array.from(document.querySelectorAll('aside button'));
+              sidebarItem = asideButtons.find((btn) => {
+                const text = (btn.innerText || btn.getAttribute('title') || '').toLowerCase();
+                return text.includes(resolvedTarget) || (label && text.includes(label.toLowerCase()));
+              });
+            }
+
+            if (sidebarItem) {
+              // 5. Avatar clicks/taps the correct sidebar item
+              await executeMoveAndTap(sidebarItem);
+              // 6. The requested page opens (and sidebar automatically closes)
+              try {
+                sidebarItem.click();
+              } catch (_) {}
+              finalize();
+            } else {
+              finalize();
+            }
+
+            // 7. Avatar returns to its appropriate position
+            await executeReturnHome();
+            return;
+          }
+
+          // =====================================================================
+          // CASE C: DESKTOP MODE (Preserves desktop navigation)
+          // "Preserve existing desktop navigation behavior"
+          // =====================================================================
+          let targetEl = document.querySelector(`[data-nav-id="${resolvedTarget}"]`) ||
+                         document.querySelector(`a[href*="${resolvedTarget}"]`);
+
+          if (!targetEl) {
+            const candidates = Array.from(document.querySelectorAll('button, a, div[role="button"]'));
+            targetEl = candidates.find((el) => {
+              const text = (el.innerText || el.getAttribute('title') || el.getAttribute('aria-label') || '').toLowerCase();
+              return text.includes(resolvedTarget) || (label && text.includes(label.toLowerCase()));
+            });
+          }
+
+          if (targetEl) {
+            await executeMoveAndTap(targetEl);
+            try {
+              targetEl.click();
+            } catch (_) {}
+            finalize();
+            await executeReturnHome();
+          } else {
+            finalize();
+          }
+        } catch (_) {
+          finalize();
+        } finally {
+          isNavigatingRef.current = false;
+        }
+      })();
     });
-  }, [avatarPos, characterWidth, characterHeight]);
+  }, [avatarPos, characterWidth, characterHeight, isMobileScreen]);
 
   useEffect(() => {
     window.__loopraWalkAndTap = walkToTargetAndTap;
@@ -886,28 +1115,32 @@ export default function CharacterBuddy({
       {/* ============================================================= */}
       <div
         id="loopra-3d-character-container"
-        style={
-          isCustomPos
+        style={{
+          ...(isCustomPos
             ? {
                 left: `${avatarPos.x}px`,
-                top: `${avatarPos.y}px`,
-                width: `${characterWidth}px`,
-                height: `${characterHeight}px`,
-                touchAction: 'none'
+                top: `${avatarPos.y}px`
               }
             : {
-                right: isMobileScreen ? '8px' : '24px',
+                right: isMobileScreen ? '68px' : '84px',
                 bottom: isMobileScreen 
                   ? (isBottomPlayerVisible 
                       ? 'calc(134px + env(safe-area-inset-bottom, 0px))' 
                       : 'calc(64px + env(safe-area-inset-bottom, 0px))') 
-                  : (isBottomPlayerVisible ? '96px' : '20px'),
-                width: `${characterWidth}px`,
-                height: `${characterHeight}px`,
-                touchAction: 'none'
-              }
-        }
-        className="fixed select-none pointer-events-auto flex flex-col items-center z-[2147483640] transition-[opacity,transform] duration-300 animate-in fade-in zoom-in-95"
+                  : (isBottomPlayerVisible ? '96px' : '20px')
+              }),
+          width: `${characterWidth}px`,
+          height: `${characterHeight}px`,
+          touchAction: 'none',
+          opacity: isFadedIn ? 1 : 0,
+          transform: isFadedIn ? 'scale(1) translateY(0)' : 'scale(0.92) translateY(14px)',
+          visibility: isDOMVisible ? 'visible' : 'hidden',
+          pointerEvents: (isDOMVisible && isFadedIn) ? 'auto' : 'none',
+          transition: isFadedIn
+            ? 'opacity 400ms cubic-bezier(0.16, 1, 0.3, 1), transform 400ms cubic-bezier(0.16, 1, 0.3, 1), width 0.22s cubic-bezier(0.2, 0.8, 0.4, 1), height 0.22s cubic-bezier(0.2, 0.8, 0.4, 1)'
+            : 'opacity 350ms cubic-bezier(0.4, 0, 0.2, 1), transform 350ms cubic-bezier(0.4, 0, 0.2, 1), width 0.22s cubic-bezier(0.2, 0.8, 0.4, 1), height 0.22s cubic-bezier(0.2, 0.8, 0.4, 1)'
+        }}
+        className="fixed select-none flex flex-col items-center z-[2147483640] will-change-[opacity,transform]"
       >
         {/* Subtle Avatar Header Controls (Reset Size & Position, Hide) */}
         <div className="absolute -top-7 right-0 flex items-center gap-1 opacity-0 hover:opacity-100 focus-within:opacity-100 transition-opacity z-50">
@@ -1001,9 +1234,8 @@ export default function CharacterBuddy({
           onContextMenu={(e) => {
             e.preventDefault();
             playTransientGesture('wave', 1200);
-            onToggleChat?.();
           }}
-          title="Loopra AI — Drag to Rotate 360° — Hold 500ms to Resize — Single Click: Voice — Right-Click: Chat"
+          title="Loopra AI — Drag to Reposition — Hold 500ms or Pinch/Wheel to Resize — Single Click: Voice"
         >
           {/* Subtle Loopra Amber Audio Waveform (shown above head) */}
           {isSpeaking && (
@@ -1029,7 +1261,11 @@ export default function CharacterBuddy({
 
           {/* 3D Humanoid Full-Body Container */}
           <div
-            style={{ width: `${characterWidth}px`, height: `${characterHeight}px` }}
+            style={{
+              width: `${characterWidth}px`,
+              height: `${characterHeight}px`,
+              transition: 'width 0.22s cubic-bezier(0.2, 0.8, 0.4, 1), height 0.22s cubic-bezier(0.2, 0.8, 0.4, 1)'
+            }}
             className="relative flex items-center justify-center pointer-events-none"
           >
             <ThreeDCharacter

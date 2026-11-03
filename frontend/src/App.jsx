@@ -1357,6 +1357,17 @@ export default function App() {
   }, []);
 
   // Synchronize voice control access on auth changes
+  const [isVoiceControlAllowed, setIsVoiceControlAllowed] = useState(() => {
+    return voiceControlService.getAccessState().allowed;
+  });
+
+  useEffect(() => {
+    const unsub = voiceControlService.subscribe((state) => {
+      setIsVoiceControlAllowed(Boolean(state.allowed));
+    });
+    return unsub;
+  }, []);
+
   useEffect(() => {
     voiceControlService.checkAccess({ token: authToken, user, backendUrl: BACKEND_URL });
   }, [authToken, user]);
@@ -1988,6 +1999,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     return true; // Default to true so AI avatar is always visible!
   });
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isMobileScreen, setIsMobileScreen] = useState(() => {
+    return typeof window !== 'undefined' ? window.innerWidth < 768 : false;
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobileScreen(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef(null);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
@@ -5659,7 +5681,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 navMap.set(st.id, st);
               });
 
-              const allItems = Array.from(navMap.values()).filter(item => item && item.enabled !== false && !disabledIds.has(item.id));
+              // Destinations present in the mobile lower navbar (MobileBottomNav)
+              const bottomNavIds = new Set(['home', 'discover', 'library', 'liked', 'playlists', 'radio', 'indian-radio']);
+              const allItems = Array.from(navMap.values()).filter(item => {
+                if (!item || item.enabled === false || disabledIds.has(item.id)) return false;
+                // Restriction applies ONLY to phone/mobile mode: do not show lower navbar destinations in mobile sidebar
+                if (isMobileScreen && bottomNavIds.has(item.id)) return false;
+                return true;
+              });
               const groups = [
                 { key: 'main', title: null },
                 { key: 'discovery', title: 'AI & DISCOVERY' },
@@ -5800,11 +5829,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           {/* LEFT: Mobile Menu & Logo | Desktop Clock */}
           <div className="flex items-center gap-2 sm:gap-3">
             <button
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="md:hidden p-1.5 sm:p-2 rounded-2xl bg-neutral-800 text-neutral-200 hover:text-white focus:outline-none shrink-0"
+              id="loopra-mobile-hamburger-btn"
+              data-nav-id="hamburger"
+              type="button"
+              onClick={() => setIsSidebarOpen(prev => !prev)}
+              className="md:hidden flex items-center justify-center p-2 rounded-2xl bg-neutral-800 text-neutral-200 hover:text-white focus:outline-none shrink-0 min-w-[42px] min-h-[42px] active:scale-95 transition z-20 cursor-pointer shadow-sm"
               aria-label="Toggle Menu"
+              title="Toggle Menu"
             >
-              <Icon name={isSidebarOpen ? "close" : "menu"} className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
+              <Icon name={isSidebarOpen ? "close" : "menu"} className="w-5 h-5 text-amber-400 pointer-events-none" />
             </button>
             <div className="flex md:hidden items-center gap-1.5 sm:gap-2">
               <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow-md overflow-hidden">
@@ -5841,21 +5874,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
           {/* RIGHT: INSTALL APP & AUTH/LOGOUT */}
           <div className="flex items-center gap-2">
-            {/* Small Clean Loopra AI Assistant Icon (Desktop + Mobile) */}
-            <button
-              id="loopra-header-ai-icon"
-              type="button"
-              onClick={() => setIsAvatarVisible(prev => !prev)}
-              title={isAvatarVisible ? "Hide Loopra AI Companion" : "Open Loopra AI Companion"}
-              aria-label={isAvatarVisible ? "Hide Loopra AI Companion" : "Open Loopra AI Companion"}
-              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all duration-300 shadow-md active:scale-95 cursor-pointer shrink-0 ${
-                isAvatarVisible
-                  ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-neutral-950 font-bold ring-2 ring-amber-400 shadow-amber-500/25'
-                  : 'bg-neutral-900 border border-amber-500/40 text-amber-400 hover:border-amber-400 hover:text-amber-300 hover:bg-neutral-800'
-              }`}
-            >
-              <Icon name="sparkles" className="w-4 h-4 text-current animate-pulse" />
-            </button>
+            {/* Small Clean Loopra AI Voice Assistant Icon (Admin controlled) */}
+            {isVoiceControlAllowed && (
+              <button
+                id="loopra-header-ai-icon"
+                type="button"
+                onClick={() => setIsAvatarVisible(prev => !prev)}
+                title={isAvatarVisible ? "Hide Loopra AI Companion" : "Open Loopra AI Companion"}
+                aria-label={isAvatarVisible ? "Hide Loopra AI Companion" : "Open Loopra AI Companion"}
+                className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all duration-300 shadow-md active:scale-95 cursor-pointer shrink-0 ${
+                  isAvatarVisible
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-neutral-950 font-bold ring-2 ring-amber-400 shadow-amber-500/25'
+                    : 'bg-neutral-900 border border-amber-500/40 text-amber-400 hover:border-amber-400 hover:text-amber-300 hover:bg-neutral-800'
+                }`}
+              >
+                <Icon name="sparkles" className="w-4 h-4 text-current animate-pulse" />
+              </button>
+            )}
             {/* Mobile Circular Download Button / Desktop Pill */}
             <button
               onClick={handleInstallClick}
@@ -8165,7 +8200,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         isOpen={activeAssistantPanel === 'ai'}
         onToggleOpen={(open) => setActiveAssistantPanel(open ? 'ai' : null)}
         onClose={() => setActiveAssistantPanel(null)}
-        hideFloatingButton={true}
+        hideFloatingButton={false}
       />
 
       {/* Loopra Dedicated Voice Agent & Shared Floating Assistant Action Bar */}
@@ -8185,6 +8220,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         onOpenPanel={() => setActiveAssistantPanel('voice')}
         onClosePanel={() => setActiveAssistantPanel(null)}
         isAvatarVisible={isAvatarVisible}
+        showSplashScreen={showSplashScreen}
+        isAppInitialized={isAppInitialized}
         onToggleAvatar={(vis) => {
           setIsAvatarVisible((prev) => {
             const next = typeof vis === 'boolean' ? vis : !prev;

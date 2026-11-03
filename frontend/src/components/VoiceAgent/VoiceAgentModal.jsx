@@ -37,6 +37,8 @@ export default function VoiceAgentModal({
   onOpenPanel,
   onClosePanel,
   isAvatarVisible = false,
+  showSplashScreen = false,
+  isAppInitialized = true,
   onToggleAvatar,
   onPlayTrack,
   onTogglePlayPause,
@@ -822,6 +824,81 @@ export default function VoiceAgentModal({
     };
   }, [handleProcessUtterance]);
 
+  // =========================================================================
+  // LOOPRA AVATAR DELAYED APPEARANCE & PERSISTENT MOUNT MANAGEMENT
+  // 1. Never mount or render avatar during splash screen.
+  // 2. Start 2-second delay only after splash screen completely finishes & app is initialized.
+  // 3. Keep 3D model mounted across visibility transitions to prevent recreation.
+  // =========================================================================
+  const [hasMountedAvatar, setHasMountedAvatar] = useState(false);
+  const [initialDelayDone, setInitialDelayDone] = useState(false);
+  const initialDelayTimerRef = useRef(null);
+  const prevIsAvatarVisibleRef = useRef(isAvatarVisible);
+
+  // Mount avatar only after splash screen has completely closed and app initialized
+  useEffect(() => {
+    if (!showSplashScreen && isAppInitialized && !hasMountedAvatar) {
+      setHasMountedAvatar(true);
+    }
+  }, [showSplashScreen, isAppInitialized, hasMountedAvatar]);
+
+  // Handle the 2-second delay AFTER homepage loading completes
+  useEffect(() => {
+    // Never start the timer while splash screen is active or before app initialization
+    if (showSplashScreen || !isAppInitialized || initialDelayDone) {
+      return;
+    }
+
+    // Start 2-second delay AFTER homepage loading is complete
+    initialDelayTimerRef.current = setTimeout(() => {
+      setInitialDelayDone(true);
+    }, 2000);
+
+    return () => {
+      if (initialDelayTimerRef.current) {
+        clearTimeout(initialDelayTimerRef.current);
+        initialDelayTimerRef.current = null;
+      }
+    };
+  }, [showSplashScreen, isAppInitialized, initialDelayDone]);
+
+  // Respect manual user toggles:
+  // If user explicitly turns on avatar before 2s delay completes, reveal immediately.
+  // If user explicitly turns off avatar, cancel delay timer.
+  useEffect(() => {
+    if (!prevIsAvatarVisibleRef.current && isAvatarVisible && !initialDelayDone && !showSplashScreen && isAppInitialized) {
+      if (initialDelayTimerRef.current) {
+        clearTimeout(initialDelayTimerRef.current);
+        initialDelayTimerRef.current = null;
+      }
+      setInitialDelayDone(true);
+    }
+    if (!isAvatarVisible && initialDelayTimerRef.current) {
+      clearTimeout(initialDelayTimerRef.current);
+      initialDelayTimerRef.current = null;
+    }
+    prevIsAvatarVisibleRef.current = isAvatarVisible;
+  }, [isAvatarVisible, initialDelayDone, showSplashScreen, isAppInitialized]);
+
+  // Cleanup timers on component unmount
+  useEffect(() => {
+    return () => {
+      if (initialDelayTimerRef.current) {
+        clearTimeout(initialDelayTimerRef.current);
+        initialDelayTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Determine whether avatar should be visually active
+  const isTargetVisible = Boolean(
+    hasMountedAvatar &&
+    !showSplashScreen &&
+    isAppInitialized &&
+    initialDelayDone &&
+    isAvatarVisible
+  );
+
   // Responsive button bottom offset
   const buttonBottomOffset = isBottomPlayerVisible
     ? (isMobile ? 'calc(136px + env(safe-area-inset-bottom, 0px))' : '88px')
@@ -832,7 +909,7 @@ export default function VoiceAgentModal({
       {/* ============================================================= */}
       {/* 1. LOOPRA MOVABLE AI COMPANION AVATAR (Persistent)            */}
       {/* ============================================================= */}
-      {isAvatarVisible && (
+      {hasMountedAvatar && hasAccess && (
         <div
           className="loopra-character-dock-container pointer-events-auto"
           style={{
@@ -849,6 +926,7 @@ export default function VoiceAgentModal({
             onToggleChat={onToggleAi}
             onCloseAvatar={() => onToggleAvatar?.(false)}
             isBottomPlayerVisible={isBottomPlayerVisible}
+            isVisible={isTargetVisible}
           />
         </div>
       )}
