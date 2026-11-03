@@ -65,7 +65,7 @@ export default function AppSplashScreen({
   const mountTimeRef = useRef(Date.now());
   const exitTriggeredRef = useRef(false);
 
-  const logoUrl = branding?.logoUrl || '/loopra-logo.png';
+  const logoUrl = (branding?.logoUrl && typeof branding.logoUrl === 'string' && branding.logoUrl.trim()) ? branding.logoUrl.trim() : '/loopra-logo.png';
 
   // Check reduced motion & WebGL capabilities once on mount
   useEffect(() => {

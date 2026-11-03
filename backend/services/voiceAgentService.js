@@ -194,6 +194,16 @@ export const LOOPRA_TOOLS = [
     }
   },
 
+  // Avatar Animation Actions
+  {
+    name: 'avatar_action',
+    category: 'AVATAR',
+    description: 'Trigger a reactive visual animation or gesture for Loopra avatar (wave, wink, dance, jump, pose)',
+    parameters: {
+      gesture: { type: 'string', enum: ['wave', 'wink', 'dance', 'jump', 'pose'] }
+    }
+  },
+
   // Clarification & Safety
   {
     name: 'clarify',
@@ -274,7 +284,7 @@ export const voiceAgentService = {
     const client = this.getClient();
     if (client) {
       try {
-        const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+        const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
         const aiPlan = await this.queryGeminiIntent({
           client,
           modelName,
@@ -305,6 +315,15 @@ export const voiceAgentService = {
   evaluateDeterministicRules(text = '', currentTrack = null) {
     const lower = text.toLowerCase().trim();
 
+    // 0. NEGATIVE PLAY INTENT GUARD:
+    // Catches phrases like: "don't play", "do not play", "mat chalao", "mat bajana", "without playing", "bina play kare"
+    const hasNegativePlayModifier = (
+      /\b(don'?t|do not|mat|na|bina|without|except|never)\s+(?:play|chalao|bajao|sunao|shuru)/i.test(lower) ||
+      /\b(?:play|chalao|bajao|sunao)\s+(?:mat|na|nahi)\b/i.test(lower) ||
+      /\b(?:don'?t|do not)\s+play\b/i.test(lower) ||
+      /don'?t\s+play\s+them/i.test(lower)
+    );
+
     // A. Playback Controls
     if (/^(pause|stop|hold on|ruk jao|rok do|gaana roko|pause karo|pause music|stop music)$/i.test(lower)) {
       return {
@@ -326,7 +345,7 @@ export const voiceAgentService = {
       };
     }
 
-    if (/\b(next song|next track|skip song|agla gaana|agla track|skip track)\b/i.test(lower) || /^(next|skip|agla)$/i.test(lower)) {
+    if (/\b(next song|next track|play (?:the )?next (?:song|track)|skip song|agla gaana|agla track|skip track)\b/i.test(lower) || /^(next|skip|agla)$/i.test(lower)) {
       return {
         success: true,
         intent: 'next_song',
@@ -359,7 +378,7 @@ export const voiceAgentService = {
       };
     }
 
-    if (/\b(volume up|increase volume|louder|awaaz badhao|volume tej)\b/i.test(lower)) {
+    if (/\b(volume up|increase volume|louder|volume badhao|awaaz badhao|volume tej|volume badha do|awaaz badha do)\b/i.test(lower)) {
       return {
         success: true,
         intent: 'volume_up',
@@ -369,7 +388,7 @@ export const voiceAgentService = {
       };
     }
 
-    if (/\b(volume down|decrease volume|lower volume|softer|awaaz kam karo)\b/i.test(lower)) {
+    if (/\b(volume down|decrease volume|lower volume|softer|awaaz kam karo|volume kam karo|awaaz kam)\b/i.test(lower)) {
       return {
         success: true,
         intent: 'volume_down',
@@ -396,6 +415,123 @@ export const voiceAgentService = {
         confidence: 1.0,
         speechResponse: 'Unmuting audio',
         steps: [{ tool: 'unmute', action: 'unmute', description: 'Unmute volume' }]
+      };
+    }
+
+    // Library: Unlike / Remove (EVALUATED BEFORE NAVIGATION TO PREVENT REGRESSION)
+    if (
+      /\b(unlike|remove (?:this song )?from (?:favorites|favourites|liked)|delete from (?:favorites|favourites|liked)|dislike|favourite se hatao|favorites se hatao|liked se hatao|liked songs se hatao|is gaane ko hatao|is gaane ko delete karo|hata do|hatao isko|nikal do|remove this song|unlike this song|unlike song)\b/i.test(lower) ||
+      /^(unlike|dislike|remove|hatao|hata do)$/i.test(lower)
+    ) {
+      return {
+        success: true,
+        intent: 'unlike_song',
+        confidence: 1.0,
+        speechResponse: currentTrack ? `Removing "${currentTrack.title || 'song'}" from Liked Songs` : 'Removing from Liked Songs',
+        steps: [{ tool: 'unlike_song', action: 'unlike_current', target: currentTrack, description: `Unlike "${currentTrack?.title || 'Current Song'}"` }]
+      };
+    }
+
+    // Library: Like / Favorite
+    if (/\b(like this song|like this track|like it|add to favourites|add to favorites|add to liked|dil de do|pasand karo|usko like karo)\b/i.test(lower) || /^(like|favourite|favorite)$/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'like_song',
+        confidence: 1.0,
+        speechResponse: currentTrack ? `Adding "${currentTrack.title || 'song'}" to Liked Songs` : 'Adding to Liked Songs',
+        steps: [{ tool: 'like_song', action: 'like_current', target: currentTrack, description: `Like "${currentTrack?.title || 'Current Song'}"` }]
+      };
+    }
+
+    // Avatar Interactive Gestures
+    if (/\b(wave karo|hath hilao|wave|say hi|hi bolo)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'avatar_action',
+        confidence: 1.0,
+        speechResponse: 'Loopra waves at you!',
+        steps: [{ tool: 'avatar_action', action: 'avatar_action', gesture: 'wave', description: 'Loopra Wave' }]
+      };
+    }
+    if (/\b(wink karo|aankh maro|wink)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'avatar_action',
+        confidence: 1.0,
+        speechResponse: 'Loopra winks!',
+        steps: [{ tool: 'avatar_action', action: 'avatar_action', gesture: 'wink', description: 'Loopra Wink' }]
+      };
+    }
+    if (/\b(dance karo|dance|nacho|groove karo)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'avatar_action',
+        confidence: 1.0,
+        speechResponse: 'Loopra starts dancing to the music!',
+        steps: [{ tool: 'avatar_action', action: 'avatar_action', gesture: 'dance', description: 'Loopra Dance' }]
+      };
+    }
+    if (/\b(jump karo|jump|koodo)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'avatar_action',
+        confidence: 1.0,
+        speechResponse: 'Loopra jumps with excitement!',
+        steps: [{ tool: 'avatar_action', action: 'avatar_action', gesture: 'jump', description: 'Loopra Jump' }]
+      };
+    }
+    if (/\b(pose karo|pose do|style dikhao|pose)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'avatar_action',
+        confidence: 1.0,
+        speechResponse: 'Loopra strikes a pose!',
+        steps: [{ tool: 'avatar_action', action: 'avatar_action', gesture: 'pose', description: 'Loopra Pose' }]
+      };
+    }
+
+    // Stations & Radio Channels (STRICT MAPPING)
+    // "Saloon FM" MUST ALWAYS map to "barber"
+    if (/\b(saloon|salon|barber|saloon\s*fm|salon\s*fm|lune\s*fm|luna\s*fm|saloon\s*nostalgia|90s\s*saloon)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'navigate_to_page',
+        confidence: 1.0,
+        speechResponse: 'Opening Saloon FM',
+        steps: [{ tool: 'navigate_to_page', action: 'navigate_page', target: 'barber', parameters: { page: 'barber' }, description: 'Open Saloon FM' }]
+      };
+    }
+
+    // "Horn Ok Please" maps to "truck"
+    if (/\b(horn\s*ok\s*please|truck\s*melodies|highway\s*truck|dhaba|highway)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'navigate_to_page',
+        confidence: 1.0,
+        speechResponse: 'Opening Horn Ok Please',
+        steps: [{ tool: 'navigate_to_page', action: 'navigate_page', target: 'truck', parameters: { page: 'truck' }, description: 'Open Horn Ok Please' }]
+      };
+    }
+
+    // "Theka Session" maps to "pauwa"
+    if (/\b(desi\s*theka|theka\s*session|theka|pauwa)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'navigate_to_page',
+        confidence: 1.0,
+        speechResponse: 'Opening Desi Theka Session',
+        steps: [{ tool: 'navigate_to_page', action: 'navigate_page', target: 'pauwa', parameters: { page: 'pauwa' }, description: 'Open Desi Theka' }]
+      };
+    }
+
+    // "Time Machine Radio" maps to "timemachine"
+    if (/\b(time\s*machine|retro\s*era|purana\s*radio)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'navigate_to_page',
+        confidence: 1.0,
+        speechResponse: 'Opening Time Machine Radio',
+        steps: [{ tool: 'navigate_to_page', action: 'navigate_page', target: 'timemachine', parameters: { page: 'timemachine' }, description: 'Open Time Machine Radio' }]
       };
     }
 
@@ -451,7 +587,7 @@ export const voiceAgentService = {
       };
     }
 
-    if (/\b(liked songs|my liked songs|open liked|favourites?|pasandida gaane|mera liked songs kholo|meri liked songs)\b/i.test(lower) || /^(liked|favourites|favorites)$/i.test(lower)) {
+    if (/\b(go to liked songs|open liked songs|my liked songs|liked songs|open liked|open favourites|open favorites|liked playlist|pasandida gaane|mera liked songs kholo|meri liked songs)\b/i.test(lower) || /^(liked|favourites|favorites|liked songs)$/i.test(lower)) {
       return {
         success: true,
         intent: 'navigate_to_page',
@@ -461,13 +597,14 @@ export const voiceAgentService = {
       };
     }
 
-    if (/\b(listening history|recently played|recent songs|history kholo|open listening history|mera listening history)\b/i.test(lower) || /^(history)$/i.test(lower)) {
+    // Listening Activity (Explicitly routes to 'activity' page)
+    if (/\b(listening activity|listening history|recently played|recent songs|history kholo|open listening history|mera listening history|activity kholo|activity page|recent activity)\b/i.test(lower) || /^(activity|history)$/i.test(lower)) {
       return {
         success: true,
         intent: 'navigate_to_page',
         confidence: 1.0,
-        speechResponse: 'Opening Listening History',
-        steps: [{ tool: 'navigate_to_page', action: 'navigate_page', target: 'history', parameters: { page: 'history' }, description: 'Open Listening History' }]
+        speechResponse: 'Opening Listening Activity',
+        steps: [{ tool: 'navigate_to_page', action: 'navigate_page', target: 'activity', parameters: { page: 'activity' }, description: 'Open Listening Activity' }]
       };
     }
 
@@ -502,13 +639,14 @@ export const voiceAgentService = {
       };
     }
 
-    if (/\b(listening insights|weekly recap|my recap|stats|statistics|listening stats|insights kholo)\b/i.test(lower) || /^(insights|recap|stats)$/i.test(lower)) {
+    // Recap and Stats (STRICTLY opens Insights Modal, NEVER routes to activity)
+    if (/\b(recap and stats|recap & stats|my listening statistics|music summary|listening report|listening insights|weekly recap|my recap|stats|statistics|listening stats|insights kholo|listening report)\b/i.test(lower) || /^(insights|recap|stats)$/i.test(lower)) {
       return {
         success: true,
         intent: 'open_insights',
         confidence: 1.0,
-        speechResponse: 'Opening Listening Insights',
-        steps: [{ tool: 'open_insights', action: 'open_insights', description: 'Open Insights & Recap' }]
+        speechResponse: 'Opening Recap & Stats',
+        steps: [{ tool: 'open_insights', action: 'open_insights', description: 'Open Recap & Stats' }]
       };
     }
 
@@ -519,17 +657,6 @@ export const voiceAgentService = {
         confidence: 1.0,
         speechResponse: 'Going back',
         steps: [{ tool: 'go_back', action: 'go_back', description: 'Navigate back' }]
-      };
-    }
-
-    // Library
-    if (/\b(like this song|like this track|like it|add to favourites|add to favorites|add to liked|dil de do|pasand karo|usko like karo)\b/i.test(lower) || /^(like|favourite|favorite)$/i.test(lower)) {
-      return {
-        success: true,
-        intent: 'like_song',
-        confidence: 1.0,
-        speechResponse: currentTrack ? `Adding "${currentTrack.title || 'song'}" to Liked Songs` : 'Adding to Liked Songs',
-        steps: [{ tool: 'like_song', action: 'like_current', target: currentTrack, description: `Like "${currentTrack?.title || 'Current Song'}"` }]
       };
     }
 
@@ -545,43 +672,68 @@ export const voiceAgentService = {
 
     // STRICT PLAYBACK INTENT GATE (PLAY COMMANDS ONLY)
     // Matches explicit play commands: "play X", "bajao X", "chalao X", "X play karo", "X bajao"
-    const explicitPlayPattern = /^(?:play\s+song|play\s+track|play|bajao\s+gaana|bajao|chalao\s+song|chalao|sunao\s+gaana|sunao|gaana\s+bajao)\s+(.+)$/i;
-    const playMatch = lower.match(explicitPlayPattern);
-    if (playMatch && playMatch[1]) {
-      const q = text.slice(text.length - playMatch[1].length).trim();
-      return {
-        success: true,
-        intent: 'play_song',
-        confidence: 0.98,
-        speechResponse: `Playing "${q}"`,
-        steps: [{ tool: 'play_song', action: 'play_search', query: q, parameters: { query: q }, description: `Play "${q}"` }]
-      };
-    }
+    // ONLY executed if NO negative play modifier is present!
+    if (!hasNegativePlayModifier) {
+      const explicitPlayPattern = /^(?:play\s+song|play\s+track|play|bajao\s+gaana|bajao|chalao\s+song|chalao|sunao\s+gaana|sunao|gaana\s+bajao)\s+(.+)$/i;
+      const playMatch = lower.match(explicitPlayPattern);
+      if (playMatch && playMatch[1]) {
+        const q = text.slice(text.length - playMatch[1].length).trim();
+        return {
+          success: true,
+          intent: 'play_song',
+          confidence: 0.98,
+          speechResponse: `Playing "${q}"`,
+          steps: [{ tool: 'play_song', action: 'play_search', query: q, parameters: { query: q }, description: `Play "${q}"` }]
+        };
+      }
 
-    // Hindi suffix play: "Headlights play karo", "Headlights bajao"
-    const hindiSuffixPlay = lower.match(/^(.+?)\s+(?:play\s+karo|bajao|chalao)$/i);
-    if (hindiSuffixPlay && hindiSuffixPlay[1]) {
-      const q = text.slice(0, hindiSuffixPlay[1].length).trim();
-      return {
-        success: true,
-        intent: 'play_song',
-        confidence: 0.98,
-        speechResponse: `Playing "${q}"`,
-        steps: [{ tool: 'play_song', action: 'play_search', query: q, parameters: { query: q }, description: `Play "${q}"` }]
-      };
+      // Hindi suffix play: "Headlights play karo", "Headlights bajao"
+      const hindiSuffixPlay = lower.match(/^(.+?)\s+(?:play\s+karo|bajao|chalao)$/i);
+      if (hindiSuffixPlay && hindiSuffixPlay[1]) {
+        const q = text.slice(0, hindiSuffixPlay[1].length).trim();
+        return {
+          success: true,
+          intent: 'play_song',
+          confidence: 0.98,
+          speechResponse: `Playing "${q}"`,
+          steps: [{ tool: 'play_song', action: 'play_search', query: q, parameters: { query: q }, description: `Play "${q}"` }]
+        };
+      }
     }
 
     // STRICT SEARCH ONLY (NEVER PLAY)
     const searchPattern = /^(?:search\s+for|search|find\s+song|find|look\s+up|dhundo|khojo)\s+(.+)$/i;
     const searchMatch = lower.match(searchPattern);
     if (searchMatch && searchMatch[1]) {
-      const q = text.slice(text.length - searchMatch[1].length).trim();
+      let q = text.slice(text.length - searchMatch[1].length).trim();
+      q = q
+        .replace(/,\s*(?:don'?t\s+play\s+(?:them|it|songs?)?|mat\s+chalao|bina\s+play\s+kare|do\s+not\s+play\s+(?:them|it)?)/gi, '')
+        .replace(/\b(don'?t\s+play\s+(?:them|it|songs?)?|mat\s+chalao|bina\s+play\s+kare|do\s+not\s+play\s+(?:them|it)?)\b/gi, '')
+        .replace(/^(?:(?:\d+|five|four|three|two|one|paanch|top|best|popular)\s+)?songs?\s+(?:by|of|from)\s+/i, '')
+        .trim();
       return {
         success: true,
         intent: 'search_songs',
         confidence: 0.98,
         speechResponse: `Searching catalog for "${q}"`,
         steps: [{ tool: 'search_songs', action: 'search', query: q, parameters: { query: q }, description: `Search for "${q}"` }]
+      };
+    }
+
+    // Negative play fallback: e.g. "five songs by Arijit Singh, don't play them"
+    if (hasNegativePlayModifier) {
+      let q = text
+        .replace(/^(?:search\s+for|search|find\s+song|find|look\s+up|dhundo|khojo|show|display)\s+/i, '')
+        .replace(/,\s*(?:don'?t\s+play\s+(?:them|it|songs?)?|mat\s+chalao|bina\s+play\s+kare|do\s+not\s+play\s+(?:them|it)?)/gi, '')
+        .replace(/\b(don'?t\s+play\s+(?:them|it|songs?)?|mat\s+chalao|bina\s+play\s+kare|do\s+not\s+play\s+(?:them|it)?)\b/gi, '')
+        .replace(/^(?:(?:\d+|five|four|three|two|one|paanch|top|best|popular)\s+)?songs?\s+(?:by|of|from)\s+/i, '')
+        .trim();
+      return {
+        success: true,
+        intent: 'search_songs',
+        confidence: 0.98,
+        speechResponse: `Displaying songs for "${q || 'songs'}"`,
+        steps: [{ tool: 'search_songs', action: 'search', query: q || 'songs', parameters: { query: q || 'songs' }, description: `Search for "${q || 'songs'}"` }]
       };
     }
 
@@ -724,6 +876,7 @@ AVAILABLE LOOPRA TOOLS:
 - get_artist_details(artist: string)
 - like_song()
 - unlike_song()
+- avatar_action(gesture: "wave" | "wink" | "dance" | "jump" | "pose")
 - add_song_to_playlist(songTitle?: string, playlistName?: string)
 - follow_artist(artist?: string)
 - clarify(question: string)
@@ -735,6 +888,9 @@ CRITICAL RULES:
    - ONLY emit 'play_song' if the user EXPLICITLY commanded playback ("play", "bajao", "chalao", "sunao", "play karo").
    - "Search Headlights" -> tool: 'search_songs', query: 'Headlights'. NEVER 'play_song'!
    - "Find Headlights" -> tool: 'search_songs', query: 'Headlights'. NEVER 'play_song'!
+   - "Find five songs by Arijit Singh, don't play them" -> tool: 'show_songs', artist: 'Arijit Singh'. NEVER 'play_song'!
+   - "Remove this song from favourites" -> tool: 'unlike_song'. NEVER 'play_song'!
+   - "Play the next song" -> tool: 'next_song'. NEVER 'play_song'!
    - "Open Headlights album" -> tool: 'open_album', album: 'Headlights'. NEVER 'play_song'!
    - "Show songs by Arijit Singh" -> tool: 'show_songs', artist: 'Arijit Singh'. NEVER 'play_song'!
    - "Arijit Singh ke songs dikhao" -> tool: 'show_songs', artist: 'Arijit Singh'. NEVER 'play_song'!
@@ -742,6 +898,7 @@ CRITICAL RULES:
    - "Tell me about Arijit Singh" -> tool: 'get_artist_details', artist: 'Arijit Singh'. NEVER 'play_song'!
    - "Open Headlights" -> ambiguous! Emit tool: 'clarify', question: "Would you like to play the song 'Headlights', view the album, or search for it?"
 2. MULTI-STEP COMMANDS:
+   - "Open liked songs and remove this song" -> 2 steps: [navigate_to_page('library'), unlike_song()]
    - "Discover kholo aur Arijit Singh search karo" -> 2 steps: [navigate_to_page('discover'), search_songs('Arijit Singh')]
    - "Listening History kholo aur last played song play karo" -> 2 steps: [navigate_to_page('history'), play_song('last played song')]
 3. SECURITY ISOLATION:
@@ -841,6 +998,330 @@ OUTPUT JSON SCHEMA:
       confidence: 0.70,
       speechResponse: `Searching catalog for "${text}"`,
       steps: [{ tool: 'search_songs', action: 'search', query: text, description: `Search catalog for "${text}"` }]
+    };
+  },
+
+  /**
+   * Gemini Multimodal Native Audio Speech Recognition & Intent Comprehension
+   * Accepts raw base64 microphone audio buffer.
+   * Transcribes first, then classifies intent and returns structured execution plan.
+   */
+  async recognizeAndParseAudio({ audioData, mimeType = 'audio/webm', currentTrack = null, activeTab = 'home', history = [] }) {
+    const startTime = Date.now();
+    const client = this.getClient();
+
+    if (!client) {
+      return {
+        success: false,
+        error: 'GEMINI_NOT_CONFIGURED',
+        transcript: '',
+        language: 'en',
+        intent: 'clarify',
+        confidence: 0,
+        clarification_required: true,
+        clarification_question: 'Gemini API key is not configured for native audio recognition.',
+        speechResponse: 'Gemini API key is not configured. Please enter your API key in settings.',
+        steps: [],
+        latencyMs: Date.now() - startTime
+      };
+    }
+
+    const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+    const currentTrackSummary = currentTrack
+      ? `CURRENT TRACK: "${currentTrack.title}" by ${currentTrack.artist || 'Unknown'} (Status: ${currentTrack.isPlaying ? 'Playing' : 'Paused'})`
+      : 'NO TRACK CURRENTLY PLAYING';
+
+    const systemPrompt = `
+You are Loopra's Native Audio Speech Recognizer and Command Intent Parser.
+You receive direct raw microphone audio from a user speaking in Hindi, Hinglish, Roman Hindi, or Indian English.
+
+TASKS:
+1. SPEECH RECOGNITION (TRANSCRIBE FIRST):
+   - Listen to the audio and provide the exact transcript in "transcript".
+   - Accurately preserve Indian artist names (e.g., "Arijit Singh", "Shreya Ghoshal", "Diljit Dosanjh", "Pritam", "Sidhu Moose Wala", "AP Dhillon"), Hindi words ("chalao", "bajao", "roko", "agla", "pichla", "kholo", "hatao", "saloon fm", "desi theka"), and song titles.
+   - Set "language" to "hi", "en", or "hinglish".
+
+2. CONVERSATION UNDERSTANDING:
+   - Understand casual speech, Indian slang, incomplete sentences, and contextual follow-ups ("play this", "remove this", "next one", "open that", "isse like karo", "hata do").
+   - Multi-turn conversation history: ${JSON.stringify(history.slice(-4))}
+   - Active Tab: "${activeTab}"
+   - ${currentTrackSummary}
+
+3. RELIABLE LOOPRA INTENT MAPPING:
+   - "navigate_to_page":
+       "activity" for "Listening Activity", "listening history", "recently played", "recent activity".
+       "barber" for "Saloon FM".
+       "truck" for "Horn Ok Please".
+       "pauwa" for "Desi Theka" / "Theka Session".
+       "timemachine" for "Time Machine Radio".
+       "radio" for "Indian Live Radio".
+       "library" for "Liked Songs" / "Library".
+       "playlists" for "Playlists".
+       "discover" for "Discover".
+       "home" for "Home".
+   - "open_insights": STRICTLY for "Recap and Stats", "my listening statistics", "music summary", "listening report", "weekly recap", "recap", "stats", "statistics", "listening stats", "listening insights". NOTE: Explicitly requesting Recap & Stats must NEVER navigate to activity or history!
+   - "play_song": STRICT PLAYBACK INTENT GATE! ONLY call if user EXPLICITLY commanded playback ("play", "bajao", "chalao", "sunao"). Query must be cleaned song title or artist.
+   - "search_songs": For searching/finding songs without playing ("search Headlights", "find five songs by Arijit Singh, don't play them", "Arijit Singh ke gaane dikhao").
+   - "pause_song": "pause", "stop", "ruk jao", "rok do", "gaana roko".
+   - "resume_song": "resume", "continue", "wapas play karo".
+   - "next_song": "next", "agla gaana", "skip", "play next song".
+   - "previous_song": "previous", "prev", "pichla gaana".
+   - "set_volume": volume 0..100.
+   - "volume_up" / "volume_down" / "mute" / "unmute".
+   - "like_song": "like this song", "add to favourites".
+   - "unlike_song": "remove from favourites", "unlike", "favourite se hatao", "hata do".
+   - "avatar_action": "wave" | "wink" | "dance" | "jump" | "pose".
+   - "clarify": When user intent is genuinely ambiguous (e.g. user just said "Headlights" alone).
+
+4. SHORT SPOKEN CONFIRMATION:
+   - Provide a short, natural Indian conversational response in "speechResponse" (e.g., "Playing Kesariya", "Opening Recap & Stats", "Removed from favourites", "Paused").
+
+STRICT JSON OUTPUT FORMAT:
+{
+  "transcript": "exact transcription",
+  "language": "hi" | "en" | "hinglish",
+  "intent": "navigate_to_page" | "open_insights" | "play_song" | "search_songs" | "pause_song" | "resume_song" | "next_song" | "previous_song" | "set_volume" | "volume_up" | "volume_down" | "mute" | "unmute" | "like_song" | "unlike_song" | "avatar_action" | "clarify",
+  "target": "target string or null",
+  "parameters": { ... },
+  "clarification_required": boolean,
+  "clarification_question": "string or null",
+  "speechResponse": "short confirmation",
+  "steps": [
+    {
+      "tool": "tool_name",
+      "action": "action_name",
+      "target": "target",
+      "parameters": { ... },
+      "description": "description"
+    }
+  ]
+}
+`;
+
+    try {
+      let cleanBase64 = audioData;
+      if (cleanBase64.includes(';base64,')) {
+        cleanBase64 = cleanBase64.split(';base64,')[1];
+      }
+
+      const response = await client.models.generateContent({
+        model: modelName,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  mimeType: mimeType || 'audio/webm',
+                  data: cleanBase64
+                }
+              },
+              {
+                text: systemPrompt
+              }
+            ]
+          }
+        ],
+        config: {
+          responseMimeType: 'application/json'
+        }
+      });
+
+      const raw = response.text?.trim() || '{}';
+      let parsed = {};
+      try {
+        parsed = JSON.parse(raw);
+      } catch (jsonErr) {
+        const match = raw.match(/\{[\s\S]*\}/);
+        if (match) parsed = JSON.parse(match[0]);
+      }
+
+      const verifiedPlan = this.validateAndNormalizePlan({
+        transcript: parsed.transcript || '',
+        language: parsed.language || 'en',
+        intent: parsed.intent || 'unknown',
+        steps: Array.isArray(parsed.steps) ? parsed.steps : [],
+        speechResponse: parsed.speechResponse || '',
+        clarification_required: Boolean(parsed.clarification_required),
+        clarification_question: parsed.clarification_question || null,
+        target: parsed.target || null,
+        parameters: parsed.parameters || {},
+        currentTrack
+      });
+
+      verifiedPlan.latencyMs = Date.now() - startTime;
+      return verifiedPlan;
+    } catch (err) {
+      console.warn('[VoiceAgentService] Native audio recognition error:', err.message);
+      return {
+        success: false,
+        error: err.message,
+        transcript: '',
+        intent: 'error',
+        speechResponse: 'Could not recognize audio. Please try again.',
+        steps: [],
+        latencyMs: Date.now() - startTime
+      };
+    }
+  },
+
+  /**
+   * Validates and normalizes parsed audio/text plans to enforce all Loopra strict safety rules.
+   */
+  validateAndNormalizePlan({
+    transcript = '',
+    language = 'en',
+    intent = 'unknown',
+    steps = [],
+    speechResponse = '',
+    clarification_required = false,
+    clarification_question = null,
+    target = null,
+    parameters = {},
+    currentTrack = null
+  }) {
+    const lowerTranscript = (transcript || '').toLowerCase().trim();
+
+    // 1. ADMINISTRATIVE ISOLATION RULE
+    if (/\b(admin|administrator|admin dashboard|cms|user management|audit logs?|system metrics|diagnostics|database|feature toggle|server logs)\b/i.test(lowerTranscript)) {
+      return {
+        success: true,
+        transcript,
+        language,
+        intent: 'security_blocked',
+        confidence: 1.0,
+        speechResponse: 'Admin operations are strictly isolated from the Voice Agent.',
+        steps: [{
+          tool: 'security_blocked',
+          action: 'security_blocked',
+          parameters: { reason: 'Administrative functions isolated' },
+          description: 'Administrative access blocked'
+        }],
+        clarification_required: false,
+        clarification_question: null
+      };
+    }
+
+    // 2. NEGATIVE PLAY INTENT GUARD:
+    // If transcript contains "don't play", "do not play", "mat chalao", "without playing",
+    // never execute play_song! Convert to search_songs.
+    const hasNegativePlay = (
+      /\b(don'?t|do not|mat|na|bina|without|except|never)\s+(?:play|chalao|bajao|sunao|shuru)/i.test(lowerTranscript) ||
+      /\b(?:play|chalao|bajao|sunao)\s+(?:mat|na|nahi)\b/i.test(lowerTranscript) ||
+      /\b(?:don'?t|do not)\s+play\b/i.test(lowerTranscript)
+    );
+
+    // 3. NAVIGATION ENFORCEMENT:
+    // Recap & Stats must NEVER navigate to activity!
+    const isExplicitRecapStats = /\b(recap and stats|recap & stats|my listening statistics|music summary|listening report|listening insights|weekly recap|my recap|stats|statistics|listening stats|insights kholo)\b/i.test(lowerTranscript);
+    const isExplicitActivity = /\b(listening activity|listening history|recently played|recent songs|history kholo|open listening history|activity kholo|activity page|recent activity)\b/i.test(lowerTranscript);
+
+    let normalizedIntent = intent;
+    let normalizedSpeech = speechResponse;
+
+    if (isExplicitRecapStats) {
+      normalizedIntent = 'open_insights';
+      if (!normalizedSpeech) normalizedSpeech = 'Opening Recap & Stats';
+      steps = [{
+        tool: 'open_insights',
+        action: 'open_insights',
+        description: 'Open Recap & Stats'
+      }];
+    } else if (isExplicitActivity) {
+      normalizedIntent = 'navigate_to_page';
+      if (!normalizedSpeech) normalizedSpeech = 'Opening Listening Activity';
+      steps = [{
+        tool: 'navigate_to_page',
+        action: 'navigate_page',
+        target: 'activity',
+        parameters: { page: 'activity' },
+        description: 'Open Listening Activity'
+      }];
+    }
+
+    // 4. MAP AND VALIDATE EACH STEP
+    const validatedSteps = (steps.length > 0 ? steps : []).map(s => {
+      let action = s.action || s.tool;
+      let stepTarget = s.target || s.parameters?.page || s.parameters?.artist || s.parameters?.album || s.parameters?.playlistName;
+      let query = s.parameters?.query || s.parameters?.artist || s.parameters?.songTitle || s.query;
+
+      if (s.tool === 'navigate_to_page') {
+        action = 'navigate_page';
+        stepTarget = s.parameters?.page || s.target;
+      } else if (s.tool === 'open_insights') {
+        action = 'open_insights';
+      } else if (s.tool === 'play_song') {
+        if (hasNegativePlay) {
+          action = 'search';
+        } else {
+          action = 'play_search';
+        }
+      } else if (s.tool === 'search_songs' || s.tool === 'show_songs') {
+        action = 'search';
+      } else if (s.tool === 'pause_song') {
+        action = 'pause';
+      } else if (s.tool === 'resume_song') {
+        action = 'resume';
+      } else if (s.tool === 'next_song') {
+        action = 'next';
+      } else if (s.tool === 'previous_song') {
+        action = 'previous';
+      } else if (s.tool === 'like_song') {
+        action = 'like_current';
+        stepTarget = currentTrack;
+      } else if (s.tool === 'unlike_song') {
+        action = 'unlike_current';
+        stepTarget = currentTrack;
+      } else if (s.tool === 'avatar_action') {
+        action = 'avatar_action';
+      }
+
+      return {
+        tool: s.tool || action,
+        action,
+        target: stepTarget,
+        query,
+        parameters: s.parameters || {},
+        description: s.description || `Execute ${action}`
+      };
+    });
+
+    // If steps array is empty, generate from intent
+    if (validatedSteps.length === 0 && normalizedIntent && normalizedIntent !== 'unknown') {
+      if (normalizedIntent === 'open_insights') {
+        validatedSteps.push({ tool: 'open_insights', action: 'open_insights', description: 'Open Recap & Stats' });
+      } else if (normalizedIntent === 'navigate_to_page') {
+        validatedSteps.push({ tool: 'navigate_to_page', action: 'navigate_page', target: target || 'home', description: `Open ${target || 'page'}` });
+      } else if (normalizedIntent === 'unlike_song') {
+        validatedSteps.push({ tool: 'unlike_song', action: 'unlike_current', target: currentTrack, description: 'Remove from Liked Songs' });
+      } else if (normalizedIntent === 'like_song') {
+        validatedSteps.push({ tool: 'like_song', action: 'like_current', target: currentTrack, description: 'Add to Liked Songs' });
+      } else if (normalizedIntent === 'pause_song') {
+        validatedSteps.push({ tool: 'pause_song', action: 'pause', description: 'Pause playback' });
+      } else if (normalizedIntent === 'resume_song') {
+        validatedSteps.push({ tool: 'resume_song', action: 'resume', description: 'Resume playback' });
+      } else if (normalizedIntent === 'next_song') {
+        validatedSteps.push({ tool: 'next_song', action: 'next', description: 'Next track' });
+      } else if (normalizedIntent === 'previous_song') {
+        validatedSteps.push({ tool: 'previous_song', action: 'previous', description: 'Previous track' });
+      } else if (normalizedIntent === 'search_songs') {
+        validatedSteps.push({ tool: 'search_songs', action: 'search', query: target || parameters?.query || transcript, description: 'Search catalog' });
+      } else if (normalizedIntent === 'play_song' && !hasNegativePlay) {
+        validatedSteps.push({ tool: 'play_song', action: 'play_search', query: target || parameters?.query || transcript, description: 'Play track' });
+      }
+    }
+
+    return {
+      success: true,
+      transcript,
+      language,
+      intent: normalizedIntent,
+      target,
+      parameters,
+      clarification_required: Boolean(clarification_required),
+      clarification_question,
+      speechResponse: normalizedSpeech || 'Done dost! Command execute ho gaya.',
+      steps: validatedSteps
     };
   }
 };

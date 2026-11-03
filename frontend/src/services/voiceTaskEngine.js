@@ -29,9 +29,11 @@ const ACTION_VERB_PATTERNS = [
   // Library
   /^(usko|isse|is gaane ko|use|unhe|it)\s+(like|favorite|favourite|playlist|dil|pasand)/i,
   /^(like|favorite|favourite|add to favorites|add to liked|dil do|pasand karo)\b/i,
-  /^(unlike|remove from favorites|dislike)\b/i,
+  /^(unlike|remove from favorites|remove from favourites|remove this song|dislike|remove|hatao|nikal do)\b/i,
   /^(add to playlist|add to favorites|add that song|add|playlist mein daalo|playlist)\b/i,
   /^(follow|unfollow)\b/i,
+  // Avatar
+  /^(wave|wink|dance|jump|pose)\b/i,
   // Details & Modals
   /^(lyrics|open lyrics|show lyrics|lyrics kholo|lyrics dikhao)\b/i,
   /^(queue|open\s+queue|show\s+queue|queue\s+kholo|up\s+next|open\s+playback\s+queue)\b/i,
@@ -401,6 +403,28 @@ export async function executeTaskPipeline(steps = [], initialContext = {}, handl
         if (!onToggleLike) throw new Error('Like handler unavailable.');
         await onToggleLike(targetTrack);
         stepResult = { description: `Favorited "${targetTrack.title}"`, data: targetTrack };
+      }
+
+      // 12b. Library: Unlike / Remove from Favorites
+      else if (step.action === 'unlike_current' || step.action === 'remove_favorite') {
+        const targetTrack = step.target || currentContext.currentSong || currentContext.lastPlayedTrack;
+        if (!targetTrack) {
+          throw new Error('No song currently playing or specified to remove from favorites.');
+        }
+        if (!onToggleLike) throw new Error('Like handler unavailable.');
+        await onToggleLike(targetTrack);
+        stepResult = { description: `Removed "${targetTrack.title || 'song'}" from favorites`, data: targetTrack };
+      }
+
+      // 12c. Avatar Action: Wave, Wink, Dance, Jump, Pose
+      else if (step.action === 'avatar_action') {
+        const gesture = step.gesture || step.target || 'wave';
+        if (typeof window !== 'undefined' && typeof window.__loopraTriggerAvatarGesture === 'function') {
+          window.__loopraTriggerAvatarGesture(gesture, 2500);
+        } else if (typeof window !== 'undefined' && typeof window.__loopraPlayGesture === 'function') {
+          window.__loopraPlayGesture(gesture, 2500);
+        }
+        stepResult = { description: `Triggered Loopra ${gesture} animation` };
       }
 
       // 13. Library: Add to Playlist

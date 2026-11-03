@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom';
 import { aiMusicCompanionClient } from '../../services/aiMusicCompanionClient';
 import { voiceControlService } from '../../services/voiceControlService';
+import { voiceBuddyService } from '../../services/voiceBuddyService';
+import { parseCommandToAction, INTENT_CATEGORIES } from '../../services/commandActionEngine';
+import { Volume2, VolumeX, ChevronDown, ChevronUp } from 'lucide-react';
 
 const STORAGE_KEY_DESKTOP = 'loopra_ai_chat_dims_desktop';
 const STORAGE_KEY_MOBILE = 'loopra_ai_chat_dims_mobile';
@@ -83,9 +86,20 @@ export default function LoopraAiCompanion({
   duration,
   onPlayTrack,
   onTogglePlayPause,
+  onNextTrack,
+  onPrevTrack,
+  onToggleShuffle,
+  onToggleRepeat,
+  onSetVolume,
   onToggleLike,
   isLiked,
   onAddToPlaylist,
+  onNavigate,
+  onOpenInsights,
+  onOpenQueue,
+  onOpenLyrics,
+  onGoBack,
+  onOpenArtist,
   showToast,
   isBottomPlayerVisible = false,
   isOpen: controlledIsOpen,
@@ -96,6 +110,38 @@ export default function LoopraAiCompanion({
   const [uncontrolledIsOpen, setUncontrolledIsOpen] = useState(false);
   const isControlled = controlledIsOpen !== undefined;
   const isOpen = isControlled ? controlledIsOpen : uncontrolledIsOpen;
+
+  // Voice Output (TTS) & Drawer States
+  const [isVoiceOutputEnabled, setIsVoiceOutputEnabled] = useState(() => voiceBuddyService.isVoiceOutputEnabled);
+  const [showVoiceControls, setShowVoiceControls] = useState(false);
+
+  useEffect(() => {
+    const unsub = voiceBuddyService.subscribe(({ event, enabled }) => {
+      if (event === 'voice_output_change') {
+        setIsVoiceOutputEnabled(enabled !== undefined ? enabled : voiceBuddyService.isVoiceOutputEnabled);
+      }
+    });
+    return unsub;
+  }, []);
+
+  const handleToggleVoiceOutput = (e) => {
+    e?.stopPropagation?.();
+    const newState = voiceBuddyService.toggleVoiceOutput();
+    setIsVoiceOutputEnabled(newState);
+    if (showToast) showToast(newState ? 'Voice output: ON (Loopra speaks)' : 'Voice output: OFF (Silent text)');
+  };
+
+  const handleTestVoice = () => {
+    voiceBuddyService.speak('Namaste! Main Loopra hoon, aapki AI music dost. Main Hindi aur English dono bolti hoon.');
+    if (showToast) showToast('Testing Loopra Indian voice...');
+  };
+
+  const handleTestGesture = (gesture, dur = 1500) => {
+    if (typeof window !== 'undefined' && typeof window.__loopraPlayGesture === 'function') {
+      window.__loopraPlayGesture(gesture, dur);
+      if (showToast) showToast(`Avatar: ${gesture.charAt(0).toUpperCase() + gesture.slice(1)}`);
+    }
+  };
 
   const [hasVoiceAccess, setHasVoiceAccess] = useState(() => {
     try {
@@ -329,7 +375,30 @@ export default function LoopraAiCompanion({
     };
   }, [currentSong, isPlaying, playbackPosition, duration]);
 
-  // Send message to Loopra AI with streaming
+  // Sync speaking state with voiceBuddyService
+  useEffect(() => {
+    const unsub = voiceBuddyService.subscribe(({ event }) => {
+      if (event === 'speech_start') {
+        setIsSpeaking(true);
+      } else if (event === 'speech_end' || event === 'speech_text_only') {
+        setIsSpeaking(false);
+      }
+    });
+    return unsub;
+  }, []);
+
+  // Context object for local command parsing
+  const getCommandContext = useCallback(() => {
+    return {
+      currentSong: currentSong || null,
+      lastPlayedTrack: currentSong || null,
+      lastArtist: currentSong?.artist || currentSong?.channel || null,
+      isPlaying: Boolean(isPlaying),
+      completedSteps: []
+    };
+  }, [currentSong, isPlaying]);
+
+  // Central Command & Chat Message Handler (Unifies all text, voice, and quick commands)
   const handleSendMessage = async (textToSend = null) => {
     const text = (textToSend || inputText).trim();
     if (!text || isTyping) return;
@@ -346,6 +415,115 @@ export default function LoopraAiCompanion({
     setIsTyping(true);
     setStreamingText('');
 
+    // 1. First, evaluate against the local fast Command-to-Action engine
+    const directAction = parseCommandToAction(text, getCommandContext());
+
+    if (directAction) {
+      try {
+        let replyText = '';
+        let actionTrack = null;
+
+        // A. OPEN_PAGE (e.g. Saloon FM, Horn Ok Please, Theka, Home, Discover)
+        if (directAction.intent === INTENT_CATEGORIES.OPEN_PAGE) {
+          const targetId = directAction.target;
+          const targetName = directAction.item?.name || targetId;
+
+          // Animate 3D physical character walking/running to the element
+          if (typeof window !== 'undefined' && typeof window.__loopraWalkAndTap === 'function') {
+            window.__loopraWalkAndTap(targetId, targetName, () => {
+              if (onNavigate) onNavigate(targetId);
+            });
+          } else if (onNavigate) {
+            onNavigate(targetId);
+          }
+
+          replyText = voiceBuddyService.generateFriendReply('navigate_page', { target: targetId });
+        }
+        // B. OPEN_SECTION (e.g. Trending Songs)
+        else if (directAction.intent === INTENT_CATEGORIES.OPEN_SECTION) {
+          if (directAction.target === 'trending_section') {
+            if (onNavigate) onNavigate('home', { showAll: 'trending' });
+            replyText = voiceBuddyService.generateFriendReply('navigate_section', { target: 'trending_section' });
+          }
+        }
+        // C. SEARCH_SONG
+        else if (directAction.intent === INTENT_CATEGORIES.SEARCH_SONG) {
+          const q = directAction.query || 'songs';
+          if (onNavigate) onNavigate('discover', { query: q });
+          replyText = voiceBuddyService.generateFriendReply('search', { query: q });
+        }
+        // D. PLAY_MUSIC (e.g. Arijit Singh, specific track)
+        else if (directAction.intent === INTENT_CATEGORIES.PLAY_MUSIC) {
+          const q = directAction.query || '';
+          try {
+            const cleanUrl = (backendUrl || '').replace(/\/+$/, '');
+            const res = await fetch(`${cleanUrl}/api/youtube/search?q=${encodeURIComponent(q)}&limit=1`);
+            if (res.ok) {
+              const data = await res.json();
+              const item = data.items?.[0];
+              if (item) {
+                actionTrack = {
+                  id: item.id?.videoId || item.id,
+                  videoId: item.id?.videoId || item.id,
+                  title: item.snippet?.title || q,
+                  artist: item.snippet?.channelTitle || 'Artist',
+                  thumbnail: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.medium?.url || ''
+                };
+                if (onPlayTrack) onPlayTrack(actionTrack);
+              }
+            }
+          } catch (_) {}
+          replyText = voiceBuddyService.generateFriendReply('play_artist', { artist: q, count: 1 });
+        }
+        // E. MEDIA CONTROLS
+        else if (directAction.intent === INTENT_CATEGORIES.PAUSE_PLAYBACK) {
+          if (onTogglePlayPause && isPlaying) onTogglePlayPause();
+          replyText = voiceBuddyService.generateFriendReply('pause');
+        } else if (directAction.intent === INTENT_CATEGORIES.RESUME_PLAYBACK) {
+          if (onTogglePlayPause && !isPlaying) onTogglePlayPause();
+          replyText = voiceBuddyService.generateFriendReply('resume');
+        } else if (directAction.intent === INTENT_CATEGORIES.NEXT_TRACK) {
+          if (onNextTrack) onNextTrack();
+          replyText = voiceBuddyService.generateFriendReply('next');
+        } else if (directAction.intent === INTENT_CATEGORIES.PREV_TRACK) {
+          if (onPrevTrack) onPrevTrack();
+          replyText = voiceBuddyService.generateFriendReply('prev');
+        } else if (directAction.intent === INTENT_CATEGORIES.CHANGE_VOLUME) {
+          if (onSetVolume && directAction.value !== undefined) {
+            onSetVolume(directAction.value);
+            replyText = voiceBuddyService.generateFriendReply('volume', { level: directAction.value });
+          }
+        } else if (directAction.intent === INTENT_CATEGORIES.LIKE_SONG) {
+          if (onToggleLike) onToggleLike(currentSong);
+          replyText = voiceBuddyService.generateFriendReply('like', { title: currentSong?.title || 'Song' });
+        } else {
+          replyText = "Loopra command executed!";
+        }
+
+        const aiMsg = {
+          id: 'ai_' + Date.now(),
+          role: 'model',
+          text: replyText,
+          tracks: actionTrack ? [actionTrack] : [],
+          timestamp: Date.now()
+        };
+
+        setMessages(prev => [...prev, aiMsg]);
+
+        // Speak the reply if voice output is enabled and music is not actively playing
+        if (voiceBuddyService.isVoiceOutputEnabled && !voiceBuddyService.isMusicPlaying()) {
+          voiceBuddyService.speak(replyText);
+        }
+
+        return;
+      } catch (err) {
+        console.warn('[LoopraAiCompanion] Local command execution error:', err);
+      } finally {
+        setIsTyping(false);
+      }
+    }
+
+    // 2. If not a direct local action, send to Gemini AI Music Intelligence
     try {
       const historyContext = messages.slice(-6).map(m => ({
         role: m.role,
@@ -365,10 +543,12 @@ export default function LoopraAiCompanion({
         }
       });
 
+      const replyText = res.reply || accumulatedStream || "Here's what I found for you:";
+
       const aiMsg = {
         id: 'ai_' + Date.now(),
         role: 'model',
-        text: res.reply || accumulatedStream || "Here's what I found for you:",
+        text: replyText,
         tracks: res.tracks || [],
         action: res.action || null,
         timestamp: Date.now()
@@ -381,6 +561,12 @@ export default function LoopraAiCompanion({
       if (res.action?.type === 'PLAY_TRACK' && res.action?.track) {
         onPlayTrack(res.action.track);
         if (showToast) showToast(`Now playing: ${res.action.track.title}`);
+      }
+
+      // Speak response if voice output enabled and music not playing
+      if (voiceBuddyService.isVoiceOutputEnabled && !voiceBuddyService.isMusicPlaying()) {
+        const spokenPart = replyText.split('\n')[0] || replyText;
+        voiceBuddyService.speak(spokenPart);
       }
     } catch (err) {
       setMessages(prev => [
@@ -399,37 +585,20 @@ export default function LoopraAiCompanion({
     }
   };
 
-  // Text-to-Speech
+  // Indian Female Neural Text-to-Speech
   const speakMessage = (text) => {
-    if (!('speechSynthesis' in window)) {
-      if (showToast) showToast('Speech synthesis not supported in this browser');
-      return;
-    }
-
     if (isSpeaking) {
-      window.speechSynthesis.cancel();
+      voiceBuddyService.stopSpeech();
       setIsSpeaking(false);
       return;
     }
-
-    window.speechSynthesis.cancel();
     const cleanSpeech = text.replace(/[*_#`]/g, '');
-    const utterance = new SpeechSynthesisUtterance(cleanSpeech);
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-
-    setIsSpeaking(true);
-    window.speechSynthesis.speak(utterance);
+    voiceBuddyService.speak(cleanSpeech);
   };
 
   const stopSpeaking = () => {
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-    }
+    voiceBuddyService.stopSpeech();
+    setIsSpeaking(false);
   };
 
   // Revoke active speech recognition if access is turned off in real-time
@@ -625,6 +794,34 @@ export default function LoopraAiCompanion({
 
             {/* Header Actions */}
             <div className="flex items-center gap-1 shrink-0">
+              {/* Voice Output Quick Toggle */}
+              <button
+                type="button"
+                onClick={handleToggleVoiceOutput}
+                className={`p-1.5 rounded-lg text-xs transition cursor-pointer flex items-center justify-center ${
+                  isVoiceOutputEnabled ? 'text-amber-400 hover:bg-neutral-800' : 'text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800'
+                }`}
+                title={isVoiceOutputEnabled ? 'Voice output: ON (Loopra speaks)' : 'Voice output: OFF (Silent text)'}
+              >
+                {isVoiceOutputEnabled ? <Volume2 className="w-4 h-4 text-amber-400" /> : <VolumeX className="w-4 h-4 text-neutral-500" />}
+              </button>
+
+              {/* Voice & Avatar Controls Drawer Toggle */}
+              <button
+                type="button"
+                onClick={() => setShowVoiceControls(prev => !prev)}
+                className={`px-2 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 border ${
+                  showVoiceControls
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
+                    : 'bg-neutral-900 text-neutral-400 hover:text-amber-300 border-neutral-800'
+                }`}
+                title="Voice & Avatar Controls"
+              >
+                <span>🎭</span>
+                <span className="hidden sm:inline text-[10px]">Controls</span>
+                {showVoiceControls ? <ChevronUp className="w-3 h-3 ml-0.5" /> : <ChevronDown className="w-3 h-3 ml-0.5" />}
+              </button>
+
               <button
                 type="button"
                 onClick={clearChat}
@@ -644,6 +841,79 @@ export default function LoopraAiCompanion({
               </button>
             </div>
           </div>
+
+          {/* Collapsible Voice & Avatar Controls Drawer */}
+          {showVoiceControls && (
+            <div className="px-3.5 py-3 bg-neutral-950/98 border-b border-amber-500/30 flex flex-col gap-2.5 shrink-0 text-xs animate-in fade-in duration-150">
+              {/* Row 1: Voice Persona & Test Voice */}
+              <div className="flex items-center justify-between p-2 rounded-xl bg-neutral-900/80 border border-neutral-800">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-full overflow-hidden border border-emerald-400/80 bg-neutral-950 shrink-0">
+                    <img src="/characters/female_bust.png" alt="Loopra Female" className="w-full h-full object-cover object-top" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-black text-white">Loopra Female Voice</span>
+                      <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/20 border border-emerald-400/60 text-[8.5px] font-black text-emerald-300 uppercase">
+                        Active
+                      </span>
+                    </div>
+                    <p className="text-[9.5px] text-neutral-400">Indian Accent • Neerja Expressive Neural (1.12x)</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleTestVoice}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 text-[10px] font-bold transition cursor-pointer flex items-center gap-1"
+                  >
+                    <Volume2 className="w-3 h-3 text-amber-400" />
+                    <span>Test Voice</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleToggleVoiceOutput}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase transition cursor-pointer border ${
+                      isVoiceOutputEnabled
+                        ? 'bg-amber-500 text-black border-amber-400'
+                        : 'bg-neutral-800 text-neutral-400 border-neutral-700'
+                    }`}
+                  >
+                    {isVoiceOutputEnabled ? 'TTS ON' : 'MUTE'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Row 2: Avatar Animation Testing Actions */}
+              <div className="p-2 rounded-xl bg-neutral-900/80 border border-neutral-800">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-bold text-amber-400 flex items-center gap-1">
+                    <span>⚡</span>
+                    <span>Avatar Animation Tests:</span>
+                  </span>
+                  <span className="text-[9px] text-neutral-500">Live 2D Rig</span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[
+                    { label: 'Wave 👋', action: 'wave', dur: 1500 },
+                    { label: 'Wink 😉', action: 'wink', dur: 1300 },
+                    { label: 'Dance 💃', action: 'dance', dur: 2500 },
+                    { label: 'Jump 🦘', action: 'jump', dur: 1200 },
+                    { label: 'Think 🤔', action: 'think', dur: 1800 }
+                  ].map((item, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleTestGesture(item.action, item.dur)}
+                      className="px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-amber-500/20 text-neutral-300 hover:text-amber-300 text-[10px] font-bold border border-neutral-700 hover:border-amber-500/40 transition cursor-pointer"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
             {/* Current Playing Song Awareness Pill */}
             <div className="px-4 py-2 bg-neutral-900/60 border-b border-white/5 flex items-center justify-between gap-2 text-xs shrink-0">
@@ -844,27 +1114,45 @@ export default function LoopraAiCompanion({
                 )}
               </div>
 
-            {/* Quick Suggestion Chips */}
+            {/* Quick Suggestion & Voice Action Chips */}
             <div className="px-3 py-2 bg-neutral-900/60 border-t border-white/5 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0 text-[11px]">
+              <button
+                onClick={() => handleSendMessage("Saloon FM kholo")}
+                className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/25 text-amber-300 rounded-full whitespace-nowrap border border-amber-500/30 transition cursor-pointer font-bold"
+              >
+                ⚡ Saloon FM
+              </button>
+              <button
+                onClick={() => handleSendMessage("Play 5 songs of Arijit Singh")}
+                className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/25 text-amber-300 rounded-full whitespace-nowrap border border-amber-500/30 transition cursor-pointer font-bold"
+              >
+                🎵 Play Arijit Singh
+              </button>
+              <button
+                onClick={() => handleSendMessage("Trending songs")}
+                className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/25 text-amber-300 rounded-full whitespace-nowrap border border-amber-500/30 transition cursor-pointer font-bold"
+              >
+                🔥 Trending Songs
+              </button>
+              <button
+                onClick={() => handleSendMessage("Radio chalao")}
+                className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
+              >
+                📻 Radio Chalao
+              </button>
               {currentSong && (
                 <>
-                  <button
-                    onClick={() => handleSendMessage("Who is singing this song?")}
-                    className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
-                  >
-                    🎙️ Who is singing?
-                  </button>
-                  <button
-                    onClick={() => handleSendMessage("Who composed this song?")}
-                    className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
-                  >
-                    🎼 Who composed it?
-                  </button>
                   <button
                     onClick={() => handleSendMessage("Recommend songs similar to this")}
                     className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
                   >
                     ✨ Similar Songs
+                  </button>
+                  <button
+                    onClick={() => handleSendMessage("Who is singing this song?")}
+                    className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
+                  >
+                    🎙️ Who is singing?
                   </button>
                 </>
               )}
@@ -875,16 +1163,10 @@ export default function LoopraAiCompanion({
                 🌧️ Rainy Evening
               </button>
               <button
-                onClick={() => handleSendMessage("Suggest an upbeat party playlist")}
+                onClick={() => handleSendMessage("Pause")}
                 className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
               >
-                🔥 Party Vibes
-              </button>
-              <button
-                onClick={() => handleSendMessage("Suggest 5 underrated 90s bollywood gems")}
-                className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
-              >
-                📻 90s Gems
+                ⏸️ Pause
               </button>
             </div>
 

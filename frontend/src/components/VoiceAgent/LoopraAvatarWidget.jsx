@@ -634,32 +634,18 @@ export default function LoopraAvatarWidget({
               </button>
             </div>
 
-            {/* Persona Switcher (Male vs Female) */}
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <button
-                type="button"
-                onClick={() => handleSelectPersona('male')}
-                className={`flex items-center justify-center gap-2 py-2 px-3 rounded-2xl text-xs font-black transition border cursor-pointer ${
-                  isMale
-                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 shadow-lg shadow-amber-500/10'
-                    : 'bg-neutral-900/60 text-neutral-400 border-neutral-800 hover:text-white'
-                }`}
-              >
-                <span>👦</span>
-                <span>Male Loopra</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSelectPersona('female')}
-                className={`flex items-center justify-center gap-2 py-2 px-3 rounded-2xl text-xs font-black transition border cursor-pointer ${
-                  !isMale
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 shadow-lg shadow-emerald-500/10'
-                    : 'bg-neutral-900/60 text-neutral-400 border-neutral-800 hover:text-white'
-                }`}
-              >
-                <span>👧</span>
-                <span>Female Loopra</span>
-              </button>
+            {/* Active Voice Model Card */}
+            <div className="mb-3 p-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/60 shadow-lg shadow-emerald-500/10 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-base">💃</span>
+                <div>
+                  <h5 className="text-xs font-black text-white">Loopra (Female Voice)</h5>
+                  <p className="text-[10px] text-emerald-300 font-semibold">Live2D Companion • Neerja Expressive</p>
+                </div>
+              </div>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-[9px] font-black uppercase text-emerald-300">
+                Active
+              </span>
             </div>
 
             {/* Quick Voice / Beat Action Chips */}

@@ -85,7 +85,8 @@ export const featureFlagService = {
     }
 
     if (!user) {
-      return false; // Guest or unauthenticated users are denied
+      // If globally rolled out and enabled, allow guest users as well
+      return Boolean(config.globalRollout);
     }
 
     const isAdmin = user.role === 'admin';

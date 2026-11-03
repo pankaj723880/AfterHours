@@ -36,6 +36,11 @@ class VoiceSessionController {
     this.analyser = null;
     this.animFrameId = null;
     this.recognition = null;
+    this.mediaRecorder = null;
+    this.recordedChunks = [];
+    this.currentMimeType = 'audio/webm';
+    this.speechPauseTimer = null;
+    this.lastAudioSentTime = 0;
 
     // Concurrency & lifecycle guards
     this.isSessionActive = false;
@@ -56,6 +61,45 @@ class VoiceSessionController {
 
     // Event subscribers
     this.subscribers = new Set();
+
+    // Mobile & Tab Resiliency Listeners
+    this.initEnvironmentListeners();
+  }
+
+  initEnvironmentListeners() {
+    if (typeof window === 'undefined') return;
+
+    // 1. Autoplay & Suspension Unlock on User Gesture (Mobile/Safari/Chrome)
+    const unlockAudio = () => {
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        this.audioContext.resume().catch(() => {});
+      }
+    };
+    window.addEventListener('pointerdown', unlockAudio, { passive: true });
+    window.addEventListener('touchstart', unlockAudio, { passive: true });
+
+    // 2. Tab Switching Resiliency (visibilitychange)
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && this.isSessionActive && this.audioContext && this.audioContext.state === 'suspended') {
+          this.audioContext.resume().catch(() => {});
+        }
+      });
+    }
+
+    // 3. Bluetooth / Audio Input Device Change Resiliency
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.addEventListener) {
+      navigator.mediaDevices.addEventListener('devicechange', async () => {
+        if (this.isSessionActive && this.mediaStream) {
+          try {
+            const tracks = this.mediaStream.getAudioTracks();
+            if (tracks.length === 0 || tracks.some(t => t.readyState === 'ended')) {
+              await this.setupAudioStream();
+            }
+          } catch (_) {}
+        }
+      });
+    }
   }
 
   // -------------------------------------------------------------
@@ -196,10 +240,80 @@ class VoiceSessionController {
         this.analyser = analyser;
 
         this.startVolumeLoop();
+        this.setupMediaRecorder();
       }
     } catch (e) {
       console.warn('[VoiceSessionController] AudioContext visualizer init warning:', e.message);
     }
+  }
+
+  setupMediaRecorder() {
+    if (typeof window === 'undefined' || typeof MediaRecorder === 'undefined' || !this.mediaStream) {
+      return;
+    }
+
+    try {
+      let mimeType = 'audio/webm;codecs=opus';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'audio/webm';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+          mimeType = 'audio/mp4';
+          if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = '';
+          }
+        }
+      }
+
+      this.recordedChunks = [];
+      const options = mimeType ? { mimeType } : undefined;
+      const recorder = new MediaRecorder(this.mediaStream, options);
+      this.currentMimeType = mimeType || 'audio/webm';
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          this.recordedChunks.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        if (this.recordedChunks.length === 0) return;
+        const audioBlob = new Blob(this.recordedChunks, { type: this.currentMimeType });
+        this.recordedChunks = [];
+
+        // Debounce & size guard: Only send genuine user speech (> 800 bytes)
+        const now = Date.now();
+        if (audioBlob.size > 800 && this.isSessionActive && (now - this.lastAudioSentTime) > 1200) {
+          this.lastAudioSentTime = now;
+          try {
+            const base64Data = await this.blobToBase64(audioBlob);
+            if (base64Data) {
+              this.emitAudioCommand({
+                audioData: base64Data,
+                mimeType: this.currentMimeType
+              });
+            }
+          } catch (e) {
+            console.warn('[VoiceSessionController] Blob conversion warning:', e);
+          }
+        }
+      };
+
+      this.mediaRecorder = recorder;
+    } catch (e) {
+      console.warn('[VoiceSessionController] MediaRecorder setup notice:', e.message);
+    }
+  }
+
+  blobToBase64(blob) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const res = reader.result;
+        resolve(typeof res === 'string' ? res : '');
+      };
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(blob);
+    });
   }
 
   startVolumeLoop() {
@@ -223,6 +337,32 @@ class VoiceSessionController {
       const normalized = Math.min(1.0, Math.max(0.0, (avg - 10) / 100));
       this.emitVolume(normalized);
 
+      // Turn detection: Manage recording state based on speech energy
+      if (this.mediaRecorder && !this.isExecuting) {
+        if (normalized > 0.08) {
+          if (this.speechPauseTimer) {
+            clearTimeout(this.speechPauseTimer);
+            this.speechPauseTimer = null;
+          }
+          if (this.mediaRecorder.state === 'inactive') {
+            try {
+              this.mediaRecorder.start(100);
+            } catch (_) {}
+          }
+        } else if (normalized <= 0.04 && this.mediaRecorder.state === 'recording') {
+          if (!this.speechPauseTimer) {
+            this.speechPauseTimer = setTimeout(() => {
+              if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+                try {
+                  this.mediaRecorder.stop();
+                } catch (_) {}
+              }
+              this.speechPauseTimer = null;
+            }, 850);
+          }
+        }
+      }
+
       this.animFrameId = reqAnim(updateVolume);
     };
 
@@ -234,6 +374,19 @@ class VoiceSessionController {
     const snapshot = this.getSnapshot();
     snapshot.event = 'volume_change';
     snapshot.volumeScale = scale;
+    for (const sub of this.subscribers) {
+      try {
+        sub(snapshot);
+      } catch (_) {}
+    }
+  }
+
+  emitAudioCommand({ audioData, mimeType, transcript = '' }) {
+    const snapshot = this.getSnapshot();
+    snapshot.event = 'audio_command';
+    snapshot.audioData = audioData;
+    snapshot.mimeType = mimeType;
+    snapshot.transcript = transcript;
     for (const sub of this.subscribers) {
       try {
         sub(snapshot);
@@ -297,6 +450,15 @@ class VoiceSessionController {
           finalTranscript += item.transcript;
         } else {
           interim += item.transcript;
+        }
+      }
+
+      // IMMEDIATE SPEECH INTERRUPTION:
+      // If user speaks while Loopra TTS is talking, immediately silence TTS audio
+      // without stopping the microphone or cancelling existing valid tasks.
+      if (interim.trim() || finalTranscript.trim()) {
+        if (typeof window !== 'undefined' && window.voiceBuddyService?.isSpeaking) {
+          window.voiceBuddyService.stopSpeech();
         }
       }
 
@@ -532,6 +694,21 @@ class VoiceSessionController {
     clearTimeout(this.restartTimer);
     this.restartTimer = null;
     this.clearInactivityTimer();
+    if (this.speechPauseTimer) {
+      clearTimeout(this.speechPauseTimer);
+      this.speechPauseTimer = null;
+    }
+
+    // Stop MediaRecorder
+    if (this.mediaRecorder) {
+      try {
+        if (this.mediaRecorder.state !== 'inactive') {
+          this.mediaRecorder.stop();
+        }
+      } catch (_) {}
+      this.mediaRecorder = null;
+    }
+    this.recordedChunks = [];
 
     // Cancel animation frame & zero volume
     if (this.animFrameId) {

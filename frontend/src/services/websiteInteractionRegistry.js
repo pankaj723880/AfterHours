@@ -194,17 +194,32 @@ export const STATIC_INTERACTION_REGISTRY = [
   },
   {
     id: 'activity',
-    name: 'Listening Activity & Recap',
+    name: 'Listening Activity',
     type: 'page',
     route: '/activity',
     parentPage: 'root',
     selector: '[data-nav-id="activity"], a[href*="activity"]',
     priority: 80,
     aliases: [
-      'listening activity', 'activity', 'weekly recap', 'recap', 'stats',
-      'statistics', 'insights', 'insights kholo', 'recap dikhao'
+      'listening activity', 'activity', 'listening history', 'recently played',
+      'recent activity', 'activity kholo', 'meri activity'
     ],
-    description: 'Personal Listening Analytics, Insights & Weekly Stats'
+    description: 'Personal Listening Activity & Real-Time Feed'
+  },
+  {
+    id: 'recap_stats',
+    name: 'Recap & Stats',
+    type: 'modal',
+    action: 'open_insights',
+    parentPage: 'root',
+    selector: '[data-action="open_insights"]',
+    priority: 95,
+    aliases: [
+      'recap and stats', 'recap & stats', 'my listening statistics', 'music summary',
+      'listening report', 'weekly recap', 'recap', 'stats', 'statistics',
+      'listening stats', 'listening insights', 'insights', 'recap dikhao', 'stats dikhao'
+    ],
+    description: 'Personal Listening Analytics, Insights & Weekly Stats Modal'
   },
 
   // --- SUB-VIEWS ON HOME ---

@@ -13,7 +13,8 @@ import {
 import { parseVoiceCommandLocally } from '../../services/voiceAgentRegistry';
 import {
   parseMultiStepInstruction,
-  executeTaskPipeline
+  executeTaskPipeline,
+  splitVoiceInstructionIntoClauses
 } from '../../services/voiceTaskEngine';
 import { voiceBuddyService } from '../../services/voiceBuddyService';
 import { parseCommandToAction, INTENT_CATEGORIES } from '../../services/commandActionEngine';
@@ -154,125 +155,231 @@ export default function VoiceAgentModal({
       return;
     }
 
-    // B. Fast Command-to-Action Engine (Checks Registry, Intent, and Safety Gates)
-    const directAction = parseCommandToAction(text, persistentContextRef.current);
+    // B. Compound Sentence Check:
+    // If the instruction contains multiple distinct clauses (e.g. "Open liked songs and remove this song"),
+    // pass directly to Multi-Step Pipeline so each independent action is executed sequentially.
+    const clauses = splitVoiceInstructionIntoClauses(text);
+    const isCompound = clauses.length > 1;
 
-    if (directAction) {
-      // 1. OPEN_PAGE: Strictly navigates to the registered page/station (e.g. Saloon FM, Horn Ok Please, Theka)
-      if (directAction.intent === INTENT_CATEGORIES.OPEN_PAGE) {
-        const targetId = directAction.target;
-        const targetName = directAction.item?.name || targetId;
+    if (!isCompound) {
+      const directAction = parseCommandToAction(text, persistentContextRef.current);
 
-        // Animate 3D physical character walking/running to the element
-        if (typeof window !== 'undefined' && typeof window.__loopraWalkAndTap === 'function') {
-          window.__loopraWalkAndTap(targetId, targetName, () => {
-            if (onNavigate) onNavigate(targetId);
-          });
-        } else if (onNavigate) {
-          onNavigate(targetId);
+      if (directAction && directAction.intent !== INTENT_CATEGORIES.GENERAL_QUESTION) {
+        // 0. OPEN_INSIGHTS: Strictly opens Recap & Stats modal (NEVER routes to activity)
+        if (directAction.intent === INTENT_CATEGORIES.OPEN_INSIGHTS || directAction.action === 'open_insights') {
+          if (onOpenInsights) {
+            onOpenInsights();
+          }
+          const reply = 'Opening your Recap and Stats';
+          voiceBuddyService.speak(reply);
+          showToast?.('Opening Recap & Stats');
+          return;
         }
 
-        const reply = voiceBuddyService.generateFriendReply('navigate_page', { target: targetId });
-        voiceBuddyService.speak(reply);
-        showToast?.(`Opening ${targetName}`);
-        return;
-      }
+        // 1. OPEN_PAGE: Strictly navigates to the registered page/station (e.g. Saloon FM, Horn Ok Please, Theka)
+        if (directAction.intent === INTENT_CATEGORIES.OPEN_PAGE) {
+          const targetId = directAction.target;
+          const targetName = directAction.item?.name || targetId;
 
-      // 2. OPEN_SECTION: In-page section (e.g. Trending Songs)
-      if (directAction.intent === INTENT_CATEGORIES.OPEN_SECTION) {
-        if (directAction.target === 'trending_section') {
-          if (onNavigate) onNavigate('home', { showAll: 'trending' });
-          const reply = voiceBuddyService.generateFriendReply('navigate_section', { target: 'trending_section' });
+          // Animate 3D physical character walking/running to the element
+          if (typeof window !== 'undefined' && typeof window.__loopraWalkAndTap === 'function') {
+            window.__loopraWalkAndTap(targetId, targetName, () => {
+              if (onNavigate) onNavigate(targetId);
+            });
+          } else if (onNavigate) {
+            onNavigate(targetId);
+          }
+
+          const reply = voiceBuddyService.generateFriendReply('navigate_page', { target: targetId });
           voiceBuddyService.speak(reply);
-          showToast?.('Opening Trending Songs');
+          showToast?.(`Opening ${targetName}`);
+          return;
+        }
+
+        // 2. OPEN_SECTION: In-page section (e.g. Trending Songs)
+        if (directAction.intent === INTENT_CATEGORIES.OPEN_SECTION) {
+          if (directAction.target === 'trending_section') {
+            if (onNavigate) onNavigate('home', { showAll: 'trending' });
+            const reply = voiceBuddyService.generateFriendReply('navigate_section', { target: 'trending_section' });
+            voiceBuddyService.speak(reply);
+            showToast?.('Opening Trending Songs');
+            return;
+          }
+        }
+
+        // 3. SEARCH_SONG: Strictly searches WITHOUT playing music
+        if (directAction.intent === INTENT_CATEGORIES.SEARCH_SONG) {
+          const q = directAction.query || 'songs';
+          if (onNavigate) {
+            onNavigate('discover', { query: q });
+          }
+          const reply = voiceBuddyService.generateFriendReply('search', { query: q });
+          voiceBuddyService.speak(reply);
+          showToast?.(`Searching for "${q}"`);
+          return;
+        }
+
+        // 4. PLAY_SEARCH_RESULT: Plays first song from search
+        if (directAction.intent === INTENT_CATEGORIES.PLAY_SEARCH_RESULT) {
+          if (persistentContextRef.current.lastSearchResults?.length > 0 && onPlayTrack) {
+            onPlayTrack(persistentContextRef.current.lastSearchResults[0]);
+          }
+          const reply = voiceBuddyService.generateFriendReply('play_index');
+          voiceBuddyService.speak(reply);
+          showToast?.('Playing first song');
+          return;
+        }
+
+        // 5. PAUSE_PLAYBACK
+        if (directAction.intent === INTENT_CATEGORIES.PAUSE_PLAYBACK) {
+          if (isPlaying && onTogglePlayPause) onTogglePlayPause();
+          const reply = voiceBuddyService.generateFriendReply('pause');
+          voiceBuddyService.speak(reply);
+          showToast?.('Music paused');
+          return;
+        }
+
+        // 6. RESUME_PLAYBACK
+        if (directAction.intent === INTENT_CATEGORIES.RESUME_PLAYBACK) {
+          if (!isPlaying && onTogglePlayPause) onTogglePlayPause();
+          const reply = voiceBuddyService.generateFriendReply('resume');
+          voiceBuddyService.speak(reply);
+          showToast?.('Music resumed');
+          return;
+        }
+
+        // 7. NEXT_TRACK
+        if (directAction.intent === INTENT_CATEGORIES.NEXT_TRACK) {
+          if (onNextTrack) onNextTrack();
+          const reply = voiceBuddyService.generateFriendReply('next');
+          voiceBuddyService.speak(reply);
+          showToast?.('Next track');
+          return;
+        }
+
+        // 8. PREVIOUS_TRACK
+        if (directAction.intent === INTENT_CATEGORIES.PREVIOUS_TRACK) {
+          if (onPrevTrack) onPrevTrack();
+          const reply = voiceBuddyService.generateFriendReply('previous');
+          voiceBuddyService.speak(reply);
+          showToast?.('Previous track');
+          return;
+        }
+
+        // 9. CHANGE_VOLUME
+        if (directAction.intent === INTENT_CATEGORIES.CHANGE_VOLUME) {
+          let newVol = volume;
+          if (directAction.action === 'set_volume') newVol = directAction.value;
+          if (directAction.action === 'volume_down') newVol = Math.max(0, volume - 15);
+          if (directAction.action === 'volume_up') newVol = Math.min(100, volume + 15);
+          if (onSetVolume) onSetVolume(newVol);
+          const reply = voiceBuddyService.generateFriendReply(directAction.action, { value: newVol });
+          voiceBuddyService.speak(reply);
+          showToast?.(`Volume set to ${newVol}%`);
+          return;
+        }
+
+        // 10. ADD_TO_FAVOURITES
+        if (directAction.intent === INTENT_CATEGORIES.ADD_TO_FAVOURITES) {
+          const targetSong = directAction.target || currentSong || persistentContextRef.current.currentSong || persistentContextRef.current.lastPlayedTrack;
+          if (targetSong && onToggleLike) {
+            onToggleLike(targetSong);
+            const reply = voiceBuddyService.generateFriendReply('like', { target: targetSong.title });
+            voiceBuddyService.speak(reply);
+            showToast?.(`Added "${targetSong.title || 'song'}" to Liked Songs`);
+          } else {
+            showToast?.('No song currently playing to add to favorites', 'warning');
+          }
+          return;
+        }
+
+        // 11. REMOVE_FROM_FAVOURITES / UNLIKE
+        if (directAction.intent === INTENT_CATEGORIES.REMOVE_FROM_FAVOURITES) {
+          const targetSong = directAction.target || currentSong || persistentContextRef.current.currentSong || persistentContextRef.current.lastPlayedTrack;
+          if (targetSong && onToggleLike) {
+            onToggleLike(targetSong);
+            const reply = voiceBuddyService.generateFriendReply('unlike', { target: targetSong.title });
+            voiceBuddyService.speak(reply);
+            showToast?.(`Removed "${targetSong.title || 'song'}" from favorites`);
+          } else {
+            showToast?.('No song selected or currently playing to remove', 'warning');
+          }
+          return;
+        }
+
+        // 12. AVATAR_ACTION (Wave, Wink, Dance, Jump, Pose)
+        if (directAction.intent === INTENT_CATEGORIES.AVATAR_ACTION) {
+          const gesture = directAction.gesture || 'wave';
+          if (typeof window !== 'undefined' && typeof window.__loopraTriggerAvatarGesture === 'function') {
+            window.__loopraTriggerAvatarGesture(gesture, 2500);
+          } else if (typeof window !== 'undefined' && typeof window.__loopraPlayGesture === 'function') {
+            window.__loopraPlayGesture(gesture, 2500);
+          }
+          const reply = voiceBuddyService.generateFriendReply(gesture);
+          voiceBuddyService.speak(reply);
+          showToast?.(`Loopra ${gesture}`);
+          return;
+        }
+
+        // 13. PLAY_SONG (Explicit Playback Verb Only)
+        if (directAction.intent === INTENT_CATEGORIES.PLAY_SONG) {
+          const query = directAction.query;
+          let track = null;
+          if (typeof searchCatalog === 'function') {
+            const results = await searchCatalog(query);
+            if (Array.isArray(results) && results.length > 0) {
+              track = results[0];
+              persistentContextRef.current.lastSearchResults = results;
+            }
+          }
+          if (!track) {
+            track = { id: `v_${Date.now()}`, title: query, artist: query };
+          }
+          if (onPlayTrack) {
+            await onPlayTrack(track);
+            persistentContextRef.current.currentSong = track;
+            persistentContextRef.current.lastPlayedTrack = track;
+            persistentContextRef.current.isPlaying = true;
+          }
+          const reply = voiceBuddyService.generateFriendReply('play_search', { target: track.title });
+          voiceBuddyService.speak(reply);
+          showToast?.(`Playing "${track.title}"`);
           return;
         }
       }
-
-      // 3. SEARCH_SONG: Strictly searches WITHOUT playing music
-      if (directAction.intent === INTENT_CATEGORIES.SEARCH_SONG) {
-        const q = directAction.query || 'songs';
-        if (onNavigate) {
-          onNavigate('discover', { query: q });
-        }
-        const reply = voiceBuddyService.generateFriendReply('search', { query: q });
-        voiceBuddyService.speak(reply);
-        showToast?.(`Searching for "${q}"`);
-        return;
-      }
-
-      // 4. PLAY_SEARCH_RESULT: Plays first song from search
-      if (directAction.intent === INTENT_CATEGORIES.PLAY_SEARCH_RESULT) {
-        if (persistentContextRef.current.lastSearchResults?.length > 0 && onPlayTrack) {
-          onPlayTrack(persistentContextRef.current.lastSearchResults[0]);
-        }
-        const reply = voiceBuddyService.generateFriendReply('play_index');
-        voiceBuddyService.speak(reply);
-        showToast?.('Playing first song');
-        return;
-      }
-
-      // 5. PAUSE_PLAYBACK
-      if (directAction.intent === INTENT_CATEGORIES.PAUSE_PLAYBACK) {
-        if (isPlaying && onTogglePlayPause) onTogglePlayPause();
-        const reply = voiceBuddyService.generateFriendReply('pause');
-        voiceBuddyService.speak(reply);
-        showToast?.('Music paused');
-        return;
-      }
-
-      // 6. RESUME_PLAYBACK
-      if (directAction.intent === INTENT_CATEGORIES.RESUME_PLAYBACK) {
-        if (!isPlaying && onTogglePlayPause) onTogglePlayPause();
-        const reply = voiceBuddyService.generateFriendReply('resume');
-        voiceBuddyService.speak(reply);
-        showToast?.('Music resumed');
-        return;
-      }
-
-      // 7. NEXT_TRACK
-      if (directAction.intent === INTENT_CATEGORIES.NEXT_TRACK) {
-        if (onNextTrack) onNextTrack();
-        const reply = voiceBuddyService.generateFriendReply('next');
-        voiceBuddyService.speak(reply);
-        showToast?.('Next track');
-        return;
-      }
-
-      // 8. PREVIOUS_TRACK
-      if (directAction.intent === INTENT_CATEGORIES.PREVIOUS_TRACK) {
-        if (onPrevTrack) onPrevTrack();
-        const reply = voiceBuddyService.generateFriendReply('previous');
-        voiceBuddyService.speak(reply);
-        showToast?.('Previous track');
-        return;
-      }
-
-      // 9. CHANGE_VOLUME
-      if (directAction.intent === INTENT_CATEGORIES.CHANGE_VOLUME) {
-        let newVol = volume;
-        if (directAction.action === 'set_volume') newVol = directAction.value;
-        if (directAction.action === 'volume_down') newVol = Math.max(0, volume - 15);
-        if (directAction.action === 'volume_up') newVol = Math.min(100, volume + 15);
-        if (onSetVolume) onSetVolume(newVol);
-        const reply = voiceBuddyService.generateFriendReply(directAction.action, { value: newVol });
-        voiceBuddyService.speak(reply);
-        showToast?.(`Volume set to ${newVol}%`);
-        return;
-      }
-
-      // 10. ADD_TO_FAVOURITES
-      if (directAction.intent === INTENT_CATEGORIES.ADD_TO_FAVOURITES) {
-        if (onToggleLike && currentSong) onToggleLike(currentSong);
-        const reply = voiceBuddyService.generateFriendReply('like');
-        voiceBuddyService.speak(reply);
-        showToast?.('Added to Liked Songs');
-        return;
-      }
     }
 
-    // C. Multi-Step Task Pipeline Fallback (for complex compound chains)
-    const steps = parseMultiStepInstruction(text, persistentContextRef.current);
+    // C. Multi-Step Task Pipeline Fallback (for complex compound chains or ambiguous queries)
+    let steps = parseMultiStepInstruction(text, persistentContextRef.current);
+
+    // D. If local parser could not determine steps, delegate to Backend Gemini API
+    if (steps.length === 0) {
+      try {
+        const cleanUrl = (backendUrl || '').replace(/\/+$/, '');
+        const authToken = token || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : '') || '';
+        const headers = { 'Content-Type': 'application/json' };
+        if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
+        const res = await fetch(`${cleanUrl}/api/voice-agent/parse-intent`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            utterance: text,
+            currentTrack: currentSong || persistentContextRef.current.currentSong,
+            activeTab: activeTab || persistentContextRef.current.activeTab || 'home'
+          })
+        });
+
+        if (res.ok) {
+          const aiData = await res.json();
+          if (aiData.success && Array.isArray(aiData.steps) && aiData.steps.length > 0) {
+            steps = aiData.steps;
+          }
+        }
+      } catch (geminiErr) {
+        console.warn('[VoiceAgent] Gemini API fallback notice:', geminiErr.message);
+      }
+    }
 
     if (steps.length === 0) {
       voiceSessionService.notifyExecutionFinish('Command not recognized.');
@@ -363,17 +470,142 @@ export default function VoiceAgentModal({
     currentSong
   ]);
 
+  // 3B. Direct Multimodal Audio Processor (Gemini Native Audio API)
+  const handleProcessAudio = useCallback(async ({ audioData, mimeType, fallbackTranscript = '' }) => {
+    if (!audioData) {
+      if (fallbackTranscript) return handleProcessUtterance(fallbackTranscript);
+      return;
+    }
+
+    voiceSessionService.notifyExecutionStart('Interpreting with Gemini Audio...');
+    setActiveActionLabel('Interpreting with Gemini Audio...');
+
+    try {
+      const cleanUrl = (backendUrl || '').replace(/\/+$/, '');
+      const authToken = token || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : '') || '';
+      const headers = { 'Content-Type': 'application/json' };
+      if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
+      const res = await fetch(`${cleanUrl}/api/voice-agent/recognize-audio`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          audioData,
+          mimeType: mimeType || 'audio/webm',
+          currentTrack: currentSong || persistentContextRef.current.currentSong,
+          activeTab: activeTab || persistentContextRef.current.activeTab || 'home',
+          history: []
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          if (data.transcript) {
+            setTranscript(data.transcript);
+          }
+
+          if (data.clarification_required && data.clarification_question) {
+            voiceSessionService.notifyExecutionFinish();
+            voiceBuddyService.speak(data.clarification_question);
+            showToast?.(data.clarification_question, 'info');
+            return;
+          }
+
+          if (Array.isArray(data.steps) && data.steps.length > 0) {
+            // Direct Recap & Stats
+            if (data.steps.length === 1 && data.steps[0].action === 'open_insights') {
+              if (onOpenInsights) onOpenInsights();
+              const reply = data.speechResponse || 'Opening your Recap & Stats';
+              voiceBuddyService.speak(reply);
+              showToast?.('Opening Recap & Stats');
+              voiceSessionService.notifyExecutionFinish('Opened Recap & Stats');
+              return;
+            }
+
+            // Start spoken confirmation concurrently
+            if (data.speechResponse) {
+              voiceBuddyService.speak(data.speechResponse);
+            }
+
+            await executeTaskPipeline(data.steps, persistentContextRef.current, {
+              onPlayTrack,
+              onTogglePlayPause,
+              onNextTrack,
+              onPrevTrack,
+              onToggleShuffle,
+              onToggleRepeat,
+              onSetVolume,
+              onToggleLike,
+              onAddToPlaylist,
+              onNavigate,
+              onOpenInsights,
+              onOpenQueue,
+              onOpenLyrics,
+              onGoBack,
+              onOpenArtist,
+              showToast,
+              searchCatalog
+            });
+
+            voiceSessionService.notifyExecutionFinish(data.speechResponse || 'Done!');
+            return;
+          }
+        }
+      }
+    } catch (audioErr) {
+      console.warn('[VoiceAgent] Gemini Audio recognize notice:', audioErr.message);
+    }
+
+    // Fallback to text utterance processor if audio endpoint was unavailable
+    if (fallbackTranscript) {
+      return handleProcessUtterance(fallbackTranscript);
+    }
+    voiceSessionService.notifyExecutionFinish();
+  }, [
+    backendUrl,
+    token,
+    currentSong,
+    activeTab,
+    onOpenInsights,
+    onPlayTrack,
+    onTogglePlayPause,
+    onNextTrack,
+    onPrevTrack,
+    onToggleShuffle,
+    onToggleRepeat,
+    onSetVolume,
+    onToggleLike,
+    onAddToPlaylist,
+    onNavigate,
+    onOpenQueue,
+    onOpenLyrics,
+    onGoBack,
+    onOpenArtist,
+    showToast,
+    searchCatalog,
+    handleProcessUtterance
+  ]);
+
   // Expose command processor for debug and test automation
   useEffect(() => {
     window.__loopraExecuteVoiceCommand = handleProcessUtterance;
+    window.__loopraExecuteAudioCommand = handleProcessAudio;
     return () => {
       delete window.__loopraExecuteVoiceCommand;
+      delete window.__loopraExecuteAudioCommand;
     };
-  }, [handleProcessUtterance]);
+  }, [handleProcessUtterance, handleProcessAudio]);
 
   // 4. Synchronize music playback status with Voice Buddy to auto-suppress TTS during songs
   useEffect(() => {
-    voiceBuddyService.setPlaybackActive(isPlaying);
+    try {
+      if (typeof voiceBuddyService?.setPlaybackActive === 'function') {
+        voiceBuddyService.setPlaybackActive(isPlaying);
+      } else if (voiceBuddyService) {
+        voiceBuddyService.isPlaybackActive = !!isPlaying;
+      }
+    } catch (_) {}
     if (typeof window !== 'undefined') {
       window.__loopraIsMusicPlaying = !!isPlaying;
     }
@@ -389,8 +621,16 @@ export default function VoiceAgentModal({
       if (snapshot.volumeScale !== undefined) setVoiceVolumeScale(snapshot.volumeScale);
       if (snapshot.interimText !== undefined) setInterimText(snapshot.interimText);
 
+      // Native audio packet from Gemini speech recognition pipeline
+      if (snapshot.event === 'audio_command' && snapshot.audioData) {
+        handleProcessAudio({
+          audioData: snapshot.audioData,
+          mimeType: snapshot.mimeType,
+          fallbackTranscript: snapshot.transcript
+        });
+      }
       // Finalized transcript received from recognition engine
-      if (snapshot.event === 'final_transcript' && snapshot.transcript) {
+      else if (snapshot.event === 'final_transcript' && snapshot.transcript) {
         setTranscript(snapshot.transcript);
         handleProcessUtterance(snapshot.transcript);
       }
@@ -399,7 +639,7 @@ export default function VoiceAgentModal({
     return () => {
       unsub();
     };
-  }, [handleProcessUtterance]);
+  }, [handleProcessUtterance, handleProcessAudio]);
 
   // Clean deactivation on unmount
   useEffect(() => {
@@ -420,16 +660,19 @@ export default function VoiceAgentModal({
     } else {
       showToast?.('Voice Agent: ON (Listening)');
       await voiceSessionService.startSession({ lang: 'en-IN' });
-      const activeChar = voiceBuddyService.getActiveCharacter();
-      const isMale = activeChar.gender === 'male';
-      const startGreeting = isMale
-        ? 'Bilkul! Loopra ready hai, bataiye kya sunna hai?'
-        : 'Haan bilkul! Loopra ready hai, batao kya play karun?';
-      voiceBuddyService.speak(startGreeting);
+      voiceBuddyService.speak('Haan bilkul! Loopra ready hai, batao kya play karun?');
     }
   };
 
   if (typeof document === 'undefined') return null;
+
+  // Expose centralized command execution pipeline globally for unified assistant use
+  useEffect(() => {
+    window.__loopraProcessCommand = handleProcessUtterance;
+    return () => {
+      delete window.__loopraProcessCommand;
+    };
+  }, [handleProcessUtterance]);
 
   // Responsive button bottom offset
   const buttonBottomOffset = isBottomPlayerVisible
@@ -439,68 +682,26 @@ export default function VoiceAgentModal({
   return ReactDOM.createPortal(
     <>
       {/* ============================================================= */}
-      {/* 1. LOOPRA 3D HUMANOID COMPANION (Below Navbar on Content Area) */}
+      {/* 1. LOOPRA UNIFIED AI COMPANION AVATAR (Persistent throughout) */}
       {/* ============================================================= */}
       {hasAccess && (
-        <div className="loopra-character-dock-container pointer-events-auto">
+        <div
+          className="loopra-character-dock-container pointer-events-auto"
+          style={{
+            '--ai-button-bottom': buttonBottomOffset
+          }}
+        >
           <CharacterBuddy
             isSessionActive={isSessionActive}
             isListening={isListening}
             isPlaying={isPlaying}
             sessionState={sessionState}
             voiceVolumeScale={voiceVolumeScale}
-            userTranscript={transcript}
-            interimTranscript={interimText}
-            statusMessage={statusMessage}
             onToggleVoiceMode={handleToggleVoiceMode}
-            onSubmitTextCommand={handleProcessUtterance}
+            onToggleChat={onToggleAi}
           />
         </div>
       )}
-
-      {/* ============================================================= */}
-      {/* 2. FLOATING AI ASSISTANT SHORTCUT (Bottom Right)              */}
-      {/* ============================================================= */}
-      <div
-        className="loopra-floating-assistants-bar flex flex-col items-center justify-end w-auto h-auto pointer-events-auto z-[99999]"
-        style={{
-          '--ai-button-bottom': buttonBottomOffset,
-          height: 'auto'
-        }}
-      >
-        <button
-          type="button"
-          onClick={onToggleAi}
-          className={`ai-assistant-floating-button group relative flex items-center justify-center w-14 h-14 rounded-full shadow-2xl active:scale-95 cursor-pointer pointer-events-auto transition-colors duration-150 ${
-            isAiOpen
-              ? 'bg-amber-500 text-black shadow-amber-500/40'
-              : 'bg-neutral-900/95 text-amber-400 hover:text-white border border-amber-500/40 hover:border-amber-400 shadow-amber-500/20 backdrop-blur-2xl'
-          }`}
-          aria-label="Toggle Loopra AI Music Companion"
-          title="Loopra AI Assistant"
-        >
-          {isAiOpen ? (
-            <svg className="w-6 h-6 pointer-events-none transition-transform duration-200 rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          ) : (
-            <div className="relative flex items-center justify-center pointer-events-none">
-              <span className="absolute -inset-1.5 rounded-full bg-gradient-to-r from-amber-500/40 via-orange-500/30 to-amber-500/40 blur-sm animate-pulse" />
-              <div className="relative flex items-end gap-1 h-5 px-1">
-                <span className={`w-1 bg-amber-400 rounded-full transition-all duration-300 ${isPlaying ? 'h-5 animate-pulse' : 'h-3'}`} />
-                <span className={`w-1 bg-amber-300 rounded-full transition-all duration-300 ${isPlaying ? 'h-3 animate-ping' : 'h-4'}`} />
-                <span className={`w-1 bg-amber-400 rounded-full transition-all duration-300 ${isPlaying ? 'h-4 animate-pulse' : 'h-2'}`} />
-              </div>
-            </div>
-          )}
-
-          {!isAiOpen && (
-            <span className="absolute right-16 top-1/2 -translate-y-1/2 hidden md:group-hover:inline-block px-3 py-1.5 bg-neutral-900/95 border border-amber-500/30 text-amber-300 text-xs font-semibold rounded-lg shadow-xl whitespace-nowrap pointer-events-none backdrop-blur-md">
-              Loopra AI • Music Companion
-            </span>
-          )}
-        </button>
-      </div>
     </>,
     document.body
   );

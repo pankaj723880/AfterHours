@@ -35,6 +35,60 @@ const resolveCallingUser = async (req) => {
 };
 
 /**
+ * POST /api/voice-agent/recognize-audio
+ * Accepts raw base64 microphone audio directly from the client.
+ * Calls Gemini's native multimodal audio model (gemini-3.8-flash) to:
+ * 1. Accurately transcribe Indian English, Hindi, and Hinglish speech.
+ * 2. Comprehend slang, incomplete sentences, and contextual follow-ups.
+ * 3. Return structured plan with intent, parameters, and instant speech confirmation.
+ */
+router.post('/recognize-audio', async (req, res) => {
+  try {
+    const user = await resolveCallingUser(req);
+
+    // Validate feature flag permission gate
+    const config = await featureFlagService.getFeatureConfig('voice_control');
+    const allowed = featureFlagService.evaluateAccess(config, user);
+
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        error: 'Voice Control is not enabled for your account.',
+        allowed: false
+      });
+    }
+
+    const { audioData, mimeType, currentTrack, activeTab, history } = req.body;
+    if (!audioData || typeof audioData !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing or invalid "audioData" (base64 string expected).'
+      });
+    }
+
+    const result = await voiceAgentService.recognizeAndParseAudio({
+      audioData,
+      mimeType: mimeType || 'audio/webm',
+      currentTrack,
+      activeTab: activeTab || 'home',
+      history: Array.isArray(history) ? history : []
+    });
+
+    return res.json({
+      success: true,
+      allowed: true,
+      ...result
+    });
+  } catch (err) {
+    console.error('[VoiceAgentRoute] recognize-audio error:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to recognize and parse audio: ' + err.message
+    });
+  }
+});
+
+/**
  * POST /api/voice-agent/parse-intent
  * Translates multi-lingual voice/typed utterance into structured execution plan
  */
@@ -148,44 +202,64 @@ function optimizeForIndianSpeech(text, isDevanagariPreferred = true) {
 
 /**
  * GET /api/voice-agent/tts
- * Generates genuine neural Indian Hindi TTS audio stream with crystal-clear Indian accent.
+ * Generates genuine neural Indian Hindi/English TTS audio stream with crystal-clear Indian accent.
+ * Uses 100% free Microsoft Edge Neural Indian voice:
+ * Retained Female Voice: en-IN-NeerjaExpressiveNeural (Single official female voice across all Loopra)
  * Male: hi-IN-MadhurNeural / en-IN-PrabhatNeural
- * Female: hi-IN-SwaraNeural / en-IN-NeerjaExpressiveNeural
  */
 router.get('/tts', async (req, res) => {
   const rawText = (req.query.text || '').trim();
-  const gender = (req.query.gender || 'male').toLowerCase();
+  const gender = (req.query.gender || 'female').toLowerCase();
   const customVoice = req.query.voice;
+  const emotion = (req.query.emotion || 'friendly').toLowerCase();
 
   if (!rawText) {
     return res.status(400).json({ error: 'Text query parameter is required' });
   }
 
-  // Choose best neural Indian voice
-  // hi-IN-MadhurNeural & hi-IN-SwaraNeural are authentic natural Indian Hindi neural models
-  // en-IN-PrabhatNeural & en-IN-NeerjaExpressiveNeural are modern natural Hinglish neural models
+  // 1. High-Fidelity Microsoft Edge Neural Indian Speech Engine
+  // Strict Single Female Voice: 'en-IN-NeerjaExpressiveNeural'
   let voiceName = customVoice;
   if (!voiceName) {
-    voiceName = gender === 'female' ? 'hi-IN-SwaraNeural' : 'hi-IN-MadhurNeural';
+    voiceName = gender === 'male' ? 'en-IN-PrabhatNeural' : 'en-IN-NeerjaExpressiveNeural';
+  } else if (voiceName.includes('Swara') || voiceName.includes('NeerjaNeural')) {
+    voiceName = 'en-IN-NeerjaExpressiveNeural';
   }
 
   // Optimize text phonetics so it speaks with 100% natural Indian pronunciation
   const isHindiVoice = voiceName.startsWith('hi-IN');
   const speechText = optimizeForIndianSpeech(rawText, isHindiVoice);
 
+  // Dynamic prosody based on emotion
+  let rateModifier = '+12%';
+  let pitchModifier = '+0Hz';
+  if (emotion === 'enthusiastic') {
+    rateModifier = '+15%';
+    pitchModifier = '+6Hz';
+  } else if (emotion === 'chill') {
+    rateModifier = '-4%';
+    pitchModifier = '-4Hz';
+  } else if (emotion === 'formal') {
+    rateModifier = '+2%';
+    pitchModifier = '+0Hz';
+  }
+
   try {
     const tts = new MsEdgeTTS();
     await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    const readable = tts.toStream(speechText);
+    const readable = tts.toStream(speechText, {
+      rate: rateModifier,
+      pitch: pitchModifier
+    });
 
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Cache-Control', 'public, max-age=86400');
     readable.audioStream.pipe(res);
   } catch (err) {
-    console.warn('[VoiceAgentTTS] Edge Neural TTS notice, trying fallback voice:', err.message);
+    console.warn('[VoiceAgentTTS] Edge Neural TTS notice, retrying with en-IN-NeerjaExpressiveNeural:', err.message);
     try {
-      // Secondary fallback to Indian Hinglish neural model
-      const fallbackVoice = gender === 'female' ? 'en-IN-NeerjaNeural' : 'en-IN-PrabhatNeural';
+      // Direct retry with default official voice
+      const fallbackVoice = gender === 'male' ? 'en-IN-PrabhatNeural' : 'en-IN-NeerjaExpressiveNeural';
       const tts2 = new MsEdgeTTS();
       await tts2.setMetadata(fallbackVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
       const readable2 = tts2.toStream(rawText);

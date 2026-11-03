@@ -369,7 +369,7 @@ class MusicValidationService {
             isMusic: aiDecision.isMusic,
             confidence: aiDecision.confidence,
             category: aiDecision.category || (aiDecision.isMusic ? 'independent_music' : 'other_non_music'),
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3.8-flash',
             reason: aiDecision.reason || 'Gemini semantic classification'
           };
         }
@@ -393,10 +393,10 @@ class MusicValidationService {
   }
 
   /**
-   * Queries Gemini 2.5 Flash with strict JSON output schema to classify ambiguous candidates.
+   * Queries Gemini 3.8 Flash with strict JSON output schema to classify ambiguous candidates.
    */
   async queryGeminiClassifier(meta = {}) {
-    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    const model = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
     const prompt = `You are the Loopra Music Streaming Platform Content Classifier.
 Your job is to determine whether a YouTube video is genuinely an individual MUSIC TRACK (song, instrumental, bhajan, classical, regional folk, rap, etc.) or NON-MUSIC (gaming, vlog, tutorial, podcast, interview, news, movie scene, reaction, or video merely containing background music).
 

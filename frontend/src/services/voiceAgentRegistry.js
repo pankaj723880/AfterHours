@@ -61,6 +61,15 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
     };
   }
 
+  // 0. NEGATIVE PLAY INTENT GUARD:
+  // Catches phrases like: "don't play", "do not play", "mat chalao", "mat bajana", "without playing", "bina play kare"
+  const hasNegativePlayModifier = (
+    /\b(don'?t|do not|mat|na|bina|without|except|never)\s+(?:play|chalao|bajao|sunao|shuru)/i.test(lower) ||
+    /\b(?:play|chalao|bajao|sunao)\s+(?:mat|na|nahi)\b/i.test(lower) ||
+    /\b(?:don'?t|do not)\s+play\b/i.test(lower) ||
+    /don'?t\s+play\s+them/i.test(lower)
+  );
+
   // -------------------------------------------------------------
   // 1. PLAYBACK: PAUSE / STOP
   // -------------------------------------------------------------
@@ -95,7 +104,7 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
   // 3. PLAYBACK: NEXT TRACK / SKIP
   // -------------------------------------------------------------
   if (
-    /\b(next track|next song|skip song|skip track|agla gaana|agla song|agla track|agla chalao|aage badhao|change song)\b/i.test(lower) ||
+    /\b(next track|next song|play (?:the )?next (?:song|track)|skip song|skip track|agla gaana|agla song|agla track|agla chalao|aage badhao|change song)\b/i.test(lower) ||
     /^(next|skip|agla|agla chalao)(?:\s+(?:bhai|yaar|abhi|karo|please))?$/i.test(lower)
   ) {
     return {
@@ -218,13 +227,65 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
     };
   }
 
-  if (/\b(unlike|remove from favourites|remove from liked|unlike this song)\b/i.test(lower)) {
+  if (
+    /\b(unlike|remove (?:this song )?from (?:favorites|favourites|liked)|delete from (?:favorites|favourites|liked)|dislike|favourite se hatao|favorites se hatao|liked se hatao|liked songs se hatao|is gaane ko hatao|is gaane ko delete karo|hata do|hatao isko|nikal do|remove this song|unlike this song|unlike song)\b/i.test(lower) ||
+    /^(unlike|dislike|remove|hatao|hata do)$/i.test(lower)
+  ) {
     return {
       type: 'library',
       action: 'unlike_current',
       target: currentSong,
-      speechResponse: `Removed from your Liked Songs`,
+      speechResponse: currentSong ? `Removed "${currentSong.title || 'song'}" from your Liked Songs` : 'Removed from your Liked Songs',
       description: `Unlike current track`
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 9b. AVATAR INTERACTIVE ACTIONS (Wave, Wink, Dance, Jump, Pose)
+  // -------------------------------------------------------------
+  if (/\b(wave karo|hath hilao|wave|say hi|hi bolo)\b/i.test(lower)) {
+    return {
+      type: 'avatar',
+      action: 'avatar_action',
+      gesture: 'wave',
+      speechResponse: 'Loopra waves at you!',
+      description: 'Trigger Loopra Wave'
+    };
+  }
+  if (/\b(wink karo|aankh maro|wink)\b/i.test(lower)) {
+    return {
+      type: 'avatar',
+      action: 'avatar_action',
+      gesture: 'wink',
+      speechResponse: 'Loopra winks!',
+      description: 'Trigger Loopra Wink'
+    };
+  }
+  if (/\b(dance karo|dance|nacho|groove karo)\b/i.test(lower)) {
+    return {
+      type: 'avatar',
+      action: 'avatar_action',
+      gesture: 'dance',
+      speechResponse: 'Loopra is grooving!',
+      description: 'Trigger Loopra Dance'
+    };
+  }
+  if (/\b(jump karo|jump|koodo)\b/i.test(lower)) {
+    return {
+      type: 'avatar',
+      action: 'avatar_action',
+      gesture: 'jump',
+      speechResponse: 'Loopra jumps with excitement!',
+      description: 'Trigger Loopra Jump'
+    };
+  }
+  if (/\b(pose karo|pose do|style dikhao|pose)\b/i.test(lower)) {
+    return {
+      type: 'avatar',
+      action: 'avatar_action',
+      gesture: 'pose',
+      speechResponse: 'Loopra strikes a pose!',
+      description: 'Trigger Loopra Pose'
     };
   }
 
@@ -321,7 +382,7 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
   // -------------------------------------------------------------
   // 16. NAVIGATION: LISTENING INSIGHTS & RECAP
   // -------------------------------------------------------------
-  if (/\b(listening insights|weekly recap|my recap|stats|statistics|listening stats|mera recap|mera stats|insights kholo|insights)\b/i.test(lower)) {
+  if (/\b(recap and stats|recap & stats|my listening statistics|music summary|listening report|listening insights|weekly recap|my recap|stats|statistics|listening stats|mera recap|mera stats|insights kholo|insights|recap dikhao|stats dikhao)\b/i.test(lower)) {
     return {
       type: 'navigation',
       action: 'open_insights',
@@ -439,6 +500,16 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
     };
   }
 
+  if (/\b(listening activity|activity kholo|activity page|recent activity)\b/i.test(lower) || /^(activity)$/i.test(lower)) {
+    return {
+      type: 'navigation',
+      action: 'navigate_page',
+      target: 'activity',
+      speechResponse: 'Opening Listening Activity',
+      description: 'Navigate to Listening Activity'
+    };
+  }
+
   if (/\b(listening history|recently played|recent songs|history kholo|open listening history|history page|mera listening history)\b/i.test(lower) || /^(history)$/i.test(lower)) {
     return {
       type: 'navigation',
@@ -550,7 +621,13 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
   ];
   for (const prefix of searchPrefixes) {
     if (lower.startsWith(prefix)) {
-      const query = text.slice(prefix.length).trim();
+      let query = text.slice(prefix.length).trim();
+      // Clean query of negative play instructions or count prefixes
+      query = query
+        .replace(/,\s*(?:don'?t\s+play\s+(?:them|it|songs?)?|mat\s+chalao|bina\s+play\s+kare|do\s+not\s+play\s+(?:them|it)?)/gi, '')
+        .replace(/\b(don'?t\s+play\s+(?:them|it|songs?)?|mat\s+chalao|bina\s+play\s+kare|do\s+not\s+play\s+(?:them|it)?)\b/gi, '')
+        .replace(/^(?:(?:\d+|five|four|three|two|one|paanch|top|best|popular)\s+)?songs?\s+(?:by|of|from)\s+/i, '')
+        .trim();
       if (query) {
         return {
           type: 'navigation',
@@ -566,7 +643,11 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
   // Suffix search: "Arijit Singh search karo", "Headlights dhundo"
   const hindiSuffixSearch = lower.match(/^(.+?)\s+(?:search\s+karo|dhundo|dhoondho|khojo)$/i);
   if (hindiSuffixSearch && hindiSuffixSearch[1]) {
-    const query = text.slice(0, hindiSuffixSearch[1].length).trim();
+    let query = text.slice(0, hindiSuffixSearch[1].length).trim();
+    query = query
+      .replace(/\b(don'?t\s+play\s+(?:them|it|songs?)?|mat\s+chalao|bina\s+play\s+kare|do\s+not\s+play\s+(?:them|it)?)\b/gi, '')
+      .replace(/^(?:(?:\d+|five|four|three|two|one|paanch|top|best|popular)\s+)?songs?\s+(?:by|of|from)\s+/i, '')
+      .trim();
     if (query) {
       return {
         type: 'navigation',
@@ -576,6 +657,23 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
         description: `Search for "${query}"`
       };
     }
+  }
+
+  // If a negative play modifier is present ("don't play", "mat bajao"), NEVER proceed to play gates!
+  if (hasNegativePlayModifier) {
+    const cleanSearchQuery = text
+      .replace(/^(?:find|search|show|dhoondho|dhundo|khojo)\s+/i, '')
+      .replace(/,\s*(?:don'?t\s+play\s+(?:them|it|songs?)?|mat\s+chalao|bina\s+play\s+kare|do\s+not\s+play\s+(?:them|it)?)/gi, '')
+      .replace(/\b(don'?t\s+play\s+(?:them|it|songs?)?|mat\s+chalao|bina\s+play\s+kare|do\s+not\s+play\s+(?:them|it)?)\b/gi, '')
+      .replace(/^(?:(?:\d+|five|four|three|two|one|paanch|top|best|popular)\s+)?songs?\s+(?:by|of|from)\s+/i, '')
+      .trim();
+    return {
+      type: 'navigation',
+      action: 'search',
+      query: cleanSearchQuery || 'songs',
+      speechResponse: `Displaying songs for ${cleanSearchQuery || 'songs'}`,
+      description: `Search for "${cleanSearchQuery || 'songs'}" (Search only)`
+    };
   }
 
   // -------------------------------------------------------------

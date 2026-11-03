@@ -49,7 +49,7 @@ export default function LoopraFooter({
   }, [legalModalTab]);
 
   const siteName = branding?.siteName || 'Loopra';
-  const logoUrl = branding?.logoUrl || '/loopra-logo.png';
+  const logoUrl = (branding?.logoUrl && typeof branding.logoUrl === 'string' && branding.logoUrl.trim()) ? branding.logoUrl.trim() : '/loopra-logo.png';
   const contactEmail = footer?.contactEmail || footer?.takedownEmail || 'admin@loopra.in';
   const copyrightText = footer?.copyright || `© ${new Date().getFullYear()} Loopra. All rights reserved.`;
   const disclaimerText = footer?.disclaimerText || 'Audio plays through YouTube embedded player API. Loopra does not host copyrighted files directly.';

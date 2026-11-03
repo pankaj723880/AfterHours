@@ -243,13 +243,13 @@ body {
 /* ============================================================= */
 
 /* ============================================================= */
-/* Loopra AI Companion Dock (Positioned ABOVE AI Assistant Button)*/
-/* Standing prominently above the floating AI Assistant button   */
+/* Loopra Unified Persistent AI Companion Avatar Dock           */
+/* Replaces old assistant icon with persistent 2D/3D Live avatar */
 /* ============================================================= */
 .loopra-character-dock-container {
   position: fixed !important;
   top: auto !important;
-  bottom: calc(var(--ai-button-bottom, 24px) + 56px + 18px) !important;
+  bottom: var(--ai-button-bottom, 24px) !important;
   right: 24px !important;
   z-index: 2147483640 !important;
   pointer-events: auto !important;
@@ -258,78 +258,20 @@ body {
 @media (max-width: 768px) {
   .loopra-character-dock-container {
     top: auto !important;
-    bottom: calc(var(--ai-button-bottom, calc(72px + env(safe-area-inset-bottom, 0px))) + 56px + 14px) !important;
+    bottom: var(--ai-button-bottom, calc(72px + env(safe-area-inset-bottom, 0px))) !important;
     right: 16px !important;
   }
 }
 
 .loopra-floating-assistants-bar {
-  position: fixed !important;
-  right: 24px !important;
-  bottom: var(--ai-button-bottom, 24px) !important;
-  left: auto !important;
-  top: auto !important;
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  justify-content: flex-end !important;
-  gap: 26px !important;
-  z-index: 2147483646 !important;
-  pointer-events: auto !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  width: 56px !important;
-  height: auto !important;
+  display: none !important;
 }
 
-@media (max-width: 768px) {
-  .loopra-floating-assistants-bar {
-    right: 16px !important;
-    bottom: var(--ai-button-bottom, calc(72px + env(safe-area-inset-bottom, 0px))) !important;
-    gap: 22px !important;
-    width: 56px !important;
-  }
-}
-
-/* Loopra Floating AI Music Assistant Positioning */
-.ai-assistant-floating-button {
-  position: relative !important;
-  right: auto !important;
-  bottom: auto !important;
-  left: auto !important;
-  top: auto !important;
-  transform: none !important;
-  margin: 0 !important;
-  width: 56px !important;
-  height: 56px !important;
-  min-width: 56px !important;
-  min-height: 56px !important;
-  flex-shrink: 0 !important;
-  z-index: 2147483647 !important;
-}
-
-/* Loopra Floating Voice Agent Fixed Positioning */
-.voice-agent-floating-button {
-  position: relative !important;
-  right: auto !important;
-  bottom: auto !important;
-  left: auto !important;
-  top: auto !important;
-  transform: none !important;
-  margin: 0 !important;
-  width: 56px !important;
-  height: 56px !important;
-  min-width: 56px !important;
-  min-height: 56px !important;
-  flex-shrink: 0 !important;
-  z-index: 2147483646 !important;
-}
-
-/* Loopra Floating AI Assistant Chat Panel (Anchored Above & Left of Button) */
+/* Loopra Floating AI Assistant Chat Panel (Anchored Beside Avatar on Desktop, Full on Mobile) */
 .ai-assistant-chat-panel {
   position: fixed !important;
-  right: 24px !important;
-  bottom: var(--ai-panel-bottom, calc(24px + 56px + 12px)) !important;
+  right: calc(200px + 32px) !important;
+  bottom: var(--ai-panel-bottom, 24px) !important;
   left: auto !important;
   top: auto !important;
   transform: none !important;
@@ -343,14 +285,15 @@ body {
 
 @media (max-width: 768px) {
   .ai-assistant-chat-panel {
-    right: 16px !important;
-    left: auto !important;
-    bottom: var(--ai-panel-bottom, calc(72px + 56px + 12px + env(safe-area-inset-bottom, 0px))) !important;
+    right: 12px !important;
+    left: 12px !important;
+    bottom: var(--ai-panel-bottom, calc(72px + env(safe-area-inset-bottom, 0px))) !important;
     top: auto !important;
-    width: var(--chat-panel-width, 88vw) !important;
+    width: auto !important;
     max-width: calc(100vw - 24px) !important;
-    height: var(--chat-panel-height, 58vh) !important;
-    max-height: var(--chat-panel-max-height, calc(100dvh - 150px - env(safe-area-inset-bottom, 0px))) !important;
+    height: var(--chat-panel-height, 62vh) !important;
+    max-height: var(--chat-panel-max-height, calc(100dvh - 120px - env(safe-area-inset-bottom, 0px))) !important;
+    z-index: 2147483648 !important;
   }
 }
 

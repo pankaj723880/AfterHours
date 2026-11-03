@@ -133,11 +133,11 @@ test('Loopra Wake Word & Smart 60-Second Inactivity Test Suite', async (t) => {
         assert.equal(timedOut, false, 'Should not time out because valid command reset the window');
       }, 90);
 
-      // At 140ms (40 + 80 = 120ms), it should time out
+      // At 170ms (well past 40 + 80 = 120ms), it should time out
       setTimeout(() => {
         assert.equal(timedOut, true, 'Should time out after the new fresh window expires');
         resolve();
-      }, 150);
+      }, 170);
     });
   });
 

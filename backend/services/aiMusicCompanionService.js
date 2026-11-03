@@ -376,7 +376,7 @@ export const aiMusicCompanionService = {
     }
 
     // 9. Build compact context for Gemini
-    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
     let currentTrackContext = "NO TRACK CURRENTLY PLAYING IN LOOPRA";
     if (currentTrack && (currentTrack.title || currentTrack.id)) {
@@ -940,7 +940,7 @@ OUTPUT FORMAT (Strict JSON):
     if (this.isGeminiConfigured()) {
       try {
         const client = this.getClient();
-        const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+        const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
         let targetFocus = '';
         if (isSingerInquiry) {

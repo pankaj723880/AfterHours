@@ -8124,9 +8124,42 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           playSong(track);
         }}
         onTogglePlayPause={togglePlayPause}
+        onNextTrack={handleNextSong}
+        onPrevTrack={handlePrevSong}
+        onToggleShuffle={toggleShuffle}
+        onToggleRepeat={toggleRepeatMode}
+        onSetVolume={(vol) => {
+          setVolume(vol);
+          try { playerRef.current?.setVolume?.(vol); } catch (_) {}
+        }}
         onToggleLike={toggleLike}
         isLiked={isSongLiked}
         onAddToPlaylist={handleAddToPlaylistClick}
+        onNavigate={(page, extra) => {
+          if (page === 'home') {
+            window.history.pushState(null, '', '/');
+            handleStationSelect('home');
+          } else if (page === 'discover') {
+            if (extra?.query) {
+              handleSearchFromHome(extra.query);
+            } else {
+              handleStationSelect('discover');
+            }
+          } else {
+            handleStationSelect(page, extra);
+          }
+        }}
+        onOpenInsights={() => setIsStatsOpen(true)}
+        onOpenQueue={() => {
+          if (typeof handleOpenExpandedPlayer === 'function') {
+            handleOpenExpandedPlayer('queue');
+          } else {
+            setShowQueuePanel(true);
+          }
+        }}
+        onOpenLyrics={() => setIsLyricsOpen(true)}
+        onGoBack={handleGoBack}
+        onOpenArtist={(artistName) => handleArtistClick(artistName)}
         showToast={showToast}
         isBottomPlayerVisible={isBottomPlayerVisible}
         isOpen={activeAssistantPanel === 'ai'}
