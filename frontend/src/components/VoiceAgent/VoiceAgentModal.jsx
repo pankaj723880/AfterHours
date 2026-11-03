@@ -18,6 +18,7 @@ import {
 } from '../../services/voiceTaskEngine';
 import { voiceBuddyService } from '../../services/voiceBuddyService';
 import { parseCommandToAction, INTENT_CATEGORIES } from '../../services/commandActionEngine';
+import { chatBuddyClient } from '../../services/chatBuddyClient';
 import CharacterBuddy from './CharacterBuddy';
 
 export default function VoiceAgentModal({
@@ -35,6 +36,8 @@ export default function VoiceAgentModal({
   isPanelOpen = false,
   onOpenPanel,
   onClosePanel,
+  isAvatarVisible = false,
+  onToggleAvatar,
   onPlayTrack,
   onTogglePlayPause,
   onNextTrack,
@@ -43,7 +46,16 @@ export default function VoiceAgentModal({
   onToggleRepeat,
   onSetVolume,
   onToggleLike,
+  onRemoveFromFavorites,
   onAddToPlaylist,
+  onCreatePlaylist,
+  onOpenPlaylistByName,
+  onPlayPlaylist,
+  onPlayRadioStation,
+  onPlayFromHistory,
+  onRemoveHistoryItem,
+  onClearHistory,
+  onAddToQueue,
   onNavigate,
   onOpenInsights,
   onOpenQueue,
@@ -82,6 +94,10 @@ export default function VoiceAgentModal({
     activeTab: activeTab,
     completedSteps: []
   });
+
+  const pendingConfirmationStepRef = useRef(null);
+  const lastProcessedCommandRef = useRef({ text: '', time: 0 });
+  const handleProcessUtteranceRef = useRef(null);
 
   // Sync props into persistent context
   useEffect(() => {
@@ -145,7 +161,87 @@ export default function VoiceAgentModal({
     const text = rawUtterance.trim();
     if (!text) return;
 
-    // A. Check for deactivation commands (e.g. "stop listening", "done loopra")
+    // Strict deduplication: ignore exact same command processed within 2500ms
+    const now = Date.now();
+    if (
+      lastProcessedCommandRef.current.text === text.toLowerCase() &&
+      (now - lastProcessedCommandRef.current.time) < 2500
+    ) {
+      console.log('[VoiceAgent] Suppressed duplicate utterance within 2500ms:', text);
+      return;
+    }
+    lastProcessedCommandRef.current = { text: text.toLowerCase(), time: now };
+
+    // A. Check for pending destructive action confirmation
+    if (pendingConfirmationStepRef.current) {
+      if (/^(haan|yes|confirm|theek hai|kardo|kar do|sure|proceed|ha)\b/i.test(text)) {
+        const stepToRun = pendingConfirmationStepRef.current;
+        pendingConfirmationStepRef.current = null;
+        showToast?.('Executing confirmed action...');
+        try {
+          const confirmedResult = await executeTaskPipeline([stepToRun], { ...persistentContextRef.current, confirmed: true }, {
+            onPlayTrack,
+            onTogglePlayPause,
+            onNextTrack,
+            onPrevTrack,
+            onToggleShuffle,
+            onToggleRepeat,
+            onSetVolume,
+            onToggleLike,
+            onRemoveFromFavorites,
+            onAddToPlaylist,
+            onCreatePlaylist,
+            onOpenPlaylistByName,
+            onPlayPlaylist,
+            onPlayRadioStation,
+            onPlayFromHistory,
+            onRemoveHistoryItem,
+            onClearHistory,
+            onAddToQueue,
+            onNavigate,
+            onOpenInsights,
+            onOpenQueue,
+            onOpenLyrics,
+            onGoBack,
+            onOpenArtist,
+            searchCatalog
+          });
+          voiceBuddyService.speak(confirmedResult.message);
+          showToast?.(confirmedResult.message);
+          voiceSessionService.notifyExecutionFinish(confirmedResult.message);
+        } catch (confErr) {
+          showToast?.(`Error: ${confErr.message}`, 'error');
+          voiceBuddyService.speak('Action execute nahi ho paya.');
+        }
+        return;
+      } else if (/^(no|nahi|mat karo|cancel|rehne do|stop)\b/i.test(text)) {
+        pendingConfirmationStepRef.current = null;
+        voiceBuddyService.speak('Thik hai, action cancel kar diya.');
+        showToast?.('Action cancelled.');
+        voiceSessionService.notifyExecutionFinish('Cancelled.');
+        return;
+      }
+    }
+
+    // A2. Avatar Visibility Commands
+    if (/^(show avatar|avatar dikhao|companion dikhao|open buddy|avatar chalao)\b/i.test(text)) {
+      onToggleAvatar?.(true);
+      const reply = 'Namaste dost! Loopra aapke saath hai, bataiye kya sunenge?';
+      voiceBuddyService.speak(reply);
+      showToast?.('Avatar Revealed');
+      voiceSessionService.notifyExecutionFinish(reply);
+      return;
+    }
+    if (/^(hide avatar|avatar chhupao|close buddy|avatar band karo|avatar hatao)\b/i.test(text)) {
+      onToggleAvatar?.(false);
+      const reply = 'Thik hai, main chhup jaati hoon!';
+      voiceBuddyService.speak(reply);
+      showToast?.('Avatar Hidden');
+      voiceSessionService.notifyExecutionFinish(reply);
+      return;
+    }
+
+    // A3. Check for deactivation commands (e.g. "stop listening", "done loopra")
     const singleParse = parseVoiceCommandLocally(text, persistentContextRef.current);
     if (singleParse && singleParse.action === 'stop_continuous') {
       voiceSessionService.stopSession('manual');
@@ -185,18 +281,18 @@ export default function VoiceAgentModal({
           const targetId = directAction.target;
           const targetName = directAction.item?.name || targetId;
 
-          // Animate 3D physical character walking/running to the element
+          // Animate 3D physical character walking/running to the element and WAIT until arrival & tap
           if (typeof window !== 'undefined' && typeof window.__loopraWalkAndTap === 'function') {
-            window.__loopraWalkAndTap(targetId, targetName, () => {
-              if (onNavigate) onNavigate(targetId);
-            });
-          } else if (onNavigate) {
+            await window.__loopraWalkAndTap(targetId, targetName);
+          }
+          if (onNavigate) {
             onNavigate(targetId);
           }
 
           const reply = voiceBuddyService.generateFriendReply('navigate_page', { target: targetId });
           voiceBuddyService.speak(reply);
           showToast?.(`Opening ${targetName}`);
+          voiceSessionService.notifyExecutionFinish(reply);
           return;
         }
 
@@ -356,32 +452,60 @@ export default function VoiceAgentModal({
     // C. Multi-Step Task Pipeline Fallback (for complex compound chains or ambiguous queries)
     let steps = parseMultiStepInstruction(text, persistentContextRef.current);
 
-    // D. If local parser could not determine steps, delegate to Backend Gemini API
+    // D. If local parser could not determine steps, delegate to Shared Two-Layer ChatBuddy Intent Engine (/api/chat)
     if (steps.length === 0) {
       try {
-        const cleanUrl = (backendUrl || '').replace(/\/+$/, '');
-        const authToken = token || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : '') || '';
-        const headers = { 'Content-Type': 'application/json' };
-        if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+        const chatRes = await chatBuddyClient.sendMessage(text, backendUrl, persistentContextRef.current);
+        if (chatRes) {
+          // If casual conversation: speak naturally, NEVER trigger unwanted music playback
+          if (chatRes.type === 'chat') {
+            voiceBuddyService.speak(chatRes.reply);
+            showToast?.(chatRes.reply);
+            voiceSessionService.notifyExecutionFinish(chatRes.reply);
+            return;
+          }
 
-        const res = await fetch(`${cleanUrl}/api/voice-agent/parse-intent`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            utterance: text,
-            currentTrack: currentSong || persistentContextRef.current.currentSong,
-            activeTab: activeTab || persistentContextRef.current.activeTab || 'home'
-          })
-        });
+          // If structured command: execute identical actions as typed chat
+          if (chatRes.type === 'command') {
+            const action = chatRes.action;
+            const params = chatRes.params || {};
 
-        if (res.ok) {
-          const aiData = await res.json();
-          if (aiData.success && Array.isArray(aiData.steps) && aiData.steps.length > 0) {
-            steps = aiData.steps;
+            if (action === 'play_song') {
+              const q = params.query || text;
+              const searchResults = await searchCatalog(q);
+              if (searchResults.length > 0 && onPlayTrack) {
+                onPlayTrack(searchResults[0]);
+                showToast?.(`Now playing: ${searchResults[0].title}`);
+              }
+            } else if (action === 'open_page') {
+              const targetPage = params.page || 'home';
+              if (targetPage === 'stats' && onOpenInsights) onOpenInsights();
+              else if (onNavigate) onNavigate(targetPage);
+            } else if (action === 'pause') {
+              if (onTogglePlayPause && isPlaying) onTogglePlayPause();
+            } else if (action === 'resume') {
+              if (onTogglePlayPause && !isPlaying) onTogglePlayPause();
+            } else if (action === 'next') {
+              if (onNextTrack) onNextTrack();
+            } else if (action === 'previous') {
+              if (onPrevTrack) onPrevTrack();
+            } else if (action === 'volume') {
+              if (params.level !== undefined && onSetVolume) onSetVolume(params.level);
+            } else if (action === 'avatar_jump' || action === 'avatar_dance' || action === 'avatar_wave') {
+              const gesture = action.replace('avatar_', '');
+              if (typeof window !== 'undefined' && typeof window.__loopraPlayGesture === 'function') {
+                window.__loopraPlayGesture(gesture, 2500);
+              }
+            }
+
+            voiceBuddyService.speak(chatRes.reply);
+            showToast?.(chatRes.reply);
+            voiceSessionService.notifyExecutionFinish(chatRes.reply);
+            return;
           }
         }
-      } catch (geminiErr) {
-        console.warn('[VoiceAgent] Gemini API fallback notice:', geminiErr.message);
+      } catch (err) {
+        console.warn('[VoiceAgent] Shared ChatBuddy API notice:', err.message);
       }
     }
 
@@ -398,14 +522,16 @@ export default function VoiceAgentModal({
     if (navStep && typeof window !== 'undefined' && typeof window.__loopraWalkAndTap === 'function') {
       const targetId = navStep.target || 'home';
       hasWalked = true;
-      window.__loopraWalkAndTap(targetId, targetId, () => {
-        if (onNavigate) onNavigate(targetId);
-      });
+      await window.__loopraWalkAndTap(targetId, targetId);
+      if (onNavigate) onNavigate(targetId);
     }
 
     const execLabel = `Executing ${steps.length} action${steps.length > 1 ? 's' : ''}...`;
     voiceSessionService.notifyExecutionStart(execLabel);
     setActiveActionLabel(execLabel);
+    if (typeof window !== 'undefined') {
+      window.__loopraSetAvatarExecuting?.(true);
+    }
 
     try {
       const pipelineResult = await executeTaskPipeline(steps, persistentContextRef.current, {
@@ -417,8 +543,17 @@ export default function VoiceAgentModal({
         onToggleRepeat,
         onSetVolume,
         onToggleLike,
+        onRemoveFromFavorites,
         onAddToPlaylist,
-        onNavigate: hasWalked ? undefined : onNavigate,
+        onCreatePlaylist,
+        onOpenPlaylistByName,
+        onPlayPlaylist,
+        onPlayRadioStation,
+        onPlayFromHistory,
+        onRemoveHistoryItem,
+        onClearHistory,
+        onAddToQueue,
+        onNavigate,
         onOpenInsights,
         onOpenQueue,
         onOpenLyrics,
@@ -426,6 +561,14 @@ export default function VoiceAgentModal({
         onOpenArtist,
         searchCatalog
       });
+
+      if (pipelineResult.confirmationRequired) {
+        pendingConfirmationStepRef.current = pipelineResult.pendingStep;
+        voiceBuddyService.speak(pipelineResult.confirmationPrompt);
+        showToast?.(pipelineResult.confirmationPrompt, 'warning');
+        voiceSessionService.notifyExecutionFinish(pipelineResult.confirmationPrompt);
+        return;
+      }
 
       if (pipelineResult.taskContext) {
         persistentContextRef.current = pipelineResult.taskContext;
@@ -447,6 +590,10 @@ export default function VoiceAgentModal({
       voiceBuddyService.speak(errorReply);
       voiceSessionService.notifyExecutionFinish('Execution failed.');
     } finally {
+      if (typeof window !== 'undefined') {
+        window.__loopraSetAvatarExecuting?.(false);
+        window.__loopraSetAvatarThinking?.(false);
+      }
       setTimeout(() => {
         setActiveActionLabel('');
       }, 2000);
@@ -609,13 +756,18 @@ export default function VoiceAgentModal({
       } else if (voiceBuddyService) {
         voiceBuddyService.isPlaybackActive = !!isPlaying;
       }
-    } catch (_) {}
+    } catch (_) { }
     if (typeof window !== 'undefined') {
       window.__loopraIsMusicPlaying = !!isPlaying;
     }
   }, [isPlaying]);
 
-  // 5. Subscribe to the Voice Session Controller
+  // Keep latest utterance handler in ref
+  useEffect(() => {
+    handleProcessUtteranceRef.current = handleProcessUtterance;
+  }, [handleProcessUtterance]);
+
+  // 5. Subscribe to the Voice Session Controller (stable single subscription)
   useEffect(() => {
     const unsub = voiceSessionService.subscribe((snapshot) => {
       setSessionState(snapshot.state);
@@ -625,25 +777,17 @@ export default function VoiceAgentModal({
       if (snapshot.volumeScale !== undefined) setVoiceVolumeScale(snapshot.volumeScale);
       if (snapshot.interimText !== undefined) setInterimText(snapshot.interimText);
 
-      // Native audio packet from Gemini speech recognition pipeline
-      if (snapshot.event === 'audio_command' && snapshot.audioData) {
-        handleProcessAudio({
-          audioData: snapshot.audioData,
-          mimeType: snapshot.mimeType,
-          fallbackTranscript: snapshot.transcript
-        });
-      }
       // Finalized transcript received from recognition engine
-      else if (snapshot.event === 'final_transcript' && snapshot.transcript) {
+      if (snapshot.event === 'final_transcript' && snapshot.transcript) {
         setTranscript(snapshot.transcript);
-        handleProcessUtterance(snapshot.transcript);
+        handleProcessUtteranceRef.current?.(snapshot.transcript);
       }
     });
 
     return () => {
       unsub();
     };
-  }, [handleProcessUtterance, handleProcessAudio]);
+  }, []);
 
   // Clean deactivation on unmount
   useEffect(() => {
@@ -664,7 +808,8 @@ export default function VoiceAgentModal({
     } else {
       showToast?.('Voice Agent: ON (Listening)');
       await voiceSessionService.startSession({ lang: 'en-IN' });
-      voiceBuddyService.speak('Haan bilkul! Loopra ready hai, batao kya play karun?');
+      const welcomeMsg = voiceBuddyService.generateWelcomeGreeting();
+      voiceBuddyService.speak(welcomeMsg);
     }
   };
 
@@ -686,9 +831,9 @@ export default function VoiceAgentModal({
   return ReactDOM.createPortal(
     <>
       {/* ============================================================= */}
-      {/* 1. LOOPRA UNIFIED AI COMPANION AVATAR (Persistent throughout) */}
+      {/* 1. LOOPRA MOVABLE AI COMPANION AVATAR (Persistent)            */}
       {/* ============================================================= */}
-      {hasAccess && (
+      {isAvatarVisible && (
         <div
           className="loopra-character-dock-container pointer-events-auto"
           style={{
@@ -703,6 +848,7 @@ export default function VoiceAgentModal({
             voiceVolumeScale={voiceVolumeScale}
             onToggleVoiceMode={handleToggleVoiceMode}
             onToggleChat={onToggleAi}
+            onCloseAvatar={() => onToggleAvatar?.(false)}
           />
         </div>
       )}

@@ -1,13 +1,25 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import { Reorder, useDragControls } from 'framer-motion';
-import AdminDashboard from './components/Admin/AdminDashboard';
 import { safeParseJsonResponse } from './utils/errorHandler';
 import { CURATED_STATION_TRACKS } from './constants/curatedPlaylists';
 import HomeSearchBar from './components/Search/HomeSearchBar';
-import Turntable3D from './components/Player/Turntable3D';
-import AudioSpectrumVisualizer from './components/Player/AudioSpectrumVisualizer';
-import StudioLoungeAtmosphere from './components/Player/StudioLoungeAtmosphere';
+
+// Lazy-loaded heavy views and modals
+const AdminDashboard = lazy(() => import('./components/Admin/AdminDashboard'));
+const Turntable3D = lazy(() => import('./components/Player/Turntable3D'));
+const AudioSpectrumVisualizer = lazy(() => import('./components/Player/AudioSpectrumVisualizer'));
+const StudioLoungeAtmosphere = lazy(() => import('./components/Player/StudioLoungeAtmosphere'));
+const OfflineLibraryView = lazy(() => import('./components/Offline/OfflineLibraryView'));
+const OfflineEligibleExploreView = lazy(() => import('./components/Offline/OfflineEligibleExploreView'));
+const ListeningRoomsModal = lazy(() => import('./components/Social/ListeningRoomsModal'));
+const SimilarSongsModal = lazy(() => import('./components/Recommendations/SimilarSongsModal'));
+const LyricsModal = lazy(() => import('./components/Player/LyricsModal'));
+const SleepTimerModal = lazy(() => import('./components/Player/SleepTimerModal'));
+const PlayerSettingsModal = lazy(() => import('./components/Player/PlayerSettingsModal'));
+const ListeningStatsModal = lazy(() => import('./components/Stats/ListeningStatsModal'));
+const UserProfileModal = lazy(() => import('./components/Profile/UserProfileModal'));
+const DiscoverSwipe = lazy(() => import('./components/Discover/DiscoverSwipe'));
 import AppSplashScreen from './components/Common/AppSplashScreen';
 import CmsAnnouncementBar from './components/Common/CmsAnnouncementBar';
 import CmsHeroBanner from './components/Common/CmsHeroBanner';
@@ -17,18 +29,8 @@ import { getCachedCmsConfig, fetchPublicCmsConfig, applyThemeToDom, normalizeCms
 import { offlineEligibilityService } from './services/offlineEligibilityService';
 import { offlineStorageService } from './services/offlineStorageService';
 import DownloadTrackButton from './components/Offline/DownloadTrackButton';
-import OfflineLibraryView from './components/Offline/OfflineLibraryView';
-import OfflineEligibleExploreView from './components/Offline/OfflineEligibleExploreView';
-import ListeningRoomsModal from './components/Social/ListeningRoomsModal';
-import SimilarSongsModal from './components/Recommendations/SimilarSongsModal';
-import LyricsModal from './components/Player/LyricsModal';
-import SleepTimerModal from './components/Player/SleepTimerModal';
-import PlayerSettingsModal from './components/Player/PlayerSettingsModal';
-import ListeningStatsModal from './components/Stats/ListeningStatsModal';
-import UserProfileModal from './components/Profile/UserProfileModal';
 import UserAvatar from './components/Common/UserAvatar';
 import { getAvatarUrl } from './utils/avatar';
-import DiscoverSwipe from './components/Discover/DiscoverSwipe';
 import DiscoverView from './components/Discover/DiscoverView';
 import {
   initNavigation,
@@ -66,20 +68,20 @@ import { recommendationsClient } from './services/recommendationsClient';
 import { learningIntelligenceClient } from './services/learningIntelligenceClient';
 import { validatePlaybackTrack } from './services/musicValidationClient';
 import LoopraCanvas from './components/Player/LoopraCanvas';
-import TimeMachineRadio from './components/Radio/TimeMachineRadio';
-import IndianRadioView from './components/Radio/IndianRadioView';
+const TimeMachineRadio = lazy(() => import('./components/Radio/TimeMachineRadio'));
+const IndianRadioView = lazy(() => import('./components/Radio/IndianRadioView'));
 import Hls from 'hls.js';
 if (typeof window !== 'undefined') {
   window.Hls = Hls;
 }
-import ActivityFeed from './components/Activity/ActivityFeed';
+const ActivityFeed = lazy(() => import('./components/Activity/ActivityFeed'));
 import MobileBottomNav from './components/Navigation/MobileBottomNav';
 import LoopraFooter from './components/Navigation/LoopraFooter';
-import ArtistProfileView from './components/Artist/ArtistProfileView';
+const ArtistProfileView = lazy(() => import('./components/Artist/ArtistProfileView'));
 import { voiceControlService } from './services/voiceControlService';
 import shuffleService from './services/shuffleService';
 import { filterSingleSongs, isSingleSong } from './services/songFilter';
-import RatingPopupModal from './components/Rating/RatingPopupModal';
+const RatingPopupModal = lazy(() => import('./components/Rating/RatingPopupModal'));
 import HomepageReviewsSection from './components/Rating/HomepageReviewsSection';
 import { updateRouteMetadata } from './utils/seo';
 import { TrackDeduplicator, getCanonicalSongKey } from './utils/trackIdentity';
@@ -426,7 +428,7 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
     if (isPlaying && !isSeeking) {
       interval = setInterval(() => {
         try {
-          if (playerRef.current?.getCurrentTime) {
+          if (playerRef.current?.isReady && playerRef.current?.getCurrentTime) {
             const state = typeof playerRef.current.getPlayerState === 'function' ? playerRef.current.getPlayerState() : 1;
             if (state === 1 || state === 2 || state === 3) {
               const cur = playerRef.current.getCurrentTime();
@@ -441,7 +443,7 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
               }
             }
           }
-          if (playerRef.current?.getDuration) {
+          if (playerRef.current?.isReady && playerRef.current?.getDuration) {
             const state = typeof playerRef.current.getPlayerState === 'function' ? playerRef.current.getPlayerState() : 1;
             if (state === 1 || state === 2 || state === 3) {
               const dur = playerRef.current.getDuration();
@@ -1977,6 +1979,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [sleepTimerRemaining, setSleepTimerRemaining] = useState(null); // seconds
   const [isStatsOpen, setIsStatsOpen] = useState(false);
   const [activeAssistantPanel, setActiveAssistantPanel] = useState(null); // null | 'ai' | 'voice'
+  const [isAvatarVisible, setIsAvatarVisible] = useState(() => {
+    if (typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem('loopra_avatar_visible');
+      if (saved !== null) return saved === 'true';
+    }
+    return true; // Default to true so AI avatar is always visible!
+  });
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef(null);
@@ -3867,7 +3876,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       height: '100%',
       width: '100%',
       videoId: videoId,
-      host: 'https://www.youtube.com',
       playerVars: { 
         autoplay: shouldAutoPlay ? 1 : 0, 
         controls: 1, 
@@ -3876,8 +3884,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         enablejsapi: 1,
         playsinline: 1,
         start: startSeconds > 0 ? Math.floor(startSeconds) : 0,
-        origin: typeof window !== 'undefined' ? window.location.origin : '',
-        widget_referrer: typeof window !== 'undefined' ? window.location.origin : ''
+        origin: typeof window !== 'undefined' ? window.location.origin : undefined,
+        widget_referrer: typeof window !== 'undefined' ? window.location.origin : undefined
       },
       events: {
         onReady: (e) => {
@@ -5441,6 +5449,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   return (
     <div className="h-[100dvh] bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative overflow-hidden">
+      <Suspense fallback={null}>
       {/* Premium 3D Infinity Startup Splash Screen */}
       {showSplashScreen && (
         <AppSplashScreen
@@ -5856,6 +5865,21 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
           {/* RIGHT: INSTALL APP & AUTH/LOGOUT */}
           <div className="flex items-center gap-2">
+            {/* Small Clean Loopra AI Assistant Icon (Desktop + Mobile) */}
+            <button
+              id="loopra-header-ai-icon"
+              type="button"
+              onClick={() => setIsAvatarVisible(prev => !prev)}
+              title={isAvatarVisible ? "Hide Loopra AI Companion" : "Open Loopra AI Companion"}
+              aria-label={isAvatarVisible ? "Hide Loopra AI Companion" : "Open Loopra AI Companion"}
+              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all duration-300 shadow-md active:scale-95 cursor-pointer shrink-0 ${
+                isAvatarVisible
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-neutral-950 font-bold ring-2 ring-amber-400 shadow-amber-500/25'
+                  : 'bg-neutral-900 border border-amber-500/40 text-amber-400 hover:border-amber-400 hover:text-amber-300 hover:bg-neutral-800'
+              }`}
+            >
+              <Icon name="sparkles" className="w-4 h-4 text-current animate-pulse" />
+            </button>
             {/* Mobile Circular Download Button / Desktop Pill */}
             <button
               onClick={handleInstallClick}
@@ -8184,6 +8208,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         isPanelOpen={activeAssistantPanel === 'voice'}
         onOpenPanel={() => setActiveAssistantPanel('voice')}
         onClosePanel={() => setActiveAssistantPanel(null)}
+        isAvatarVisible={isAvatarVisible}
+        onToggleAvatar={(vis) => {
+          setIsAvatarVisible((prev) => {
+            const next = typeof vis === 'boolean' ? vis : !prev;
+            try {
+              localStorage.setItem('loopra_avatar_visible', next ? 'true' : 'false');
+            } catch (_) {}
+            return next;
+          });
+        }}
         onPlayTrack={(track) => playSong(track)}
         onTogglePlayPause={togglePlayPause}
         onNextTrack={handleNextSong}
@@ -8195,7 +8229,83 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           try { playerRef.current?.setVolume?.(vol); } catch (_) {}
         }}
         onToggleLike={(track) => toggleLike(track || currentSong)}
+        onRemoveFromFavorites={(trackOrTitle) => {
+          const title = typeof trackOrTitle === 'string' ? trackOrTitle : trackOrTitle?.title;
+          if (title) {
+            setLikedSongs(prev => prev.filter(s => !s.title?.toLowerCase().includes(title.toLowerCase())));
+            showToast?.(`Removed "${title}" from favorites`);
+          } else if (currentSong) {
+            toggleLike(currentSong);
+          }
+        }}
         onAddToPlaylist={(track) => handleAddToPlaylistClick(track || currentSong)}
+        onCreatePlaylist={(name) => {
+          const trimmed = (name || '').trim() || 'New Playlist';
+          const newPl = {
+            id: `pl_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+            name: trimmed,
+            createdAt: new Date().toISOString(),
+            songs: []
+          };
+          setPlaylists(prev => [newPl, ...prev]);
+          showToast?.(`Created playlist "${trimmed}"`);
+          return newPl;
+        }}
+        onOpenPlaylistByName={(name) => {
+          const pl = playlists.find(p => p.name?.toLowerCase().includes(name.toLowerCase()));
+          if (pl) {
+            setSelectedPlaylistForView(pl);
+            handleStationSelect('playlists');
+          } else {
+            handleStationSelect('playlists');
+          }
+        }}
+        onPlayPlaylist={(name) => {
+          const pl = playlists.find(p => p.name?.toLowerCase().includes(name.toLowerCase()));
+          if (pl && pl.songs?.length > 0) {
+            setQueue(pl.songs);
+            playSong(pl.songs[0]);
+            showToast?.(`Playing playlist "${pl.name}"`);
+          } else {
+            showToast?.('Playlist is empty or not found', 'warning');
+          }
+        }}
+        onPlayRadioStation={(stationName) => {
+          handleStationSelect('radio', { station: stationName, autoplay: true });
+        }}
+        onPlayFromHistory={(queryOrIndex) => {
+          if (history && history.length > 0) {
+            let track = history[0];
+            if (typeof queryOrIndex === 'string') {
+              const matched = history.find(s => s.title?.toLowerCase().includes(queryOrIndex.toLowerCase()));
+              if (matched) track = matched;
+            }
+            playSong(track);
+            showToast?.(`Playing "${track.title}" from history`);
+          } else {
+            showToast?.('No songs found in listening history', 'warning');
+          }
+        }}
+        onRemoveHistoryItem={(queryOrId) => {
+          if (queryOrId) {
+            const queryLower = String(queryOrId).toLowerCase().trim();
+            setHistory(prev => prev.filter(s => {
+              const match = s.id === queryOrId ||
+                s.title?.toLowerCase().includes(queryLower) ||
+                s.artist?.toLowerCase().includes(queryLower);
+              return !match;
+            }));
+            showToast?.('Removed from listening history');
+          }
+        }}
+        onClearHistory={clearHistory}
+        onAddToQueue={(track) => {
+          const songToAdd = track || currentSong;
+          if (songToAdd) {
+            setQueue(prev => [...prev, songToAdd]);
+            showToast?.(`Added "${songToAdd.title}" to queue`);
+          }
+        }}
         onNavigate={(page, extra) => {
           if (page === 'home') {
             window.history.pushState(null, '', '/');
@@ -8242,6 +8352,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           <span>{toastMessage}</span>
         </div>
       )}
+      </Suspense>
     </div>
   );
 }

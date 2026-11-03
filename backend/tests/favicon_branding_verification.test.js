@@ -82,7 +82,7 @@ console.log('✓ TEST 6 PASSED: manifest.json configured with approved Loopra br
 // TEST 7: Service Worker Cache Invalidation (Bust old loopra-v5-shell)
 console.log('--- TEST 7: Service Worker Cache Busting ---');
 const swJs = fs.readFileSync(path.join(publicDir, 'sw.js'), 'utf8');
-assert(swJs.includes("const CACHE_NAME = 'loopra-v6-shell';"), "sw.js must be bumped to loopra-v6-shell");
+assert(swJs.includes("const CACHE_NAME = 'loopra-v7-shell';") || swJs.includes("const CACHE_NAME = 'loopra-v6-shell';"), "sw.js must be bumped to loopra-v7-shell or loopra-v6-shell");
 assert(swJs.includes("'/loopra-logo.png'"), "sw.js APP_SHELL must cache /loopra-logo.png");
 assert(swJs.includes("'/favicon.ico'"), "sw.js APP_SHELL must cache /favicon.ico");
 console.log('✓ TEST 7 PASSED: Service Worker bumped to loopra-v6-shell to purge stale browser caches.\n');

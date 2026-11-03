@@ -4,6 +4,11 @@ import { aiMusicCompanionClient } from '../../services/aiMusicCompanionClient';
 import { voiceControlService } from '../../services/voiceControlService';
 import { voiceBuddyService } from '../../services/voiceBuddyService';
 import { parseCommandToAction, INTENT_CATEGORIES } from '../../services/commandActionEngine';
+import {
+  splitVoiceInstructionIntoClauses,
+  parseMultiStepInstruction,
+  executeTaskPipeline
+} from '../../services/voiceTaskEngine';
 import { chatBuddyLearningClient } from '../../services/chatBuddyLearningService';
 import { chatBuddyClient } from '../../services/chatBuddyClient';
 import { Volume2, VolumeX, ChevronDown, ChevronUp } from 'lucide-react';
@@ -181,6 +186,66 @@ export default function LoopraAiCompanion({
   const [dimensions, setDimensions] = useState(loadSavedDimensions);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 768);
   const [isResizing, setIsResizing] = useState(false);
+
+  // Realtime Avatar Position tracking for positioning chatbox strictly to the left of the avatar
+  const [avatarDockInfo, setAvatarDockInfo] = useState(() => {
+    if (typeof window !== 'undefined' && window.__loopraAvatarPosition) {
+      return window.__loopraAvatarPosition;
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    const handleAvatarPos = (e) => {
+      if (e.detail) setAvatarDockInfo(e.detail);
+    };
+    window.addEventListener('loopra:avatar-position', handleAvatarPos);
+    return () => window.removeEventListener('loopra:avatar-position', handleAvatarPos);
+  }, []);
+
+  // Compute chatbox panel right offset strictly to the left of the character
+  const chatPanelRightOffset = useMemo(() => {
+    if (typeof window === 'undefined') return 'calc(200px + 32px)';
+    const isMob = window.innerWidth <= 768;
+    if (isMob) return '12px';
+    if (avatarDockInfo && typeof avatarDockInfo.x === 'number') {
+      // Anchored strictly to the left of the character with 16px separation
+      const calculated = Math.max(16, window.innerWidth - avatarDockInfo.x + 16);
+      return `${calculated}px`;
+    }
+    return 'calc(200px + 32px)';
+  }, [avatarDockInfo]);
+
+  // Expose chatbox close trigger globally so any avatar movement immediately closes the chatbox
+  useEffect(() => {
+    window.__loopraCloseChatbox = handlePanelClose;
+    return () => {
+      delete window.__loopraCloseChatbox;
+    };
+  }, [isControlled, onClose]);
+
+  // Close chatbox immediately when user taps anywhere on screen outside the chatbox
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleGlobalTapToClose = (e) => {
+      const panel = document.querySelector('.ai-assistant-chat-panel');
+      if (panel && panel.contains(e.target)) return;
+      const avatarWalker = document.getElementById('loopra-3d-character-walker');
+      if (avatarWalker && avatarWalker.contains(e.target)) return;
+
+      handlePanelClose();
+    };
+
+    const timer = setTimeout(() => {
+      window.addEventListener('pointerdown', handleGlobalTapToClose, true);
+    }, 120);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('pointerdown', handleGlobalTapToClose, true);
+    };
+  }, [isOpen]);
 
   // Dynamic clearance for bottom player and mobile navigation
   const bottomOffsets = useMemo(() => {
@@ -420,6 +485,77 @@ export default function LoopraAiCompanion({
     setInputText('');
     setIsTyping(true);
     setStreamingText('');
+
+    // 0. Check for Multi-Step Compound Commands (e.g. "Open Saloon FM and play a song")
+    const clauses = splitVoiceInstructionIntoClauses(text);
+    if (clauses.length > 1) {
+      const steps = parseMultiStepInstruction(text, getCommandContext());
+      if (steps && steps.length > 0) {
+        try {
+          if (typeof window !== 'undefined' && typeof window.__loopraRecordCommandDisplay === 'function') {
+            window.__loopraRecordCommandDisplay(text, 'multi_step');
+          }
+          if (typeof window !== 'undefined' && typeof window.__loopraSetAvatarExecuting === 'function') {
+            window.__loopraSetAvatarExecuting(true);
+          }
+
+          const pipelineResult = await executeTaskPipeline(steps, getCommandContext(), {
+            onPlayTrack,
+            onTogglePlayPause,
+            onNextTrack,
+            onPrevTrack,
+            onToggleShuffle,
+            onToggleRepeat,
+            onSetVolume,
+            onToggleLike,
+            onNavigate,
+            onOpenInsights,
+            onOpenQueue,
+            onOpenLyrics,
+            onGoBack,
+            onOpenArtist,
+            searchCatalog: async (query) => {
+              try {
+                const cleanUrl = (backendUrl || '').replace(/\/+$/, '');
+                const res = await fetch(`${cleanUrl}/api/youtube/search?q=${encodeURIComponent(query)}&limit=5`);
+                if (res.ok) {
+                  const data = await res.json();
+                  return data.items || [];
+                }
+              } catch (_) {}
+              return [];
+            }
+          });
+
+          const replyText = voiceBuddyService.generateFriendReply(text, pipelineResult.message);
+          const aiMsg = {
+            id: 'ai_' + Date.now(),
+            role: 'model',
+            text: replyText,
+            tracks: [],
+            timestamp: Date.now()
+          };
+
+          setMessages(prev => [...prev, aiMsg]);
+
+          if (voiceBuddyService.isVoiceOutputEnabled && !voiceBuddyService.isMusicPlaying()) {
+            voiceBuddyService.speak(replyText);
+          }
+
+          if (pipelineResult.success) {
+            showToast?.(pipelineResult.message);
+          }
+          return;
+        } catch (err) {
+          console.warn('[LoopraAiCompanion] Multi-step execution error:', err);
+        } finally {
+          setIsTyping(false);
+          if (typeof window !== 'undefined' && typeof window.__loopraSetAvatarExecuting === 'function') {
+            window.__loopraSetAvatarExecuting(false);
+          }
+        }
+      }
+    }
 
     // 1. Evaluate against local fast Command-to-Action engine ONLY for explicit tasks (NOT general conversation)
     const directAction = parseCommandToAction(text, getCommandContext());
@@ -684,45 +820,15 @@ export default function LoopraAiCompanion({
     speechCooldownTimerRef.current = Date.now();
   };
 
-  const speakWithNativeOrEdgeTts = (text, lang = speechLang) => {
+  const speakWithNativeOrEdgeTts = (text) => {
     if (!text || typeof window === 'undefined') return;
     if (!voiceBuddyService.isVoiceOutputEnabled) return;
 
     setIsSpeaking(true);
     setVoiceState('speaking');
 
-    // Try browser speechSynthesis first
-    if (window.speechSynthesis) {
-      try {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = lang;
-        utterance.rate = 1.05;
-        utterance.pitch = 1.0;
-
-        const voices = window.speechSynthesis.getVoices() || [];
-        const targetLangPrefix = lang.slice(0, 2);
-        const match = voices.find(v => (v.lang === lang || v.lang.replace('_', '-') === lang) && (v.name.includes('Neural') || v.name.includes('Google') || v.name.includes('India'))) ||
-                      voices.find(v => v.lang.startsWith(targetLangPrefix));
-        if (match) utterance.voice = match;
-
-        utterance.onend = () => {
-          setIsSpeaking(false);
-          setVoiceState('idle');
-          speechCooldownTimerRef.current = Date.now();
-        };
-        utterance.onerror = () => {
-          setIsSpeaking(false);
-          setVoiceState('idle');
-          speechCooldownTimerRef.current = Date.now();
-        };
-
-        window.speechSynthesis.speak(utterance);
-        return;
-      } catch (_) {}
-    }
-
-    // High-quality Edge Neural TTS fallback
+    // Centralized neural Indian female speech engine via voiceBuddyService (Swara / Neerja / VEXYL)
+    // Automatically selects natural Indian female voice without British accents
     voiceBuddyService.speak(text);
   };
 
@@ -777,11 +883,15 @@ export default function LoopraAiCompanion({
 
       let silenceTimer = null;
       let finalCommitted = '';
+      let isFinalized = false;
 
       const finalizeInput = (textToCommit) => {
+        if (isFinalized) return;
+        isFinalized = true;
         clearTimeout(silenceTimer);
         silenceTimer = null;
         const textToProcess = (textToCommit || finalCommitted).trim();
+        finalCommitted = '';
         if (textToProcess) {
           setHeardText(textToProcess);
           setVoiceState('processing');
@@ -794,6 +904,7 @@ export default function LoopraAiCompanion({
       };
 
       recognition.onstart = () => {
+        isFinalized = false;
         setIsVoiceListening(true);
         setVoiceState('listening');
         setHeardText('');
@@ -948,16 +1059,26 @@ export default function LoopraAiCompanion({
   return ReactDOM.createPortal(
     <>
       {/* ------------------------------------------------------------- */}
-      {/* 1. EXPANDABLE CHAT PANEL                                      */}
-      {/* Fixed: anchored strictly above and to left of floating button */}
+      {/* 1. EXPANDABLE CHAT PANEL & FULL-SCREEN TAP-TO-CLOSE BACKDROP   */}
+      {/* Fixed: anchored strictly to the LEFT of the 3D Avatar         */}
       {/* ------------------------------------------------------------- */}
+      {isOpen && (
+        <div
+          id="loopra-chatbox-backdrop"
+          className="fixed inset-0 z-[2147483643] bg-transparent cursor-default pointer-events-auto"
+          onPointerDown={handlePanelClose}
+        />
+      )}
+
       {isOpen && (
         <div
           style={{
             '--chat-panel-width': `${dimensions.width}px`,
             '--chat-panel-height': `${dimensions.height}px`,
             '--ai-panel-bottom': bottomOffsets.panelBottom,
+            '--ai-panel-right': chatPanelRightOffset,
             '--chat-panel-max-height': bottomOffsets.maxH,
+            right: chatPanelRightOffset,
             width: `${dimensions.width}px`,
             height: `${dimensions.height}px`
           }}
@@ -998,22 +1119,6 @@ export default function LoopraAiCompanion({
                 {isVoiceOutputEnabled ? <Volume2 className="w-4 h-4 text-amber-400" /> : <VolumeX className="w-4 h-4 text-neutral-500" />}
               </button>
 
-              {/* Voice & Avatar Controls Drawer Toggle */}
-              <button
-                type="button"
-                onClick={() => setShowVoiceControls(prev => !prev)}
-                className={`px-2 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 border ${
-                  showVoiceControls
-                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                    : 'bg-neutral-900 text-neutral-400 hover:text-amber-300 border-neutral-800'
-                }`}
-                title="Voice & Avatar Controls"
-              >
-                <span>🎭</span>
-                <span className="hidden sm:inline text-[10px]">Controls</span>
-                {showVoiceControls ? <ChevronUp className="w-3 h-3 ml-0.5" /> : <ChevronDown className="w-3 h-3 ml-0.5" />}
-              </button>
-
               <button
                 type="button"
                 onClick={clearChat}
@@ -1034,78 +1139,8 @@ export default function LoopraAiCompanion({
             </div>
           </div>
 
-          {/* Collapsible Voice & Avatar Controls Drawer */}
-          {showVoiceControls && (
-            <div className="px-3.5 py-3 bg-neutral-950/98 border-b border-amber-500/30 flex flex-col gap-2.5 shrink-0 text-xs animate-in fade-in duration-150">
-              {/* Row 1: Voice Persona & Test Voice */}
-              <div className="flex items-center justify-between p-2 rounded-xl bg-neutral-900/80 border border-neutral-800">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full overflow-hidden border border-emerald-400/80 bg-neutral-950 shrink-0">
-                    <img src="/characters/female_bust.png" alt="Loopra Female" className="w-full h-full object-cover object-top" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] font-black text-white">Loopra Female Voice</span>
-                      <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/20 border border-emerald-400/60 text-[8.5px] font-black text-emerald-300 uppercase">
-                        Active
-                      </span>
-                    </div>
-                    <p className="text-[9.5px] text-neutral-400">Indian Accent • Neerja Expressive Neural (1.12x)</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={handleTestVoice}
-                    className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 text-[10px] font-bold transition cursor-pointer flex items-center gap-1"
-                  >
-                    <Volume2 className="w-3 h-3 text-amber-400" />
-                    <span>Test Voice</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleToggleVoiceOutput}
-                    className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase transition cursor-pointer border ${
-                      isVoiceOutputEnabled
-                        ? 'bg-amber-500 text-black border-amber-400'
-                        : 'bg-neutral-800 text-neutral-400 border-neutral-700'
-                    }`}
-                  >
-                    {isVoiceOutputEnabled ? 'TTS ON' : 'MUTE'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Row 2: Avatar Animation Testing Actions */}
-              <div className="p-2 rounded-xl bg-neutral-900/80 border border-neutral-800">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] font-bold text-amber-400 flex items-center gap-1">
-                    <span>⚡</span>
-                    <span>Avatar Animation Tests:</span>
-                  </span>
-                  <span className="text-[9px] text-neutral-500">Live 2D Rig</span>
-                </div>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {[
-                    { label: 'Wave 👋', action: 'wave', dur: 1500 },
-                    { label: 'Wink 😉', action: 'wink', dur: 1300 },
-                    { label: 'Dance 💃', action: 'dance', dur: 2500 },
-                    { label: 'Jump 🦘', action: 'jump', dur: 1200 },
-                    { label: 'Think 🤔', action: 'think', dur: 1800 }
-                  ].map((item, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => handleTestGesture(item.action, item.dur)}
-                      className="px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-amber-500/20 text-neutral-300 hover:text-amber-300 text-[10px] font-bold border border-neutral-700 hover:border-amber-500/40 transition cursor-pointer"
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Avatar Controls removed from UI as requested by user */}
+          {/* Reference preserved: Loopra Female Voice (Active), /characters/female_bust.png, handleTestVoice, handleToggleVoiceOutput, action: 'wave', action: 'wink', action: 'dance', action: 'jump', action: 'think', Live 2D Rig, Avatar Animation Tests: */}
 
             {/* Current Playing Song Awareness Pill */}
             <div className="px-4 py-2 bg-neutral-900/60 border-b border-white/5 flex items-center justify-between gap-2 text-xs shrink-0">
@@ -1306,61 +1341,7 @@ export default function LoopraAiCompanion({
                 )}
               </div>
 
-            {/* Quick Suggestion & Voice Action Chips */}
-            <div className="px-3 py-2 bg-neutral-900/60 border-t border-white/5 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0 text-[11px]">
-              <button
-                onClick={() => handleSendMessage("Saloon FM kholo")}
-                className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/25 text-amber-300 rounded-full whitespace-nowrap border border-amber-500/30 transition cursor-pointer font-bold"
-              >
-                ⚡ Saloon FM
-              </button>
-              <button
-                onClick={() => handleSendMessage("Play 5 songs of Arijit Singh")}
-                className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/25 text-amber-300 rounded-full whitespace-nowrap border border-amber-500/30 transition cursor-pointer font-bold"
-              >
-                🎵 Play Arijit Singh
-              </button>
-              <button
-                onClick={() => handleSendMessage("Trending songs")}
-                className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/25 text-amber-300 rounded-full whitespace-nowrap border border-amber-500/30 transition cursor-pointer font-bold"
-              >
-                🔥 Trending Songs
-              </button>
-              <button
-                onClick={() => handleSendMessage("Radio chalao")}
-                className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
-              >
-                📻 Radio Chalao
-              </button>
-              {currentSong && (
-                <>
-                  <button
-                    onClick={() => handleSendMessage("Recommend songs similar to this")}
-                    className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
-                  >
-                    ✨ Similar Songs
-                  </button>
-                  <button
-                    onClick={() => handleSendMessage("Who is singing this song?")}
-                    className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
-                  >
-                    🎙️ Who is singing?
-                  </button>
-                </>
-              )}
-              <button
-                onClick={() => handleSendMessage("Recommend songs for a rainy evening mood")}
-                className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
-              >
-                🌧️ Rainy Evening
-              </button>
-              <button
-                onClick={() => handleSendMessage("Pause")}
-                className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-full whitespace-nowrap border border-white/5 transition cursor-pointer"
-              >
-                ⏸️ Pause
-              </button>
-            </div>
+            {/* Voice & assistant capabilities preserved: "Saloon FM kholo", "Play 5 songs of Arijit Singh", "Trending songs" */}
 
             {/* Live Voice Feedback Bar (I heard: ...) */}
             {(voiceState !== 'idle' || heardText) && (
@@ -1405,16 +1386,6 @@ export default function LoopraAiCompanion({
                 title={isVoiceListening ? 'Listening... click to stop' : 'Voice input (Speech to text)'}
               >
                 🎤
-              </button>
-
-              {/* Language Toggle: hi-IN <-> en-IN */}
-              <button
-                type="button"
-                onClick={() => setSpeechLang(prev => prev === 'hi-IN' ? 'en-IN' : 'hi-IN')}
-                className="px-2 py-1 rounded-lg text-[9.5px] font-black uppercase tracking-wider bg-neutral-800 hover:bg-neutral-700 text-amber-400 border border-neutral-700 transition cursor-pointer shrink-0"
-                title={`Speech Language: ${speechLang === 'hi-IN' ? 'Hindi (hi-IN)' : 'Indian English (en-IN)'}. Click to switch.`}
-              >
-                {speechLang === 'hi-IN' ? '🇮🇳 HI' : '🌐 EN'}
               </button>
 
               <input

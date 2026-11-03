@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import dotenv from 'dotenv';
 import http from 'http';
 import { Server } from 'socket.io';
@@ -110,6 +111,16 @@ const isOriginAllowed = (origin) => {
 };
 
 // Express CORS Configuration
+// HTTP Compression for fast responses and low bandwidth on Render
+app.use(compression({
+  threshold: 1024,
+  level: 6,
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  }
+}));
+
 app.use(cors({
   origin: (origin, callback) => {
     if (isOriginAllowed(origin)) {
@@ -234,6 +245,9 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/afterh
 mongoose.connect(MONGODB_URI, {
   serverSelectionTimeoutMS: 5000,
   connectTimeoutMS: 10000,
+  maxPoolSize: 10,
+  minPoolSize: 2,
+  socketTimeoutMS: 45000,
 })
   .then(() => {
     isMongoConnected = true;
@@ -357,6 +371,7 @@ app.get(['/health', '/api/health'], (req, res) => {
   const ready = isDatabaseReady();
   res.json({
     status: 'ok',
+    uptime: Math.floor(process.uptime()),
     database: ready ? 'connected' : 'disconnected',
     readyState: mongoose.connection.readyState,
     timestamp: new Date().toISOString()

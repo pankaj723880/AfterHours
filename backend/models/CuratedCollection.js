@@ -33,6 +33,7 @@ const curatedCollectionSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 curatedCollectionSchema.index({ category: 1, sortOrder: 1 });
+curatedCollectionSchema.index({ isPublished: 1, sortOrder: 1 });
 curatedCollectionSchema.index({ isFeaturedOnHome: 1, sortOrder: 1 });
 
 export default mongoose.model('CuratedCollection', curatedCollectionSchema);

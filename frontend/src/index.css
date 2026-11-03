@@ -244,23 +244,13 @@ body {
 
 /* ============================================================= */
 /* Loopra Unified Persistent AI Companion Avatar Dock           */
-/* Replaces old assistant icon with persistent 2D/3D Live avatar */
+/* Small icon by default; full movable 3D avatar on reveal      */
 /* ============================================================= */
 .loopra-character-dock-container {
   position: fixed !important;
-  top: auto !important;
-  bottom: var(--ai-button-bottom, 24px) !important;
-  right: 24px !important;
   z-index: 2147483640 !important;
   pointer-events: auto !important;
-}
-
-@media (max-width: 768px) {
-  .loopra-character-dock-container {
-    top: auto !important;
-    bottom: var(--ai-button-bottom, calc(72px + env(safe-area-inset-bottom, 0px))) !important;
-    right: 16px !important;
-  }
+  touch-action: none;
 }
 
 .loopra-floating-assistants-bar {
@@ -270,7 +260,7 @@ body {
 /* Loopra Floating AI Assistant Chat Panel (Anchored Beside Avatar on Desktop, Full on Mobile) */
 .ai-assistant-chat-panel {
   position: fixed !important;
-  right: calc(200px + 32px) !important;
+  right: var(--ai-panel-right, calc(200px + 32px)) !important;
   bottom: var(--ai-panel-bottom, 24px) !important;
   left: auto !important;
   top: auto !important;

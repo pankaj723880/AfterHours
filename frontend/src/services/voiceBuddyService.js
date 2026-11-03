@@ -37,6 +37,15 @@ class VoiceBuddyService {
     this.currentAudio = null;
     this._currentUtterance = null;
     this.hasLoadedVoices = false;
+    this.speechQueue = [];
+    this.isProcessingQueue = false;
+    this.heartbeatTimer = null;
+    this.watchdogTimer = null;
+    this.lastSpokenText = '';
+    this.lastSpokenTime = 0;
+    this.audioContext = null;
+    this.audioAnalyser = null;
+    this.audioMeterAnimationId = null;
 
     if (typeof window !== 'undefined' && this.speechSynthesis) {
       if (typeof this.speechSynthesis.onvoiceschanged !== 'undefined') {
@@ -46,6 +55,14 @@ class VoiceBuddyService {
       }
     }
 
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && this.isSpeaking && this.speechSynthesis?.paused) {
+          this.speechSynthesis.resume();
+        }
+      });
+    }
+
     // Explicit binding to ensure methods are resilient across HMR and detached contexts
     this.setPlaybackActive = this.setPlaybackActive.bind(this);
     this.isMusicPlaying = this.isMusicPlaying.bind(this);
@@ -53,6 +70,13 @@ class VoiceBuddyService {
     this.toggleVoiceOutput = this.toggleVoiceOutput.bind(this);
     this.speak = this.speak.bind(this);
     this.stopSpeech = this.stopSpeech.bind(this);
+    this.processQueue = this.processQueue.bind(this);
+    this.executeSpeech = this.executeSpeech.bind(this);
+    this.initAudioMeter = this.initAudioMeter.bind(this);
+    this.stopAudioMeter = this.stopAudioMeter.bind(this);
+    this.fallbackToIndianSpeechSynthesis = this.fallbackToIndianSpeechSynthesis.bind(this);
+    this.startHeartbeat = this.startHeartbeat.bind(this);
+    this.clearHeartbeat = this.clearHeartbeat.bind(this);
     this.unlockAudio = this.unlockAudio.bind(this);
     this.getActiveCharacter = this.getActiveCharacter.bind(this);
     this.subscribe = this.subscribe.bind(this);
@@ -73,7 +97,7 @@ class VoiceBuddyService {
     this.isVoiceOutputEnabled = !!enabled;
     try {
       localStorage.setItem('loopra_voice_output', this.isVoiceOutputEnabled ? 'true' : 'false');
-    } catch (_) {}
+    } catch (_) { }
     if (!this.isVoiceOutputEnabled) {
       this.stopSpeech();
     }
@@ -91,7 +115,7 @@ class VoiceBuddyService {
       if (this.speechSynthesis && this.speechSynthesis.paused) {
         this.speechSynthesis.resume();
       }
-    } catch (_) {}
+    } catch (_) { }
   }
 
   setPlaybackActive(isPlaying) {
@@ -114,7 +138,7 @@ class VoiceBuddyService {
     this.activeCharacterKey = 'female';
     try {
       localStorage.setItem('loopra_voice_character', 'female');
-    } catch (_) {}
+    } catch (_) { }
     this.notifySubscribers('character_change');
   }
 
@@ -140,6 +164,30 @@ class VoiceBuddyService {
   }
 
   /**
+   * Generates fresh, warm and natural welcome greetings for Loopra AI.
+   * Avoids repetitive "Haan bilkul, Loopra ready hai".
+   */
+  generateWelcomeGreeting() {
+    const hour = new Date().getHours();
+    let timeGreeting = 'Hello dost!';
+    if (hour >= 5 && hour < 12) timeGreeting = 'Good morning dost!';
+    else if (hour >= 12 && hour < 17) timeGreeting = 'Good afternoon dost!';
+    else if (hour >= 17 && hour < 22) timeGreeting = 'Good evening dost!';
+    else timeGreeting = 'Hey night owl!';
+
+    const greetings = [
+      `${timeGreeting} Aaj kya sunna chahenge?`,
+      'Hey! Main Loopra hoon, bataiye kaunsa gaana lagau aapke liye?',
+      'Namaste dost! Kahiye, aaj kaunsa music mood hai?',
+      'Hey there! Loopra sun rahi hai, bataiye kya play karein?',
+      'Hello! Main Loopra hoon. Kahiye, aaj kya sunenge?'
+    ];
+
+    const randomIndex = Math.floor(Math.random() * greetings.length);
+    return greetings[randomIndex];
+  }
+
+  /**
    * Generates varied, authentic conversational Hindi / Hinglish responses for Loopra female companion.
    */
   generateFriendReply(action, details = {}) {
@@ -147,14 +195,19 @@ class VoiceBuddyService {
     const text = typeof action === 'string' ? action.toLowerCase() : '';
     const target = (details.target || details.query || '').toLowerCase();
 
+    // 0. Welcome / Activation Greeting
+    if (cleanAction === 'welcome' || cleanAction === 'greeting' || cleanAction === 'start' || text.includes('welcome') || text.includes('greeting')) {
+      return this.generateWelcomeGreeting();
+    }
+
     // 1. Saloon FM Navigation
     if (target === 'barber' || text.includes('saloon') || text.includes('salon') || text.includes('lune')) {
-      return 'Haan bilkul! Main Saloon FM open kar rahi hoon.';
+      return 'Haan bilkul! Main Saloon FM open kar rahi hu.';
     }
 
     // 2. Theka Session Navigation
     if (target === 'pauwa' || text.includes('theka') || text.includes('pauwa')) {
-      return 'Theka Session ready hai! Shuru karte hain.';
+      return 'Theka Session ready hai! Shuru karte hai.';
     }
 
     // 3. Horn Ok Please (Truck / Highway)
@@ -169,12 +222,12 @@ class VoiceBuddyService {
 
     // 5. Live Indian Radio
     if (target === 'radio' || text.includes('live radio') || text.includes('all radio')) {
-      return 'Indian Live Radio stations open kar diye hain dost!';
+      return 'Indian Live Radio stations open kar diya hai dost!';
     }
 
     // 6. Home Navigation
     if (target === 'home' || text.includes('home') || text.includes('mukhya')) {
-      return 'Chaliye, Home page par chalte hain!';
+      return 'Chaliye, Home page par chalte hai!';
     }
 
     // 7. Library Navigation & Actions
@@ -196,13 +249,13 @@ class VoiceBuddyService {
 
     // Avatar Interactive Gestures
     if (cleanAction === 'wave' || text.includes('wave') || text.includes('hath hilao')) {
-      return 'Hello dost! Kaise ho aap? Main Loopra hoon!';
+      return 'Hello dost! Kaise ho aap? Main Loopra hu!';
     }
     if (cleanAction === 'wink' || text.includes('wink') || text.includes('aankh maro')) {
       return 'Wink! Aaj ka music vibe ekdum best hai!';
     }
     if (cleanAction === 'dance' || text.includes('dance') || text.includes('nacho')) {
-      return 'Groove on! Chaliye beats ke saath vibe karte hain!';
+      return 'Groove on! Chaliye beats ke saath vibe karte hai!';
     }
     if (cleanAction === 'jump' || text.includes('jump') || text.includes('koodo')) {
       return 'Full energy! Let us go!';
@@ -214,7 +267,7 @@ class VoiceBuddyService {
     // Search Command Reply (Strictly explains searching, NEVER says playing)
     if (cleanAction === 'search' || text.includes('search') || text.includes('dhoondh')) {
       const q = details.query || '';
-      return q ? `Aapke liye "${q}" search kar rahi hoon dost, dekhiye!` : 'Songs search kar rahi hoon dost!';
+      return q ? `Aapke liye "${q}" search kar rahi hu dost, dekhiye!` : 'Songs search kar rahi hoon dost!';
     }
 
     // 8. Discover / Search Navigation
@@ -224,7 +277,7 @@ class VoiceBuddyService {
 
     // 9. Trending Section Scroll
     if (target === 'trending_section' || text.includes('trending') || text.includes('viral')) {
-      return 'Trending songs samne le aayi hoon dost, enjoy kijiye!';
+      return 'Trending songs samne le aayi hu dost, enjoy kijiye!';
     }
 
     // Playback Commands
@@ -241,7 +294,7 @@ class VoiceBuddyService {
     }
 
     if (cleanAction === 'previous' || text.includes('previous') || text.includes('pichla')) {
-      return 'Pichle gaane par le aayi hoon.';
+      return 'Pichle gaane par le aayi hu.';
     }
 
     if (cleanAction === 'volume_down' || text.includes('kam')) {
@@ -281,148 +334,362 @@ class VoiceBuddyService {
     return 'friendly';
   }
 
+  startHeartbeat() {
+    this.clearHeartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      if (this.speechSynthesis && this.isSpeaking) {
+        // Android Chromium keep-alive heartbeat to defeat 15-second cutoff
+        this.speechSynthesis.pause();
+        this.speechSynthesis.resume();
+      } else {
+        this.clearHeartbeat();
+      }
+    }, 10000);
+  }
+
+  clearHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
   /**
-   * Speaks out the reply using studio-quality Neural Indian Hindi TTS from backend,
-   * with rock-solid, zero-delay local Web Speech API fallback.
+   * Phonetic Hinglish normalizer for natural rhythm, breathing pauses, and accurate Indian pronunciation.
    */
-  async speak(text, contextAction = '') {
-    if (!text) return;
+  preprocessTextForSpeech(text = '') {
+    if (!text || typeof text !== 'string') return '';
+    let processed = text.trim();
+
+    // Strip markdown formatting symbols
+    processed = processed.replace(/[*_#`~>]/g, '');
+
+    // Expand common radio/music abbreviations for natural Hindi speech
+    processed = processed.replace(/\bFM\b/gi, 'एफ.एम.');
+    processed = processed.replace(/\b90s\b/gi, "90's");
+    processed = processed.replace(/\b2000s\b/gi, "2000's");
+    processed = processed.replace(/\bAI\b/g, 'ए.आई.');
+    processed = processed.replace(/\bTTS\b/gi, 'टी.टी.एस.');
+
+    // Ensure natural comma pauses after common greeting/acknowledgement phrases
+    processed = processed.replace(/\b(haan bilkul|haan dost|theek hai|chaliye|shukriya|namaste|hello)\b/gi, '$1,');
+
+    // Clean up multiple spaces/commas
+    processed = processed.replace(/,{2,}/g, ',').replace(/\s{2,}/g, ' ');
+
+    return processed;
+  }
+
+  /**
+   * Speaks out the reply using a reliable sequential Speech Queue.
+   * Prevents multiple calls from cutting each other off and handles Android speech limits.
+   */
+  speak(text, contextAction = '', options = {}) {
+    if (!text || typeof text !== 'string') return;
+    let cleanText = text.trim();
+    if (!cleanText) return;
+
+    // Strict override: Intercept any legacy "Haan bilkul, Loopra ready hai" phrases and replace with fresh welcome dialogue
+    if (
+      /^(haan\s*bilkul[!,.\s]*)?loopra\s*(ready|taiyaar)\s*(hai|h)/i.test(cleanText) ||
+      /loopra\s*(ready|taiyaar)\s*(hai|h)[,.\s]*batao\s*kya\s*play/i.test(cleanText)
+    ) {
+      cleanText = this.generateWelcomeGreeting();
+    }
+
+    // Strict speech deduplication: ignore identical utterances within 3000ms
+    const now = Date.now();
+    if (this.lastSpokenText === cleanText && (now - this.lastSpokenTime) < 3000) {
+      console.log('[VoiceBuddy] Suppressed duplicate speech utterance within 3000ms:', cleanText);
+      return;
+    }
+    this.lastSpokenText = cleanText;
+    this.lastSpokenTime = now;
 
     // 1. If voice output is manually disabled (OFF) -> Text-only, NO TTS audio
     if (!this.isVoiceOutputEnabled) {
       this.stopSpeech();
-      this.notifySubscribers('speech_text_only', { text, reason: 'voice_output_disabled' });
+      this.notifySubscribers('speech_text_only', { text: cleanText, reason: 'voice_output_disabled' });
       return;
     }
 
     if (typeof window === 'undefined') return;
 
-    // Immediately cancel any existing speech to prevent overlapping voices
-    this.stopSpeech();
     this.unlockAudio();
 
-    const char = this.getActiveCharacter();
-    const emotion = this.detectEmotion(text, contextAction);
+    // 2. Interrupt any ongoing speech to prevent duplicate or overlapping speech
+    if (this.isSpeaking || this.currentAudio) {
+      this.stopSpeech();
+    }
+    this.speechQueue = []; // Clear queue: only speak latest command response!
 
-    let hasFallenBack = false;
-    let playTimeout = null;
-
-    const triggerFallback = () => {
-      if (hasFallenBack) return;
-      hasFallenBack = true;
-      if (playTimeout) {
-        clearTimeout(playTimeout);
-        playTimeout = null;
-      }
-      this.fallbackBrowserSpeak(text, char);
-    };
-
-    try {
-      const ttsUrl = `/api/voice-agent/tts?text=${encodeURIComponent(text)}&gender=${char.gender}&voice=${encodeURIComponent(char.voiceId || 'en-IN-NeerjaExpressiveNeural')}&emotion=${emotion}`;
-      const audio = new Audio(ttsUrl);
-      this.currentAudio = audio;
-      audio.playbackRate = char.rate || 1.12;
-
-      // Fail-fast timer: If server audio doesn't start in 1000ms (e.g. 404 or network lag), switch to local speech
-      playTimeout = setTimeout(() => {
-        if (!this.isSpeaking && !hasFallenBack) {
-          triggerFallback();
-        }
-      }, 1000);
-
-      audio.onplay = () => {
-        if (playTimeout) clearTimeout(playTimeout);
-        this.isSpeaking = true;
-        this.notifySubscribers('speech_start', { text, audio });
-      };
-
-      audio.onended = () => {
-        if (playTimeout) clearTimeout(playTimeout);
-        this.isSpeaking = false;
-        this.currentAudio = null;
-        this.notifySubscribers('speech_end', { text });
-      };
-
-      audio.onerror = () => {
-        triggerFallback();
-      };
-
-      await audio.play();
-    } catch (_) {
-      triggerFallback();
+    this.speechQueue.push({ text: cleanText, contextAction, options });
+    if (!this.isProcessingQueue) {
+      this.processQueue();
     }
   }
 
-  fallbackBrowserSpeak(text, char) {
-    if (!this.speechSynthesis) {
+  processQueue() {
+    if (this.speechQueue.length === 0) {
+      this.isProcessingQueue = false;
+      this.isSpeaking = false;
+      this.clearHeartbeat();
+      this.notifySubscribers('speech_end');
+      return;
+    }
+
+    this.isProcessingQueue = true;
+    this.isSpeaking = true;
+    const current = this.speechQueue.shift();
+
+    // Split long sentences (> 180 chars) to prevent Android Chrome 15-second speech truncation
+    if (current.text.length > 180) {
+      const sentences = (current.text.match(/[^.!?\n]+[.!?\n]*/g) || [current.text])
+        .map(s => s.trim())
+        .filter(Boolean);
+      if (sentences.length > 1) {
+        const first = sentences[0];
+        const rest = sentences.slice(1).map(s => ({
+          text: s,
+          contextAction: current.contextAction,
+          options: current.options
+        }));
+        this.speechQueue.unshift(...rest);
+        current.text = first;
+      }
+    }
+
+    this.executeSpeech(current.text, current.contextAction);
+  }
+
+  /**
+   * Initializes real-time audio volume analyser for 3D avatar lip-sync mouth movements.
+   */
+  initAudioMeter(audio) {
+    if (typeof window === 'undefined') return;
+    try {
+      this.stopAudioMeter();
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+
+      if (!this.audioContext) {
+        this.audioContext = new AudioCtx();
+      }
+      if (this.audioContext.state === 'suspended') {
+        this.audioContext.resume().catch(() => {});
+      }
+
+      if (!this.audioAnalyser) {
+        this.audioAnalyser = this.audioContext.createAnalyser();
+        this.audioAnalyser.fftSize = 128;
+      }
+
+      try {
+        if (!audio._sourceNode) {
+          audio._sourceNode = this.audioContext.createMediaElementSource(audio);
+          audio._sourceNode.connect(this.audioAnalyser);
+          this.audioAnalyser.connect(this.audioContext.destination);
+        }
+      } catch (_) {}
+
+      const bufferLength = this.audioAnalyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      const updateMeter = () => {
+        if (!this.isSpeaking || !this.currentAudio) {
+          this.notifySubscribers('speech_volume', { volume: 0 });
+          if (typeof window !== 'undefined') window.__loopraVoiceAudioLevel = 0;
+          return;
+        }
+
+        this.audioAnalyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i];
+        }
+        let avg = sum / (bufferLength || 1);
+        let vol = Math.min(1.0, avg / 70);
+
+        // Conversational speech amplitude modulation if cross-origin returns 0
+        if (vol < 0.05 && this.currentAudio && !this.currentAudio.paused) {
+          vol = 0.35 + Math.sin(Date.now() / 90) * 0.3;
+        }
+
+        if (typeof window !== 'undefined') {
+          window.__loopraVoiceAudioLevel = vol;
+        }
+        this.notifySubscribers('speech_volume', { volume: vol });
+        this.audioMeterAnimationId = requestAnimationFrame(updateMeter);
+      };
+
+      this.audioMeterAnimationId = requestAnimationFrame(updateMeter);
+    } catch (e) {
+      console.warn('[VoiceBuddy] Audio meter setup notice:', e);
+    }
+  }
+
+  stopAudioMeter() {
+    if (this.audioMeterAnimationId) {
+      cancelAnimationFrame(this.audioMeterAnimationId);
+      this.audioMeterAnimationId = null;
+    }
+    if (typeof window !== 'undefined') {
+      window.__loopraVoiceAudioLevel = 0;
+    }
+    this.notifySubscribers('speech_volume', { volume: 0 });
+  }
+
+  executeSpeech(text, contextAction = '') {
+    clearTimeout(this.watchdogTimer);
+
+    let hasFinished = false;
+    const completeItem = () => {
+      if (hasFinished) return;
+      hasFinished = true;
+      clearTimeout(this.watchdogTimer);
+      this.stopAudioMeter();
+      if (this.currentAudio) {
+        try {
+          this.currentAudio.pause();
+          this.currentAudio.onplay = null;
+          this.currentAudio.onended = null;
+          this.currentAudio.onerror = null;
+          this.currentAudio.src = '';
+        } catch (_) {}
+        this.currentAudio = null;
+      }
       this.isSpeaking = false;
       this.notifySubscribers('speech_end', { text });
+      this.notifySubscribers('speech_volume', { volume: 0 });
+      this.processQueue();
+    };
+
+    // Watchdog timer: estimated duration (char count * 90ms) + 6000ms safety buffer
+    const estimatedMs = Math.max(5000, Math.round(text.length * 90) + 6000);
+    this.watchdogTimer = setTimeout(completeItem, estimatedMs);
+
+    // 1. Primary: High-Quality Indian Neural TTS via backend stream
+    const cleanPhonetics = this.preprocessTextForSpeech(text);
+    const textToSpeak = cleanPhonetics || text;
+    const encoded = encodeURIComponent(textToSpeak);
+    const audioUrl = `/api/voice-agent/tts?text=${encoded}&gender=female`;
+
+    try {
+      const audio = new Audio(audioUrl);
+      this.currentAudio = audio;
+      audio.crossOrigin = 'anonymous';
+
+      audio.onplay = () => {
+        this.isSpeaking = true;
+        this.startHeartbeat();
+        this.notifySubscribers('speech_start', { text: textToSpeak });
+        this.initAudioMeter(audio);
+      };
+
+      audio.onended = () => {
+        completeItem();
+      };
+
+      let fallbackTriggered = false;
+      const triggerFallback = () => {
+        if (fallbackTriggered || hasFinished) return;
+        fallbackTriggered = true;
+        this.fallbackToIndianSpeechSynthesis(textToSpeak, completeItem);
+      };
+
+      audio.onerror = (e) => {
+        console.warn('[VoiceBuddy] Neural audio stream error, checking Indian browser voice fallback:', e);
+        triggerFallback();
+      };
+
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          if (err.name === 'AbortError') {
+            // Cancelled cleanly by stopSpeech()
+            return;
+          }
+          console.warn('[VoiceBuddy] Audio playback error:', err?.message);
+          triggerFallback();
+        });
+      }
+    } catch (err) {
+      console.warn('[VoiceBuddy] Speech audio instantiation error:', err);
+      this.fallbackToIndianSpeechSynthesis(textToSpeak, completeItem);
+    }
+  }
+
+  /**
+   * Safe Fallback: Only allows Indian female voices (hi-IN, en-IN).
+   * STRICT: NEVER falls back to male or British voices.
+   */
+  fallbackToIndianSpeechSynthesis(text, onComplete) {
+    if (!this.speechSynthesis) {
+      if (typeof onComplete === 'function') onComplete();
       return;
     }
 
     try {
-      // Ensure Chrome speech queue is not stalled
-      if (this.speechSynthesis.paused) {
-        this.speechSynthesis.resume();
-      }
-      this.speechSynthesis.cancel();
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      // Retain utterance reference on this instance to avoid Chrome GC bug
-      this._currentUtterance = utterance;
-
-      utterance.lang = 'hi-IN';
-      utterance.pitch = char.pitch || 1.05;
-      utterance.rate = char.rate || 1.12;
-
       const voices = this.speechSynthesis.getVoices() || [];
-      const hindiVoice = voices.find(v => 
-        (v.lang === 'hi-IN' || v.lang === 'hi_IN') && 
-        (/female|kalpana|neerja|swara|google|priya/i.test(v.name))
-      ) || voices.find(v => v.lang === 'hi-IN' || v.lang === 'hi_IN')
-        || voices.find(v => (v.lang === 'en-IN' || v.lang === 'en_IN') && /female|neerja|google/i.test(v.name))
-        || voices.find(v => v.lang.startsWith('en'))
-        || voices[0];
+      const isIndianFemaleVoice = (v) => {
+        const lang = (v.lang || '').replace('_', '-').toLowerCase();
+        const name = (v.name || '').toLowerCase();
+        // Strictly exclude male voices
+        if (name.includes('ravi') || name.includes('madhur') || name.includes('prabhat') || name.includes('david') || name.includes('mark') || name.includes('male') || name.includes('george')) {
+          return false;
+        }
+        return lang === 'hi-in' || lang === 'en-in' || name.includes('india') || name.includes('hindi') || name.includes('हिन्दी') || name.includes('swara') || name.includes('neerja') || name.includes('kalpana') || name.includes('heera') || name.includes('zira');
+      };
 
-      if (hindiVoice) utterance.voice = hindiVoice;
+      const indianVoice = voices.find(isIndianFemaleVoice);
+      if (!indianVoice) {
+        console.warn('[VoiceBuddy] No native Indian voice installed in browser. Suppressing fallback to prevent bad British voice.');
+        if (typeof onComplete === 'function') onComplete();
+        return;
+      }
+
+      const utterance = new SpeechSynthesisUtterance(this.preprocessTextForSpeech(text) || text);
+      utterance.voice = indianVoice;
+      utterance.lang = indianVoice.lang || 'hi-IN';
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
 
       utterance.onstart = () => {
         this.isSpeaking = true;
+        this.startHeartbeat();
         this.notifySubscribers('speech_start', { text });
       };
+
       utterance.onend = () => {
-        this.isSpeaking = false;
-        this._currentUtterance = null;
-        this.notifySubscribers('speech_end', { text });
-      };
-      utterance.onerror = (e) => {
-        console.warn('[VoiceBuddy] Speech utterance ended with:', e?.error);
-        this.isSpeaking = false;
-        this._currentUtterance = null;
-        this.notifySubscribers('speech_end', { text });
+        if (typeof onComplete === 'function') onComplete();
       };
 
-      // Ensure speech synthesis is awake and speaking
-      if (this.speechSynthesis.paused) {
-        this.speechSynthesis.resume();
-      }
+      utterance.onerror = () => {
+        if (typeof onComplete === 'function') onComplete();
+      };
+
       this.speechSynthesis.speak(utterance);
-      if (this.speechSynthesis.paused) {
-        this.speechSynthesis.resume();
-      }
     } catch (e) {
-      console.warn('[VoiceBuddy] Speech fallback exception:', e);
-      this.isSpeaking = false;
-      this._currentUtterance = null;
-      this.notifySubscribers('speech_end', { text });
+      console.warn('[VoiceBuddy] Fallback speech error:', e);
+      if (typeof onComplete === 'function') onComplete();
     }
   }
 
   stopSpeech() {
+    this.speechQueue = [];
+    this.isProcessingQueue = false;
+    this.clearHeartbeat();
+    clearTimeout(this.watchdogTimer);
+    this.stopAudioMeter();
+
     if (this.currentAudio) {
       try {
         this.currentAudio.pause();
         this.currentAudio.currentTime = 0;
+        this.currentAudio.onplay = null;
+        this.currentAudio.onended = null;
+        this.currentAudio.onerror = null;
+        this.currentAudio.src = '';
       } catch (_) {}
       this.currentAudio = null;
     }
@@ -434,6 +701,7 @@ class VoiceBuddyService {
     this._currentUtterance = null;
     this.isSpeaking = false;
     this.notifySubscribers('speech_end');
+    this.notifySubscribers('speech_volume', { volume: 0 });
   }
 }
 

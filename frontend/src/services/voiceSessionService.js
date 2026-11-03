@@ -37,11 +37,7 @@ class VoiceSessionController {
     this.analyser = null;
     this.animFrameId = null;
     this.recognition = null;
-    this.mediaRecorder = null;
-    this.recordedChunks = [];
-    this.currentMimeType = 'audio/webm';
-    this.speechPauseTimer = null;
-    this.lastAudioSentTime = 0;
+    this.audioCaptureRetries = 0;
 
     // Concurrency & lifecycle guards
     this.isSessionActive = false;
@@ -82,11 +78,29 @@ class VoiceSessionController {
     window.addEventListener('pointerdown', unlockAudio, { passive: true });
     window.addEventListener('touchstart', unlockAudio, { passive: true });
 
-    // 2. Tab Switching Resiliency (visibilitychange)
+    // 2. Tab Switching & Mobile Background Resiliency (visibilitychange)
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', () => {
-        if (!document.hidden && this.isSessionActive && this.audioContext && this.audioContext.state === 'suspended') {
-          this.audioContext.resume().catch(() => {});
+        if (document.hidden) {
+          // Screen locked or tab backgrounded: Pause recognition to prevent background listening or Android loop
+          clearTimeout(this.restartTimer);
+          if (this.recognition && this.isRecognizing) {
+            try {
+              this.recognition.abort();
+            } catch (_) {}
+          }
+        } else {
+          // Tab returned to foreground: resume audio context and recognition if session is active
+          if (this.audioContext && this.audioContext.state === 'suspended') {
+            this.audioContext.resume().catch(() => {});
+          }
+          if (this.isSessionActive && !this.isSpeakingTts && !this.isExecuting && !this.isManualStopping) {
+            setTimeout(() => {
+              if (this.isSessionActive && !this.isSpeakingTts && !this.isExecuting) {
+                this.safeStartRecognition();
+              }
+            }, 300);
+          }
         }
       });
     }
@@ -113,8 +127,10 @@ class VoiceSessionController {
   subscribe(callback) {
     if (typeof callback === 'function') {
       this.subscribers.add(callback);
-      // Immediately emit current state snapshot
-      callback(this.getSnapshot());
+      // Emit initial snapshot without triggering one-shot command events
+      const snapshot = this.getSnapshot();
+      snapshot.event = 'initial_state';
+      callback(snapshot);
     }
     return () => {
       this.subscribers.delete(callback);
@@ -288,7 +304,7 @@ class VoiceSessionController {
       });
     }
 
-    // Setup Web Audio Analyser for volume metering
+    // Setup Web Audio Analyser for 3D visualizer volume metering
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (AudioCtx) {
@@ -307,80 +323,10 @@ class VoiceSessionController {
         this.analyser = analyser;
 
         this.startVolumeLoop();
-        this.setupMediaRecorder();
       }
     } catch (e) {
       console.warn('[VoiceSessionController] AudioContext visualizer init warning:', e.message);
     }
-  }
-
-  setupMediaRecorder() {
-    if (typeof window === 'undefined' || typeof MediaRecorder === 'undefined' || !this.mediaStream) {
-      return;
-    }
-
-    try {
-      let mimeType = 'audio/webm;codecs=opus';
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = 'audio/webm';
-        if (!MediaRecorder.isTypeSupported(mimeType)) {
-          mimeType = 'audio/mp4';
-          if (!MediaRecorder.isTypeSupported(mimeType)) {
-            mimeType = '';
-          }
-        }
-      }
-
-      this.recordedChunks = [];
-      const options = mimeType ? { mimeType } : undefined;
-      const recorder = new MediaRecorder(this.mediaStream, options);
-      this.currentMimeType = mimeType || 'audio/webm';
-
-      recorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          this.recordedChunks.push(event.data);
-        }
-      };
-
-      recorder.onstop = async () => {
-        if (this.recordedChunks.length === 0) return;
-        const audioBlob = new Blob(this.recordedChunks, { type: this.currentMimeType });
-        this.recordedChunks = [];
-
-        // Debounce & size guard: Only send genuine user speech (> 800 bytes)
-        const now = Date.now();
-        if (audioBlob.size > 800 && this.isSessionActive && (now - this.lastAudioSentTime) > 1200) {
-          this.lastAudioSentTime = now;
-          try {
-            const base64Data = await this.blobToBase64(audioBlob);
-            if (base64Data) {
-              this.emitAudioCommand({
-                audioData: base64Data,
-                mimeType: this.currentMimeType
-              });
-            }
-          } catch (e) {
-            console.warn('[VoiceSessionController] Blob conversion warning:', e);
-          }
-        }
-      };
-
-      this.mediaRecorder = recorder;
-    } catch (e) {
-      console.warn('[VoiceSessionController] MediaRecorder setup notice:', e.message);
-    }
-  }
-
-  blobToBase64(blob) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const res = reader.result;
-        resolve(typeof res === 'string' ? res : '');
-      };
-      reader.onerror = () => resolve('');
-      reader.readAsDataURL(blob);
-    });
   }
 
   startVolumeLoop() {
@@ -403,32 +349,6 @@ class VoiceSessionController {
       const avg = sum / dataArray.length;
       const normalized = Math.min(1.0, Math.max(0.0, (avg - 10) / 100));
       this.emitVolume(normalized);
-
-      // Turn detection: Manage recording state based on speech energy
-      if (this.mediaRecorder && !this.isExecuting) {
-        if (normalized > 0.08) {
-          if (this.speechPauseTimer) {
-            clearTimeout(this.speechPauseTimer);
-            this.speechPauseTimer = null;
-          }
-          if (this.mediaRecorder.state === 'inactive') {
-            try {
-              this.mediaRecorder.start(100);
-            } catch (_) {}
-          }
-        } else if (normalized <= 0.04 && this.mediaRecorder.state === 'recording') {
-          if (!this.speechPauseTimer) {
-            this.speechPauseTimer = setTimeout(() => {
-              if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
-                try {
-                  this.mediaRecorder.stop();
-                } catch (_) {}
-              }
-              this.speechPauseTimer = null;
-            }, 850);
-          }
-        }
-      }
 
       this.animFrameId = reqAnim(updateVolume);
     };
@@ -504,6 +424,7 @@ class VoiceSessionController {
       console.log('[VoiceSession:WebSpeech] onstart - recognition engine active (lang:', this.lang, ')');
       this.isRecognizing = true;
       this.isStarting = false;
+      this.audioCaptureRetries = 0;
       if (this.isSessionActive && !this.isExecuting && !this.isSpeakingTts) {
         this.setState(SESSION_STATES.LISTENING, 'Listening... (Speak your music command)');
       }
@@ -617,12 +538,24 @@ class VoiceSessionController {
       }
 
       if (err === 'audio-capture') {
-        this.setState(
-          SESSION_STATES.ERROR,
-          'Microphone hardware not available or in use by another application.',
-          err
-        );
-        this.stopSession('hardware_error');
+        this.audioCaptureRetries = (this.audioCaptureRetries || 0) + 1;
+        console.warn(`[VoiceSession:WebSpeech] audio-capture warning (attempt ${this.audioCaptureRetries}/3)`);
+        if (this.audioCaptureRetries >= 3) {
+          this.setState(
+            SESSION_STATES.ERROR,
+            'Microphone hardware not available or in use by another application.',
+            err
+          );
+          this.stopSession('hardware_error');
+          return;
+        }
+        // Graceful retry after brief pause on mobile
+        clearTimeout(this.restartTimer);
+        this.restartTimer = setTimeout(() => {
+          if (this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts && !this.isExecuting) {
+            this.safeStartRecognition();
+          }
+        }, 800);
         return;
       }
 
@@ -633,7 +566,7 @@ class VoiceSessionController {
         }
         clearTimeout(this.restartTimer);
         this.restartTimer = setTimeout(() => {
-          if (this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts) {
+          if (this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts && !this.isExecuting) {
             this.safeStartRecognition();
           }
         }, 350);
@@ -645,8 +578,17 @@ class VoiceSessionController {
       this.isRecognizing = false;
       this.isStarting = false;
 
-      // Robust auto-restart on 'end' when session is active and not stopped or muted for TTS
-      if (this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts) {
+      // Robust auto-restart on 'end' ONLY when session is genuinely active and ready:
+      // NOT while speaking TTS, NOT while processing/executing a command, NOT when manual stopping, NOT when page hidden!
+      const isDocumentVisible = typeof document === 'undefined' || !document.hidden;
+      if (
+        this.isSessionActive &&
+        !this.isManualStopping &&
+        !this.isSpeakingTts &&
+        !this.isExecuting &&
+        this.state === SESSION_STATES.LISTENING &&
+        isDocumentVisible
+      ) {
         clearTimeout(this.restartTimer);
         this.restartTimer = setTimeout(() => {
           if (
@@ -654,12 +596,15 @@ class VoiceSessionController {
             !this.isManualStopping &&
             !this.isRecognizing &&
             !this.isStarting &&
-            !this.isSpeakingTts
+            !this.isSpeakingTts &&
+            !this.isExecuting &&
+            this.state === SESSION_STATES.LISTENING &&
+            (typeof document === 'undefined' || !document.hidden)
           ) {
-            console.log('[VoiceSession:WebSpeech] Auto-restarting continuous recognition on end');
+            console.log('[VoiceSession:WebSpeech] Continuous recognition restart on end');
             this.safeStartRecognition();
           }
-        }, 180);
+        }, 250);
       }
     };
 
@@ -667,7 +612,16 @@ class VoiceSessionController {
   }
 
   safeStartRecognition() {
-    if (!this.isSessionActive || this.isManualStopping || this.isSpeakingTts) return;
+    const isDocumentVisible = typeof document === 'undefined' || !document.hidden;
+    if (
+      !this.isSessionActive ||
+      this.isManualStopping ||
+      this.isSpeakingTts ||
+      this.isExecuting ||
+      !isDocumentVisible
+    ) {
+      return;
+    }
     if (this.isRecognizing || this.isStarting) return;
 
     if (!this.recognition) {
@@ -796,22 +750,9 @@ class VoiceSessionController {
     // Clear all pending timers
     clearTimeout(this.restartTimer);
     this.restartTimer = null;
+    clearTimeout(this.ttsResumeTimer);
+    this.ttsResumeTimer = null;
     this.clearInactivityTimer();
-    if (this.speechPauseTimer) {
-      clearTimeout(this.speechPauseTimer);
-      this.speechPauseTimer = null;
-    }
-
-    // Stop MediaRecorder
-    if (this.mediaRecorder) {
-      try {
-        if (this.mediaRecorder.state !== 'inactive') {
-          this.mediaRecorder.stop();
-        }
-      } catch (_) {}
-      this.mediaRecorder = null;
-    }
-    this.recordedChunks = [];
 
     // Cancel animation frame & zero volume
     if (this.animFrameId) {

@@ -32,21 +32,30 @@ export default function ThreeDCharacter({
   animationState = 'idle',
   isSpeaking = false,
   isListening = false,
+  isPlaying = false,
   voiceVolumeScale = 0,
   facing = 'left',
   cursorOffset = { x: 0, y: 0 },
-  width = 220,
-  height = 290
+  rotationYaw = 0,
+  rotationPitch = 0,
+  width = 215,
+  height = 355
 }) {
   const mountRef = useRef(null);
+  const rendererRef = useRef(null);
+  const cameraRef = useRef(null);
+  const updateFramingRef = useRef(null);
   const stateRef = useRef({
     animationState,
     isSpeaking,
     isListening,
+    isPlaying,
     voiceVolumeScale,
     facing,
     cursorX: 0,
-    cursorY: 0
+    cursorY: 0,
+    rotationYaw: 0,
+    rotationPitch: 0
   });
 
   const [hasGlbLoaded, setHasGlbLoaded] = useState(false);
@@ -57,21 +66,53 @@ export default function ThreeDCharacter({
       animationState,
       isSpeaking,
       isListening,
+      isPlaying,
       voiceVolumeScale: Math.max(0, Math.min(1, voiceVolumeScale || (isSpeaking ? 0.75 : 0))),
       facing,
       cursorX: cursorOffset?.x || 0,
-      cursorY: cursorOffset?.y || 0
+      cursorY: cursorOffset?.y || 0,
+      rotationYaw: rotationYaw || 0,
+      rotationPitch: rotationPitch || 0
     };
-  }, [animationState, isSpeaking, isListening, voiceVolumeScale, facing, cursorOffset]);
+  }, [animationState, isSpeaking, isListening, isPlaying, voiceVolumeScale, facing, cursorOffset, rotationYaw, rotationPitch]);
+
+  // Decoupled dynamic resizing: NEVER remounts Three.js or reloads the GLB on size change!
+  useEffect(() => {
+    if (rendererRef.current && cameraRef.current && updateFramingRef.current) {
+      rendererRef.current.setSize(width, height);
+      updateFramingRef.current(width, height);
+    }
+  }, [width, height]);
 
   useEffect(() => {
     const container = mountRef.current;
     if (!container) return;
 
-    // 1. Scene & Perspective Camera
+    // 1. Scene & Dynamically Calibrated Perspective Camera
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(35, width / height, 0.1, 50);
-    camera.position.set(0, 0.15, 3.4);
+    const fov = 30;
+    const initialAspect = width / height;
+    const camera = new THREE.PerspectiveCamera(fov, initialAspect, 0.1, 50);
+    cameraRef.current = camera;
+
+    const updateCameraFraming = (w, h) => {
+      const aspect = w / h;
+      camera.aspect = aspect;
+      const vFovRad = fov * (Math.PI / 180);
+      const charHeight = 1.49;
+      const charWingspan = 1.20;
+      const requiredVerticalSpan = charHeight * 1.07;
+      const distForHeight = (requiredVerticalSpan / 2) / Math.tan(vFovRad / 2);
+      const distForWidth = (charWingspan * 1.04 / 2) / (Math.tan(vFovRad / 2) * aspect);
+      const targetDist = Math.max(distForHeight, distForWidth);
+      const cameraCenterY = -0.015;
+
+      camera.position.set(0, cameraCenterY, targetDist);
+      camera.lookAt(0, cameraCenterY, 0);
+      camera.updateProjectionMatrix();
+    };
+    updateFramingRef.current = updateCameraFraming;
+    updateCameraFraming(width, height);
 
     // 2. High-Performance WebGL Renderer
     const renderer = new THREE.WebGLRenderer({
@@ -84,6 +125,8 @@ export default function ThreeDCharacter({
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
     renderer.shadowMap.enabled = false;
+    rendererRef.current = renderer;
+
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
 
@@ -160,7 +203,7 @@ export default function ThreeDCharacter({
     };
 
     // =========================================================================
-    // A. TRY GLTF / GLB SKINNED 3D CHARACTER LOADING
+    // A. GLTF / GLB SKINNED 3D REALISTIC DIGITAL HUMAN LOADING
     // =========================================================================
     const dracoLoader = new DRACOLoader();
     dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
@@ -170,26 +213,50 @@ export default function ThreeDCharacter({
 
     let isGlbActive = false;
     let glbHeadBone = null;
+    const glbBones = {};
     const glbModelGroup = new THREE.Group();
+    glbModelGroup.visible = false; // Hidden until realistic GLB finishes loading
     charRoot.add(glbModelGroup);
+
+    const setBoneRot = (boneName, eulerX, eulerY, eulerZ, slerpSpeed = 0.20) => {
+      const bone = glbBones[boneName.toLowerCase()];
+      if (!bone || !bone.userData.restQuat) return;
+      const delta = new THREE.Quaternion().setFromEuler(new THREE.Euler(eulerX, eulerY, eulerZ, 'XYZ'));
+      const targetQuat = bone.userData.restQuat.clone().multiply(delta);
+      bone.quaternion.slerp(targetQuat, slerpSpeed);
+    };
+
+    const setBonePos = (boneName, posX, posY, posZ, lerpSpeed = 0.20) => {
+      const bone = glbBones[boneName.toLowerCase()];
+      if (!bone || !bone.userData.restPos) return;
+      const targetX = bone.userData.restPos.x + posX;
+      const targetY = bone.userData.restPos.y + posY;
+      const targetZ = bone.userData.restPos.z + posZ;
+      bone.position.x = THREE.MathUtils.lerp(bone.position.x, targetX, lerpSpeed);
+      bone.position.y = THREE.MathUtils.lerp(bone.position.y, targetY, lerpSpeed);
+      bone.position.z = THREE.MathUtils.lerp(bone.position.z, targetZ, lerpSpeed);
+    };
 
     gltfLoader.load(
       '/characters/avatar.glb',
       (gltf) => {
         isGlbActive = true;
         setHasGlbLoaded(true);
+        glbModelGroup.visible = true;
         const model = gltf.scene;
         model.scale.set(0.9, 0.9, 0.9);
         model.position.set(0, -0.96, 0);
-        // Face the front camera: Mixamo / standard GLTF models look down -Z by default
-        model.rotation.y = Math.PI;
+        // Face the user/camera directly (+Z)
+        model.rotation.y = 0;
 
         model.traverse((child) => {
-          if (child.isBone && !glbHeadBone) {
+          if (child.isBone) {
             const lower = child.name.toLowerCase();
-            if (lower.includes('head') || lower.includes('neck')) {
+            glbBones[lower] = child;
+            child.userData.restQuat = child.quaternion.clone();
+            child.userData.restPos = child.position.clone();
+            if (!glbHeadBone && (lower.includes('head') || lower.includes('neck'))) {
               glbHeadBone = child;
-              console.log('[ThreeDCharacter] Bound head tracking bone:', child.name);
             }
           }
           if (child.isMesh && child.material) {
@@ -200,7 +267,6 @@ export default function ThreeDCharacter({
 
         glbModelGroup.add(model);
 
-        // Setup AnimationMixer from GLTF animations
         if (gltf.animations && gltf.animations.length > 0) {
           mixer = new THREE.AnimationMixer(model);
           gltf.animations.forEach((clip) => {
@@ -217,7 +283,6 @@ export default function ThreeDCharacter({
             else actions[clip.name] = action;
           });
 
-          // Default start on idle
           if (actions['idle']) {
             fadeToAction('idle', 0.1);
           } else if (gltf.animations[0]) {
@@ -225,330 +290,27 @@ export default function ThreeDCharacter({
             fadeToAction('idle', 0.1);
           }
         }
-
-        // Hide procedural fallback once GLB is successfully loaded
-        if (proceduralGroup) {
-          proceduralGroup.visible = false;
-        }
       },
       undefined,
       (err) => {
-        // Fallback gracefully to procedural 3D avatar (expected when avatar.glb hasn't been placed)
-        isGlbActive = false;
-        setHasGlbLoaded(false);
+        console.warn('[ThreeDCharacter] avatar.glb load notice:', err?.message || err);
       }
     );
 
-    // =========================================================================
-    // B. HIGH-FIDELITY PROCEDURAL 3D HUMANOID RIG (PBR MESH & BONES)
-    // =========================================================================
-    const proceduralGroup = new THREE.Group();
-    charRoot.add(proceduralGroup);
-
-    // Material Library
-    const skinMat = new THREE.MeshStandardMaterial({
-      color: 0xf5cfb8,
-      roughness: 0.55,
-      metalness: 0.05
-    });
-
-    const hoodieMat = new THREE.MeshStandardMaterial({
-      color: 0x121215, // Sleek black streetwear hoodie
-      roughness: 0.8,
-      metalness: 0.1
-    });
-
-    const pantsMat = new THREE.MeshStandardMaterial({
-      color: 0x18181b, // Dark techwear cargo
-      roughness: 0.75,
-      metalness: 0.15
-    });
-
-    const shoeMat = new THREE.MeshStandardMaterial({
-      color: 0x27272a,
-      roughness: 0.6,
-      metalness: 0.3
-    });
-
-    const accentMat = new THREE.MeshStandardMaterial({
-      color: rimColor,
-      roughness: 0.2,
-      metalness: 0.8,
-      emissive: rimColor,
-      emissiveIntensity: 0.4
-    });
-
-    const hairMat = new THREE.MeshStandardMaterial({
-      color: 0x281816, // Dark espresso hair
-      roughness: 0.9,
-      metalness: 0.05
-    });
-
-    // 1. Torso & Hoodie (Sleek streetwear fit, lowered to keep neck and chin clear)
-    const torsoGroup = new THREE.Group();
-    torsoGroup.position.set(0, 0, 0);
-    proceduralGroup.add(torsoGroup);
-
-    const chestGeo = new THREE.CylinderGeometry(0.22, 0.18, 0.44, 24);
-    const chestMesh = new THREE.Mesh(chestGeo, hoodieMat);
-    chestMesh.position.set(0, 0.14, 0);
-    torsoGroup.add(chestMesh);
-
-    // Hoodie Collar / Neckline Trim
-    const collarGeo = new THREE.TorusGeometry(0.115, 0.022, 12, 24);
-    const collarMesh = new THREE.Mesh(collarGeo, hoodieMat);
-    collarMesh.rotation.x = Math.PI / 2.3;
-    collarMesh.position.set(0, 0.355, 0.015);
-    torsoGroup.add(collarMesh);
-
-    // Hoodie Accent Zipper / Neon Stripe
-    const stripeGeo = new THREE.BoxGeometry(0.016, 0.38, 0.02);
-    const stripeMesh = new THREE.Mesh(stripeGeo, accentMat);
-    stripeMesh.position.set(0, 0.16, 0.20);
-    torsoGroup.add(stripeMesh);
-
-    // Visible Graceful Neck (Skin-toned cylinder connecting chest and head)
-    const neckGeo = new THREE.CylinderGeometry(0.065, 0.075, 0.16, 24);
-    const neckMesh = new THREE.Mesh(neckGeo, skinMat);
-    neckMesh.position.set(0, 0.42, 0);
-    torsoGroup.add(neckMesh);
-
-    // 2. Head & Facial Geometry (Positioned at y = 0.58 so neck, chin, lips, and nose are completely visible)
+    // Lightweight non-rendered tracking nodes (Zero cartoon fallback mesh!)
     const headGroup = new THREE.Group();
-    headGroup.position.set(0, 0.58, 0);
-    torsoGroup.add(headGroup);
-
-    // Skull & Cute Anime Face
-    const headGeo = new THREE.SphereGeometry(0.185, 32, 28);
-    const headMesh = new THREE.Mesh(headGeo, skinMat);
-    headMesh.scale.set(1.0, 1.10, 1.02);
-    headGroup.add(headMesh);
-
-    // Sculpted Chin / Jaw Taper
-    const jawGeo = new THREE.ConeGeometry(0.075, 0.08, 16);
-    const jawMesh = new THREE.Mesh(jawGeo, skinMat);
-    jawMesh.rotation.x = Math.PI;
-    jawMesh.position.set(0, -0.15, 0.06);
-    headGroup.add(jawMesh);
-
-    // 3D Anime Nose (Delicate, Clear & Prominent)
-    const noseGeo = new THREE.ConeGeometry(0.020, 0.055, 12);
-    const noseMesh = new THREE.Mesh(noseGeo, skinMat);
-    noseMesh.rotation.x = -Math.PI / 2.3;
-    noseMesh.position.set(0, 0.015, 0.195);
-    headGroup.add(noseMesh);
-
-    // Eyes with white sclera, pupil, iris, and eyelid
-    const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const irisMat = new THREE.MeshStandardMaterial({ color: 0x4a2810, roughness: 0.3 });
-    const pupilMat = new THREE.MeshBasicMaterial({ color: 0x120a06 });
-    const sparkleMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const eyelidMat = new THREE.MeshStandardMaterial({ color: 0xf0c4aa, roughness: 0.6 });
-    const lipsMat = new THREE.MeshStandardMaterial({ color: 0xdb2777, roughness: 0.4 }); // Soft rose lips
-
-    const createEye = (xPos) => {
-      const eyeG = new THREE.Group();
-      eyeG.position.set(xPos, 0.052, 0.172);
-
-      const eyeMesh = new THREE.Mesh(new THREE.SphereGeometry(0.038, 16, 16), eyeWhiteMat);
-      eyeMesh.scale.set(1.1, 0.9, 0.5);
-      eyeG.add(eyeMesh);
-
-      const irisMesh = new THREE.Mesh(new THREE.SphereGeometry(0.024, 16, 16), irisMat);
-      irisMesh.position.set(0, 0, 0.016);
-      irisMesh.scale.set(1.0, 1.0, 0.4);
-      eyeG.add(irisMesh);
-
-      const pupilMesh = new THREE.Mesh(new THREE.SphereGeometry(0.014, 16, 16), pupilMat);
-      pupilMesh.position.set(0, 0, 0.022);
-      eyeG.add(pupilMesh);
-
-      // Cute white anime eye sparkle reflection
-      const sparkle = new THREE.Mesh(new THREE.SphereGeometry(0.006, 8, 8), sparkleMat);
-      sparkle.position.set(xPos > 0 ? -0.008 : 0.008, 0.008, 0.028);
-      eyeG.add(sparkle);
-
-      const eyelid = new THREE.Mesh(new THREE.SphereGeometry(0.042, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2), eyelidMat);
-      eyelid.rotation.x = -Math.PI / 2;
-      eyelid.position.set(0, 0, 0.01);
-      eyeG.add(eyelid);
-
-      return { eyeGroup: eyeG, eyelid, pupilMesh };
-    };
-
-    const eyeL = createEye(-0.068);
-    const eyeR = createEye(0.068);
-    headGroup.add(eyeL.eyeGroup);
-    headGroup.add(eyeR.eyeGroup);
-
-    // Cute Anime Eyebrows
-    const browGeo = new THREE.BoxGeometry(0.042, 0.007, 0.01);
-    const browL = new THREE.Mesh(browGeo, hairMat);
-    browL.position.set(-0.068, 0.105, 0.178);
-    browL.rotation.z = -0.08;
-    headGroup.add(browL);
-
-    const browR = new THREE.Mesh(browGeo, hairMat);
-    browR.position.set(0.068, 0.105, 0.178);
-    browR.rotation.z = 0.08;
-    headGroup.add(browR);
-
-    // Beautiful, Clearly Visible Lips & Mouth
-    const lipsGroup = new THREE.Group();
-    lipsGroup.position.set(0, -0.065, 0.188);
-
-    // Upper Lip
-    const upperLipGeo = new THREE.BoxGeometry(0.042, 0.010, 0.012);
-    const upperLip = new THREE.Mesh(upperLipGeo, lipsMat);
-    upperLip.position.set(0, 0.006, 0);
-    lipsGroup.add(upperLip);
-
-    // Lower Lip (Plump soft anime bottom lip)
-    const lowerLipGeo = new THREE.BoxGeometry(0.038, 0.012, 0.012);
-    const lowerLip = new THREE.Mesh(lowerLipGeo, lipsMat);
-    lowerLip.position.set(0, -0.006, 0);
-    lipsGroup.add(lowerLip);
-
-    // Dynamic Talking Lip-Sync Aperture Mesh (Opens smoothly when speaking)
-    const mouthGeo = new THREE.BoxGeometry(0.036, 0.018, 0.015);
-    const mouthMat = new THREE.MeshBasicMaterial({ color: 0x581c24 });
-    const mouthMesh = new THREE.Mesh(mouthGeo, mouthMat);
-    mouthMesh.position.set(0, 0, 0.002);
-    mouthMesh.scale.set(1.0, 0.1, 1.0); // resting closed
-    lipsGroup.add(mouthMesh);
-
-    headGroup.add(lipsGroup);
-
-    // Cheerful anime cheek blush highlights
-    const blushMat = new THREE.MeshBasicMaterial({
-      color: 0xf43f5e,
-      transparent: true,
-      opacity: 0.35
-    });
-    const blushGeo = new THREE.PlaneGeometry(0.042, 0.022);
-    const blushL = new THREE.Mesh(blushGeo, blushMat);
-    blushL.position.set(-0.105, 0.010, 0.182);
-    headGroup.add(blushL);
-
-    const blushR = new THREE.Mesh(blushGeo, blushMat);
-    blushR.position.set(0.105, 0.010, 0.182);
-    headGroup.add(blushR);
-
-    // Hair Style (High bun + wispy front bangs that stay ABOVE eyes/nose + side strands)
-    const hairGroup = new THREE.Group();
-    const hairCapGeo = new THREE.SphereGeometry(0.192, 24, 20);
-    const hairCap = new THREE.Mesh(hairCapGeo, hairMat);
-    hairCap.position.set(0, 0.04, -0.025);
-    hairGroup.add(hairCap);
-
-    // High Messy Bun (Positioned gracefully at top back)
-    const hairBunGeo = new THREE.SphereGeometry(0.10, 20, 20);
-    const hairBun = new THREE.Mesh(hairBunGeo, hairMat);
-    hairBun.position.set(0, 0.23, -0.06);
-    hairGroup.add(hairBun);
-
-    // Cute Wispy Bangs (Positioned at y = 0.13, well ABOVE the eyes, nose, and lips!)
-    const bangsGeo = new THREE.BoxGeometry(0.14, 0.035, 0.04);
-    const bangsMesh = new THREE.Mesh(bangsGeo, hairMat);
-    bangsMesh.position.set(0, 0.13, 0.165);
-    bangsMesh.rotation.x = -0.15;
-    hairGroup.add(bangsMesh);
-
-    // Delicate Side hair strands framing cheeks without covering lips or nose
-    const strandGeo = new THREE.ConeGeometry(0.016, 0.18, 12);
-    const strandL = new THREE.Mesh(strandGeo, hairMat);
-    strandL.position.set(-0.16, -0.02, 0.11);
-    strandL.rotation.z = 0.12;
-    hairGroup.add(strandL);
-
-    const strandR = new THREE.Mesh(strandGeo, hairMat);
-    strandR.position.set(0.16, -0.02, 0.11);
-    strandR.rotation.z = -0.12;
-    hairGroup.add(strandR);
-
-    headGroup.add(hairGroup);
-
-    // Over-Ear DJ Headphones with Glowing Ring (Positioned neatly on ears at y = 0.04)
-    const hpGroup = new THREE.Group();
-    const hpBandGeo = new THREE.TorusGeometry(0.21, 0.018, 12, 32, Math.PI);
-    const hpBand = new THREE.Mesh(hpBandGeo, hoodieMat);
-    hpBand.position.set(0, 0.04, 0);
-    hpGroup.add(hpBand);
-
-    const createEarCup = (xPos) => {
-      const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.035, 24), hoodieMat);
-      cup.rotation.z = Math.PI / 2;
-      cup.position.set(xPos, 0.03, 0);
-
-      const glowRing = new THREE.Mesh(new THREE.TorusGeometry(0.050, 0.008, 12, 24), accentMat);
-      glowRing.rotation.y = Math.PI / 2;
-      glowRing.position.set(xPos > 0 ? 0.020 : -0.020, 0, 0);
-      cup.add(glowRing);
-
-      return cup;
-    };
-    hpGroup.add(createEarCup(-0.195));
-    hpGroup.add(createEarCup(0.195));
-    headGroup.add(hpGroup);
-
-    // 3. Arms & Shoulders (Lowered to match shoulder height at y = 0.32)
+    const torsoGroup = new THREE.Group();
     const armL = new THREE.Group();
     const armR = new THREE.Group();
-    armL.position.set(-0.25, 0.32, 0);
-    armR.position.set(0.25, 0.32, 0);
-    torsoGroup.add(armL);
-    torsoGroup.add(armR);
-
-    const armGeo = new THREE.CylinderGeometry(0.055, 0.046, 0.44, 16);
-    const armLMesh = new THREE.Mesh(armGeo, hoodieMat);
-    const armRMesh = new THREE.Mesh(armGeo, hoodieMat);
-    armLMesh.position.set(0, -0.20, 0);
-    armRMesh.position.set(0, -0.20, 0);
-    armL.add(armLMesh);
-    armR.add(armRMesh);
-
-    // Hands
-    const handGeo = new THREE.SphereGeometry(0.042, 16, 16);
-    const handL = new THREE.Mesh(handGeo, skinMat);
-    const handR = new THREE.Mesh(handGeo, skinMat);
-    handL.position.set(0, -0.42, 0);
-    handR.position.set(0, -0.42, 0);
-    armL.add(handL);
-    armR.add(handR);
-
-    // 4. Legs & Footwear
     const legL = new THREE.Group();
     const legR = new THREE.Group();
-    legL.position.set(-0.11, -0.04, 0);
-    legR.position.set(0.11, -0.04, 0);
-    proceduralGroup.add(legL);
-    proceduralGroup.add(legR);
-
-    const legGeo = new THREE.CylinderGeometry(0.08, 0.065, 0.62, 16);
-    const legLMesh = new THREE.Mesh(legGeo, pantsMat);
-    const legRMesh = new THREE.Mesh(legGeo, pantsMat);
-    legLMesh.position.set(0, -0.31, 0);
-    legRMesh.position.set(0, -0.31, 0);
-    legL.add(legLMesh);
-    legR.add(legRMesh);
-
-    // Sneakers
-    const shoeGeo = new THREE.BoxGeometry(0.11, 0.08, 0.22);
-    const shoeL = new THREE.Mesh(shoeGeo, shoeMat);
-    const shoeR = new THREE.Mesh(shoeGeo, shoeMat);
-    shoeL.position.set(0, -0.62, 0.04);
-    shoeR.position.set(0, -0.62, 0.04);
-    legL.add(shoeL);
-    legR.add(shoeR);
 
     // =========================================================================
-    // C. 60 FPS ANIMATION LOOP WITH TAB VISIBILITY PAUSE & HEAD TRACKING
+    // C. 60 FPS ANIMATION LOOP WITH TAB VISIBILITY PAUSE & SUBTLE HEAD TRACKING
     // =========================================================================
     let reqId;
     let clock = new THREE.Clock();
     let isTabVisible = true;
-    let blinkTimer = 0;
-    let isBlinking = false;
     let lastMouseMoveTime = Date.now();
     let currentHeadYaw = 0;
     let currentHeadPitch = 0;
@@ -579,14 +341,21 @@ export default function ThreeDCharacter({
       const vol = stateRef.current.voiceVolumeScale;
       const facingDir = stateRef.current.facing;
 
-      // Smooth Orientation
-      const targetScaleX = facingDir === 'right' ? -1 : 1;
-      charRoot.scale.x = THREE.MathUtils.lerp(charRoot.scale.x, targetScaleX, 0.15);
+      // Full 360-Degree Interactive Rotation & Viewing Pitch (Strict Front-Facing by default)
+      const userYaw = stateRef.current.rotationYaw || 0;
+      const userPitch = stateRef.current.rotationPitch || 0;
+      const isTraveling = curState === 'walking' || curState === 'walk' || curState === 'running' || curState === 'run';
+      const baseFacingYaw = isTraveling ? (facingDir === 'right' ? -0.22 : 0.22) : 0;
+      const targetCharYaw = userYaw + baseFacingYaw;
+      const targetCharPitch = THREE.MathUtils.clamp(userPitch, -0.25, 0.25);
 
-      // Update AnimationMixer if GLB is loaded
+      charRoot.rotation.y = THREE.MathUtils.lerp(charRoot.rotation.y, targetCharYaw, 0.12);
+      charRoot.rotation.x = THREE.MathUtils.lerp(charRoot.rotation.x, targetCharPitch, 0.12);
+      charRoot.scale.set(1, 1, 1);
+
+      // Update AnimationMixer if GLB contains clips
       if (mixer) {
         mixer.update(delta);
-        // Map current state to GLTF action
         if (curState === 'walking' || curState === 'walk') fadeToAction('walk', 0.25);
         else if (curState === 'running' || curState === 'run') fadeToAction('run', 0.25);
         else if (curState === 'jump') fadeToAction('jump', 0.2);
@@ -597,11 +366,7 @@ export default function ThreeDCharacter({
         else fadeToAction('idle', 0.35);
       }
 
-      // Head-Only Subtle Cursor Tracking Logic:
-      // "only a liitle up down face movement and left right movement"
-      // Limits: subtle gentle yaw max ±8° (0.14 rad), pitch max ±5° (0.087 rad)
-      // Dead zone: movements < 0.05 are centered
-      // 3-second cursor idle: smoothly returns to neutral (0, 0)
+      // Subtle Head Tracking Logic: ±8° yaw, ±5° pitch
       const now = Date.now();
       const isCursorIdle = (now - lastMouseMoveTime) > 3000;
 
@@ -611,123 +376,169 @@ export default function ThreeDCharacter({
       if (Math.abs(rawX) < 0.05) rawX = 0;
       if (Math.abs(rawY) < 0.05) rawY = 0;
 
-      const maxYawRad = 8 * (Math.PI / 180); // Subtle ±8° left/right
-      const maxPitchRad = 5 * (Math.PI / 180); // Subtle ±5° up/down
+      const maxYawRad = 8 * (Math.PI / 180);
+      const maxPitchRad = 5 * (Math.PI / 180);
 
       const targetYaw = isCursorIdle ? 0 : THREE.MathUtils.clamp(rawX * maxYawRad, -maxYawRad, maxYawRad);
       const targetPitch = isCursorIdle ? 0 : THREE.MathUtils.clamp(-rawY * maxPitchRad, -maxPitchRad, maxPitchRad);
 
-      // Smooth gentle interpolation with lerp factor 0.04
       currentHeadYaw = THREE.MathUtils.lerp(currentHeadYaw, targetYaw, 0.04);
       currentHeadPitch = THREE.MathUtils.lerp(currentHeadPitch, targetPitch, 0.04);
 
-      // Apply strictly to GLB head bone if active
-      if (glbHeadBone) {
-        glbHeadBone.rotation.y = currentHeadYaw;
-        glbHeadBone.rotation.x = currentHeadPitch;
+      // Apply subtle head tracking to GLB head bone
+      setBoneRot('head', currentHeadPitch, currentHeadYaw, 0, 0.20);
+
+      const breath = Math.sin(time * 2.6);
+
+      // Attentive Listening Glow & Visualizer Ring
+      if (isListeningNow || curState === 'listening') {
+        particleMat.size = 0.075 + vol * 0.04;
+      } else {
+        particleMat.size = 0.05;
       }
 
-      // Procedural 3D Kinematics (Runs if GLB is absent or blends with baseline)
-      if (!isGlbActive) {
-        // 1. Natural Breathing & Weight Shift (Idle)
-        const breath = Math.sin(time * 2.6);
-        torsoGroup.position.y = breath * 0.012;
-        torsoGroup.scale.y = 1.0 + breath * 0.015;
-        torsoGroup.rotation.y = 0; // Body stays strictly facing forward
-        torsoGroup.rotation.x = 0;
+      // Music-Synchronized Dancing rhythm & intensity calculations
+      const intensity = 0.75 + vol * 0.55;
+      const dancePhase = time * (6.0 + vol * 2.5);
+      const danceRoutine = Math.floor((time / 12) % 4);
 
-        // 2. Subtle Head Gaze Tracking (Targeting strictly head/neck)
-        headGroup.rotation.y = currentHeadYaw;
-        headGroup.rotation.x = currentHeadPitch;
-
-        // Eyes can follow slightly more (pupil tracking)
-        const pupilShiftX = currentHeadYaw * 0.025;
-        const pupilShiftY = -currentHeadPitch * 0.020;
-        if (eyeL?.pupilMesh && eyeR?.pupilMesh) {
-          eyeL.pupilMesh.position.x = pupilShiftX;
-          eyeL.pupilMesh.position.y = pupilShiftY;
-          eyeR.pupilMesh.position.x = pupilShiftX;
-          eyeR.pupilMesh.position.y = pupilShiftY;
-        }
-
-        // 3. Natural Eye Blinking (Every 3.5s for 120ms)
-        blinkTimer += delta;
-        if (blinkTimer > (isBlinking ? 0.12 : 3.5 + Math.random() * 2.0)) {
-          isBlinking = !isBlinking;
-          blinkTimer = 0;
-        }
-        const blinkRot = isBlinking ? 0 : -Math.PI / 2;
-        eyeL.eyelid.rotation.x = THREE.MathUtils.lerp(eyeL.eyelid.rotation.x, blinkRot, 0.3);
-        eyeR.eyelid.rotation.x = THREE.MathUtils.lerp(eyeR.eyelid.rotation.x, blinkRot, 0.3);
-
-        // 4. Lip-Sync Mouth & Lips Articulation (Speaking State)
-        if (isSpeakingNow || curState === 'speaking') {
-          const speechFreq = time * 20;
-          const aperture = (0.2 + Math.abs(Math.sin(speechFreq)) * 0.8) * Math.max(0.4, vol);
-          mouthMesh.scale.set(1.0 + aperture * 0.5, 1.0 + aperture * 2.2, 1.0);
-          lowerLip.position.y = -0.006 - aperture * 0.012;
-          upperLip.position.y = 0.006 + aperture * 0.006;
-          headGroup.position.y = 0.58 + Math.sin(time * 6) * 0.008;
-          armR.rotation.z = -0.15 + Math.sin(time * 4) * 0.08;
+      // =========================================================================
+      // D. ANATOMICALLY NATURAL KINEMATICS & STANDING ORIENTATION
+      // =========================================================================
+      if (curState === 'dancing' || curState === 'dance') {
+        if (danceRoutine === 0) {
+          const sway = Math.sin(dancePhase);
+          const bounce = Math.abs(Math.cos(dancePhase)) * 0.04 * intensity;
+          setBonePos('hips', sway * 0.04 * intensity, bounce, 0, 0.25);
+          setBoneRot('spine', 0, sway * 0.12 * intensity, -sway * 0.08 * intensity, 0.25);
+          setBoneRot('leftarm', 0.44, Math.cos(dancePhase) * 0.25 * intensity, 0.08 + sway * 0.25 * intensity, 0.25);
+          setBoneRot('rightarm', 0.44, -Math.cos(dancePhase) * 0.25 * intensity, -0.08 - sway * 0.25 * intensity, 0.25);
+          setBoneRot('leftforearm', 0, 0, 0.28, 0.25);
+          setBoneRot('rightforearm', 0, 0, -0.28, 0.25);
+        } else if (danceRoutine === 1) {
+          const beat = Math.sin(dancePhase * 1.4);
+          const bob = Math.abs(Math.sin(dancePhase * 1.4)) * 0.045 * intensity;
+          setBonePos('hips', 0, bob, 0, 0.25);
+          setBoneRot('spine', -bob * 0.6, 0, 0, 0.25);
+          setBoneRot('leftarm', 0.38 + beat * 0.15 * intensity, 0.15, 0.35 + beat * 0.18 * intensity, 0.25);
+          setBoneRot('rightarm', 0.38 - beat * 0.15 * intensity, -0.15, -0.35 - beat * 0.18 * intensity, 0.25);
+          setBoneRot('leftforearm', 0, 0, 0.45 + beat * 0.15, 0.25);
+          setBoneRot('rightforearm', 0, 0, -0.45 - beat * 0.15, 0.25);
+        } else if (danceRoutine === 2) {
+          const wave = Math.sin(dancePhase * 0.9);
+          setBonePos('hips', wave * 0.04 * intensity, 0, 0, 0.25);
+          setBoneRot('spine', 0, wave * 0.18 * intensity, 0, 0.25);
+          setBoneRot('leftarm', 0.42, 0, 0.35 + Math.cos(dancePhase) * 0.25 * intensity, 0.25);
+          setBoneRot('rightarm', 0.42, 0, -0.35 - Math.sin(dancePhase) * 0.25 * intensity, 0.25);
+          setBoneRot('leftforearm', 0, 0, 0.22, 0.25);
+          setBoneRot('rightforearm', 0, 0, -0.22, 0.25);
         } else {
-          mouthMesh.scale.set(1.0, 0.1, 1.0);
-          lowerLip.position.y = -0.006;
-          upperLip.position.y = 0.006;
-          headGroup.position.y = 0.58;
-          armR.rotation.z = THREE.MathUtils.lerp(armR.rotation.z, 0, 0.1);
+          const roll = Math.sin(dancePhase * 0.85);
+          setBonePos('hips', 0, breath * 0.01, 0, 0.25);
+          setBoneRot('spine', 0, 0, -roll * 0.08 * intensity, 0.25);
+          setBoneRot('leftarm', 0.45, 0.1, 0.15 + Math.sin(dancePhase) * 0.20 * intensity, 0.25);
+          setBoneRot('rightarm', 0.45, -0.1, -0.15 - Math.sin(dancePhase) * 0.20 * intensity, 0.25);
+          setBoneRot('leftforearm', 0, 0, 0.18, 0.25);
+          setBoneRot('rightforearm', 0, 0, -0.18, 0.25);
         }
-
-        // 5. Attentive Listening State
-        if (isListeningNow || curState === 'listening') {
-          headGroup.rotation.z = THREE.MathUtils.lerp(headGroup.rotation.z, 0.12, 0.1);
-          accentMat.emissiveIntensity = 0.8 + Math.sin(time * 6) * 0.3;
-          particleMat.size = 0.075 + vol * 0.04;
-        } else {
-          headGroup.rotation.z = THREE.MathUtils.lerp(headGroup.rotation.z, 0, 0.1);
-          accentMat.emissiveIntensity = 0.4;
-          particleMat.size = 0.05;
-        }
-
-        // 6. Action-Specific Kinematics (Walk, Run, Jump, Wave, Dance)
-        if (curState === 'walking' || curState === 'walk') {
-          const stride = Math.sin(time * 8);
-          legL.rotation.x = stride * 0.65;
-          legR.rotation.x = -stride * 0.65;
-          armL.rotation.x = -stride * 0.55;
-          armR.rotation.x = stride * 0.55;
-          torsoGroup.position.y = Math.abs(stride) * 0.03;
-        } else if (curState === 'running' || curState === 'run') {
-          const stride = Math.sin(time * 16);
-          legL.rotation.x = stride * 0.95;
-          legR.rotation.x = -stride * 0.95;
-          armL.rotation.x = -stride * 0.85;
-          armR.rotation.x = stride * 0.85;
-          torsoGroup.position.y = Math.abs(stride) * 0.06;
-          torsoGroup.rotation.x = 0.12;
-        } else if (curState === 'jump') {
-          const jumpPhase = Math.sin(time * 10);
-          torsoGroup.position.y = Math.max(0, jumpPhase * 0.22);
-          armL.rotation.z = 0.5;
-          armR.rotation.z = -0.5;
-        } else if (curState === 'wave') {
-          const wave = Math.sin(time * 14) * 0.35;
-          armR.rotation.z = -1.6 + wave;
-          armR.rotation.x = 0.2;
-        } else if (curState === 'dance') {
-          const groove = Math.sin(time * 6);
-          charRoot.position.x = groove * 0.08;
-          headGroup.rotation.z = groove * 0.15;
-          armL.rotation.z = 0.4 + groove * 0.3;
-          armR.rotation.z = -0.4 - groove * 0.3;
-        } else {
-          // Reset limb angles for resting idle
-          legL.rotation.x = THREE.MathUtils.lerp(legL.rotation.x, 0, 0.1);
-          legR.rotation.x = THREE.MathUtils.lerp(legR.rotation.x, 0, 0.1);
-          armL.rotation.x = THREE.MathUtils.lerp(armL.rotation.x, 0, 0.1);
-          armL.rotation.z = THREE.MathUtils.lerp(armL.rotation.z, 0, 0.1);
-          torsoGroup.rotation.x = THREE.MathUtils.lerp(torsoGroup.rotation.x, 0, 0.1);
-          charRoot.position.x = THREE.MathUtils.lerp(charRoot.position.x, 0, 0.1);
-        }
+      } else if (curState === 'walking' || curState === 'walk') {
+        const stride = Math.sin(time * 7.5);
+        setBonePos('hips', 0, Math.abs(stride) * 0.02, 0, 0.25);
+        setBoneRot('spine', 0.04, 0, 0, 0.25);
+        setBoneRot('leftupleg', stride * 0.42, 0, 0, 0.25);
+        setBoneRot('rightupleg', -stride * 0.42, 0, 0, 0.25);
+        setBoneRot('leftleg', Math.min(0, -stride * 0.45), 0, 0, 0.25);
+        setBoneRot('rightleg', Math.min(0, stride * 0.45), 0, 0, 0.25);
+        setBoneRot('leftarm', 0.46, 0, -stride * 0.32, 0.25);
+        setBoneRot('rightarm', 0.46, 0, stride * 0.32, 0.25);
+        setBoneRot('leftforearm', 0, 0, 0.18, 0.25);
+        setBoneRot('rightforearm', 0, 0, -0.18, 0.25);
+      } else if (curState === 'sitting' || curState === 'sit') {
+        // Natural relaxed seated pose without inverted leg distortion
+        setBonePos('hips', 0, -0.15, 0, 0.15);
+        setBoneRot('spine', 0.02, 0, 0, 0.15);
+        setBoneRot('leftupleg', 0.22, 0.02, 0.02, 0.15);
+        setBoneRot('rightupleg', 0.22, -0.02, -0.02, 0.15);
+        setBoneRot('leftleg', 0.18, 0, 0, 0.15);
+        setBoneRot('rightleg', 0.18, 0, 0, 0.15);
+        setBoneRot('leftfoot', 0, 0, 0, 0.15);
+        setBoneRot('rightfoot', 0, 0, 0, 0.15);
+        setBoneRot('leftarm', 0.44, 0, 0.08, 0.15);
+        setBoneRot('rightarm', 0.44, 0, -0.08, 0.15);
+        setBoneRot('leftforearm', 0, 0, 0.15, 0.15);
+        setBoneRot('rightforearm', 0, 0, -0.15, 0.15);
+      } else if (curState === 'standing') {
+        // Relaxed natural standing posture with both legs straight and feet flat
+        setBonePos('hips', 0.01, breath * 0.005, 0, 0.15);
+        setBoneRot('spine', 0, 0, -0.02, 0.15);
+        setBoneRot('leftupleg', 0, 0, 0.02, 0.15);
+        setBoneRot('rightupleg', 0, 0, -0.02, 0.15);
+        setBoneRot('leftleg', 0, 0, 0, 0.15);
+        setBoneRot('rightleg', 0, 0, 0, 0.15);
+        setBoneRot('leftarm', 0.46, 0, 0.06, 0.15);
+        setBoneRot('rightarm', 0.44, 0, -0.04, 0.15);
+        setBoneRot('leftforearm', 0, 0, 0.12, 0.15);
+        setBoneRot('rightforearm', 0, 0, -0.18, 0.15);
+      } else if (curState === 'listening') {
+        setBonePos('hips', 0, breath * 0.005, 0, 0.15);
+        setBoneRot('spine', 0.04, 0, 0, 0.15);
+        setBoneRot('head', currentHeadPitch - 0.05, currentHeadYaw, 0.13, 0.15);
+        setBoneRot('leftarm', 0.46, 0, 0.04, 0.15);
+        setBoneRot('rightarm', 0.46, 0, -0.04, 0.15);
+        setBoneRot('leftforearm', 0, 0, 0.15, 0.15);
+        setBoneRot('rightforearm', 0, 0, -0.15, 0.15);
+      } else if (curState === 'thinking') {
+        setBonePos('hips', 0, breath * 0.005, 0, 0.15);
+        setBoneRot('spine', 0, 0, 0.02, 0.15);
+        setBoneRot('head', currentHeadPitch - 0.08, currentHeadYaw + 0.1, 0.08, 0.15);
+        setBoneRot('leftarm', 0.46, 0, 0.04, 0.15);
+        setBoneRot('rightarm', 0.22, -0.32, -0.65, 0.15);
+        setBoneRot('rightforearm', 0, 0, -0.75, 0.15);
+      } else if (curState === 'executing') {
+        const execPulse = Math.sin(time * 8);
+        setBonePos('hips', 0, Math.sin(time * 4) * 0.008, 0, 0.20);
+        setBoneRot('spine', 0.04, 0, 0, 0.20);
+        setBoneRot('head', currentHeadPitch + 0.04, currentHeadYaw, 0, 0.20);
+        setBoneRot('leftarm', 0.38 + execPulse * 0.07, 0.15, 0.35, 0.20);
+        setBoneRot('rightarm', 0.38 - execPulse * 0.07, -0.15, -0.35, 0.20);
+        setBoneRot('leftforearm', 0, 0, 0.45, 0.20);
+        setBoneRot('rightforearm', 0, 0, -0.45, 0.20);
+      } else if (curState === 'speaking') {
+        setBonePos('hips', 0, breath * 0.005, 0, 0.15);
+        setBoneRot('spine', 0, 0, 0, 0.15);
+        setBoneRot('head', currentHeadPitch + Math.sin(time * 6) * 0.05 * Math.max(0.4, vol), currentHeadYaw, 0, 0.15);
+        setBoneRot('leftarm', 0.46, 0, 0.04, 0.15);
+        setBoneRot('rightarm', 0.34, -0.22, -0.32 + Math.sin(time * 3.5) * 0.15, 0.15);
+        setBoneRot('rightforearm', 0, 0, -0.45, 0.15);
+      } else if (curState === 'wave') {
+        const wave = Math.sin(time * 14) * 0.35;
+        setBoneRot('rightarm', 0.18, -0.15, -1.35 + wave * 0.35, 0.25);
+        setBoneRot('rightforearm', 0, 0, -0.45, 0.25);
+      } else if (curState === 'jump') {
+        const jumpPhase = Math.sin(time * 10);
+        const jumpY = Math.max(0, jumpPhase * 0.22);
+        setBonePos('hips', 0, jumpY, 0, 0.25);
+      } else if (curState === 'running' || curState === 'run') {
+        const stride = Math.sin(time * 16);
+        setBonePos('hips', 0, Math.abs(stride) * 0.05, 0, 0.25);
+        setBoneRot('leftarm', 0.46, 0, -stride * 0.55, 0.25);
+        setBoneRot('rightarm', 0.46, 0, stride * 0.55, 0.25);
+        setBoneRot('leftforearm', 0, 0, 0.25, 0.25);
+        setBoneRot('rightforearm', 0, 0, -0.25, 0.25);
+      } else {
+        // Default Natural Upright Standing Idle (Strict Straight Posture, Arms at Sides)
+        setBonePos('hips', 0, breath * 0.005, 0, 0.15);
+        setBoneRot('spine', breath * 0.015, 0, 0, 0.15);
+        setBoneRot('leftarm', 0.46 + breath * 0.02, 0, 0.04, 0.15);
+        setBoneRot('rightarm', 0.46 + breath * 0.02, 0, -0.04, 0.15);
+        setBoneRot('leftforearm', 0, 0, 0.15, 0.15);
+        setBoneRot('rightforearm', 0, 0, -0.15, 0.15);
+        setBoneRot('leftupleg', 0, 0, 0, 0.15);
+        setBoneRot('rightupleg', 0, 0, 0, 0.15);
+        setBoneRot('leftleg', 0, 0, 0, 0.15);
+        setBoneRot('rightleg', 0, 0, 0, 0.15);
+        setBoneRot('leftfoot', 0, 0, 0, 0.15);
+        setBoneRot('rightfoot', 0, 0, 0, 0.15);
       }
 
       renderer.render(scene, camera);
@@ -746,7 +557,7 @@ export default function ThreeDCharacter({
       renderer.dispose();
       dracoLoader.dispose();
     };
-  }, [width, height]);
+  }, []); // Run ONCE on mount; size updates handled by decoupled useEffect!
 
   return (
     <div

@@ -41,8 +41,8 @@ import {
 export default function LoopraAvatarWidget({
   isAudioPlaying = false,
   audioVolume = 70,
-  onVoiceCommand = () => {},
-  onNavigate = () => {},
+  onVoiceCommand = () => { },
+  onNavigate = () => { },
   currentTrack = null
 }) {
   // Active Persona: 'male' | 'female'
@@ -93,11 +93,11 @@ export default function LoopraAvatarWidget({
     setPersona(newPersona);
     try {
       localStorage.setItem('loopra_avatar_persona', newPersona);
-    } catch (_) {}
+    } catch (_) { }
     triggerSpeech(
       newPersona === 'male'
-        ? 'Bilkul bhai! Loopra Male ready hai, bataiye kya bajana hai?'
-        : 'Haan bilkul dost! Loopra Female ready hai, batao kya play karun?'
+        ? 'Bilkul bhai! Loopra  taiyaar hai, bataiye kya bajana hai?'
+        : 'Hey! Main Loopra hoon, bataiye aaj kya sunna chahenge?'
     );
   };
 
@@ -148,8 +148,8 @@ export default function LoopraAvatarWidget({
     if (!isMuted && typeof Audio !== 'undefined') {
       try {
         const audio = new Audio(`/api/voice-agent/tts?text=${encodeURIComponent(text)}&gender=${persona}`);
-        audio.play().catch(() => {});
-      } catch (_) {}
+        audio.play().catch(() => { });
+      } catch (_) { }
     }
 
     replyTimerRef.current = setTimeout(() => {
@@ -588,7 +588,7 @@ export default function LoopraAvatarWidget({
       {/* FLOATING WIDGET CONTAINER (Bottom-Right, Website-Wide Persistent)    */}
       {/* =================================================================== */}
       <div className="fixed bottom-6 right-6 z-[2147483640] select-none flex flex-col items-end pointer-events-none">
-        
+
         {/* 1. CONVERSATIONAL SPEECH BUBBLES */}
         {/* User Voice / Query Bubble */}
         {userSpeechBubble && (
@@ -648,30 +648,6 @@ export default function LoopraAvatarWidget({
               </span>
             </div>
 
-            {/* Quick Voice / Beat Action Chips */}
-            <div className="mb-3 space-y-1">
-              <p className="text-[10px] font-bold text-neutral-400">Quick Commands:</p>
-              <div className="flex flex-wrap gap-1">
-                {[
-                  { label: 'Saloon FM', query: 'Saloon FM kholo' },
-                  { label: 'Dance Beat', query: 'Dance' },
-                  { label: 'Indian Radio', query: 'Indian Live Radio kholo' },
-                  { label: 'Say Hello', query: 'Hello Loopra' }
-                ].map((chip, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => {
-                      setCommandText(chip.query);
-                    }}
-                    className="px-2 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-[10px] font-semibold text-neutral-300 border border-neutral-800 transition cursor-pointer"
-                  >
-                    {chip.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {/* Typed Command Input */}
             <form onSubmit={handleCommandSubmit} className="flex items-center gap-1.5">
               <input
@@ -694,7 +670,7 @@ export default function LoopraAvatarWidget({
 
         {/* 3. AVATAR MAIN STAGE & THREE.JS CANVAS */}
         <div className="relative flex flex-col items-center pointer-events-auto">
-          
+
           {/* Pulsing Audio Reactivity Glow Ring behind Avatar */}
           <div
             style={{
