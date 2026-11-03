@@ -10,7 +10,7 @@ const featureFlagSchema = new mongoose.Schema({
   },
   enabled: {
     type: Boolean,
-    default: true
+    default: false
   },
   globalRollout: {
     type: Boolean,
@@ -18,7 +18,7 @@ const featureFlagSchema = new mongoose.Schema({
   },
   adminAccess: {
     type: Boolean,
-    default: true
+    default: false
   },
   updatedBy: {
     type: String,

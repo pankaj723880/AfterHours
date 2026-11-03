@@ -205,7 +205,10 @@ export default function VoiceControlManagement({ token, backendUrl, showToast })
             <button
               type="button"
               disabled={saving}
-              onClick={() => handleUpdateConfig(!enabled, globalRollout, adminAccess)}
+              onClick={() => {
+                const next = !enabled;
+                handleUpdateConfig(next, next, next);
+              }}
               className={`relative inline-flex h-7 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500/40 ${
                 enabled ? 'bg-amber-500' : 'bg-neutral-800'
               }`}
@@ -234,7 +237,7 @@ export default function VoiceControlManagement({ token, backendUrl, showToast })
 
             <button
               type="button"
-              disabled={saving || !enabled}
+              disabled={saving}
               onClick={() => handleUpdateConfig(enabled, !globalRollout, adminAccess)}
               className={`relative inline-flex h-7 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500/40 disabled:opacity-40 disabled:cursor-not-allowed ${
                 globalRollout ? 'bg-emerald-500' : 'bg-neutral-800'
@@ -264,7 +267,7 @@ export default function VoiceControlManagement({ token, backendUrl, showToast })
 
             <button
               type="button"
-              disabled={saving || !enabled}
+              disabled={saving}
               onClick={() => handleUpdateConfig(enabled, globalRollout, !adminAccess)}
               className={`relative inline-flex h-7 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500/40 disabled:opacity-40 disabled:cursor-not-allowed ${
                 adminAccess ? 'bg-amber-500' : 'bg-neutral-800'

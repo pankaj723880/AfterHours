@@ -5,9 +5,9 @@ import User from '../models/User.js';
 // Default initial config for voice_control (Active for all users)
 const DEFAULT_VOICE_CONTROL_CONFIG = {
   featureKey: 'voice_control',
-  enabled: true,
-  globalRollout: true,
-  adminAccess: true,
+  enabled: false,
+  globalRollout: false,
+  adminAccess: false,
   updatedBy: 'system',
   updatedByUsername: 'System Default',
   updatedAt: new Date()
@@ -85,8 +85,8 @@ export const featureFlagService = {
     }
 
     if (!user) {
-      // If globally rolled out and enabled, allow guest users as well
-      return Boolean(config.globalRollout);
+      // Unauthenticated guests do not have voice control access
+      return false;
     }
 
     const isAdmin = user.role === 'admin';
@@ -147,7 +147,11 @@ export const featureFlagService = {
    * Update feature configuration by an authorized administrator
    */
   async updateVoiceControlConfig({ enabled, globalRollout, adminAccess }, adminUser, ip = 'unknown') {
-    if (typeof enabled !== 'boolean' || typeof globalRollout !== 'boolean' || typeof adminAccess !== 'boolean') {
+    if (
+      (enabled !== undefined && typeof enabled !== 'boolean') ||
+      (globalRollout !== undefined && typeof globalRollout !== 'boolean') ||
+      (adminAccess !== undefined && typeof adminAccess !== 'boolean')
+    ) {
       throw new Error('All feature toggles (enabled, globalRollout, adminAccess) must be boolean values');
     }
 
@@ -159,16 +163,20 @@ export const featureFlagService = {
       adminAccess: previousDoc.adminAccess
     };
 
+    const finalEnabled = typeof enabled === 'boolean' ? enabled : previousDoc.enabled;
+    const finalGlobalRollout = typeof globalRollout === 'boolean' ? globalRollout : (typeof enabled === 'boolean' ? enabled : previousDoc.globalRollout);
+    const finalAdminAccess = typeof adminAccess === 'boolean' ? adminAccess : (typeof enabled === 'boolean' ? enabled : previousDoc.adminAccess);
+
     const newState = {
-      enabled,
-      globalRollout,
-      adminAccess
+      enabled: finalEnabled,
+      globalRollout: finalGlobalRollout,
+      adminAccess: finalAdminAccess
     };
 
     const updatePayload = {
-      enabled,
-      globalRollout,
-      adminAccess,
+      enabled: finalEnabled,
+      globalRollout: finalGlobalRollout,
+      adminAccess: finalAdminAccess,
       updatedBy: adminUser._id ? adminUser._id.toString() : (adminUser.userId || 'admin'),
       updatedByUsername: adminUser.username || 'Administrator',
       updatedAt: new Date()

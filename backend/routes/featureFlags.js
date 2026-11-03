@@ -77,13 +77,9 @@ router.put(['/admin/voice-control', '/voice-control', '/'], authenticateToken, r
   try {
     const { enabled, globalRollout, adminAccess } = req.body;
 
-    if (
-      typeof enabled !== 'boolean' ||
-      typeof globalRollout !== 'boolean' ||
-      typeof adminAccess !== 'boolean'
-    ) {
+    if (typeof enabled !== 'boolean' && typeof globalRollout !== 'boolean' && typeof adminAccess !== 'boolean') {
       return res.status(400).json({
-        error: 'Invalid configuration: enabled, globalRollout, and adminAccess must be boolean values'
+        error: 'Invalid configuration: at least one toggle (enabled, globalRollout, adminAccess) must be provided'
       });
     }
 
