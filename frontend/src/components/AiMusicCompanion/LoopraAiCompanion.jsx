@@ -5,6 +5,7 @@ import { voiceControlService } from '../../services/voiceControlService';
 import { voiceBuddyService } from '../../services/voiceBuddyService';
 import { parseCommandToAction, INTENT_CATEGORIES } from '../../services/commandActionEngine';
 import { chatBuddyLearningClient } from '../../services/chatBuddyLearningService';
+import { chatBuddyClient } from '../../services/chatBuddyClient';
 import { Volume2, VolumeX, ChevronDown, ChevronUp } from 'lucide-react';
 
 const STORAGE_KEY_DESKTOP = 'loopra_ai_chat_dims_desktop';
@@ -291,6 +292,10 @@ export default function LoopraAiCompanion({
   const [isTyping, setIsTyping] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [speechLang, setSpeechLang] = useState('hi-IN'); // 'hi-IN' default with 'en-IN' toggle
+  const [voiceState, setVoiceState] = useState('idle'); // 'idle' | 'listening' | 'processing' | 'speaking'
+  const [heardText, setHeardText] = useState('');
+  const speechCooldownTimerRef = useRef(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
   const speechRecognitionRef = useRef(null);
@@ -548,84 +553,96 @@ export default function LoopraAiCompanion({
       }
     }
 
-    // 2. If not a direct local action, send to Gemini AI Music Intelligence
+    // 2. Send through Two-Layer ChatBuddy Intent Engine (/api/chat)
     try {
-      const historyContext = messages.slice(-6).map(m => ({
-        role: m.role,
-        text: m.text,
-        tracks: m.tracks || []
-      }));
-
-      let accumulatedStream = '';
-
-      const res = await aiMusicCompanionClient.sendChat(backendUrl, authToken, {
-        message: text,
-        currentTrack: getCurrentTrackContext(),
-        history: historyContext,
-        onChunk: (chunk) => {
-          accumulatedStream += chunk;
-          setStreamingText(accumulatedStream);
-        }
-      });
-
-      const replyText = res.reply || accumulatedStream || "Here's what I found for you:";
+      const chatRes = await chatBuddyClient.sendMessage(text, backendUrl, getCommandContext());
+      const replyText = chatRes.reply || 'Main sun rahi hoon, boliye!';
 
       const aiMsg = {
         id: 'ai_' + Date.now(),
         role: 'model',
         text: replyText,
-        tracks: res.tracks || [],
-        action: res.action || null,
+        tracks: chatRes.tracks || [],
+        action: chatRes.action || 'none',
         timestamp: Date.now()
       };
 
       setMessages(prev => [...prev, aiMsg]);
       setStreamingText('');
 
-      // Action resolution from Gemini AI response
-      if (res.action) {
-        const act = res.action;
-        if (act.type === 'PLAY_TRACK') {
-          const trackToPlay = act.track || res.tracks?.[0];
-          if (trackToPlay && onPlayTrack) {
-            onPlayTrack(trackToPlay);
-            if (showToast) showToast(`Now playing: ${trackToPlay.title}`);
+      // Execute structured actions ONLY if type is 'command'
+      if (chatRes.type === 'command') {
+        const action = chatRes.action;
+        const params = chatRes.params || {};
+
+        if (action === 'play_song') {
+          const q = params.query || text;
+          try {
+            const cleanUrl = (backendUrl || '').replace(/\/+$/, '');
+            const res = await fetch(`${cleanUrl}/api/youtube/search?q=${encodeURIComponent(q)}&limit=1`);
+            if (res.ok) {
+              const data = await res.json();
+              const item = data.items?.[0];
+              if (item) {
+                const track = {
+                  id: item.id?.videoId || item.id,
+                  videoId: item.id?.videoId || item.id,
+                  title: item.snippet?.title || q,
+                  artist: item.snippet?.channelTitle || 'Artist',
+                  thumbnail: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.medium?.url || ''
+                };
+                if (onPlayTrack) onPlayTrack(track);
+                if (showToast) showToast(`Now playing: ${track.title}`);
+              }
+            }
+          } catch (_) {}
+        } else if (action === 'open_page') {
+          const page = params.page || 'home';
+          if (page === 'stats') {
+            if (onOpenInsights) onOpenInsights();
+          } else if (page === 'activity' || page === 'history' || page === 'favorites' || page === 'playlists' || page === 'saloon_fm') {
+            if (onNavigate) onNavigate(page);
+          } else if (onNavigate) {
+            onNavigate(page);
           }
-        } else if (act.type === 'OPEN_STATS') {
-          if (onOpenInsights) onOpenInsights();
-        } else if (act.type === 'NAVIGATE' && act.target) {
-          if (onNavigate) onNavigate(act.target);
-        } else if (act.type === 'VOLUME' && act.value !== undefined) {
-          if (onSetVolume) onSetVolume(act.value);
-        } else if (act.type === 'NEXT') {
+        } else if (action === 'pause') {
+          if (onTogglePlayPause && isPlaying) onTogglePlayPause();
+        } else if (action === 'resume') {
+          if (onTogglePlayPause && !isPlaying) onTogglePlayPause();
+        } else if (action === 'next') {
           if (onNextTrack) onNextTrack();
-        } else if (act.type === 'PREV') {
+        } else if (action === 'previous') {
           if (onPrevTrack) onPrevTrack();
-        } else if (act.type === 'LIKE') {
-          if (onToggleLike) onToggleLike(currentSong);
-        } else if (act.type === 'UNLIKE') {
-          if (onToggleLike && isLiked) onToggleLike(currentSong);
-        } else if (act.type === 'AVATAR_ACTION') {
+        } else if (action === 'volume') {
+          if (params.level !== undefined && onSetVolume) {
+            onSetVolume(params.level);
+          } else if (params.relative !== undefined && onSetVolume) {
+            onSetVolume(Math.max(0, Math.min(100, 75 + params.relative)));
+          }
+        } else if (action === 'avatar_jump') {
           if (typeof window !== 'undefined' && typeof window.__loopraPlayGesture === 'function') {
-            window.__loopraPlayGesture(act.target || 'dance', 2500);
+            window.__loopraPlayGesture('jump', 1500);
+          }
+        } else if (action === 'avatar_dance') {
+          if (typeof window !== 'undefined' && typeof window.__loopraPlayGesture === 'function') {
+            window.__loopraPlayGesture('dance', 3500);
+          }
+        } else if (action === 'avatar_wave') {
+          if (typeof window !== 'undefined' && typeof window.__loopraPlayGesture === 'function') {
+            window.__loopraPlayGesture('wave', 1800);
+          }
+        } else if (action === 'avatar_walk') {
+          const target = params.target || 'search_input';
+          if (typeof window !== 'undefined' && typeof window.__loopraWalkAndTap === 'function') {
+            window.__loopraWalkAndTap(target, target);
           }
         }
-        chatBuddyLearningClient.recordExecution({
-          userPhrase: text,
-          intent: act.type,
-          actionType: act.type,
-          target: act.target,
-          query: act.query,
-          value: act.value,
-          backendUrl,
-          token: authToken
-        });
       }
 
-      // Speak response if voice output enabled and music not playing
+      // Out-loud voice output with Indian accent
       if (voiceBuddyService.isVoiceOutputEnabled && !voiceBuddyService.isMusicPlaying()) {
         const spokenPart = replyText.split('\n')[0] || replyText;
-        voiceBuddyService.speak(spokenPart);
+        speakWithNativeOrEdgeTts(spokenPart, speechLang);
       }
     } catch (err) {
       setMessages(prev => [
@@ -633,7 +650,7 @@ export default function LoopraAiCompanion({
         {
           id: 'err_' + Date.now(),
           role: 'model',
-          text: `⚠️ ${err.message || 'I had trouble connecting to the music network. Please try again!'}`,
+          text: `⚠️ ${err.message || 'I had trouble connecting. Please try again!'}`,
           tracks: [],
           timestamp: Date.now()
         }
@@ -656,8 +673,53 @@ export default function LoopraAiCompanion({
   };
 
   const stopSpeaking = () => {
+    try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (_) {}
     voiceBuddyService.stopSpeech();
     setIsSpeaking(false);
+    setVoiceState('idle');
+    speechCooldownTimerRef.current = Date.now();
+  };
+
+  const speakWithNativeOrEdgeTts = (text, lang = speechLang) => {
+    if (!text || typeof window === 'undefined') return;
+    if (!voiceBuddyService.isVoiceOutputEnabled) return;
+
+    setIsSpeaking(true);
+    setVoiceState('speaking');
+
+    // Try browser speechSynthesis first
+    if (window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = lang;
+        utterance.rate = 1.05;
+        utterance.pitch = 1.0;
+
+        const voices = window.speechSynthesis.getVoices() || [];
+        const targetLangPrefix = lang.slice(0, 2);
+        const match = voices.find(v => (v.lang === lang || v.lang.replace('_', '-') === lang) && (v.name.includes('Neural') || v.name.includes('Google') || v.name.includes('India'))) ||
+                      voices.find(v => v.lang.startsWith(targetLangPrefix));
+        if (match) utterance.voice = match;
+
+        utterance.onend = () => {
+          setIsSpeaking(false);
+          setVoiceState('idle');
+          speechCooldownTimerRef.current = Date.now();
+        };
+        utterance.onerror = () => {
+          setIsSpeaking(false);
+          setVoiceState('idle');
+          speechCooldownTimerRef.current = Date.now();
+        };
+
+        window.speechSynthesis.speak(utterance);
+        return;
+      } catch (_) {}
+    }
+
+    // High-quality Edge Neural TTS fallback
+    voiceBuddyService.speak(text);
   };
 
   // Revoke active speech recognition if access is turned off in real-time
@@ -674,7 +736,7 @@ export default function LoopraAiCompanion({
     return () => unsub();
   }, [user, isVoiceListening]);
 
-  // Speech-to-Text Voice Query
+  // Speech-to-Text Voice Query with Anti-Echo Cooldown & Live Feedback
   const toggleVoiceInput = () => {
     const access = voiceControlService.getAccessState();
     const canUseVoice = user ? voiceControlService.evaluateLocalAccess(access, user) : Boolean(access.allowed);
@@ -682,6 +744,12 @@ export default function LoopraAiCompanion({
       if (showToast) showToast('Voice input is restricted by administrator', 'warning');
       return;
     }
+
+    // Cooldown check: ignore if buddy just finished speaking within 800ms
+    if (Date.now() - speechCooldownTimerRef.current < 800) {
+      return;
+    }
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       if (showToast) showToast('Speech recognition not supported in this browser');
@@ -693,26 +761,29 @@ export default function LoopraAiCompanion({
         try { speechRecognitionRef.current.stop(); } catch (e) {}
       }
       setIsVoiceListening(false);
+      setVoiceState('idle');
       return;
     }
 
     try {
       const recognition = new SpeechRecognition();
-      recognition.lang = 'en-IN';
+      recognition.lang = speechLang;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
 
       let silenceTimer = null;
-      let accumulatedTranscript = '';
-      let speechStartedAt = 0;
+      let finalCommitted = '';
 
-      const finalizeInput = () => {
+      const finalizeInput = (textToCommit) => {
         clearTimeout(silenceTimer);
         silenceTimer = null;
-        const textToProcess = accumulatedTranscript.trim();
+        const textToProcess = (textToCommit || finalCommitted).trim();
         if (textToProcess) {
-          setInputText(textToProcess);
+          setHeardText(textToProcess);
+          setVoiceState('processing');
           handleSendMessage(textToProcess);
+        } else {
+          setVoiceState('idle');
         }
         try { recognition.stop(); } catch (_) {}
         setIsVoiceListening(false);
@@ -720,8 +791,9 @@ export default function LoopraAiCompanion({
 
       recognition.onstart = () => {
         setIsVoiceListening(true);
-        accumulatedTranscript = '';
-        speechStartedAt = 0;
+        setVoiceState('listening');
+        setHeardText('');
+        finalCommitted = '';
       };
 
       recognition.onresult = (event) => {
@@ -734,40 +806,31 @@ export default function LoopraAiCompanion({
           else interim += res[0].transcript;
         }
 
-        // Immediate user interruption of any currently playing TTS
+        // Echo protection: immediately interrupt TTS if user speaks
         if (interim.trim() || finalPart.trim()) {
-          if (voiceBuddyService.isSpeaking) {
-            voiceBuddyService.stopSpeech();
-          }
+          stopSpeaking();
+        }
+
+        const display = (finalPart || interim).trim();
+        if (display) {
+          setHeardText(display);
         }
 
         if (finalPart) {
-          accumulatedTranscript = (accumulatedTranscript + ' ' + finalPart).trim();
-          setInputText(accumulatedTranscript);
-        } else if (interim) {
-          setInputText((accumulatedTranscript + ' ' + interim).trim());
+          finalCommitted = (finalCommitted + ' ' + finalPart).trim();
         }
 
-        if (!speechStartedAt) speechStartedAt = Date.now();
-
-        // Voice Activity Detection (VAD): 1200ms silence threshold, max 2000ms
+        // Voice Activity Detection: finalize after 1200ms silence
         clearTimeout(silenceTimer);
-        const elapsed = Date.now() - speechStartedAt;
-        if (elapsed >= 2000 && accumulatedTranscript) {
-          finalizeInput();
-        } else {
-          silenceTimer = setTimeout(() => {
-            if (accumulatedTranscript || interim) {
-              if (interim && !accumulatedTranscript) accumulatedTranscript = interim;
-              finalizeInput();
-            }
-          }, 1200);
-        }
+        silenceTimer = setTimeout(() => {
+          finalizeInput(finalCommitted || interim);
+        }, 1200);
       };
 
       recognition.onerror = (e) => {
         clearTimeout(silenceTimer);
         setIsVoiceListening(false);
+        setVoiceState('idle');
         if (e.error === 'not-allowed' && showToast) {
           showToast('Microphone access was denied for voice input');
         }
@@ -775,10 +838,11 @@ export default function LoopraAiCompanion({
 
       recognition.onend = () => {
         clearTimeout(silenceTimer);
-        if (accumulatedTranscript) {
-          finalizeInput();
+        if (finalCommitted) {
+          finalizeInput(finalCommitted);
         } else {
           setIsVoiceListening(false);
+          setVoiceState('idle');
         }
       };
 
@@ -786,6 +850,7 @@ export default function LoopraAiCompanion({
       recognition.start();
     } catch (e) {
       setIsVoiceListening(false);
+      setVoiceState('idle');
     }
   };
 
@@ -1293,6 +1358,30 @@ export default function LoopraAiCompanion({
               </button>
             </div>
 
+            {/* Live Voice Feedback Bar (I heard: ...) */}
+            {(voiceState !== 'idle' || heardText) && (
+              <div className="px-3.5 py-1.5 bg-neutral-900/95 border-t border-amber-500/30 flex items-center justify-between text-xs text-amber-300 animate-in fade-in duration-100">
+                <div className="flex items-center gap-2 truncate">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${
+                    voiceState === 'listening' ? 'bg-red-500 animate-ping' :
+                    voiceState === 'processing' ? 'bg-amber-400 animate-pulse' :
+                    'bg-emerald-400'
+                  }`} />
+                  <span className="font-bold text-neutral-400 text-[11px]">
+                    {voiceState === 'listening' ? 'Listening...' : voiceState === 'processing' ? 'Processing...' : 'Speaking:'}
+                  </span>
+                  {heardText && <span className="text-white italic text-[11px] truncate">I heard: "{heardText}"</span>}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setVoiceState('idle'); setHeardText(''); }}
+                  className="text-[10px] text-neutral-400 hover:text-white ml-2 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
             {/* Input Bar */}
             <form
               onSubmit={(e) => {
@@ -1306,12 +1395,22 @@ export default function LoopraAiCompanion({
                 onClick={toggleVoiceInput}
                 className={`p-2 rounded-xl transition cursor-pointer ${
                   isVoiceListening
-                    ? 'bg-red-500 text-white animate-pulse'
+                    ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/30'
                     : 'text-neutral-400 hover:text-amber-400 hover:bg-neutral-800'
                 }`}
                 title={isVoiceListening ? 'Listening... click to stop' : 'Voice input (Speech to text)'}
               >
                 🎤
+              </button>
+
+              {/* Language Toggle: hi-IN <-> en-IN */}
+              <button
+                type="button"
+                onClick={() => setSpeechLang(prev => prev === 'hi-IN' ? 'en-IN' : 'hi-IN')}
+                className="px-2 py-1 rounded-lg text-[9.5px] font-black uppercase tracking-wider bg-neutral-800 hover:bg-neutral-700 text-amber-400 border border-neutral-700 transition cursor-pointer shrink-0"
+                title={`Speech Language: ${speechLang === 'hi-IN' ? 'Hindi (hi-IN)' : 'Indian English (en-IN)'}. Click to switch.`}
+              >
+                {speechLang === 'hi-IN' ? '🇮🇳 HI' : '🌐 EN'}
               </button>
 
               <input

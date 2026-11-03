@@ -101,7 +101,7 @@ export function parseCommandToAction(rawInput = '', context = {}) {
   }
 
   // 5. Playback: Resume / Continue
-  if (/\b(resume|continue|unpause|gaana wapas chalu karo|wapas play karo|chalu karo|resume music)\b/i.test(cleanLower)) {
+  if (/\b(resume|continue|unpause|gaana wapas chalu karo|wapas play karo|chalu karo|shuru karo|wapas shuru karo|phir se chalao|resume music)\b/i.test(cleanLower)) {
     return {
       intent: INTENT_CATEGORIES.RESUME_PLAYBACK,
       action: 'resume',

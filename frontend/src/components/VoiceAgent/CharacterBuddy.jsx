@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { voiceBuddyService, CHARACTERS } from '../../services/voiceBuddyService';
-import TwoDCharacter from './TwoDCharacter';
+import ThreeDCharacter from './ThreeDCharacter';
 
 /**
  * CharacterBuddy
@@ -373,12 +373,12 @@ export default function CharacterBuddy({
             </div>
           )}
 
-          {/* Prominent Articulated 2D Skeletal Puppet (~240px desktop, ~170px mobile) */}
+          {/* Prominent Skinned & Rigged 3D Humanoid (~240px desktop, ~170px mobile) */}
           <div
             style={{ width: `${characterWidth}px`, height: `${characterHeight}px` }}
-            className="relative flex items-center justify-center"
+            className="relative flex items-center justify-center pointer-events-none"
           >
-            <TwoDCharacter
+            <ThreeDCharacter
               gender={character.gender}
               animationState={animationState}
               isSpeaking={isSpeaking}

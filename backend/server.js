@@ -31,6 +31,7 @@ import { listeningEventService } from './services/listeningEventService.js';
 import { analyticsService } from './services/analyticsService.js';
 import analyticsRoutes from './routes/analytics.js';
 import aiMusicRoutes from './routes/aiMusic.js';
+import chatRouter from './routes/chat.js';
 import { isSingleSong, filterSingleSongs } from './services/songFilter.js';
 import { liveUsersService } from './services/liveUsersService.js';
 import learningRoutes from './routes/learningIntelligence.js';
@@ -1059,6 +1060,7 @@ app.get('/api/listening-stats', authenticateToken, async (req, res) => {
 
 // Mount Loopra AI Music Companion & External Song Recognition
 app.use(['/api/ai-music', '/ai-music'], aiMusicRoutes);
+app.use(['/api/chat', '/chat'], chatRouter);
 app.use(['/api/chatbuddy/learning', '/chatbuddy/learning'], chatBuddyLearningRouter);
 
 // Mount AI Learning Intelligence Engine (Passive Observation & Admin Intelligence)
