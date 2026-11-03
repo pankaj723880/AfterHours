@@ -230,6 +230,9 @@ export default function CharacterBuddy({
   // - Long press (420ms): Open Unified AI Chat Assistant
   const handlePointerDown = (e) => {
     if (e.button !== undefined && e.button !== 0) return; // Only primary button
+    try {
+      voiceBuddyService.unlockAudio();
+    } catch (_) {}
     didLongPressRef.current = false;
     isPointerDownRef.current = true;
 
@@ -415,137 +418,38 @@ export default function CharacterBuddy({
         }`}
       >
         {/* ======================================================= */}
-        {/* REALTIME COMMAND & LIVE TRANSCRIPT DISPLAY BUBBLE       */}
-        {/* Positioned strictly ABOVE avatar head - NEVER on face! */}
+        {/* REALTIME COMMAND & LIVE TRANSCRIPT TEXT-ONLY DISPLAY    */}
+        {/* Positioned cleanly on the LEFT side of the character.   */}
+        {/* Pure text only: no background, borders, or cards.       */}
         {/* ======================================================= */}
-        {(isBubbleVisible || isListening || isSpeaking || isSessionActive) && (
+        {(liveTranscript || isListening || isSpeaking) && (
           <div
-            className="absolute bottom-[104%] mb-2 z-[999999] w-64 md:w-72 left-1/2 -translate-x-1/2 flex flex-col gap-1.5 p-2.5 rounded-2xl bg-neutral-950/95 border border-amber-500/30 backdrop-blur-xl shadow-2xl shadow-amber-500/10 pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-200"
+            className="absolute right-full mr-3 md:mr-4 bottom-24 md:bottom-32 z-[999999] w-64 md:w-80 pointer-events-none select-none text-right flex flex-col items-end gap-1 animate-in fade-in duration-150"
           >
-            {/* Top Bar: Mic State Indicator + Language Toggle + History Toggle */}
-            <div className="flex items-center justify-between gap-1 text-[10px] pb-1.5 border-b border-white/10">
-              <div className="flex items-center gap-1.5 font-bold">
-                <span
-                  className={`w-2 h-2 rounded-full shrink-0 ${
-                    micState === 'Listening'
-                      ? 'bg-red-500 animate-ping'
-                      : micState === 'Processing'
-                      ? 'bg-amber-400 animate-pulse'
-                      : micState === 'Speaking'
-                      ? 'bg-emerald-400'
-                      : 'bg-neutral-500'
-                  }`}
-                />
-                <span
-                  className={
-                    micState === 'Listening'
-                      ? 'text-red-400 uppercase tracking-wider'
-                      : micState === 'Processing'
-                      ? 'text-amber-400 uppercase tracking-wider'
-                      : micState === 'Speaking'
-                      ? 'text-emerald-400 uppercase tracking-wider'
-                      : 'text-neutral-400'
-                  }
-                >
-                  {micState}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-1">
-                {/* Language Switcher Toggle */}
-                <button
-                  type="button"
-                  onClick={handleToggleLang}
-                  className="px-2 py-0.5 rounded-md bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 hover:border-amber-400/50 text-[9.5px] font-black uppercase text-amber-300 transition cursor-pointer flex items-center gap-1"
-                  title="Toggle Language: Hindi (hi-IN) / English (en-IN)"
-                >
-                  <Globe className="w-2.5 h-2.5 text-amber-400" />
-                  <span>{currentLang === 'hi-IN' ? 'HI' : 'EN'}</span>
-                </button>
-
-                {/* Last 5 Commands History Dropdown Button */}
-                {commandHistory.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setIsHistoryOpen(!isHistoryOpen)}
-                    className={`px-1.5 py-0.5 rounded-md text-[9.5px] font-bold transition cursor-pointer flex items-center gap-0.5 ${
-                      isHistoryOpen
-                        ? 'bg-amber-500 text-black'
-                        : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-800'
-                    }`}
-                    title="View last 5 voice/text commands"
-                  >
-                    <History className="w-2.5 h-2.5" />
-                    <span>{commandHistory.length}</span>
-                    {isHistoryOpen ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
-                  </button>
-                )}
-
-                {/* Dismiss Button */}
-                <button
-                  type="button"
-                  onClick={() => setIsBubbleVisible(false)}
-                  className="p-0.5 text-neutral-400 hover:text-white rounded hover:bg-neutral-800 text-[10px] cursor-pointer ml-1"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-
-            {/* Live Transcript / Final Locked Command Display */}
-            <div className="flex flex-col gap-1 py-0.5">
-              {isInterim ? (
-                <div className="flex items-start gap-1.5 text-xs text-amber-300 italic">
-                  <Mic className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5 animate-pulse" />
-                  <p className="break-words font-medium">
-                    I heard: <span className="text-white font-semibold">"{liveTranscript}"</span>
+            {isInterim ? (
+              <p className="text-xs md:text-sm font-semibold text-amber-300 italic drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)] leading-tight break-words">
+                "{liveTranscript}"
+              </p>
+            ) : liveTranscript ? (
+              <div className="flex flex-col items-end gap-1">
+                <p className="text-sm md:text-base font-bold text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)] leading-snug break-words">
+                  "{liveTranscript}"
+                </p>
+                {lastActionTag && (
+                  <p className="text-xs md:text-sm font-mono font-bold text-emerald-400 drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">
+                    → {lastActionTag}
                   </p>
-                </div>
-              ) : liveTranscript ? (
-                <div className="flex flex-col gap-1">
-                  <div className="text-xs text-neutral-200 font-semibold break-words">
-                    Heard: <span className="text-white">"{liveTranscript}"</span>
-                  </div>
-                  {/* Detected Action Tag below verbatim text */}
-                  {lastActionTag && (
-                    <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-lg w-fit">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                      <span>→ Action: {lastActionTag}</span>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-[11px] text-neutral-400 flex items-center gap-1.5">
-                  <Sparkles className="w-3 h-3 text-amber-400" />
-                  <span>Click avatar or say "Loopra" to command</span>
-                </div>
-              )}
-            </div>
-
-            {/* Expandable Last 5 Commands History Panel */}
-            {isHistoryOpen && commandHistory.length > 0 && (
-              <div className="mt-1 pt-1.5 border-t border-white/10 flex flex-col gap-1 max-h-36 overflow-y-auto">
-                <span className="text-[9px] uppercase font-bold text-neutral-400 tracking-wider">
-                  Recent Commands (Last 5):
-                </span>
-                {commandHistory.map((cmd) => (
-                  <div
-                    key={cmd.id}
-                    className="p-1.5 rounded-lg bg-neutral-900/90 border border-neutral-800 text-[10.5px] flex flex-col gap-0.5"
-                  >
-                    <div className="flex items-center justify-between text-neutral-300">
-                      <span className="truncate font-medium">"{cmd.text}"</span>
-                      <span className="text-[8.5px] text-neutral-500 shrink-0 ml-1">{cmd.time}</span>
-                    </div>
-                    {cmd.action && (
-                      <span className="text-[9px] font-mono text-emerald-400 font-bold">
-                        → Action: {cmd.action}
-                      </span>
-                    )}
-                  </div>
-                ))}
+                )}
               </div>
-            )}
+            ) : isListening ? (
+              <p className="text-xs font-semibold text-amber-400 drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)] animate-pulse">
+                Listening...
+              </p>
+            ) : isSpeaking ? (
+              <p className="text-xs font-semibold text-emerald-400 drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]">
+                Speaking...
+              </p>
+            ) : null}
           </div>
         )}
 

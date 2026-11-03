@@ -35,6 +35,16 @@ class VoiceBuddyService {
     this.isSpeaking = false;
     this.subscribers = new Set();
     this.currentAudio = null;
+    this._currentUtterance = null;
+    this.hasLoadedVoices = false;
+
+    if (typeof window !== 'undefined' && this.speechSynthesis) {
+      if (typeof this.speechSynthesis.onvoiceschanged !== 'undefined') {
+        this.speechSynthesis.onvoiceschanged = () => {
+          this.hasLoadedVoices = true;
+        };
+      }
+    }
 
     // Explicit binding to ensure methods are resilient across HMR and detached contexts
     this.setPlaybackActive = this.setPlaybackActive.bind(this);
@@ -43,6 +53,7 @@ class VoiceBuddyService {
     this.toggleVoiceOutput = this.toggleVoiceOutput.bind(this);
     this.speak = this.speak.bind(this);
     this.stopSpeech = this.stopSpeech.bind(this);
+    this.unlockAudio = this.unlockAudio.bind(this);
     this.getActiveCharacter = this.getActiveCharacter.bind(this);
     this.subscribe = this.subscribe.bind(this);
     this.notifySubscribers = this.notifySubscribers.bind(this);
@@ -74,14 +85,22 @@ class VoiceBuddyService {
     return this.isVoiceOutputEnabled;
   }
 
+  unlockAudio() {
+    if (typeof window === 'undefined') return;
+    try {
+      if (this.speechSynthesis && this.speechSynthesis.paused) {
+        this.speechSynthesis.resume();
+      }
+    } catch (_) {}
+  }
+
   setPlaybackActive(isPlaying) {
     this.isPlaybackActive = !!isPlaying;
     if (typeof window !== 'undefined') {
       window.__loopraIsMusicPlaying = !!isPlaying;
     }
-    if (this.isPlaybackActive && this.isSpeaking) {
-      this.stopSpeech();
-    }
+    // Note: Do not abort ongoing TTS confirmation when song playback starts;
+    // let Loopra smoothly finish her short voice reply to the user.
     this.notifySubscribers('playback_change', { isPlaying: this.isPlaybackActive });
   }
 
@@ -263,9 +282,8 @@ class VoiceBuddyService {
   }
 
   /**
-   * Speaks out the reply using studio-quality Neural Indian Hindi TTS from backend.
-   * Speed tuned to natural fast conversational pace (1.12x).
-   * Cancels stale audio immediately so speech is instantaneous with zero delay.
+   * Speaks out the reply using studio-quality Neural Indian Hindi TTS from backend,
+   * with rock-solid, zero-delay local Web Speech API fallback.
    */
   async speak(text, contextAction = '') {
     if (!text) return;
@@ -279,10 +297,25 @@ class VoiceBuddyService {
 
     if (typeof window === 'undefined') return;
 
-    // Immediately cancel any existing or stale speech to prevent lag/overlap
+    // Immediately cancel any existing speech to prevent overlapping voices
     this.stopSpeech();
+    this.unlockAudio();
+
     const char = this.getActiveCharacter();
     const emotion = this.detectEmotion(text, contextAction);
+
+    let hasFallenBack = false;
+    let playTimeout = null;
+
+    const triggerFallback = () => {
+      if (hasFallenBack) return;
+      hasFallenBack = true;
+      if (playTimeout) {
+        clearTimeout(playTimeout);
+        playTimeout = null;
+      }
+      this.fallbackBrowserSpeak(text, char);
+    };
 
     try {
       const ttsUrl = `/api/voice-agent/tts?text=${encodeURIComponent(text)}&gender=${char.gender}&voice=${encodeURIComponent(char.voiceId || 'en-IN-NeerjaExpressiveNeural')}&emotion=${emotion}`;
@@ -290,24 +323,33 @@ class VoiceBuddyService {
       this.currentAudio = audio;
       audio.playbackRate = char.rate || 1.12;
 
+      // Fail-fast timer: If server audio doesn't start in 1000ms (e.g. 404 or network lag), switch to local speech
+      playTimeout = setTimeout(() => {
+        if (!this.isSpeaking && !hasFallenBack) {
+          triggerFallback();
+        }
+      }, 1000);
+
       audio.onplay = () => {
+        if (playTimeout) clearTimeout(playTimeout);
         this.isSpeaking = true;
         this.notifySubscribers('speech_start', { text, audio });
       };
 
       audio.onended = () => {
+        if (playTimeout) clearTimeout(playTimeout);
         this.isSpeaking = false;
         this.currentAudio = null;
         this.notifySubscribers('speech_end', { text });
       };
 
       audio.onerror = () => {
-        this.fallbackBrowserSpeak(text, char);
+        triggerFallback();
       };
 
       await audio.play();
     } catch (_) {
-      this.fallbackBrowserSpeak(text, char);
+      triggerFallback();
     }
   }
 
@@ -319,17 +361,28 @@ class VoiceBuddyService {
     }
 
     try {
+      // Ensure Chrome speech queue is not stalled
+      if (this.speechSynthesis.paused) {
+        this.speechSynthesis.resume();
+      }
       this.speechSynthesis.cancel();
+
       const utterance = new SpeechSynthesisUtterance(text);
+      // Retain utterance reference on this instance to avoid Chrome GC bug
+      this._currentUtterance = utterance;
+
       utterance.lang = 'hi-IN';
-      utterance.pitch = char.pitch;
+      utterance.pitch = char.pitch || 1.05;
       utterance.rate = char.rate || 1.12;
 
       const voices = this.speechSynthesis.getVoices() || [];
       const hindiVoice = voices.find(v => 
         (v.lang === 'hi-IN' || v.lang === 'hi_IN') && 
-        (/female|kalpana|neerja|google/i.test(v.name))
-      ) || voices.find(v => v.lang === 'hi-IN' || v.lang === 'hi_IN') || voices[0];
+        (/female|kalpana|neerja|swara|google|priya/i.test(v.name))
+      ) || voices.find(v => v.lang === 'hi-IN' || v.lang === 'hi_IN')
+        || voices.find(v => (v.lang === 'en-IN' || v.lang === 'en_IN') && /female|neerja|google/i.test(v.name))
+        || voices.find(v => v.lang.startsWith('en'))
+        || voices[0];
 
       if (hindiVoice) utterance.voice = hindiVoice;
 
@@ -339,16 +392,28 @@ class VoiceBuddyService {
       };
       utterance.onend = () => {
         this.isSpeaking = false;
+        this._currentUtterance = null;
         this.notifySubscribers('speech_end', { text });
       };
-      utterance.onerror = () => {
+      utterance.onerror = (e) => {
+        console.warn('[VoiceBuddy] Speech utterance ended with:', e?.error);
         this.isSpeaking = false;
+        this._currentUtterance = null;
         this.notifySubscribers('speech_end', { text });
       };
 
+      // Ensure speech synthesis is awake and speaking
+      if (this.speechSynthesis.paused) {
+        this.speechSynthesis.resume();
+      }
       this.speechSynthesis.speak(utterance);
+      if (this.speechSynthesis.paused) {
+        this.speechSynthesis.resume();
+      }
     } catch (e) {
+      console.warn('[VoiceBuddy] Speech fallback exception:', e);
       this.isSpeaking = false;
+      this._currentUtterance = null;
       this.notifySubscribers('speech_end', { text });
     }
   }
@@ -366,6 +431,7 @@ class VoiceBuddyService {
         this.speechSynthesis.cancel();
       } catch (_) {}
     }
+    this._currentUtterance = null;
     this.isSpeaking = false;
     this.notifySubscribers('speech_end');
   }

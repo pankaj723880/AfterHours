@@ -188,10 +188,12 @@ class VoiceSessionController {
 
     const attach = () => {
       if (window.voiceBuddyService && typeof window.voiceBuddyService.subscribe === 'function') {
-        window.voiceBuddyService.subscribe((event) => {
-          if (event === 'speech_start') {
+        window.voiceBuddyService.subscribe((payload) => {
+          const evt = typeof payload === 'string' ? payload : payload?.event;
+          if (evt === 'speech_start') {
             console.log('[VoiceSession:WebSpeech] Avatar TTS started -> pausing mic to prevent echo');
             this.isSpeakingTts = true;
+            this.ttsStartTime = Date.now();
             clearTimeout(this.ttsResumeTimer);
             if (this.recognition && this.isRecognizing) {
               try {
@@ -201,7 +203,7 @@ class VoiceSessionController {
             if (this.isSessionActive) {
               this.setState(SESSION_STATES.SPEAKING, 'Loopra speaking...');
             }
-          } else if (event === 'speech_end') {
+          } else if (evt === 'speech_end') {
             console.log('[VoiceSession:WebSpeech] Avatar TTS ended -> 800ms cooldown before resuming mic');
             clearTimeout(this.ttsResumeTimer);
             this.ttsResumeTimer = setTimeout(() => {
@@ -550,10 +552,13 @@ class VoiceSessionController {
         isFinal: !!finalTranscript
       });
 
-      // Immediate user interruption: If user speaks while TTS is playing, silence TTS immediately
-      if (interim.trim() || finalTranscript.trim()) {
-        if (typeof window !== 'undefined' && window.voiceBuddyService?.isSpeaking) {
-          window.voiceBuddyService.stopSpeech();
+      // Immediate user interruption: If user explicitly speaks after TTS has already begun speaking (>800ms), silence TTS
+      if (this.isSpeakingTts && Date.now() - (this.ttsStartTime || 0) > 800) {
+        if (interim.trim() || finalTranscript.trim()) {
+          if (typeof window !== 'undefined' && window.voiceBuddyService?.isSpeaking) {
+            console.log('[VoiceSession:WebSpeech] User interrupted TTS -> stopping speech');
+            window.voiceBuddyService.stopSpeech();
+          }
         }
       }
 
