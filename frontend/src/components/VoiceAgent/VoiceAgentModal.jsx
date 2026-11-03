@@ -826,30 +826,34 @@ export default function VoiceAgentModal({
 
   // =========================================================================
   // LOOPRA AVATAR DELAYED APPEARANCE & PERSISTENT MOUNT MANAGEMENT
-  // 1. Never mount or render avatar during splash screen.
-  // 2. Start 2-second delay only after splash screen completely finishes & app is initialized.
-  // 3. Keep 3D model mounted across visibility transitions to prevent recreation.
+  // 1. Never mount or render avatar during splash screen or when Voice Control is OFF.
+  // 2. Start 2-second delay only after splash screen completely finishes, app is initialized, and Voice Control is ON.
+  // 3. Smooth fade-out and unmount when Voice Control is switched OFF by admin.
   // =========================================================================
   const [hasMountedAvatar, setHasMountedAvatar] = useState(false);
   const [initialDelayDone, setInitialDelayDone] = useState(false);
   const initialDelayTimerRef = useRef(null);
+  const unmountTimerRef = useRef(null);
   const prevIsAvatarVisibleRef = useRef(isAvatarVisible);
 
-  // Mount avatar only after splash screen has completely closed and app initialized
+  // Mount avatar only after splash screen has completely closed, app initialized, AND hasAccess is granted!
   useEffect(() => {
-    if (!showSplashScreen && isAppInitialized && !hasMountedAvatar) {
+    if (!showSplashScreen && isAppInitialized && !hasMountedAvatar && hasAccess) {
       setHasMountedAvatar(true);
     }
-  }, [showSplashScreen, isAppInitialized, hasMountedAvatar]);
+  }, [showSplashScreen, isAppInitialized, hasAccess, hasMountedAvatar]);
 
-  // Handle the 2-second delay AFTER homepage loading completes
+  // Handle the 2-second delay AFTER homepage loading completes AND hasAccess is granted
   useEffect(() => {
-    // Never start the timer while splash screen is active or before app initialization
+    // Never start the timer while splash screen is active or before app initialization or without access
     if (showSplashScreen || !isAppInitialized || initialDelayDone) {
       return;
     }
+    if (!hasAccess) {
+      return;
+    }
 
-    // Start 2-second delay AFTER homepage loading is complete
+    // Start 2-second delay AFTER homepage loading is complete and voice control allowed
     initialDelayTimerRef.current = setTimeout(() => {
       setInitialDelayDone(true);
     }, 2000);
@@ -860,13 +864,27 @@ export default function VoiceAgentModal({
         initialDelayTimerRef.current = null;
       }
     };
-  }, [showSplashScreen, isAppInitialized, initialDelayDone]);
+  }, [showSplashScreen, isAppInitialized, hasAccess, initialDelayDone]);
+
+  // Immediate smooth fade-out and unmount when access is revoked by admin
+  useEffect(() => {
+    if (!hasAccess) {
+      setInitialDelayDone(false);
+      // Allow 400ms for smooth fade-out animation before fully removing from DOM
+      unmountTimerRef.current = setTimeout(() => {
+        setHasMountedAvatar(false);
+      }, 400);
+      return () => {
+        if (unmountTimerRef.current) clearTimeout(unmountTimerRef.current);
+      };
+    }
+  }, [hasAccess]);
 
   // Respect manual user toggles:
   // If user explicitly turns on avatar before 2s delay completes, reveal immediately.
   // If user explicitly turns off avatar, cancel delay timer.
   useEffect(() => {
-    if (!prevIsAvatarVisibleRef.current && isAvatarVisible && !initialDelayDone && !showSplashScreen && isAppInitialized) {
+    if (!prevIsAvatarVisibleRef.current && isAvatarVisible && !initialDelayDone && !showSplashScreen && isAppInitialized && hasAccess) {
       if (initialDelayTimerRef.current) {
         clearTimeout(initialDelayTimerRef.current);
         initialDelayTimerRef.current = null;
@@ -878,7 +896,7 @@ export default function VoiceAgentModal({
       initialDelayTimerRef.current = null;
     }
     prevIsAvatarVisibleRef.current = isAvatarVisible;
-  }, [isAvatarVisible, initialDelayDone, showSplashScreen, isAppInitialized]);
+  }, [isAvatarVisible, initialDelayDone, showSplashScreen, isAppInitialized, hasAccess]);
 
   // Cleanup timers on component unmount
   useEffect(() => {
@@ -886,6 +904,10 @@ export default function VoiceAgentModal({
       if (initialDelayTimerRef.current) {
         clearTimeout(initialDelayTimerRef.current);
         initialDelayTimerRef.current = null;
+      }
+      if (unmountTimerRef.current) {
+        clearTimeout(unmountTimerRef.current);
+        unmountTimerRef.current = null;
       }
     };
   }, []);
@@ -896,7 +918,8 @@ export default function VoiceAgentModal({
     !showSplashScreen &&
     isAppInitialized &&
     initialDelayDone &&
-    isAvatarVisible
+    isAvatarVisible &&
+    hasAccess
   );
 
   // Responsive button bottom offset

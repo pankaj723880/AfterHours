@@ -352,7 +352,7 @@ export default function CharacterBuddy({
 
   const setAnimationState = useCallback((state) => {
     smoothReturnToFront();
-    if (state === 'idle' || state === 'standing' || state === 'sitting' || state === 'walking') {
+    if (state === 'idle' || state === 'standing' || state === 'sitting' || state === 'walking' || state === 'idle_walking') {
       setAutonomousSubState(state);
       setTransientGesture(null);
     } else {
@@ -360,56 +360,359 @@ export default function CharacterBuddy({
     }
   }, [smoothReturnToFront]);
 
-  // Autonomous Inactivity Engine (Triggers after 5s of inactivity when no command & no music)
-  const autonomousTimerRef = useRef(null);
-  const lastAutonomousChoiceRef = useRef('idle');
+  // =========================================================================
+  // AUTONOMOUS FULL-SCREEN IDLE WALKING & NATURAL IDLE ENGINE
+  // 1. Full visible screen coverage with randomized destination quadrants.
+  // 2. Smooth acceleration, deceleration, curved Bézier trajectory, and directional facing.
+  // 3. Strict Interaction Priority: Immediate stop on voice/text/drag/resize/task.
+  // 4. Tab visibility pause & mobile safe area boundaries.
+  // =========================================================================
+  const walkAnimFrameRef = useRef(null);
+  const idleWalkTimerRef = useRef(null);
+  const idlePauseTimerRef = useRef(null);
+  const isIdleWalkingRef = useRef(false);
+  const lastVisitedCellsRef = useRef([]);
 
-  const runAutonomousBehavior = useCallback(() => {
-    if (isListening || isSpeaking || isPlaying || isThinking || isExecuting || dragRef.current.isDragging || isRotatingRef.current) {
-      return;
+  // Calculate strict usable viewport boundaries respecting headers, bottom navigation, and mobile safe areas
+  const getUsableScreenBounds = useCallback(() => {
+    const isMobile = isMobileScreen || (typeof window !== 'undefined' && window.innerWidth < 768);
+    const winW = typeof window !== 'undefined' ? window.innerWidth : 1200;
+    const winH = typeof window !== 'undefined' ? window.innerHeight : 800;
+
+    const minX = isMobile ? 12 : 88;
+    const maxX = Math.max(minX + 40, winW - characterWidth - (isMobile ? 16 : 32));
+    const minY = isMobile ? 64 : 70;
+    const bottomNavHeight = isMobile
+      ? (isBottomPlayerVisible ? 140 : 72)
+      : (isBottomPlayerVisible ? 98 : 24);
+    const maxY = Math.max(minY + 40, winH - characterHeight - bottomNavHeight);
+
+    return { minX, maxX, minY, maxY, isMobile };
+  }, [isMobileScreen, characterWidth, characterHeight, isBottomPlayerVisible]);
+
+  // Immediately cancel any active autonomous walking and clear all pending timers
+  const stopAutonomousWalking = useCallback((resetSubState = true) => {
+    isIdleWalkingRef.current = false;
+    if (walkAnimFrameRef.current) {
+      cancelAnimationFrame(walkAnimFrameRef.current);
+      walkAnimFrameRef.current = null;
     }
-    smoothReturnToFront();
-
-    // Autonomous Natural Gestures (wave/hello, dance, jump, thinking, standing, idle)
-    const behaviorPool = ['wave', 'dance', 'jump', 'standing', 'idle', 'thinking'];
-    let nextChoice = behaviorPool[Math.floor(Math.random() * behaviorPool.length)];
-    if (nextChoice === lastAutonomousChoiceRef.current) {
-      nextChoice = nextChoice === 'wave' ? 'dance' : nextChoice === 'dance' ? 'jump' : nextChoice === 'jump' ? 'standing' : 'idle';
+    if (idleWalkTimerRef.current) {
+      clearTimeout(idleWalkTimerRef.current);
+      idleWalkTimerRef.current = null;
     }
-    lastAutonomousChoiceRef.current = nextChoice;
-    setAutonomousSubState(nextChoice);
+    if (idlePauseTimerRef.current) {
+      clearTimeout(idlePauseTimerRef.current);
+      idlePauseTimerRef.current = null;
+    }
+    if (resetSubState) {
+      setAutonomousSubState((prev) => (prev === 'idle_walking' ? 'idle' : prev));
+      smoothReturnToFront();
+    }
+  }, [smoothReturnToFront]);
 
-    // Each gesture strictly lasts 5-10 seconds as specified
-    const stateDuration = 5000 + Math.random() * 4500;
+  // Select next destination across the available screen area avoiding repetitive patterns
+  const selectNextIdleDestination = useCallback((curX, curY) => {
+    const bounds = getUsableScreenBounds();
+    const { minX, maxX, minY, maxY, isMobile } = bounds;
 
-    autonomousTimerRef.current = setTimeout(() => {
-      if (!isListening && !isSpeaking && !isPlaying && !isThinking && !isExecuting && !dragRef.current.isDragging && !isRotatingRef.current) {
-        setAutonomousSubState('idle');
-        autonomousTimerRef.current = setTimeout(runAutonomousBehavior, 3000 + Math.random() * 2000);
+    const spanX = Math.max(1, maxX - minX);
+    const spanY = Math.max(1, maxY - minY);
+
+    // 3 columns x 2 rows (6 screen sectors)
+    const curCol = Math.min(2, Math.max(0, Math.floor(((curX - minX) / spanX) * 3)));
+    const curRow = Math.min(1, Math.max(0, Math.floor(((curY - minY) / spanY) * 2)));
+    const curSector = curRow * 3 + curCol;
+
+    const recent = lastVisitedCellsRef.current || [];
+    const candidateSectors = [];
+    for (let s = 0; s < 6; s++) {
+      if (s !== curSector && !recent.includes(s)) {
+        candidateSectors.push(s);
       }
-    }, stateDuration);
-  }, [isListening, isSpeaking, isPlaying, isThinking, isExecuting, smoothReturnToFront]);
+    }
+    const available = candidateSectors.length > 0
+      ? candidateSectors
+      : [0, 1, 2, 3, 4, 5].filter((s) => s !== curSector);
 
-  const resetAutonomousTimer = useCallback(() => {
-    clearTimeout(autonomousTimerRef.current);
-    if (isListening || isSpeaking || isPlaying || isThinking || isExecuting || dragRef.current.isDragging) {
+    const targetSector = available[Math.floor(Math.random() * available.length)] ?? ((curSector + 3) % 6);
+    lastVisitedCellsRef.current = [targetSector, curSector].slice(0, 2);
+
+    const targetCol = targetSector % 3;
+    const targetRow = Math.floor(targetSector / 3);
+
+    const sectorMinX = minX + (targetCol / 3) * spanX;
+    const sectorMaxX = minX + ((targetCol + 1) / 3) * spanX;
+    const sectorMinY = minY + (targetRow / 2) * spanY;
+    const sectorMaxY = minY + ((targetRow + 1) / 2) * spanY;
+
+    let destX = sectorMinX + Math.random() * (sectorMaxX - sectorMinX);
+    let destY = sectorMinY + Math.random() * (sectorMaxY - sectorMinY);
+
+    destX = Math.max(minX, Math.min(maxX, Math.round(destX)));
+    destY = Math.max(minY, Math.min(maxY, Math.round(destY)));
+
+    const minDistance = isMobile ? 80 : 150;
+    const dist = Math.hypot(destX - curX, destY - curY);
+    if (dist < minDistance) {
+      if (Math.abs(curX - minX) < Math.abs(maxX - curX)) {
+        destX = Math.min(maxX, curX + minDistance + Math.random() * 60);
+      } else {
+        destX = Math.max(minX, curX - minDistance - Math.random() * 60);
+      }
+    }
+
+    return { x: Math.round(destX), y: Math.round(destY) };
+  }, [getUsableScreenBounds]);
+
+  // Execute continuous natural walking to the selected screen destination
+  const startAutonomousWalk = useCallback(() => {
+    // 1. Strict Interaction Priority Check
+    if (
+      !isVisible ||
+      isListening ||
+      isSpeaking ||
+      isPlaying ||
+      isThinking ||
+      isExecuting ||
+      isPointerDownRef.current ||
+      dragRef.current.isDragging ||
+      isResizeMode ||
+      isNavigatingRef.current ||
+      isRotatingRef.current ||
+      (typeof document !== 'undefined' && document.hidden)
+    ) {
       return;
     }
-    autonomousTimerRef.current = setTimeout(runAutonomousBehavior, 5000);
-  }, [isListening, isSpeaking, isPlaying, isThinking, isExecuting, runAutonomousBehavior]);
+
+    const bounds = getUsableScreenBounds();
+    const startX = isCustomPos ? avatarPos.x : (bounds.maxX - (isMobileScreen ? 48 : 64));
+    const startY = isCustomPos ? avatarPos.y : bounds.maxY;
+
+    if (!isCustomPos) {
+      setIsCustomPos(true);
+      setAvatarPos({ x: startX, y: startY });
+    }
+
+    const destination = selectNextIdleDestination(startX, startY);
+    const destX = destination.x;
+    const destY = destination.y;
+
+    const deltaX = destX - startX;
+    const deltaY = destY - startY;
+    const dist = Math.hypot(deltaX, deltaY);
+
+    if (dist < 35) {
+      idlePauseTimerRef.current = setTimeout(startAutonomousWalk, 2000);
+      return;
+    }
+
+    // Quadratic Bézier curve with gentle perpendicular curvature (no robotic straight lines)
+    const midX = (startX + destX) / 2;
+    const midY = (startY + destY) / 2;
+    const normalX = -deltaY / dist;
+    const normalY = deltaX / dist;
+    const curvature = (18 + Math.random() * 32) * (Math.random() > 0.5 ? 1 : -1);
+    const ctrlX = Math.max(bounds.minX, Math.min(bounds.maxX, midX + normalX * curvature));
+    const ctrlY = Math.max(bounds.minY, Math.min(bounds.maxY, midY + normalY * curvature));
+
+    // Natural human walking duration (~130px per second)
+    const duration = Math.max(2200, Math.min(5400, Math.round((dist / 130) * 1000)));
+
+    isIdleWalkingRef.current = true;
+    setAutonomousSubState('idle_walking');
+    setWalkFacing(deltaX < 0 ? 'left' : 'right');
+
+    const startTime = performance.now();
+
+    const step = (now) => {
+      // Abort immediately if user interacts or new task/command arrives
+      if (
+        !isIdleWalkingRef.current ||
+        !isVisible ||
+        isListening ||
+        isSpeaking ||
+        isPlaying ||
+        isThinking ||
+        isExecuting ||
+        isPointerDownRef.current ||
+        dragRef.current.isDragging ||
+        isResizeMode ||
+        isNavigatingRef.current ||
+        (typeof document !== 'undefined' && document.hidden)
+      ) {
+        stopAutonomousWalking(false);
+        return;
+      }
+
+      const elapsed = now - startTime;
+      const progress = Math.min(1, elapsed / duration);
+
+      // Smooth acceleration and deceleration (Smoothstep cubic easing)
+      const eased = progress < 0.5
+        ? 4 * progress * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+      const oneMinusE = 1 - eased;
+      const curX = Math.round(oneMinusE * oneMinusE * startX + 2 * oneMinusE * eased * ctrlX + eased * eased * destX);
+      const curY = Math.round(oneMinusE * oneMinusE * startY + 2 * oneMinusE * eased * ctrlY + eased * eased * destY);
+
+      // Instantaneous tangent for facing direction and subtle body yaw into the turn
+      const tangentX = 2 * (1 - eased) * (ctrlX - startX) + 2 * eased * (destX - ctrlX);
+      if (tangentX > 1.2) {
+        setWalkFacing('right');
+        setRotationYaw(-0.16);
+      } else if (tangentX < -1.2) {
+        setWalkFacing('left');
+        setRotationYaw(0.16);
+      }
+
+      setAvatarPos({ x: curX, y: curY });
+      window.__loopraAvatarPosition = { x: curX, y: curY, width: characterWidth, height: characterHeight };
+
+      if (progress < 1) {
+        walkAnimFrameRef.current = requestAnimationFrame(step);
+      } else {
+        // Reached destination cleanly!
+        isIdleWalkingRef.current = false;
+        setAvatarPos({ x: destX, y: destY });
+        setAutonomousSubState('idle');
+        smoothReturnToFront();
+
+        // Varied idle pause: stand, look around, or perform subtle natural gesture
+        const idleChoice = Math.random();
+        if (idleChoice < 0.35) {
+          setAutonomousSubState('standing');
+        } else if (idleChoice < 0.50) {
+          setAutonomousSubState('thinking');
+        } else if (idleChoice < 0.65) {
+          setAutonomousSubState('wave');
+        } else {
+          setAutonomousSubState('idle');
+        }
+
+        idlePauseTimerRef.current = setTimeout(() => {
+          setAutonomousSubState('idle');
+          idleWalkTimerRef.current = setTimeout(() => {
+            startAutonomousWalk();
+          }, 1200 + Math.random() * 1500);
+        }, 1800);
+      }
+    };
+
+    walkAnimFrameRef.current = requestAnimationFrame(step);
+  }, [
+    isVisible,
+    isListening,
+    isSpeaking,
+    isPlaying,
+    isThinking,
+    isExecuting,
+    isResizeMode,
+    isCustomPos,
+    avatarPos,
+    isMobileScreen,
+    characterWidth,
+    characterHeight,
+    getUsableScreenBounds,
+    selectNextIdleDestination,
+    smoothReturnToFront,
+    stopAutonomousWalking
+  ]);
+
+  // Reset autonomous timer & schedule next walk when returning to uninterrupted idle
+  const resetAutonomousTimer = useCallback(() => {
+    stopAutonomousWalking(false);
+    if (
+      !isVisible ||
+      isListening ||
+      isSpeaking ||
+      isPlaying ||
+      isThinking ||
+      isExecuting ||
+      isResizeMode ||
+      dragRef.current.isDragging
+    ) {
+      return;
+    }
+    idleWalkTimerRef.current = setTimeout(() => {
+      startAutonomousWalk();
+    }, 3500);
+  }, [
+    isVisible,
+    isListening,
+    isSpeaking,
+    isPlaying,
+    isThinking,
+    isExecuting,
+    isResizeMode,
+    startAutonomousWalk,
+    stopAutonomousWalking
+  ]);
 
   const resetIdleTimer = resetAutonomousTimer;
 
+  // Watch for state changes to start/stop idle walking
   useEffect(() => {
     resetAutonomousTimer();
-    return () => clearTimeout(autonomousTimerRef.current);
-  }, [resetAutonomousTimer, isPlaying, isListening, isSpeaking, isThinking, isExecuting]);
+    return () => {
+      if (idleWalkTimerRef.current) {
+        clearTimeout(idleWalkTimerRef.current);
+      }
+    };
+  }, [resetAutonomousTimer, isPlaying, isListening, isSpeaking, isThinking, isExecuting, isVisible]);
+
+  // Tab visibility listener: pause autonomous movement when tab is hidden, resume when visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        stopAutonomousWalking(true);
+      } else if (
+        isVisible &&
+        !isListening &&
+        !isSpeaking &&
+        !isPlaying &&
+        !isThinking &&
+        !isExecuting &&
+        !isResizeMode
+      ) {
+        stopAutonomousWalking(false);
+        idleWalkTimerRef.current = setTimeout(() => {
+          startAutonomousWalk();
+        }, 2200);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      stopAutonomousWalking(true);
+    };
+  }, [
+    isVisible,
+    isListening,
+    isSpeaking,
+    isPlaying,
+    isThinking,
+    isExecuting,
+    isResizeMode,
+    startAutonomousWalk,
+    stopAutonomousWalking
+  ]);
+
+  // Clean up all animation frames and timers on unmount
+  useEffect(() => {
+    return () => {
+      stopAutonomousWalking(true);
+    };
+  }, [stopAutonomousWalking]);
 
   // Record command into display and 5-item rolling history
   const recordCommandDisplay = useCallback((text, actionTag = null) => {
     if (!text || !text.trim()) return;
     const cleanText = text.trim();
 
+    stopAutonomousWalking(true);
     clearTimeout(bubbleDismissTimerRef.current);
     setIsInterim(false);
     setLiveTranscript(cleanText);
@@ -441,7 +744,7 @@ export default function CharacterBuddy({
       setLiveTranscript('');
       setLastActionTag(null);
     }, 2000);
-  }, []);
+  }, [stopAutonomousWalking]);
 
   // Expose command recorder and thinking/executing/celebrating triggers globally
   useEffect(() => {
@@ -584,6 +887,7 @@ export default function CharacterBuddy({
   const handlePointerDown = (e) => {
     if (e.button !== undefined && e.button !== 0) return; // Only primary button
     try { voiceBuddyService.unlockAudio(); } catch (_) {}
+    stopAutonomousWalking(true);
 
     // Multi-touch Pinch to Resize detection for mobile
     if (e.touches && e.touches.length === 2) {
@@ -817,6 +1121,7 @@ export default function CharacterBuddy({
   // Reset Position and scale back to default navbar dock
   const handleResetPosition = (e) => {
     e?.stopPropagation?.();
+    stopAutonomousWalking(true);
     setIsCustomPos(false);
     try {
       sessionStorage.removeItem('loopra_avatar_position');
@@ -859,6 +1164,7 @@ export default function CharacterBuddy({
         return;
       }
       isNavigatingRef.current = true;
+      stopAutonomousWalking(true);
 
       (async () => {
         try {
@@ -1221,7 +1527,7 @@ export default function CharacterBuddy({
           className={`relative flex flex-col items-center justify-center cursor-grab active:cursor-grabbing select-none ${
             isResizeMode ? 'ring-2 ring-amber-400/80 ring-offset-2 ring-offset-neutral-950 rounded-2xl' : ''
           } ${
-            activeAnimationState === 'walking' || activeAnimationState === 'running' ? 'z-[9999999]' : ''
+            activeAnimationState === 'walking' || activeAnimationState === 'idle_walking' || activeAnimationState === 'running' ? 'z-[9999999]' : ''
           }`}
           onMouseDown={handlePointerDown}
           onTouchStart={handlePointerDown}

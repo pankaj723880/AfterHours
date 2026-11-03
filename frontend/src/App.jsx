@@ -235,7 +235,9 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
     flame: <path d="M13.5 1.5s0 3.5-3 5.5C8.5 8.5 7 11 7 14c0 3.87 3.13 7 7 7s7-3.13 7-7c0-4-3-8.5-7.5-12.5zm0 17.5c-2.21 0-4-1.79-4-4 0-1.8 1.05-3.32 2.5-4.04.38 1.64 1.83 2.87 3.5 2.87 2.02 0 3.66-1.64 3.66-3.66 0-.3-.04-.59-.11-.87 1.49 1.49 2.45 3.5 2.45 5.7 0 2.21-1.79 4-4 4z" fill="currentColor" />,
     swipe: <path d="M9 11.24V7.5a2.5 2.5 0 0 1 5 0v3.74c1.21-.81 2-2.18 2-3.74a4.5 4.5 0 0 0-9 0c0 1.56.79 2.93 2 3.74zm9.84 4.63l-4.54-2.26A2.01 2.01 0 0 0 13.4 13.5H13v-6a1 1 0 0 0-2 0v10.59l-3.29-.69a1.002 1.002 0 0 0-1.04.42l-.58.88 5.13 5.17c.56.56 1.33.87 2.12.87h6.66c1.53 0 2.8-1.15 2.97-2.67l.55-4.99a2.01 2.01 0 0 0-.68-1.85z" fill="currentColor" />,
     settings: <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" fill="currentColor" />,
-    sliders: <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" fill="currentColor" />
+    sliders: <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" fill="currentColor" />,
+    messageSquare: <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" fill="currentColor" />,
+    chat: <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" fill="currentColor" />
   };
   return (
     <svg className={className} viewBox="0 0 24 24" {...props}>
@@ -5602,6 +5604,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             {(() => {
               const defaultNav = [
                 { id: 'home', label: 'Home', icon: 'home', group: 'main' },
+                { id: 'chat', label: 'Loopra AI Chat', icon: 'messageSquare', badge: 'AI', group: 'main' },
                 { id: 'discover', label: 'Discover & Search', icon: 'discover', group: 'main' },
                 { id: 'radio', label: 'Indian Live Radio', icon: 'radio', badge: 'Live', group: 'main' },
                 { id: 'mood', label: 'Mood-to-Music AI', icon: 'sparkles', badge: 'AI', group: 'discovery' },
@@ -5618,7 +5621,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               ];
 
               const canonicalGroup = (id, rawGroup) => {
-                if (['home', 'discover', 'radio'].includes(id)) return 'main';
+                if (['home', 'chat', 'ai-chat', 'discover', 'radio'].includes(id)) return 'main';
                 if (['mood', 'timemachine', 'activity', 'swipe'].includes(id)) return 'discovery';
                 if (['barber', 'truck', 'pauwa'].includes(id)) return 'stations';
                 if (['library', 'history', 'playlists', 'stats'].includes(id)) return 'collection';
@@ -5722,6 +5725,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       const itemKey = item.id || item.route?.replace(/^\//, '');
                       const isActive = item.id === 'stats'
                         ? isStatsOpen
+                        : (item.id === 'chat' || item.id === 'ai-chat')
+                        ? activeAssistantPanel === 'ai'
                         : (activeTab === item.id || activeTab === itemKey);
 
                       // Display label: if it's a station, use station's updated title if available; format collections
@@ -5739,6 +5744,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                           onClick={() => {
                             if (item.id === 'stats') {
                               setIsStatsOpen(true);
+                            } else if (item.id === 'chat' || item.id === 'ai-chat') {
+                              setActiveAssistantPanel(prev => prev === 'ai' ? null : 'ai');
                             } else if (item.id === 'playlists') {
                               handleStationSelect('playlists');
                               setSelectedPlaylistForView(null);
@@ -7456,6 +7463,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       <MobileBottomNav 
         activeTab={activeTab}
         isProfileOpen={isProfileOpen}
+        isAiOpen={activeAssistantPanel === 'ai'}
+        onToggleAi={() => setActiveAssistantPanel(prev => prev === 'ai' ? null : 'ai')}
         onNavigate={(tab) => {
           setIsProfileOpen(false);
           handleStationSelect(tab);
@@ -8200,7 +8209,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         isOpen={activeAssistantPanel === 'ai'}
         onToggleOpen={(open) => setActiveAssistantPanel(open ? 'ai' : null)}
         onClose={() => setActiveAssistantPanel(null)}
-        hideFloatingButton={false}
+        hideFloatingButton={showSplashScreen || !isAppInitialized}
       />
 
       {/* Loopra Dedicated Voice Agent & Shared Floating Assistant Action Bar */}

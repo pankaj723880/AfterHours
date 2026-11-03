@@ -344,7 +344,7 @@ export default function ThreeDCharacter({
       // Full 360-Degree Interactive Rotation & Viewing Pitch (Strict Front-Facing by default)
       const userYaw = stateRef.current.rotationYaw || 0;
       const userPitch = stateRef.current.rotationPitch || 0;
-      const isTraveling = curState === 'walking' || curState === 'walk' || curState === 'running' || curState === 'run';
+      const isTraveling = curState === 'walking' || curState === 'walk' || curState === 'idle_walking' || curState === 'running' || curState === 'run';
       const baseFacingYaw = isTraveling ? (facingDir === 'right' ? -0.22 : 0.22) : 0;
       const targetCharYaw = userYaw + baseFacingYaw;
       const targetCharPitch = THREE.MathUtils.clamp(userPitch, -0.25, 0.25);
@@ -356,7 +356,7 @@ export default function ThreeDCharacter({
       // Update AnimationMixer if GLB contains clips
       if (mixer) {
         mixer.update(delta);
-        if (curState === 'walking' || curState === 'walk') fadeToAction('walk', 0.25);
+        if (curState === 'walking' || curState === 'walk' || curState === 'idle_walking') fadeToAction('walk', 0.25);
         else if (curState === 'running' || curState === 'run') fadeToAction('run', 0.25);
         else if (curState === 'jump') fadeToAction('jump', 0.2);
         else if (curState === 'wave') fadeToAction('wave', 0.25);
@@ -460,7 +460,7 @@ export default function ThreeDCharacter({
           setBoneRot('leftleg', -Math.abs(Math.sin(dancePhase * 0.85)) * 0.25, 0, 0, 0.25);
           setBoneRot('rightleg', -Math.abs(Math.cos(dancePhase * 0.85)) * 0.25, 0, 0, 0.25);
         }
-      } else if (curState === 'walking' || curState === 'walk') {
+      } else if (curState === 'walking' || curState === 'walk' || curState === 'idle_walking') {
         const stride = Math.sin(time * 7.5);
         setBonePos('hips', 0, Math.abs(stride) * 0.02, 0, 0.25);
         setBoneRot('spine', 0.04, 0, 0, 0.25);

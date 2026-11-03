@@ -340,7 +340,7 @@ export default function TwoDCharacter({
       const curPack = spriteMap.female;
 
       // Identify active composite flags
-      const isWalk = curState === 'walking' || curState === 'walk';
+      const isWalk = curState === 'walking' || curState === 'walk' || curState === 'idle_walking';
       const isRun = curState === 'running' || curState === 'run';
       const isDance = curState === 'dance' || curState === 'dancing';
       const isTalk = isSpeakingNow || curState === 'speaking' || curState === 'speak';
