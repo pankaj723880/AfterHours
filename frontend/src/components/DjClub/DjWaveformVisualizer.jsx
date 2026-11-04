@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { djAudio } from './djAudioEngine';
 
 /**
  * DjWaveformVisualizer
@@ -17,6 +18,14 @@ export default function DjWaveformVisualizer({
   const canvasRef = useRef(null);
   const animFrameRef = useRef(null);
   const barsRef = useRef([]);
+  const beatEnergyRef = useRef(0);
+
+  useEffect(() => {
+    const unsubscribe = djAudio.onBeat((evt) => {
+      beatEnergyRef.current = Math.max(beatEnergyRef.current, (evt.intensity || 0.8) * (evt.isKick ? 1.0 : 0.7));
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     const count = variant === 'player' ? 24 : barCount;
@@ -47,6 +56,7 @@ export default function DjWaveformVisualizer({
       if (!isTabVisible) return;
 
       step += isPlaying ? 0.08 : 0.02;
+      beatEnergyRef.current *= 0.88;
       const width = canvas.width;
       const h = canvas.height;
 
@@ -75,14 +85,15 @@ export default function DjWaveformVisualizer({
       ctx.fillStyle = grad;
 
       bars.forEach((b, i) => {
-        if (isPlaying) {
-          // Dynamic harmonic audio spectrum simulation
+        const beatBoost = beatEnergyRef.current;
+        if (isPlaying || beatBoost > 0.05) {
+          // Dynamic harmonic audio spectrum simulation with beat synchronization
           const centerDist = 1 - Math.abs(i - totalBars / 2) / (totalBars / 2);
           const w1 = Math.sin(step * 3.2 + b.phase);
           const w2 = Math.cos(step * 2.1 - i * 0.4);
           const w3 = Math.sin(step * 5.4 + (i % 4) * 1.5);
-          const energy = Math.max(0.12, (w1 * 0.4 + w2 * 0.35 + w3 * 0.25 + 0.5) * (0.4 + centerDist * 0.7));
-          b.targetH = 4 + energy * (h - 6);
+          const energy = Math.max(0.12, (w1 * 0.4 + w2 * 0.35 + w3 * 0.25 + 0.5) * (0.4 + centerDist * 0.7) + beatBoost * 0.5);
+          b.targetH = 4 + Math.min(1.0, energy) * (h - 6);
         } else {
           // Ambient gentle breathing
           b.targetH = 3 + Math.sin(step + i * 0.2) * 2;

@@ -75,17 +75,25 @@ export default function DjLightingCanvas({
       const s = stateRef.current;
       const now = performance.now();
       s.lastBeatTime = now;
-      s.beatPulse = Math.max(s.beatPulse, beatEvent.intensity || 0.85);
+      s.beatPulse = Math.max(s.beatPulse, (beatEvent.intensity || 0.85) * (beatEvent.isKick ? 1.0 : 0.75));
 
       if (!s.reducedMotion) {
-        if (beatEvent.isKick) {
-          if (s.preset === 'strobe-rush' || s.preset === 'ultra-rave') {
-            s.strobeFlash = Math.max(s.strobeFlash, 0.45 * s.flashIntensity);
-          }
-        }
-        if (beatEvent.isSnare || beatEvent.isDrop) {
+        if (beatEvent.isDrop || beatEvent.sfxType === 'drop' || beatEvent.sfxType === 'bass-impact') {
+          s.strobeFlash = Math.max(s.strobeFlash, 0.88 * s.flashIntensity);
+          s.strobeColor = '#ffffff';
+        } else if (beatEvent.isKick) {
+          const kickStrobe = (s.preset === 'strobe-rush' || s.preset === 'ultra-rave') ? 0.5 : 0.28;
+          s.strobeFlash = Math.max(s.strobeFlash, kickStrobe * s.flashIntensity);
+          s.strobeColor = s.preset === 'laser-show' ? '#00f0ff' : '#ffffff';
+        } else if (beatEvent.isSnare) {
+          s.strobeFlash = Math.max(s.strobeFlash, 0.45 * s.flashIntensity);
+          s.strobeColor = Math.random() > 0.5 ? '#ff007f' : '#38bdf8';
+        } else if (beatEvent.sfxType === 'laser') {
+          s.strobeFlash = Math.max(s.strobeFlash, 0.65 * s.flashIntensity);
+          s.strobeColor = '#00f0ff';
+        } else if (beatEvent.sfxType === 'airhorn') {
           s.strobeFlash = Math.max(s.strobeFlash, 0.75 * s.flashIntensity);
-          s.strobeColor = beatEvent.isDrop ? '#ffffff' : (Math.random() > 0.5 ? '#ff007f' : '#00f0ff');
+          s.strobeColor = '#f59e0b';
         }
       }
     });

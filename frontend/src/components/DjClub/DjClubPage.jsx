@@ -21,11 +21,26 @@ import {
   Eye,
   EyeOff,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Music,
+  Speaker,
+  Activity,
+  Plus,
+  Minus,
+  RotateCcw,
+  Gauge,
+  Layers
 } from 'lucide-react';
 import DjLightingCanvas from './DjLightingCanvas';
 import DjWaveformVisualizer from './DjWaveformVisualizer';
-import { djAudio } from './djAudioEngine';
+import {
+  djAudio,
+  BEAT_CATEGORIES,
+  BEAT_STYLES,
+  BASS_LIBRARY,
+  SFX_LIBRARY,
+  BEAT_PATTERNS
+} from './djAudioEngine';
 import { getCleanThumbnail } from '../../utils/thumbnailValidator';
 
 // 6 Visual Presets matching the reference design
@@ -116,13 +131,25 @@ export default function DjClubPage({
   const [lightBrightness, setLightBrightness] = useState(90); // 10 to 100
   const [reducedMotion, setReducedMotion] = useState(false);
 
-  // DJ Beats & Sound Effects State (Requirement 5)
+  // Mini DJ Mixing Console State
   const [isDjBeatsPlaying, setIsDjBeatsPlaying] = useState(false);
-  const [djBeatsVolume, setDjBeatsVolume] = useState(75);
+  const [djBeatsVolume, setDjBeatsVolume] = useState(80);
   const [djSfxVolume, setDjSfxVolume] = useState(85);
-  const [djPattern, setDjPattern] = useState('edm'); // 'edm' | 'tech-house' | 'hyper-rave'
+  const [djStyle, setDjStyle] = useState('big-room');
+  const [djCategory, setDjCategory] = useState('edm');
+  const [djBpm, setDjBpm] = useState(128);
+  const [djPattern, setDjPattern] = useState('straight');
+  const [djEqBass, setDjEqBass] = useState(0);
+  const [djEqMid, setDjEqMid] = useState(0);
+  const [djEqTreble, setDjEqTreble] = useState(0);
+  const [djIntensity, setDjIntensity] = useState(75);
+  const [djEcho, setDjEcho] = useState(15);
+  const [djReverb, setDjReverb] = useState(20);
   const [isDjAudioMuted, setIsDjAudioMuted] = useState(false);
   const [lastSfxTriggered, setLastSfxTriggered] = useState(null);
+  const [lastBassTriggered, setLastBassTriggered] = useState(null);
+  const [audioSubTab, setAudioSubTab] = useState('styles'); // 'styles' | 'mixer' | 'bass' | 'sfx'
+  const tapTimesRef = useRef([]);
 
   // Active track info
   const activeTrack = currentSong && (currentSong.title || currentSong.name) ? currentSong : DEFAULT_DJ_TRACK;
@@ -187,15 +214,100 @@ export default function DjClubPage({
     }
   };
 
-  // DJ Beats Engine Controls
+  // Mini DJ Mixing Console Controls
   const handleToggleDjBeats = async () => {
     const isNowPlaying = await djAudio.toggleBeats();
     setIsDjBeatsPlaying(isNowPlaying);
   };
 
-  const handleDjPatternChange = (pattern) => {
-    setDjPattern(pattern);
-    djAudio.setPattern(pattern);
+  const handleSelectStyle = (styleId) => {
+    const s = BEAT_STYLES.find((item) => item.id === styleId);
+    if (s) {
+      setDjStyle(styleId);
+      setDjBpm(s.defaultBpm);
+      djAudio.setStyle(styleId);
+    }
+  };
+
+  const handleBpmChange = (newBpm) => {
+    const val = Math.max(70, Math.min(180, Number(newBpm) || 128));
+    setDjBpm(val);
+    djAudio.setBpm(val);
+  };
+
+  const handleNudgeBpm = (delta) => {
+    handleBpmChange(djBpm + delta);
+  };
+
+  const handleTapTempo = () => {
+    const now = performance.now();
+    const taps = tapTimesRef.current.filter((t) => now - t < 3000);
+    taps.push(now);
+    tapTimesRef.current = taps;
+
+    if (taps.length >= 2) {
+      const intervals = [];
+      for (let i = 1; i < taps.length; i++) {
+        intervals.push(taps[i] - taps[i - 1]);
+      }
+      const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+      if (avgInterval > 0) {
+        const calculatedBpm = Math.round(60000 / avgInterval);
+        const clampedBpm = Math.max(70, Math.min(180, calculatedBpm));
+        setDjBpm(clampedBpm);
+        djAudio.setBpm(clampedBpm);
+      }
+    }
+  };
+
+  const handlePatternChange = (patId) => {
+    setDjPattern(patId);
+    djAudio.setPattern(patId);
+  };
+
+  const handleEqBassChange = (e) => {
+    const val = Number(e.target.value);
+    setDjEqBass(val);
+    djAudio.setEqBass(val);
+  };
+
+  const handleEqMidChange = (e) => {
+    const val = Number(e.target.value);
+    setDjEqMid(val);
+    djAudio.setEqMid(val);
+  };
+
+  const handleEqTrebleChange = (e) => {
+    const val = Number(e.target.value);
+    setDjEqTreble(val);
+    djAudio.setEqTreble(val);
+  };
+
+  const handleResetEq = () => {
+    setDjEqBass(0);
+    setDjEqMid(0);
+    setDjEqTreble(0);
+    djAudio.setEqBass(0);
+    djAudio.setEqMid(0);
+    djAudio.setEqTreble(0);
+  };
+
+  const handleIntensityChange = (e) => {
+    const val = Number(e.target.value);
+    setDjIntensity(val);
+    djAudio.setBeatIntensity(val / 100);
+  };
+
+  const handleEchoChange = (e) => {
+    const val = Number(e.target.value);
+    setDjEcho(val);
+    djAudio.setEchoAmount(val / 100);
+  };
+
+  const handleReverbChange = (e) => {
+    const val = Number(e.target.value);
+    setDjReverb(val);
+    djAudio.setReverbAmount(val / 100);
   };
 
   const handleDjBeatsVolumeChange = (e) => {
@@ -215,16 +327,28 @@ export default function DjClubPage({
     setIsDjAudioMuted(muted);
   };
 
-  // Trigger DJ Sound Effects
-  const handleTriggerSfx = (type) => {
-    setLastSfxTriggered(type);
-    setTimeout(() => setLastSfxTriggered(null), 400);
+  const handleTriggerBass = (bassId) => {
+    setLastBassTriggered(bassId);
+    setTimeout(() => setLastBassTriggered(null), 350);
+    djAudio.triggerBassItem(bassId);
+  };
 
-    if (type === 'airhorn') djAudio.triggerAirHorn();
-    else if (type === 'laser') djAudio.triggerLaserZap();
-    else if (type === 'drop') djAudio.triggerSubDrop();
-    else if (type === 'scratch') djAudio.triggerScratch();
-    else if (type === 'riser') djAudio.triggerRiser(1.8);
+  const handleTriggerSfx = (sfxId) => {
+    setLastSfxTriggered(sfxId);
+    setTimeout(() => setLastSfxTriggered(null), 350);
+    djAudio.triggerSfxItem(sfxId);
+  };
+
+  const handleBeatDrop = () => {
+    setLastSfxTriggered('beat-drop');
+    setTimeout(() => setLastSfxTriggered(null), 1500);
+    djAudio.triggerBeatDrop();
+  };
+
+  const handleBassDrop = () => {
+    setLastSfxTriggered('bass-drop');
+    setTimeout(() => setLastSfxTriggered(null), 500);
+    djAudio.triggerLiveBassDrop();
   };
 
   // Handle Fullscreen
@@ -342,7 +466,7 @@ export default function DjClubPage({
         className={`absolute top-16 sm:top-20 md:top-22 right-2 sm:right-5 md:right-6 z-30 transition-all duration-200 ${
           isPanelCollapsed
             ? 'w-9 h-9 sm:w-11 sm:h-11 rounded-full p-0 flex items-center justify-center bg-neutral-950/95 border border-white/20 shadow-2xl cursor-pointer hover:scale-105 opacity-100'
-            : 'w-[72vw] min-w-[230px] max-w-[265px] sm:w-76 md:w-80 max-h-[calc(100vh-140px)] sm:max-h-[calc(100vh-165px)] overflow-y-auto opacity-100 bg-neutral-950/95 backdrop-blur-2xl border border-white/20 rounded-2xl sm:rounded-3xl p-2 sm:p-2.5 shadow-[0_20px_50px_rgba(0,0,0,0.95)] custom-scrollbar'
+            : 'w-[84vw] min-w-[260px] max-w-[325px] sm:w-80 md:w-88 max-h-[calc(100vh-140px)] sm:max-h-[calc(100vh-165px)] overflow-y-auto opacity-100 bg-neutral-950/95 backdrop-blur-2xl border border-white/20 rounded-2xl sm:rounded-3xl p-2 sm:p-2.5 shadow-[0_20px_50px_rgba(0,0,0,0.95)] custom-scrollbar'
         }`}
       >
         {isPanelCollapsed ? (
@@ -606,229 +730,511 @@ export default function DjClubPage({
               </div>
             )}
 
-            {/* TAB 2: ORIGINAL DJ BEATS & SOUND EFFECTS */}
+            {/* TAB 2: MINI DJ MIXING CONSOLE */}
             {activePanelTab === 'audio' && (
               <div className="space-y-2 sm:space-y-2.5 animate-fadeIn">
-                {/* DJ Beats Main Card */}
-                <div className="p-2 sm:p-2.5 rounded-xl bg-neutral-900/90 border border-orange-500/30 shadow-[0_0_12px_rgba(249,115,22,0.15)] space-y-2">
+                {/* 1. MASTER DJ CONSOLE BAR */}
+                <div className="p-2 sm:p-2.5 rounded-xl bg-neutral-900/95 border border-orange-500/30 shadow-[0_0_15px_rgba(249,115,22,0.18)] space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 sm:gap-2">
                       <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-orange-500/20 text-orange-400 flex items-center justify-center border border-orange-500/40">
                         <Flame className="w-3.5 h-3.5 animate-pulse" />
                       </div>
                       <div>
-                        <h4 className="text-[11px] sm:text-xs font-bold text-white">BOOM-BOOM Beats</h4>
-                        <p className="text-[8.5px] sm:text-[9.5px] text-neutral-400">Club Rhythms</p>
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="text-[11px] sm:text-xs font-bold text-white">DJ Console</h4>
+                          <span className="px-1.5 py-0.2 rounded text-[7.5px] font-bold bg-orange-500/25 text-orange-400 border border-orange-500/40 font-mono">
+                            {djBpm} BPM
+                          </span>
+                        </div>
+                        <p className="text-[8px] sm:text-[9px] text-neutral-400 truncate max-w-[110px] sm:max-w-[130px]">
+                          {BEAT_STYLES.find((s) => s.id === djStyle)?.name || 'Club Mix'}
+                        </p>
                       </div>
                     </div>
 
-                    {/* DJ Beats Play / Pause Button */}
-                    <button
-                      type="button"
-                      onClick={handleToggleDjBeats}
-                      className={`px-2.5 sm:px-3 py-1 rounded-lg font-bold text-[10px] sm:text-[11px] flex items-center gap-1 sm:gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer ${
-                        isDjBeatsPlaying
-                          ? 'bg-red-500 hover:bg-red-600 text-white shadow-[0_0_10px_rgba(239,68,68,0.5)]'
-                          : 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-neutral-950 shadow-[0_0_10px_rgba(249,115,22,0.4)]'
-                      }`}
-                    >
-                      {isDjBeatsPlaying ? (
-                        <>
-                          <Pause className="w-3 h-3 fill-current" />
-                          <span>Pause</span>
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-3 h-3 fill-current" />
-                          <span>Play</span>
-                        </>
-                      )}
-                    </button>
+                    <div className="flex items-center gap-1 sm:gap-1.5">
+                      {/* DJ Beats Play / Pause Button */}
+                      <button
+                        type="button"
+                        onClick={handleToggleDjBeats}
+                        className={`px-2.5 sm:px-3 py-1 rounded-lg font-bold text-[10px] sm:text-[11px] flex items-center gap-1 sm:gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer ${
+                          isDjBeatsPlaying
+                            ? 'bg-red-500 hover:bg-red-600 text-white shadow-[0_0_10px_rgba(239,68,68,0.5)]'
+                            : 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-neutral-950 shadow-[0_0_10px_rgba(249,115,22,0.4)]'
+                        }`}
+                      >
+                        {isDjBeatsPlaying ? (
+                          <>
+                            <Pause className="w-3 h-3 fill-current" />
+                            <span>Pause</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3 h-3 fill-current" />
+                            <span>Play</span>
+                          </>
+                        )}
+                      </button>
+
+                      {/* DJ Audio Master Mute */}
+                      <button
+                        type="button"
+                        onClick={handleToggleDjAudioMute}
+                        className={`p-1.5 rounded-lg border transition cursor-pointer ${
+                          isDjAudioMuted
+                            ? 'bg-red-500/30 text-red-400 border-red-500/40'
+                            : 'bg-neutral-800 text-neutral-300 border-white/10 hover:text-white'
+                        }`}
+                        title={isDjAudioMuted ? 'Unmute DJ Mixer' : 'Mute DJ Mixer'}
+                      >
+                        {isDjAudioMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Beat Pattern Selector */}
-                  <div>
-                    <span className="text-[8.5px] sm:text-[9.5px] text-neutral-400 block mb-0.5">Style & Tempo</span>
-                    <div className="grid grid-cols-3 gap-1 p-0.5 rounded-lg bg-neutral-950 border border-white/5">
-                      {[
-                        { id: 'edm', label: 'Club EDM', bpm: '128' },
-                        { id: 'tech-house', label: 'Tech House', bpm: '125' },
-                        { id: 'hyper-rave', label: 'Hyper Rave', bpm: '134' }
-                      ].map((item) => (
+                  {/* One-Click Quick Action Buttons: Beat Drop & Bass Drop */}
+                  <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={handleBeatDrop}
+                      className={`py-1 sm:py-1.5 px-2 rounded-lg font-bold text-[9.5px] sm:text-[10px] flex items-center justify-center gap-1 border transition-all active:scale-95 cursor-pointer ${
+                        lastSfxTriggered === 'beat-drop'
+                          ? 'bg-red-500 text-white border-red-400 shadow-[0_0_12px_rgba(239,68,68,0.9)] scale-98'
+                          : 'bg-neutral-950/90 text-red-400 border-red-500/30 hover:border-red-500/60 hover:bg-red-500/10'
+                      }`}
+                    >
+                      <Zap className="w-3 h-3 fill-current" />
+                      <span>💥 BEAT DROP</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleBassDrop}
+                      className={`py-1 sm:py-1.5 px-2 rounded-lg font-bold text-[9.5px] sm:text-[10px] flex items-center justify-center gap-1 border transition-all active:scale-95 cursor-pointer ${
+                        lastSfxTriggered === 'bass-drop'
+                          ? 'bg-purple-500 text-white border-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.9)] scale-98'
+                          : 'bg-neutral-950/90 text-purple-400 border-purple-500/30 hover:border-purple-500/60 hover:bg-purple-500/10'
+                      }`}
+                    >
+                      <Activity className="w-3 h-3" />
+                      <span>⚡ BASS DROP</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. CONSOLE SUB-NAVIGATION TABS */}
+                <div className="grid grid-cols-4 p-0.5 rounded-lg bg-neutral-950 border border-white/10 text-[8.5px] sm:text-[9.5px] font-semibold">
+                  {[
+                    { id: 'styles', label: 'Styles', icon: Music },
+                    { id: 'mixer', label: 'EQ/Mix', icon: Sliders },
+                    { id: 'bass', label: 'Bass (8)', icon: Speaker },
+                    { id: 'sfx', label: 'FX (12)', icon: Zap }
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setAudioSubTab(tab.id)}
+                      className={`py-1 rounded-md flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 transition cursor-pointer ${
+                        audioSubTab === tab.id
+                          ? 'bg-orange-500 text-neutral-950 font-bold shadow-sm'
+                          : 'text-neutral-400 hover:text-white'
+                      }`}
+                    >
+                      <tab.icon className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                      <span className="truncate">{tab.label}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* SUB-TAB 1: BEAT STYLES & TEMPO */}
+                {audioSubTab === 'styles' && (
+                  <div className="space-y-2 animate-fadeIn">
+                    {/* Category Selector Pills */}
+                    <div className="flex gap-1 overflow-x-auto custom-scrollbar pb-0.5">
+                      {BEAT_CATEGORIES.map((cat) => (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => setDjCategory(cat.id)}
+                          className={`px-2 py-0.5 rounded-full text-[8px] sm:text-[9px] font-bold whitespace-nowrap transition cursor-pointer ${
+                            djCategory === cat.id
+                              ? 'bg-orange-500/30 text-orange-400 border border-orange-500/50'
+                              : 'bg-neutral-900 text-neutral-400 hover:text-white border border-white/5'
+                          }`}
+                        >
+                          {cat.name}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Beat Styles Grid */}
+                    <div className="grid grid-cols-2 gap-1 max-h-36 overflow-y-auto custom-scrollbar pr-0.5">
+                      {BEAT_STYLES.filter((s) => s.category === djCategory).map((styleItem) => {
+                        const isSelected = djStyle === styleItem.id;
+                        return (
+                          <button
+                            key={styleItem.id}
+                            type="button"
+                            onClick={() => handleSelectStyle(styleItem.id)}
+                            className={`p-1.5 rounded-lg text-left border transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-orange-500/20 border-orange-400 shadow-[0_0_8px_rgba(249,115,22,0.4)]'
+                                : 'bg-neutral-950/80 border-white/5 hover:border-white/20 text-neutral-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className={`text-[9.5px] font-bold truncate ${isSelected ? 'text-orange-400' : 'text-white'}`}>
+                                {styleItem.name}
+                              </span>
+                              <span className="text-[7.5px] font-mono text-neutral-400">
+                                {styleItem.defaultBpm}
+                              </span>
+                            </div>
+                            <span className="text-[7.5px] text-neutral-400 block line-clamp-1 mt-0.5">
+                              {styleItem.desc}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* BPM Adjustment & Custom Tempo Controls */}
+                    <div className="p-2 rounded-xl bg-neutral-900/90 border border-white/10 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1 text-[9px] sm:text-[10px] font-bold text-neutral-300">
+                          <Gauge className="w-3 h-3 text-orange-400" />
+                          <span>Tempo & BPM</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-orange-400 font-mono font-bold text-xs">{djBpm}</span>
+                          <span className="text-[7.5px] text-neutral-400">BPM</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="range"
+                          min="70"
+                          max="180"
+                          value={djBpm}
+                          onChange={(e) => handleBpmChange(e.target.value)}
+                          className="flex-1 h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                        />
+                      </div>
+
+                      {/* Nudge Buttons & Tap Tempo */}
+                      <div className="grid grid-cols-5 gap-1 pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleNudgeBpm(-5)}
+                          className="py-1 rounded bg-neutral-950 border border-white/10 text-[8px] font-mono text-neutral-300 hover:text-white"
+                        >
+                          -5
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleNudgeBpm(-1)}
+                          className="py-1 rounded bg-neutral-950 border border-white/10 text-[8px] font-mono text-neutral-300 hover:text-white"
+                        >
+                          -1
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleTapTempo}
+                          className="py-1 rounded bg-gradient-to-r from-orange-500 to-amber-500 font-bold text-[8.5px] text-neutral-950 hover:brightness-110 active:scale-95"
+                          title="Tap in rhythm to match tempo"
+                        >
+                          TAP
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleNudgeBpm(1)}
+                          className="py-1 rounded bg-neutral-950 border border-white/10 text-[8px] font-mono text-neutral-300 hover:text-white"
+                        >
+                          +1
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleNudgeBpm(5)}
+                          className="py-1 rounded bg-neutral-950 border border-white/10 text-[8px] font-mono text-neutral-300 hover:text-white"
+                        >
+                          +5
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Beat Pattern Selector */}
+                    <div className="p-2 rounded-xl bg-neutral-900/90 border border-white/10 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-bold text-neutral-300">Beat Pattern</span>
+                        <span className="text-[7.5px] text-neutral-400 capitalize">{djPattern}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1">
+                        {BEAT_PATTERNS.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => handlePatternChange(p.id)}
+                            className={`py-1 px-0.5 rounded text-center transition cursor-pointer ${
+                              djPattern === p.id
+                                ? 'bg-orange-500 text-neutral-950 font-bold shadow-sm'
+                                : 'bg-neutral-950 text-neutral-400 hover:text-white border border-white/5'
+                            }`}
+                          >
+                            <span className="block text-[8px] font-bold truncate">{p.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SUB-TAB 2: 3-BAND EQ & ADVANCED MIXER */}
+                {audioSubTab === 'mixer' && (
+                  <div className="space-y-2 animate-fadeIn">
+                    {/* 3-Band Equalizer */}
+                    <div className="p-2 sm:p-2.5 rounded-xl bg-neutral-900/90 border border-white/10 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-300">
+                          <SlidersHorizontal className="w-3 h-3 text-orange-400" />
+                          <span>3-Band EQ</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleResetEq}
+                          className="text-[8px] font-bold text-neutral-400 hover:text-white flex items-center gap-0.5"
+                          title="Reset EQ to flat (0 dB)"
+                        >
+                          <RotateCcw className="w-2.5 h-2.5" />
+                          <span>Reset</span>
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-1.5 pt-0.5">
+                        {/* Bass */}
+                        <div className="flex flex-col items-center bg-neutral-950/80 p-1.5 rounded-lg border border-white/5">
+                          <span className="text-[8px] text-neutral-400">Bass</span>
+                          <span className="text-[9px] font-mono font-bold text-orange-400">{djEqBass > 0 ? `+${djEqBass}` : djEqBass}dB</span>
+                          <input
+                            type="range"
+                            min="-12"
+                            max="12"
+                            value={djEqBass}
+                            onChange={handleEqBassChange}
+                            className="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-orange-500 my-1"
+                          />
+                        </div>
+
+                        {/* Mid / Kick */}
+                        <div className="flex flex-col items-center bg-neutral-950/80 p-1.5 rounded-lg border border-white/5">
+                          <span className="text-[8px] text-neutral-400">Mid/Kick</span>
+                          <span className="text-[9px] font-mono font-bold text-amber-400">{djEqMid > 0 ? `+${djEqMid}` : djEqMid}dB</span>
+                          <input
+                            type="range"
+                            min="-12"
+                            max="12"
+                            value={djEqMid}
+                            onChange={handleEqMidChange}
+                            className="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-amber-500 my-1"
+                          />
+                        </div>
+
+                        {/* Treble */}
+                        <div className="flex flex-col items-center bg-neutral-950/80 p-1.5 rounded-lg border border-white/5">
+                          <span className="text-[8px] text-neutral-400">Treble</span>
+                          <span className="text-[9px] font-mono font-bold text-cyan-400">{djEqTreble > 0 ? `+${djEqTreble}` : djEqTreble}dB</span>
+                          <input
+                            type="range"
+                            min="-12"
+                            max="12"
+                            value={djEqTreble}
+                            onChange={handleEqTrebleChange}
+                            className="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-cyan-400 my-1"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Beat Intensity, Echo & Reverb */}
+                    <div className="p-2 sm:p-2.5 rounded-xl bg-neutral-900/90 border border-white/10 space-y-1.5">
+                      {/* Beat Intensity */}
+                      <div>
+                        <div className="flex justify-between items-center text-[9px] text-neutral-400 mb-0.5">
+                          <span>Beat Intensity / Club Drive</span>
+                          <span className="font-semibold text-orange-400">{djIntensity}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="10"
+                          max="100"
+                          value={djIntensity}
+                          onChange={handleIntensityChange}
+                          className="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                        />
+                      </div>
+
+                      {/* Echo & Reverb */}
+                      <div className="grid grid-cols-2 gap-2 pt-0.5">
+                        <div>
+                          <div className="flex justify-between text-[8px] text-neutral-400 mb-0.5">
+                            <span>Echo Delay</span>
+                            <span className="font-bold text-cyan-400">{djEcho}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={djEcho}
+                            onChange={handleEchoChange}
+                            className="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                          />
+                        </div>
+                        <div>
+                          <div className="flex justify-between text-[8px] text-neutral-400 mb-0.5">
+                            <span>Reverb Space</span>
+                            <span className="font-bold text-purple-400">{djReverb}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={djReverb}
+                            onChange={handleReverbChange}
+                            className="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-purple-400"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Dual Vertical Mixer Faders */}
+                    <div className="p-2 sm:p-2.5 rounded-xl bg-neutral-900/90 border border-white/10 space-y-1">
+                      <div className="flex items-center justify-between text-[10px] font-bold text-neutral-300">
+                        <div className="flex items-center gap-1.5">
+                          <Volume2 className="w-3 h-3 text-orange-400" />
+                          <span>DJ Sound Faders</span>
+                        </div>
+                        <span className="text-[8px] text-neutral-400 font-mono">CH1 / CH2</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 pt-0.5">
+                        {/* Channel 1: Beats Volume Vertical Fader */}
+                        <div className="flex flex-col items-center bg-neutral-950/80 p-1.5 rounded-lg border border-white/5">
+                          <div className="flex items-center justify-between w-full text-[8.5px] font-semibold text-neutral-400 mb-1">
+                            <span>Beats</span>
+                            <span className="text-orange-400 font-mono font-bold">{djBeatsVolume}%</span>
+                          </div>
+                          <div className="h-18 sm:h-20 flex items-center justify-center my-0.5">
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              value={djBeatsVolume}
+                              onChange={handleDjBeatsVolumeChange}
+                              className="h-18 sm:h-20 w-2 accent-orange-500 cursor-pointer"
+                              style={{
+                                writingMode: 'vertical-lr',
+                                direction: 'rtl'
+                              }}
+                              title={`Beats Volume: ${djBeatsVolume}%`}
+                              aria-label="DJ Beats Vertical Volume"
+                            />
+                          </div>
+                          <span className="text-[7px] text-neutral-500 uppercase tracking-wider font-mono">Fader 1</span>
+                        </div>
+
+                        {/* Channel 2: SFX Volume Vertical Fader */}
+                        <div className="flex flex-col items-center bg-neutral-950/80 p-1.5 rounded-lg border border-white/5">
+                          <div className="flex items-center justify-between w-full text-[8.5px] font-semibold text-neutral-400 mb-1">
+                            <span>Effects</span>
+                            <span className="text-amber-400 font-mono font-bold">{djSfxVolume}%</span>
+                          </div>
+                          <div className="h-18 sm:h-20 flex items-center justify-center my-0.5">
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              value={djSfxVolume}
+                              onChange={handleDjSfxVolumeChange}
+                              className="h-18 sm:h-20 w-2 accent-amber-500 cursor-pointer"
+                              style={{
+                                writingMode: 'vertical-lr',
+                                direction: 'rtl'
+                              }}
+                              title={`Effects Volume: ${djSfxVolume}%`}
+                              aria-label="DJ Effects Vertical Volume"
+                            />
+                          </div>
+                          <span className="text-[7px] text-neutral-500 uppercase tracking-wider font-mono">Fader 2</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SUB-TAB 3: BOOM-BOOM BASS LIBRARY (8 Items) */}
+                {audioSubTab === 'bass' && (
+                  <div className="space-y-1.5 animate-fadeIn">
+                    <div className="flex items-center justify-between px-1">
+                      <span className="text-[9px] font-bold text-neutral-300">BOOM-BOOM Bass Library</span>
+                      <span className="text-[7.5px] text-neutral-400">8 Web Audio Presets</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5 max-h-56 overflow-y-auto custom-scrollbar pr-0.5">
+                      {BASS_LIBRARY.map((item) => (
                         <button
                           key={item.id}
                           type="button"
-                          onClick={() => handleDjPatternChange(item.id)}
-                          className={`py-1 px-0.5 rounded-md text-center transition cursor-pointer ${
-                            djPattern === item.id
-                              ? 'bg-orange-500 text-neutral-950 font-bold shadow-sm'
-                              : 'text-neutral-300 hover:text-white'
+                          onClick={() => handleTriggerBass(item.id)}
+                          className={`p-2 rounded-lg text-left border transition-all active:scale-95 cursor-pointer ${
+                            lastBassTriggered === item.id
+                              ? 'bg-orange-500 text-neutral-950 border-orange-300 scale-98 shadow-[0_0_12px_rgba(249,115,22,0.9)]'
+                              : 'bg-neutral-950/80 border-white/10 hover:border-orange-400/50 text-white hover:bg-neutral-900'
                           }`}
                         >
-                          <span className="block text-[8.5px] sm:text-[9.5px] font-semibold leading-tight">{item.label}</span>
-                          <span className="block text-[7px] opacity-75">{item.bpm} BPM</span>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold block">{item.name}</span>
+                            <span className="text-[7px] font-mono px-1 py-0.2 rounded bg-white/10 text-orange-400">
+                              {item.tag}
+                            </span>
+                          </div>
+                          <span className="text-[7.5px] text-neutral-400 block mt-0.5 line-clamp-1">
+                            {item.desc}
+                          </span>
                         </button>
                       ))}
                     </div>
                   </div>
-                </div>
+                )}
 
-                {/* DUAL VERTICAL MIXER VOLUME FADERS (Requirement 3: Compact & Mobile-Friendly) */}
-                <div className="p-2 sm:p-2.5 rounded-xl bg-neutral-900/90 border border-white/10 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold text-neutral-300">
-                      <Volume2 className="w-3 h-3 text-orange-400" />
-                      <span>DJ Sound Faders</span>
-                    </div>
-                    {/* Master Mute for DJ Audio */}
-                    <button
-                      type="button"
-                      onClick={handleToggleDjAudioMute}
-                      className={`px-1.5 py-0.5 rounded-md text-[8px] font-bold flex items-center gap-1 transition cursor-pointer ${
-                        isDjAudioMuted ? 'bg-red-500/80 text-white' : 'bg-neutral-800 text-neutral-300 hover:text-white'
-                      }`}
-                      title={isDjAudioMuted ? 'Unmute DJ Audio' : 'Mute DJ Audio'}
-                    >
-                      {isDjAudioMuted ? <VolumeX className="w-2.5 h-2.5" /> : <Volume2 className="w-2.5 h-2.5" />}
-                      <span>{isDjAudioMuted ? 'MUTED' : 'UNMUTED'}</span>
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 pt-0.5">
-                    {/* Channel 1: Beats Volume Vertical Fader */}
-                    <div className="flex flex-col items-center bg-neutral-950/80 p-2 rounded-lg border border-white/5">
-                      <div className="flex items-center justify-between w-full text-[9px] font-semibold text-neutral-400 mb-1">
-                        <span>Beats</span>
-                        <span className="text-orange-400 font-mono font-bold">{djBeatsVolume}%</span>
-                      </div>
-                      <div className="h-20 sm:h-22 flex items-center justify-center my-1">
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          value={djBeatsVolume}
-                          onChange={handleDjBeatsVolumeChange}
-                          className="h-20 sm:h-22 w-2 accent-orange-500 cursor-pointer"
-                          style={{
-                            writingMode: 'vertical-lr',
-                            direction: 'rtl'
-                          }}
-                          title={`Beats Volume: ${djBeatsVolume}%`}
-                          aria-label="DJ Beats Vertical Volume"
-                        />
-                      </div>
-                      <span className="text-[7.5px] text-neutral-500 uppercase tracking-wider font-mono">Fader 1</span>
+                {/* SUB-TAB 4: DJ SOUND EFFECTS (12 Items) */}
+                {audioSubTab === 'sfx' && (
+                  <div className="space-y-1.5 animate-fadeIn">
+                    <div className="flex items-center justify-between px-1">
+                      <span className="text-[9px] font-bold text-neutral-300">DJ Sound Effects</span>
+                      <span className="text-[7.5px] text-neutral-400">12 Studio SFX</span>
                     </div>
 
-                    {/* Channel 2: SFX Volume Vertical Fader */}
-                    <div className="flex flex-col items-center bg-neutral-950/80 p-2 rounded-lg border border-white/5">
-                      <div className="flex items-center justify-between w-full text-[9px] font-semibold text-neutral-400 mb-1">
-                        <span>Effects</span>
-                        <span className="text-amber-400 font-mono font-bold">{djSfxVolume}%</span>
-                      </div>
-                      <div className="h-20 sm:h-22 flex items-center justify-center my-1">
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          value={djSfxVolume}
-                          onChange={handleDjSfxVolumeChange}
-                          className="h-20 sm:h-22 w-2 accent-amber-500 cursor-pointer"
-                          style={{
-                            writingMode: 'vertical-lr',
-                            direction: 'rtl'
-                          }}
-                          title={`Effects Volume: ${djSfxVolume}%`}
-                          aria-label="DJ Effects Vertical Volume"
-                        />
-                      </div>
-                      <span className="text-[7.5px] text-neutral-500 uppercase tracking-wider font-mono">Fader 2</span>
+                    <div className="grid grid-cols-3 gap-1 max-h-56 overflow-y-auto custom-scrollbar pr-0.5">
+                      {SFX_LIBRARY.map((sfx) => (
+                        <button
+                          key={sfx.id}
+                          type="button"
+                          onClick={() => handleTriggerSfx(sfx.id)}
+                          className={`p-1.5 rounded-lg text-left border transition-all active:scale-95 cursor-pointer ${
+                            lastSfxTriggered === sfx.id
+                              ? 'bg-amber-400 text-neutral-950 border-amber-300 scale-98 shadow-[0_0_12px_rgba(251,191,36,0.9)]'
+                              : 'bg-neutral-950/80 border-white/10 hover:border-amber-400/50 text-white hover:bg-neutral-900'
+                          }`}
+                        >
+                          <span className="text-sm block">{sfx.icon}</span>
+                          <span className="text-[9px] font-bold block mt-0.5 truncate">{sfx.name}</span>
+                          <span className="text-[7px] text-neutral-400 block truncate">{sfx.desc}</span>
+                        </button>
+                      ))}
                     </div>
                   </div>
-                </div>
-
-                {/* DJ SOUND EFFECTS (SFX) TRIGGER PAD */}
-                <div className="p-2 sm:p-2.5 rounded-xl bg-neutral-900/90 border border-white/10 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-bold text-neutral-300">
-                      <Zap className="w-3 h-3 text-amber-400" />
-                      <span>DJ Sound Effects</span>
-                    </div>
-                  </div>
-
-                  {/* 5 Instant SFX Trigger Buttons */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 sm:gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleTriggerSfx('airhorn')}
-                      className={`p-1.5 rounded-lg text-left border transition-all active:scale-95 cursor-pointer ${
-                        lastSfxTriggered === 'airhorn'
-                          ? 'bg-amber-400 text-neutral-950 border-amber-300 scale-98 shadow-[0_0_12px_rgba(251,191,36,0.8)]'
-                          : 'bg-neutral-950/80 border-white/10 hover:border-amber-400/60 text-white hover:bg-neutral-900'
-                      }`}
-                    >
-                      <span className="text-sm block">🚨</span>
-                      <span className="text-[9.5px] sm:text-[10px] font-bold block mt-0.5">Air Horn</span>
-                      <span className="text-[7.5px] text-neutral-400 block">Triple Blast</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleTriggerSfx('laser')}
-                      className={`p-1.5 rounded-lg text-left border transition-all active:scale-95 cursor-pointer ${
-                        lastSfxTriggered === 'laser'
-                          ? 'bg-cyan-400 text-neutral-950 border-cyan-300 scale-98 shadow-[0_0_12px_rgba(6,182,212,0.8)]'
-                          : 'bg-neutral-950/80 border-white/10 hover:border-cyan-400/60 text-white hover:bg-neutral-900'
-                      }`}
-                    >
-                      <span className="text-sm block">⚡</span>
-                      <span className="text-[9.5px] sm:text-[10px] font-bold block mt-0.5">Laser Zap</span>
-                      <span className="text-[7.5px] text-neutral-400 block">Dual Sweep</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleTriggerSfx('drop')}
-                      className={`p-1.5 rounded-lg text-left border transition-all active:scale-95 cursor-pointer ${
-                        lastSfxTriggered === 'drop'
-                          ? 'bg-purple-500 text-white border-purple-400 scale-98 shadow-[0_0_12px_rgba(168,85,247,0.8)]'
-                          : 'bg-neutral-950/80 border-white/10 hover:border-purple-400/60 text-white hover:bg-neutral-900'
-                      }`}
-                    >
-                      <span className="text-sm block">💥</span>
-                      <span className="text-[9.5px] sm:text-[10px] font-bold block mt-0.5">Bass Drop</span>
-                      <span className="text-[7.5px] text-neutral-400 block">Sub Boom</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleTriggerSfx('scratch')}
-                      className={`p-1.5 rounded-lg text-left border transition-all active:scale-95 cursor-pointer ${
-                        lastSfxTriggered === 'scratch'
-                          ? 'bg-pink-500 text-white border-pink-400 scale-98 shadow-[0_0_12px_rgba(236,72,153,0.8)]'
-                          : 'bg-neutral-950/80 border-white/10 hover:border-pink-400/60 text-white hover:bg-neutral-900'
-                      }`}
-                    >
-                      <span className="text-sm block">🌀</span>
-                      <span className="text-[9.5px] sm:text-[10px] font-bold block mt-0.5">Scratch</span>
-                      <span className="text-[7.5px] text-neutral-400 block">Vinyl Flick</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleTriggerSfx('riser')}
-                      className={`col-span-2 p-1.5 rounded-lg text-left border transition-all active:scale-95 cursor-pointer ${
-                        lastSfxTriggered === 'riser'
-                          ? 'bg-orange-500 text-neutral-950 border-orange-300 scale-98 shadow-[0_0_12px_rgba(249,115,22,0.8)]'
-                          : 'bg-neutral-950/80 border-white/10 hover:border-orange-400/60 text-white hover:bg-neutral-900'
-                      }`}
-                    >
-                      <span className="text-sm block">🚀</span>
-                      <span className="text-[9.5px] sm:text-[10px] font-bold block mt-0.5">DJ Riser & Drop</span>
-                      <span className="text-[7.5px] text-neutral-400 block">2-Bar Build</span>
-                    </button>
-                  </div>
-                </div>
+                )}
               </div>
             )}
           </div>
