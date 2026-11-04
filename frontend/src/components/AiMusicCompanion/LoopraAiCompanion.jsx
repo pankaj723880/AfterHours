@@ -254,21 +254,22 @@ export default function LoopraAiCompanion({
     if (isMob) {
       // MobileBottomNav is 56px (h-14).
       // Bottom mini player (when active) is ~64px + 8px gap.
+      // Offset button safely upward away from music player and navbar
       const btnBottom = isBottomPlayerVisible
-        ? 'calc(136px + env(safe-area-inset-bottom, 0px))'
-        : 'calc(70px + env(safe-area-inset-bottom, 0px))';
+        ? 'calc(152px + env(safe-area-inset-bottom, 0px))'
+        : 'calc(82px + env(safe-area-inset-bottom, 0px))';
       const panelBottom = isBottomPlayerVisible
-        ? `calc(136px + ${barHeight} + 10px + env(safe-area-inset-bottom, 0px))`
-        : `calc(70px + ${barHeight} + 10px + env(safe-area-inset-bottom, 0px))`;
+        ? `calc(152px + ${barHeight} + 10px + env(safe-area-inset-bottom, 0px))`
+        : `calc(82px + ${barHeight} + 10px + env(safe-area-inset-bottom, 0px))`;
       const maxH = isBottomPlayerVisible
-        ? `calc(100dvh - ${hasVoiceAccess ? '280px' : '215px'} - env(safe-area-inset-bottom, 0px))`
-        : `calc(100dvh - ${hasVoiceAccess ? '215px' : '150px'} - env(safe-area-inset-bottom, 0px))`;
+        ? `calc(100dvh - ${hasVoiceAccess ? '295px' : '230px'} - env(safe-area-inset-bottom, 0px))`
+        : `calc(100dvh - ${hasVoiceAccess ? '225px' : '160px'} - env(safe-area-inset-bottom, 0px))`;
       return { btnBottom, panelBottom, maxH };
     }
-    // Desktop:
-    const btnBottom = isBottomPlayerVisible ? '88px' : '24px';
-    const panelBottom = isBottomPlayerVisible ? `calc(88px + ${barHeight} + 12px)` : `calc(24px + ${barHeight} + 12px)`;
-    const maxH = isBottomPlayerVisible ? `calc(100vh - ${hasVoiceAccess ? '235px' : '170px'})` : `calc(100vh - ${hasVoiceAccess ? '175px' : '110px'})`;
+    // Desktop: comfortably clear bottom music player bar
+    const btnBottom = isBottomPlayerVisible ? '106px' : '36px';
+    const panelBottom = isBottomPlayerVisible ? `calc(106px + ${barHeight} + 12px)` : `calc(36px + ${barHeight} + 12px)`;
+    const maxH = isBottomPlayerVisible ? `calc(100vh - ${hasVoiceAccess ? '250px' : '185px'})` : `calc(100vh - ${hasVoiceAccess ? '185px' : '120px'})`;
     return { btnBottom, panelBottom, maxH };
   }, [isBottomPlayerVisible, hasVoiceAccess]);
 

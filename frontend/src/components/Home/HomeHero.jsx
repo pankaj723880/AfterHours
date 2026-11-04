@@ -6,6 +6,7 @@ export default function HomeHero({
   onSearch,
   onSelectSong,
   onPlaySong,
+  onArtistClick,
   placeholder,
   suggestions,
   user,
@@ -93,6 +94,7 @@ export default function HomeHero({
           onSearch={onSearch}
           onSelectSong={onSelectSong}
           onPlaySong={onPlaySong}
+          onArtistClick={onArtistClick}
           placeholder={placeholder || "Search songs, artists, or paste link..."}
           suggestions={suggestions}
           showQuickTags={true}

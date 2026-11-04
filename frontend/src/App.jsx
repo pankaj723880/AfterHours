@@ -5649,7 +5649,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               const defaultNav = [
                 { id: 'home', label: 'Home', icon: 'home', group: 'main' },
                 { id: 'dj-club', label: 'Loopra DJ Club', icon: 'headphones', badge: 'Live', group: 'main' },
-                { id: 'chat', label: 'Loopra AI Chat', icon: 'messageSquare', badge: 'AI', group: 'main' },
                 { id: 'discover', label: 'Discover & Search', icon: 'discover', group: 'main' },
                 { id: 'radio', label: 'Indian Live Radio', icon: 'radio', badge: 'Live', group: 'main' },
                 { id: 'mood', label: 'Mood-to-Music AI', icon: 'sparkles', badge: 'AI', group: 'discovery' },
@@ -5733,6 +5732,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               const bottomNavIds = new Set(['home', 'discover', 'library', 'liked', 'playlists', 'radio', 'indian-radio']);
               const allItems = Array.from(navMap.values()).filter(item => {
                 if (!item || item.enabled === false || disabledIds.has(item.id)) return false;
+                // Requirement 5: Remove only Loopra AI Chat navigation from the sidebar
+                if (item.id === 'chat' || item.id === 'ai-chat') return false;
                 // Restriction applies ONLY to phone/mobile mode: do not show lower navbar destinations in mobile sidebar
                 if (isMobileScreen && bottomNavIds.has(item.id)) return false;
                 return true;
@@ -5746,7 +5747,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
               return groups.map(grp => {
                 const groupItems = allItems.filter(item => {
-                  if (item.id === 'profile') return false;
+                  if (item.id === 'profile' || item.id === 'chat' || item.id === 'ai-chat') return false;
                   return (item.group || 'main') === grp.key;
                 });
 
@@ -6299,6 +6300,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               onSearch={handleSearchFromHome}
               onSelectSong={playSong}
               onPlaySong={playSong}
+              onArtistClick={handleArtistClick}
               placeholder={cmsConfig?.searchPage?.placeholder || "Search songs, artists, albums..."}
               suggestions={cmsConfig?.searchPage?.quickTags}
               user={user}

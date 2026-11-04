@@ -137,6 +137,7 @@ export default function DiscoverView({
               }}
               onSelectSong={playSong}
               onPlaySong={playSong}
+              onArtistClick={onArtistClick}
               placeholder={cmsConfig?.searchPage?.placeholder || "Search song, artist, album..."}
               showQuickTags={false}
               user={user}
@@ -222,35 +223,59 @@ export default function DiscoverView({
                 >
                   {/* Left: Index, Thumbnail, Title & Artist */}
                   <div className="flex items-center gap-3 sm:gap-3.5 min-w-0 flex-1 pr-2">
-                    <span className="text-xs font-mono text-neutral-500 w-5 text-center shrink-0">
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        playSong(track);
+                      }}
+                      className="text-xs font-mono text-neutral-500 w-5 text-center shrink-0 cursor-pointer hover:text-amber-400"
+                      title="Play track"
+                    >
                       {i + 1}
                     </span>
-                    <img
-                      src={cleanThumb}
-                      alt={track.title || ""}
-                      loading="lazy"
-                      className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl object-cover shrink-0 shadow-md bg-neutral-950"
-                      onLoad={(e) => {
-                        const target = e.currentTarget;
-                        if (target.naturalWidth <= 1 || (target.naturalWidth === 120 && target.naturalHeight === 90)) {
-                          const card = target.closest('.rounded-2xl');
-                          if (card) card.style.display = 'none';
-                        }
+                    <div
+                      className="relative shrink-0 group/art cursor-pointer"
+                      title={`View ${track.channel || track.artist || 'artist'} profile`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onArtistClick?.(track.channel || track.artist);
                       }}
-                      onError={(e) => {
-                        if (handleImageError) handleImageError(e, track.title, trackId);
-                        else {
-                          const card = e.currentTarget.closest('.rounded-2xl');
-                          if (card) card.style.display = 'none';
-                        }
-                      }}
-                    />
+                    >
+                      <img
+                        src={cleanThumb}
+                        alt={track.title || ""}
+                        loading="lazy"
+                        className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl object-cover shadow-md bg-neutral-950 border border-white/10 group-hover/art:border-amber-400 group-hover/art:scale-105 transition-all"
+                        onLoad={(e) => {
+                          const target = e.currentTarget;
+                          if (target.naturalWidth <= 1 || (target.naturalWidth === 120 && target.naturalHeight === 90)) {
+                            const card = target.closest('.rounded-2xl');
+                            if (card) card.style.display = 'none';
+                          }
+                        }}
+                        onError={(e) => {
+                          if (handleImageError) handleImageError(e, track.title, trackId);
+                          else {
+                            const card = e.currentTarget.closest('.rounded-2xl');
+                            if (card) card.style.display = 'none';
+                          }
+                        }}
+                      />
+                    </div>
                     <div className="min-w-0 flex-1">
-                      <h4 className={`font-bold text-xs sm:text-sm truncate ${isCurrent ? 'text-amber-400 font-extrabold' : 'text-white'}`}>
+                      <h4
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          playSong(track);
+                        }}
+                        title={`Play ${track.title}`}
+                        className={`font-bold text-xs sm:text-sm truncate cursor-pointer hover:text-amber-400 transition-colors ${isCurrent ? 'text-amber-400 font-extrabold' : 'text-white'}`}
+                      >
                         {track.title}
                       </h4>
                       <p
-                        className="text-[11px] sm:text-xs text-neutral-400 truncate mt-0.5 hover:text-amber-300 hover:underline cursor-pointer"
+                        className="text-[11px] sm:text-xs text-neutral-400 truncate mt-0.5 hover:text-amber-300 hover:underline cursor-pointer inline-block max-w-full"
+                        title={`View ${track.channel || track.artist || 'artist'} profile`}
                         onClick={(e) => {
                           e.stopPropagation();
                           onArtistClick?.(track.channel || track.artist);
