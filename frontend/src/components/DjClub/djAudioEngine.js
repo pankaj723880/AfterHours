@@ -222,6 +222,14 @@ class DjAudioEngine {
     // Event listeners for visual sync
     this.beatListeners = new Set();
 
+    // Multi-Item Continuous Auto-Loop System
+    this.activeLoops = new Map(); // id -> { id, type: 'bass'|'fx', interval: number, nextTriggerTime: number, lastTriggerTime: number, customInterval: boolean }
+    this.globalBassInterval = 2.0; // 0.5 to 10s (default 2s)
+    this.globalFxInterval = 4.0; // 1 to 15s (default 4s)
+    this.loopSchedulerTimer = null;
+    this.loopStateListeners = new Set();
+    this.loopTriggerListeners = new Set();
+
     // Noise buffer cache
     this.noiseBuffer = null;
     this.reverbBuffer = null;
@@ -878,10 +886,10 @@ class DjAudioEngine {
   /**
    * 1. Air Horn
    */
-  async triggerAirHorn() {
+  async triggerAirHorn(time = 0) {
     await this.resumeContext();
     if (!this.ctx) return;
-    const t = this.ctx.currentTime + 0.015;
+    const t = Math.max(time, this.ctx.currentTime + 0.015);
     const freqs = [311.13, 392.0, 466.16, 622.25];
 
     [0, 0.18, 0.38].forEach((burstOffset, burstIdx) => {
@@ -913,10 +921,10 @@ class DjAudioEngine {
   /**
    * 2. Bass Impact (Massive cinematic trailer boom)
    */
-  async triggerBassImpact() {
+  async triggerBassImpact(time = 0) {
     await this.resumeContext();
     if (!this.ctx) return;
-    const t = this.ctx.currentTime + 0.015;
+    const t = Math.max(time, this.ctx.currentTime + 0.015);
 
     const osc = this.ctx.createOscillator();
     osc.type = 'sine';
@@ -959,11 +967,11 @@ class DjAudioEngine {
   /**
    * 3. DJ Tension Riser
    */
-  async triggerRiser(duration = 2.0) {
+  async triggerRiser(duration = 2.0, time = 0) {
     await this.resumeContext();
     if (!this.ctx) return;
     if (!this.noiseBuffer) this.initNoiseBuffer();
-    const t = this.ctx.currentTime + 0.015;
+    const t = Math.max(time, this.ctx.currentTime + 0.015);
 
     if (this.noiseBuffer) {
       const noise = this.ctx.createBufferSource();
@@ -1010,12 +1018,12 @@ class DjAudioEngine {
   /**
    * 4. Vinyl Scratch FX
    */
-  async triggerScratch() {
+  async triggerScratch(time = 0) {
     await this.resumeContext();
     if (!this.ctx) return;
     if (!this.noiseBuffer) this.initNoiseBuffer();
     if (!this.noiseBuffer) return;
-    const t = this.ctx.currentTime + 0.015;
+    const t = Math.max(time, this.ctx.currentTime + 0.015);
 
     const noise = this.ctx.createBufferSource();
     noise.buffer = this.noiseBuffer;
@@ -1045,10 +1053,10 @@ class DjAudioEngine {
   /**
    * 5. Laser Zap FX
    */
-  async triggerLaserZap() {
+  async triggerLaserZap(time = 0) {
     await this.resumeContext();
     if (!this.ctx) return;
-    const t = this.ctx.currentTime + 0.015;
+    const t = Math.max(time, this.ctx.currentTime + 0.015);
 
     [0, 0.13].forEach((offset) => {
       const zapTime = t + offset;
@@ -1080,10 +1088,10 @@ class DjAudioEngine {
   /**
    * 6. Bass Sweep
    */
-  async triggerBassSweep() {
+  async triggerBassSweep(time = 0) {
     await this.resumeContext();
     if (!this.ctx) return;
-    const t = this.ctx.currentTime + 0.015;
+    const t = Math.max(time, this.ctx.currentTime + 0.015);
 
     const osc = this.ctx.createOscillator();
     osc.type = 'sawtooth';
@@ -1113,10 +1121,10 @@ class DjAudioEngine {
   /**
    * 7. Deep Sub Drop
    */
-  async triggerSubDrop() {
+  async triggerSubDrop(time = 0) {
     await this.resumeContext();
     if (!this.ctx) return;
-    const t = this.ctx.currentTime + 0.015;
+    const t = Math.max(time, this.ctx.currentTime + 0.015);
 
     const osc = this.ctx.createOscillator();
     osc.type = 'sine';
@@ -1140,12 +1148,12 @@ class DjAudioEngine {
   /**
    * 8. Crowd Hype (Cheering stadium roar)
    */
-  async triggerCrowdHype() {
+  async triggerCrowdHype(time = 0) {
     await this.resumeContext();
     if (!this.ctx) return;
     if (!this.noiseBuffer) this.initNoiseBuffer();
     if (!this.noiseBuffer) return;
-    const t = this.ctx.currentTime + 0.015;
+    const t = Math.max(time, this.ctx.currentTime + 0.015);
 
     const noise = this.ctx.createBufferSource();
     noise.buffer = this.noiseBuffer;
@@ -1174,10 +1182,10 @@ class DjAudioEngine {
   /**
    * 9. Drum Roll (Accelerating snare build into crash)
    */
-  async triggerDrumRoll() {
+  async triggerDrumRoll(time = 0) {
     await this.resumeContext();
     if (!this.ctx) return;
-    const t = this.ctx.currentTime + 0.015;
+    const t = Math.max(time, this.ctx.currentTime + 0.015);
 
     // 8 hits accelerating from 0.12s to 0.03s intervals
     let curr = t;
@@ -1198,10 +1206,10 @@ class DjAudioEngine {
   /**
    * 10. DJ Shout (Vocoder formant chant "HEY!")
    */
-  async triggerDjShout() {
+  async triggerDjShout(time = 0) {
     await this.resumeContext();
     if (!this.ctx) return;
-    const t = this.ctx.currentTime + 0.015;
+    const t = Math.max(time, this.ctx.currentTime + 0.015);
 
     // Dual vocal formants (approx 700Hz and 1220Hz for "EH/AY")
     const formants = [720, 1240, 2500];
@@ -1234,11 +1242,11 @@ class DjAudioEngine {
   /**
    * 11. Impact Hit (Metallic club cymbal splash layered with heavy transient punch)
    */
-  async triggerImpactHit() {
+  async triggerImpactHit(time = 0) {
     await this.resumeContext();
     if (!this.ctx) return;
     if (!this.noiseBuffer) this.initNoiseBuffer();
-    const t = this.ctx.currentTime + 0.015;
+    const t = Math.max(time, this.ctx.currentTime + 0.015);
 
     this.playPunchyKick(t, true);
 
@@ -1269,10 +1277,10 @@ class DjAudioEngine {
   /**
    * 12. Echo Delay FX (Staccato synth stab that cascades in the delay feedback)
    */
-  async triggerEchoDelay() {
+  async triggerEchoDelay(time = 0) {
     await this.resumeContext();
     if (!this.ctx) return;
-    const t = this.ctx.currentTime + 0.015;
+    const t = Math.max(time, this.ctx.currentTime + 0.015);
 
     const osc = this.ctx.createOscillator();
     osc.type = 'sawtooth';
@@ -1850,39 +1858,305 @@ class DjAudioEngine {
     }
   }
 
-  // Trigger individual bass library item
-  triggerBassItem(id) {
+  // Trigger individual bass library item (supports precise Web Audio time scheduling)
+  triggerBassItem(id, time = 0) {
+    const t = Math.max(time, this.ctx ? this.ctx.currentTime + 0.005 : 0.005);
     switch (id) {
-      case 'deep-sub': this.playDeepSub(); break;
-      case 'punchy-kick': this.playPunchyKick(0, true); break;
-      case 'rolling-bass': this.playRollingBass(0, 65.41); break;
-      case 'wobble-bass': this.playWobbleBass(0, 55.0, 6); break;
-      case 'distorted-bass': this.playDistortedBass(0, 60.0); break;
-      case 'reverse-bass': this.playReverseBass(0, 65.0); break;
-      case 'dhol-bass': this.playDholBass(0, true); break;
-      case 'triple-drop': this.playTripleDrop(0); break;
-      default: this.playPunchyKick(0, true); break;
+      case 'deep-sub': this.playDeepSub(t); break;
+      case 'punchy-kick': this.playPunchyKick(t, true); break;
+      case 'rolling-bass': this.playRollingBass(t, 65.41); break;
+      case 'wobble-bass': this.playWobbleBass(t, 55.0, 6); break;
+      case 'distorted-bass': this.playDistortedBass(t, 60.0); break;
+      case 'reverse-bass': this.playReverseBass(t, 65.0); break;
+      case 'dhol-bass': this.playDholBass(t, true); break;
+      case 'triple-drop': this.playTripleDrop(t); break;
+      default: this.playPunchyKick(t, true); break;
     }
     this.notifyBeat({ isKick: true, intensity: 0.95, sfxType: id });
   }
 
-  // Trigger individual SFX library item
-  triggerSfxItem(id) {
+  // Trigger individual SFX library item (supports precise Web Audio time scheduling)
+  triggerSfxItem(id, time = 0) {
+    const t = Math.max(time, this.ctx ? this.ctx.currentTime + 0.005 : 0.005);
     switch (id) {
-      case 'airhorn': this.triggerAirHorn(); break;
-      case 'bass-impact': this.triggerBassImpact(); break;
-      case 'riser': this.triggerRiser(1.8); break;
-      case 'scratch': this.triggerScratch(); break;
-      case 'laser': this.triggerLaserZap(); break;
-      case 'bass-sweep': this.triggerBassSweep(); break;
-      case 'sub-drop': this.triggerSubDrop(); break;
-      case 'crowd-hype': this.triggerCrowdHype(); break;
-      case 'drum-roll': this.triggerDrumRoll(); break;
-      case 'dj-shout': this.triggerDjShout(); break;
-      case 'impact-hit': this.triggerImpactHit(); break;
-      case 'echo-delay': this.triggerEchoDelay(); break;
-      default: this.triggerLaserZap(); break;
+      case 'airhorn': this.triggerAirHorn(t); break;
+      case 'bass-impact': this.triggerBassImpact(t); break;
+      case 'riser': this.triggerRiser(1.8, t); break;
+      case 'scratch': this.triggerScratch(t); break;
+      case 'laser': this.triggerLaserZap(t); break;
+      case 'bass-sweep': this.triggerBassSweep(t); break;
+      case 'sub-drop': this.triggerSubDrop(t); break;
+      case 'crowd-hype': this.triggerCrowdHype(t); break;
+      case 'drum-roll': this.triggerDrumRoll(t); break;
+      case 'dj-shout': this.triggerDjShout(t); break;
+      case 'impact-hit': this.triggerImpactHit(t); break;
+      case 'echo-delay': this.triggerEchoDelay(t); break;
+      default: this.triggerLaserZap(t); break;
     }
+  }
+
+  // =========================================================================
+  // MULTI-ITEM CONTINUOUS AUTO-LOOP SYSTEM (Centralized Scheduler)
+  // =========================================================================
+
+  onLoopStateChange(callback) {
+    if (typeof callback === 'function') {
+      this.loopStateListeners.add(callback);
+    }
+    return () => this.loopStateListeners.delete(callback);
+  }
+
+  notifyLoopStateChange() {
+    const activeLoops = Array.from(this.activeLoops.values());
+    const activeBass = activeLoops.filter((l) => l.type === 'bass');
+    const activeFx = activeLoops.filter((l) => l.type === 'fx');
+
+    this.loopStateListeners.forEach((cb) => {
+      try {
+        cb({
+          activeLoops,
+          activeBassCount: activeBass.length,
+          activeFxCount: activeFx.length,
+          globalBassInterval: this.globalBassInterval,
+          globalFxInterval: this.globalFxInterval
+        });
+      } catch (_) {}
+    });
+  }
+
+  onLoopTrigger(callback) {
+    if (typeof callback === 'function') {
+      this.loopTriggerListeners.add(callback);
+    }
+    return () => this.loopTriggerListeners.delete(callback);
+  }
+
+  notifyLoopTrigger(data) {
+    this.loopTriggerListeners.forEach((cb) => {
+      try {
+        cb(data);
+      } catch (_) {}
+    });
+  }
+
+  /**
+   * Centralized Single Scheduler Loop: checks active loops with Web Audio lookahead.
+   * Completely avoids multi-timer leaks or duplicate audio intervals.
+   */
+  scheduleLoopIteration() {
+    if (!this.ctx || this.activeLoops.size === 0) {
+      if (this.loopSchedulerTimer) {
+        clearTimeout(this.loopSchedulerTimer);
+        this.loopSchedulerTimer = null;
+      }
+      return;
+    }
+
+    const now = this.ctx.currentTime;
+    const lookahead = 0.05; // 50ms scheduling window
+
+    this.activeLoops.forEach((loop, id) => {
+      if (now >= loop.nextTriggerTime - lookahead) {
+        const triggerTime = Math.max(now, loop.nextTriggerTime);
+
+        if (loop.type === 'bass') {
+          this.triggerBassItem(id, triggerTime);
+        } else if (loop.type === 'fx') {
+          this.triggerSfxItem(id, triggerTime);
+        }
+
+        loop.lastTriggerTime = triggerTime;
+        loop.nextTriggerTime = triggerTime + loop.interval;
+
+        this.notifyLoopTrigger({
+          id,
+          type: loop.type,
+          time: triggerTime,
+          nextTime: loop.nextTriggerTime,
+          interval: loop.interval
+        });
+      }
+    });
+
+    this.loopSchedulerTimer = setTimeout(() => this.scheduleLoopIteration(), 25);
+  }
+
+  /**
+   * Toggle individual item in the continuous multi-loop system
+   */
+  async toggleLoop(id, type = 'bass', customInterval = null) {
+    await this.resumeContext();
+    if (this.activeLoops.has(id)) {
+      // Turn OFF
+      this.activeLoops.delete(id);
+      if (this.activeLoops.size === 0 && this.loopSchedulerTimer) {
+        clearTimeout(this.loopSchedulerTimer);
+        this.loopSchedulerTimer = null;
+      }
+      this.notifyLoopStateChange();
+      return false;
+    } else {
+      // Turn ON
+      const defaultInterval = type === 'bass' ? this.globalBassInterval : this.globalFxInterval;
+      const interval = Number(customInterval) > 0 ? Number(customInterval) : defaultInterval;
+      const now = this.ctx ? this.ctx.currentTime : 0;
+
+      const loopConfig = {
+        id,
+        type,
+        interval: Math.max(0.2, interval),
+        nextTriggerTime: now + 0.01, // Immediate first play
+        lastTriggerTime: now,
+        customInterval: Boolean(customInterval && customInterval !== defaultInterval)
+      };
+
+      this.activeLoops.set(id, loopConfig);
+
+      // Play immediate first note
+      if (type === 'bass') {
+        this.triggerBassItem(id, now + 0.01);
+      } else {
+        this.triggerSfxItem(id, now + 0.01);
+      }
+
+      loopConfig.nextTriggerTime = now + loopConfig.interval;
+
+      this.notifyLoopTrigger({
+        id,
+        type,
+        time: now + 0.01,
+        nextTime: loopConfig.nextTriggerTime,
+        interval: loopConfig.interval
+      });
+
+      if (!this.loopSchedulerTimer) {
+        this.scheduleLoopIteration();
+      }
+      this.notifyLoopStateChange();
+      return true;
+    }
+  }
+
+  isLoopActive(id) {
+    return this.activeLoops.has(id);
+  }
+
+  getLoopConfig(id) {
+    return this.activeLoops.get(id) || null;
+  }
+
+  getActiveLoops() {
+    return Array.from(this.activeLoops.values());
+  }
+
+  getActiveCount(type) {
+    let count = 0;
+    this.activeLoops.forEach((loop) => {
+      if (!type || loop.type === type) count++;
+    });
+    return count;
+  }
+
+  /**
+   * Adjusts individual item's repeat interval immediately without restarting other items
+   */
+  setItemInterval(id, newInterval) {
+    const loop = this.activeLoops.get(id);
+    const validInterval = Math.max(0.2, Number(newInterval) || 1.0);
+    if (loop) {
+      loop.interval = validInterval;
+      loop.customInterval = true;
+      const now = this.ctx ? this.ctx.currentTime : 0;
+      const elapsed = now - loop.lastTriggerTime;
+      if (elapsed < loop.interval) {
+        loop.nextTriggerTime = loop.lastTriggerTime + loop.interval;
+      } else {
+        loop.nextTriggerTime = now + 0.02;
+      }
+      this.notifyLoopStateChange();
+    }
+  }
+
+  /**
+   * Sets Global Bass Interval (0.5 to 10s)
+   */
+  setGlobalBassInterval(sec) {
+    const validSec = Math.max(0.5, Math.min(10, Number(sec) || 2.0));
+    this.globalBassInterval = validSec;
+    // Update active bass loops that don't have custom override
+    this.activeLoops.forEach((loop) => {
+      if (loop.type === 'bass' && !loop.customInterval) {
+        loop.interval = validSec;
+      }
+    });
+    this.notifyLoopStateChange();
+  }
+
+  /**
+   * Sets Global FX Interval (1 to 15s)
+   */
+  setGlobalFxInterval(sec) {
+    const validSec = Math.max(1, Math.min(15, Number(sec) || 4.0));
+    this.globalFxInterval = validSec;
+    // Update active FX loops that don't have custom override
+    this.activeLoops.forEach((loop) => {
+      if (loop.type === 'fx' && !loop.customInterval) {
+        loop.interval = validSec;
+      }
+    });
+    this.notifyLoopStateChange();
+  }
+
+  /**
+   * Stop all active bass loops
+   */
+  stopAllBass() {
+    for (const [id, loop] of this.activeLoops.entries()) {
+      if (loop.type === 'bass') {
+        this.activeLoops.delete(id);
+      }
+    }
+    if (this.activeLoops.size === 0 && this.loopSchedulerTimer) {
+      clearTimeout(this.loopSchedulerTimer);
+      this.loopSchedulerTimer = null;
+    }
+    this.notifyLoopStateChange();
+  }
+
+  /**
+   * Stop all active FX loops
+   */
+  stopAllFx() {
+    for (const [id, loop] of this.activeLoops.entries()) {
+      if (loop.type === 'fx') {
+        this.activeLoops.delete(id);
+      }
+    }
+    if (this.activeLoops.size === 0 && this.loopSchedulerTimer) {
+      clearTimeout(this.loopSchedulerTimer);
+      this.loopSchedulerTimer = null;
+    }
+    this.notifyLoopStateChange();
+  }
+
+  /**
+   * Stop all active loops (both Bass and FX)
+   */
+  stopAllLoops() {
+    this.activeLoops.clear();
+    if (this.loopSchedulerTimer) {
+      clearTimeout(this.loopSchedulerTimer);
+      this.loopSchedulerTimer = null;
+    }
+    this.notifyLoopStateChange();
+  }
+
+  /**
+   * Emergency Stop All: stops all loops + pauses beat playback
+   */
+  stopAll() {
+    this.stopAllLoops();
+    this.pauseBeats();
   }
 
   toggleMute() {
@@ -1901,8 +2175,11 @@ class DjAudioEngine {
   }
 
   destroy() {
+    this.stopAllLoops();
     this.pauseBeats();
     this.beatListeners.clear();
+    this.loopStateListeners.clear();
+    this.loopTriggerListeners.clear();
     if (this.ctx && this.ctx.state !== 'closed') {
       try {
         this.ctx.close();

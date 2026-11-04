@@ -29,7 +29,9 @@ import {
   Minus,
   RotateCcw,
   Gauge,
-  Layers
+  Layers,
+  Timer,
+  Clock
 } from 'lucide-react';
 import DjLightingCanvas from './DjLightingCanvas';
 import DjWaveformVisualizer from './DjWaveformVisualizer';
@@ -151,16 +153,48 @@ export default function DjClubPage({
   const [audioSubTab, setAudioSubTab] = useState('styles'); // 'styles' | 'mixer' | 'bass' | 'sfx'
   const tapTimesRef = useRef([]);
 
+  // Multi-Item Continuous Auto-Loop State
+  const [activeLoops, setActiveLoops] = useState([]);
+  const [activeBassCount, setActiveBassCount] = useState(0);
+  const [activeFxCount, setActiveFxCount] = useState(0);
+  const [globalBassInterval, setGlobalBassInterval] = useState(2.0);
+  const [globalFxInterval, setGlobalFxInterval] = useState(4.0);
+  const [triggerFlashMap, setTriggerFlashMap] = useState({});
+
   // Active track info
   const activeTrack = currentSong && (currentSong.title || currentSong.name) ? currentSong : DEFAULT_DJ_TRACK;
   const trackTitle = activeTrack.title || 'Loopra DJ Mix';
   const trackSubtitle = activeTrack.channel || activeTrack.artist || 'Club • EDM • Party';
   const trackArt = activeTrack.thumbnail || activeTrack.coverArt || '/presets/loopra-dj-art.jpg';
 
-  // Clean up DJ beats playback on component unmount
+  // Multi-Loop Real-Time Subscription & Clean up on component unmount
   useEffect(() => {
+    const unsubState = djAudio.onLoopStateChange((state) => {
+      setActiveLoops(state.activeLoops);
+      setActiveBassCount(state.activeBassCount);
+      setActiveFxCount(state.activeFxCount);
+      setGlobalBassInterval(state.globalBassInterval);
+      setGlobalFxInterval(state.globalFxInterval);
+    });
+
+    const unsubTrigger = djAudio.onLoopTrigger((evt) => {
+      setTriggerFlashMap((prev) => ({
+        ...prev,
+        [evt.id]: Date.now()
+      }));
+      setTimeout(() => {
+        setTriggerFlashMap((prev) => {
+          const next = { ...prev };
+          delete next[evt.id];
+          return next;
+        });
+      }, 350);
+    });
+
     return () => {
-      djAudio.pauseBeats();
+      unsubState();
+      unsubTrigger();
+      djAudio.stopAll();
     };
   }, []);
 
@@ -337,6 +371,51 @@ export default function DjClubPage({
     setLastSfxTriggered(sfxId);
     setTimeout(() => setLastSfxTriggered(null), 350);
     djAudio.triggerSfxItem(sfxId);
+  };
+
+  // Continuous Multi-Loop Item Toggles
+  const handleToggleBassLoop = (bassId) => {
+    setLastBassTriggered(bassId);
+    setTimeout(() => setLastBassTriggered(null), 350);
+    djAudio.toggleLoop(bassId, 'bass');
+  };
+
+  const handleToggleFxLoop = (sfxId) => {
+    setLastSfxTriggered(sfxId);
+    setTimeout(() => setLastSfxTriggered(null), 350);
+    djAudio.toggleLoop(sfxId, 'fx');
+  };
+
+  const handleSetItemInterval = (id, newInterval, e) => {
+    e?.stopPropagation?.();
+    djAudio.setItemInterval(id, newInterval);
+  };
+
+  const handleGlobalBassIntervalChange = (val) => {
+    const num = Number(val);
+    setGlobalBassInterval(num);
+    djAudio.setGlobalBassInterval(num);
+  };
+
+  const handleGlobalFxIntervalChange = (val) => {
+    const num = Number(val);
+    setGlobalFxInterval(num);
+    djAudio.setGlobalFxInterval(num);
+  };
+
+  const handleStopAllBass = (e) => {
+    e?.stopPropagation?.();
+    djAudio.stopAllBass();
+  };
+
+  const handleStopAllFx = (e) => {
+    e?.stopPropagation?.();
+    djAudio.stopAllFx();
+  };
+
+  const handleStopAll = () => {
+    djAudio.stopAll();
+    setIsDjBeatsPlaying(false);
   };
 
   const handleBeatDrop = () => {
@@ -747,13 +826,39 @@ export default function DjClubPage({
                             {djBpm} BPM
                           </span>
                         </div>
-                        <p className="text-[8px] sm:text-[9px] text-neutral-400 truncate max-w-[110px] sm:max-w-[130px]">
-                          {BEAT_STYLES.find((s) => s.id === djStyle)?.name || 'Club Mix'}
-                        </p>
+                        <div className="flex items-center gap-1 mt-0.5">
+                          {activeBassCount > 0 && (
+                            <span className="text-[7px] font-mono px-1 py-0.2 rounded bg-amber-500/25 text-amber-300 font-bold animate-pulse">
+                              Bass: {activeBassCount} ON
+                            </span>
+                          )}
+                          {activeFxCount > 0 && (
+                            <span className="text-[7px] font-mono px-1 py-0.2 rounded bg-cyan-500/25 text-cyan-300 font-bold animate-pulse">
+                              FX: {activeFxCount} ON
+                            </span>
+                          )}
+                          {activeBassCount === 0 && activeFxCount === 0 && (
+                            <p className="text-[8px] sm:text-[9px] text-neutral-400 truncate max-w-[110px] sm:max-w-[130px]">
+                              {BEAT_STYLES.find((s) => s.id === djStyle)?.name || 'Club Mix'}
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-1 sm:gap-1.5">
+                      {/* Emergency Stop All Button */}
+                      {(activeBassCount > 0 || activeFxCount > 0 || isDjBeatsPlaying) && (
+                        <button
+                          type="button"
+                          onClick={handleStopAll}
+                          className="px-2 py-1 rounded-lg text-[8.5px] font-bold bg-red-600 hover:bg-red-500 text-white shadow-[0_0_8px_rgba(239,68,68,0.7)] transition active:scale-95 cursor-pointer"
+                          title="Stop all running loops and beats"
+                        >
+                          STOP ALL
+                        </button>
+                      )}
+
                       {/* DJ Beats Play / Pause Button */}
                       <button
                         type="button"
@@ -828,8 +933,8 @@ export default function DjClubPage({
                   {[
                     { id: 'styles', label: 'Styles', icon: Music },
                     { id: 'mixer', label: 'EQ/Mix', icon: Sliders },
-                    { id: 'bass', label: 'Bass (8)', icon: Speaker },
-                    { id: 'sfx', label: 'FX (12)', icon: Zap }
+                    { id: 'bass', label: activeBassCount > 0 ? `Bass (${activeBassCount})` : 'Bass (8)', icon: Speaker },
+                    { id: 'sfx', label: activeFxCount > 0 ? `FX (${activeFxCount})` : 'FX (12)', icon: Zap }
                   ].map((tab) => (
                     <button
                       key={tab.id}
@@ -1172,66 +1277,263 @@ export default function DjClubPage({
                   </div>
                 )}
 
-                {/* SUB-TAB 3: BOOM-BOOM BASS LIBRARY (8 Items) */}
+                {/* SUB-TAB 3: BOOM-BOOM BASS MULTI-LOOP LAB (8 Items) */}
                 {audioSubTab === 'bass' && (
                   <div className="space-y-1.5 animate-fadeIn">
-                    <div className="flex items-center justify-between px-1">
-                      <span className="text-[9px] font-bold text-neutral-300">BOOM-BOOM Bass Library</span>
-                      <span className="text-[7.5px] text-neutral-400">8 Web Audio Presets</span>
+                    {/* Global Bass Interval & Action Bar */}
+                    <div className="p-2 rounded-xl bg-neutral-900/95 border border-white/10 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <Timer className="w-3 h-3 text-orange-400" />
+                          <span className="text-[9px] font-bold text-neutral-200">Bass Loop Interval</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9.5px] font-mono font-bold text-orange-400">{globalBassInterval.toFixed(1)}s</span>
+                          {activeBassCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={handleStopAllBass}
+                              className="px-1.5 py-0.5 rounded text-[7px] font-bold bg-red-500/20 text-red-400 border border-red-500/40 hover:bg-red-500/30 transition cursor-pointer"
+                              title="Stop all active bass loops"
+                            >
+                              Stop All ({activeBassCount})
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min="0.5"
+                          max="10"
+                          step="0.5"
+                          value={globalBassInterval}
+                          onChange={(e) => handleGlobalBassIntervalChange(e.target.value)}
+                          className="flex-1 h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between text-[7px] text-neutral-400">
+                        <span>0.5s Fast</span>
+                        <div className="flex gap-1">
+                          {[1, 2, 4].map((sec) => (
+                            <button
+                              key={sec}
+                              type="button"
+                              onClick={() => handleGlobalBassIntervalChange(sec)}
+                              className={`px-1.5 py-0.2 rounded font-mono ${
+                                Math.abs(globalBassInterval - sec) < 0.1
+                                  ? 'bg-orange-500 text-neutral-950 font-bold'
+                                  : 'bg-neutral-950 text-neutral-400 hover:text-white'
+                              }`}
+                            >
+                              {sec}s
+                            </button>
+                          ))}
+                        </div>
+                        <span>10s Slow</span>
+                      </div>
                     </div>
 
+                    {/* 8 Bass Cards Grid */}
                     <div className="grid grid-cols-2 gap-1.5 max-h-56 overflow-y-auto custom-scrollbar pr-0.5">
-                      {BASS_LIBRARY.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => handleTriggerBass(item.id)}
-                          className={`p-2 rounded-lg text-left border transition-all active:scale-95 cursor-pointer ${
-                            lastBassTriggered === item.id
-                              ? 'bg-orange-500 text-neutral-950 border-orange-300 scale-98 shadow-[0_0_12px_rgba(249,115,22,0.9)]'
-                              : 'bg-neutral-950/80 border-white/10 hover:border-orange-400/50 text-white hover:bg-neutral-900'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold block">{item.name}</span>
-                            <span className="text-[7px] font-mono px-1 py-0.2 rounded bg-white/10 text-orange-400">
-                              {item.tag}
+                      {BASS_LIBRARY.map((item) => {
+                        const loopConfig = activeLoops.find((l) => l.id === item.id);
+                        const isActive = Boolean(loopConfig);
+                        const isFlashing = Boolean(triggerFlashMap[item.id]);
+                        const currentInterval = loopConfig ? loopConfig.interval : globalBassInterval;
+
+                        return (
+                          <div
+                            key={item.id}
+                            onClick={() => handleToggleBassLoop(item.id)}
+                            className={`p-2 rounded-xl text-left border transition-all cursor-pointer relative select-none ${
+                              isActive
+                                ? isFlashing
+                                  ? 'bg-orange-500/30 border-orange-300 shadow-[0_0_16px_rgba(249,115,22,0.85)] scale-[1.01]'
+                                  : 'bg-orange-500/15 border-orange-400/80 shadow-[0_0_10px_rgba(249,115,22,0.35)]'
+                                : 'bg-neutral-950/80 border-white/10 hover:border-white/20 hover:bg-neutral-900/60 text-white'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className={`text-[9.5px] font-bold truncate ${isActive ? 'text-orange-400' : 'text-white'}`}>
+                                {item.name}
+                              </span>
+                              <span
+                                className={`text-[6.5px] font-mono px-1 py-0.2 rounded font-bold ${
+                                  isActive ? 'bg-orange-500 text-neutral-950 animate-pulse' : 'bg-white/10 text-neutral-400'
+                                }`}
+                              >
+                                {isActive ? '● LOOP' : item.tag}
+                              </span>
+                            </div>
+
+                            <span className="text-[7.5px] text-neutral-400 block mt-0.5 line-clamp-1">
+                              {item.desc}
                             </span>
+
+                            {/* Active Loop Control Strip */}
+                            <div className="flex items-center justify-between mt-1.5 pt-1 border-t border-white/10">
+                              <div className="flex items-center gap-1">
+                                <Clock className="w-2.5 h-2.5 text-neutral-400" />
+                                <span className="text-[7.5px] font-mono text-neutral-300">
+                                  {currentInterval.toFixed(1)}s
+                                </span>
+                              </div>
+
+                              {isActive ? (
+                                <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleSetItemInterval(item.id, Math.max(0.5, currentInterval - 0.5), e)}
+                                    className="w-4 h-4 rounded bg-neutral-900 hover:bg-neutral-800 text-neutral-200 text-[8px] flex items-center justify-center font-bold"
+                                    title="Speed up loop interval (-0.5s)"
+                                  >
+                                    -
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleSetItemInterval(item.id, Math.min(10, currentInterval + 0.5), e)}
+                                    className="w-4 h-4 rounded bg-neutral-900 hover:bg-neutral-800 text-neutral-200 text-[8px] flex items-center justify-center font-bold"
+                                    title="Slow down loop interval (+0.5s)"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[6.5px] text-neutral-500">Tap to loop</span>
+                              )}
+                            </div>
                           </div>
-                          <span className="text-[7.5px] text-neutral-400 block mt-0.5 line-clamp-1">
-                            {item.desc}
-                          </span>
-                        </button>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
 
-                {/* SUB-TAB 4: DJ SOUND EFFECTS (12 Items) */}
+                {/* SUB-TAB 4: DJ SOUND EFFECTS MULTI-LOOP PAD (12 Items) */}
                 {audioSubTab === 'sfx' && (
                   <div className="space-y-1.5 animate-fadeIn">
-                    <div className="flex items-center justify-between px-1">
-                      <span className="text-[9px] font-bold text-neutral-300">DJ Sound Effects</span>
-                      <span className="text-[7.5px] text-neutral-400">12 Studio SFX</span>
+                    {/* Global FX Interval & Action Bar */}
+                    <div className="p-2 rounded-xl bg-neutral-900/95 border border-white/10 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <Timer className="w-3 h-3 text-cyan-400" />
+                          <span className="text-[9px] font-bold text-neutral-200">FX Loop Interval</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9.5px] font-mono font-bold text-cyan-400">{globalFxInterval.toFixed(1)}s</span>
+                          {activeFxCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={handleStopAllFx}
+                              className="px-1.5 py-0.5 rounded text-[7px] font-bold bg-red-500/20 text-red-400 border border-red-500/40 hover:bg-red-500/30 transition cursor-pointer"
+                              title="Stop all active FX loops"
+                            >
+                              Stop All ({activeFxCount})
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min="1"
+                          max="15"
+                          step="0.5"
+                          value={globalFxInterval}
+                          onChange={(e) => handleGlobalFxIntervalChange(e.target.value)}
+                          className="flex-1 h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between text-[7px] text-neutral-400">
+                        <span>1s Fast</span>
+                        <div className="flex gap-1">
+                          {[2, 4, 8].map((sec) => (
+                            <button
+                              key={sec}
+                              type="button"
+                              onClick={() => handleGlobalFxIntervalChange(sec)}
+                              className={`px-1.5 py-0.2 rounded font-mono ${
+                                Math.abs(globalFxInterval - sec) < 0.1
+                                  ? 'bg-cyan-400 text-neutral-950 font-bold'
+                                  : 'bg-neutral-950 text-neutral-400 hover:text-white'
+                              }`}
+                            >
+                              {sec}s
+                            </button>
+                          ))}
+                        </div>
+                        <span>15s Slow</span>
+                      </div>
                     </div>
 
+                    {/* 12 FX Cards Grid */}
                     <div className="grid grid-cols-3 gap-1 max-h-56 overflow-y-auto custom-scrollbar pr-0.5">
-                      {SFX_LIBRARY.map((sfx) => (
-                        <button
-                          key={sfx.id}
-                          type="button"
-                          onClick={() => handleTriggerSfx(sfx.id)}
-                          className={`p-1.5 rounded-lg text-left border transition-all active:scale-95 cursor-pointer ${
-                            lastSfxTriggered === sfx.id
-                              ? 'bg-amber-400 text-neutral-950 border-amber-300 scale-98 shadow-[0_0_12px_rgba(251,191,36,0.9)]'
-                              : 'bg-neutral-950/80 border-white/10 hover:border-amber-400/50 text-white hover:bg-neutral-900'
-                          }`}
-                        >
-                          <span className="text-sm block">{sfx.icon}</span>
-                          <span className="text-[9px] font-bold block mt-0.5 truncate">{sfx.name}</span>
-                          <span className="text-[7px] text-neutral-400 block truncate">{sfx.desc}</span>
-                        </button>
-                      ))}
+                      {SFX_LIBRARY.map((sfx) => {
+                        const loopConfig = activeLoops.find((l) => l.id === sfx.id);
+                        const isActive = Boolean(loopConfig);
+                        const isFlashing = Boolean(triggerFlashMap[sfx.id]);
+                        const currentInterval = loopConfig ? loopConfig.interval : globalFxInterval;
+
+                        return (
+                          <div
+                            key={sfx.id}
+                            onClick={() => handleToggleFxLoop(sfx.id)}
+                            className={`p-1.5 rounded-xl text-left border transition-all cursor-pointer relative select-none ${
+                              isActive
+                                ? isFlashing
+                                  ? 'bg-cyan-400/30 border-cyan-300 shadow-[0_0_16px_rgba(6,182,212,0.85)] scale-[1.02]'
+                                  : 'bg-cyan-500/15 border-cyan-400/80 shadow-[0_0_10px_rgba(6,182,212,0.35)]'
+                                : 'bg-neutral-950/80 border-white/10 hover:border-white/20 hover:bg-neutral-900/60 text-white'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm block">{sfx.icon}</span>
+                              {isActive && (
+                                <span className="text-[6.5px] font-mono px-1 py-0.2 rounded bg-cyan-400 text-neutral-950 font-bold animate-pulse">
+                                  ON
+                                </span>
+                              )}
+                            </div>
+
+                            <span className={`text-[8.5px] font-bold block mt-0.5 truncate ${isActive ? 'text-cyan-300' : 'text-white'}`}>
+                              {sfx.name}
+                            </span>
+                            <span className="text-[7px] text-neutral-400 block truncate">{sfx.desc}</span>
+
+                            {/* Interval strip */}
+                            <div className="flex items-center justify-between mt-1 pt-0.5 border-t border-white/10 text-[7px]">
+                              <span className="font-mono text-neutral-300">{currentInterval.toFixed(0)}s</span>
+                              {isActive ? (
+                                <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleSetItemInterval(sfx.id, Math.max(1, currentInterval - 1), e)}
+                                    className="w-3.5 h-3.5 rounded bg-neutral-900 hover:bg-neutral-800 text-neutral-200 text-[7px] flex items-center justify-center font-bold"
+                                    title="-1s interval"
+                                  >
+                                    -
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleSetItemInterval(sfx.id, Math.min(15, currentInterval + 1), e)}
+                                    className="w-3.5 h-3.5 rounded bg-neutral-900 hover:bg-neutral-800 text-neutral-200 text-[7px] flex items-center justify-center font-bold"
+                                    title="+1s interval"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[6px] text-neutral-500">Tap loop</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

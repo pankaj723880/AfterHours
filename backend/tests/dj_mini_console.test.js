@@ -210,7 +210,7 @@ async function runTestSuite() {
   console.log('  ✓ Dual Volume Faders & Master Mute verified');
 
   // Test 8: Live Drop Functions
-  console.log('\n[8/8] Testing Quick Drop Triggers...');
+  console.log('\n[8/9] Testing Quick Drop Triggers...');
   assert.doesNotThrow(() => {
     djAudio.triggerLiveBassDrop();
   }, 'Live Bass Drop must execute');
@@ -221,6 +221,93 @@ async function runTestSuite() {
   }, 'Beat Drop sequence must execute');
   console.log('  ✓ 💥 Live Beat Drop executed');
 
+  // Test 9: Multi-Item Continuous Auto-Loop System (Requirement 1, 2, 3, 4, 5)
+  console.log('\n[9/9] Testing Multi-Item Continuous Auto-Loop System...');
+
+  // Track loop state notifications and trigger events
+  let lastStateReceived = null;
+  const loopTriggersReceived = [];
+  const unsubLoopState = djAudio.onLoopStateChange((state) => {
+    lastStateReceived = state;
+  });
+  const unsubLoopTrigger = djAudio.onLoopTrigger((evt) => {
+    loopTriggersReceived.push(evt);
+  });
+
+  // 1. Activate multiple simultaneous Bass items
+  await djAudio.toggleLoop('deep-sub', 'bass');
+  await djAudio.toggleLoop('punchy-kick', 'bass');
+  await djAudio.toggleLoop('wobble-bass', 'bass');
+
+  assert.strictEqual(djAudio.getActiveCount('bass'), 3, 'Must have 3 active Bass items');
+  assert.strictEqual(djAudio.isLoopActive('deep-sub'), true, 'deep-sub must be active');
+  assert.strictEqual(djAudio.isLoopActive('punchy-kick'), true, 'punchy-kick must be active');
+  assert.strictEqual(djAudio.isLoopActive('wobble-bass'), true, 'wobble-bass must be active');
+  console.log('  ✓ Multiple Bass items (3) running simultaneously');
+
+  // 2. Activate multiple simultaneous FX items together with Bass
+  await djAudio.toggleLoop('airhorn', 'fx');
+  await djAudio.toggleLoop('laser', 'fx');
+  await djAudio.toggleLoop('sub-drop', 'fx');
+
+  assert.strictEqual(djAudio.getActiveCount('fx'), 3, 'Must have 3 active FX items');
+  assert.strictEqual(djAudio.activeLoops.size, 6, 'Total active loops must be 6 (3 Bass + 3 FX)');
+  console.log('  ✓ Multiple FX items (3) running simultaneously with Bass');
+
+  // 3. Centralized scheduler executes without error
+  assert.doesNotThrow(() => {
+    djAudio.scheduleLoopIteration();
+  }, 'Single centralized scheduler iteration must run cleanly');
+  console.log('  ✓ Single centralized scheduler iteration executed');
+
+  // 4. Custom Individual Item Interval
+  djAudio.setItemInterval('deep-sub', 1.5);
+  const deepSubCfg = djAudio.getLoopConfig('deep-sub');
+  assert.strictEqual(deepSubCfg.interval, 1.5, 'deep-sub interval must be customized to 1.5s');
+  assert.strictEqual(deepSubCfg.customInterval, true, 'deep-sub must be marked as custom');
+  assert.strictEqual(djAudio.getLoopConfig('punchy-kick').interval, djAudio.globalBassInterval, 'punchy-kick interval must remain default');
+  console.log('  ✓ Individual interval customization verified without affecting other items');
+
+  // 5. Global Interval Updates
+  djAudio.setGlobalBassInterval(3.0);
+  assert.strictEqual(djAudio.globalBassInterval, 3.0, 'Global bass interval must be 3.0s');
+  assert.strictEqual(djAudio.getLoopConfig('punchy-kick').interval, 3.0, 'Non-custom bass items must follow global');
+  assert.strictEqual(djAudio.getLoopConfig('deep-sub').interval, 1.5, 'Custom bass item must preserve custom interval');
+
+  djAudio.setGlobalFxInterval(5.0);
+  assert.strictEqual(djAudio.globalFxInterval, 5.0, 'Global FX interval must be 5.0s');
+  console.log('  ✓ Global interval sliders (Bass: 3.0s, FX: 5.0s) verified');
+
+  // 6. Individual Toggle OFF
+  const turnOffResult = await djAudio.toggleLoop('wobble-bass', 'bass');
+  assert.strictEqual(turnOffResult, false, 'Toggling active item must return false (OFF)');
+  assert.strictEqual(djAudio.isLoopActive('wobble-bass'), false, 'wobble-bass must be inactive');
+  assert.strictEqual(djAudio.getActiveCount('bass'), 2, 'Active bass count must now be 2');
+  console.log('  ✓ Individual OFF toggle verified');
+
+  // 7. Stop All Bass
+  djAudio.stopAllBass();
+  assert.strictEqual(djAudio.getActiveCount('bass'), 0, 'All bass loops must be stopped');
+  assert.strictEqual(djAudio.getActiveCount('fx'), 3, 'FX loops must continue running');
+  console.log('  ✓ Stop All Bass verified (FX preserved)');
+
+  // 8. Stop All FX
+  djAudio.stopAllFx();
+  assert.strictEqual(djAudio.getActiveCount('fx'), 0, 'All FX loops must be stopped');
+  assert.strictEqual(djAudio.activeLoops.size, 0, 'All active loops must be cleared');
+  console.log('  ✓ Stop All FX verified');
+
+  // 9. Emergency Stop All
+  await djAudio.toggleLoop('punchy-kick', 'bass');
+  await djAudio.toggleLoop('laser', 'fx');
+  assert.strictEqual(djAudio.activeLoops.size, 2, 'Loops active before Stop All');
+  djAudio.stopAll();
+  assert.strictEqual(djAudio.activeLoops.size, 0, 'Emergency Stop All must silence all active loops');
+  assert.strictEqual(djAudio.isPlayingBeats, false, 'Emergency Stop All must pause beats playback');
+  console.log('  ✓ Emergency Stop All verified');
+
+  unsubLoopState();
+  unsubLoopTrigger();
   djAudio.destroy();
   console.log('\n=== ALL MINI DJ MIXING CONSOLE TESTS PASSED (100% SUCCESS) ===');
 }
