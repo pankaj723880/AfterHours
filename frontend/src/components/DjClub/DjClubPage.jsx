@@ -706,13 +706,11 @@ export default function DjClubPage({
                           type="range"
                           min="0"
                           max="100"
-                          orient="vertical"
                           value={djBeatsVolume}
                           onChange={handleDjBeatsVolumeChange}
                           className="h-20 sm:h-22 w-2 accent-orange-500 cursor-pointer"
                           style={{
                             writingMode: 'vertical-lr',
-                            WebkitAppearance: 'slider-vertical',
                             direction: 'rtl'
                           }}
                           title={`Beats Volume: ${djBeatsVolume}%`}
@@ -733,13 +731,11 @@ export default function DjClubPage({
                           type="range"
                           min="0"
                           max="100"
-                          orient="vertical"
                           value={djSfxVolume}
                           onChange={handleDjSfxVolumeChange}
                           className="h-20 sm:h-22 w-2 accent-amber-500 cursor-pointer"
                           style={{
                             writingMode: 'vertical-lr',
-                            WebkitAppearance: 'slider-vertical',
                             direction: 'rtl'
                           }}
                           title={`Effects Volume: ${djSfxVolume}%`}
@@ -978,7 +974,6 @@ export default function DjClubPage({
                   type="range"
                   min="0"
                   max="100"
-                  orient="vertical"
                   value={isMuted ? 0 : volume}
                   onChange={(e) => {
                     if (isMuted) setIsMuted(false);
@@ -987,7 +982,6 @@ export default function DjClubPage({
                   className="h-24 sm:h-28 w-2 accent-orange-500 cursor-pointer"
                   style={{
                     writingMode: 'vertical-lr',
-                    WebkitAppearance: 'slider-vertical',
                     direction: 'rtl'
                   }}
                   title={`Volume: ${isMuted ? 0 : volume}%`}

@@ -215,9 +215,10 @@ export default function DjLightingCanvas({
         const sy = discoY + Math.sin(sp.angle) * (sp.dist * 0.45 * (height / 650));
 
         const glintAlpha = sp.alpha * (0.6 + activeBeat * 0.4) * s.brightness;
-        ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, glintAlpha)})`;
+        ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, Math.max(0, glintAlpha))})`;
         ctx.beginPath();
-        ctx.arc(sx, sy, sp.size * (1 + activeBeat * 0.4), 0, Math.PI * 2);
+        const sparkleRadius = Math.max(0, sp.size * (1 + activeBeat * 0.4));
+        ctx.arc(sx, sy, sparkleRadius, 0, Math.PI * 2);
         ctx.fill();
 
         if (sp.flare && sp.alpha > 0.75) {
@@ -293,13 +294,13 @@ export default function DjLightingCanvas({
       // Concentric Expanding Bass Shockwaves from DJ Booth
       const ringCount = 3;
       for (let r = 0; r < ringCount; r++) {
-        const ringProgress = (s.time * 1.5 + r * 0.33) % 1;
-        const ringRadius = 40 + ringProgress * (w * 0.42);
-        const ringAlpha = (1 - ringProgress) * (0.45 + beat * 0.45) * s.brightness;
+        const ringProgress = ((s.time * 1.5 + r * 0.33) % 1 + 1) % 1;
+        const ringRadius = Math.max(0, 40 + ringProgress * (w * 0.42));
+        const ringAlpha = Math.max(0, (1 - ringProgress) * (0.45 + beat * 0.45) * s.brightness);
 
         ctx.strokeStyle = colors[r % colors.length];
-        ctx.lineWidth = 3.5 + beat * 4;
-        ctx.globalAlpha = ringAlpha;
+        ctx.lineWidth = Math.max(1, 3.5 + beat * 4);
+        ctx.globalAlpha = Math.min(1, ringAlpha);
         ctx.beginPath();
         ctx.arc(cx, cy, ringRadius, 0, Math.PI * 2);
         ctx.stroke();
@@ -407,16 +408,18 @@ export default function DjLightingCanvas({
 
       if (!s.reducedMotion) {
         if (isLeftBlinder) {
-          const gradL = ctx.createRadialGradient(w * 0.2, h * 0.25, 10, w * 0.2, h * 0.25, w * 0.35);
+          const radL = Math.max(15, w * 0.35);
+          const gradL = ctx.createRadialGradient(w * 0.2, h * 0.25, 10, w * 0.2, h * 0.25, radL);
           gradL.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
           gradL.addColorStop(0.5, 'rgba(251, 191, 36, 0.3)');
           gradL.addColorStop(1, 'rgba(0, 0, 0, 0)');
           ctx.fillStyle = gradL;
-          ctx.globalAlpha = (0.7 + beat * 0.3) * s.flashIntensity * s.brightness;
+          ctx.globalAlpha = Math.min(1, Math.max(0, (0.7 + beat * 0.3) * s.flashIntensity * s.brightness));
           ctx.fillRect(0, 0, w * 0.5, h);
         }
         if (isRightBlinder) {
-          const gradR = ctx.createRadialGradient(w * 0.8, h * 0.25, 10, w * 0.8, h * 0.25, w * 0.35);
+          const radR = Math.max(15, w * 0.35);
+          const gradR = ctx.createRadialGradient(w * 0.8, h * 0.25, 10, w * 0.8, h * 0.25, radR);
           gradR.addColorStop(0, 'rgba(255, 255, 255, 0.7)');
           gradR.addColorStop(0.5, 'rgba(0, 240, 255, 0.3)');
           gradR.addColorStop(1, 'rgba(0, 0, 0, 0)');
@@ -500,13 +503,13 @@ export default function DjLightingCanvas({
       const warmColors = ['#f59e0b', '#ec4899', '#ef4444', '#a855f7', '#fbbf24'];
 
       // Ambient Stage Wash Glow
-      const washRadius = w * (0.35 + beat * 0.15);
+      const washRadius = Math.max(35, w * (0.35 + beat * 0.15));
       const washGrad = ctx.createRadialGradient(cx, cy, 30, cx, cy, washRadius);
       washGrad.addColorStop(0, 'rgba(245, 158, 11, 0.45)');
       washGrad.addColorStop(0.4, 'rgba(236, 72, 153, 0.25)');
       washGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
       ctx.fillStyle = washGrad;
-      ctx.globalAlpha = (0.7 + beat * 0.3) * s.brightness;
+      ctx.globalAlpha = Math.min(1, Math.max(0, (0.7 + beat * 0.3) * s.brightness));
       ctx.beginPath();
       ctx.arc(cx, cy, washRadius, 0, Math.PI * 2);
       ctx.fill();
@@ -549,7 +552,7 @@ export default function DjLightingCanvas({
       const ultraLaserCount = Math.round(24 * dMult);
 
       // Rainbow Dynamic Center Burst
-      const raveRadius = 120 + beat * 85;
+      const raveRadius = Math.max(25, 120 + beat * 85);
       const rainbowGrad = ctx.createRadialGradient(cx, cy, 20, cx, cy, raveRadius);
       const curColor = colors[Math.floor(s.colorCycle) % colors.length];
       const nextColor = colors[(Math.floor(s.colorCycle) + 1) % colors.length];
@@ -557,7 +560,7 @@ export default function DjLightingCanvas({
       rainbowGrad.addColorStop(0.5, `${nextColor}44`);
       rainbowGrad.addColorStop(1, 'transparent');
       ctx.fillStyle = rainbowGrad;
-      ctx.globalAlpha = (0.75 + beat * 0.25) * s.brightness;
+      ctx.globalAlpha = Math.min(1, Math.max(0, (0.75 + beat * 0.25) * s.brightness));
       ctx.beginPath();
       ctx.arc(cx, cy, raveRadius, 0, Math.PI * 2);
       ctx.fill();
@@ -629,16 +632,16 @@ export default function DjLightingCanvas({
 
       // Pass 4: Laser Impact Hotspot on Crowd Horizon
       ctx.fillStyle = color;
-      ctx.globalAlpha = 0.8 * beamAlpha;
+      ctx.globalAlpha = Math.min(1, Math.max(0, 0.8 * beamAlpha));
       ctx.beginPath();
-      ctx.arc(tx, ty, coreW * 2.2, 0, Math.PI * 2);
+      ctx.arc(tx, ty, Math.max(0, coreW * 2.2), 0, Math.PI * 2);
       ctx.fill();
 
       // Pass 5: Inner White Spark in Hotspot
       ctx.fillStyle = '#ffffff';
-      ctx.globalAlpha = 0.95 * beamAlpha;
+      ctx.globalAlpha = Math.min(1, Math.max(0, 0.95 * beamAlpha));
       ctx.beginPath();
-      ctx.arc(tx, ty, coreW * 0.9, 0, Math.PI * 2);
+      ctx.arc(tx, ty, Math.max(0, coreW * 0.9), 0, Math.PI * 2);
       ctx.fill();
     }
 
