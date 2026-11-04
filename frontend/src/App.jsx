@@ -20,6 +20,7 @@ const PlayerSettingsModal = lazy(() => import('./components/Player/PlayerSetting
 const ListeningStatsModal = lazy(() => import('./components/Stats/ListeningStatsModal'));
 const UserProfileModal = lazy(() => import('./components/Profile/UserProfileModal'));
 const DiscoverSwipe = lazy(() => import('./components/Discover/DiscoverSwipe'));
+const DjClubPage = lazy(() => import('./components/DjClub/DjClubPage'));
 import CinematicVideoPlayer from './components/Player/CinematicVideoPlayer';
 import AppSplashScreen from './components/Common/AppSplashScreen';
 import CmsAnnouncementBar from './components/Common/CmsAnnouncementBar';
@@ -137,14 +138,16 @@ socket.on('listening_stats_updated', (data) => {
 });
 
 const fetchFromBackend = async (query, options = {}) => {
+  const timeoutMs = options.timeoutMs || 35000;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
     try {
-      controller.abort(new Error('Backend request timed out after 20s'));
+      controller.abort(new Error('Backend request timed out after 35s'));
     } catch (_) {
       controller.abort();
     }
-  }, 20000);
+  }, timeoutMs);
+
   try {
     let res;
     const { limit, pageToken } = options;
@@ -160,7 +163,7 @@ const fetchFromBackend = async (query, options = {}) => {
         }
       });
     } catch (localErr) {
-      if (!BACKEND_URL.includes('onrender.com')) {
+      if (!BACKEND_URL.includes('onrender.com') && !controller.signal.aborted) {
         res = await fetch(`https://afterhours-zvic.onrender.com${path}`, {
           signal: controller.signal,
           headers: {
@@ -206,6 +209,7 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
     radio: <path d="M3.24 6.15C2.51 6.43 2 7.17 2 8v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2H8.3l7.43-3.71-1.41-1.41L3.24 6.15Z" fill="currentColor" />,
     sparkles: <path d="M12 2L9.19 8.63 2 11.5l7.19 2.87L12 21l2.81-6.63L22 11.5l-7.19-2.87z" fill="currentColor" />,
     music: <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" fill="currentColor" />,
+    headphones: <path d="M12 3a9 9 0 0 0-9 9v7a3 3 0 0 0 3 3h1a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H5v-2a7 7 0 0 1 14 0v2h-2a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h1a3 3 0 0 0 3-3v-7a9 9 0 0 0-9-9z" fill="currentColor" />,
     shuffle: <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z" fill="currentColor" />,
     repeat: <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z" fill="currentColor" />,
     volume: <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" fill="currentColor" />,
@@ -1965,8 +1969,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [isMiniPlayerExpanded, setIsMiniPlayerExpanded] = useState(false);
   const [isHomeScrolled, setIsHomeScrolled] = useState(false);
   // Route-aware mini-player visibility: Hidden on Home page so featured 3D player is solitary
-  // Route-aware mini-player visibility: Displays when away from Home tab OR when scrolled past hero on Home tab
-  const isBottomPlayerVisible = Boolean(currentSong && (activeTab !== 'home' || isHomeScrolled));
+  // Route-aware mini-player visibility: Displays when away from Home tab OR when scrolled past hero on Home tab (hidden on DJ Club where full-screen dedicated player is active)
+  const isBottomPlayerVisible = Boolean(currentSong && (activeTab !== 'home' || isHomeScrolled) && activeTab !== 'dj-club');
   const [stopAfterCurrentTrack, setStopAfterCurrentTrack] = useState(false);
   const stopAfterCurrentTrackRef = useRef(false);
   useEffect(() => {
@@ -3528,7 +3532,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             console.warn('[PlaybackGate] Blocked non-music playback request:', targetVideoId, validation.reason);
             showToast?.(`Playback blocked: Video is not verified music (${validation.reason})`, 'error');
             if (options.isAutoAdvance || options.fromQueue) {
-              handleNextSongRef.current?.();
+              if (queue && queue.length > 1) {
+                handleNextSongRef.current?.();
+              }
             }
             return;
           }
@@ -3901,6 +3907,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       height: '100%',
       width: '100%',
       videoId: videoId,
+      host: 'https://www.youtube.com',
       playerVars: { 
         autoplay: shouldAutoPlay ? 1 : 0, 
         controls: 0, 
@@ -5224,12 +5231,46 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
     } catch (err) {
       if (currentReqId === searchRequestIdRef.current) {
-        console.warn("[Search Error]:", err.message);
-        setSearchError(err.message || 'Unable to connect to search service. Please try again.');
-        setSearchResults([]);
-        setSearchVisibleCount(0);
-        setSearchNextPageToken(null);
-        setHasMoreSearchResults(false);
+        console.warn("[Search Notice]:", err.message);
+
+        // Resilient Fallback: Search local curated library when backend is spinning up or offline
+        const localMatches = Object.values(CURATED_STATION_TRACKS || {})
+          .flat()
+          .filter(t => {
+            if (!t || !t.title) return false;
+            const fullStr = `${t.title} ${t.artist || ''} ${t.channel || ''}`.toLowerCase();
+            const words = trimmedQuery.split(/\s+/).filter(Boolean);
+            return words.some(w => fullStr.includes(w));
+          })
+          .map(t => ({
+            id: t.id || t.videoId,
+            videoId: t.id || t.videoId,
+            title: t.title,
+            channel: t.channel || t.artist || 'Loopra Curated',
+            artist: t.artist || t.channel || 'Loopra Curated',
+            thumbnail: t.thumbnail || t.coverArt || '/presets/loopra-dj-art.jpg'
+          }))
+          .filter(t => t.id);
+
+        if (localMatches.length > 0) {
+          const seen = new Set();
+          const uniqueLocal = localMatches.filter(t => {
+            if (seen.has(t.id)) return false;
+            seen.add(t.id);
+            return true;
+          });
+          setSearchResults(uniqueLocal);
+          setSearchVisibleCount(uniqueLocal.length);
+          setSearchNextPageToken(null);
+          setHasMoreSearchResults(false);
+          setSearchError('Search service is connecting. Showing instant curated recommendations.');
+        } else {
+          setSearchError(err.message?.includes('timed out') ? 'Search service is connecting. Please retry in a few moments.' : (err.message || 'Unable to connect to search service. Please try again.'));
+          setSearchResults([]);
+          setSearchVisibleCount(0);
+          setSearchNextPageToken(null);
+          setHasMoreSearchResults(false);
+        }
       }
     } finally {
       if (currentReqId === searchRequestIdRef.current) {
@@ -5567,7 +5608,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
       <aside 
         className={`fixed md:relative h-screen inset-y-0 left-0 z-[55] bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80 p-4 flex flex-col shrink-0 transform transition-all duration-300 ease-in-out overflow-y-auto overflow-x-hidden ${
-          isSidebarOpen ? 'translate-x-0 w-72' : `-translate-x-full md:translate-x-0 ${isSidebarCollapsed ? 'w-20' : 'w-72'}`
+          activeTab === 'dj-club'
+            ? 'hidden'
+            : isSidebarOpen ? 'translate-x-0 w-72' : `-translate-x-full md:translate-x-0 ${isSidebarCollapsed ? 'w-20' : 'w-72'}`
         }`}
       >
         <div className="flex-1">
@@ -5604,6 +5647,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             {(() => {
               const defaultNav = [
                 { id: 'home', label: 'Home', icon: 'home', group: 'main' },
+                { id: 'dj-club', label: 'Loopra DJ Club', icon: 'headphones', badge: 'Live', group: 'main' },
                 { id: 'chat', label: 'Loopra AI Chat', icon: 'messageSquare', badge: 'AI', group: 'main' },
                 { id: 'discover', label: 'Discover & Search', icon: 'discover', group: 'main' },
                 { id: 'radio', label: 'Indian Live Radio', icon: 'radio', badge: 'Live', group: 'main' },
@@ -5621,7 +5665,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               ];
 
               const canonicalGroup = (id, rawGroup) => {
-                if (['home', 'chat', 'ai-chat', 'discover', 'radio'].includes(id)) return 'main';
+                if (['home', 'dj-club', 'chat', 'ai-chat', 'discover', 'radio'].includes(id)) return 'main';
                 if (['mood', 'timemachine', 'activity', 'swipe'].includes(id)) return 'discovery';
                 if (['barber', 'truck', 'pauwa'].includes(id)) return 'stations';
                 if (['library', 'history', 'playlists', 'stats'].includes(id)) return 'collection';
@@ -5831,8 +5875,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       </aside>
 
       <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 relative overflow-hidden">
-        {/* Unified Top Navbar for both Mobile and Desktop */}
-        <header className="relative z-40 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-2.5 sm:px-4 md:px-8 py-2.5 sm:py-3 h-14 md:h-16 flex items-center justify-between shrink-0 w-full box-border">
+        {/* Unified Top Navbar for both Mobile and Desktop (hidden on DJ Club where full-screen dedicated navbar is active) */}
+        <header className={`${activeTab === 'dj-club' ? 'hidden' : 'relative z-40 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-2.5 sm:px-4 md:px-8 py-2.5 sm:py-3 h-14 md:h-16 flex items-center justify-between shrink-0 w-full box-border'}`}>
           {/* LEFT: Mobile Menu & Logo | Desktop Clock */}
           <div className="flex items-center gap-2 sm:gap-3">
             <button
@@ -6089,10 +6133,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         </header>
 
         {/* Site-wide CMS Announcement Bar */}
-        <CmsAnnouncementBar announcement={cmsConfig?.announcement} />
+        {activeTab !== 'dj-club' && <CmsAnnouncementBar announcement={cmsConfig?.announcement} />}
 
-        <main ref={mainScrollRef} onScroll={(e) => { if (activeTab === 'home') setIsHomeScrolled(e.currentTarget.scrollTop > 320); }} className={`flex-1 h-full min-h-0 overflow-y-auto px-2.5 py-3 sm:px-4 sm:py-4 md:p-8 bg-neutral-950 box-border relative w-full transition-all duration-300 ${isBottomPlayerVisible ? 'pb-44 md:pb-28' : 'pb-24 md:pb-8'}`}>
-          {currentStation && currentBgImage && (
+        <main ref={mainScrollRef} onScroll={(e) => { if (activeTab === 'home') setIsHomeScrolled(e.currentTarget.scrollTop > 320); }} className={`flex-1 h-full min-h-0 ${activeTab === 'dj-club' ? 'overflow-hidden p-0' : 'overflow-y-auto px-2.5 py-3 sm:px-4 sm:py-4 md:p-8'} bg-neutral-950 box-border relative w-full transition-all duration-300 ${activeTab === 'dj-club' ? 'pb-0' : (isBottomPlayerVisible ? 'pb-44 md:pb-28' : 'pb-24 md:pb-8')}`}>
+          {currentStation && currentBgImage && activeTab !== 'dj-club' && (
             <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden transition-all duration-700">
               <img 
                 key={currentBgImage}
@@ -6107,7 +6151,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
 
 
-        {canGoBack(navigationStack, activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio, selectedPlaylistForView, offlineSubView }) && activeTab !== 'artist' && (
+        {canGoBack(navigationStack, activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio, selectedPlaylistForView, offlineSubView }) && activeTab !== 'artist' && activeTab !== 'dj-club' && (
           <div className="relative z-20 mb-6 flex justify-start">
             <button
               onClick={handleGoBack}
@@ -7168,6 +7212,36 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             />
           </div>
         )}
+
+        {activeTab === 'dj-club' && (
+          <div key="page-dj-club" className="absolute inset-0 z-30 w-full h-full overflow-hidden">
+            <DjClubPage
+              currentSong={currentSong}
+              isPlaying={isPlaying}
+              onPlaySong={playSong}
+              onTogglePlay={togglePlayPause}
+              onNextSong={handleNextSong}
+              onPrevSong={handlePrevSong}
+              volume={volume}
+              onVolumeChange={handleVolumeChange}
+              isShuffle={isShuffle}
+              onToggleShuffle={toggleShuffle}
+              isRepeat={isRepeat}
+              onToggleRepeat={toggleRepeatMode}
+              onNavigate={(tab) => {
+                setActiveTab(tab);
+                window.history.pushState({ tab }, '', buildPath(tab));
+              }}
+              user={user}
+              cmsConfig={cmsConfig}
+              onOpenSearch={() => {
+                setActiveTab('discover');
+                window.history.pushState({ tab: 'discover' }, '', '/discover');
+              }}
+              onOpenProfile={() => setIsAccountMenuOpen(true)}
+            />
+          </div>
+        )}
       </main>
       <ListeningRoomsModal
         isOpen={isListeningRoomsOpen}
@@ -7486,7 +7560,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           setIsSidebarOpen(false);
         }}
         user={user}
-        isVisible={!showQueuePanel}
+        isVisible={!showQueuePanel && activeTab !== 'dj-club'}
       />
 
 

@@ -67,6 +67,43 @@ export async function validatePlaybackTrack(track, backendUrl = '') {
 
     if (res.ok) {
       const data = await res.json();
+      // If backend explicitly rejected with a clear non-music category (gaming, vlog, tutorial, podcast, news), block it
+      if (!data.eligible && data.category !== 'uncertain' && !data.reason?.includes('insufficient')) {
+        FRONTEND_VALIDATION_CACHE.set(videoId, data);
+        return data;
+      }
+
+      // If backend was merely uncertain due to missing category metadata in search snippet, verify with client anti-pattern filter
+      if (!data.eligible && (data.category === 'uncertain' || data.reason?.includes('insufficient'))) {
+        const fullText = `${track.title || ''} ${track.channel || ''}`.toLowerCase();
+        const nonMusicPatterns = [
+          /\b(gameplay|walkthrough|lets play|speedrun|minecraft|roblox|valorant|gta\s*[v5]|fortnite|pubg|bgmi)\b/i,
+          /\b(daily vlog|mukbang|shopping haul|room tour|travel vlog|morning routine)\b/i,
+          /\b(tutorial|how to|for beginners|crash course|full course|fl studio tutorial|beat making tutorial)\b/i,
+          /\b(podcast|episode \d+|the ranveer show|joe rogan|talk show|full interview)\b/i,
+          /\b(breaking news|daily news|news bulletin|debate live)\b/i,
+          /\b(full movie|climax scene|comedy scene|fight scene|movie scene|official trailer)\b/i,
+          /\b(reaction video|reacts to|reacting to|honest review|unboxing)\b/i,
+          /\b(with background music|study with me background)\b/i
+        ];
+        const hasBlockedPattern = nonMusicPatterns.some(regex => regex.test(fullText));
+        if (hasBlockedPattern) {
+          FRONTEND_VALIDATION_CACHE.set(videoId, data);
+          return data;
+        }
+
+        // Clean song metadata with zero disqualifiers passes provisionally
+        const provisional = {
+          eligible: true,
+          isMusic: true,
+          confidence: 0.80,
+          category: 'provisional_music',
+          reason: 'Provisional client validation passed (no non-music traits detected)'
+        };
+        FRONTEND_VALIDATION_CACHE.set(videoId, provisional);
+        return provisional;
+      }
+
       FRONTEND_VALIDATION_CACHE.set(videoId, data);
       return data;
     }

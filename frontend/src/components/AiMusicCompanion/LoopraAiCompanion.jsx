@@ -451,8 +451,13 @@ export default function LoopraAiCompanion({
     const unsub = voiceBuddyService.subscribe(({ event }) => {
       if (event === 'speech_start') {
         setIsSpeaking(true);
+        if (speechRecognitionRef.current) {
+          try { speechRecognitionRef.current.stop(); } catch (_) {}
+        }
+        setIsVoiceListening(false);
       } else if (event === 'speech_end' || event === 'speech_text_only') {
         setIsSpeaking(false);
+        speechCooldownTimerRef.current = Date.now();
       }
     });
     return unsub;
@@ -855,6 +860,12 @@ export default function LoopraAiCompanion({
     if (!text || typeof window === 'undefined') return;
     if (!voiceBuddyService.isVoiceOutputEnabled) return;
 
+    // Pause mic recognition so avatar does not pick up its own voice
+    if (speechRecognitionRef.current) {
+      try { speechRecognitionRef.current.stop(); } catch (_) {}
+    }
+    setIsVoiceListening(false);
+
     setIsSpeaking(true);
     setVoiceState('speaking');
 
@@ -943,6 +954,11 @@ export default function LoopraAiCompanion({
       };
 
       recognition.onresult = (event) => {
+        // Discard any sound picked up while Loopra is actively speaking or during 600ms acoustic cooldown
+        if (isSpeaking || (Date.now() - speechCooldownTimerRef.current < 600)) {
+          return;
+        }
+
         let interim = '';
         let finalPart = '';
 
@@ -950,11 +966,6 @@ export default function LoopraAiCompanion({
           const res = event.results[i];
           if (res.isFinal) finalPart += res[0].transcript;
           else interim += res[0].transcript;
-        }
-
-        // Echo protection: immediately interrupt TTS if user speaks
-        if (interim.trim() || finalPart.trim()) {
-          stopSpeaking();
         }
 
         const display = (finalPart || interim).trim();

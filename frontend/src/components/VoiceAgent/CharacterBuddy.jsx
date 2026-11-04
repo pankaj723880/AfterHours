@@ -159,10 +159,10 @@ export default function CharacterBuddy({
   // Position & Dragging State (Default origin strictly in Lower Right Corner, right above mobile navbar)
   const getDefaultPosition = useCallback(() => {
     if (typeof window === 'undefined') return { x: 20, y: 70 };
-    const rightMargin = isMobileScreen ? 68 : 84;
+    const rightMargin = isMobileScreen ? 14 : 24;
     const bottomMargin = isMobileScreen
       ? (isBottomPlayerVisible ? 134 : 64)
-      : (isBottomPlayerVisible ? 96 : 20);
+      : (isBottomPlayerVisible ? 100 : 24);
     const defaultX = Math.max(8, window.innerWidth - characterWidth - rightMargin);
     const defaultY = Math.max(50, window.innerHeight - characterHeight - bottomMargin);
     return { x: defaultX, y: defaultY };
@@ -172,8 +172,9 @@ export default function CharacterBuddy({
   const [isCustomPos, setIsCustomPos] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
+        const wasDragged = sessionStorage.getItem('loopra_avatar_user_dragged');
         const savedPos = sessionStorage.getItem('loopra_avatar_drag_pos');
-        if (savedPos) {
+        if (wasDragged === 'true' && savedPos) {
           const parsed = JSON.parse(savedPos);
           if (parsed && typeof parsed.x === 'number' && typeof parsed.y === 'number') {
             return true;
@@ -187,8 +188,9 @@ export default function CharacterBuddy({
   const [avatarPos, setAvatarPos] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
+        const wasDragged = sessionStorage.getItem('loopra_avatar_user_dragged');
         const saved = sessionStorage.getItem('loopra_avatar_drag_pos');
-        if (saved) {
+        if (wasDragged === 'true' && saved) {
           const parsed = JSON.parse(saved);
           if (parsed && typeof parsed.x === 'number' && typeof parsed.y === 'number') {
             return parsed;
@@ -198,10 +200,10 @@ export default function CharacterBuddy({
       const isMobile = window.innerWidth < 768;
       const charW = isMobile ? 140 : 200;
       const charH = isMobile ? 230 : 330;
-      const rightMargin = isMobile ? 68 : 84;
+      const rightMargin = isMobile ? 14 : 24;
       const bottomMargin = isMobile
         ? (isBottomPlayerVisible ? 134 : 64)
-        : (isBottomPlayerVisible ? 96 : 20);
+        : (isBottomPlayerVisible ? 100 : 24);
       const defaultX = Math.max(8, window.innerWidth - charW - rightMargin);
       const defaultY = Math.max(50, window.innerHeight - charH - bottomMargin);
       return { x: defaultX, y: defaultY };
@@ -214,6 +216,9 @@ export default function CharacterBuddy({
     try {
       sessionStorage.removeItem('loopra_avatar_position');
       sessionStorage.removeItem('loopra_avatar_custom_pos');
+      if (sessionStorage.getItem('loopra_avatar_user_dragged') !== 'true') {
+        sessionStorage.removeItem('loopra_avatar_drag_pos');
+      }
     } catch (_) {}
   }, []);
 
@@ -241,10 +246,10 @@ export default function CharacterBuddy({
 
   // Sync avatar dock position globally for chatbox anchoring
   useEffect(() => {
-    const rightMargin = isMobileScreen ? 68 : 84;
+    const rightMargin = isMobileScreen ? 14 : 24;
     const bottomMargin = isMobileScreen 
       ? (isBottomPlayerVisible ? 134 : 64) 
-      : (isBottomPlayerVisible ? 96 : 20);
+      : (isBottomPlayerVisible ? 100 : 24);
     const curX = isCustomPos 
       ? avatarPos.x 
       : (typeof window !== 'undefined' ? window.innerWidth - characterWidth - rightMargin : 0);
@@ -465,222 +470,27 @@ export default function CharacterBuddy({
     return { x: Math.round(destX), y: Math.round(destY) };
   }, [getUsableScreenBounds]);
 
-  // Execute continuous natural walking to the selected screen destination
+  // Idle wandering is strictly disabled: Loopra AI avatar rests stably at its lower-right corner dock
   const startAutonomousWalk = useCallback(() => {
-    // 1. Strict Interaction Priority Check
-    if (
-      !isVisible ||
-      isListening ||
-      isSpeaking ||
-      isPlaying ||
-      isThinking ||
-      isExecuting ||
-      isPointerDownRef.current ||
-      dragRef.current.isDragging ||
-      isResizeMode ||
-      isNavigatingRef.current ||
-      isRotatingRef.current ||
-      (typeof document !== 'undefined' && document.hidden)
-    ) {
-      return;
-    }
+    stopAutonomousWalking(false);
+  }, [stopAutonomousWalking]);
 
-    const bounds = getUsableScreenBounds();
-    const startX = isCustomPos ? avatarPos.x : (bounds.maxX - (isMobileScreen ? 48 : 64));
-    const startY = isCustomPos ? avatarPos.y : bounds.maxY;
-
-    if (!isCustomPos) {
-      setIsCustomPos(true);
-      setAvatarPos({ x: startX, y: startY });
-    }
-
-    const destination = selectNextIdleDestination(startX, startY);
-    const destX = destination.x;
-    const destY = destination.y;
-
-    const deltaX = destX - startX;
-    const deltaY = destY - startY;
-    const dist = Math.hypot(deltaX, deltaY);
-
-    if (dist < 35) {
-      idlePauseTimerRef.current = setTimeout(startAutonomousWalk, 2000);
-      return;
-    }
-
-    // Quadratic Bézier curve with gentle perpendicular curvature (no robotic straight lines)
-    const midX = (startX + destX) / 2;
-    const midY = (startY + destY) / 2;
-    const normalX = -deltaY / dist;
-    const normalY = deltaX / dist;
-    const curvature = (18 + Math.random() * 32) * (Math.random() > 0.5 ? 1 : -1);
-    const ctrlX = Math.max(bounds.minX, Math.min(bounds.maxX, midX + normalX * curvature));
-    const ctrlY = Math.max(bounds.minY, Math.min(bounds.maxY, midY + normalY * curvature));
-
-    // Natural human walking duration (~130px per second)
-    const duration = Math.max(2200, Math.min(5400, Math.round((dist / 130) * 1000)));
-
-    isIdleWalkingRef.current = true;
-    setAutonomousSubState('idle_walking');
-    setWalkFacing(deltaX < 0 ? 'left' : 'right');
-
-    const startTime = performance.now();
-
-    const step = (now) => {
-      // Abort immediately if user interacts or new task/command arrives
-      if (
-        !isIdleWalkingRef.current ||
-        !isVisible ||
-        isListening ||
-        isSpeaking ||
-        isPlaying ||
-        isThinking ||
-        isExecuting ||
-        isPointerDownRef.current ||
-        dragRef.current.isDragging ||
-        isResizeMode ||
-        isNavigatingRef.current ||
-        (typeof document !== 'undefined' && document.hidden)
-      ) {
-        stopAutonomousWalking(false);
-        return;
-      }
-
-      const elapsed = now - startTime;
-      const progress = Math.min(1, elapsed / duration);
-
-      // Smooth acceleration and deceleration (Smoothstep cubic easing)
-      const eased = progress < 0.5
-        ? 4 * progress * progress * progress
-        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
-
-      const oneMinusE = 1 - eased;
-      const curX = Math.round(oneMinusE * oneMinusE * startX + 2 * oneMinusE * eased * ctrlX + eased * eased * destX);
-      const curY = Math.round(oneMinusE * oneMinusE * startY + 2 * oneMinusE * eased * ctrlY + eased * eased * destY);
-
-      // Instantaneous tangent for facing direction and subtle body yaw into the turn
-      const tangentX = 2 * (1 - eased) * (ctrlX - startX) + 2 * eased * (destX - ctrlX);
-      if (tangentX > 1.2) {
-        setWalkFacing('right');
-        setRotationYaw(-0.16);
-      } else if (tangentX < -1.2) {
-        setWalkFacing('left');
-        setRotationYaw(0.16);
-      }
-
-      setAvatarPos({ x: curX, y: curY });
-      window.__loopraAvatarPosition = { x: curX, y: curY, width: characterWidth, height: characterHeight };
-
-      if (progress < 1) {
-        walkAnimFrameRef.current = requestAnimationFrame(step);
-      } else {
-        // Reached destination cleanly!
-        isIdleWalkingRef.current = false;
-        setAvatarPos({ x: destX, y: destY });
-        setAutonomousSubState('idle');
-        smoothReturnToFront();
-
-        // Varied idle pause: stand, look around, or perform subtle natural gesture
-        const idleChoice = Math.random();
-        if (idleChoice < 0.35) {
-          setAutonomousSubState('standing');
-        } else if (idleChoice < 0.50) {
-          setAutonomousSubState('thinking');
-        } else if (idleChoice < 0.65) {
-          setAutonomousSubState('wave');
-        } else {
-          setAutonomousSubState('idle');
-        }
-
-        idlePauseTimerRef.current = setTimeout(() => {
-          setAutonomousSubState('idle');
-          idleWalkTimerRef.current = setTimeout(() => {
-            startAutonomousWalk();
-          }, 1200 + Math.random() * 1500);
-        }, 1800);
-      }
-    };
-
-    walkAnimFrameRef.current = requestAnimationFrame(step);
-  }, [
-    isVisible,
-    isListening,
-    isSpeaking,
-    isPlaying,
-    isThinking,
-    isExecuting,
-    isResizeMode,
-    isCustomPos,
-    avatarPos,
-    isMobileScreen,
-    characterWidth,
-    characterHeight,
-    getUsableScreenBounds,
-    selectNextIdleDestination,
-    smoothReturnToFront,
-    stopAutonomousWalking
-  ]);
-
-  // Reset autonomous timer & schedule next walk when returning to uninterrupted idle
+  // Reset autonomous state: keeps avatar at home dock in lower right corner
   const resetAutonomousTimer = useCallback(() => {
     stopAutonomousWalking(false);
-    if (
-      !isVisible ||
-      isListening ||
-      isSpeaking ||
-      isPlaying ||
-      isThinking ||
-      isExecuting ||
-      isResizeMode ||
-      dragRef.current.isDragging
-    ) {
-      return;
-    }
-    idleWalkTimerRef.current = setTimeout(() => {
-      startAutonomousWalk();
-    }, 3500);
-  }, [
-    isVisible,
-    isListening,
-    isSpeaking,
-    isPlaying,
-    isThinking,
-    isExecuting,
-    isResizeMode,
-    startAutonomousWalk,
-    stopAutonomousWalking
-  ]);
+  }, [stopAutonomousWalking]);
 
   const resetIdleTimer = resetAutonomousTimer;
 
-  // Watch for state changes to start/stop idle walking
+  // Ensure idle walking is disabled and avatar rests stably
   useEffect(() => {
-    resetAutonomousTimer();
-    return () => {
-      if (idleWalkTimerRef.current) {
-        clearTimeout(idleWalkTimerRef.current);
-      }
-    };
-  }, [resetAutonomousTimer, isPlaying, isListening, isSpeaking, isThinking, isExecuting, isVisible]);
+    stopAutonomousWalking(false);
+  }, [stopAutonomousWalking, isPlaying, isListening, isSpeaking, isThinking, isExecuting, isVisible]);
 
-  // Tab visibility listener: pause autonomous movement when tab is hidden, resume when visible
+  // Tab visibility listener: ensure avatar remains cleanly docked when tab visibility changes
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.hidden) {
-        stopAutonomousWalking(true);
-      } else if (
-        isVisible &&
-        !isListening &&
-        !isSpeaking &&
-        !isPlaying &&
-        !isThinking &&
-        !isExecuting &&
-        !isResizeMode
-      ) {
-        stopAutonomousWalking(false);
-        idleWalkTimerRef.current = setTimeout(() => {
-          startAutonomousWalk();
-        }, 2200);
-      }
+      stopAutonomousWalking(true);
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -688,17 +498,7 @@ export default function CharacterBuddy({
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       stopAutonomousWalking(true);
     };
-  }, [
-    isVisible,
-    isListening,
-    isSpeaking,
-    isPlaying,
-    isThinking,
-    isExecuting,
-    isResizeMode,
-    startAutonomousWalk,
-    stopAutonomousWalking
-  ]);
+  }, [stopAutonomousWalking]);
 
   // Clean up all animation frames and timers on unmount
   useEffect(() => {
@@ -706,6 +506,26 @@ export default function CharacterBuddy({
       stopAutonomousWalking(true);
     };
   }, [stopAutonomousWalking]);
+
+  // Non-passive wheel event listener for avatar scaling without browser console violations
+  useEffect(() => {
+    const walker = walkerRef.current;
+    if (!walker) return;
+    const handleNativeWheel = (e) => {
+      try {
+        if (e.cancelable) {
+          e.preventDefault();
+        }
+      } catch (_) {}
+      e.stopPropagation();
+      const step = e.deltaY < 0 ? 0.05 : -0.05;
+      updateAvatarScale(avatarScale + step);
+    };
+    walker.addEventListener('wheel', handleNativeWheel, { passive: false });
+    return () => {
+      walker.removeEventListener('wheel', handleNativeWheel);
+    };
+  }, [updateAvatarScale, avatarScale]);
 
   // Record command into display and 5-item rolling history
   const recordCommandDisplay = useCallback((text, actionTag = null) => {
@@ -1056,7 +876,7 @@ export default function CharacterBuddy({
       const minY = 50;
       const bottomMargin = isMobileScreen 
         ? (isBottomPlayerVisible ? 134 : 64) 
-        : (isBottomPlayerVisible ? 96 : 20);
+        : (isBottomPlayerVisible ? 100 : 24);
       const maxY = Math.max(minY, window.innerHeight - characterHeight - bottomMargin);
 
       const finalPos = {
@@ -1068,6 +888,7 @@ export default function CharacterBuddy({
 
       try {
         sessionStorage.setItem('loopra_avatar_drag_pos', JSON.stringify(finalPos));
+        sessionStorage.setItem('loopra_avatar_user_dragged', 'true');
       } catch (_) {}
 
       if (e.preventDefault) e.preventDefault();
@@ -1127,6 +948,7 @@ export default function CharacterBuddy({
       sessionStorage.removeItem('loopra_avatar_position');
       sessionStorage.removeItem('loopra_avatar_custom_pos');
       sessionStorage.removeItem('loopra_avatar_drag_pos');
+      sessionStorage.removeItem('loopra_avatar_user_dragged');
       sessionStorage.removeItem('loopra_avatar_scale');
     } catch (_) {}
     updateAvatarScale(1.0);
@@ -1428,12 +1250,12 @@ export default function CharacterBuddy({
                 top: `${avatarPos.y}px`
               }
             : {
-                right: isMobileScreen ? '68px' : '84px',
+                right: isMobileScreen ? '14px' : '24px',
                 bottom: isMobileScreen 
                   ? (isBottomPlayerVisible 
                       ? 'calc(134px + env(safe-area-inset-bottom, 0px))' 
                       : 'calc(64px + env(safe-area-inset-bottom, 0px))') 
-                  : (isBottomPlayerVisible ? '96px' : '20px')
+                  : (isBottomPlayerVisible ? '100px' : '24px')
               }),
           width: `${characterWidth}px`,
           height: `${characterHeight}px`,
@@ -1531,12 +1353,6 @@ export default function CharacterBuddy({
           }`}
           onMouseDown={handlePointerDown}
           onTouchStart={handlePointerDown}
-          onWheel={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const step = e.deltaY < 0 ? 0.05 : -0.05;
-            updateAvatarScale(avatarScale + step);
-          }}
           onContextMenu={(e) => {
             e.preventDefault();
             playTransientGesture('wave', 1200);

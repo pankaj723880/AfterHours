@@ -36,6 +36,16 @@ export const ROUTE_SEO_DATA = {
       { name: 'Live Indian Radio', item: `${PRIMARY_DOMAIN}/radio` }
     ]
   },
+  'dj-club': {
+    title: 'Loopra DJ Club - Immersive Nightclub & EDM Light Show | Loopra',
+    description: 'Experience Loopra DJ Club: cinematic full-screen nightclub visuals, beat-reactive lasers, moving spotlights, disco ball, and live EDM party music.',
+    path: '/dj-club',
+    isIndexable: true,
+    breadcrumbs: [
+      { name: 'Home', item: `${PRIMARY_DOMAIN}/` },
+      { name: 'DJ Club', item: `${PRIMARY_DOMAIN}/dj-club` }
+    ]
+  },
   'for-you': {
     title: 'Personalized AI Music Recommendations | Loopra',
     description: 'Enjoy personalized music recommendations powered by AI intelligence tailored to your listening habits, mood, and favorite artists.',

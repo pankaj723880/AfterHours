@@ -343,6 +343,17 @@ export function parseCommandToAction(rawInput = '', context = {}) {
     }
   }
 
+  // Conversational requests with spoken entertainment verbs (e.g. "Ek joke sunao", "Shayari sunao", "Koi kahani sunao")
+  // MUST route to Gemini Chat, NEVER to music player!
+  if (/\b(joke|chutkula|shayari|shayri|kahani|kissa|baat|baatein|story|poem|kavita)\b/i.test(cleanLower)) {
+    return {
+      intent: INTENT_CATEGORIES.GENERAL_QUESTION,
+      action: 'chat',
+      text: rawInput,
+      description: 'Conversational chat request'
+    };
+  }
+
   // Single Song / Mood / Artist Playback: e.g. "Play Kesariya", "Arijit ka koi gaana chala", "Koi romantic song laga"
   if (hasPlayVerb) {
     // Pattern A: "<Artist/Theme> ka/ki/ke koi gaana chala", "Arijit ka koi gaana chala", "party ka music chala"

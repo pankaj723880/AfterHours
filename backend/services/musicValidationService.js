@@ -12,6 +12,7 @@
 
 import { GoogleGenAI } from '@google/genai';
 import { isValidYouTubeId } from './songFilter.js';
+import { executeGeminiOperation, isGeminiConfigured } from './geminiKeyManager.js';
 
 // In-memory LRU/TTL cache for validation decisions (keyed by YouTube videoId)
 const VALIDATION_CACHE = new Map();
@@ -245,6 +246,18 @@ class MusicValidationService {
       score += 0.40;
     }
 
+    // 2b. Performing Artist Self-Upload (Channel name in title, or title starts with channel)
+    if (lowerChannel && lowerChannel.length >= 3 && (lowerTitle.startsWith(lowerChannel) || lowerTitle.includes(lowerChannel))) {
+      positiveSignals.push(`Channel name matches performing artist in title: "${channel}"`);
+      score += 0.25;
+    }
+
+    // 2c. Music Collaboration Indicator (&, x, feat., ft., prod., with)
+    if (/\b(&|x|feat\.?|ft\.?|prod\.?|featuring|with)\b/i.test(lowerTitle)) {
+      positiveSignals.push('Artist collaboration indicator in title');
+      score += 0.15;
+    }
+
     // 3. Audio & Music Video Indicators in Title
     if (/\b(official\s+(music\s+)?video|official\s+audio|full\s+(video\s+)?song|lyric\s+video|lyrics|audio\s+track|original\s+song|visualizer)\b/i.test(lowerTitle)) {
       positiveSignals.push('Explicit official song/video indicator in title');
@@ -308,9 +321,15 @@ class MusicValidationService {
   // LAYER 3: AI CONTENT CLASSIFICATION
   // =========================================================================
   async evaluateLayer3AI(meta = {}, layer1Result = {}, layer2Result = {}) {
-    const combinedScore = (layer1Result.score * 0.35) + (layer2Result.score * 0.65);
+    // If YouTube CategoryId is missing from search snippet, rely primarily on Layer 2 metadata (90%)
+    const hasCategoryInfo = layer1Result.categoryId !== null && layer1Result.categoryId !== 'null';
+    const layer1Weight = hasCategoryInfo ? 0.35 : 0.10;
+    const layer2Weight = 1.0 - layer1Weight;
+    const combinedScore = (layer1Result.score * layer1Weight) + (layer2Result.score * layer2Weight);
+
     const hasDisqualifiers = layer2Result.negativeSignals.length > 0;
     const isTopicOrLabel = layer2Result.isTopicChannel || layer2Result.isOfficialLabel;
+    const hasArtistTrackDelimiter = layer2Result.positiveSignals.some(s => s.includes('delimiter') || s.includes('artist in title') || s.includes('collaboration'));
 
     // TIER 1: HIGH-CONFIDENCE OBVIOUS CASES (0ms Latency Fast-Path)
     // A. Obvious Disqualification: clear non-music markers without official distributor proof
@@ -336,8 +355,8 @@ class MusicValidationService {
       };
     }
 
-    // B. Obvious Music: Topic channel or verified label with song indicators and no disqualifiers
-    if ((isTopicOrLabel || combinedScore >= 0.80) && !hasDisqualifiers) {
+    // B. Obvious Music: Topic channel, verified label, or high-confidence score with no disqualifiers
+    if ((isTopicOrLabel || combinedScore >= 0.75 || (hasArtistTrackDelimiter && combinedScore >= 0.65)) && !hasDisqualifiers) {
       let musicCat = 'official_song';
       if (layer2Result.positiveSignals.some(s => s.includes('classical') || s.includes('raga') || s.includes('sitar'))) {
         musicCat = 'classical';
@@ -359,17 +378,17 @@ class MusicValidationService {
       };
     }
 
-    // TIER 2: AMBIGUOUS OR BORDERLINE CASES (Semantic AI Classification)
-    if (this.geminiClient) {
+    // TIER 2: AMBIGUOUS OR BORDERLINE CASES (Semantic AI Classification via Dual-Key Manager)
+    if (isGeminiConfigured()) {
       try {
         const aiDecision = await this.queryGeminiClassifier(meta);
         if (aiDecision && typeof aiDecision.isMusic === 'boolean') {
           return {
-            passed: aiDecision.isMusic && aiDecision.confidence >= 0.70,
+            passed: aiDecision.isMusic && aiDecision.confidence >= 0.65,
             isMusic: aiDecision.isMusic,
             confidence: aiDecision.confidence,
             category: aiDecision.category || (aiDecision.isMusic ? 'independent_music' : 'other_non_music'),
-            model: 'gemini-3.8-flash',
+            model: 'gemini-key-manager',
             reason: aiDecision.reason || 'Gemini semantic classification'
           };
         }
@@ -378,8 +397,10 @@ class MusicValidationService {
       }
     }
 
-    // TIER 3: SAFE HEURISTIC FALLBACK (Fail-Safe: Reject ambiguous/uncertain content)
-    const isMarginalMusic = combinedScore >= 0.65 && !hasDisqualifiers;
+    // TIER 3: SAFE HEURISTIC FALLBACK (Fail-Safe: Allow clean songs, reject non-music)
+    const isCleanTrack = hasArtistTrackDelimiter && !hasDisqualifiers && (layer2Result.score >= 0.60 || combinedScore >= 0.55);
+    const isMarginalMusic = (combinedScore >= 0.60 || isCleanTrack) && !hasDisqualifiers;
+
     return {
       passed: isMarginalMusic,
       isMusic: isMarginalMusic,
@@ -393,10 +414,11 @@ class MusicValidationService {
   }
 
   /**
-   * Queries Gemini 3.8 Flash with strict JSON output schema to classify ambiguous candidates.
+   * Queries Gemini 3.8 Flash (with automatic secondary failover) to classify ambiguous candidates.
    */
   async queryGeminiClassifier(meta = {}) {
-    const model = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+    if (!isGeminiConfigured()) return null;
+
     const prompt = `You are the Loopra Music Streaming Platform Content Classifier.
 Your job is to determine whether a YouTube video is genuinely an individual MUSIC TRACK (song, instrumental, bhajan, classical, regional folk, rap, etc.) or NON-MUSIC (gaming, vlog, tutorial, podcast, interview, news, movie scene, reaction, or video merely containing background music).
 
@@ -411,9 +433,9 @@ ALLOWED MUSIC CATEGORIES:
 - official_song
 - licensed_music
 - independent_music
-- regional_folk (e.g. Bhojpuri, Punjabi, Haryanvi, Bengali, folk)
-- devotional (e.g. bhajans, aarti, qawwali, kirtan)
-- classical (e.g. Indian/Western classical, instrumental sitar, flute, piano)
+- regional_folk
+- devotional
+- classical
 - instrumental
 - rap_hiphop
 - live_performance
@@ -421,13 +443,13 @@ ALLOWED MUSIC CATEGORIES:
 BLOCKED NON-MUSIC CATEGORIES:
 - gaming
 - vlog
-- tutorial (including FL Studio / music production / mixing tutorials)
+- tutorial
 - podcast
 - interview
 - news
-- movie_tv (full movies, clips, scenes, trailers)
+- movie_tv
 - reaction
-- background_music_only (e.g. gameplay or study video with background music)
+- background_music_only
 - other_non_music
 
 OUTPUT RULES:
@@ -439,17 +461,27 @@ Return strictly a JSON object with:
   "reason": short explanation (max 15 words)
 }`;
 
-    const response = await this.geminiClient.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        temperature: 0.1
-      }
+    const opResult = await executeGeminiOperation(async ({ client, modelName }) => {
+      const response = await client.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          temperature: 0.1
+        }
+      });
+      const text = response?.text?.trim() || '';
+      return JSON.parse(text);
+    }, {
+      modelName: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+      timeoutMs: 6000,
+      operationName: 'MusicValidationClassifier'
     });
 
-    const text = response?.text?.trim() || '';
-    return JSON.parse(text);
+    if (opResult.success && opResult.data) {
+      return opResult.data;
+    }
+    return null;
   }
 
   // =========================================================================

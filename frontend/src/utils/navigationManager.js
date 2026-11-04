@@ -42,8 +42,9 @@ export function buildPath(tab, params = {}) {
     return '/downloads';
   }
   if (tab === 'admin') return '/admin';
+  if (tab === 'dj-club' || tab === 'djclub' || tab === 'dj') return '/dj-club';
   if (tab === 'radio' || tab === 'indian-radio') return '/radio';
-  if (['barber', 'truck', 'pauwa', 'timemachine', 'mood', 'library', 'history', 'activity', 'swipe', 'for-you'].includes(tab)) {
+  if (['barber', 'truck', 'pauwa', 'timemachine', 'mood', 'library', 'history', 'activity', 'swipe', 'for-you', 'dj-club'].includes(tab)) {
     return `/${tab}`;
   }
   return `/${tab}`;
@@ -61,6 +62,9 @@ export function parseRoute(pathname = '/', search = '') {
 
   if (cleanPath === '/admin') {
     return { tab: 'admin', path: '/admin', params: {} };
+  }
+  if (cleanPath === '/dj-club' || cleanPath === '/djclub' || cleanPath === '/dj') {
+    return { tab: 'dj-club', path: '/dj-club', params: {} };
   }
   if (cleanPath === '/discover' || q) {
     const p = q ? `/discover?q=${encodeURIComponent(q)}` : '/discover';
@@ -91,7 +95,7 @@ export function parseRoute(pathname = '/', search = '') {
     const stationId = cleanPath.replace('/station/', '');
     return { tab: stationId, path: `/${stationId}`, params: {} };
   }
-  const knownTabs = ['barber', 'truck', 'pauwa', 'mood', 'timemachine', 'activity', 'library', 'history', 'swipe'];
+  const knownTabs = ['barber', 'truck', 'pauwa', 'mood', 'timemachine', 'activity', 'library', 'history', 'swipe', 'dj-club'];
   const stripped = cleanPath.replace(/^\//, '');
   if (knownTabs.includes(stripped)) {
     return { tab: stripped, path: `/${stripped}`, params: {} };

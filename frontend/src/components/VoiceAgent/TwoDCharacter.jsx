@@ -324,14 +324,18 @@ export default function TwoDCharacter({
 
     // 5. 60 FPS Kinematics & Animation Loop
     let reqId;
-    let clock = new THREE.Clock();
+    let lastTime = performance.now();
+    let elapsedTime = 0;
     let blinkTimer = 0;
     let isBlinking = false;
 
     const animate = () => {
       reqId = requestAnimationFrame(animate);
-      const delta = clock.getDelta();
-      const time = clock.getElapsedTime();
+      const now = performance.now();
+      const delta = Math.min((now - lastTime) / 1000, 0.1);
+      lastTime = now;
+      elapsedTime += delta;
+      const time = elapsedTime;
       const curState = stateRef.current.animationState;
       const isSpeakingNow = stateRef.current.isSpeaking;
       const isListeningNow = stateRef.current.isListening;

@@ -309,7 +309,8 @@ export default function ThreeDCharacter({
     // C. 60 FPS ANIMATION LOOP WITH TAB VISIBILITY PAUSE & SUBTLE HEAD TRACKING
     // =========================================================================
     let reqId;
-    let clock = new THREE.Clock();
+    let lastTime = performance.now();
+    let elapsedTime = 0;
     let isTabVisible = true;
     let lastMouseMoveTime = Date.now();
     let currentHeadYaw = 0;
@@ -323,7 +324,7 @@ export default function ThreeDCharacter({
     const handleVisibilityChange = () => {
       isTabVisible = !document.hidden;
       if (isTabVisible) {
-        clock.getDelta(); // flush delta
+        lastTime = performance.now(); // reset delta on tab refocus
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -332,8 +333,11 @@ export default function ThreeDCharacter({
       reqId = requestAnimationFrame(animate);
       if (!isTabVisible) return;
 
-      const delta = clock.getDelta();
-      const time = clock.getElapsedTime();
+      const animNow = performance.now();
+      const delta = Math.min((animNow - lastTime) / 1000, 0.1);
+      lastTime = animNow;
+      elapsedTime += delta;
+      const time = elapsedTime;
 
       const curState = stateRef.current.animationState;
       const isSpeakingNow = stateRef.current.isSpeaking;
@@ -367,8 +371,7 @@ export default function ThreeDCharacter({
       }
 
       // Subtle Head Tracking Logic: ±8° yaw, ±5° pitch
-      const now = Date.now();
-      const isCursorIdle = (now - lastMouseMoveTime) > 3000;
+      const isCursorIdle = (Date.now() - lastMouseMoveTime) > 3000;
 
       let rawX = stateRef.current.cursorX || 0;
       let rawY = stateRef.current.cursorY || 0;
@@ -496,19 +499,19 @@ export default function ThreeDCharacter({
         setBoneRot('rightleg', 0, 0, 0, 0.15);
         setBoneRot('leftfoot', 0, 0, 0, 0.15);
         setBoneRot('rightfoot', 0, 0, 0, 0.15);
-        setBoneRot('leftarm', breath * 0.015, 0, 0.02, 0.15);
-        setBoneRot('rightarm', breath * 0.015, 0, -0.02, 0.15);
-        setBoneRot('leftforearm', 0, 0, 0, 0.15);
-        setBoneRot('rightforearm', 0, 0, 0, 0.15);
+        setBoneRot('leftarm', 0.48 + breath * 0.015, 0, 0.02, 0.15);
+        setBoneRot('rightarm', 0.48 + breath * 0.015, 0, -0.02, 0.15);
+        setBoneRot('leftforearm', 0, 0, 0.08, 0.15);
+        setBoneRot('rightforearm', 0, 0, -0.08, 0.15);
       } else if (curState === 'listening') {
         // Attentive upright standing pose with subtle curious head tilt and relaxed arms
         setBonePos('hips', 0, breath * 0.003, 0, 0.15);
         setBoneRot('spine', 0.02, 0, 0, 0.15);
         setBoneRot('head', currentHeadPitch - 0.04, currentHeadYaw, 0.08, 0.15);
-        setBoneRot('leftarm', 0, 0, 0.02, 0.15);
-        setBoneRot('rightarm', 0, 0, -0.02, 0.15);
-        setBoneRot('leftforearm', 0, 0, 0.04, 0.15);
-        setBoneRot('rightforearm', 0, 0, -0.04, 0.15);
+        setBoneRot('leftarm', 0.46, 0, 0.02, 0.15);
+        setBoneRot('rightarm', 0.46, 0, -0.02, 0.15);
+        setBoneRot('leftforearm', 0, 0, 0.08, 0.15);
+        setBoneRot('rightforearm', 0, 0, -0.08, 0.15);
         setBoneRot('leftupleg', 0, 0, 0, 0.15);
         setBoneRot('rightupleg', 0, 0, 0, 0.15);
         setBoneRot('leftleg', 0, 0, 0, 0.15);
@@ -520,9 +523,9 @@ export default function ThreeDCharacter({
         setBonePos('hips', 0, breath * 0.003, 0, 0.15);
         setBoneRot('spine', 0, 0, 0.02, 0.15);
         setBoneRot('head', currentHeadPitch - 0.06, currentHeadYaw + 0.08, 0.05, 0.15);
-        setBoneRot('leftarm', 0, 0, 0.02, 0.15);
-        setBoneRot('leftforearm', 0, 0, 0, 0.15);
-        setBoneRot('rightarm', 0.22, -0.15, -0.32, 0.15);
+        setBoneRot('leftarm', 0.46, 0, 0.02, 0.15);
+        setBoneRot('leftforearm', 0, 0, 0.08, 0.15);
+        setBoneRot('rightarm', 0.28, -0.15, -0.32, 0.15);
         setBoneRot('rightforearm', 0, 0, -0.35, 0.15);
         setBoneRot('leftupleg', 0, 0, 0, 0.15);
         setBoneRot('rightupleg', 0, 0, 0, 0.15);
@@ -550,9 +553,9 @@ export default function ThreeDCharacter({
         setBonePos('hips', 0, breath * 0.003, 0, 0.15);
         setBoneRot('spine', 0, 0, 0, 0.15);
         setBoneRot('head', currentHeadPitch + Math.sin(time * 6) * 0.04 * Math.max(0.4, vol), currentHeadYaw, 0, 0.15);
-        setBoneRot('leftarm', 0, 0, 0.02, 0.15);
-        setBoneRot('leftforearm', 0, 0, 0, 0.15);
-        setBoneRot('rightarm', 0.18 + Math.sin(time * 3) * 0.06, -0.10, -0.20, 0.15);
+        setBoneRot('leftarm', 0.46, 0, 0.02, 0.15);
+        setBoneRot('leftforearm', 0, 0, 0.08, 0.15);
+        setBoneRot('rightarm', 0.26 + Math.sin(time * 3) * 0.06, -0.10, -0.20, 0.15);
         setBoneRot('rightforearm', 0, 0, -0.25, 0.15);
         setBoneRot('leftupleg', 0, 0, 0, 0.15);
         setBoneRot('rightupleg', 0, 0, 0, 0.15);
@@ -564,10 +567,10 @@ export default function ThreeDCharacter({
         // Natural Upright Relaxed Standing (Strict Straight Posture, Arms Naturally at Sides, Feet Flat)
         setBonePos('hips', 0, breath * 0.003, 0, 0.15);
         setBoneRot('spine', breath * 0.015, 0, 0, 0.15);
-        setBoneRot('leftarm', breath * 0.015, 0, 0.02, 0.15);
-        setBoneRot('rightarm', breath * 0.015, 0, -0.02, 0.15);
-        setBoneRot('leftforearm', 0, 0, 0, 0.15);
-        setBoneRot('rightforearm', 0, 0, 0, 0.15);
+        setBoneRot('leftarm', 0.48 + breath * 0.015, 0, 0.02, 0.15);
+        setBoneRot('rightarm', 0.48 + breath * 0.015, 0, -0.02, 0.15);
+        setBoneRot('leftforearm', 0, 0, 0.08, 0.15);
+        setBoneRot('rightforearm', 0, 0, -0.08, 0.15);
         setBoneRot('leftupleg', 0, 0, 0, 0.15);
         setBoneRot('rightupleg', 0, 0, 0, 0.15);
         setBoneRot('leftleg', 0, 0, 0, 0.15);
@@ -578,8 +581,8 @@ export default function ThreeDCharacter({
         const wave = Math.sin(time * 14) * 0.35;
         setBoneRot('rightarm', 0.18, -0.15, -1.35 + wave * 0.35, 0.25);
         setBoneRot('rightforearm', 0, 0, -0.45, 0.25);
-        setBoneRot('leftarm', 0, 0, 0.02, 0.15);
-        setBoneRot('leftforearm', 0, 0, 0, 0.15);
+        setBoneRot('leftarm', 0.48, 0, 0.02, 0.15);
+        setBoneRot('leftforearm', 0, 0, 0.08, 0.15);
         setBoneRot('leftupleg', 0, 0, 0, 0.15);
         setBoneRot('rightupleg', 0, 0, 0, 0.15);
         setBoneRot('leftleg', 0, 0, 0, 0.15);

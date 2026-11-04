@@ -6,7 +6,8 @@
  * 2. Automatic failover on HTTP 429, RESOURCE_EXHAUSTED, quota exceeded, 401/403, and timeouts.
  * 3. Safe logging: Never logs, leaks, or exposes raw API keys.
  * 4. Streaming support: Key selection prior to stream start; failover before first chunk; no mid-stream switching.
- * 5. Bounded retries: Sensible backoff, no infinite loops, no retrying client 400 parameter errors.
+ * 5. Bounded retries: Sensible backoff, no infinite loops, no retrying client 400 parameter errors (except API_KEY_INVALID).
+ * 6. Model fallback resilience: Seamless recovery to gemini-2.0-flash if configured model 404s.
  */
 
 import { GoogleGenAI } from '@google/genai';
@@ -23,12 +24,11 @@ export const geminiDiagnostics = {
 };
 
 /**
- * Sanitizes any string to ensure API keys are never exposed in logs or errors.
+ * Sanitizes any string or object to ensure API keys are never exposed in logs or errors.
  */
 export function sanitizeLogMessage(msg = '') {
   if (!msg) return '';
   const text = typeof msg === 'string' ? msg : JSON.stringify(msg);
-  // Redact AIzaSy... or standard Google API key patterns
   return text.replace(/AIza[0-9A-Za-z-_]{35}/g, '[REDACTED_API_KEY]');
 }
 
@@ -60,23 +60,40 @@ export function isGeminiConfigured() {
 }
 
 /**
+ * Identifies whether an error is specifically quota or rate limit exhaustion.
+ */
+export function isQuotaError(err) {
+  if (!err) return false;
+  const status = err.status || err.statusCode || err.code || err.error?.code;
+  const raw = String(err.message || '') + ' ' + String(err.stack || '') + ' ' + JSON.stringify(err.error || {});
+  const lower = raw.toLowerCase();
+
+  return (
+    status === 429 ||
+    status === 'RESOURCE_EXHAUSTED' ||
+    lower.includes('resource_exhausted') ||
+    lower.includes('quota') ||
+    lower.includes('rate limit') ||
+    lower.includes('ratelimitexceeded') ||
+    lower.includes('429')
+  );
+}
+
+/**
  * Determines whether an error is eligible for failover (429, Quota, 401/403, Timeout, Network).
- * Explicitly rejects retrying ordinary client 400 errors (unless it's API_KEY_INVALID).
+ * Explicitly rejects retrying ordinary client 400 parameter errors (unless it's API_KEY_INVALID).
  */
 export function isFailoverError(err) {
   if (!err) return false;
 
-  const status = err.status || err.statusCode || err.code;
-  const message = String(err.message || '') + ' ' + String(err.stack || '');
-  const lowerMsg = message.toLowerCase();
+  const status = err.status || err.statusCode || err.code || err.error?.code;
+  const raw = String(err.message || '') + ' ' + String(err.stack || '') + ' ' + JSON.stringify(err.error || {});
+  const lowerMsg = raw.toLowerCase();
 
-  // Quota & Rate limits
-  if (status === 429 || status === 'RESOURCE_EXHAUSTED') return true;
-  if (lowerMsg.includes('resource_exhausted') || lowerMsg.includes('quota') || lowerMsg.includes('rate limit') || lowerMsg.includes('ratelimitexceeded') || lowerMsg.includes('429')) {
-    return true;
-  }
+  // 1. Quota & Rate limits
+  if (isQuotaError(err)) return true;
 
-  // Auth / Key issues (401, 403, or 400 with API_KEY_INVALID)
+  // 2. Auth / Key issues (401, 403, or 400 with API_KEY_INVALID)
   if (status === 401 || status === 403) return true;
   if (
     lowerMsg.includes('api_key_invalid') ||
@@ -84,12 +101,14 @@ export function isFailoverError(err) {
     lowerMsg.includes('unauthenticated') ||
     lowerMsg.includes('permission_denied') ||
     lowerMsg.includes('unauthorized') ||
-    lowerMsg.includes('forbidden')
+    lowerMsg.includes('forbidden') ||
+    lowerMsg.includes('service_disabled') ||
+    lowerMsg.includes('api_key_service_blocked')
   ) {
     return true;
   }
 
-  // Network / Timeout errors
+  // 3. Network / Timeout errors
   if (
     status === 'GEMINI_TIMEOUT' ||
     lowerMsg.includes('gemini_timeout') ||
@@ -102,7 +121,7 @@ export function isFailoverError(err) {
     return true;
   }
 
-  // Ordinary client 400 Bad Request should NOT be retried
+  // Ordinary client 400 Bad Request (bad prompt format, etc.) should NOT trigger key failover
   if (status === 400) {
     return false;
   }
@@ -139,8 +158,8 @@ export async function executeGeminiOperation(operationFn, options = {}) {
   const startTime = Date.now();
   geminiDiagnostics.totalCalls += 1;
 
-  const defaultModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-  const modelName = options.modelName || defaultModel;
+  const defaultModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+  const requestedModel = options.modelName || defaultModel;
   const timeoutMs = options.timeoutMs || 12000;
   const opName = options.operationName || 'GeminiOp';
 
@@ -155,55 +174,74 @@ export async function executeGeminiOperation(operationFn, options = {}) {
     };
   }
 
-  // Helper to execute an operation with a per-call timeout
-  const runWithTimeout = async (keyInfo) => {
+  const firstKey = keys[0];
+  const fallbackKey = keys.length > 1 && keys[1].key !== firstKey.key ? keys[1] : null;
+
+  // Helper to execute with per-call timeout and model 404 resilience
+  const runWithKey = async (keyInfo) => {
     const client = new GoogleGenAI({ apiKey: keyInfo.key });
-    return await Promise.race([
-      operationFn({ client, keyInfo, modelName }),
-      new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('GEMINI_TIMEOUT')), timeoutMs);
-      })
-    ]);
+
+    const executeWithModel = async (modelToUse) => {
+      return await Promise.race([
+        operationFn({ client, keyInfo, modelName: modelToUse }),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('GEMINI_TIMEOUT')), timeoutMs);
+        })
+      ]);
+    };
+
+    try {
+      return await executeWithModel(requestedModel);
+    } catch (modelErr) {
+      // If configured model 404s (e.g. gemini-3.8-flash doesn't exist), fallback to gemini-2.0-flash
+      const is404 = modelErr.status === 404 || String(modelErr.message || '').includes('not found');
+      if (is404 && requestedModel !== 'gemini-2.0-flash') {
+        console.warn(`[GeminiKeyManager] Model ${requestedModel} not found for ${opName}. Retrying with gemini-2.0-flash on key ${keyInfo.label}...`);
+        return await executeWithModel('gemini-2.0-flash');
+      }
+      throw modelErr;
+    }
   };
 
   // 1. Try Primary Key (or first available key)
-  const primaryKeyInfo = keys[0];
   try {
-    const result = await runWithTimeout(primaryKeyInfo);
-    geminiDiagnostics.primarySuccess += 1;
+    const result = await runWithKey(firstKey);
+    if (firstKey.label === 'primary') {
+      geminiDiagnostics.primarySuccess += 1;
+    } else {
+      geminiDiagnostics.secondarySuccess += 1;
+    }
     geminiDiagnostics.lastLatencyMs = Date.now() - startTime;
     return {
       success: true,
       data: result,
-      keyLabel: primaryKeyInfo.label,
-      keyIndex: primaryKeyInfo.index
+      keyLabel: firstKey.label,
+      keyIndex: firstKey.index
     };
   } catch (primaryErr) {
     const isRetryable = isFailoverError(primaryErr);
     const safeErrorMsg = sanitizeLogMessage(primaryErr.message || 'Unknown error');
-
     geminiDiagnostics.lastError = safeErrorMsg;
 
     // Check if we have a secondary key and this error qualifies for failover
-    const secondaryKeyInfo = keys.find(k => k.index === 1);
-    if (isRetryable && secondaryKeyInfo) {
+    if (isRetryable && fallbackKey) {
       geminiDiagnostics.totalFailovers += 1;
       geminiDiagnostics.lastFailoverReason = safeErrorMsg;
-      console.warn(`[GeminiKeyManager] Primary key failed for ${opName} (${safeErrorMsg}). Automatically failing over to secondary key...`);
+      console.warn(`[GeminiKeyManager] Key ${firstKey.label} failed for ${opName} (${safeErrorMsg}). Automatically failing over to ${fallbackKey.label}...`);
 
       // Brief jittered backoff before secondary attempt (80ms - 150ms)
       await new Promise(res => setTimeout(res, 80 + Math.floor(Math.random() * 70)));
 
       try {
-        const secondaryResult = await runWithTimeout(secondaryKeyInfo);
+        const secondaryResult = await runWithKey(fallbackKey);
         geminiDiagnostics.secondarySuccess += 1;
         geminiDiagnostics.lastLatencyMs = Date.now() - startTime;
-        console.info(`[GeminiKeyManager] Request succeeded for ${opName} using secondary key.`);
+        console.info(`[GeminiKeyManager] Request succeeded for ${opName} using ${fallbackKey.label}.`);
         return {
           success: true,
           data: secondaryResult,
-          keyLabel: secondaryKeyInfo.label,
-          keyIndex: secondaryKeyInfo.index,
+          keyLabel: fallbackKey.label,
+          keyIndex: fallbackKey.index,
           failedOver: true
         };
       } catch (secondaryErr) {
@@ -211,17 +249,21 @@ export async function executeGeminiOperation(operationFn, options = {}) {
         geminiDiagnostics.failedCalls += 1;
         geminiDiagnostics.lastError = safeSecMsg;
         console.error(`[GeminiKeyManager] Both primary and secondary keys failed for ${opName}. Secondary error: ${safeSecMsg}`);
+
+        const bothQuotaExhausted = isQuotaError(primaryErr) || isQuotaError(secondaryErr);
         return {
           success: false,
-          error: 'ALL_KEYS_FAILED',
+          error: bothQuotaExhausted ? 'QUOTA_EXHAUSTED' : 'ALL_KEYS_FAILED',
           message: safeSecMsg,
           primaryError: safeErrorMsg,
-          secondaryError: safeSecMsg
+          secondaryError: safeSecMsg,
+          allKeysExhausted: bothQuotaExhausted,
+          code: bothQuotaExhausted ? 429 : (secondaryErr.status || 500)
         };
       }
     }
 
-    // No secondary key available, or non-retryable error
+    // No secondary key available, or non-retryable client error
     geminiDiagnostics.failedCalls += 1;
     if (!isRetryable) {
       console.warn(`[GeminiKeyManager] Non-retryable error for ${opName}: ${safeErrorMsg}`);
@@ -232,11 +274,13 @@ export async function executeGeminiOperation(operationFn, options = {}) {
       };
     }
 
+    const quotaExhausted = isQuotaError(primaryErr);
     console.error(`[GeminiKeyManager] Primary key failed for ${opName} and no secondary key is configured: ${safeErrorMsg}`);
     return {
       success: false,
-      error: 'PRIMARY_KEY_FAILED',
-      message: safeErrorMsg
+      error: quotaExhausted ? 'QUOTA_EXHAUSTED' : 'PRIMARY_KEY_FAILED',
+      message: safeErrorMsg,
+      code: quotaExhausted ? 429 : (primaryErr.status || 500)
     };
   }
 }
@@ -249,7 +293,7 @@ export async function executeGeminiOperation(operationFn, options = {}) {
  * @param {Object} options - { modelName, timeoutMs, operationName }
  */
 export async function executeGeminiStreamOperation(streamInitFn, options = {}) {
-  const defaultModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+  const defaultModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
   const modelName = options.modelName || defaultModel;
   const timeoutMs = options.timeoutMs || 10000;
   const opName = options.operationName || 'GeminiStream';
@@ -263,8 +307,8 @@ export async function executeGeminiStreamOperation(streamInitFn, options = {}) {
     };
   }
 
-  const primaryKeyInfo = keys[0];
-  const secondaryKeyInfo = keys.find(k => k.index === 1);
+  const firstKey = keys[0];
+  const fallbackKey = keys.length > 1 && keys[1].key !== firstKey.key ? keys[1] : null;
 
   // Helper to test if stream can produce its first chunk
   const tryStartStream = async (keyInfo) => {
@@ -277,42 +321,48 @@ export async function executeGeminiStreamOperation(streamInitFn, options = {}) {
   };
 
   try {
-    const started = await tryStartStream(primaryKeyInfo);
+    const started = await tryStartStream(firstKey);
     return {
       success: true,
       stream: started.stream,
-      keyLabel: primaryKeyInfo.label,
-      keyIndex: primaryKeyInfo.index
+      keyLabel: firstKey.label,
+      keyIndex: firstKey.index
     };
   } catch (primaryErr) {
     const isRetryable = isFailoverError(primaryErr);
     const safeMsg = sanitizeLogMessage(primaryErr.message);
 
-    if (isRetryable && secondaryKeyInfo) {
-      console.warn(`[GeminiKeyManager] Stream initiation failed on primary (${safeMsg}). Failing over to secondary key before streaming...`);
+    if (isRetryable && fallbackKey) {
+      console.warn(`[GeminiKeyManager] Stream initiation failed on ${firstKey.label} (${safeMsg}). Failing over to ${fallbackKey.label} before streaming...`);
       try {
-        const startedSec = await tryStartStream(secondaryKeyInfo);
+        const startedSec = await tryStartStream(fallbackKey);
         return {
           success: true,
           stream: startedSec.stream,
-          keyLabel: secondaryKeyInfo.label,
-          keyIndex: secondaryKeyInfo.index,
+          keyLabel: fallbackKey.label,
+          keyIndex: fallbackKey.index,
           failedOver: true
         };
       } catch (secondaryErr) {
         const safeSecMsg = sanitizeLogMessage(secondaryErr.message);
+        const bothQuota = isQuotaError(primaryErr) || isQuotaError(secondaryErr);
         return {
           success: false,
-          error: 'ALL_KEYS_FAILED',
-          message: safeSecMsg
+          error: bothQuota ? 'QUOTA_EXHAUSTED' : 'ALL_KEYS_FAILED',
+          message: safeSecMsg,
+          primaryError: safeMsg,
+          secondaryError: safeSecMsg,
+          code: bothQuota ? 429 : 500
         };
       }
     }
 
+    const quotaExhausted = isQuotaError(primaryErr);
     return {
       success: false,
-      error: isRetryable ? 'PRIMARY_KEY_FAILED' : 'CLIENT_OR_INPUT_ERROR',
-      message: safeMsg
+      error: quotaExhausted ? 'QUOTA_EXHAUSTED' : (isRetryable ? 'PRIMARY_KEY_FAILED' : 'CLIENT_OR_INPUT_ERROR'),
+      message: safeMsg,
+      code: quotaExhausted ? 429 : 500
     };
   }
 }
@@ -321,10 +371,10 @@ export default {
   getGeminiKeys,
   isGeminiConfigured,
   isFailoverError,
+  isQuotaError,
   createGeminiClient,
   executeGeminiOperation,
   executeGeminiStreamOperation,
   sanitizeLogMessage,
   geminiDiagnostics
 };
-

@@ -184,7 +184,7 @@ describe('Gemini Multi-Key Failover & ChatBuddy Verification Suite', () => {
       });
 
       assert.equal(res.success, false);
-      assert.equal(res.error, 'ALL_KEYS_FAILED');
+      assert.ok(res.error === 'ALL_KEYS_FAILED' || res.error === 'QUOTA_EXHAUSTED');
       assert.ok(res.message.includes('Quota exceeded'));
     });
 

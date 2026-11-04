@@ -490,12 +490,16 @@ export default function LoopraAvatarWidget({
     // 60 FPS RENDER LOOP WITH SPRING PHYSICS & SKELETAL KINEMATICS
     // =========================================================================
     let reqId;
-    let clock = new THREE.Clock();
+    let lastTime = performance.now();
+    let elapsedTime = 0;
 
     const animate = () => {
       reqId = requestAnimationFrame(animate);
-      const delta = clock.getDelta();
-      const time = clock.getElapsedTime();
+      const now = performance.now();
+      const delta = Math.min((now - lastTime) / 1000, 0.1);
+      lastTime = now;
+      elapsedTime += delta;
+      const time = elapsedTime;
 
       const { persona: curPersona, animState: curState, audioScale: aScale, cursorX, cursorY } = threeStateRef.current;
 
