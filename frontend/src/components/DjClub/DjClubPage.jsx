@@ -1,10 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Home,
-  Music,
   Headphones,
-  PartyPopper,
-  Radio,
   Search,
   Bell,
   Shuffle,
@@ -18,10 +15,19 @@ import {
   Maximize2,
   Minimize2,
   Sparkles,
-  Layers
+  Sliders,
+  SlidersHorizontal,
+  Flame,
+  Zap,
+  Radio,
+  Eye,
+  EyeOff,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import DjLightingCanvas from './DjLightingCanvas';
 import DjWaveformVisualizer from './DjWaveformVisualizer';
+import { djAudio } from './djAudioEngine';
 import { getCleanThumbnail } from '../../utils/thumbnailValidator';
 
 // 6 Visual Presets matching the reference design
@@ -30,41 +36,41 @@ const LIGHT_PRESETS = [
     id: 'club-pulse',
     name: 'Club Pulse',
     thumbnail: '/presets/club-pulse.jpg',
-    description: 'Bass-driven magenta & violet audio pulse'
+    description: 'Fast rhythmic multicolor pulses and synchronized beams'
   },
   {
     id: 'neon-wave',
     name: 'Neon Wave',
     thumbnail: '/presets/neon-wave.jpg',
-    description: 'Electric cyan & purple sweeping beams'
+    description: 'Rapid moving cyan, blue, purple and pink waves'
   },
   {
     id: 'strobe-rush',
     name: 'Strobe Rush',
     thumbnail: '/presets/strobe-rush.jpg',
-    description: 'High-speed white & gold strobe bursts'
+    description: 'Powerful rapid multicolor flashes and alternating light bursts'
   },
   {
     id: 'laser-show',
     name: 'Laser Show',
     thumbnail: '/presets/laser-show.jpg',
-    description: 'Crisp green & cyan geometric laser fan'
+    description: 'Dense moving laser beams sweeping across the entire screen'
   },
   {
     id: 'party-glow',
     name: 'Party Glow',
     thumbnail: '/presets/party-glow.jpg',
-    description: 'Warm amber & neon purple party wash'
+    description: 'Dynamic colorful ambient lighting with pulsing glow'
   },
   {
     id: 'ultra-rave',
     name: 'Ultra Rave',
     thumbnail: '/presets/ultra-rave.jpg',
-    description: 'Full-spectrum multi-color hyper rave'
+    description: 'Maximum-energy combination of lasers, strobes, flashes and color transitions'
   }
 ];
 
-// Default high-energy DJ track for immediate playback
+// Default high-energy DJ track for immediate playback in music player
 const DEFAULT_DJ_TRACK = {
   id: 'slUoxZedJwE',
   videoId: 'slUoxZedJwE',
@@ -94,20 +100,49 @@ export default function DjClubPage({
   onOpenSearch,
   onOpenProfile
 }) {
+  // Preset State
   const [activePreset, setActivePreset] = useState('club-pulse');
   const [isAutoMode, setIsAutoMode] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [prevVolume, setPrevVolume] = useState(volume);
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
+  const [activePanelTab, setActivePanelTab] = useState('lighting'); // 'lighting' | 'audio'
   const [notificationCount] = useState(1);
   const autoTimerRef = useRef(null);
+
+  // Laser & Lighting Controls (Requirement 4 & 7)
+  const [laserSpeed, setLaserSpeed] = useState('normal'); // 'slow' | 'normal' | 'fast' | 'extreme'
+  const [laserDensity, setLaserDensity] = useState('medium'); // 'low' | 'medium' | 'high' | 'max'
+  const [flashIntensity, setFlashIntensity] = useState(80); // 0 to 100
+  const [lightBrightness, setLightBrightness] = useState(90); // 10 to 100
+  const [reducedMotion, setReducedMotion] = useState(false);
+
+  // DJ Beats & Sound Effects State (Requirement 5)
+  const [isDjBeatsPlaying, setIsDjBeatsPlaying] = useState(false);
+  const [djBeatsVolume, setDjBeatsVolume] = useState(75);
+  const [djSfxVolume, setDjSfxVolume] = useState(85);
+  const [djPattern, setDjPattern] = useState('edm'); // 'edm' | 'tech-house' | 'hyper-rave'
+  const [isDjAudioMuted, setIsDjAudioMuted] = useState(false);
+  const [latestBeatEvent, setLatestBeatEvent] = useState(null);
+  const [lastSfxTriggered, setLastSfxTriggered] = useState(null);
 
   // Active track info
   const activeTrack = currentSong && (currentSong.title || currentSong.name) ? currentSong : DEFAULT_DJ_TRACK;
   const trackTitle = activeTrack.title || 'Loopra DJ Mix';
   const trackSubtitle = activeTrack.channel || activeTrack.artist || 'Club • EDM • Party';
   const trackArt = activeTrack.thumbnail || activeTrack.coverArt || '/presets/loopra-dj-art.jpg';
+
+  // Synchronize audio beat events from djAudioEngine to lighting canvas
+  useEffect(() => {
+    const unsubscribe = djAudio.onBeat((event) => {
+      setLatestBeatEvent(event);
+    });
+    return () => {
+      unsubscribe();
+      djAudio.pauseBeats();
+    };
+  }, []);
 
   // Preset cycling function
   const handleCyclePreset = useCallback(() => {
@@ -134,7 +169,7 @@ export default function DjClubPage({
     };
   }, [isAutoMode, handleCyclePreset]);
 
-  // Handle Play/Pause
+  // Handle Play/Pause for Main Music Player
   const handlePlayToggle = () => {
     if (!currentSong) {
       if (onPlaySong) {
@@ -147,7 +182,7 @@ export default function DjClubPage({
     }
   };
 
-  // Handle Mute/Unmute
+  // Handle Mute/Unmute for Main Music Player
   const handleToggleMute = () => {
     if (isMuted) {
       setIsMuted(false);
@@ -157,6 +192,46 @@ export default function DjClubPage({
       setIsMuted(true);
       onVolumeChange?.({ target: { value: 0 } });
     }
+  };
+
+  // DJ Beats Engine Controls
+  const handleToggleDjBeats = () => {
+    const isNowPlaying = djAudio.toggleBeats();
+    setIsDjBeatsPlaying(isNowPlaying);
+  };
+
+  const handleDjPatternChange = (pattern) => {
+    setDjPattern(pattern);
+    djAudio.setPattern(pattern);
+  };
+
+  const handleDjBeatsVolumeChange = (e) => {
+    const val = Number(e.target.value);
+    setDjBeatsVolume(val);
+    djAudio.setBeatsVolume(val / 100);
+  };
+
+  const handleDjSfxVolumeChange = (e) => {
+    const val = Number(e.target.value);
+    setDjSfxVolume(val);
+    djAudio.setSfxVolume(val / 100);
+  };
+
+  const handleToggleDjAudioMute = () => {
+    const muted = djAudio.toggleMute();
+    setIsDjAudioMuted(muted);
+  };
+
+  // Trigger DJ Sound Effects
+  const handleTriggerSfx = (type) => {
+    setLastSfxTriggered(type);
+    setTimeout(() => setLastSfxTriggered(null), 400);
+
+    if (type === 'airhorn') djAudio.triggerAirHorn();
+    else if (type === 'laser') djAudio.triggerLaserZap();
+    else if (type === 'drop') djAudio.triggerSubDrop();
+    else if (type === 'scratch') djAudio.triggerScratch();
+    else if (type === 'riser') djAudio.triggerRiser(1.8);
   };
 
   // Handle Fullscreen
@@ -185,40 +260,44 @@ export default function DjClubPage({
         <img
           src="/loopra-dj-stage-clean.jpg"
           onError={(e) => {
-            // Fallback to original image if needed
             e.currentTarget.src = '/loopra-dj-club-bg.jpg';
           }}
           alt="Loopra DJ Club Arena"
           className="w-full h-full object-cover object-center filter brightness-[0.92] contrast-[1.08] transition-transform duration-1000 ease-out"
           style={{
-            transform: isPlaying ? 'scale(1.02)' : 'scale(1.0)'
+            transform: isPlaying || isDjBeatsPlaying ? 'scale(1.025)' : 'scale(1.0)'
           }}
         />
 
         {/* Ambient Dark Gradient Vignette for UI readability */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/85" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/65 via-transparent to-black/90" />
       </div>
 
-      {/* 2. DYNAMIC BEAT-REACTIVE LIGHTING CANVAS */}
+      {/* 2. DYNAMIC BEAT-REACTIVE VOLUMETRIC LIGHTING & MULTI-COLOR LASER CANVAS */}
       <DjLightingCanvas
         preset={activePreset}
-        isPlaying={isPlaying}
-        beatIntensity={1}
+        isPlaying={isPlaying || isDjBeatsPlaying}
+        speed={laserSpeed}
+        density={laserDensity}
+        flashIntensity={flashIntensity}
+        brightness={lightBrightness}
+        reducedMotion={reducedMotion}
+        beatEvent={latestBeatEvent}
       />
 
       {/* 3. STAGE BARRIER EQUALIZER WAVEFORM (Across Crowd Horizon) */}
       <div className="absolute bottom-[20%] md:bottom-[21%] left-1/2 -translate-x-1/2 w-full max-w-3xl px-6 z-20 flex justify-center pointer-events-none opacity-90">
         <DjWaveformVisualizer
           variant="stage"
-          isPlaying={isPlaying}
+          isPlaying={isPlaying || isDjBeatsPlaying}
           barCount={48}
           height={38}
           className="w-full max-w-xl h-9 drop-shadow-[0_0_12px_rgba(236,72,153,0.7)]"
         />
       </div>
 
-      {/* 4. TOP NAVBAR MATCHING REFERENCE */}
-      <header className="absolute top-0 left-0 right-0 z-40 h-16 px-4 md:px-8 flex items-center justify-between bg-black/40 backdrop-blur-xl border-b border-white/10">
+      {/* 4. TOP NAVBAR - CLEANED UP: STRICTLY HOME & DJ CLUB ONLY (Requirement 1) */}
+      <header className="absolute top-0 left-0 right-0 z-40 h-16 px-4 md:px-8 flex items-center justify-between bg-black/45 backdrop-blur-xl border-b border-white/10">
         {/* Left: Brand Logo & Title */}
         <div
           onClick={() => onNavigate?.('home')}
@@ -239,67 +318,30 @@ export default function DjClubPage({
           </span>
         </div>
 
-        {/* Center: Navigation Links */}
-        <nav className="hidden md:flex items-center gap-6 lg:gap-8">
+        {/* Center: Top Navigation Links (STRICT REQUIREMENT 1: Only Home & DJ Club) */}
+        <nav className="flex items-center gap-5 sm:gap-8">
           {/* Home */}
           <button
             type="button"
             onClick={() => onNavigate?.('home')}
-            className="flex items-center gap-2 text-sm font-medium text-neutral-300 hover:text-white transition cursor-pointer"
+            className="flex items-center gap-2 text-sm font-medium text-neutral-300 hover:text-white transition cursor-pointer px-2 py-1 rounded-lg hover:bg-white/5"
+            title="Return to Home"
           >
-            <Home className="w-4 h-4 text-neutral-400" />
+            <Home className="w-4 h-4 text-neutral-400 group-hover:text-white" />
             <span>Home</span>
           </button>
 
-          {/* Music */}
-          <button
-            type="button"
-            onClick={() => onNavigate?.('discover')}
-            className="flex items-center gap-2 text-sm font-medium text-neutral-300 hover:text-white transition cursor-pointer"
-          >
-            <Music className="w-4 h-4 text-neutral-400" />
-            <span>Music</span>
-          </button>
-
           {/* DJ Club (Active) */}
-          <button
-            type="button"
-            className="relative flex items-center gap-2 text-sm font-semibold text-orange-400 transition cursor-default pb-1"
-          >
+          <div className="relative flex items-center gap-2 text-sm font-semibold text-orange-400 transition cursor-default px-2 py-1">
             <Headphones className="w-4 h-4 text-orange-400 drop-shadow-[0_0_8px_rgba(249,115,22,0.8)]" />
             <span className="drop-shadow-[0_0_10px_rgba(249,115,22,0.6)]">DJ Club</span>
-            {/* Glowing Orange Underline */}
-            <span className="absolute -bottom-2 left-0 right-0 h-0.5 bg-gradient-to-r from-amber-500 via-orange-500 to-pink-500 rounded-full shadow-[0_0_10px_rgba(249,115,22,0.8)]" />
-          </button>
-
-          {/* Party */}
-          <button
-            type="button"
-            onClick={() => {
-              if (onPlaySong) {
-                onPlaySong(DEFAULT_DJ_TRACK);
-              }
-            }}
-            className="flex items-center gap-2 text-sm font-medium text-neutral-300 hover:text-white transition cursor-pointer"
-            title="Start Party Mode"
-          >
-            <PartyPopper className="w-4 h-4 text-neutral-400" />
-            <span>Party</span>
-          </button>
-
-          {/* Radio */}
-          <button
-            type="button"
-            onClick={() => onNavigate?.('radio')}
-            className="flex items-center gap-2 text-sm font-medium text-neutral-300 hover:text-white transition cursor-pointer"
-          >
-            <Radio className="w-4 h-4 text-neutral-400" />
-            <span>Radio</span>
-          </button>
+            {/* Glowing Orange Underline Indicator */}
+            <span className="absolute -bottom-1 left-0 right-0 h-0.5 bg-gradient-to-r from-amber-500 via-orange-500 to-pink-500 rounded-full shadow-[0_0_10px_rgba(249,115,22,0.9)]" />
+          </div>
         </nav>
 
         {/* Right: Search, Notifications & User Avatar */}
-        <div className="flex items-center gap-3 sm:gap-4">
+        <div className="flex items-center gap-2.5 sm:gap-4">
           {/* Search */}
           <button
             type="button"
@@ -348,118 +390,472 @@ export default function DjClubPage({
         </div>
       </header>
 
-      {/* 5. FLOATING RIGHT-SIDE "LIGHT SHOW" PANEL */}
+      {/* 5. FLOATING RIGHT-SIDE "LIGHT SHOW & DJ AUDIO" CONTROL PANEL */}
       <aside
-        aria-label="Light Show Presets"
-        className={`absolute top-20 md:top-24 right-4 md:right-8 z-30 transition-all duration-300 ${
+        aria-label="Light Show & DJ Controls"
+        className={`absolute top-20 md:top-24 right-3 sm:right-6 md:right-8 z-30 transition-all duration-300 ${
           isPanelCollapsed
-            ? 'w-14 h-14 rounded-full p-0 flex items-center justify-center bg-neutral-950/90 border border-white/20 shadow-2xl cursor-pointer hover:scale-105'
-            : 'w-72 sm:w-80 bg-neutral-950/85 backdrop-blur-2xl border border-white/15 rounded-3xl p-4 shadow-[0_20px_50px_rgba(0,0,0,0.85)]'
+            ? 'w-13 h-13 rounded-full p-0 flex items-center justify-center bg-neutral-950/90 border border-white/20 shadow-2xl cursor-pointer hover:scale-105'
+            : 'w-[90vw] sm:w-88 md:w-96 max-h-[calc(100vh-170px)] overflow-y-auto bg-neutral-950/90 backdrop-blur-2xl border border-white/15 rounded-3xl p-4 shadow-[0_20px_50px_rgba(0,0,0,0.9)] custom-scrollbar'
         }`}
       >
         {isPanelCollapsed ? (
           <button
             type="button"
             onClick={() => setIsPanelCollapsed(false)}
-            className="w-full h-full flex items-center justify-center text-orange-400"
-            title="Open Light Show Presets"
+            className="w-full h-full flex items-center justify-center text-orange-400 cursor-pointer"
+            title="Open Light Show & DJ Controls"
           >
             <Sparkles className="w-6 h-6 animate-pulse" />
           </button>
         ) : (
-          <>
-            {/* Header: Title + Auto Toggle */}
-            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+          <div className="space-y-3.5">
+            {/* Header: Title + Auto Toggle + Collapse Button */}
+            <div className="flex items-center justify-between pb-2.5 border-b border-white/10">
               <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-orange-400" />
+                <Sparkles className="w-4.5 h-4.5 text-orange-400" />
                 <h3 className="text-sm sm:text-base font-bold text-white tracking-wide">
-                  Light Show
+                  Light Show & DJ
                 </h3>
               </div>
 
-              {/* Auto Mode Switch Toggle */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-neutral-400 font-medium">Auto</span>
+              <div className="flex items-center gap-2.5">
+                {/* Auto Light Show Toggle (Requirement 4) */}
+                <div className="flex items-center gap-1.5" title="Auto Light Show Mode">
+                  <span className="text-[11px] text-neutral-400 font-medium">Auto</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsAutoMode((prev) => !prev)}
+                    className={`w-12 h-5.5 px-0.5 rounded-full flex items-center transition-all duration-200 cursor-pointer ${
+                      isAutoMode
+                        ? 'bg-gradient-to-r from-orange-500 to-amber-500 justify-end shadow-[0_0_10px_rgba(249,115,22,0.5)]'
+                        : 'bg-neutral-800 justify-start border border-neutral-700'
+                    }`}
+                    title={isAutoMode ? 'Disable Auto Light Show' : 'Enable Auto Light Show'}
+                    aria-pressed={isAutoMode}
+                  >
+                    <span
+                      className={`h-4.5 px-1.5 rounded-full text-[9px] font-bold flex items-center justify-center shadow-md ${
+                        isAutoMode ? 'bg-white text-orange-600' : 'bg-neutral-500 text-white'
+                      }`}
+                    >
+                      {isAutoMode ? 'ON' : 'OFF'}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Collapse Button */}
                 <button
                   type="button"
-                  onClick={() => setIsAutoMode((prev) => !prev)}
-                  className={`w-14 h-6 px-1 rounded-full flex items-center transition-all duration-200 cursor-pointer ${
-                    isAutoMode
-                      ? 'bg-gradient-to-r from-orange-500 to-amber-500 justify-end shadow-[0_0_10px_rgba(249,115,22,0.5)]'
-                      : 'bg-neutral-800 justify-start border border-neutral-700'
-                  }`}
-                  title={isAutoMode ? 'Disable Auto Light Show' : 'Enable Auto Light Show'}
-                  aria-pressed={isAutoMode}
+                  onClick={() => setIsPanelCollapsed(true)}
+                  className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                  title="Collapse Panel"
+                  aria-label="Collapse Panel"
                 >
-                  <span
-                    className={`h-4.5 px-2 rounded-full text-[10px] font-bold flex items-center justify-center shadow-md ${
-                      isAutoMode ? 'bg-white text-orange-600' : 'bg-neutral-500 text-white'
-                    }`}
-                  >
-                    Auto
-                  </span>
+                  <ChevronUp className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            {/* 6 Visual Presets Grid (2 Columns x 3 Rows) */}
-            <div className="grid grid-cols-2 gap-2.5 mt-3.5">
-              {LIGHT_PRESETS.map((p) => {
-                const isActive = activePreset === p.id;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => {
-                      setActivePreset(p.id);
-                      // If user manually clicks, keep auto or reset timer
-                    }}
-                    className={`group relative flex flex-col p-1.5 rounded-2xl transition-all duration-200 text-left cursor-pointer overflow-hidden ${
-                      isActive
-                        ? 'border-2 border-orange-500 ring-2 ring-orange-500/30 bg-neutral-900/90 shadow-[0_0_15px_rgba(249,115,22,0.4)]'
-                        : 'border border-white/10 hover:border-white/30 bg-neutral-900/50 hover:bg-neutral-900/80 opacity-80 hover:opacity-100'
-                    }`}
-                    title={p.description}
-                  >
-                    {/* Thumbnail */}
-                    <div className="w-full h-13 rounded-xl overflow-hidden bg-neutral-950 relative">
-                      <img
-                        src={p.thumbnail}
-                        alt={p.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
-                      />
-                      {/* Active glowing indicator pill */}
-                      {isActive && (
-                        <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-orange-400 shadow-[0_0_6px_rgba(249,115,22,1)]" />
-                      )}
-                    </div>
+            {/* Segmented Tab Selector: Lighting vs DJ Beats/SFX */}
+            <div className="grid grid-cols-2 p-1 rounded-xl bg-neutral-900 border border-white/10">
+              <button
+                type="button"
+                onClick={() => setActivePanelTab('lighting')}
+                className={`py-1.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  activePanelTab === 'lighting'
+                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-neutral-950 font-bold shadow-md'
+                    : 'text-neutral-300 hover:text-white'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Light Show</span>
+              </button>
 
-                    {/* Preset Name */}
-                    <span
-                      className={`text-[11px] font-semibold tracking-wide mt-1.5 truncate text-center ${
-                        isActive ? 'text-orange-400 font-bold' : 'text-neutral-200'
-                      }`}
-                    >
-                      {p.name}
-                    </span>
-                  </button>
-                );
-              })}
+              <button
+                type="button"
+                onClick={() => setActivePanelTab('audio')}
+                className={`py-1.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  activePanelTab === 'audio'
+                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-neutral-950 font-bold shadow-md'
+                    : 'text-neutral-300 hover:text-white'
+                }`}
+              >
+                <Flame className="w-3.5 h-3.5" />
+                <span>DJ Beats & SFX</span>
+                {isDjBeatsPlaying && (
+                  <span className="w-2 h-2 rounded-full bg-red-400 animate-ping" />
+                )}
+              </button>
             </div>
 
-            {/* Bottom "Change Light Show" Button */}
-            <button
-              type="button"
-              onClick={handleCyclePreset}
-              className="w-full mt-3.5 py-2.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-pink-500 hover:from-amber-400 hover:via-orange-400 hover:to-pink-400 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(249,115,22,0.4)] hover:shadow-[0_0_30px_rgba(249,115,22,0.7)] active:scale-95 transition-all cursor-pointer"
-            >
-              <Shuffle className="w-4 h-4 text-white" />
-              <span>Change Light Show</span>
-            </button>
-          </>
+            {/* TAB 1: LIGHT SHOW PRESETS & LASER SETTINGS */}
+            {activePanelTab === 'lighting' && (
+              <div className="space-y-3 animate-fadeIn">
+                {/* 6 Visual Presets Grid (Requirement 2) */}
+                <div className="grid grid-cols-2 gap-2">
+                  {LIGHT_PRESETS.map((p) => {
+                    const isActive = activePreset === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setActivePreset(p.id);
+                        }}
+                        className={`group relative flex flex-col p-1.5 rounded-2xl transition-all duration-200 text-left cursor-pointer overflow-hidden ${
+                          isActive
+                            ? 'border-2 border-orange-500 ring-2 ring-orange-500/30 bg-neutral-900/90 shadow-[0_0_15px_rgba(249,115,22,0.4)]'
+                            : 'border border-white/10 hover:border-white/30 bg-neutral-900/50 hover:bg-neutral-900/80 opacity-80 hover:opacity-100'
+                        }`}
+                        title={p.description}
+                      >
+                        {/* Thumbnail */}
+                        <div className="w-full h-12 rounded-xl overflow-hidden bg-neutral-950 relative">
+                          <img
+                            src={p.thumbnail}
+                            alt={p.name}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                          {/* Active glowing indicator pill */}
+                          {isActive && (
+                            <div className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-orange-400 shadow-[0_0_8px_rgba(249,115,22,1)]" />
+                          )}
+                        </div>
+
+                        {/* Preset Name */}
+                        <span
+                          className={`text-[11px] font-semibold tracking-wide mt-1 truncate text-center ${
+                            isActive ? 'text-orange-400 font-bold' : 'text-neutral-200'
+                          }`}
+                        >
+                          {p.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Change Light Show Quick Cycle Button */}
+                <button
+                  type="button"
+                  onClick={handleCyclePreset}
+                  className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-pink-500 hover:from-amber-400 hover:via-orange-400 hover:to-pink-400 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(249,115,22,0.35)] active:scale-95 transition-all cursor-pointer"
+                >
+                  <Shuffle className="w-3.5 h-3.5 text-white" />
+                  <span>Next Preset ({LIGHT_PRESETS.find(p => p.id === activePreset)?.name})</span>
+                </button>
+
+                {/* USER-CONTROLLED LASER & LIGHTING SETTINGS (Requirement 4 & 7) */}
+                <div className="p-3 rounded-2xl bg-neutral-900/80 border border-white/10 space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-neutral-300">
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-orange-400" />
+                    <span>Laser & Light Engine Controls</span>
+                  </div>
+
+                  {/* Laser Speed: Slow / Normal / Fast / Extreme */}
+                  <div>
+                    <div className="flex justify-between items-center text-[10px] text-neutral-400 mb-1">
+                      <span>Laser Speed</span>
+                      <span className="font-semibold text-orange-400 capitalize">{laserSpeed}</span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1 p-0.5 rounded-lg bg-neutral-950 border border-white/5">
+                      {['slow', 'normal', 'fast', 'extreme'].map((sVal) => (
+                        <button
+                          key={sVal}
+                          type="button"
+                          onClick={() => setLaserSpeed(sVal)}
+                          className={`py-1 text-[10px] font-semibold rounded capitalize transition cursor-pointer ${
+                            laserSpeed === sVal
+                              ? 'bg-orange-500 text-neutral-950 font-bold shadow-sm'
+                              : 'text-neutral-400 hover:text-white'
+                          }`}
+                        >
+                          {sVal}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Laser Density: Low / Medium / High / Maximum */}
+                  <div>
+                    <div className="flex justify-between items-center text-[10px] text-neutral-400 mb-1">
+                      <span>Laser Density</span>
+                      <span className="font-semibold text-orange-400 capitalize">{laserDensity === 'max' ? 'Maximum' : laserDensity}</span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1 p-0.5 rounded-lg bg-neutral-950 border border-white/5">
+                      {[
+                        { id: 'low', label: 'Low' },
+                        { id: 'medium', label: 'Med' },
+                        { id: 'high', label: 'High' },
+                        { id: 'max', label: 'Max' }
+                      ].map((dItem) => (
+                        <button
+                          key={dItem.id}
+                          type="button"
+                          onClick={() => setLaserDensity(dItem.id)}
+                          className={`py-1 text-[10px] font-semibold rounded transition cursor-pointer ${
+                            laserDensity === dItem.id
+                              ? 'bg-orange-500 text-neutral-950 font-bold shadow-sm'
+                              : 'text-neutral-400 hover:text-white'
+                          }`}
+                        >
+                          {dItem.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Flash Intensity Slider */}
+                  <div>
+                    <div className="flex justify-between items-center text-[10px] text-neutral-400 mb-1">
+                      <span>Flash Intensity</span>
+                      <span className="font-semibold text-neutral-200">{flashIntensity}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={flashIntensity}
+                      onChange={(e) => setFlashIntensity(Number(e.target.value))}
+                      className="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                    />
+                  </div>
+
+                  {/* Light Brightness Slider */}
+                  <div>
+                    <div className="flex justify-between items-center text-[10px] text-neutral-400 mb-1">
+                      <span>Light Brightness</span>
+                      <span className="font-semibold text-neutral-200">{lightBrightness}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="10"
+                      max="100"
+                      value={lightBrightness}
+                      onChange={(e) => setLightBrightness(Number(e.target.value))}
+                      className="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                    />
+                  </div>
+
+                  {/* Reduced Motion Toggle (Requirement 7) */}
+                  <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                    <span className="text-[10px] text-neutral-400">Reduced Motion (Gentle)</span>
+                    <button
+                      type="button"
+                      onClick={() => setReducedMotion((prev) => !prev)}
+                      className={`px-2 py-0.5 rounded-full text-[9px] font-bold transition cursor-pointer ${
+                        reducedMotion
+                          ? 'bg-amber-400 text-neutral-950'
+                          : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                      }`}
+                    >
+                      {reducedMotion ? 'ENABLED' : 'OFF'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: ORIGINAL DJ BEATS & SOUND EFFECTS (Requirement 5) */}
+            {activePanelTab === 'audio' && (
+              <div className="space-y-3 animate-fadeIn">
+                {/* DJ Beats Main Card */}
+                <div className="p-3 rounded-2xl bg-neutral-900/90 border border-orange-500/30 shadow-[0_0_15px_rgba(249,115,22,0.15)] space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-orange-500/20 text-orange-400 flex items-center justify-center border border-orange-500/40">
+                        <Flame className="w-4.5 h-4.5 animate-pulse" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-white">BOOM-BOOM Beats</h4>
+                        <p className="text-[10px] text-neutral-400">Original Electronic Club Rhythms</p>
+                      </div>
+                    </div>
+
+                    {/* DJ Beats Play / Pause Button */}
+                    <button
+                      type="button"
+                      onClick={handleToggleDjBeats}
+                      className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer ${
+                        isDjBeatsPlaying
+                          ? 'bg-red-500 hover:bg-red-600 text-white shadow-[0_0_12px_rgba(239,68,68,0.5)]'
+                          : 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-neutral-950 shadow-[0_0_12px_rgba(249,115,22,0.4)]'
+                      }`}
+                    >
+                      {isDjBeatsPlaying ? (
+                        <>
+                          <Pause className="w-3.5 h-3.5 fill-current" />
+                          <span>Pause Beats</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-3.5 h-3.5 fill-current" />
+                          <span>Play Beats</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Beat Pattern Selector */}
+                  <div>
+                    <span className="text-[10px] text-neutral-400 block mb-1">Style & Tempo</span>
+                    <div className="grid grid-cols-3 gap-1.5 p-0.5 rounded-xl bg-neutral-950 border border-white/5">
+                      {[
+                        { id: 'edm', label: 'Club EDM', bpm: '128' },
+                        { id: 'tech-house', label: 'Tech House', bpm: '125' },
+                        { id: 'hyper-rave', label: 'Hyper Rave', bpm: '134' }
+                      ].map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => handleDjPatternChange(item.id)}
+                          className={`py-1.5 px-1 rounded-lg text-center transition cursor-pointer ${
+                            djPattern === item.id
+                              ? 'bg-orange-500 text-neutral-950 font-bold shadow-sm'
+                              : 'text-neutral-300 hover:text-white'
+                          }`}
+                        >
+                          <span className="block text-[10px] font-semibold leading-tight">{item.label}</span>
+                          <span className="block text-[8px] opacity-75">{item.bpm} BPM</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Beats Volume Slider */}
+                  <div>
+                    <div className="flex justify-between items-center text-[10px] text-neutral-400 mb-1">
+                      <span>Beats Volume</span>
+                      <span className="font-semibold text-neutral-200">{djBeatsVolume}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={djBeatsVolume}
+                      onChange={handleDjBeatsVolumeChange}
+                      className="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                    />
+                  </div>
+                </div>
+
+                {/* DJ SOUND EFFECTS (SFX) TRIGGER PAD (Requirement 5) */}
+                <div className="p-3 rounded-2xl bg-neutral-900/90 border border-white/10 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-neutral-300">
+                      <Zap className="w-3.5 h-3.5 text-amber-400" />
+                      <span>DJ Sound Effects Pad</span>
+                    </div>
+                    {/* Master Mute for DJ Audio */}
+                    <button
+                      type="button"
+                      onClick={handleToggleDjAudioMute}
+                      className={`px-2 py-0.5 rounded-full text-[9px] font-bold flex items-center gap-1 transition cursor-pointer ${
+                        isDjAudioMuted ? 'bg-red-500/80 text-white' : 'bg-neutral-800 text-neutral-300 hover:text-white'
+                      }`}
+                      title={isDjAudioMuted ? 'Unmute DJ Audio' : 'Mute DJ Audio'}
+                    >
+                      {isDjAudioMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
+                      <span>{isDjAudioMuted ? 'MUTED' : 'UNMUTED'}</span>
+                    </button>
+                  </div>
+
+                  {/* 5 Instant SFX Trigger Buttons */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleTriggerSfx('airhorn')}
+                      className={`p-2 rounded-xl text-left border transition-all active:scale-95 cursor-pointer ${
+                        lastSfxTriggered === 'airhorn'
+                          ? 'bg-amber-400 text-neutral-950 border-amber-300 scale-98 shadow-[0_0_15px_rgba(251,191,36,0.8)]'
+                          : 'bg-neutral-950/80 border-white/10 hover:border-amber-400/60 text-white hover:bg-neutral-900'
+                      }`}
+                    >
+                      <span className="text-base block">🚨</span>
+                      <span className="text-[11px] font-bold block mt-0.5">Air Horn</span>
+                      <span className="text-[9px] text-neutral-400 block">Triple Blast</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleTriggerSfx('laser')}
+                      className={`p-2 rounded-xl text-left border transition-all active:scale-95 cursor-pointer ${
+                        lastSfxTriggered === 'laser'
+                          ? 'bg-cyan-400 text-neutral-950 border-cyan-300 scale-98 shadow-[0_0_15px_rgba(6,182,212,0.8)]'
+                          : 'bg-neutral-950/80 border-white/10 hover:border-cyan-400/60 text-white hover:bg-neutral-900'
+                      }`}
+                    >
+                      <span className="text-base block">⚡</span>
+                      <span className="text-[11px] font-bold block mt-0.5">Laser Zap</span>
+                      <span className="text-[9px] text-neutral-400 block">Dual Sweep</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleTriggerSfx('drop')}
+                      className={`p-2 rounded-xl text-left border transition-all active:scale-95 cursor-pointer ${
+                        lastSfxTriggered === 'drop'
+                          ? 'bg-purple-500 text-white border-purple-400 scale-98 shadow-[0_0_15px_rgba(168,85,247,0.8)]'
+                          : 'bg-neutral-950/80 border-white/10 hover:border-purple-400/60 text-white hover:bg-neutral-900'
+                      }`}
+                    >
+                      <span className="text-base block">💥</span>
+                      <span className="text-[11px] font-bold block mt-0.5">Bass Drop</span>
+                      <span className="text-[9px] text-neutral-400 block">Sub Boom</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleTriggerSfx('scratch')}
+                      className={`p-2 rounded-xl text-left border transition-all active:scale-95 cursor-pointer ${
+                        lastSfxTriggered === 'scratch'
+                          ? 'bg-pink-500 text-white border-pink-400 scale-98 shadow-[0_0_15px_rgba(236,72,153,0.8)]'
+                          : 'bg-neutral-950/80 border-white/10 hover:border-pink-400/60 text-white hover:bg-neutral-900'
+                      }`}
+                    >
+                      <span className="text-base block">🌀</span>
+                      <span className="text-[11px] font-bold block mt-0.5">Scratch</span>
+                      <span className="text-[9px] text-neutral-400 block">Vinyl Flick</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleTriggerSfx('riser')}
+                      className={`col-span-2 sm:col-span-2 p-2 rounded-xl text-left border transition-all active:scale-95 cursor-pointer ${
+                        lastSfxTriggered === 'riser'
+                          ? 'bg-orange-500 text-neutral-950 border-orange-300 scale-98 shadow-[0_0_15px_rgba(249,115,22,0.8)]'
+                          : 'bg-neutral-950/80 border-white/10 hover:border-orange-400/60 text-white hover:bg-neutral-900'
+                      }`}
+                    >
+                      <span className="text-base block">🚀</span>
+                      <span className="text-[11px] font-bold block mt-0.5">DJ Riser & Drop</span>
+                      <span className="text-[9px] text-neutral-400 block">2-Bar Tension Build</span>
+                    </button>
+                  </div>
+
+                  {/* SFX Volume Slider */}
+                  <div className="pt-1">
+                    <div className="flex justify-between items-center text-[10px] text-neutral-400 mb-1">
+                      <span>Sound Effects Volume</span>
+                      <span className="font-semibold text-neutral-200">{djSfxVolume}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={djSfxVolume}
+                      onChange={handleDjSfxVolumeChange}
+                      className="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </aside>
 
@@ -480,7 +876,7 @@ export default function DjClubPage({
                 e.currentTarget.src = '/presets/loopra-dj-art.jpg';
               }}
             />
-            {isPlaying && (
+            {(isPlaying || isDjBeatsPlaying) && (
               <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-orange-500 text-[8px] flex items-center justify-center animate-spin-slow shadow-md">
                 ⚡
               </span>
@@ -561,7 +957,7 @@ export default function DjClubPage({
         <div className="hidden lg:flex items-center px-2 shrink-0">
           <DjWaveformVisualizer
             variant="player"
-            isPlaying={isPlaying}
+            isPlaying={isPlaying || isDjBeatsPlaying}
             height={26}
             className="w-28 sm:w-32 h-6"
           />
@@ -617,4 +1013,3 @@ export default function DjClubPage({
     </div>
   );
 }
-
