@@ -1,6 +1,6 @@
 /**
  * djAudioEngine.js
- * High-Energy Procedural Web Audio API DJ Synthesizer & Beat Engine for Loopra DJ Club
+ * High-Performance Procedural Web Audio API DJ Synthesizer & Beat Engine for Loopra DJ Club
  * 
  * Capabilities:
  * - Authentic 4-on-the-floor BOOM-BOOM kick synthesizer with pitch drop & sub-bass punch
@@ -8,16 +8,18 @@
  * - Crisp closed & open hi-hat 16th-note patterns
  * - Off-beat rolling EDM / Tech-House bassline
  * - Dynamic DJ Risers & explosive beat Drops
- * - Instant DJ Sound Effects: Air Horn, Laser Zap, Sub Drop, Vinyl Scratch, Impact Burst
+ * - Instant DJ Sound Effects: Air Horn, Laser Zap, Sub Drop, Vinyl Scratch, DJ Riser
  * - Beat-Sync Event Dispatcher: syncs light flashes & lasers directly with real audio beats
  * - Zero external audio files required: 100% locally synthesized in real time
- * - Strict adherence to browser autoplay restrictions: audio only starts on explicit user trigger
+ * - Strict adherence to browser autoplay restrictions: audio initializes & resumes on explicit user trigger
+ * - Master Dynamics Compressor for loud, punchy, distortion-free club mix
  * - Independent volume & mute controls that do not collide with Loopra's music player
  */
 
 class DjAudioEngine {
   constructor() {
     this.ctx = null;
+    this.compressor = null;
     this.masterGain = null;
     this.beatsGain = null;
     this.sfxGain = null;
@@ -26,7 +28,7 @@ class DjAudioEngine {
     this.isMuted = false;
 
     // Volume levels (0.0 to 1.0)
-    this.beatsVolume = 0.75;
+    this.beatsVolume = 0.8;
     this.sfxVolume = 0.85;
 
     // Tempo & Sequence Configuration
@@ -36,10 +38,10 @@ class DjAudioEngine {
     this.barCount = 0;
     this.timerId = null;
     this.nextNoteTime = 0.0;
-    this.scheduleAheadTime = 0.1; // seconds
+    this.scheduleAheadTime = 0.12; // seconds
     this.lookahead = 25.0; // milliseconds
 
-    // Auto SFX occasional trigger (every 16 or 32 bars)
+    // Auto SFX occasional trigger (every 16 bars)
     this.isAutoSfxEnabled = true;
 
     // Beat subscriber callbacks
@@ -58,22 +60,33 @@ class DjAudioEngine {
       if (!AudioCtx) return false;
       this.ctx = new AudioCtx();
 
+      // Master Dynamics Compressor: glues punchy drums and bass without clipping or distortion
+      this.compressor = this.ctx.createDynamicsCompressor();
+      this.compressor.threshold.setValueAtTime(-14, this.ctx.currentTime);
+      this.compressor.knee.setValueAtTime(24, this.ctx.currentTime);
+      this.compressor.ratio.setValueAtTime(5, this.ctx.currentTime);
+      this.compressor.attack.setValueAtTime(0.003, this.ctx.currentTime);
+      this.compressor.release.setValueAtTime(0.2, this.ctx.currentTime);
+
       // Master output stage
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.value = this.isMuted ? 0 : 1;
-      this.masterGain.connect(this.ctx.destination);
+      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 1, this.ctx.currentTime);
+
+      // Signal Chain: [BeatsBus, SfxBus] -> MasterGain -> Compressor -> Destination
+      this.masterGain.connect(this.compressor);
+      this.compressor.connect(this.ctx.destination);
 
       // Dedicated Beats Bus
       this.beatsGain = this.ctx.createGain();
-      this.beatsGain.gain.value = this.beatsVolume;
+      this.beatsGain.gain.setValueAtTime(this.beatsVolume, this.ctx.currentTime);
       this.beatsGain.connect(this.masterGain);
 
       // Dedicated SFX Bus
       this.sfxGain = this.ctx.createGain();
-      this.sfxGain.gain.value = this.sfxVolume;
+      this.sfxGain.gain.setValueAtTime(this.sfxVolume, this.ctx.currentTime);
       this.sfxGain.connect(this.masterGain);
 
-      // Pre-generate 3 seconds of white noise for percussions & sweeps
+      // Pre-generate white noise buffer
       this.initNoiseBuffer();
     }
 
@@ -85,12 +98,28 @@ class DjAudioEngine {
   }
 
   /**
-   * Generates white noise buffer
+   * Asynchronously guarantees AudioContext is running
+   */
+  async resumeContext() {
+    if (!this.ensureContext()) return false;
+    if (this.ctx && this.ctx.state === 'suspended') {
+      try {
+        await this.ctx.resume();
+      } catch (err) {
+        console.warn('AudioContext resume failed:', err);
+      }
+    }
+    return Boolean(this.ctx && this.ctx.state === 'running');
+  }
+
+  /**
+   * Generates white noise buffer for percussions & sweeps
    */
   initNoiseBuffer() {
     if (!this.ctx) return;
-    const bufferSize = this.ctx.sampleRate * 3;
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const sampleRate = this.ctx.sampleRate || 44100;
+    const bufferSize = sampleRate * 3;
+    const buffer = this.ctx.createBuffer(1, bufferSize, sampleRate);
     const output = buffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) {
       output[i] = Math.random() * 2 - 1;
@@ -99,7 +128,7 @@ class DjAudioEngine {
   }
 
   /**
-   * Register a listener for beat events (e.g. for lighting synchronization)
+   * Register a listener for beat events (e.g. for lighting canvas synchronization)
    */
   onBeat(callback) {
     if (typeof callback === 'function') {
@@ -125,7 +154,7 @@ class DjAudioEngine {
    */
   playKick(time = 0, isAccent = false) {
     if (!this.ensureContext()) return;
-    const t = time || this.ctx.currentTime;
+    const t = Math.max(time, this.ctx.currentTime + 0.005);
 
     // 1. Main punch oscillator with steep pitch drop
     const osc = this.ctx.createOscillator();
@@ -186,7 +215,8 @@ class DjAudioEngine {
    */
   playSnare(time = 0) {
     if (!this.ensureContext()) return;
-    const t = time || this.ctx.currentTime;
+    if (!this.noiseBuffer) this.initNoiseBuffer();
+    const t = Math.max(time, this.ctx.currentTime + 0.005);
 
     // Tone body
     const osc = this.ctx.createOscillator();
@@ -229,8 +259,10 @@ class DjAudioEngine {
    * Stereo Layered Electronic Clap
    */
   playClap(time = 0) {
-    if (!this.ensureContext() || !this.noiseBuffer) return;
-    const t = time || this.ctx.currentTime;
+    if (!this.ensureContext()) return;
+    if (!this.noiseBuffer) this.initNoiseBuffer();
+    if (!this.noiseBuffer) return;
+    const t = Math.max(time, this.ctx.currentTime + 0.005);
 
     // 3 rapid micro bursts followed by a sustained decay
     [0, 0.012, 0.024].forEach((offset, idx) => {
@@ -261,8 +293,10 @@ class DjAudioEngine {
    * Hi-Hat (Closed & Open)
    */
   playHat(time = 0, isOpen = false) {
-    if (!this.ensureContext() || !this.noiseBuffer) return;
-    const t = time || this.ctx.currentTime;
+    if (!this.ensureContext()) return;
+    if (!this.noiseBuffer) this.initNoiseBuffer();
+    if (!this.noiseBuffer) return;
+    const t = Math.max(time, this.ctx.currentTime + 0.005);
 
     const noise = this.ctx.createBufferSource();
     noise.buffer = this.noiseBuffer;
@@ -290,9 +324,8 @@ class DjAudioEngine {
    * Off-beat Rolling Synth Bass
    */
   playBasslineNote(time = 0, freq = 65.41) {
-    // 65.41 Hz = C2
     if (!this.ensureContext()) return;
-    const t = time || this.ctx.currentTime;
+    const t = Math.max(time, this.ctx.currentTime + 0.005);
 
     const osc = this.ctx.createOscillator();
     osc.type = 'sawtooth';
@@ -323,9 +356,10 @@ class DjAudioEngine {
   /**
    * 1. Iconic DJ Club Air Horn
    */
-  triggerAirHorn() {
-    if (!this.ensureContext()) return;
-    const t = this.ctx.currentTime;
+  async triggerAirHorn() {
+    await this.resumeContext();
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + 0.015;
 
     // Harmonic multi-tone brass frequencies (approx Eb4, G4, Bb4, Eb5)
     const freqs = [311.13, 392.0, 466.16, 622.25];
@@ -338,7 +372,6 @@ class DjAudioEngine {
       freqs.forEach((freq) => {
         const osc = this.ctx.createOscillator();
         osc.type = 'sawtooth';
-        // Pitch drop characteristic of compressed air horns
         osc.frequency.setValueAtTime(freq, burstTime);
         osc.frequency.linearRampToValueAtTime(freq * 0.95, burstTime + duration);
 
@@ -369,9 +402,10 @@ class DjAudioEngine {
   /**
    * 2. Rapid Laser Zap FX
    */
-  triggerLaserZap() {
-    if (!this.ensureContext()) return;
-    const t = this.ctx.currentTime;
+  async triggerLaserZap() {
+    await this.resumeContext();
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + 0.015;
 
     // 2 rapid laser sweeps
     [0, 0.14].forEach((offset) => {
@@ -411,9 +445,10 @@ class DjAudioEngine {
   /**
    * 3. Deep Sub Drop / Bass Drop
    */
-  triggerSubDrop() {
-    if (!this.ensureContext()) return;
-    const t = this.ctx.currentTime;
+  async triggerSubDrop() {
+    await this.resumeContext();
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + 0.015;
 
     const osc = this.ctx.createOscillator();
     osc.type = 'sine';
@@ -445,9 +480,12 @@ class DjAudioEngine {
   /**
    * 4. Vinyl Scratch FX
    */
-  triggerScratch() {
-    if (!this.ensureContext() || !this.noiseBuffer) return;
-    const t = this.ctx.currentTime;
+  async triggerScratch() {
+    await this.resumeContext();
+    if (!this.ctx) return;
+    if (!this.noiseBuffer) this.initNoiseBuffer();
+    if (!this.noiseBuffer) return;
+    const t = this.ctx.currentTime + 0.015;
 
     const noise = this.ctx.createBufferSource();
     noise.buffer = this.noiseBuffer;
@@ -484,9 +522,12 @@ class DjAudioEngine {
   /**
    * 5. DJ Tension Riser & White Noise Sweep
    */
-  triggerRiser(duration = 2.0) {
-    if (!this.ensureContext() || !this.noiseBuffer) return;
-    const t = this.ctx.currentTime;
+  async triggerRiser(duration = 2.0) {
+    await this.resumeContext();
+    if (!this.ctx) return;
+    if (!this.noiseBuffer) this.initNoiseBuffer();
+    if (!this.noiseBuffer) return;
+    const t = this.ctx.currentTime + 0.015;
 
     // Rising noise sweep
     const noise = this.ctx.createBufferSource();
@@ -499,7 +540,7 @@ class DjAudioEngine {
     filter.Q.setValueAtTime(4.5, t);
 
     const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(0.1, t);
+    gain.gain.setValueAtTime(0.01, t);
     gain.gain.linearRampToValueAtTime(0.65, t + duration * 0.9);
     gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
 
@@ -535,16 +576,18 @@ class DjAudioEngine {
   /**
    * Starts the DJ Beats pattern
    */
-  startBeats() {
-    if (!this.ensureContext()) return;
-    if (this.isPlayingBeats) return;
+  async startBeats() {
+    const isReady = await this.resumeContext();
+    if (!isReady || !this.ctx) return false;
+    if (this.isPlayingBeats) return true;
 
     this.isPlayingBeats = true;
     this.currentStep = 0;
     this.barCount = 0;
-    this.nextNoteTime = this.ctx.currentTime + 0.05;
+    this.nextNoteTime = this.ctx.currentTime + 0.04;
 
     this.scheduler();
+    return true;
   }
 
   /**
@@ -561,13 +604,12 @@ class DjAudioEngine {
   /**
    * Toggle DJ Beats playback
    */
-  toggleBeats() {
+  async toggleBeats() {
     if (this.isPlayingBeats) {
       this.pauseBeats();
       return false;
     } else {
-      this.startBeats();
-      return true;
+      return await this.startBeats();
     }
   }
 
@@ -576,6 +618,11 @@ class DjAudioEngine {
    */
   scheduler() {
     if (!this.isPlayingBeats || !this.ctx) return;
+
+    // Guard against drift or scheduling into the past
+    if (this.nextNoteTime < this.ctx.currentTime) {
+      this.nextNoteTime = this.ctx.currentTime + 0.02;
+    }
 
     while (this.nextNoteTime < this.ctx.currentTime + this.scheduleAheadTime) {
       this.scheduleStep(this.currentStep, this.nextNoteTime);

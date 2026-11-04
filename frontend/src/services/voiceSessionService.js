@@ -215,20 +215,21 @@ class VoiceSessionController {
             if (this.isSessionActive) {
               this.setState(SESSION_STATES.SPEAKING, 'Loopra speaking...');
             }
+            this.emitInterim(''); // Flush any lingering interim speech
             // Suppress microphone during TTS playback to avoid hearing own speakers
             this.safeStopRecognition();
           } else if (evt === 'speech_end') {
-            console.log('[VoiceSession:WebSpeech] Avatar TTS ended -> applying 450ms acoustic cooldown before resuming listening');
+            console.log('[VoiceSession:WebSpeech] Avatar TTS ended -> applying 750ms acoustic cooldown before resuming listening');
             this.lastTtsEndTime = Date.now();
             clearTimeout(this.ttsResumeTimer);
-            // 450ms cooldown prevents speaker reverberation from triggering phantom user speech
+            // 750ms cooldown prevents speaker reverberation from triggering phantom user speech
             this.ttsResumeTimer = setTimeout(() => {
               this.isSpeakingTts = false;
               if (this.isSessionActive && !this.isManualStopping && !this.isExecuting) {
                 this.setState(SESSION_STATES.LISTENING, 'Listening... (Speak your music command)');
                 this.safeStartRecognition();
               }
-            }, 450);
+            }, 750);
           }
         });
         return true;
@@ -474,8 +475,9 @@ class VoiceSessionController {
       });
 
       // Acoustic Echo & Loop Protection:
-      // 1. If Loopra is actively speaking, or TTS ended less than 450ms ago, ignore mic audio entirely.
-      if (this.isSpeakingTts || (this.lastTtsEndTime && Date.now() - this.lastTtsEndTime < 450)) {
+      // 1. If Loopra is actively speaking, voiceBuddy is speaking, or TTS ended less than 750ms ago, discard audio entirely.
+      const isBuddySpeaking = typeof window !== 'undefined' && window.voiceBuddyService && window.voiceBuddyService.isSpeaking;
+      if (this.isSpeakingTts || isBuddySpeaking || (this.lastTtsEndTime && Date.now() - this.lastTtsEndTime < 750)) {
         return;
       }
 
@@ -483,7 +485,7 @@ class VoiceSessionController {
       const candidateText = (finalTranscript || interim || '').toLowerCase().replace(/[^a-z0-9\s]/gi, '').trim();
       if (candidateText && this.lastTtsText) {
         const cleanTts = this.lastTtsText.replace(/[^a-z0-9\s]/gi, '').trim();
-        if (cleanTts && (cleanTts.includes(candidateText) || candidateText.includes(cleanTts)) && (Date.now() - (this.lastTtsEndTime || 0) < 3000)) {
+        if (cleanTts && (cleanTts.includes(candidateText) || candidateText.includes(cleanTts)) && (Date.now() - (this.lastTtsEndTime || 0) < 4000)) {
           console.log('[VoiceSession:WebSpeech] Discarded speaker echo from avatar TTS:', candidateText);
           return;
         }
@@ -649,6 +651,20 @@ class VoiceSessionController {
       } else {
         console.warn('[VoiceSessionController] safeStartRecognition error:', err.message);
       }
+    }
+  }
+
+  safeStopRecognition() {
+    this.isStarting = false;
+    clearTimeout(this.restartTimer);
+    if (!this.recognition) return;
+    try {
+      this.isRecognizing = false;
+      this.recognition.abort();
+    } catch (_) {
+      try {
+        this.recognition.stop();
+      } catch (__) {}
     }
   }
 

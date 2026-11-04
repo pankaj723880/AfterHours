@@ -4559,6 +4559,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
     setActiveTab(target.tab);
     setCurrentBgIndex(0);
+    setIsStatsOpen(false);
 
     // Restore destination parameters
     if (target.tab === 'discover') {
@@ -5602,12 +5603,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       {isSidebarOpen && (
         <div 
           onClick={() => setIsSidebarOpen(false)}
-          className="md:hidden fixed inset-0 bg-neutral-900/80 backdrop-blur-xl backdrop-blur-sm z-[52] transition-opacity"
+          className={`${isStatsOpen ? 'block' : 'md:hidden'} fixed inset-0 bg-neutral-900/80 backdrop-blur-xl backdrop-blur-sm z-[52] transition-opacity`}
         />
       )}
 
       <aside 
-        className={`fixed md:relative h-screen inset-y-0 left-0 z-[55] bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80 p-4 flex flex-col shrink-0 transform transition-all duration-300 ease-in-out overflow-y-auto overflow-x-hidden ${
+        className={`${isStatsOpen && isSidebarOpen ? 'fixed' : 'fixed md:relative'} h-screen inset-y-0 left-0 z-[55] bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80 p-4 flex flex-col shrink-0 transform transition-all duration-300 ease-in-out overflow-y-auto overflow-x-hidden ${
           activeTab === 'dj-club'
             ? 'hidden'
             : isSidebarOpen ? 'translate-x-0 w-72' : `-translate-x-full md:translate-x-0 ${isSidebarCollapsed ? 'w-20' : 'w-72'}`
@@ -5790,14 +5791,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                               setIsStatsOpen(true);
                             } else if (item.id === 'chat' || item.id === 'ai-chat') {
                               setActiveAssistantPanel(prev => prev === 'ai' ? null : 'ai');
+                              setIsStatsOpen(false);
                             } else if (item.id === 'playlists') {
                               handleStationSelect('playlists');
                               setSelectedPlaylistForView(null);
+                              setIsStatsOpen(false);
                             } else if (item.id === 'admin') {
                               handleStationSelect('admin');
                               window.history.pushState({ tab: 'admin' }, '', '/admin');
+                              setIsStatsOpen(false);
                             } else {
                               handleStationSelect(item.id);
+                              setIsStatsOpen(false);
                             }
                             setIsSidebarOpen(false);
                           }}
@@ -5884,7 +5889,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               data-nav-id="hamburger"
               type="button"
               onClick={() => setIsSidebarOpen(prev => !prev)}
-              className="md:hidden flex items-center justify-center p-2 rounded-2xl bg-neutral-800 text-neutral-200 hover:text-white focus:outline-none shrink-0 min-w-[42px] min-h-[42px] active:scale-95 transition z-20 cursor-pointer shadow-sm"
+              className={`${isStatsOpen ? 'flex' : 'md:hidden flex'} items-center justify-center p-2 rounded-2xl bg-neutral-800 text-neutral-200 hover:text-white focus:outline-none shrink-0 min-w-[42px] min-h-[42px] active:scale-95 transition z-20 cursor-pointer shadow-sm`}
               aria-label="Toggle Menu"
               title="Toggle Menu"
             >

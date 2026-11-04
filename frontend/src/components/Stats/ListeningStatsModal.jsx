@@ -512,14 +512,14 @@ export default function ListeningStatsModal({
 
   return (
     <div
-      className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-xl flex items-center justify-center p-2 sm:p-4 md:p-6 animate-fadeIn overflow-y-auto"
+      className="fixed inset-x-0 bottom-0 top-14 md:top-16 z-30 bg-black/85 backdrop-blur-xl flex items-center justify-center p-2 sm:p-4 md:p-6 animate-fadeIn overflow-y-auto"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       {/* Hidden high-res canvas for 9:16 Instagram Story generation */}
       <canvas ref={canvasRef} className="hidden" />
 
       <div
-        className="w-full max-w-5xl bg-[#0b0c10] border border-amber-500/20 rounded-3xl overflow-hidden shadow-[0_0_60px_rgba(245,158,11,0.12)] flex flex-col my-auto max-h-[92vh] relative text-white"
+        className="w-full max-w-5xl bg-[#0b0c10] border border-amber-500/20 rounded-3xl overflow-hidden shadow-[0_0_60px_rgba(245,158,11,0.12)] flex flex-col my-auto max-h-[calc(100vh-80px)] md:max-h-[calc(100vh-100px)] relative text-white"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 1. TOP HEADER BAR */}

@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 
 /**
  * DjWaveformVisualizer
- * Renders beat-reactive audio waveforms with glowing magenta/purple gradients.
+ * High-Performance Beat-Reactive Audio Waveform Visualizer
  * Supports:
  * - 'stage': Wide stage barrier equalizer wave across crowd horizon.
  * - 'player': Compact glowing waveform inside bottom music player.
@@ -31,12 +31,21 @@ export default function DjWaveformVisualizer({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: true });
     if (!ctx) return;
 
     let step = 0;
+    let isTabVisible = !document.hidden;
+
+    const handleVisibilityChange = () => {
+      isTabVisible = !document.hidden;
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const render = () => {
+      animFrameRef.current = requestAnimationFrame(render);
+      if (!isTabVisible) return;
+
       step += isPlaying ? 0.08 : 0.02;
       const width = canvas.width;
       const h = canvas.height;
@@ -64,8 +73,6 @@ export default function DjWaveformVisualizer({
       }
 
       ctx.fillStyle = grad;
-      ctx.shadowBlur = isPlaying ? (variant === 'player' ? 8 : 14) : 4;
-      ctx.shadowColor = variant === 'player' ? '#f97316' : '#ec4899';
 
       bars.forEach((b, i) => {
         if (isPlaying) {
@@ -88,7 +95,7 @@ export default function DjWaveformVisualizer({
         const y = h - b.h;
         const radius = Math.min(barWidth * 0.5, 3);
 
-        // Rounded vertical bar
+        // Rounded vertical bar (rendered cleanly without expensive shadowBlur)
         ctx.beginPath();
         if (ctx.roundRect) {
           ctx.roundRect(x, y, barWidth, b.h, [radius, radius, 0, 0]);
@@ -97,13 +104,12 @@ export default function DjWaveformVisualizer({
         }
         ctx.fill();
       });
-
-      animFrameRef.current = requestAnimationFrame(render);
     };
 
     animFrameRef.current = requestAnimationFrame(render);
 
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (animFrameRef.current) {
         cancelAnimationFrame(animFrameRef.current);
       }
@@ -119,4 +125,3 @@ export default function DjWaveformVisualizer({
     />
   );
 }
-

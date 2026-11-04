@@ -1,19 +1,19 @@
 import React, { useEffect, useRef } from 'react';
+import { djAudio } from './djAudioEngine';
 
 /**
  * DjLightingCanvas
  * Next-Gen High-Performance 60fps HTML5 Canvas Nightclub Lighting Engine
  * 
- * Features:
- * - 6 Completely Distinct Presets with unique beam kinematics, geometries, and visual physics
- * - Multi-Projector Laser System (Ceiling Truss, Stage Towers, Floor Pods)
- * - Convergence Mechanics: Lasers converge to focal points, cross in X-patterns, fan into crowd
- * - Rich Multi-Color Palette: Cyan, Electric Blue, Purple, Magenta, Red, Green, Yellow, Orange
- * - Volumetric Moving Spotlights with realistic falloff and illuminated crowd pools
- * - Beat-reactive shockwave pulses and stage blinder strobes
- * - Realtime controls: Speed, Density, Flash Intensity, Brightness, Reduced Motion
- * - Audio-Engine Sync: Directly flashes and snaps on real kick/snare hits
- * - Tab visibility detection for zero CPU/GPU usage when tab is hidden
+ * Performance & Architecture:
+ * - Single coordinated requestAnimationFrame loop with delta-time synchronization.
+ * - Multi-pass volumetric additive rendering: ZERO ctx.shadowBlur (no expensive GPU blur convolutions).
+ * - Direct subscription to djAudio.onBeat ref-state: ZERO React fiber re-renders during audio beats.
+ * - Pre-allocated sparkle and projector arrays to eliminate GC pressure.
+ * - Tab visibility detection for 0% CPU/GPU usage when backgrounded.
+ * - 6 Visually Distinct Presets: Club Pulse, Neon Wave, Strobe Rush, Laser Show, Party Glow, Ultra Rave.
+ * - Usable Laser Density: Low, Medium, High, Maximum running at smooth 60 FPS.
+ * - Controls: Speed, Density, Flash Intensity, Light Brightness, and Reduced Motion.
  */
 
 export default function DjLightingCanvas({
@@ -24,7 +24,6 @@ export default function DjLightingCanvas({
   flashIntensity = 75, // 0 to 100
   brightness = 90, // 10 to 100
   reducedMotion = false,
-  beatEvent = null, // Beat event from djAudioEngine { isKick, isSnare, intensity, ... }
   className = ''
 }) {
   const canvasRef = useRef(null);
@@ -35,7 +34,6 @@ export default function DjLightingCanvas({
     time: 0,
     preset,
     targetPreset: preset,
-    transitionProgress: 1.0,
     speed,
     density,
     flashIntensity: flashIntensity / 100,
@@ -52,15 +50,14 @@ export default function DjLightingCanvas({
     colorCycle: 0
   });
 
-  // Keep stateRef synced with latest props
+  // Keep stateRef synced with latest UI props without restarting animation
   useEffect(() => {
     const s = stateRef.current;
     if (s.preset !== preset) {
       s.targetPreset = preset;
       s.preset = preset;
-      s.transitionProgress = 0;
-      // Trigger dramatic preset transition flash
-      s.strobeFlash = s.reducedMotion ? 0 : 0.85 * (flashIntensity / 100);
+      // Dramatic preset transition flash
+      s.strobeFlash = s.reducedMotion ? 0 : 0.75 * (flashIntensity / 100);
       s.strobeColor = preset === 'laser-show' ? '#00f0ff' : preset === 'strobe-rush' ? '#ffffff' : '#ff007f';
     }
     s.speed = speed;
@@ -71,33 +68,37 @@ export default function DjLightingCanvas({
     s.isPlaying = Boolean(isPlaying);
   }, [preset, speed, density, flashIntensity, brightness, reducedMotion, isPlaying]);
 
-  // Synchronize on real audio beat events
+  // Synchronize on real audio beat events directly via audio engine callback
+  // This updates stateRef directly with ZERO React component re-renders!
   useEffect(() => {
-    if (!beatEvent) return;
-    const s = stateRef.current;
-    const now = performance.now();
-    s.lastBeatTime = now;
-    s.beatPulse = Math.max(s.beatPulse, beatEvent.intensity || 0.85);
+    const unsubscribe = djAudio.onBeat((beatEvent) => {
+      const s = stateRef.current;
+      const now = performance.now();
+      s.lastBeatTime = now;
+      s.beatPulse = Math.max(s.beatPulse, beatEvent.intensity || 0.85);
 
-    if (!s.reducedMotion) {
-      if (beatEvent.isKick) {
-        // Subtle beat pulse
-        if (s.preset === 'strobe-rush' || s.preset === 'ultra-rave') {
-          s.strobeFlash = Math.max(s.strobeFlash, 0.45 * s.flashIntensity);
+      if (!s.reducedMotion) {
+        if (beatEvent.isKick) {
+          if (s.preset === 'strobe-rush' || s.preset === 'ultra-rave') {
+            s.strobeFlash = Math.max(s.strobeFlash, 0.45 * s.flashIntensity);
+          }
+        }
+        if (beatEvent.isSnare || beatEvent.isDrop) {
+          s.strobeFlash = Math.max(s.strobeFlash, 0.75 * s.flashIntensity);
+          s.strobeColor = beatEvent.isDrop ? '#ffffff' : (Math.random() > 0.5 ? '#ff007f' : '#00f0ff');
         }
       }
-      if (beatEvent.isSnare || beatEvent.isDrop) {
-        // Snare or drop flash
-        s.strobeFlash = Math.max(s.strobeFlash, 0.75 * s.flashIntensity);
-        s.strobeColor = beatEvent.isDrop ? '#ffffff' : (Math.random() > 0.5 ? '#ff007f' : '#00f0ff');
-      }
-    }
-  }, [beatEvent]);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: true });
     if (!ctx) return;
 
     let width = (canvas.width = window.innerWidth);
@@ -110,26 +111,27 @@ export default function DjLightingCanvas({
     };
     window.addEventListener('resize', handleResize);
 
-    // Tab visibility handling for performance
+    // Tab visibility handling for zero background resource consumption
     let isTabVisible = !document.hidden;
     const handleVisibilityChange = () => {
       isTabVisible = !document.hidden;
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Pre-initialize disco sparkles (48 specular light glints)
-    stateRef.current.sparkles = Array.from({ length: 48 }, () => ({
+    // Pre-initialize disco sparkles (40 specular light glints)
+    stateRef.current.sparkles = Array.from({ length: 40 }, () => ({
       angle: Math.random() * Math.PI * 2,
       dist: 35 + Math.random() * 240,
       size: 1.2 + Math.random() * 2.8,
       speed: (Math.random() - 0.5) * 0.025,
       alpha: Math.random(),
-      flare: Math.random() > 0.6
+      flare: Math.random() > 0.65
     }));
 
-    // Multipliers
+    // Multipliers for user settings
     const SPEED_MAP = { slow: 0.55, normal: 1.0, fast: 1.85, extreme: 3.0 };
-    const DENSITY_MAP = { low: 0.55, medium: 1.0, high: 1.65, max: 2.5 };
+    // Stable density multipliers capped for 60fps performance
+    const DENSITY_MAP = { low: 0.5, medium: 1.0, high: 1.5, max: 2.1 };
 
     // 8 Vivid Club Laser Colors
     const CLUB_COLORS = [
@@ -182,17 +184,15 @@ export default function DjLightingCanvas({
       s.convergenceTimer += timeStep;
       if (s.convergenceTimer > 3.0) {
         s.convergenceTimer = 0;
-        // Target shifts between center, left audience, right audience, and ceiling
         const targets = [
-          { x: 0.5, y: 0.65 }, // Center stage / crowd
+          { x: 0.5, y: 0.65 },  // Center stage / crowd
           { x: 0.28, y: 0.72 }, // Left audience
           { x: 0.72, y: 0.72 }, // Right audience
-          { x: 0.5, y: 0.44 }, // DJ Booth focal point
+          { x: 0.5, y: 0.44 },  // DJ Booth focal point
           { x: 0.15, y: 0.55 }, // Far left balcony
           { x: 0.85, y: 0.55 }  // Far right balcony
         ];
-        const chosen = targets[Math.floor(Math.random() * targets.length)];
-        s.convergencePoint = chosen;
+        s.convergencePoint = targets[Math.floor(Math.random() * targets.length)];
       }
 
       // Clear Canvas
@@ -314,11 +314,9 @@ export default function DjLightingCanvas({
         const isLeft = i % 2 === 0;
         const origin = isLeft ? originL : originR;
 
-        // Snap phase on beat pulse
         const phase = s.time * 2.2 + (i / beamCount) * Math.PI * 2;
         const sweepAngle = Math.sin(phase) * 0.85;
 
-        // Converge toward moving audience target
         const targetX = isLeft
           ? w * 0.48 + sweepAngle * (w * 0.45)
           : w * 0.52 - sweepAngle * (w * 0.45);
@@ -344,24 +342,34 @@ export default function DjLightingCanvas({
     // =========================================================================
     function renderNeonWavePreset(ctx, w, h, s, beat, dMult, sMult, cx, cy) {
       const neonColors = ['#00f0ff', '#3b82f6', '#9900ff', '#ff00aa', '#00ffcc'];
-      const waveCount = Math.round(18 * dMult);
+      const waveCount = Math.round(16 * dMult);
 
-      // Continuous Fluid Laser Sine Waves across crowd horizon
+      // Continuous Fluid Laser Sine Waves across crowd horizon (multi-pass neon glow, zero shadowBlur)
       const numRibbons = 4;
       for (let r = 0; r < numRibbons; r++) {
         const color = neonColors[r % neonColors.length];
-        ctx.strokeStyle = color;
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 12;
-        ctx.lineWidth = 3.0 + (r % 2 === 0 ? 1.5 : 0);
-        ctx.globalAlpha = (0.55 + beat * 0.35) * s.brightness;
-
-        ctx.beginPath();
         const baseElevation = h * (0.48 + r * 0.1);
         const freq = 0.0035 + r * 0.001;
         const phaseShift = s.time * 2.8 + r * 1.4;
 
-        for (let x = 0; x <= w; x += 14) {
+        // Outer soft glow pass
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 5.5 + (r % 2 === 0 ? 2 : 0);
+        ctx.globalAlpha = (0.24 + beat * 0.18) * s.brightness;
+        ctx.beginPath();
+        for (let x = 0; x <= w; x += 16) {
+          const y = baseElevation + Math.sin(x * freq + phaseShift) * (42 + beat * 22) + Math.cos(x * freq * 0.5 - s.time) * 18;
+          if (x === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // Inner sharp saturated neon core
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.0;
+        ctx.globalAlpha = (0.65 + beat * 0.3) * s.brightness;
+        ctx.beginPath();
+        for (let x = 0; x <= w; x += 16) {
           const y = baseElevation + Math.sin(x * freq + phaseShift) * (42 + beat * 22) + Math.cos(x * freq * 0.5 - s.time) * 18;
           if (x === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
@@ -420,7 +428,6 @@ export default function DjLightingCanvas({
 
       // Piercing Staccato Laser Darts
       for (let i = 0; i < staccatoCount; i++) {
-        // High-frequency flickers
         const isFlickerOn = Math.sin(s.time * 28 + i * 4.2) > 0.05;
         if (!isFlickerOn && !s.reducedMotion) continue;
 
@@ -428,10 +435,10 @@ export default function DjLightingCanvas({
         const originX = w * (0.15 + (i / staccatoCount) * 0.7);
         const originY = h * 0.16;
 
-        const targetX = w * (0.05 + ((i * 3) % staccatoCount) / staccatoCount * 0.9) + (Math.random() - 0.5) * 80;
-        const targetY = h * (0.65 + Math.random() * 0.3);
+        const targetX = w * (0.05 + ((i * 3) % staccatoCount) / staccatoCount * 0.9) + (Math.sin(i * 1.5) * 40);
+        const targetY = h * (0.65 + ((i % 4) / 4) * 0.3);
 
-        drawLaserBeam(ctx, originX, originY, targetX, targetY, color, 0.85 + beat * 0.35, s.brightness, 2.5);
+        drawLaserBeam(ctx, originX, originY, targetX, targetY, color, 0.85 + beat * 0.35, s.brightness, 2.2);
       }
     }
 
@@ -440,7 +447,7 @@ export default function DjLightingCanvas({
     // Dense multi-projector laser spectacle: sweeping fans, rotating vortex, convergence
     // =========================================================================
     function renderLaserShowPreset(ctx, w, h, s, beat, dMult, sMult, cx, cy, colors) {
-      const laserCount = Math.round(32 * dMult);
+      const laserCount = Math.round(22 * dMult);
 
       // 5 Projector Origins
       const projectors = [
@@ -463,9 +470,9 @@ export default function DjLightingCanvas({
         if (modeCycle < 1.0) {
           // MODE A: CONVERGENCE FOCAL POINT (All lasers converge & burst)
           const conv = s.convergencePoint;
-          const spreadOffset = (i - laserCount / 2) * (20 + (1 - beat) * 45);
+          const spreadOffset = (i - laserCount / 2) * (18 + (1 - beat) * 36);
           targetX = w * conv.x + spreadOffset;
-          targetY = h * conv.y + Math.sin(s.time * 3 + i) * 35;
+          targetY = h * conv.y + Math.sin(s.time * 3 + i) * 30;
         } else if (modeCycle < 2.0) {
           // MODE B: ROTATING VORTEX CONE (Liquid Sky 3D Tunnel)
           const angle = (i / laserCount) * Math.PI * 2 + s.time * 2.4;
@@ -505,7 +512,7 @@ export default function DjLightingCanvas({
       ctx.fill();
 
       // Soft Wide Volumetric Moving-Head Spotlights
-      const numHeads = 6;
+      const numHeads = 5;
       for (let i = 0; i < numHeads; i++) {
         const color = warmColors[i % warmColors.length];
         const originX = w * (0.2 + (i / (numHeads - 1)) * 0.6);
@@ -516,7 +523,7 @@ export default function DjLightingCanvas({
         const targetX = cx + Math.sin(sweepPhase) * (w * 0.35);
         const targetY = h * (0.7 + Math.sin(sweepPhase * 2) * 0.18);
 
-        drawSpotlightCone(ctx, originX, originY, targetX, targetY, color, 0.55 + beat * 0.3, s.brightness, 28, 110);
+        drawSpotlightCone(ctx, originX, originY, targetX, targetY, color, 0.55 + beat * 0.3, s.brightness, 24, 100);
       }
 
       // Elegant fan of amber/magenta laser ribbons
@@ -539,7 +546,7 @@ export default function DjLightingCanvas({
     // Maximum-energy hyper rave: dense multi-color lasers, rapid strobes, rainbow cycling
     // =========================================================================
     function renderUltraRavePreset(ctx, w, h, s, beat, dMult, sMult, cx, cy, colors) {
-      const ultraLaserCount = Math.round(36 * dMult);
+      const ultraLaserCount = Math.round(24 * dMult);
 
       // Rainbow Dynamic Center Burst
       const raveRadius = 120 + beat * 85;
@@ -568,7 +575,6 @@ export default function DjLightingCanvas({
         const color = colors[(i + Math.floor(s.colorCycle)) % colors.length];
         const orig = origins[i % origins.length];
 
-        // Complex multi-harmonic sweep with instant direction reversals
         const phaseA = s.time * 3.4 + i * 0.7;
         const phaseB = s.time * 1.8 - i * 0.4;
         const targetX = cx + Math.sin(phaseA) * (w * 0.46) + Math.cos(phaseB) * (w * 0.12);
@@ -578,7 +584,7 @@ export default function DjLightingCanvas({
       }
 
       // Fast-moving sweeping spotlights
-      const numSpots = 5;
+      const numSpots = 4;
       for (let sp = 0; sp < numSpots; sp++) {
         const color = colors[(sp * 2) % colors.length];
         const spotOriginX = w * (0.2 + (sp / (numSpots - 1)) * 0.6);
@@ -590,55 +596,54 @@ export default function DjLightingCanvas({
     }
 
     // =========================================================================
-    // HELPER: DRAW REALISTIC VOLUMETRIC LASER BEAM
+    // HIGH-PERFORMANCE MULTI-PASS VOLUMETRIC LASER BEAM (ZERO SHADOWBLUR)
     // =========================================================================
     function drawLaserBeam(ctx, ox, oy, tx, ty, color, intensity = 1.0, brightness = 1.0, coreW = 1.8) {
       const beamAlpha = Math.min(1, intensity * brightness);
 
-      // 1. Broad Volumetric Outer Glow
+      // Pass 1: Broad Volumetric Outer Glow
       ctx.strokeStyle = color;
-      ctx.globalAlpha = 0.32 * beamAlpha;
-      ctx.lineWidth = coreW * 3.8;
-      ctx.shadowBlur = 14;
-      ctx.shadowColor = color;
+      ctx.globalAlpha = 0.22 * beamAlpha;
+      ctx.lineWidth = coreW * 4.2;
       ctx.beginPath();
       ctx.moveTo(ox, oy);
       ctx.lineTo(tx, ty);
       ctx.stroke();
 
-      // 2. High-intensity Color Tube
-      ctx.globalAlpha = 0.75 * beamAlpha;
+      // Pass 2: Concentrated Saturated Color Body
+      ctx.globalAlpha = 0.65 * beamAlpha;
       ctx.lineWidth = coreW * 2.0;
       ctx.beginPath();
       ctx.moveTo(ox, oy);
       ctx.lineTo(tx, ty);
       ctx.stroke();
 
-      // 3. Piercing Pure-White Core Line
+      // Pass 3: Razor-Sharp Piercing White Core Filament
       ctx.strokeStyle = '#ffffff';
       ctx.globalAlpha = 0.95 * beamAlpha;
-      ctx.lineWidth = coreW;
+      ctx.lineWidth = coreW * 0.9;
       ctx.beginPath();
       ctx.moveTo(ox, oy);
       ctx.lineTo(tx, ty);
       ctx.stroke();
 
-      // 4. Laser End Impact Hotspot on Crowd Horizon
+      // Pass 4: Laser Impact Hotspot on Crowd Horizon
       ctx.fillStyle = color;
-      ctx.globalAlpha = 0.85 * beamAlpha;
+      ctx.globalAlpha = 0.8 * beamAlpha;
       ctx.beginPath();
       ctx.arc(tx, ty, coreW * 2.2, 0, Math.PI * 2);
       ctx.fill();
 
-      // Inner white spark in hotspot
+      // Pass 5: Inner White Spark in Hotspot
       ctx.fillStyle = '#ffffff';
+      ctx.globalAlpha = 0.95 * beamAlpha;
       ctx.beginPath();
       ctx.arc(tx, ty, coreW * 0.9, 0, Math.PI * 2);
       ctx.fill();
     }
 
     // =========================================================================
-    // HELPER: DRAW VOLUMETRIC MOVING SPOTLIGHT CONE
+    // VOLUMETRIC MOVING SPOTLIGHT CONE (ZERO SHADOWBLUR)
     // =========================================================================
     function drawSpotlightCone(ctx, ox, oy, tx, ty, color, intensity = 1.0, brightness = 1.0, baseW = 16, coneW = 85) {
       const dx = tx - ox;
@@ -656,7 +661,7 @@ export default function DjLightingCanvas({
       grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
       ctx.fillStyle = grad;
-      ctx.globalAlpha = 0.38 * alpha;
+      ctx.globalAlpha = 0.35 * alpha;
       ctx.beginPath();
       ctx.moveTo(ox - nx * (baseW * 0.5), oy - ny * (baseW * 0.5));
       ctx.lineTo(tx - nx * (coneW * 0.5), ty - ny * (coneW * 0.5));
