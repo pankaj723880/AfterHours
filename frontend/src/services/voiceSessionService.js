@@ -30,6 +30,7 @@ class VoiceSessionController {
     this.statusMessage = 'Voice Agent: OFF (Click mic to speak)';
     this.errorMessage = '';
     this.lang = 'hi-IN'; // Default Hindi per requirements (toggle for en-IN)
+    this.initiator = 'global'; // 'global' | 'voice_agent' | 'ai_companion'
     
     // Hardware & Audio references
     this.mediaStream = null;
@@ -170,7 +171,8 @@ class VoiceSessionController {
       isSessionActive: this.isSessionActive,
       isListening: this.isRecognizing && this.state === SESSION_STATES.LISTENING && !this.isSpeakingTts,
       isSpeakingTts: this.isSpeakingTts,
-      lang: this.lang
+      lang: this.lang,
+      initiator: this.initiator
     };
   }
 
@@ -206,12 +208,14 @@ class VoiceSessionController {
       if (window.voiceBuddyService && typeof window.voiceBuddyService.subscribe === 'function') {
         window.voiceBuddyService.subscribe((payload) => {
           const evt = typeof payload === 'string' ? payload : payload?.event;
-          if (evt === 'speech_start') {
-            console.log('[VoiceSession:WebSpeech] Avatar TTS started -> pausing recognition to eliminate microphone self-triggering');
+          if (evt === 'speech_start' || evt === 'speech_pending') {
             this.isSpeakingTts = true;
             this.lastTtsText = (payload?.text || '').trim().toLowerCase();
             this.lastTtsStartTime = Date.now();
-            clearTimeout(this.ttsResumeTimer);
+            if (this.ttsResumeTimer) {
+              clearTimeout(this.ttsResumeTimer);
+              this.ttsResumeTimer = null;
+            }
             if (this.isSessionActive) {
               this.setState(SESSION_STATES.SPEAKING, 'Loopra speaking...');
             }
@@ -219,11 +223,18 @@ class VoiceSessionController {
             // Suppress microphone during TTS playback to avoid hearing own speakers
             this.safeStopRecognition();
           } else if (evt === 'speech_end') {
-            console.log('[VoiceSession:WebSpeech] Avatar TTS ended -> applying 750ms acoustic cooldown before resuming listening');
+            // Guard: If voiceBuddyService is still processing queued speech, do NOT emit duplicate cooldown
+            const isStillSpeaking = typeof window !== 'undefined' && window.voiceBuddyService && window.voiceBuddyService.isSpeaking;
+            if (isStillSpeaking) return;
+
             this.lastTtsEndTime = Date.now();
-            clearTimeout(this.ttsResumeTimer);
-            // 750ms cooldown prevents speaker reverberation from triggering phantom user speech
+            if (this.ttsResumeTimer) {
+              clearTimeout(this.ttsResumeTimer);
+              this.ttsResumeTimer = null;
+            }
+            // Exactly one 750ms cooldown prevents speaker reverberation from triggering phantom user speech
             this.ttsResumeTimer = setTimeout(() => {
+              this.ttsResumeTimer = null;
               this.isSpeakingTts = false;
               if (this.isSessionActive && !this.isManualStopping && !this.isExecuting) {
                 this.setState(SESSION_STATES.LISTENING, 'Listening... (Speak your music command)');
@@ -397,6 +408,7 @@ class VoiceSessionController {
     const snapshot = this.getSnapshot();
     snapshot.event = 'final_transcript';
     snapshot.transcript = text;
+    snapshot.initiator = this.initiator;
     for (const sub of this.subscribers) {
       try {
         sub(snapshot);
@@ -519,16 +531,13 @@ class VoiceSessionController {
 
     recognition.onerror = (event) => {
       const err = event.error;
-      console.log('[VoiceSession:WebSpeech] onerror:', err);
 
-      if (err === 'no-speech') {
-        // Natural pause between spoken words: remain in LISTENING
+      if (err === 'no-speech' || err === 'aborted') {
+        // Natural speech pause or benign abort on stop/TTS pause - do not flood console or restart loops
         return;
       }
-      if (err === 'aborted') {
-        // Expected on reset, stop, or TTS pause
-        return;
-      }
+
+      console.warn('[VoiceSession:WebSpeech] onerror:', err);
 
       if (err === 'not-allowed' || err === 'service-not-allowed') {
         this.setState(
@@ -676,14 +685,16 @@ class VoiceSessionController {
    * Manually activates Voice Mode.
    * Can ONLY be invoked via explicit user interaction (e.g. clicking the mic button).
    */
-  async startSession({ lang } = {}) {
+  async startSession({ lang, initiator = 'global' } = {}) {
     if (this.isSessionActive) {
+      if (initiator) this.initiator = initiator;
       return; // Already active
     }
 
     this.isManualStopping = false;
     this.isSessionActive = true;
     this.isExecuting = false;
+    this.initiator = initiator || 'global';
     if (lang) this.lang = lang;
 
     // 1. Transition to REQUESTING_PERMISSION
@@ -740,7 +751,8 @@ class VoiceSessionController {
     this.isExecuting = false;
     this.resumeInactivityAfterExecution();
     if (this.isSessionActive) {
-      if (this.isSpeakingTts) {
+      const isBuddySpeaking = typeof window !== 'undefined' && window.voiceBuddyService && window.voiceBuddyService.isSpeaking;
+      if (this.isSpeakingTts || isBuddySpeaking) {
         this.setState(
           SESSION_STATES.SPEAKING,
           'Loopra speaking...'

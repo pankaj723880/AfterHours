@@ -119,11 +119,12 @@ const socket = io(BACKEND_URL, {
     token: getInitialAuthToken()
   },
   query: { sessionId: getOrCreateSessionId() },
-  transports: ['polling', 'websocket'],
+  transports: ['websocket', 'polling'],
   withCredentials: true,
-  reconnectionAttempts: 5,
-  reconnectionDelay: 2000,
-  timeout: 10000,
+  reconnection: true,
+  reconnectionAttempts: 20,
+  reconnectionDelay: 1000,
+  timeout: 20000,
   autoConnect: true,
 });
 
@@ -138,11 +139,11 @@ socket.on('listening_stats_updated', (data) => {
 });
 
 const fetchFromBackend = async (query, options = {}) => {
-  const timeoutMs = options.timeoutMs || 35000;
+  const timeoutMs = options.timeoutMs || 45000;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
     try {
-      controller.abort(new Error('Backend request timed out after 35s'));
+      controller.abort(new Error(`Backend request timed out after ${Math.round(timeoutMs / 1000)}s`));
     } catch (_) {
       controller.abort();
     }
@@ -1627,6 +1628,17 @@ export default function App() {
           }
         }
       } catch (e) {
+        // Fallback: If network timed out or failed, populate from cached localStorage
+        try {
+          const cached = localStorage.getItem(storageKey);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length >= 3) {
+              setState(parsed);
+              return;
+            }
+          }
+        } catch (_) {}
         if (e?.name !== 'AbortError') {
           console.warn(`[Dynamic Content] Notice fetching ${storageKey}:`, e.message);
         }

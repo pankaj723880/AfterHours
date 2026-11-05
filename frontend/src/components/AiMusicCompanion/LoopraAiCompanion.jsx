@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom';
 import { aiMusicCompanionClient } from '../../services/aiMusicCompanionClient';
 import { voiceControlService } from '../../services/voiceControlService';
 import { voiceBuddyService } from '../../services/voiceBuddyService';
+import { voiceSessionService, SESSION_STATES } from '../../services/voiceSessionService';
 import { parseCommandToAction, INTENT_CATEGORIES } from '../../services/commandActionEngine';
 import {
   splitVoiceInstructionIntoClauses,
@@ -364,7 +365,6 @@ export default function LoopraAiCompanion({
   const speechCooldownTimerRef = useRef(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
-  const speechRecognitionRef = useRef(null);
   const chatScrollRef = useRef(null);
 
   // Save chat history
@@ -385,8 +385,8 @@ export default function LoopraAiCompanion({
   useEffect(() => {
     return () => {
       if (window.speechSynthesis) window.speechSynthesis.cancel();
-      if (speechRecognitionRef.current) {
-        try { speechRecognitionRef.current.stop(); } catch (e) {}
+      if (voiceSessionService.isSessionActive && voiceSessionService.initiator === 'ai_companion') {
+        voiceSessionService.stopSession('unmount');
       }
     };
   }, []);
@@ -450,12 +450,8 @@ export default function LoopraAiCompanion({
   // Sync speaking state with voiceBuddyService
   useEffect(() => {
     const unsub = voiceBuddyService.subscribe(({ event }) => {
-      if (event === 'speech_start') {
+      if (event === 'speech_start' || event === 'speech_pending') {
         setIsSpeaking(true);
-        if (speechRecognitionRef.current) {
-          try { speechRecognitionRef.current.stop(); } catch (_) {}
-        }
-        setIsVoiceListening(false);
       } else if (event === 'speech_end' || event === 'speech_text_only') {
         setIsSpeaking(false);
         speechCooldownTimerRef.current = Date.now();
@@ -861,12 +857,6 @@ export default function LoopraAiCompanion({
     if (!text || typeof window === 'undefined') return;
     if (!voiceBuddyService.isVoiceOutputEnabled) return;
 
-    // Pause mic recognition so avatar does not pick up its own voice
-    if (speechRecognitionRef.current) {
-      try { speechRecognitionRef.current.stop(); } catch (_) {}
-    }
-    setIsVoiceListening(false);
-
     setIsSpeaking(true);
     setVoiceState('speaking');
 
@@ -880,8 +870,8 @@ export default function LoopraAiCompanion({
     const unsub = voiceControlService.subscribe((state) => {
       const allowed = user ? voiceControlService.evaluateLocalAccess(state, user) : Boolean(state.allowed);
       if (!allowed && isVoiceListening) {
-        if (speechRecognitionRef.current) {
-          try { speechRecognitionRef.current.stop(); } catch (e) {}
+        if (voiceSessionService.isSessionActive && voiceSessionService.initiator === 'ai_companion') {
+          voiceSessionService.stopSession('access_revoked');
         }
         setIsVoiceListening(false);
       }
@@ -889,8 +879,45 @@ export default function LoopraAiCompanion({
     return () => unsub();
   }, [user, isVoiceListening]);
 
-  // Speech-to-Text Voice Query with Anti-Echo Cooldown & Live Feedback
-  const toggleVoiceInput = () => {
+  // Centralized Voice Session Subscription
+  useEffect(() => {
+    const unsub = voiceSessionService.subscribe((snapshot) => {
+      if (snapshot.initiator === 'ai_companion') {
+        const isListeningNow = Boolean(snapshot.isListening);
+        setIsVoiceListening(isListeningNow);
+
+        if (snapshot.state === SESSION_STATES.LISTENING) {
+          setVoiceState('listening');
+        } else if (snapshot.state === SESSION_STATES.PROCESSING) {
+          setVoiceState('processing');
+        } else if (snapshot.state === SESSION_STATES.SPEAKING) {
+          setVoiceState('speaking');
+        } else if (snapshot.state === SESSION_STATES.OFF || snapshot.state === SESSION_STATES.ERROR) {
+          setVoiceState('idle');
+          setIsVoiceListening(false);
+        }
+
+        if (snapshot.event === 'interim_transcript') {
+          setHeardText(snapshot.interimText || '');
+        }
+
+        if (snapshot.event === 'final_transcript' && snapshot.transcript) {
+          const finalSpeech = snapshot.transcript.trim();
+          if (finalSpeech) {
+            setHeardText(finalSpeech);
+            setVoiceState('processing');
+            handleSendMessage(finalSpeech);
+            voiceSessionService.stopSession('companion_submitted');
+          }
+        }
+      }
+    });
+
+    return unsub;
+  }, [handleSendMessage]);
+
+  // Speech-to-Text Voice Query via Centralized Voice Session Service
+  const toggleVoiceInput = async () => {
     const access = voiceControlService.getAccessState();
     const canUseVoice = user ? voiceControlService.evaluateLocalAccess(access, user) : Boolean(access.allowed);
     if (!canUseVoice) {
@@ -903,110 +930,20 @@ export default function LoopraAiCompanion({
       return;
     }
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      if (showToast) showToast('Speech recognition not supported in this browser');
-      return;
-    }
-
-    if (isVoiceListening) {
-      if (speechRecognitionRef.current) {
-        try { speechRecognitionRef.current.stop(); } catch (e) {}
-      }
+    if (voiceSessionService.isSessionActive && voiceSessionService.initiator === 'ai_companion') {
+      voiceSessionService.stopSession('companion_user_toggle');
       setIsVoiceListening(false);
       setVoiceState('idle');
       return;
     }
 
     try {
-      const recognition = new SpeechRecognition();
-      recognition.lang = speechLang;
-      recognition.interimResults = true;
-      recognition.maxAlternatives = 1;
-
-      let silenceTimer = null;
-      let finalCommitted = '';
-      let isFinalized = false;
-
-      const finalizeInput = (textToCommit) => {
-        if (isFinalized) return;
-        isFinalized = true;
-        clearTimeout(silenceTimer);
-        silenceTimer = null;
-        const textToProcess = (textToCommit || finalCommitted).trim();
-        finalCommitted = '';
-        if (textToProcess) {
-          setHeardText(textToProcess);
-          setVoiceState('processing');
-          handleSendMessage(textToProcess);
-        } else {
-          setVoiceState('idle');
-        }
-        try { recognition.stop(); } catch (_) {}
-        setIsVoiceListening(false);
-      };
-
-      recognition.onstart = () => {
-        isFinalized = false;
-        setIsVoiceListening(true);
-        setVoiceState('listening');
-        setHeardText('');
-        finalCommitted = '';
-      };
-
-      recognition.onresult = (event) => {
-        // Discard any sound picked up while Loopra is actively speaking or during 600ms acoustic cooldown
-        if (isSpeaking || (Date.now() - speechCooldownTimerRef.current < 600)) {
-          return;
-        }
-
-        let interim = '';
-        let finalPart = '';
-
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const res = event.results[i];
-          if (res.isFinal) finalPart += res[0].transcript;
-          else interim += res[0].transcript;
-        }
-
-        const display = (finalPart || interim).trim();
-        if (display) {
-          setHeardText(display);
-        }
-
-        if (finalPart) {
-          finalCommitted = (finalCommitted + ' ' + finalPart).trim();
-        }
-
-        // Voice Activity Detection: finalize after 1200ms silence
-        clearTimeout(silenceTimer);
-        silenceTimer = setTimeout(() => {
-          finalizeInput(finalCommitted || interim);
-        }, 1200);
-      };
-
-      recognition.onerror = (e) => {
-        clearTimeout(silenceTimer);
-        setIsVoiceListening(false);
-        setVoiceState('idle');
-        if (e.error === 'not-allowed' && showToast) {
-          showToast('Microphone access was denied for voice input');
-        }
-      };
-
-      recognition.onend = () => {
-        clearTimeout(silenceTimer);
-        if (finalCommitted) {
-          finalizeInput(finalCommitted);
-        } else {
-          setIsVoiceListening(false);
-          setVoiceState('idle');
-        }
-      };
-
-      speechRecognitionRef.current = recognition;
-      recognition.start();
+      setHeardText('');
+      setVoiceState('listening');
+      setIsVoiceListening(true);
+      await voiceSessionService.startSession({ lang: speechLang, initiator: 'ai_companion' });
     } catch (e) {
+      console.warn('[LoopraAiCompanion] Voice session activation notice:', e.message);
       setIsVoiceListening(false);
       setVoiceState('idle');
     }

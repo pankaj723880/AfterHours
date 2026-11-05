@@ -11,6 +11,7 @@
 
 import { GoogleGenAI } from '@google/genai';
 import { executeGeminiOperation, createGeminiClient, isGeminiConfigured, sanitizeLogMessage } from './geminiKeyManager.js';
+import { multiModelOrchestrator } from './multiModelOrchestrator.js';
 
 export const LOOPRA_TOOLS = [
   // Navigation
@@ -279,8 +280,7 @@ export const voiceAgentService = {
     // 3. GEMINI AI SEMANTIC INTENT CLASSIFICATION & PLANNER
     if (isGeminiConfigured()) {
       try {
-        const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-        const execResult = await executeGeminiOperation(async ({ client, modelName: selectedModel }) => {
+        const execResult = await multiModelOrchestrator.executeTask('VOICE_INTENT', async ({ client, modelName: selectedModel }) => {
           return await this.queryGeminiIntent({
             client,
             modelName: selectedModel,
@@ -290,13 +290,15 @@ export const voiceAgentService = {
             history
           });
         }, {
-          modelName,
+          prompt: cleanText,
           timeoutMs: 8000,
-          operationName: 'VoiceAgentIntent'
+          cacheTtlMs: 30000,
+          extra: { activeTab, track: currentTrack?.title }
         });
 
         if (execResult.success && execResult.data && Array.isArray(execResult.data.steps) && execResult.data.steps.length > 0) {
           execResult.data.latencyMs = Date.now() - startTime;
+          execResult.data.modelUsed = execResult.modelUsed;
           return execResult.data;
         }
       } catch (err) {
@@ -336,7 +338,7 @@ export const voiceAgentService = {
       };
     }
 
-    if (/^(resume|play|continue|unpause|shuru karo|chalao|bajao|start playing|resume music|play music)$/i.test(lower)) {
+    if (/^(resume|play|continue|unpause|shuru karo|chalao|bajao|start playing|resume music|resume song|resume track|play music)$/i.test(lower)) {
       return {
         success: true,
         intent: 'resume_song',
@@ -1105,29 +1107,39 @@ STRICT JSON OUTPUT FORMAT:
         cleanBase64 = cleanBase64.split(';base64,')[1];
       }
 
-      const response = await client.models.generateContent({
-        model: modelName,
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                inlineData: {
-                  mimeType: mimeType || 'audio/webm',
-                  data: cleanBase64
+      const execResult = await multiModelOrchestrator.executeTask('SPEECH_TO_TEXT', async ({ client, modelName }) => {
+        return await client.models.generateContent({
+          model: modelName,
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: mimeType || 'audio/webm',
+                    data: cleanBase64
+                  }
+                },
+                {
+                  text: systemPrompt
                 }
-              },
-              {
-                text: systemPrompt
-              }
-            ]
+              ]
+            }
+          ],
+          config: {
+            responseMimeType: 'application/json'
           }
-        ],
-        config: {
-          responseMimeType: 'application/json'
-        }
+        });
+      }, {
+        timeoutMs: 12000,
+        skipCache: true
       });
 
+      if (!execResult.success) {
+        throw new Error(execResult.message || 'Speech recognition failed');
+      }
+
+      const response = execResult.data;
       const raw = response.text?.trim() || '{}';
       let parsed = {};
       try {
@@ -1151,6 +1163,7 @@ STRICT JSON OUTPUT FORMAT:
       });
 
       verifiedPlan.latencyMs = Date.now() - startTime;
+      verifiedPlan.modelUsed = execResult.modelUsed;
       return verifiedPlan;
     } catch (err) {
       console.warn('[VoiceAgentService] Native audio recognition error:', err.message);
@@ -1164,6 +1177,13 @@ STRICT JSON OUTPUT FORMAT:
         latencyMs: Date.now() - startTime
       };
     }
+  },
+
+  /**
+   * Dedicated Multilingual Translation
+   */
+  async translateText({ text = '', targetLang = 'hi', sourceLang = 'auto' }) {
+    return await multiModelOrchestrator.translateText({ text, targetLang, sourceLang });
   },
 
   /**

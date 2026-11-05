@@ -9,6 +9,7 @@ import { featureFlagService } from '../services/featureFlagService.js';
 import { verifyToken } from '../middleware/auth.js';
 import User from '../models/User.js';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
+import { multiModelOrchestrator } from '../services/multiModelOrchestrator.js';
 
 const router = express.Router();
 
@@ -402,6 +403,73 @@ const handleTtsRequest = async (req, res) => {
 
 router.get('/tts', handleTtsRequest);
 router.post('/tts', handleTtsRequest);
+
+/**
+ * POST /api/voice-agent/translate
+ * Multilingual speech & text translation endpoint
+ */
+router.post('/translate', async (req, res) => {
+  try {
+    const { text, targetLang, sourceLang } = req.body;
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ success: false, error: 'Text string is required for translation.' });
+    }
+
+    const result = await voiceAgentService.translateText({
+      text,
+      targetLang: targetLang || 'hi',
+      sourceLang: sourceLang || 'auto'
+    });
+
+    return res.json({
+      success: true,
+      ...result
+    });
+  } catch (err) {
+    console.error('[VoiceAgentRoute] Translation error:', err);
+    return res.status(500).json({ success: false, error: 'Translation failed: ' + err.message });
+  }
+});
+
+/**
+ * GET /api/voice-agent/models
+ * Returns discovered models, supported capabilities, and active role assignments
+ */
+router.get('/models', async (req, res) => {
+  try {
+    const force = req.query.refresh === 'true';
+    const models = await multiModelOrchestrator.discoverAvailableModels(force);
+    const quotaReport = multiModelOrchestrator.getQuotaStatusReport();
+
+    return res.json({
+      success: true,
+      discoveredCount: models.length,
+      models,
+      routingCascades: quotaReport.routingCascades,
+      isConfigured: quotaReport.isConfigured
+    });
+  } catch (err) {
+    console.error('[VoiceAgentRoute] Models list error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve models: ' + err.message });
+  }
+});
+
+/**
+ * GET /api/voice-agent/quota-status
+ * Live quota tracking: measured RPM, TPM, RPD status (marked UNVERIFIED unless AI Studio session), backoffs
+ */
+router.get('/quota-status', (req, res) => {
+  try {
+    const report = multiModelOrchestrator.getQuotaStatusReport();
+    return res.json({
+      success: true,
+      ...report
+    });
+  } catch (err) {
+    console.error('[VoiceAgentRoute] Quota report error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve quota status: ' + err.message });
+  }
+});
 
 export default router;
 

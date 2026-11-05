@@ -194,9 +194,11 @@ const io = new Server(server, {
     credentials: true,
     methods: ['GET', 'POST']
   },
-  transports: ['polling', 'websocket'],
+  transports: ['websocket', 'polling'],
   allowEIO3: true,
-  pingTimeout: 30000,
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  connectTimeout: 45000,
 });
 
 app.set('io', io);
@@ -1284,7 +1286,8 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
   const activeKeys = allKeys.filter(k => !isKeyDead(k));
 
   if (activeKeys.length > 0) {
-    for (let i = 0; i < activeKeys.length; i++) {
+    const maxKeyTries = Math.min(activeKeys.length, 2);
+    for (let i = 0; i < maxKeyTries; i++) {
       const apiKeyIndex = (currentApiKeyIndex + i) % activeKeys.length;
       const apiKey = activeKeys[apiKeyIndex];
       try {
@@ -1302,7 +1305,7 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
 
         const response = await axios.get('https://www.googleapis.com/youtube/v3/search', {
           params,
-          timeout: 5000
+          timeout: 2500
         });
 
         if (response.data && Array.isArray(response.data.items)) {
@@ -1389,11 +1392,11 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
 
     // Top up the pool if needed until we have enough tracks for this page
     let fetchPage = Math.floor(cachedPool.videos.length / 15) + 1;
-    while (cachedPool.videos.length < pageOffset + limit && fetchPage <= 4) {
+    while (cachedPool.videos.length < pageOffset + limit && fetchPage <= 2) {
       try {
         const searchPromise = ytSearch({ query: queryStr, page: fetchPage });
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('yt-search timeout after 8000ms')), 8000)
+          setTimeout(() => reject(new Error('yt-search timeout after 3500ms')), 3500)
         );
         const searchResult = await Promise.race([searchPromise, timeoutPromise]);
         let incoming = (searchResult?.videos || []);
@@ -1404,18 +1407,23 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
         if (incoming.length > 0) {
           const singleSongs = filterSingleSongs(incoming);
           const seenIds = new Set(cachedPool.videos.map(v => v.id || v.videoId));
-          for (const v of singleSongs) {
+          const toValidate = singleSongs.filter(v => {
             const vid = v.id || v.videoId;
-            if (vid && !seenIds.has(vid)) {
-              const vRes = await musicValidationService.validateTrack(v);
-              if (vRes.eligible) {
-                seenIds.add(vid);
-                cachedPool.videos.push({
-                  ...v,
-                  isMusic: true,
-                  musicCategory: vRes.category
-                });
-              }
+            return vid && !seenIds.has(vid);
+          });
+          const validationResults = await Promise.all(
+            toValidate.map(v => musicValidationService.validateTrack(v).catch(() => ({ eligible: true, category: 'music' })))
+          );
+          for (let j = 0; j < toValidate.length; j++) {
+            const v = toValidate[j];
+            const vRes = validationResults[j];
+            if (vRes?.eligible) {
+              seenIds.add(v.id || v.videoId);
+              cachedPool.videos.push({
+                ...v,
+                isMusic: true,
+                musicCategory: vRes.category
+              });
             }
           }
         }

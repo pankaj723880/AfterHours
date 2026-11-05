@@ -7,7 +7,7 @@
  * 3. Safe logging: Never logs, leaks, or exposes raw API keys.
  * 4. Streaming support: Key selection prior to stream start; failover before first chunk; no mid-stream switching.
  * 5. Bounded retries: Sensible backoff, no infinite loops, no retrying client 400 parameter errors (except API_KEY_INVALID).
- * 6. Model fallback resilience: Seamless recovery to gemini-2.0-flash if configured model 404s.
+ * 6. Model fallback resilience: Seamless recovery to gemini-3.8-flash if configured model 404s.
  */
 
 import { GoogleGenAI } from '@google/genai';
@@ -158,7 +158,7 @@ export async function executeGeminiOperation(operationFn, options = {}) {
   const startTime = Date.now();
   geminiDiagnostics.totalCalls += 1;
 
-  const defaultModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+  const defaultModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
   const requestedModel = options.modelName || defaultModel;
   const timeoutMs = options.timeoutMs || 12000;
   const opName = options.operationName || 'GeminiOp';
@@ -193,11 +193,11 @@ export async function executeGeminiOperation(operationFn, options = {}) {
     try {
       return await executeWithModel(requestedModel);
     } catch (modelErr) {
-      // If configured model 404s (e.g. gemini-3.8-flash doesn't exist), fallback to gemini-2.0-flash
+      // If configured model 404s, fallback to gemini-3.8-flash
       const is404 = modelErr.status === 404 || String(modelErr.message || '').includes('not found');
-      if (is404 && requestedModel !== 'gemini-2.0-flash') {
-        console.warn(`[GeminiKeyManager] Model ${requestedModel} not found for ${opName}. Retrying with gemini-2.0-flash on key ${keyInfo.label}...`);
-        return await executeWithModel('gemini-2.0-flash');
+      if (is404 && requestedModel !== 'gemini-3.8-flash') {
+        console.warn(`[GeminiKeyManager] Model ${requestedModel} not found for ${opName}. Retrying with gemini-3.8-flash on key ${keyInfo.label}...`);
+        return await executeWithModel('gemini-3.8-flash');
       }
       throw modelErr;
     }
@@ -293,7 +293,7 @@ export async function executeGeminiOperation(operationFn, options = {}) {
  * @param {Object} options - { modelName, timeoutMs, operationName }
  */
 export async function executeGeminiStreamOperation(streamInitFn, options = {}) {
-  const defaultModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+  const defaultModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
   const modelName = options.modelName || defaultModel;
   const timeoutMs = options.timeoutMs || 10000;
   const opName = options.operationName || 'GeminiStream';

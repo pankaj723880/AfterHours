@@ -3,6 +3,7 @@ import { verifyToken } from '../middleware/auth.js';
 import User from '../models/User.js';
 import { aiMusicCompanionService, aiCompanionDiagnostics } from '../services/aiMusicCompanionService.js';
 import { catalogService } from '../services/catalogService.js';
+import { multiModelOrchestrator } from '../services/multiModelOrchestrator.js';
 
 const router = express.Router();
 
@@ -65,13 +66,17 @@ export const optionalAuth = async (req, res, next) => {
  */
 router.get('/context', (req, res) => {
   const geminiConfigured = aiMusicCompanionService.isGeminiConfigured();
+  const quotaReport = multiModelOrchestrator.getQuotaStatusReport();
 
   return res.json({
     geminiConfigured,
+    routingCascades: quotaReport.routingCascades,
+    quotaStatus: quotaReport.models,
     diagnostics: {
       totalChats: aiCompanionDiagnostics.totalChats,
       successfulAiChats: aiCompanionDiagnostics.successfulAiChats,
-      fallbackChats: aiCompanionDiagnostics.fallbackChats
+      fallbackChats: aiCompanionDiagnostics.fallbackChats,
+      orchestrator: quotaReport.diagnostics
     }
   });
 });

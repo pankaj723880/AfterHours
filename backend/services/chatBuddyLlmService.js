@@ -16,6 +16,7 @@
 
 import { GoogleGenAI } from '@google/genai';
 import { executeGeminiOperation, sanitizeLogMessage, isGeminiConfigured } from './geminiKeyManager.js';
+import { multiModelOrchestrator } from './multiModelOrchestrator.js';
 
 export const CHATBUDDY_SYSTEM_PROMPT = `
 You are Loopra ChatBuddy, a culturally tuned, friendly, and accurate personal AI music assistant.
@@ -277,14 +278,13 @@ export function fallbackHeuristicClassifier(message = '', geminiError = null) {
 }
 
 /**
- * Call Gemini with multi-key automatic fallback and conversation history.
+ * Call Gemini with multi-model task routing, quota management, and conversation history.
  */
 export async function callGeminiApi(message, history = []) {
   if (!isGeminiConfigured()) {
     return { success: false, error: 'NO_KEYS_CONFIGURED', message: 'No Gemini API keys configured.' };
   }
 
-  const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
   const historyContext = history.slice(-10).map(h => ({
     role: h.role === 'model' || h.role === 'assistant' ? 'assistant' : 'user',
     content: h.text || h.content || h.reply || ''
@@ -296,33 +296,23 @@ export async function callGeminiApi(message, history = []) {
     `USER MESSAGE:\n"${message}"\n\nSTRICT JSON OUTPUT:`
   ].join('\n');
 
-  const execResult = await executeGeminiOperation(async ({ client, modelName: selectedModel }) => {
-    try {
-      return await client.models.generateContent({
-        model: selectedModel,
-        contents,
-        config: {
-          responseMimeType: 'application/json'
-        }
-      });
-    } catch (modelErr) {
-      // If primary model 404s, try fallback model
-      if (modelErr.status === 404 || String(modelErr.message).includes('not found')) {
-        console.warn(`[ChatBuddyLLM] Model ${selectedModel} not found. Retrying with gemini-2.0-flash...`);
-        return await client.models.generateContent({
-          model: 'gemini-2.0-flash',
-          contents,
-          config: {
-            responseMimeType: 'application/json'
-          }
-        });
+  // Check if message is a complex analytical query vs standard casual chat
+  const lowerMsg = (message || '').toLowerCase();
+  const isComplex = lowerMsg.length > 180 || /\b(analyze|compare and contrast|breakdown|history of|music theory|chord progression|discography deep dive)\b/i.test(lowerMsg);
+  const taskType = isComplex ? 'COMPLEX_TASK' : 'CASUAL_CHAT';
+
+  const execResult = await multiModelOrchestrator.executeTask(taskType, async ({ client, modelName, keyInfo }) => {
+    return await client.models.generateContent({
+      model: modelName,
+      contents,
+      config: {
+        responseMimeType: 'application/json'
       }
-      throw modelErr;
-    }
+    });
   }, {
-    modelName,
-    timeoutMs: 12000,
-    operationName: 'ChatBuddyMessage'
+    prompt: message,
+    cacheTtlMs: 120000, // 2-minute cache for identical chat queries
+    timeoutMs: 12000
   });
 
   if (!execResult.success) {
@@ -338,6 +328,7 @@ export async function callGeminiApi(message, history = []) {
   const parsed = sanitizeAndParseJson(raw);
   if (parsed) {
     parsed.keyUsed = execResult.keyLabel;
+    parsed.modelUsed = execResult.modelUsed;
     parsed.failedOver = Boolean(execResult.failedOver);
     return parsed;
   }

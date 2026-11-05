@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { voiceControlService } from '../../services/voiceControlService';
+import { voiceSessionService } from '../../services/voiceSessionService';
 
 // Supported recognition languages
 const SUPPORTED_LANGUAGES = [
@@ -204,6 +205,11 @@ export default function VoiceSearchButton({
     if (!SpeechRecognition) {
       setErrorMessage('Voice recognition is not supported in this browser. Please try Google Chrome or Microsoft Edge.');
       return;
+    }
+
+    // Pause global continuous session to prevent hardware lockup
+    if (voiceSessionService.isSessionActive) {
+      voiceSessionService.stopSession('search_active');
     }
 
     try {

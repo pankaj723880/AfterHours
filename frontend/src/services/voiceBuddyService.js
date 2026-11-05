@@ -424,6 +424,10 @@ class VoiceBuddyService {
     }
     this.speechQueue = []; // Clear queue: only speak latest command response!
 
+    // Mark speaking state immediately and notify listeners so microphone pauses before audio buffers
+    this.isSpeaking = true;
+    this.notifySubscribers('speech_pending', { text: cleanText });
+
     this.speechQueue.push({ text: cleanText, contextAction, options });
     if (!this.isProcessingQueue) {
       this.processQueue();
@@ -559,6 +563,13 @@ class VoiceBuddyService {
         } catch (_) {}
         this.currentAudio = null;
       }
+
+      // If more sentences remain in queue for this utterance, continue without premature speech_end
+      if (this.speechQueue.length > 0) {
+        this.processQueue();
+        return;
+      }
+
       this.isSpeaking = false;
       this.notifySubscribers('speech_end', { text });
       this.notifySubscribers('speech_volume', { volume: 0 });

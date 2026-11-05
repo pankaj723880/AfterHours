@@ -781,6 +781,10 @@ export default function VoiceAgentModal({
 
       // Finalized transcript received from recognition engine
       if (snapshot.event === 'final_transcript' && snapshot.transcript) {
+        if (snapshot.initiator === 'ai_companion') {
+          // Handled directly by AI Companion drawer; ignore here to prevent duplicate execution
+          return;
+        }
         setTranscript(snapshot.transcript);
         handleProcessUtteranceRef.current?.(snapshot.transcript);
       }

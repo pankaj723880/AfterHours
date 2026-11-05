@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { executeGeminiOperation, createGeminiClient, isGeminiConfigured } from './geminiKeyManager.js';
+import { multiModelOrchestrator } from './multiModelOrchestrator.js';
 import { catalogService } from './catalogService.js';
 import { listeningEventService } from './listeningEventService.js';
 import { verifySingleSong, isSingleSong } from './songFilter.js';
@@ -505,7 +506,10 @@ OUTPUT FORMAT (Strict JSON):
 `;
 
     try {
-      const execResult = await executeGeminiOperation(async ({ client, modelName: selectedModel }) => {
+      const isComplexQuery = cleanMessage.length > 150 || /\b(analyze|compare|contrast|history|theory|evolution|in-depth|deep dive)\b/i.test(cleanMessage);
+      const taskType = isComplexQuery ? 'COMPLEX_TASK' : 'CASUAL_CHAT';
+
+      const execResult = await multiModelOrchestrator.executeTask(taskType, async ({ client, modelName: selectedModel }) => {
         return await client.models.generateContent({
           model: selectedModel,
           contents: systemPrompt,
@@ -514,9 +518,10 @@ OUTPUT FORMAT (Strict JSON):
           }
         });
       }, {
-        modelName,
+        prompt: cleanMessage,
         timeoutMs: 10000,
-        operationName: 'AiMusicCompanionChat'
+        cacheTtlMs: 60000,
+        extra: { currentTrack: currentTrack?.title }
       });
 
       if (!execResult.success) {
