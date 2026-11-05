@@ -395,7 +395,7 @@ export default function CharacterBuddy({
     return { minX, maxX, minY, maxY, isMobile };
   }, [isMobileScreen, characterWidth, characterHeight, isBottomPlayerVisible]);
 
-  // Immediately cancel any active autonomous walking and clear all pending timers
+  // Immediately cancel any active autonomous walking/running/dancing and smoothly reset to base position
   const stopAutonomousWalking = useCallback((resetSubState = true) => {
     isIdleWalkingRef.current = false;
     if (walkAnimFrameRef.current) {
@@ -411,8 +411,12 @@ export default function CharacterBuddy({
       idlePauseTimerRef.current = null;
     }
     if (resetSubState) {
-      setAutonomousSubState((prev) => (prev === 'idle_walking' ? 'idle' : prev));
+      setAutonomousSubState((prev) => (prev === 'idle' ? prev : 'idle'));
+      setWalkFacing('front');
       smoothReturnToFront();
+      // Seamless Interruption: Smoothly cross-fade and return walkOffset back to origin
+      setMoveTransition('transform 0.45s cubic-bezier(0.25, 0.1, 0.25, 1)');
+      setWalkOffset({ x: 0, y: 0 });
     }
   }, [smoothReturnToFront]);
 
@@ -424,32 +428,32 @@ export default function CharacterBuddy({
     const spanX = Math.max(1, maxX - minX);
     const spanY = Math.max(1, maxY - minY);
 
-    // 3 columns x 2 rows (6 screen sectors)
+    // Full-Page Coverage: 3 columns x 3 rows (9 screen sectors covering corners, edges & center)
     const curCol = Math.min(2, Math.max(0, Math.floor(((curX - minX) / spanX) * 3)));
-    const curRow = Math.min(1, Math.max(0, Math.floor(((curY - minY) / spanY) * 2)));
+    const curRow = Math.min(2, Math.max(0, Math.floor(((curY - minY) / spanY) * 3)));
     const curSector = curRow * 3 + curCol;
 
     const recent = lastVisitedCellsRef.current || [];
     const candidateSectors = [];
-    for (let s = 0; s < 6; s++) {
+    for (let s = 0; s < 9; s++) {
       if (s !== curSector && !recent.includes(s)) {
         candidateSectors.push(s);
       }
     }
     const available = candidateSectors.length > 0
       ? candidateSectors
-      : [0, 1, 2, 3, 4, 5].filter((s) => s !== curSector);
+      : [0, 1, 2, 3, 4, 5, 6, 7, 8].filter((s) => s !== curSector);
 
-    const targetSector = available[Math.floor(Math.random() * available.length)] ?? ((curSector + 3) % 6);
-    lastVisitedCellsRef.current = [targetSector, curSector].slice(0, 2);
+    const targetSector = available[Math.floor(Math.random() * available.length)] ?? ((curSector + 4) % 9);
+    lastVisitedCellsRef.current = [targetSector, curSector].slice(0, 3);
 
     const targetCol = targetSector % 3;
     const targetRow = Math.floor(targetSector / 3);
 
     const sectorMinX = minX + (targetCol / 3) * spanX;
     const sectorMaxX = minX + ((targetCol + 1) / 3) * spanX;
-    const sectorMinY = minY + (targetRow / 2) * spanY;
-    const sectorMaxY = minY + ((targetRow + 1) / 2) * spanY;
+    const sectorMinY = minY + (targetRow / 3) * spanY;
+    const sectorMaxY = minY + ((targetRow + 1) / 3) * spanY;
 
     let destX = sectorMinX + Math.random() * (sectorMaxX - sectorMinX);
     let destY = sectorMinY + Math.random() * (sectorMaxY - sectorMinY);
@@ -457,37 +461,139 @@ export default function CharacterBuddy({
     destX = Math.max(minX, Math.min(maxX, Math.round(destX)));
     destY = Math.max(minY, Math.min(maxY, Math.round(destY)));
 
-    const minDistance = isMobile ? 80 : 150;
+    const minDistance = isMobile ? 80 : 140;
     const dist = Math.hypot(destX - curX, destY - curY);
     if (dist < minDistance) {
       if (Math.abs(curX - minX) < Math.abs(maxX - curX)) {
-        destX = Math.min(maxX, curX + minDistance + Math.random() * 60);
+        destX = Math.min(maxX, curX + minDistance + Math.random() * 50);
       } else {
-        destX = Math.max(minX, curX - minDistance - Math.random() * 60);
+        destX = Math.max(minX, curX - minDistance - Math.random() * 50);
       }
     }
 
     return { x: Math.round(destX), y: Math.round(destY) };
   }, [getUsableScreenBounds]);
 
-  // Idle wandering is strictly disabled: Loopra AI avatar rests stably at its lower-right corner dock
-  const startAutonomousWalk = useCallback(() => {
-    stopAutonomousWalking(false);
-  }, [stopAutonomousWalking]);
+  // Autonomous Wandering, Running & Heavy Dancing Engine
+  const startAutonomousExploration = useCallback(() => {
+    if (!isVisible || isListening || isSpeaking || isPlaying || isThinking || isExecuting || dragRef.current.isDragging) {
+      return;
+    }
 
-  // Reset autonomous state: keeps avatar at home dock in lower right corner
+    isIdleWalkingRef.current = true;
+
+    const performStep = () => {
+      if (!isIdleWalkingRef.current) return;
+
+      const walkerEl = walkerRef.current;
+      const currentWalkerRect = walkerEl
+        ? walkerEl.getBoundingClientRect()
+        : { left: avatarPos.x + walkOffset.x, top: avatarPos.y + walkOffset.y };
+
+      const curX = currentWalkerRect.left;
+      const curY = currentWalkerRect.top;
+
+      const dest = selectNextIdleDestination(curX, curY);
+      const deltaX = dest.x - curX;
+      const deltaY = dest.y - curY;
+      const dist = Math.hypot(deltaX, deltaY);
+
+      // Dynamic movement: run for longer distances (>180px) or walk for tighter explorations
+      const shouldRun = dist > 180 || Math.random() < 0.4;
+      const speed = shouldRun ? 360 : 160;
+      const duration = Math.round(Math.max(650, Math.min(2800, (dist / speed) * 1000)));
+
+      setWalkFacing(deltaX < 0 ? 'left' : 'right');
+      setAutonomousSubState(shouldRun ? 'running' : 'walking');
+      setMoveTransition(`transform ${duration}ms cubic-bezier(0.25, 0.1, 0.25, 1)`);
+
+      const targetOffsetX = dest.x - avatarPos.x;
+      const targetOffsetY = dest.y - avatarPos.y;
+      setWalkOffset({ x: targetOffsetX, y: targetOffsetY });
+
+      idleWalkTimerRef.current = setTimeout(() => {
+        if (!isIdleWalkingRef.current) return;
+
+        setWalkFacing('front');
+
+        // Multi-Step Heavy Dancing sequence or brief groove pause
+        const shouldDance = Math.random() < 0.65;
+        if (shouldDance) {
+          setAutonomousSubState('heavy_dancing');
+          const danceDuration = 4500 + Math.random() * 2500;
+          idlePauseTimerRef.current = setTimeout(() => {
+            if (!isIdleWalkingRef.current) return;
+            performStep();
+          }, danceDuration);
+        } else {
+          setAutonomousSubState('idle');
+          idlePauseTimerRef.current = setTimeout(() => {
+            if (!isIdleWalkingRef.current) return;
+            performStep();
+          }, 2000 + Math.random() * 1500);
+        }
+      }, duration);
+    };
+
+    performStep();
+  }, [isVisible, isListening, isSpeaking, isPlaying, isThinking, isExecuting, avatarPos, walkOffset, selectNextIdleDestination]);
+
+  // 5-Second Inactivity Trigger & Interruption Handler
+  const inactivityTimerRef = useRef(null);
+
   const resetAutonomousTimer = useCallback(() => {
-    stopAutonomousWalking(false);
-  }, [stopAutonomousWalking]);
+    // Seamless Interruption: instantly halt autonomous wandering/dancing on any interaction
+    if (isIdleWalkingRef.current) {
+      stopAutonomousWalking(true);
+    }
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = null;
+    }
+    if (!isVisible || isListening || isSpeaking || isPlaying || isThinking || isExecuting || dragRef.current.isDragging) {
+      return;
+    }
+    inactivityTimerRef.current = setTimeout(() => {
+      startAutonomousExploration();
+    }, 5000); // 5-second inactivity trigger
+  }, [isVisible, isListening, isSpeaking, isPlaying, isThinking, isExecuting, stopAutonomousWalking, startAutonomousExploration]);
 
   const resetIdleTimer = resetAutonomousTimer;
 
-  // Ensure idle walking is disabled and avatar rests stably
+  // Window-wide inactivity tracking: resets 5-second timer on user interaction
   useEffect(() => {
-    stopAutonomousWalking(false);
-  }, [stopAutonomousWalking, isPlaying, isListening, isSpeaking, isThinking, isExecuting, isVisible]);
+    let lastEventTime = 0;
+    const handleUserInteraction = () => {
+      const now = performance.now();
+      if (now - lastEventTime < 150) return;
+      lastEventTime = now;
+      resetAutonomousTimer();
+    };
 
-  // Tab visibility listener: ensure avatar remains cleanly docked when tab visibility changes
+    const events = ['pointerdown', 'mousemove', 'keydown', 'touchstart', 'wheel'];
+    events.forEach((evt) => window.addEventListener(evt, handleUserInteraction, { passive: true }));
+
+    resetAutonomousTimer();
+
+    return () => {
+      events.forEach((evt) => window.removeEventListener(evt, handleUserInteraction));
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
+        inactivityTimerRef.current = null;
+      }
+    };
+  }, [resetAutonomousTimer]);
+
+  // State changes immediately stop autonomous exploration if non-idle
+  useEffect(() => {
+    if (isListening || isSpeaking || isPlaying || isThinking || isExecuting) {
+      stopAutonomousWalking(true);
+    } else {
+      resetAutonomousTimer();
+    }
+  }, [isListening, isSpeaking, isPlaying, isThinking, isExecuting, stopAutonomousWalking, resetAutonomousTimer]);
+
+  // Tab visibility listener
   useEffect(() => {
     const handleVisibilityChange = () => {
       stopAutonomousWalking(true);
@@ -898,6 +1004,7 @@ export default function CharacterBuddy({
     if (didLongPressRef.current) {
       if (e.preventDefault) e.preventDefault();
       didLongPressRef.current = false;
+      playTransientGesture('pose', 1800);
       return;
     }
 

@@ -265,8 +265,7 @@ export default function VoiceAgentModal({
     const singleParse = parseVoiceCommandLocally(text, persistentContextRef.current);
     if (singleParse && singleParse.action === 'stop_continuous') {
       voiceSessionService.stopSession('manual');
-      const byeReply = voiceBuddyService.generateFriendReply('pause', 'Voice session stopped');
-      voiceBuddyService.speak(byeReply);
+      voiceBuddyService.speak('Byeee');
       showToast?.('Voice session stopped');
       return;
     }
@@ -970,8 +969,7 @@ export default function VoiceAgentModal({
   const handleToggleVoiceMode = async () => {
     if (voiceSessionService.isSessionActive) {
       voiceSessionService.stopSession('manual');
-      const stopReply = voiceBuddyService.generateFriendReply('pause', 'Voice session paused');
-      voiceBuddyService.speak(stopReply);
+      voiceBuddyService.speak('Byeee');
       showToast?.('Voice Agent: OFF');
     } else {
       showToast?.('Voice Agent: Listening...');

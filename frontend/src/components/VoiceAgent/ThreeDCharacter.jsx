@@ -364,7 +364,7 @@ export default function ThreeDCharacter({
         else if (curState === 'running' || curState === 'run') fadeToAction('run', 0.25);
         else if (curState === 'jump') fadeToAction('jump', 0.2);
         else if (curState === 'wave') fadeToAction('wave', 0.25);
-        else if (curState === 'dance') fadeToAction('dance', 0.3);
+        else if (curState === 'dance' || curState === 'dancing' || curState === 'heavy_dancing') fadeToAction('dance', 0.3);
         else if (isSpeakingNow || curState === 'speaking') fadeToAction('speaking', 0.25);
         else if (curState === 'think' || curState === 'thinking') fadeToAction('thinking', 0.3);
         else fadeToAction('idle', 0.35);
@@ -400,15 +400,16 @@ export default function ThreeDCharacter({
         particleMat.size = 0.05;
       }
 
-      // Music-Synchronized Dancing rhythm & intensity calculations
-      const intensity = 0.75 + vol * 0.55;
-      const dancePhase = time * (6.0 + vol * 2.5);
-      const danceRoutine = Math.floor((time / 12) % 4);
+      // Music-Synchronized & Heavy Dancing rhythm & intensity calculations
+      const isHeavyDance = curState === 'heavy_dancing';
+      const intensity = (isHeavyDance ? 1.45 : 0.75) + vol * 0.55;
+      const dancePhase = time * ((isHeavyDance ? 8.4 : 6.0) + vol * 2.5);
+      const danceRoutine = isHeavyDance ? Math.floor((time / 3.0) % 4) : Math.floor((time / 12) % 4);
 
       // =========================================================================
       // D. ANATOMICALLY NATURAL KINEMATICS & SKELETAL ANIMATION SYSTEM
       // =========================================================================
-      if (curState === 'dancing' || curState === 'dance') {
+      if (curState === 'dancing' || curState === 'dance' || curState === 'heavy_dancing') {
         if (danceRoutine === 0) {
           const sway = Math.sin(dancePhase);
           const bounce = Math.abs(Math.cos(dancePhase)) * 0.04 * intensity;
