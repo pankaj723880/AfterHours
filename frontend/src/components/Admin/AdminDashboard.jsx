@@ -297,9 +297,10 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
       const adminSocket = io(cleanBackendUrl, {
         auth: { token, sessionId: sid },
         query: { sessionId: sid },
-        transports: ['websocket', 'polling'],
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000
+        transports: ['polling', 'websocket'],
+        reconnectionAttempts: 10,
+        reconnectionDelay: 2000,
+        timeout: 45000
       });
 
       adminSocket.on('connect', () => {

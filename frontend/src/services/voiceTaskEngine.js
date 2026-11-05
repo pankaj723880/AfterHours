@@ -48,10 +48,13 @@ const ACTION_VERB_PATTERNS = [
   /^(follow|unfollow)\b/i,
   // Avatar
   /^(wave|wink|dance|jump|pose|sit|sit down)\b/i,
+  // DJ Club & Controls
+  /^(dj club|open dj club|dj mode|start dj|stop dj|beat drop|bass drop|drop the beat|drop the bass|air horn|dj horn|scratch)\b/i,
   // Details & Modals
   /^(lyrics|open lyrics|show lyrics|lyrics kholo|lyrics dikhao)\b/i,
   /^(queue|open\s+queue|show\s+queue|queue\s+kholo|up\s+next|open\s+playback\s+queue)\b/i,
   /^(insights|recap|weekly recap|stats|listening stats|listening insights)\b/i,
+  /^(listening rooms|open listening rooms|social rooms|similar songs|recommend similar|player settings|open equalizer|equalizer|sleep timer|open sleep timer|canvas|open canvas|user profile|open profile|rate song|rate this song)\b/i,
   /^(artist|open\s+artist|view\s+artist|artist\s+profile|show\s+artist|open\s+this\s+artist(?:\s+profile)?|open\s+the\s+artist(?:\s+profile)?|open\s+its\s+artist(?:\s+profile)?|uska artist profile kholo)\b/i,
   // Navigation & Search
   /^(search|search for|dhoondho|khojo|find)\b/i,
@@ -458,6 +461,15 @@ export async function executeTaskPipeline(steps = [], initialContext = {}, handl
     onOpenInsights,
     onOpenQueue,
     onOpenLyrics,
+    onOpenListeningRooms,
+    onOpenSimilarSongs,
+    onOpenPlayerSettings,
+    onOpenSleepTimer,
+    onOpenCanvas,
+    onOpenProfile,
+    onOpenRatingModal,
+    onSetPlaybackSpeed,
+    onDjAction,
     onGoBack,
     onOpenArtist,
     searchCatalog
@@ -632,8 +644,15 @@ export async function executeTaskPipeline(steps = [], initialContext = {}, handl
 
       // 11. Playback: Play direct track
       else if (step.action === 'play_direct' && step.track) {
-        if (!onPlayTrack) throw new Error('Player handler unavailable.');
-        await onPlayTrack(step.track);
+        if (onPlayFromHistory && currentContext.activeTab === 'history') {
+          await onPlayFromHistory(step.track);
+        } else if (onPlayTrack) {
+          await onPlayTrack(step.track);
+        } else if (onPlayFromHistory) {
+          await onPlayFromHistory(step.track);
+        } else {
+          throw new Error('Player handler unavailable.');
+        }
         currentContext.currentSong = step.track;
         currentContext.lastPlayedTrack = step.track;
         currentContext.isPlaying = true;
@@ -796,12 +815,69 @@ export async function executeTaskPipeline(steps = [], initialContext = {}, handl
       // 18. Navigation: Standard tabs
       else if (step.action === 'navigate_page') {
         if (onNavigate) {
-          await onNavigate(step.target);
+          await onNavigate(step.target, step.extra);
         }
         currentContext.activeTab = step.target;
         currentContext.lastStation = step.target;
         const stationName = SPECIAL_STATIONS[step.target]?.title || step.target;
         stepResult = { description: `Navigated to ${stationName}` };
+      }
+
+      // 18b. Navigation: Social Listening Rooms
+      else if (step.action === 'open_listening_rooms') {
+        if (onOpenListeningRooms) await onOpenListeningRooms();
+        else if (onNavigate) await onNavigate('listening_rooms');
+        stepResult = { description: 'Opened Social Listening Rooms' };
+      }
+
+      // 18c. Navigation: Similar Songs Modal
+      else if (step.action === 'open_similar_songs') {
+        const targetTrack = step.target || currentContext.currentSong || currentContext.lastPlayedTrack;
+        if (onOpenSimilarSongs) await onOpenSimilarSongs(targetTrack);
+        stepResult = { description: 'Opened Similar Songs' };
+      }
+
+      // 18d. Navigation: Player Settings & Equalizer
+      else if (step.action === 'open_player_settings') {
+        if (onOpenPlayerSettings) await onOpenPlayerSettings();
+        stepResult = { description: 'Opened Player Settings & Equalizer' };
+      }
+
+      // 18e. Navigation: Sleep Timer
+      else if (step.action === 'open_sleep_timer') {
+        if (onOpenSleepTimer) await onOpenSleepTimer();
+        stepResult = { description: 'Opened Sleep Timer' };
+      }
+
+      // 18f. Navigation: Loopra Canvas Visualizer
+      else if (step.action === 'open_canvas') {
+        if (onOpenCanvas) await onOpenCanvas();
+        stepResult = { description: 'Opened Loopra Canvas' };
+      }
+
+      // 18g. Navigation: User Profile
+      else if (step.action === 'open_profile') {
+        if (onOpenProfile) await onOpenProfile();
+        stepResult = { description: 'Opened User Profile' };
+      }
+
+      // 18h. Navigation: Rate & Review Modal
+      else if (step.action === 'open_rating_modal') {
+        if (onOpenRatingModal) await onOpenRatingModal();
+        stepResult = { description: 'Opened Rate & Review Modal' };
+      }
+
+      // 18i. Playback: Set Speed
+      else if (step.action === 'set_playback_speed') {
+        const spd = typeof step.value === 'number' ? step.value : (typeof step.speed === 'number' ? step.speed : 1.0);
+        if (onSetPlaybackSpeed) await onSetPlaybackSpeed(spd);
+        stepResult = { description: `Set playback speed to ${spd}x` };
+      }
+
+      // 18j. DJ Club: Actions
+      else if (['dj_action', 'dj_drop', 'dj_start_beat', 'dj_stop_beat', 'dj_trigger_sfx', 'action_dj_drop', 'action_dj_start_beat', 'action_dj_stop_beat'].includes(step.action)) {
+        if (onDjAction) await onDjAction(step);
+        stepResult = { description: step.description || 'DJ action executed' };
       }
 
       // 19. Search Catalog

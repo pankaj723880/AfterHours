@@ -489,12 +489,7 @@ export default function PersonalizedRecommendationsSection({
           {track.title}
         </h4>
         <p
-          className="text-[11px] sm:text-xs text-neutral-400 truncate mt-0.5 hover:text-amber-300 hover:underline cursor-pointer"
-          title={cleanArtist}
-          onClick={(e) => {
-            e.stopPropagation();
-            onArtistClick?.(cleanArtist);
-          }}
+          className="text-[11px] sm:text-xs text-neutral-400 truncate mt-0.5 select-none pointer-events-none"
         >
           {cleanArtist}
         </p>

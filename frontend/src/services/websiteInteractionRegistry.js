@@ -207,6 +207,34 @@ export const STATIC_INTERACTION_REGISTRY = [
     description: 'Personal Listening Activity & Real-Time Feed'
   },
   {
+    id: 'dj-club',
+    name: 'Loopra DJ Club',
+    type: 'page',
+    route: '/dj-club',
+    parentPage: 'root',
+    selector: '[data-nav-id="dj-club"], a[href*="dj-club"]',
+    priority: 95,
+    aliases: [
+      'loopra dj club', 'dj club', 'dj club kholo', 'dj mode', 'club mode',
+      'dj mixing', 'dj studio', 'dj session', 'dj chalao', 'dj lagao', 'dj view', 'dj'
+    ],
+    description: 'Interactive DJ mixing console, procedural synth, dynamic lighting & beat generators'
+  },
+  {
+    id: 'downloads_explore',
+    name: 'Explore Offline Songs',
+    type: 'page',
+    route: '/downloads/explore',
+    parentPage: 'downloads',
+    selector: '[data-nav-id="downloads-explore"], a[href*="downloads/explore"]',
+    priority: 85,
+    aliases: [
+      'explore downloads', 'offline explore', 'downloadable songs', 'offline eligible',
+      'explore offline music', 'download karne wale gaane', 'offline catalog'
+    ],
+    description: 'Browse and discover tracks eligible for encrypted offline download'
+  },
+  {
     id: 'recap_stats',
     name: 'Recap & Stats',
     type: 'modal',
@@ -220,6 +248,105 @@ export const STATIC_INTERACTION_REGISTRY = [
       'listening stats', 'listening insights', 'insights', 'recap dikhao', 'stats dikhao'
     ],
     description: 'Personal Listening Analytics, Insights & Weekly Stats Modal'
+  },
+  {
+    id: 'listening_rooms',
+    name: 'Social Listening Rooms',
+    type: 'modal',
+    action: 'open_listening_rooms',
+    parentPage: 'root',
+    selector: '[data-action="open_listening_rooms"]',
+    priority: 90,
+    aliases: [
+      'listening rooms', 'open listening rooms', 'social rooms', 'listening room kholo',
+      'group listening', 'listen together', 'friends room', 'dosto ke sath suno', 'party room'
+    ],
+    description: 'Real-time synchronized Social Listening Rooms modal'
+  },
+  {
+    id: 'similar_songs',
+    name: 'Similar Songs Recommendations',
+    type: 'modal',
+    action: 'open_similar_songs',
+    parentPage: 'root',
+    selector: '[data-action="open_similar_songs"]',
+    priority: 90,
+    aliases: [
+      'similar songs', 'recommend similar', 'find similar songs', 'iske jaise gaane',
+      'similar music', 'aise hi gaane sunao', 'similar songs modal', 'related songs'
+    ],
+    description: 'AI & Content Similar Songs recommendation modal'
+  },
+  {
+    id: 'player_settings',
+    name: 'Player Settings & Equalizer',
+    type: 'modal',
+    action: 'open_player_settings',
+    parentPage: 'root',
+    selector: '[data-action="open_player_settings"]',
+    priority: 90,
+    aliases: [
+      'player settings', 'open equalizer', 'equalizer', 'audio settings',
+      'equalizer kholo', 'sound settings', 'playback settings', 'bass treble settings',
+      'speed settings', 'audio quality'
+    ],
+    description: 'Audio Equalizer, Playback Speed, and Audio Quality modal'
+  },
+  {
+    id: 'sleep_timer',
+    name: 'Sleep Timer',
+    type: 'modal',
+    action: 'open_sleep_timer',
+    parentPage: 'root',
+    selector: '[data-action="open_sleep_timer"]',
+    priority: 90,
+    aliases: [
+      'sleep timer', 'open sleep timer', 'sleep timer kholo', 'timer lagao',
+      'off timer', 'auto off timer', 'music timer', 'sone ka timer'
+    ],
+    description: 'Configurable automatic sleep timer modal'
+  },
+  {
+    id: 'canvas_modal',
+    name: 'Loopra Canvas Visualizer',
+    type: 'modal',
+    action: 'open_canvas',
+    parentPage: 'root',
+    selector: '[data-action="open_canvas"]',
+    priority: 90,
+    aliases: [
+      'open canvas', 'canvas mode', 'visualizer', 'fullscreen visualizer',
+      'music canvas', 'canvas kholo', 'audio visualizer', 'loopra canvas', 'visualizer chalao'
+    ],
+    description: 'Immersive fullscreen reactive audio canvas visualizer'
+  },
+  {
+    id: 'profile_modal',
+    name: 'User Profile',
+    type: 'modal',
+    action: 'open_profile',
+    parentPage: 'root',
+    selector: '[data-action="open_profile"]',
+    priority: 90,
+    aliases: [
+      'user profile', 'open profile', 'my profile', 'profile kholo',
+      'mera profile', 'account settings', 'user account', 'profile dikhao'
+    ],
+    description: 'User account profile, badges, and listening summary modal'
+  },
+  {
+    id: 'rating_modal',
+    name: 'Rate & Review Modal',
+    type: 'modal',
+    action: 'open_rating_modal',
+    parentPage: 'root',
+    selector: '[data-action="open_rating_modal"]',
+    priority: 90,
+    aliases: [
+      'rate song', 'rate this song', 'review song', 'give review',
+      'rating do', 'review likho', 'rate karo', 'review modal', 'song feedback'
+    ],
+    description: 'Submit song rating and user review modal'
   },
 
   // --- SUB-VIEWS ON HOME ---
@@ -235,6 +362,46 @@ export const STATIC_INTERACTION_REGISTRY = [
       'trending songs', 'trending', 'top trending', 'trending hits', 'popular songs'
     ],
     description: 'Top most played hits right now'
+  },
+  {
+    id: 'reviews_section',
+    name: 'Community Reviews & Ratings',
+    type: 'section',
+    route: '/?view=reviews',
+    parentPage: 'home',
+    selector: '[data-section="reviews"], #reviews-section',
+    priority: 80,
+    aliases: [
+      'community reviews', 'all reviews', 'reviews section', 'user reviews',
+      'reviews dikhao', 'logo ke reviews', 'music reviews'
+    ],
+    description: 'Recent user reviews and ratings section on home'
+  },
+  {
+    id: 'artists_section',
+    name: 'Featured Artists',
+    type: 'section',
+    route: '/?view=artists',
+    parentPage: 'home',
+    selector: '[data-section="artists"], #artists-section',
+    priority: 80,
+    aliases: [
+      'featured artists', 'top artists', 'popular singers', 'saare artists', 'all artists'
+    ],
+    description: 'Featured top artists directory on home'
+  },
+  {
+    id: 'albums_section',
+    name: 'Top Albums',
+    type: 'section',
+    route: '/?view=albums',
+    parentPage: 'home',
+    selector: '[data-section="albums"], #albums-section',
+    priority: 80,
+    aliases: [
+      'top albums', 'featured albums', 'all albums', 'saare albums', 'popular albums'
+    ],
+    description: 'Popular albums section on home'
   },
 
   // --- PLAYBACK CONTROLS ---

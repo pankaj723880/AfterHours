@@ -119,17 +119,27 @@ const socket = io(BACKEND_URL, {
     token: getInitialAuthToken()
   },
   query: { sessionId: getOrCreateSessionId() },
-  transports: ['websocket', 'polling'],
+  transports: ['polling', 'websocket'],
   withCredentials: true,
   reconnection: true,
-  reconnectionAttempts: 20,
-  reconnectionDelay: 1000,
-  timeout: 20000,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 2000,
+  reconnectionDelayMax: 10000,
+  timeout: 45000,
   autoConnect: true,
 });
 
+let hasLoggedSocketWarn = false;
 socket.on('connect_error', (err) => {
-  console.warn('[Socket.io] Real-time connection notice:', err.message);
+  if (!hasLoggedSocketWarn) {
+    hasLoggedSocketWarn = true;
+    console.info('[Socket.io] Backend connecting (reconnecting in background):', err.message);
+  }
+});
+
+socket.on('connect', () => {
+  hasLoggedSocketWarn = false;
+  console.log('[Socket.io] Real-time connection established.');
 });
 
 socket.on('listening_stats_updated', (data) => {
@@ -139,8 +149,21 @@ socket.on('listening_stats_updated', (data) => {
 });
 
 const fetchFromBackend = async (query, options = {}) => {
-  const timeoutMs = options.timeoutMs || 45000;
+  const timeoutMs = options.timeoutMs || 15000;
   const controller = new AbortController();
+  const callerSignal = options.signal;
+
+  const onCallerAbort = () => {
+    try { controller.abort(); } catch (_) {}
+  };
+
+  if (callerSignal) {
+    if (callerSignal.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+    callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+  }
+
   const timeoutId = setTimeout(() => {
     try {
       controller.abort(new Error(`Backend request timed out after ${Math.round(timeoutMs / 1000)}s`));
@@ -176,6 +199,9 @@ const fetchFromBackend = async (query, options = {}) => {
       }
     }
     clearTimeout(timeoutId);
+    if (callerSignal) {
+      callerSignal.removeEventListener('abort', onCallerAbort);
+    }
     const parsed = await safeParseJsonResponse(res, 'Backend search failed');
     if (!parsed.ok) {
       throw new Error(parsed.error);
@@ -183,6 +209,9 @@ const fetchFromBackend = async (query, options = {}) => {
     return parsed.data || { items: [] };
   } catch (err) {
     clearTimeout(timeoutId);
+    if (callerSignal) {
+      callerSignal.removeEventListener('abort', onCallerAbort);
+    }
     if (err?.name !== 'AbortError') {
       console.warn("Backend fetch notice:", err.message);
     }
@@ -1738,6 +1767,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const currentTimeRef = useRef(0);
   const durationRef = useRef(0);
   const playerRef = useRef(null);
+  const isPlayerReadyRef = useRef(false);
   const wasPlayingBeforeAuthRef = useRef(false);
   const isInitialMountRef = useRef(true);
   const trackPlaybackStartTimeRef = useRef(null);
@@ -1820,6 +1850,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [searchLoadMoreError, setSearchLoadMoreError] = useState('');
   const activeSearchQueryRef = useRef('');
   const searchRequestIdRef = useRef(0);
+  const activeSearchAbortControllerRef = useRef(null);
+  const inFlightSearchMapRef = useRef(new Map());
   const fetchYouTubeMusicRef = useRef(null);
   const [stationVisibleCounts, setStationVisibleCounts] = useState({ barber: 50, truck: 50, pauwa: 50 });
   const stationVisibleCount = stationVisibleCounts[activeTab] || 50;
@@ -3431,12 +3463,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         hlsRef.current = null;
       }
 
-      if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
+      if (playerRef.current && isPlayerReadyRef.current && typeof playerRef.current.stopVideo === 'function') {
         try { playerRef.current.stopVideo(); } catch (e) {}
       }
 
-      // Direct synchronous YouTube iframe invocation if player exists and is online
-      if (playerRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline && !song?.isRadio && targetVideoId) {
+      // Direct synchronous YouTube iframe invocation if player exists, is ready, and is online
+      if (playerRef.current && isPlayerReadyRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline && !song?.isRadio && targetVideoId) {
         try {
           playerRef.current.loadVideoById({ videoId: targetVideoId });
           const p = playerRef.current.playVideo();
@@ -3893,6 +3925,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   useEffect(() => {
     return () => {
+      isPlayerReadyRef.current = false;
       try {
         if (playerRef.current && typeof playerRef.current.destroy === 'function') {
           playerRef.current.destroy();
@@ -3905,6 +3938,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const initPlayerInstance = useCallback((videoId, shouldAutoPlay = true, startSeconds = 0) => {
     if (!window.YT || !window.YT.Player) return;
 
+    isPlayerReadyRef.current = false;
     try {
       if (playerRef.current && typeof playerRef.current.destroy === 'function') {
         playerRef.current.destroy();
@@ -3914,6 +3948,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     if (ytContainerRef.current) {
       ytContainerRef.current.innerHTML = '<div id="yt-player-instance"></div>';
     }
+
+    const appOrigin = typeof window !== 'undefined'
+      ? `${window.location.protocol}//${window.location.host}`
+      : undefined;
 
     playerRef.current = new window.YT.Player('yt-player-instance', {
       height: '100%',
@@ -3931,11 +3969,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         enablejsapi: 1,
         playsinline: 1,
         start: startSeconds > 0 ? Math.floor(startSeconds) : 0,
-        origin: typeof window !== 'undefined' ? window.location.origin : undefined,
-        widget_referrer: typeof window !== 'undefined' ? window.location.origin : undefined
+        origin: appOrigin
       },
       events: {
         onReady: (e) => {
+          isPlayerReadyRef.current = true;
+          if (playerRef.current) {
+            playerRef.current._isReady = true;
+          }
           try {
             e.target.setVolume(volume);
             if (startSeconds > 0) {
@@ -4433,7 +4474,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         return;
       }
 
-      if (playerRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline) {
+      if (playerRef.current && isPlayerReadyRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline) {
         try {
           if (isFirstMount) {
             if (typeof playerRef.current.cueVideoById === 'function') {
@@ -5168,6 +5209,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const trimmedQuery = q.trim().toLowerCase();
     if (!trimmedQuery) return;
 
+    // Abort any prior in-flight search request immediately to prevent race conditions
+    if (activeSearchAbortControllerRef.current) {
+      try {
+        activeSearchAbortControllerRef.current.abort();
+      } catch (_) {}
+    }
+    const searchController = new AbortController();
+    activeSearchAbortControllerRef.current = searchController;
+
     const currentReqId = ++searchRequestIdRef.current;
     activeSearchQueryRef.current = trimmedQuery;
     setHasSearched(true);
@@ -5183,21 +5233,27 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       });
     }
 
-    // If cache already has modern format with pagination token
+    // 1. Instant Cache Hit: Return cached search results in 0ms
     const cachedEntry = searchCache[trimmedQuery];
     if (cachedEntry && !Array.isArray(cachedEntry) && Array.isArray(cachedEntry.items) && cachedEntry.items.length > 0) {
       setSearchResults(cachedEntry.items);
       setSearchVisibleCount(cachedEntry.items.length);
       setSearchNextPageToken(cachedEntry.nextPageToken || null);
       setHasMoreSearchResults(Boolean(cachedEntry.nextPageToken));
+      setIsLoading(false);
       return;
     }
 
-    if (isLoading) return;
+    // Give immediate visual loading feedback without blocking new searches
     setIsLoading(true);
     try {
-      const data = await fetchFromBackend(trimmedQuery + " official video original", { limit: 10 });
+      const data = await fetchFromBackend(trimmedQuery + " official video original", {
+        limit: 10,
+        timeoutMs: 9000,
+        signal: searchController.signal
+      });
 
+      // Stale response guard: Ignore if user has initiated a newer search
       if (currentReqId !== searchRequestIdRef.current) return;
 
       if (data && Array.isArray(data.items) && data.items.length > 0) {
@@ -5243,6 +5299,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         setHasMoreSearchResults(false);
       }
     } catch (err) {
+      if (err?.name === 'AbortError') {
+        // Cleanly aborted by newer query - do not show error or alter state
+        return;
+      }
+
       if (currentReqId === searchRequestIdRef.current) {
         console.warn("[Search Notice]:", err.message);
 
@@ -6362,13 +6423,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       {currentSong ? currentSong.title : ((trendingSongs?.[0] || TRENDING_SONGS[0])?.title || 'High-Fidelity Retro & Modern Lounge')}
                     </h1>
                     <p
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const artistToOpen = currentSong ? (currentSong.artist || currentSong.channel) : ((trendingSongs?.[0] || TRENDING_SONGS[0])?.channel);
-                        if (artistToOpen) handleArtistClick(artistToOpen);
-                      }}
-                      className="text-xs sm:text-sm text-amber-400/90 font-medium mt-0.5 sm:mt-1 truncate max-w-full hover:underline hover:text-amber-300 cursor-pointer"
-                      title="View artist profile"
+                      className="text-xs sm:text-sm text-amber-400/90 font-medium mt-0.5 sm:mt-1 truncate max-w-full select-none"
                     >
                       {currentSong ? (currentSong.artist || currentSong.channel) : ((trendingSongs?.[0] || TRENDING_SONGS[0])?.channel || 'Drop the needle on curated trending hits, nostalgia stations, or search any track.')}
                     </p>
@@ -7337,7 +7392,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </div>
               <div className="min-w-0 flex-1">
                 <h4 className="font-bold text-xs text-white truncate group-hover:text-amber-300 transition-colors">{currentSong.title}</h4>
-                <p onClick={(e) => { e.stopPropagation(); handleArtistClick(currentSong.channel || currentSong.artist); }} className="text-[10px] text-amber-400 truncate hover:underline hover:text-amber-300 cursor-pointer" title="View artist profile">{currentSong.channel || currentSong.artist}</p>
+                <p className="text-[10px] text-amber-400 truncate select-none">{currentSong.channel || currentSong.artist}</p>
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-2" onClick={(e) => e.stopPropagation()}>
                 <button 
@@ -7472,7 +7527,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </div>
               <div className="min-w-0 flex-1">
                 <h4 className="font-bold text-xs text-white truncate leading-tight">{currentSong.title}</h4>
-                <p onClick={(e) => { e.stopPropagation(); handleArtistClick(currentSong.channel || currentSong.artist); }} className="text-[10px] text-amber-400 truncate mt-0.5 hover:underline hover:text-amber-300 cursor-pointer" title="View artist profile">{currentSong.channel || currentSong.artist}</p>
+                <p className="text-[10px] text-amber-400 truncate mt-0.5 select-none">{currentSong.channel || currentSong.artist}</p>
               </div>
             </div>
 
@@ -7653,13 +7708,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     {currentSong.title}
                   </h2>
                   <p
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsExpandedPlayerOpen(false);
-                      handleArtistClick(currentSong.channel || currentSong.artist);
-                    }}
-                    className="text-xs sm:text-sm text-amber-500 font-medium truncate max-w-full hover:underline hover:text-amber-400 cursor-pointer"
-                    title="View artist profile"
+                    className="text-xs sm:text-sm text-amber-500 font-medium truncate max-w-full select-none"
                   >
                     {currentSong.channel || currentSong.artist}
                   </p>
@@ -8295,6 +8344,28 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           }
         }}
         onOpenLyrics={() => setIsLyricsOpen(true)}
+        onOpenListeningRooms={() => setIsListeningRoomsOpen(true)}
+        onOpenSimilarSongs={(track) => setSimilarSongsTrack(track || currentSong)}
+        onOpenPlayerSettings={() => setIsPlayerSettingsOpen(true)}
+        onOpenSleepTimer={() => setIsSleepTimerOpen(true)}
+        onOpenCanvas={() => setIsCanvasOpen(true)}
+        onOpenProfile={() => setIsProfileOpen(true)}
+        onOpenRatingModal={() => setIsRatingModalOpen(true)}
+        onSetPlaybackSpeed={(spd) => {
+          try {
+            if (typeof playerRef.current?.setPlaybackRate === 'function') {
+              playerRef.current.setPlaybackRate(spd);
+            }
+            showToast?.(`Playback speed set to ${spd}x`);
+          } catch (_) {}
+        }}
+        onDjAction={(actionObj) => {
+          try {
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('loopra_dj_action', { detail: actionObj }));
+            }
+          } catch (_) {}
+        }}
         onGoBack={handleGoBack}
         onOpenArtist={(artistName) => handleArtistClick(artistName)}
         showToast={showToast}
@@ -8444,6 +8515,28 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           }
         }}
         onOpenLyrics={() => setIsLyricsOpen(true)}
+        onOpenListeningRooms={() => setIsListeningRoomsOpen(true)}
+        onOpenSimilarSongs={(track) => setSimilarSongsTrack(track || currentSong)}
+        onOpenPlayerSettings={() => setIsPlayerSettingsOpen(true)}
+        onOpenSleepTimer={() => setIsSleepTimerOpen(true)}
+        onOpenCanvas={() => setIsCanvasOpen(true)}
+        onOpenProfile={() => setIsProfileOpen(true)}
+        onOpenRatingModal={() => setIsRatingModalOpen(true)}
+        onSetPlaybackSpeed={(spd) => {
+          try {
+            if (typeof playerRef.current?.setPlaybackRate === 'function') {
+              playerRef.current.setPlaybackRate(spd);
+            }
+            showToast?.(`Playback speed set to ${spd}x`);
+          } catch (_) {}
+        }}
+        onDjAction={(actionObj) => {
+          try {
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('loopra_dj_action', { detail: actionObj }));
+            }
+          } catch (_) {}
+        }}
         onGoBack={handleGoBack}
         onOpenArtist={(artistName) => handleArtistClick(artistName)}
         showToast={showToast}

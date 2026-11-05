@@ -26,7 +26,11 @@ export const ACTION_CATEGORIES = {
   HISTORY: 'HISTORY',
   MODALS: 'MODALS',
   OFFLINE: 'OFFLINE',
-  AVATAR: 'AVATAR'
+  AVATAR: 'AVATAR',
+  DJ_CLUB: 'DJ_CLUB',
+  SETTINGS: 'SETTINGS',
+  SOCIAL: 'SOCIAL',
+  REVIEWS: 'REVIEWS'
 };
 
 export const ACTION_REGISTRY = [
@@ -1105,6 +1109,356 @@ export const ACTION_REGISTRY = [
     expectedResult: 'Movable avatar visibility toggled',
     verify: () => true,
     errorFallback: 'Unable to toggle avatar visibility.'
+  },
+
+  // =========================================================================
+  // 11. LOOPRA DJ CLUB & PROCEDURAL SYNTH ACTIONS
+  // =========================================================================
+  {
+    id: 'nav_dj_club',
+    name: 'Navigate to Loopra DJ Club',
+    category: ACTION_CATEGORIES.NAVIGATION,
+    route: '/dj-club',
+    page: 'dj-club',
+    component: 'DjClubPage.jsx',
+    handlerName: 'onNavigate',
+    handlerArgs: ['dj-club'],
+    aliases: [
+      'dj club', 'open dj club', 'dj club kholo', 'dj mode', 'loopra dj club',
+      'dj mixing', 'dj studio', 'dj session', 'club mode', 'dj chalao', 'dj lagao', 'dj view'
+    ],
+    params: {},
+    dependencies: [],
+    confirmationRequired: false,
+    expectedResult: 'DJ Club mixing console and procedural synthesizer active',
+    verify: (ctx) => ctx.activeTab === 'dj-club',
+    errorFallback: 'Unable to open DJ Club.'
+  },
+  {
+    id: 'action_dj_start_beat',
+    name: 'Start DJ Beat',
+    category: ACTION_CATEGORIES.DJ_CLUB,
+    route: '/dj-club',
+    page: 'dj-club',
+    component: 'djAudioEngine.js / DjClubPage.jsx',
+    handlerName: 'onDjStartBeat',
+    handlerArgs: ['$style', '$bpm'],
+    aliases: [
+      'start beat', 'play dj beat', 'dj beat chalao', 'start dj beat',
+      'beat bajao', 'beat start karo', 'start dj', 'club beat'
+    ],
+    params: {
+      style: { type: 'string', required: false, default: 'edm' },
+      bpm: { type: 'number', required: false, default: 128 }
+    },
+    dependencies: [],
+    confirmationRequired: false,
+    expectedResult: 'Procedural DJ beat rhythm started',
+    verify: () => true,
+    errorFallback: 'Could not start DJ beat.'
+  },
+  {
+    id: 'action_dj_stop_beat',
+    name: 'Stop DJ Beat',
+    category: ACTION_CATEGORIES.DJ_CLUB,
+    route: '/dj-club',
+    page: 'dj-club',
+    component: 'djAudioEngine.js / DjClubPage.jsx',
+    handlerName: 'onDjStopBeat',
+    handlerArgs: [],
+    aliases: [
+      'stop beat', 'pause dj beat', 'stop dj beat', 'dj beat roko',
+      'beat band karo', 'stop dj', 'dj band karo'
+    ],
+    params: {},
+    dependencies: [],
+    confirmationRequired: false,
+    expectedResult: 'Procedural DJ beat rhythm stopped',
+    verify: () => true,
+    errorFallback: 'Could not stop DJ beat.'
+  },
+  {
+    id: 'action_dj_trigger_sfx',
+    name: 'Trigger DJ Sound Effect',
+    category: ACTION_CATEGORIES.DJ_CLUB,
+    route: '/dj-club',
+    page: 'dj-club',
+    component: 'djAudioEngine.js / DjClubPage.jsx',
+    handlerName: 'onDjTriggerSfx',
+    handlerArgs: ['$sfx'],
+    aliases: [
+      'air horn', 'dj horn', 'horn bajao', 'scratch', 'dj scratch',
+      'laser sound', 'laser sfx', 'sub drop', 'crowd hype', 'crowd cheer', 'dj sound effect'
+    ],
+    params: {
+      sfx: { type: 'string', required: true }
+    },
+    dependencies: [],
+    confirmationRequired: false,
+    expectedResult: 'Instant DJ sound effect triggered',
+    verify: () => true,
+    errorFallback: 'Unable to trigger DJ sound effect.'
+  },
+  {
+    id: 'action_dj_drop',
+    name: 'Trigger DJ Beat Drop / Bass Drop',
+    category: ACTION_CATEGORIES.DJ_CLUB,
+    route: '/dj-club',
+    page: 'dj-club',
+    component: 'djAudioEngine.js / DjClubPage.jsx',
+    handlerName: 'onDjDrop',
+    handlerArgs: [],
+    aliases: [
+      'beat drop', 'drop the beat', 'bass drop', 'drop the bass',
+      'beat drop karo', 'bass drop karo', 'heavy drop'
+    ],
+    params: {},
+    dependencies: [],
+    confirmationRequired: false,
+    expectedResult: 'Synchronized beat drop filter sweep and bass impact triggered',
+    verify: () => true,
+    errorFallback: 'Failed to trigger drop.'
+  },
+  {
+    id: 'action_dj_set_preset',
+    name: 'Set DJ Lighting Preset',
+    category: ACTION_CATEGORIES.DJ_CLUB,
+    route: '/dj-club',
+    page: 'dj-club',
+    component: 'DjLightingCanvas.jsx / DjClubPage.jsx',
+    handlerName: 'onDjSetPreset',
+    handlerArgs: ['$preset'],
+    aliases: [
+      'club pulse', 'neon wave', 'cyber laser', 'strobe storm',
+      'sunset chill', 'bass eclipse', 'change dj lights', 'dj lighting preset'
+    ],
+    params: {
+      preset: { type: 'string', required: true }
+    },
+    dependencies: [],
+    confirmationRequired: false,
+    expectedResult: 'DJ club lighting visualizer preset switched',
+    verify: () => true,
+    errorFallback: 'Failed to switch DJ lighting preset.'
+  },
+  {
+    id: 'action_dj_set_bpm',
+    name: 'Adjust DJ Tempo / BPM',
+    category: ACTION_CATEGORIES.DJ_CLUB,
+    route: '/dj-club',
+    page: 'dj-club',
+    component: 'djAudioEngine.js / DjClubPage.jsx',
+    handlerName: 'onDjSetBpm',
+    handlerArgs: ['$bpm'],
+    aliases: [
+      'set bpm', 'change tempo', 'bpm badhao', 'bpm kam karo',
+      'faster tempo', 'slower tempo', 'tempo set karo'
+    ],
+    params: {
+      bpm: { type: 'number', required: true }
+    },
+    dependencies: [],
+    confirmationRequired: false,
+    expectedResult: 'DJ engine tempo adjusted',
+    verify: () => true,
+    errorFallback: 'Could not adjust DJ tempo.'
+  },
+
+  // =========================================================================
+  // 12. ADVANCED MODALS & SOCIAL FEATURES
+  // =========================================================================
+  {
+    id: 'action_open_listening_rooms',
+    name: 'Open Social Listening Rooms',
+    category: ACTION_CATEGORIES.SOCIAL,
+    route: null,
+    page: 'listening_rooms',
+    component: 'ListeningRoomsModal.jsx',
+    handlerName: 'onOpenListeningRooms',
+    handlerArgs: [],
+    aliases: [
+      'listening rooms', 'open listening rooms', 'social rooms', 'listening room kholo',
+      'group listening', 'listen together', 'friends room', 'dosto ke sath suno', 'party room'
+    ],
+    params: {},
+    dependencies: [],
+    confirmationRequired: false,
+    expectedResult: 'Social Listening Rooms modal opened',
+    verify: (ctx) => ctx.isListeningRoomsOpen === true,
+    errorFallback: 'Could not open listening rooms.'
+  },
+  {
+    id: 'action_open_similar_songs',
+    name: 'Open Similar Songs Recommendations',
+    category: ACTION_CATEGORIES.MODALS,
+    route: null,
+    page: 'similar_songs',
+    component: 'SimilarSongsModal.jsx',
+    handlerName: 'onOpenSimilarSongs',
+    handlerArgs: ['$track'],
+    aliases: [
+      'similar songs', 'recommend similar', 'find similar songs', 'iske jaise gaane',
+      'similar music', 'aise hi gaane sunao', 'similar songs modal', 'related songs'
+    ],
+    params: {
+      track: { type: 'object', required: false }
+    },
+    apiEndpoint: '/api/recommendations',
+    httpMethod: 'POST',
+    dependencies: [],
+    confirmationRequired: false,
+    expectedResult: 'Similar Songs modal opened with matching tracks',
+    verify: (ctx) => Boolean(ctx.similarSongsTrack),
+    errorFallback: 'Failed to fetch similar songs.'
+  },
+  {
+    id: 'action_open_player_settings',
+    name: 'Open Player Settings & Equalizer',
+    category: ACTION_CATEGORIES.SETTINGS,
+    route: null,
+    page: 'player_settings',
+    component: 'PlayerSettingsModal.jsx',
+    handlerName: 'onOpenPlayerSettings',
+    handlerArgs: [],
+    aliases: [
+      'player settings', 'open equalizer', 'equalizer', 'audio settings',
+      'equalizer kholo', 'sound settings', 'playback settings', 'bass treble settings',
+      'speed settings', 'audio quality'
+    ],
+    params: {},
+    dependencies: [],
+    confirmationRequired: false,
+    expectedResult: 'Player settings and audio equalizer modal active',
+    verify: (ctx) => ctx.isPlayerSettingsOpen === true,
+    errorFallback: 'Unable to open audio settings.'
+  },
+  {
+    id: 'action_open_canvas',
+    name: 'Open Fullscreen Visualizer Canvas',
+    category: ACTION_CATEGORIES.MODALS,
+    route: null,
+    page: 'canvas',
+    component: 'LoopraCanvas.jsx',
+    handlerName: 'onOpenCanvas',
+    handlerArgs: [],
+    aliases: [
+      'open canvas', 'canvas mode', 'visualizer', 'fullscreen visualizer',
+      'music canvas', 'canvas kholo', 'audio visualizer', 'loopra canvas', 'visualizer chalao'
+    ],
+    params: {},
+    dependencies: [],
+    confirmationRequired: false,
+    expectedResult: 'Dynamic fullscreen Loopra Canvas visualizer active',
+    verify: (ctx) => ctx.isCanvasOpen === true,
+    errorFallback: 'Failed to activate canvas visualizer.'
+  },
+  {
+    id: 'action_open_rating_modal',
+    name: 'Open Rate & Review Modal',
+    category: ACTION_CATEGORIES.REVIEWS,
+    route: null,
+    page: 'rating_modal',
+    component: 'RatingPopupModal.jsx',
+    handlerName: 'onOpenRatingModal',
+    handlerArgs: [],
+    aliases: [
+      'rate song', 'rate this song', 'review song', 'give review',
+      'rating do', 'review likho', 'rate karo', 'review modal', 'song feedback'
+    ],
+    params: {},
+    apiEndpoint: '/api/reviews',
+    httpMethod: 'POST',
+    dependencies: [],
+    confirmationRequired: false,
+    expectedResult: 'Rate and review submission modal displayed',
+    verify: (ctx) => ctx.isRatingModalOpen === true,
+    errorFallback: 'Could not open rating modal.'
+  },
+  {
+    id: 'action_open_reviews_section',
+    name: 'Navigate to Community Reviews',
+    category: ACTION_CATEGORIES.REVIEWS,
+    route: '/?view=reviews',
+    page: 'reviews_section',
+    component: 'HomepageReviewsSection.jsx',
+    handlerName: 'onNavigate',
+    handlerArgs: ['home', { showAll: 'reviews' }],
+    aliases: [
+      'community reviews', 'all reviews', 'reviews section', 'user reviews',
+      'reviews dikhao', 'logo ke reviews', 'music reviews'
+    ],
+    params: {},
+    apiEndpoint: '/api/reviews',
+    httpMethod: 'GET',
+    dependencies: [],
+    confirmationRequired: false,
+    expectedResult: 'Community reviews section displayed',
+    verify: (ctx) => ctx.activeTab === 'home',
+    errorFallback: 'Could not open reviews section.'
+  },
+  {
+    id: 'nav_downloads_explore',
+    name: 'Navigate to Offline Eligible Tracks',
+    category: ACTION_CATEGORIES.NAVIGATION,
+    route: '/downloads/explore',
+    page: 'downloads_explore',
+    component: 'OfflineEligibleExploreView.jsx',
+    handlerName: 'onNavigate',
+    handlerArgs: ['downloads', { offlineSubView: 'explore' }],
+    aliases: [
+      'explore downloads', 'offline explore', 'downloadable songs', 'offline eligible',
+      'explore offline music', 'download karne wale gaane', 'offline catalog'
+    ],
+    params: {},
+    dependencies: [],
+    confirmationRequired: false,
+    expectedResult: 'Offline eligible tracks catalog active',
+    verify: (ctx) => ctx.activeTab === 'downloads' && (ctx.offlineSubView === 'explore' || ctx.subView === 'explore'),
+    errorFallback: 'Failed to open offline exploration view.'
+  },
+  {
+    id: 'action_set_playback_speed',
+    name: 'Set Playback Speed',
+    category: ACTION_CATEGORIES.SETTINGS,
+    route: null,
+    page: 'player',
+    component: 'PlayerSettingsModal.jsx / App.jsx',
+    handlerName: 'onSetPlaybackSpeed',
+    handlerArgs: ['$speed'],
+    aliases: [
+      'playback speed', 'set speed', 'speed 1.25', 'speed 1.5',
+      'speed 2x', 'slow down song', 'speed up song', 'speed badhao', 'speed kam karo'
+    ],
+    params: {
+      speed: { type: 'number', required: true }
+    },
+    dependencies: [],
+    confirmationRequired: false,
+    expectedResult: 'Player audio playback rate adjusted',
+    verify: () => true,
+    errorFallback: 'Unable to set playback speed.'
+  },
+  {
+    id: 'action_set_equalizer_preset',
+    name: 'Set Equalizer Preset',
+    category: ACTION_CATEGORIES.SETTINGS,
+    route: null,
+    page: 'player_settings',
+    component: 'PlayerSettingsModal.jsx',
+    handlerName: 'onSetEqualizerPreset',
+    handlerArgs: ['$preset'],
+    aliases: [
+      'bass boost', 'vocal boost', 'electronic preset', 'flat preset',
+      'equalizer preset', 'bass badha do', 'vocals boost karo'
+    ],
+    params: {
+      preset: { type: 'string', required: true }
+    },
+    dependencies: [],
+    confirmationRequired: false,
+    expectedResult: 'Audio equalizer frequencies adjusted for chosen preset',
+    verify: () => true,
+    errorFallback: 'Unable to set equalizer preset.'
   }
 ];
 

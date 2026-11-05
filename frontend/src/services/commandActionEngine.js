@@ -35,6 +35,16 @@ export const INTENT_CATEGORIES = {
   SCROLL_TO_ELEMENT: 'SCROLL_TO_ELEMENT',
   CLOSE_MODAL: 'CLOSE_MODAL',
   OPEN_INSIGHTS: 'OPEN_INSIGHTS',
+  OPEN_DJ_CLUB: 'OPEN_DJ_CLUB',
+  OPEN_LISTENING_ROOMS: 'OPEN_LISTENING_ROOMS',
+  OPEN_SIMILAR_SONGS: 'OPEN_SIMILAR_SONGS',
+  OPEN_PLAYER_SETTINGS: 'OPEN_PLAYER_SETTINGS',
+  OPEN_SLEEP_TIMER: 'OPEN_SLEEP_TIMER',
+  OPEN_CANVAS: 'OPEN_CANVAS',
+  OPEN_PROFILE: 'OPEN_PROFILE',
+  OPEN_RATING_MODAL: 'OPEN_RATING_MODAL',
+  DJ_ACTION: 'DJ_ACTION',
+  CHANGE_SPEED: 'CHANGE_SPEED',
   GENERAL_QUESTION: 'GENERAL_QUESTION',
   CLARIFY: 'CLARIFY'
 };
@@ -43,7 +53,8 @@ export function parseCommandToAction(rawInput = '', context = {}) {
   if (!rawInput || typeof rawInput !== 'string') return null;
   const text = rawInput.trim();
   const lower = text.toLowerCase()
-    .replace(/[?!,.]/g, '')
+    .replace(/[?!,]/g, '')
+    .replace(/\.(?!\d)/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -271,24 +282,80 @@ export function parseCommandToAction(rawInput = '', context = {}) {
     };
   }
 
+  // 9C. Live DJ Controls & Playback Speed
+  if (/\b(beat drop|drop the beat|bass drop|drop the bass|beat drop karo|bass drop karo|heavy drop)\b/i.test(cleanLower)) {
+    return {
+      intent: INTENT_CATEGORIES.DJ_ACTION,
+      action: 'dj_drop',
+      description: 'Trigger DJ Beat Drop'
+    };
+  }
+  if (/\b(start beat|play dj beat|dj beat chalao|start dj beat|beat bajao|beat start karo|start dj)\b/i.test(cleanLower)) {
+    return {
+      intent: INTENT_CATEGORIES.DJ_ACTION,
+      action: 'dj_start_beat',
+      description: 'Start DJ Beat'
+    };
+  }
+  if (/\b(stop beat|pause dj beat|stop dj beat|dj beat roko|beat band karo|stop dj|dj band karo)\b/i.test(cleanLower)) {
+    return {
+      intent: INTENT_CATEGORIES.DJ_ACTION,
+      action: 'dj_stop_beat',
+      description: 'Stop DJ Beat'
+    };
+  }
+  if (/\b(air horn|dj horn|horn bajao|scratch|dj scratch|laser sound|laser sfx|sub drop|crowd hype|crowd cheer)\b/i.test(cleanLower)) {
+    const sfx = cleanLower.includes('scratch') ? 'scratch' : (cleanLower.includes('laser') ? 'laser' : 'air_horn');
+    return {
+      intent: INTENT_CATEGORIES.DJ_ACTION,
+      action: 'dj_trigger_sfx',
+      sfx,
+      description: `Trigger DJ ${sfx}`
+    };
+  }
+
+  const speedMatch = cleanLower.match(/\b(?:set\s+)?(?:playback\s+)?speed\s+(?:to\s+)?(2(?:\.0)?|1\.75|1\.5|1\.25|1(?:\.0)?|0\.75|0\.5)(?:x)?\b/i);
+  if (speedMatch && speedMatch[1]) {
+    const spd = parseFloat(speedMatch[1]);
+    return {
+      intent: INTENT_CATEGORIES.CHANGE_SPEED,
+      action: 'set_playback_speed',
+      value: spd,
+      description: `Set playback speed to ${spd}x`
+    };
+  }
+
   // 10. Strict Priority Check via Interaction Registry (Pages, Stations, Sub-views, Modals)
   // Ensures "Saloon FM kholo" maps strictly to Saloon FM ('barber') and NEVER Time Machine
   const registryItem = websiteInteractionRegistry.findBestMatch(cleanLower);
   if (registryItem) {
     if (registryItem.type === 'modal' || registryItem.action === 'open_insights' || registryItem.id === 'recap_stats') {
+      const act = registryItem.action || (registryItem.id === 'recap_stats' ? 'open_insights' : `open_${registryItem.id}`);
+      let intentCat = INTENT_CATEGORIES.OPEN_INSIGHTS;
+      if (act === 'open_listening_rooms') intentCat = INTENT_CATEGORIES.OPEN_LISTENING_ROOMS;
+      else if (act === 'open_similar_songs') intentCat = INTENT_CATEGORIES.OPEN_SIMILAR_SONGS;
+      else if (act === 'open_player_settings') intentCat = INTENT_CATEGORIES.OPEN_PLAYER_SETTINGS;
+      else if (act === 'open_sleep_timer') intentCat = INTENT_CATEGORIES.OPEN_SLEEP_TIMER;
+      else if (act === 'open_canvas') intentCat = INTENT_CATEGORIES.OPEN_CANVAS;
+      else if (act === 'open_profile') intentCat = INTENT_CATEGORIES.OPEN_PROFILE;
+      else if (act === 'open_rating_modal') intentCat = INTENT_CATEGORIES.OPEN_RATING_MODAL;
+
       return {
-        intent: INTENT_CATEGORIES.OPEN_INSIGHTS,
-        action: 'open_insights',
-        target: 'recap_stats',
+        intent: intentCat,
+        action: act,
+        target: registryItem.id,
         item: registryItem,
-        description: 'Open Recap & Stats'
+        description: `Open ${registryItem.name}`
       };
     }
     if (registryItem.type === 'station' || registryItem.type === 'page') {
+      const isDjClub = registryItem.id === 'dj-club';
+      const isDownloadsExplore = registryItem.id === 'downloads_explore';
       return {
-        intent: INTENT_CATEGORIES.OPEN_PAGE,
+        intent: isDjClub ? INTENT_CATEGORIES.OPEN_DJ_CLUB : INTENT_CATEGORIES.OPEN_PAGE,
         action: 'navigate_page',
-        target: registryItem.id,
+        target: isDownloadsExplore ? 'downloads' : registryItem.id,
+        extra: isDownloadsExplore ? { offlineSubView: 'explore' } : undefined,
         item: registryItem,
         description: `Open ${registryItem.name}`
       };

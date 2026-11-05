@@ -51,7 +51,7 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
   // SECURITY REQUIREMENT: STRICT ADMIN DASHBOARD ISOLATION
   // -------------------------------------------------------------
   if (
-    /\b(admin|administrator|admin dashboard|cms|user management|audit logs?|system metrics|diagnostics|database|feature toggle|rollout|server logs)\b/i.test(lower)
+    /\b(admin|administrator|admin dashboard|cms|user management|audit logs?|system metrics|server metrics|diagnostics|database|feature toggle|rollout|server logs)\b/i.test(lower)
   ) {
     return {
       type: 'security_blocked',
@@ -392,6 +392,126 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
   }
 
   // -------------------------------------------------------------
+  // 16B. ADVANCED MODALS: SOCIAL, EQUALIZER, CANVAS, RATING, PROFILE
+  // -------------------------------------------------------------
+  if (/\b(listening rooms|listening room|social rooms|group listening|listen together|friends room|dosto ke sath suno|party room)\b/i.test(lower)) {
+    return {
+      type: 'modal',
+      action: 'open_listening_rooms',
+      speechResponse: 'Opening Social Listening Rooms',
+      description: 'Open Listening Rooms'
+    };
+  }
+
+  if (/\b(similar songs|recommend similar|find similar songs|iske jaise gaane|similar music|aise hi gaane sunao|similar songs modal|related songs)\b/i.test(lower)) {
+    return {
+      type: 'modal',
+      action: 'open_similar_songs',
+      target: currentSong,
+      speechResponse: 'Opening similar songs recommendations',
+      description: 'Open Similar Songs'
+    };
+  }
+
+  if (/\b(player settings|open equalizer|equalizer|audio settings|equalizer kholo|sound settings|playback settings|bass treble settings|audio quality)\b/i.test(lower)) {
+    return {
+      type: 'modal',
+      action: 'open_player_settings',
+      speechResponse: 'Opening player settings and equalizer',
+      description: 'Open Player Settings & Equalizer'
+    };
+  }
+
+  if (/\b(sleep timer|open sleep timer|sleep timer kholo|timer lagao|off timer|auto off timer|music timer|sone ka timer)\b/i.test(lower)) {
+    return {
+      type: 'modal',
+      action: 'open_sleep_timer',
+      speechResponse: 'Opening Sleep Timer',
+      description: 'Open Sleep Timer'
+    };
+  }
+
+  if (/\b(open canvas|canvas mode|visualizer|fullscreen visualizer|music canvas|canvas kholo|audio visualizer|loopra canvas|visualizer chalao)\b/i.test(lower)) {
+    return {
+      type: 'modal',
+      action: 'open_canvas',
+      speechResponse: 'Opening Loopra Canvas visualizer',
+      description: 'Open Canvas'
+    };
+  }
+
+  if (/\b(user profile|open profile|my profile|profile kholo|mera profile|account settings|user account|profile dikhao)\b/i.test(lower)) {
+    return {
+      type: 'modal',
+      action: 'open_profile',
+      speechResponse: 'Opening your profile',
+      description: 'Open User Profile'
+    };
+  }
+
+  if (/\b(rate song|rate this song|review song|give review|rating do|review likho|rate karo|review modal|song feedback)\b/i.test(lower)) {
+    return {
+      type: 'modal',
+      action: 'open_rating_modal',
+      speechResponse: 'Opening rating and review modal',
+      description: 'Open Rate & Review'
+    };
+  }
+
+  // -------------------------------------------------------------
+  // 16C. LIVE DJ CONTROLS & PLAYBACK SPEED
+  // -------------------------------------------------------------
+  if (/\b(beat drop|drop the beat|bass drop|drop the bass|beat drop karo|bass drop karo|heavy drop)\b/i.test(lower)) {
+    return {
+      type: 'dj_action',
+      action: 'dj_drop',
+      speechResponse: 'Dropping the beat!',
+      description: 'Trigger DJ Beat Drop'
+    };
+  }
+
+  if (/\b(start beat|play dj beat|dj beat chalao|start dj beat|beat bajao|beat start karo|start dj)\b/i.test(lower)) {
+    return {
+      type: 'dj_action',
+      action: 'dj_start_beat',
+      speechResponse: 'Starting DJ beat rhythm',
+      description: 'Start DJ Beat'
+    };
+  }
+
+  if (/\b(stop beat|pause dj beat|stop dj beat|dj beat roko|beat band karo|stop dj|dj band karo)\b/i.test(lower)) {
+    return {
+      type: 'dj_action',
+      action: 'dj_stop_beat',
+      speechResponse: 'Stopping DJ beat',
+      description: 'Stop DJ Beat'
+    };
+  }
+
+  if (/\b(air horn|dj horn|horn bajao|scratch|dj scratch|laser sound|laser sfx|sub drop|crowd hype|crowd cheer)\b/i.test(lower)) {
+    const sfx = lower.includes('scratch') ? 'scratch' : (lower.includes('laser') ? 'laser' : 'air_horn');
+    return {
+      type: 'dj_action',
+      action: 'dj_trigger_sfx',
+      sfx,
+      speechResponse: 'Playing DJ effect',
+      description: `Trigger DJ ${sfx}`
+    };
+  }
+
+  const speedMatch = lower.match(/\b(?:set\s+)?(?:playback\s+)?speed\s+(?:to\s+)?(2(?:\.0)?|1\.75|1\.5|1\.25|1(?:\.0)?|0\.75|0\.5)(?:x)?\b/i);
+  if (speedMatch && speedMatch[1]) {
+    const spd = parseFloat(speedMatch[1]);
+    return {
+      type: 'playback',
+      action: 'set_playback_speed',
+      value: spd,
+      speechResponse: `Setting playback speed to ${spd}x`,
+      description: `Set playback speed to ${spd}x`
+    };
+  }
+
+  // -------------------------------------------------------------
   // 17. NAVIGATION: TOP-LEVEL PAGES & STATIONS
   // -------------------------------------------------------------
   if (/\b(go home|open home|home page|ghar jao|main page)\b/i.test(lower) || /^(home)$/i.test(lower)) {
@@ -401,6 +521,29 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
       target: 'home',
       speechResponse: 'Opening Home',
       description: 'Navigate to Home'
+    };
+  }
+
+  // Loopra DJ Club
+  if (/\b(dj club|dj mode|loopra dj club|dj mixing|dj studio|dj session|club mode|dj kholo|dj chalao|dj lagao)\b/i.test(lower)) {
+    return {
+      type: 'navigation',
+      action: 'navigate_page',
+      target: 'dj-club',
+      speechResponse: 'Opening Loopra DJ Club',
+      description: 'Navigate to DJ Club'
+    };
+  }
+
+  // Offline Eligible Downloads Explore
+  if (/\b(explore downloads|offline explore|downloadable songs|offline eligible|explore offline music|download karne wale gaane|offline catalog)\b/i.test(lower)) {
+    return {
+      type: 'navigation',
+      action: 'navigate_page',
+      target: 'downloads',
+      extra: { offlineSubView: 'explore' },
+      speechResponse: 'Opening offline eligible tracks',
+      description: 'Explore offline downloads'
     };
   }
 

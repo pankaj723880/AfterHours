@@ -234,18 +234,13 @@ export default function DiscoverView({
                       {i + 1}
                     </span>
                     <div
-                      className="relative shrink-0 group/art cursor-pointer"
-                      title={`View ${track.channel || track.artist || 'artist'} profile`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onArtistClick?.(track.channel || track.artist);
-                      }}
+                      className="relative shrink-0 pointer-events-none select-none"
                     >
                       <img
                         src={cleanThumb}
                         alt={track.title || ""}
                         loading="lazy"
-                        className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl object-cover shadow-md bg-neutral-950 border border-white/10 group-hover/art:border-amber-400 group-hover/art:scale-105 transition-all"
+                        className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl object-cover shadow-md bg-neutral-950 border border-white/10 pointer-events-none select-none transition-all"
                         onLoad={(e) => {
                           const target = e.currentTarget;
                           if (target.naturalWidth <= 1 || (target.naturalWidth === 120 && target.naturalHeight === 90)) {
@@ -262,24 +257,15 @@ export default function DiscoverView({
                         }}
                       />
                     </div>
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1 pointer-events-none select-none">
                       <h4
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          playSong(track);
-                        }}
                         title={`Play ${track.title}`}
-                        className={`font-bold text-xs sm:text-sm truncate cursor-pointer hover:text-amber-400 transition-colors ${isCurrent ? 'text-amber-400 font-extrabold' : 'text-white'}`}
+                        className={`font-bold text-xs sm:text-sm truncate transition-colors ${isCurrent ? 'text-amber-400 font-extrabold' : 'text-white'}`}
                       >
                         {track.title}
                       </h4>
                       <p
-                        className="text-[11px] sm:text-xs text-neutral-400 truncate mt-0.5 hover:text-amber-300 hover:underline cursor-pointer inline-block max-w-full"
-                        title={`View ${track.channel || track.artist || 'artist'} profile`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onArtistClick?.(track.channel || track.artist);
-                        }}
+                        className="text-[11px] sm:text-xs text-neutral-400 truncate mt-0.5 inline-block max-w-full select-none"
                       >
                         {track.channel || track.artist || 'Loopra Music'}
                       </p>
@@ -555,13 +541,7 @@ export default function DiscoverView({
                       <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">
                         {track.title}
                       </h4>
-                      <p
-                        className="text-[11px] text-neutral-400 truncate mt-0.5 hover:text-amber-300 hover:underline cursor-pointer"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onArtistClick?.(track.artist || track.channel);
-                        }}
-                      >
+                      <p className="text-[11px] text-neutral-400 truncate mt-0.5 select-none pointer-events-none">
                         {track.artist || track.channel}
                       </p>
                     </div>
@@ -630,13 +610,7 @@ export default function DiscoverView({
                       <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">
                         {album.title}
                       </h4>
-                      <p
-                        className="text-[11px] text-neutral-400 truncate mt-0.5 hover:text-amber-300 hover:underline cursor-pointer"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onArtistClick?.(album.artist || 'Bollywood Classic');
-                        }}
-                      >
+                      <p className="text-[11px] text-neutral-400 truncate mt-0.5 select-none pointer-events-none">
                         {album.artist || 'Bollywood Classic'}
                       </p>
                     </div>

@@ -22,8 +22,68 @@ export const LOOPRA_TOOLS = [
     parameters: {
       page: {
         type: 'string',
-        enum: ['home', 'discover', 'radio', 'library', 'history', 'playlists', 'downloads', 'mood', 'timemachine', 'activity', 'barber', 'truck', 'pauwa', 'swipe', 'for-you']
+        enum: ['home', 'discover', 'radio', 'library', 'history', 'playlists', 'downloads', 'mood', 'timemachine', 'activity', 'barber', 'truck', 'pauwa', 'swipe', 'for-you', 'dj-club']
       }
+    }
+  },
+  {
+    name: 'open_dj_club',
+    category: 'NAVIGATION',
+    description: 'Open Loopra DJ Club mixing console and procedural beat synthesizer'
+  },
+  {
+    name: 'open_listening_rooms',
+    category: 'NAVIGATION',
+    description: 'Open Social Listening Rooms modal for synchronized group listening'
+  },
+  {
+    name: 'open_similar_songs',
+    category: 'NAVIGATION',
+    description: 'Open Similar Songs recommendations modal for current or specified song',
+    parameters: {
+      songTitle: { type: 'string' }
+    }
+  },
+  {
+    name: 'open_player_settings',
+    category: 'NAVIGATION',
+    description: 'Open player settings and audio equalizer modal'
+  },
+  {
+    name: 'open_sleep_timer',
+    category: 'NAVIGATION',
+    description: 'Open sleep timer modal'
+  },
+  {
+    name: 'open_canvas',
+    category: 'NAVIGATION',
+    description: 'Open fullscreen reactive Loopra Canvas visualizer'
+  },
+  {
+    name: 'open_profile',
+    category: 'NAVIGATION',
+    description: 'Open user profile and account modal'
+  },
+  {
+    name: 'open_rating_modal',
+    category: 'NAVIGATION',
+    description: 'Open rate and review modal for song'
+  },
+  {
+    name: 'dj_action',
+    category: 'MUSIC',
+    description: 'Execute DJ Club mixing action (start_beat, stop_beat, drop, sfx)',
+    parameters: {
+      action: { type: 'string' },
+      sfx: { type: 'string' }
+    }
+  },
+  {
+    name: 'set_playback_speed',
+    category: 'MUSIC',
+    description: 'Set player playback speed (0.5 to 2.0)',
+    parameters: {
+      speed: { type: 'number' }
     }
   },
   {
@@ -254,7 +314,7 @@ export const voiceAgentService = {
     const lower = cleanText.toLowerCase();
 
     // 1. STRICT ADMINISTRATIVE ISOLATION CHECK
-    if (/\b(admin|administrator|admin dashboard|cms|user management|audit logs?|system metrics|diagnostics|database|feature toggle|rollout|server logs)\b/i.test(lower)) {
+    if (/\b(admin|administrator|admin dashboard|cms|user management|audit logs?|system metrics|server metrics|diagnostics|database|feature toggle|rollout|server logs)\b/i.test(lower)) {
       return {
         success: true,
         intent: 'security_blocked',
@@ -650,6 +710,141 @@ export const voiceAgentService = {
         confidence: 1.0,
         speechResponse: 'Opening Recap & Stats',
         steps: [{ tool: 'open_insights', action: 'open_insights', description: 'Open Recap & Stats' }]
+      };
+    }
+
+    // Advanced Modals
+    if (/\b(listening rooms|listening room|social rooms|group listening|listen together|friends room|dosto ke sath suno|party room)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'open_listening_rooms',
+        confidence: 1.0,
+        speechResponse: 'Opening Social Listening Rooms',
+        steps: [{ tool: 'open_listening_rooms', action: 'open_listening_rooms', description: 'Open Listening Rooms' }]
+      };
+    }
+
+    if (/\b(similar songs|recommend similar|find similar songs|iske jaise gaane|similar music|aise hi gaane sunao|similar songs modal|related songs)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'open_similar_songs',
+        confidence: 1.0,
+        speechResponse: 'Opening similar songs recommendations',
+        steps: [{ tool: 'open_similar_songs', action: 'open_similar_songs', target: currentTrack, description: 'Open Similar Songs' }]
+      };
+    }
+
+    if (/\b(player settings|open equalizer|equalizer|audio settings|equalizer kholo|sound settings|playback settings|bass treble settings|audio quality)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'open_player_settings',
+        confidence: 1.0,
+        speechResponse: 'Opening player settings and equalizer',
+        steps: [{ tool: 'open_player_settings', action: 'open_player_settings', description: 'Open Player Settings & Equalizer' }]
+      };
+    }
+
+    if (/\b(sleep timer|open sleep timer|sleep timer kholo|timer lagao|off timer|auto off timer|music timer|sone ka timer)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'open_sleep_timer',
+        confidence: 1.0,
+        speechResponse: 'Opening Sleep Timer',
+        steps: [{ tool: 'open_sleep_timer', action: 'open_sleep_timer', description: 'Open Sleep Timer' }]
+      };
+    }
+
+    if (/\b(open canvas|canvas mode|visualizer|fullscreen visualizer|music canvas|canvas kholo|audio visualizer|loopra canvas|visualizer chalao)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'open_canvas',
+        confidence: 1.0,
+        speechResponse: 'Opening Loopra Canvas visualizer',
+        steps: [{ tool: 'open_canvas', action: 'open_canvas', description: 'Open Canvas' }]
+      };
+    }
+
+    if (/\b(user profile|open profile|my profile|profile kholo|mera profile|account settings|user account|profile dikhao)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'open_profile',
+        confidence: 1.0,
+        speechResponse: 'Opening your profile',
+        steps: [{ tool: 'open_profile', action: 'open_profile', description: 'Open User Profile' }]
+      };
+    }
+
+    if (/\b(rate song|rate this song|review song|give review|rating do|review likho|rate karo|review modal|song feedback)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'open_rating_modal',
+        confidence: 1.0,
+        speechResponse: 'Opening rating and review modal',
+        steps: [{ tool: 'open_rating_modal', action: 'open_rating_modal', description: 'Open Rate & Review' }]
+      };
+    }
+
+    // Loopra DJ Club Navigation & Controls
+    if (/\b(dj club|dj mode|loopra dj club|dj mixing|dj studio|dj session|club mode|dj kholo|dj chalao|dj lagao)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'open_dj_club',
+        confidence: 1.0,
+        speechResponse: 'Opening Loopra DJ Club',
+        steps: [{ tool: 'navigate_to_page', action: 'navigate_page', target: 'dj-club', parameters: { page: 'dj-club' }, description: 'Open DJ Club' }]
+      };
+    }
+
+    if (/\b(beat drop|drop the beat|bass drop|drop the bass|beat drop karo|bass drop karo|heavy drop)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'dj_action',
+        confidence: 1.0,
+        speechResponse: 'Dropping the beat!',
+        steps: [{ tool: 'dj_action', action: 'dj_drop', parameters: { action: 'drop' }, description: 'Trigger DJ Beat Drop' }]
+      };
+    }
+
+    if (/\b(start beat|play dj beat|dj beat chalao|start dj beat|beat bajao|beat start karo|start dj)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'dj_action',
+        confidence: 1.0,
+        speechResponse: 'Starting DJ beat rhythm',
+        steps: [{ tool: 'dj_action', action: 'dj_start_beat', parameters: { action: 'start_beat' }, description: 'Start DJ Beat' }]
+      };
+    }
+
+    if (/\b(stop beat|pause dj beat|stop dj beat|dj beat roko|beat band karo|stop dj|dj band karo)\b/i.test(lower)) {
+      return {
+        success: true,
+        intent: 'dj_action',
+        confidence: 1.0,
+        speechResponse: 'Stopping DJ beat',
+        steps: [{ tool: 'dj_action', action: 'dj_stop_beat', parameters: { action: 'stop_beat' }, description: 'Stop DJ Beat' }]
+      };
+    }
+
+    if (/\b(air horn|dj horn|horn bajao|scratch|dj scratch|laser sound|laser sfx|sub drop|crowd hype|crowd cheer)\b/i.test(lower)) {
+      const sfx = lower.includes('scratch') ? 'scratch' : (lower.includes('laser') ? 'laser' : 'air_horn');
+      return {
+        success: true,
+        intent: 'dj_action',
+        confidence: 1.0,
+        speechResponse: 'Playing DJ sound effect',
+        steps: [{ tool: 'dj_action', action: 'dj_trigger_sfx', parameters: { action: 'sfx', sfx }, description: `Trigger DJ ${sfx}` }]
+      };
+    }
+
+    const speedMatch = lower.match(/\b(?:set\s+)?(?:playback\s+)?speed\s+(?:to\s+)?(2(?:\.0)?|1\.75|1\.5|1\.25|1(?:\.0)?|0\.75|0\.5)(?:x)?\b/i);
+    if (speedMatch && speedMatch[1]) {
+      const spd = parseFloat(speedMatch[1]);
+      return {
+        success: true,
+        intent: 'set_playback_speed',
+        confidence: 1.0,
+        speechResponse: `Setting playback speed to ${spd}x`,
+        steps: [{ tool: 'set_playback_speed', action: 'set_playback_speed', parameters: { speed: spd }, value: spd, description: `Set playback speed to ${spd}x` }]
       };
     }
 

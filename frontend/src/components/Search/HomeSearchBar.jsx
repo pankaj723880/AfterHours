@@ -17,6 +17,9 @@ const SUGGESTIONS = [
   'Anuv Jain'
 ];
 
+// Smart Client-side Autocomplete Cache (LRU up to 100 queries)
+const autocompleteCache = new Map();
+
 const decodeHtml = (str = '') => {
   if (!str) return '';
   return str
@@ -63,11 +66,19 @@ export default function HomeSearchBar({
     setRecentSearches(list);
   }, [currentUserId]);
 
-  // Live autocomplete search with debouncing & request cancellation
+  // Live autocomplete search with debouncing, request cancellation & smart client cache
   useEffect(() => {
     const trimmed = query.trim();
     if (!trimmed) {
       setSuggestionsList([]);
+      setIsSearching(false);
+      setSelectedIndex(-1);
+      return;
+    }
+
+    const cacheKey = trimmed.toLowerCase();
+    if (autocompleteCache.has(cacheKey)) {
+      setSuggestionsList(autocompleteCache.get(cacheKey));
       setIsSearching(false);
       setSelectedIndex(-1);
       return;
@@ -111,6 +122,13 @@ export default function HomeSearchBar({
             rawItem: item
           };
         });
+
+        // Store in LRU cache
+        autocompleteCache.set(cacheKey, formatted);
+        if (autocompleteCache.size > 100) {
+          const oldestKey = autocompleteCache.keys().next().value;
+          autocompleteCache.delete(oldestKey);
+        }
 
         setSuggestionsList(formatted);
         setSelectedIndex(-1);
@@ -414,53 +432,33 @@ export default function HomeSearchBar({
                       >
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div
-                            className="relative w-10 h-10 rounded-xl overflow-hidden bg-neutral-950 shrink-0 border border-neutral-800 shadow-sm cursor-pointer hover:border-amber-400 group/thumb"
-                            title={`View ${song.channel || 'artist'} profile`}
-                            onClick={(e) => {
-                              if (onArtistClick && song.channel) {
-                                e.stopPropagation();
-                                setIsOpen(false);
-                                onArtistClick(song.channel);
-                              }
-                            }}
+                            className="relative w-10 h-10 rounded-xl overflow-hidden bg-neutral-950 shrink-0 border border-neutral-800 shadow-sm pointer-events-none select-none"
                           >
                             <img
                               src={song.thumbnail}
                               alt={song.title}
                               loading="lazy"
-                              className="w-full h-full object-cover group-hover/thumb:scale-105 transition-transform"
+                              className="w-full h-full object-cover pointer-events-none select-none"
                               onError={(e) => {
                                 e.currentTarget.src = `https://i.ytimg.com/vi/${song.id}/hqdefault.jpg`;
                               }}
                             />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition-opacity">
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                               <svg className="w-4 h-4 text-amber-400 fill-current ml-0.5" viewBox="0 0 24 24">
                                 <path d="M8 5v14l11-7z" />
                               </svg>
                             </div>
                           </div>
 
-                          <div className="min-w-0 flex-1">
+                          <div className="min-w-0 flex-1 pointer-events-none select-none">
                             <h4
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSelectSong(song);
-                              }}
-                              className="text-xs sm:text-sm font-semibold truncate leading-tight group-hover:text-amber-400 transition-colors cursor-pointer"
+                              className="text-xs sm:text-sm font-semibold truncate leading-tight group-hover:text-amber-400 transition-colors"
                               title={`Play ${song.title}`}
                             >
                               {song.title}
                             </h4>
                             <p
-                              className="text-[10px] sm:text-[11px] text-neutral-400 truncate mt-0.5 flex items-center gap-1.5 hover:text-amber-300 hover:underline cursor-pointer"
-                              title={`View ${song.channel} profile`}
-                              onClick={(e) => {
-                                if (onArtistClick && song.channel) {
-                                  e.stopPropagation();
-                                  setIsOpen(false);
-                                  onArtistClick(song.channel);
-                                }
-                              }}
+                              className="text-[10px] sm:text-[11px] text-neutral-400 truncate mt-0.5 flex items-center gap-1.5 select-none"
                             >
                               <svg className="w-3 h-3 text-amber-500/80 shrink-0" fill="currentColor" viewBox="0 0 24 24">
                                 <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />

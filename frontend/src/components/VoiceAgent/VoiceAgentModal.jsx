@@ -62,6 +62,15 @@ export default function VoiceAgentModal({
   onOpenInsights,
   onOpenQueue,
   onOpenLyrics,
+  onOpenListeningRooms,
+  onOpenSimilarSongs,
+  onOpenPlayerSettings,
+  onOpenSleepTimer,
+  onOpenCanvas,
+  onOpenProfile,
+  onOpenRatingModal,
+  onSetPlaybackSpeed,
+  onDjAction,
   onGoBack,
   onOpenArtist,
   showToast
@@ -204,6 +213,15 @@ export default function VoiceAgentModal({
             onOpenInsights,
             onOpenQueue,
             onOpenLyrics,
+            onOpenListeningRooms,
+            onOpenSimilarSongs,
+            onOpenPlayerSettings,
+            onOpenSleepTimer,
+            onOpenCanvas,
+            onOpenProfile,
+            onOpenRatingModal,
+            onSetPlaybackSpeed,
+            onDjAction,
             onGoBack,
             onOpenArtist,
             searchCatalog
@@ -303,8 +321,83 @@ export default function VoiceAgentModal({
           return;
         }
 
-        // 1. OPEN_PAGE: Strictly navigates to the registered page/station (e.g. Saloon FM, Horn Ok Please, Theka)
-        if (directAction.intent === INTENT_CATEGORIES.OPEN_PAGE) {
+        // Advanced Modals
+        if (directAction.action === 'open_listening_rooms' || directAction.intent === INTENT_CATEGORIES.OPEN_LISTENING_ROOMS) {
+          if (onOpenListeningRooms) onOpenListeningRooms();
+          const reply = 'Opening Social Listening Rooms';
+          voiceBuddyService.speak(reply);
+          showToast?.('Opening Listening Rooms');
+          return;
+        }
+
+        if (directAction.action === 'open_similar_songs' || directAction.intent === INTENT_CATEGORIES.OPEN_SIMILAR_SONGS) {
+          if (onOpenSimilarSongs) onOpenSimilarSongs(currentSong);
+          const reply = 'Finding similar songs for you';
+          voiceBuddyService.speak(reply);
+          showToast?.('Opening Similar Songs');
+          return;
+        }
+
+        if (directAction.action === 'open_player_settings' || directAction.intent === INTENT_CATEGORIES.OPEN_PLAYER_SETTINGS) {
+          if (onOpenPlayerSettings) onOpenPlayerSettings();
+          const reply = 'Opening player settings and equalizer';
+          voiceBuddyService.speak(reply);
+          showToast?.('Opening Player Settings');
+          return;
+        }
+
+        if (directAction.action === 'open_sleep_timer' || directAction.intent === INTENT_CATEGORIES.OPEN_SLEEP_TIMER) {
+          if (onOpenSleepTimer) onOpenSleepTimer();
+          const reply = 'Opening Sleep Timer';
+          voiceBuddyService.speak(reply);
+          showToast?.('Opening Sleep Timer');
+          return;
+        }
+
+        if (directAction.action === 'open_canvas' || directAction.intent === INTENT_CATEGORIES.OPEN_CANVAS) {
+          if (onOpenCanvas) onOpenCanvas();
+          const reply = 'Opening Loopra Canvas visualizer';
+          voiceBuddyService.speak(reply);
+          showToast?.('Opening Loopra Canvas');
+          return;
+        }
+
+        if (directAction.action === 'open_profile' || directAction.intent === INTENT_CATEGORIES.OPEN_PROFILE) {
+          if (onOpenProfile) onOpenProfile();
+          const reply = 'Opening your profile';
+          voiceBuddyService.speak(reply);
+          showToast?.('Opening Profile');
+          return;
+        }
+
+        if (directAction.action === 'open_rating_modal' || directAction.intent === INTENT_CATEGORIES.OPEN_RATING_MODAL) {
+          if (onOpenRatingModal) onOpenRatingModal();
+          const reply = 'Opening rating and reviews';
+          voiceBuddyService.speak(reply);
+          showToast?.('Opening Rate & Review');
+          return;
+        }
+
+        // Live DJ Controls
+        if (directAction.intent === INTENT_CATEGORIES.DJ_ACTION) {
+          if (onDjAction) onDjAction(directAction);
+          const reply = directAction.description || 'DJ action executed';
+          voiceBuddyService.speak(reply);
+          showToast?.(reply);
+          return;
+        }
+
+        // Playback Speed
+        if (directAction.intent === INTENT_CATEGORIES.CHANGE_SPEED && directAction.action === 'set_playback_speed') {
+          if (onSetPlaybackSpeed) onSetPlaybackSpeed(directAction.value);
+          const reply = `Playback speed set to ${directAction.value}x`;
+          voiceBuddyService.speak(reply);
+          showToast?.(reply);
+          return;
+        }
+
+        // 1. OPEN_PAGE: Strictly navigates to the registered page/station (e.g. Saloon FM, Horn Ok Please, Theka, DJ Club)
+        if (directAction.intent === INTENT_CATEGORIES.OPEN_PAGE || directAction.intent === INTENT_CATEGORIES.OPEN_DJ_CLUB) {
           const targetId = directAction.target;
           const targetName = directAction.item?.name || targetId;
 
@@ -313,7 +406,7 @@ export default function VoiceAgentModal({
             await window.__loopraWalkAndTap(targetId, targetName);
           }
           if (onNavigate) {
-            onNavigate(targetId);
+            onNavigate(targetId, directAction.extra);
           }
 
           const reply = voiceBuddyService.generateFriendReply('navigate_page', { target: targetId });
@@ -593,6 +686,15 @@ export default function VoiceAgentModal({
         onOpenInsights,
         onOpenQueue,
         onOpenLyrics,
+        onOpenListeningRooms,
+        onOpenSimilarSongs,
+        onOpenPlayerSettings,
+        onOpenSleepTimer,
+        onOpenCanvas,
+        onOpenProfile,
+        onOpenRatingModal,
+        onSetPlaybackSpeed,
+        onDjAction,
         onGoBack,
         onOpenArtist,
         searchCatalog
@@ -746,6 +848,15 @@ export default function VoiceAgentModal({
               onOpenInsights,
               onOpenQueue,
               onOpenLyrics,
+              onOpenListeningRooms,
+              onOpenSimilarSongs,
+              onOpenPlayerSettings,
+              onOpenSleepTimer,
+              onOpenCanvas,
+              onOpenProfile,
+              onOpenRatingModal,
+              onSetPlaybackSpeed,
+              onDjAction,
               onGoBack,
               onOpenArtist,
               showToast,
