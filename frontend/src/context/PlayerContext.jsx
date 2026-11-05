@@ -365,6 +365,39 @@ export const PlayerProvider = ({ children }) => {
     setIsPlaying(true);
   };
 
+  const playPlaylistTrack = (clickedTrack, playlistTracks = []) => {
+    const tracks = Array.isArray(playlistTracks) ? [...playlistTracks] : [];
+    const target = clickedTrack || tracks[0];
+    if (!target && tracks.length === 0) return;
+
+    const targetId = target?.id || target?._id;
+    const clickedIndex = tracks.findIndex((t) => (t?.id || t?._id) === targetId);
+
+    let reorderedPlaylist;
+    if (clickedIndex > -1) {
+      reorderedPlaylist = [
+        tracks[clickedIndex],
+        ...tracks.slice(clickedIndex + 1),
+        ...tracks.slice(0, clickedIndex)
+      ];
+    } else if (target) {
+      reorderedPlaylist = [target, ...tracks.filter((t) => (t?.id || t?._id) !== targetId)];
+    } else {
+      reorderedPlaylist = tracks;
+    }
+
+    const currentQueue = Array.isArray(queue) ? queue : [];
+    const newQueue = [...reorderedPlaylist, ...currentQueue];
+
+    updateQueueWithPlay(newQueue, 0);
+  };
+
+  const playPlaylist = (playlist) => {
+    const songs = Array.isArray(playlist?.songs) ? playlist.songs : (Array.isArray(playlist) ? playlist : []);
+    if (songs.length === 0) return;
+    playPlaylistTrack(songs[0], songs);
+  };
+
   // Bind audio element lifecycle and error handlers
   useEffect(() => {
     const audio = audioRef.current;
@@ -397,6 +430,8 @@ export const PlayerProvider = ({ children }) => {
         handlePrevious,
         addToQueue,
         updateQueue: updateQueueWithPlay,
+        playPlaylistTrack,
+        playPlaylist,
         soundProfile,
         setSoundProfile,
         audioRef,

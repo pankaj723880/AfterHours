@@ -5,7 +5,7 @@ import { usePlayer } from '../context/PlayerContext';
 
 export default function PlaylistDetail({ playlistId, onBack }) {
   const { playlists, removeFromPlaylist, deletePlaylist } = usePlaylists();
-  const { playTrack, setQueue, addToQueue, currentTrack, isPlaying } = usePlayer();
+  const { playPlaylistTrack, playPlaylist, addToQueue, currentTrack } = usePlayer();
 
   const playlist = playlists.find((p) => p.id === playlistId);
 
@@ -21,9 +21,8 @@ export default function PlaylistDetail({ playlistId, onBack }) {
   }
 
   const handlePlayAll = () => {
-    if (!playlist.songs.length) return;
-    setQueue(playlist.songs);
-    playTrack(playlist.songs[0], 0);
+    if (!playlist?.songs?.length) return;
+    playPlaylist(playlist);
   };
 
   const handleAddPlaylistToQueue = () => {
@@ -96,10 +95,7 @@ export default function PlaylistDetail({ playlistId, onBack }) {
             return (
               <div
                 key={`${song.id || song._id}-${index}`}
-                onClick={() => {
-                  setQueue(playlist.songs);
-                  playTrack(song, index);
-                }}
+                onClick={() => playPlaylistTrack(song, playlist?.songs)}
                 className={`group flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${
                   isCurrent ? 'bg-neutral-800/80 text-indigo-400' : 'hover:bg-neutral-800/40 text-neutral-200'
                 }`}

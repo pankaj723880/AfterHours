@@ -5,7 +5,7 @@ import { usePlayer } from '../context/PlayerContext';
 
 export default function Playlists({ onOpenPlaylist }) {
   const { playlists, createPlaylist, deletePlaylist } = usePlaylists();
-  const { playTrack, setQueue } = usePlayer();
+  const { playPlaylist } = usePlayer();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
 
@@ -19,9 +19,8 @@ export default function Playlists({ onOpenPlaylist }) {
 
   const handlePlayPlaylist = (e, playlist) => {
     e.stopPropagation();
-    if (!playlist.songs.length) return;
-    setQueue(playlist.songs);
-    playTrack(playlist.songs[0], 0);
+    if (!playlist?.songs?.length) return;
+    playPlaylist(playlist);
   };
 
   return (
