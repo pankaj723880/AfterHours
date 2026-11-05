@@ -1,0 +1,14 @@
+Network Administration worksheet -03
+
+Subnetting
+IPV4-32Bits-10.0.0.1
+Classful
+A- 0-126
+B- 128-191
+C- 192-223
+D- 224-239
+E-240-255
+
+
+there are network bits and host bits
+Subnet mask and its calculation

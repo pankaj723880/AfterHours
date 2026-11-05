@@ -237,7 +237,8 @@ export function parseMultiStepInstruction(rawText = '', taskContext = {}) {
       parsedSteps.push({
         id: 'action_play_from_history',
         type: 'history',
-        action: 'play_from_history',
+        action: workingContext.lastPlayedTrack ? 'play_direct' : 'play_from_history',
+        track: workingContext.lastPlayedTrack || workingContext.currentSong || null,
         target: workingContext.lastPlayedTrack || workingContext.currentSong || null,
         description: 'Play last played song from history'
       });
@@ -826,9 +827,22 @@ export async function executeTaskPipeline(steps = [], initialContext = {}, handl
         stepResult = { description: `Loopra ${gesture}` };
       }
 
+      // 21. Clarification Request (Never execute as completed or output internal "Executed clarify")
+      else if (step.action === 'clarify' || step.type === 'clarify') {
+        const prompt = step.speechResponse || 'Which song would you like to play?';
+        return {
+          success: false,
+          clarificationRequired: true,
+          clarificationQuestion: prompt,
+          message: prompt,
+          taskContext: currentContext,
+          pendingStep: step
+        };
+      }
+
       // Default fallback for any remaining action
       else {
-        stepResult = { description: `Executed ${step.action}` };
+        stepResult = { description: step.description || `Completed ${step.action}` };
       }
 
       trackedSteps[i].status = 'completed';

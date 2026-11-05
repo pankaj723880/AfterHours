@@ -35,7 +35,8 @@ export const INTENT_CATEGORIES = {
   SCROLL_TO_ELEMENT: 'SCROLL_TO_ELEMENT',
   CLOSE_MODAL: 'CLOSE_MODAL',
   OPEN_INSIGHTS: 'OPEN_INSIGHTS',
-  GENERAL_QUESTION: 'GENERAL_QUESTION'
+  GENERAL_QUESTION: 'GENERAL_QUESTION',
+  CLARIFY: 'CLARIFY'
 };
 
 export function parseCommandToAction(rawInput = '', context = {}) {
@@ -389,7 +390,30 @@ export function parseCommandToAction(rawInput = '', context = {}) {
       .replace(new RegExp('\\b(play|chalao|chala de|chala do|chala|bajao|baja de|baja do|baja|sunao|suna de|suna do|suna|lagao|laga de|laga do|laga|shuru karo|shuru kar|song|gaana|music)\\b', 'gi'), '')
       .replace(/^(?:koi|thoda|ek)\s+/i, '')
       .trim();
+
     if (playTarget && playTarget !== 'them' && playTarget !== 'music') {
+      // Demonstrative pronoun check: "play that song" / "play that" / "woh gaana chalao" / "woh chalao"
+      if (/^(that|this|it|wo|woh|yeh|ye|usko|use|same)$/i.test(playTarget)) {
+        const ctxSong = context.lastPlayedTrack || context.currentSong;
+        if (ctxSong && (ctxSong.title || ctxSong.name)) {
+          const sTitle = ctxSong.title || ctxSong.name;
+          return {
+            intent: INTENT_CATEGORIES.PLAY_SONG,
+            action: 'play_direct',
+            track: ctxSong,
+            query: sTitle,
+            description: `Play "${sTitle}"`
+          };
+        }
+        // Action command lacks required target context -> clarify!
+        return {
+          intent: INTENT_CATEGORIES.CLARIFY,
+          action: 'clarify',
+          speechResponse: 'Which song would you like to play?',
+          description: 'Clarify target song for "play that"'
+        };
+      }
+
       return {
         intent: INTENT_CATEGORIES.PLAY_SONG,
         action: 'play_search',

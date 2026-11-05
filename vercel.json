@@ -64,6 +64,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/chat",
+      "destination": "/api/chat"
+    },
+    {
       "source": "/api/:match*",
       "destination": "https://afterhours-zvic.onrender.com/api/:match*"
     },

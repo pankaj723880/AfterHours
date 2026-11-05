@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Advanced Interactive HTML Table</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to right, #e0f7fa, #ffffff);
+      padding: 30px;
+      color: #333;
+    }
+
+    h1 {
+      text-align: center;
+      color: #00796b;
+    }
+
+    #filters {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    #filters input {
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      width: 200px;
+    }
+
+    table {
+      width: 80%;
+      margin: 10px auto;
+      border-collapse: collapse;
+      background-color: #fff;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+
+    th, td {
+      border: 1px solid #ddd;
+      padding: 12px 15px;
+      text-align: left;
+    }
+
+    th {
+      background-color: #00796b;
+      color: white;
+      cursor: pointer;
+    }
+
+    tr:nth-child(even) {
+      background-color: #f1f1f1;
+    }
+
+    tr:hover {
+      background-color: #d7f5f2;
+    }
+
+    .action-btn {
+      padding: 6px 10px;
+      margin-right: 5px;
+      font-size: 14px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .edit-btn {
+      background-color: #ff9800;
+      color: white;
+    }
+
+    .delete-btn {
+      background-color: #f44336;
+      color: white;
+    }
+
+    .input-form {
+      margin: 20px auto;
+      width: 80%;
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .input-form input {
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      flex: 1;
+    }
+
+    .input-form button {
+      padding: 10px 20px;
+      background-color: #00796b;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+
+    .input-form button:hover {
+      background-color: #004d40;
+    }
+
+    .highlight {
+      background-color: #fff8c6 !important;
+    }
+
+    #htmlCode {
+      width: 90%;
+      margin: 20px auto;
+      height: 200px;
+      font-family: monospace;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      padding: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Advanced Interactive HTML Table</h1>
+
+  <div id="filters">
+    <input type="text" id="nameFilter" placeholder="Filter by Name" onkeyup="filterTable()">
+    <input type="text" id="ageFilter" placeholder="Filter by Age" onkeyup="filterTable()">
+    <input type="text" id="cityFilter" placeholder="Filter by City" onkeyup="filterTable()">
+  </div>
+
+  <table id="infoTable">
+    <thead>
+      <tr>
+        <th onclick="sortTable(0)">Name</th>
+        <th onclick="sortTable(1)">Age</th>
+        <th onclick="sortTable(2)">City</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>John Doe</td>
+        <td>28</td>
+        <td>New York</td>
+        <td>
+          <button class="action-btn edit-btn" onclick="editRow(this)">Edit</button>
+          <button class="action-btn delete-btn" onclick="deleteRow(this)">Delete</button>
+        </td>
+      </tr>
+      <tr>
+        <td>Jane Smith</td>
+        <td>34</td>
+        <td>Los Angeles</td>
+        <td>
+          <button class="action-btn edit-btn" onclick="editRow(this)">Edit</button>
+          <button class="action-btn delete-btn" onclick="deleteRow(this)">Delete</button>
+        </td>
+      </tr>
+      <tr>
+        <td>Raj Kumar</td>
+        <td>25</td>
+        <td>Delhi</td>
+        <td>
+          <button class="action-btn edit-btn" onclick="editRow(this)">Edit</button>
+          <button class="action-btn delete-btn" onclick="deleteRow(this)">Delete</button>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="input-form">
+    <input type="text" id="nameInput" placeholder="Enter Name">
+    <input type="number" id="ageInput" placeholder="Enter Age">
+    <input type="text" id="cityInput" placeholder="Enter City">
+    <button id="submitBtn" onclick="addRow()">Add Row</button>
+    <button onclick="exportCSV()">Export CSV</button>
+  </div>
+
+  <h3 style="text-align:center">Generated HTML Table Code:</h3>
+  <textarea id="htmlCode" readonly></textarea>
+
+  <script>
+    let selectedRow = null;
+    let ascending = true;
+
+    function updateSourceCode() {
+      const tbody = document.querySelector("#infoTable tbody");
+      let html = "";
+      tbody.querySelectorAll("tr").forEach(row => {
+        const cells = row.querySelectorAll("td");
+        if (cells.length > 3) {
+          html += `  <tr>\n    <td>${cells[0].innerText}</td>\n    <td>${cells[1].innerText}</td>\n    <td>${cells[2].innerText}</td>\n    <td>\n      <button class='action-btn edit-btn' onclick='editRow(this)'>Edit</button>\n      <button class='action-btn delete-btn' onclick='deleteRow(this)'>Delete</button>\n    </td>\n  </tr>\n`;
+        }
+      });
+      document.getElementById("htmlCode").value = html;
+    }
+
+    function addRow() {
+      const name = document.getElementById("nameInput").value.trim();
+      const age = document.getElementById("ageInput").value.trim();
+      const city = document.getElementById("cityInput").value.trim();
+
+      if (!name || !age || !city) {
+        alert("Please fill all fields!");
+        return;
+      }
+
+      if (selectedRow == null) {
+        insertRow(name, age, city);
+      } else {
+        selectedRow.cells[0].innerText = name;
+        selectedRow.cells[1].innerText = age;
+        selectedRow.cells[2].innerText = city;
+        selectedRow = null;
+        document.getElementById("submitBtn").textContent = "Add Row";
+      }
+
+      clearInputs();
+      filterTable();
+      updateSourceCode();
+    }
+
+    function insertRow(name, age, city) {
+      const table = document.getElementById("infoTable").getElementsByTagName('tbody')[0];
+      const newRow = table.insertRow();
+      newRow.innerHTML = `
+        <td>${name}</td>
+        <td>${age}</td>
+        <td>${city}</td>
+        <td>
+          <button class="action-btn edit-btn" onclick="editRow(this)">Edit</button>
+          <button class="action-btn delete-btn" onclick="deleteRow(this)">Delete</button>
+        </td>
+      `;
+    }
+
+    function editRow(button) {
+      selectedRow = button.parentElement.parentElement;
+      document.getElementById("nameInput").value = selectedRow.cells[0].innerText;
+      document.getElementById("ageInput").value = selectedRow.cells[1].innerText;
+      document.getElementById("cityInput").value = selectedRow.cells[2].innerText;
+      document.getElementById("submitBtn").textContent = "Update Row";
+    }
+
+    function deleteRow(button) {
+      if (confirm("Are you sure you want to delete this row?")) {
+        const row = button.parentElement.parentElement;
+        row.remove();
+        if (selectedRow === row) clearInputs();
+        filterTable();
+        updateSourceCode();
+      }
+    }
+
+    function filterTable() {
+      const nameFilter = document.getElementById("nameFilter").value.toLowerCase();
+      const ageFilter = document.getElementById("ageFilter").value.toLowerCase();
+      const cityFilter = document.getElementById("cityFilter").value.toLowerCase();
+
+      const rows = document.querySelectorAll("#infoTable tbody tr");
+
+      rows.forEach(row => {
+        const name = row.cells[0].innerText.toLowerCase();
+        const age = row.cells[1].innerText.toLowerCase();
+        const city = row.cells[2].innerText.toLowerCase();
+
+        const matches = name.includes(nameFilter) && age.includes(ageFilter) && city.includes(cityFilter);
+        row.style.display = matches ? "" : "none";
+      });
+    }
+
+    function sortTable(columnIndex) {
+      const tbody = document.querySelector("#infoTable tbody");
+      const rows = Array.from(tbody.rows);
+      rows.sort((a, b) => {
+        const valA = a.cells[columnIndex].innerText.toLowerCase();
+        const valB = b.cells[columnIndex].innerText.toLowerCase();
+        return ascending ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      });
+      ascending = !ascending;
+      rows.forEach(row => tbody.appendChild(row));
+      updateSourceCode();
+    }
+
+    function clearInputs() {
+      document.getElementById("nameInput").value = "";
+      document.getElementById("ageInput").value = "";
+      document.getElementById("cityInput").value = "";
+      document.getElementById("submitBtn").textContent = "Add Row";
+      selectedRow = null;
+    }
+
+    function exportCSV() {
+      const rows = Array.from(document.querySelectorAll("table tr"));
+      const csv = rows.map(row => Array.from(row.cells).map(cell => cell.innerText).join(",")).join("\n");
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = "table_data.csv";
+      a.click();
+    }
+
+    // Initialize source code display on page load
+    window.onload = updateSourceCode;
+  </script>
+
+</body>
+</html>

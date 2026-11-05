@@ -1,0 +1,439 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import './App.css';
+import { useGemini } from './hooks/useGemini';
+import { useHoloCore } from './hooks/useHoloCore';
+import { useSystemSound } from './hooks/useSystemSound';
+
+function App() {
+  const videoRef = useRef(null);
+  const trackCanvasRef = useRef(null);
+  const cursorRef = useRef(null);
+  const workerRef = useRef(null);
+  const isProcessingRef = useRef(false);
+  const isModelLoadedRef = useRef(false);
+  const lastGestureRef = useRef(null);
+  const ripplesRef = useRef([]);
+  
+  const [isTracking, setIsTracking] = useState(false);
+  const [isCamVisible, setIsCamVisible] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(null);
+  const [showGestureName, setShowGestureName] = useState(true);
+  const [distortionIntensity, setDistortionIntensity] = useState(5);
+
+  const isTrackingRef = useRef(isTracking);
+  const showGestureNameRef = useRef(showGestureName);
+  const distortionIntensityRef = useRef(distortionIntensity);
+
+  // Hooks
+  const { isScanMode, updateInput } = useHoloCore();
+  const { processInput } = useGemini();
+  const { playSound } = useSystemSound();
+
+  // Refs to access latest state/props inside worker callback
+  const isScanModeRef = useRef(isScanMode);
+  const updateInputRef = useRef(updateInput);
+  const playSoundRef = useRef(playSound);
+
+  useEffect(() => {
+    isScanModeRef.current = isScanMode;
+    updateInputRef.current = updateInput;
+    playSoundRef.current = playSound;
+  }, [isScanMode, updateInput, playSound]);
+
+  useEffect(() => {
+    showGestureNameRef.current = showGestureName;
+  }, [showGestureName]);
+
+  useEffect(() => {
+    distortionIntensityRef.current = distortionIntensity;
+  }, [distortionIntensity]);
+
+  useEffect(() => {
+    if (errorMessage) {
+      playSound('error');
+    }
+  }, [errorMessage, playSound]);
+
+  useEffect(() => {
+    // Initialize Web Worker
+    try {
+      workerRef.current = new Worker(new URL('./workers/handTrackingWorker.js', import.meta.url));
+
+      workerRef.current.onerror = (err) => {
+        console.error("Worker encountered an error:", err);
+        isProcessingRef.current = false;
+        playSound('error');
+        setErrorMessage(`Worker Error: ${err.message}`);
+      };
+
+      workerRef.current.onmessage = (e) => {
+        const { type, results, error } = e.data;
+
+        if (type === 'INIT_COMPLETE') {
+          isModelLoadedRef.current = true;
+          playSound('success');
+          startTracking();
+        } else if (type === 'RESULT') {
+          handleResults(results);
+          isProcessingRef.current = false;
+        } else if (type === 'ERROR') {
+          console.error("Worker reported error:", error);
+          isProcessingRef.current = false;
+          playSound('error');
+          setErrorMessage(`Worker Error: ${error}`);
+        }
+      };
+    } catch (err) {
+      console.error("Failed to initialize worker:", err);
+      playSound('error');
+      setErrorMessage(`Worker Init Failed: ${err.message}`);
+    }
+
+    return () => {
+      if (workerRef.current) {
+        workerRef.current.terminate();
+      }
+    };
+  }, []);
+
+  const handleResults = (results) => {
+    if (trackCanvasRef.current && videoRef.current) {
+        const ctx = trackCanvasRef.current.getContext('2d');
+        const videoWidth = videoRef.current.videoWidth;
+        const videoHeight = videoRef.current.videoHeight;
+
+        if (trackCanvasRef.current.width !== videoWidth) {
+            trackCanvasRef.current.width = videoWidth;
+            trackCanvasRef.current.height = videoHeight;
+        }
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+        const distortVideo = (x, y, radius) => {
+            const intensity = distortionIntensityRef.current;
+            for (let i = y - radius; i < y + radius; i++) {
+                for (let j = x - radius; j < x + radius; j++) {
+                    const dist = Math.sqrt((i - y) * (i - y) + (j - x) * (j - x));
+                    if (dist < radius) {
+                        const angle = Math.atan2(i - y, j - x);
+                        const distortionFactor = (1 - dist / radius) * intensity;
+
+                        const sourceX = j + Math.cos(angle) * distortionFactor;
+                        const sourceY = i + Math.sin(angle) * distortionFactor;
+
+                        if (sourceX >= 0 && sourceX < videoWidth && sourceY >= 0 && sourceY < videoHeight) {
+                            const dx = j;
+                            const dy = i;
+                            ctx.drawImage(
+                                videoRef.current,
+                                sourceX, sourceY, 1, 1, // Source coordinates and size
+                                dx, dy, 1, 1             // Destination coordinates and size
+                            );
+                        }
+                    }
+                }
+            }
+        };
+        const now = performance.now();
+        ripplesRef.current = ripplesRef.current.filter(r => now - r.startTime < 1000);
+
+        ripplesRef.current.forEach(ripple => {
+            const elapsedTime = now - ripple.startTime;
+            const speed = ripple.speed || 0.2;
+            const color = ripple.color || '0, 255, 204';
+            
+            const radius = elapsedTime * speed;
+            const opacity = Math.max(0, 1 - (elapsedTime / 1000));
+
+            ctx.beginPath();
+            ctx.arc(ripple.x, ripple.y, radius, 0, 2 * Math.PI);
+            ctx.strokeStyle = `rgba(${color}, ${opacity})`;
+            ctx.lineWidth = 2;
+            distortVideo(ripple.x, ripple.y, radius);
+            ctx.stroke();
+        });
+        
+        if (results.landmarks) {
+          for (const landmarks of results.landmarks) {
+            const xList = landmarks.map(l => l.x);
+            const yList = landmarks.map(l => l.y);
+            const minX = Math.min(...xList) * videoWidth;
+            const maxX = Math.max(...xList) * videoWidth;
+            const minY = Math.min(...yList) * videoHeight;
+            const maxY = Math.max(...yList) * videoHeight;
+            const width = maxX - minX;
+            const height = maxY - minY;
+
+            const isPoint = landmarks[8].y < landmarks[6].y && landmarks[12].y > landmarks[10].y;
+            const label = isPoint ? 'point' : 'open';
+
+            // Dynamic styling based on gesture
+            const gestureColor = label === 'point' ? '0, 255, 204' : '255, 0, 255';
+            const rippleSpeed = label === 'point' ? 0.5 : 0.2;
+
+            ctx.strokeStyle = `rgba(${gestureColor}, 0.8)`;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(minX, minY, width, height);
+            
+            if (isScanModeRef.current && label !== lastGestureRef.current) {
+                playSoundRef.current(label);
+                const centerX = minX + width / 2;
+                const centerY = minY + height / 2;
+                ripplesRef.current.push({ x: centerX, y: centerY, startTime: performance.now(), color: gestureColor, speed: rippleSpeed });
+            }
+            lastGestureRef.current = label;
+
+            if (showGestureNameRef.current) {
+              ctx.fillStyle = `rgba(${gestureColor}, 0.8)`;
+              ctx.font = '12px monospace';
+              ctx.fillText(label.toUpperCase(), minX + 5, minY + 15);
+            }
+
+            if (isScanModeRef.current && label === 'point') {
+                const cx = landmarks[8].x * videoWidth;
+                const cy = landmarks[8].y * videoHeight;
+                ctx.strokeStyle = '#ff0055';
+                ctx.fillStyle = '#ff0055';
+                ctx.fillText(`TARGET LOCKED: [${Math.round(cx)}, ${Math.round(cy)}]`, cx + 40, cy);
+            }
+          }
+        }
+    }
+
+    if (results.landmarks && results.landmarks.length > 0) {
+        const landmarks = results.landmarks[0];
+        const xList = landmarks.map(l => l.x);
+        const yList = landmarks.map(l => l.y);
+        const minX = Math.min(...xList);
+        const maxX = Math.max(...xList);
+        const minY = Math.min(...yList);
+        const maxY = Math.max(...yList);
+        const width = maxX - minX;
+        const height = maxY - minY;
+        
+        const normX = ((minX + width/2) * 2) - 1;
+        const normY = ((minY + height/2) * 2) - 1;
+        const scale = 0.8 + (width * 2);
+        
+        const isPoint = landmarks[8].y < landmarks[6].y && landmarks[12].y > landmarks[10].y;
+        const gestureLabel = isPoint ? 'point' : 'open';
+
+        const cursorX = minX + width/2;
+        const cursorY = minY + height/2;
+        if (cursorRef.current) {
+          cursorRef.current.style.display = 'block';
+          const x = cursorX * window.innerWidth;
+          const y = cursorY * window.innerHeight;
+          cursorRef.current.style.transform = `translate(${x - 10}px, ${y - 10}px)`;
+        }
+        
+        let x2 = 0, y2 = 0;
+        if (results.landmarks.length > 1) {
+            const l2 = results.landmarks[1];
+            const minX2 = Math.min(...l2.map(l => l.x));
+            const maxX2 = Math.max(...l2.map(l => l.x));
+            const minY2 = Math.min(...l2.map(l => l.y));
+            const maxY2 = Math.max(...l2.map(l => l.y));
+            x2 = ((minX2 + (maxX2-minX2)/2) * 2) - 1;
+            y2 = ((minY2 + (maxY2-minY2)/2) * 2) - 1;
+        }
+
+        updateInputRef.current(normX, normY, scale, true, gestureLabel, results.landmarks.length, x2, y2);
+    } else {
+        updateInputRef.current(0, 0, 1, false);
+        if (cursorRef.current) {
+          cursorRef.current.style.display = 'none';
+        }
+    }
+  };
+
+  const runDetection = useCallback(() => {
+    if (!videoRef.current) return;
+    
+    const detect = async () => {
+        if (videoRef.current && !videoRef.current.paused && !videoRef.current.ended && isTrackingRef.current) {
+            // Only send a new frame if the previous one is finished processing
+            if (!isProcessingRef.current) {
+                isProcessingRef.current = true;
+                const imageBitmap = await createImageBitmap(videoRef.current);
+                if (workerRef.current) {
+                  workerRef.current.postMessage(
+                      { type: 'DETECT', payload: { image: imageBitmap, timestamp: performance.now() } },
+                      [imageBitmap] // Transfer the bitmap to the worker
+                  );
+                } else {
+                  isProcessingRef.current = false;
+                }
+            }
+            
+            requestAnimationFrame(detect);
+        }
+    };
+    detect();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      // Cleanup on unmount
+      if (videoRef.current && videoRef.current.srcObject) {
+        const tracks = videoRef.current.srcObject.getTracks();
+        tracks.forEach(track => track.stop());
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    isTrackingRef.current = isTracking;
+    if (isTracking) {
+      runDetection();
+    }
+  }, [isTracking, runDetection]);
+
+  const handleTrackInit = async () => {
+    if (!isModelLoadedRef.current) {
+        // Send INIT command to worker
+        if (workerRef.current) {
+          workerRef.current.postMessage({ type: 'INIT' });
+        } else {
+          console.error("Worker is not initialized.");
+        }
+    } else {
+        if (isTracking) {
+            setIsTracking(false);
+            setIsCamVisible(false);
+            if (videoRef.current && videoRef.current.srcObject) {
+                videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+                videoRef.current.srcObject = null;
+            }
+            updateInput(0, 0, 1, false);
+        } else {
+            startTracking();
+        }
+    }
+  };
+
+  const startTracking = async () => {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          try {
+              const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+              if (videoRef.current) {
+                  videoRef.current.srcObject = stream;
+                  videoRef.current.onloadeddata = () => {
+                      setIsTracking(true);
+                      setIsCamVisible(true);
+                  };
+              }
+          } catch (err) {
+              console.error("Error accessing webcam:", err);
+          }
+      }
+  };
+
+  return (
+    <div className="App">
+      <h1>Hand Tracking</h1>
+      <button onClick={handleTrackInit}>{isTracking ? "Stop Tracking" : "Start Tracking"}</button>
+      <div>
+        <input
+          type="checkbox"
+          id="showGesture"
+          checked={showGestureName}
+          onChange={(e) => setShowGestureName(e.target.checked)}
+        />
+        <label htmlFor="showGesture">Show Gesture Name</label>
+      </div>
+      <div>
+        <label htmlFor="distortionIntensity">Distortion Intensity: {distortionIntensity}</label>
+        <input
+          type="range"
+          id="distortionIntensity"
+          min="0"
+          max="20"
+          step="1"
+          value={distortionIntensity}
+          onChange={(e) => setDistortionIntensity(Number(e.target.value))}
+          style={{ marginLeft: '10px', verticalAlign: 'middle' }}
+        />
+      </div>
+      
+      <div style={{ position: 'relative', display: isCamVisible ? 'block' : 'none' }}>
+        <video 
+            ref={videoRef} 
+            style={{ width: '640px', height: '480px', transform: 'scaleX(-1)' }} 
+            autoPlay 
+            playsInline 
+            muted
+        />
+        <canvas 
+            ref={trackCanvasRef} 
+            style={{ position: 'absolute', top: 0, left: 0, width: '640px', height: '480px', transform: 'scaleX(-1)' }} 
+        />
+      </div>
+      
+      <div ref={cursorRef} style={{
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          width: '20px',
+          height: '20px',
+          backgroundColor: 'red',
+          borderRadius: '50%',
+          pointerEvents: 'none',
+          zIndex: 9999,
+          display: 'none'
+      }} />
+      
+      <style>{`
+        @keyframes slideIn {
+          from {
+            transform: translateX(120%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+      `}</style>
+      {errorMessage && (
+        <div style={{
+          position: 'fixed',
+          bottom: '20px',
+          right: '20px',
+          background: 'rgba(220, 38, 38, 0.35)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
+          color: 'white',
+          textShadow: '0 1px 2px rgba(0,0,0,0.3)',
+          padding: '16px 24px',
+          borderRadius: '16px',
+          zIndex: 10000,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          maxWidth: '350px',
+          fontFamily: "'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+          fontWeight: '500',
+          animation: 'slideIn 0.5s cubic-bezier(0.23, 1, 0.32, 1) forwards'
+        }}>
+          <span style={{ flex: 1 }}>{errorMessage}</span>
+          <button 
+            onClick={() => setErrorMessage(null)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'white',
+              fontSize: '20px',
+              cursor: 'pointer',
+              padding: '0',
+              lineHeight: '1'
+            }}
+          >×</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default App;

@@ -46,6 +46,7 @@ import musicValidationRouter from './routes/musicValidation.js';
 import musicValidationService from './services/musicValidationService.js';
 import chatBuddyLearningRouter from './routes/chatBuddyLearning.js';
 import { chatBuddyLearningService } from './services/chatBuddyLearningService.js';
+import { geminiLiveBridge } from './services/geminiLiveBridge.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -384,6 +385,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 const listeningRooms = new Map();
 
 io.on('connection', (socket) => {
+  geminiLiveBridge.registerSocket(socket);
   const sessionId = socket.handshake.auth?.sessionId || 
     socket.handshake.query?.sessionId || 
     socket.handshake.headers?.['x-session-id'];

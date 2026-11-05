@@ -1,0 +1,23 @@
+What is reference to AI--?-- Gradient and gradient descent.
+Supervised and unsupervised machne learning
+What are universal approximator
+Five python libraries
+what are back and forward propagation
+what is error surface
+difference between classification and regression
+what is linear regression model mathematically
+Any algorithm in non linear
+what is clustering
+in which situation we use K-Mens heriechial and DBscan
+Outlier detection
+what is noisepoint
+partitional and K-Means
+
+
+overfitting? how overfitting impacts the model?
+confusion matrix
+what is bias varience trade off(k-means)
+what is parametric and non parametric
+why we use activation function
+what are the challenges which usually faced while using clustering algorithm- advantages and disadvantages
+

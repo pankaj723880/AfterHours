@@ -131,11 +131,11 @@ export const OFFICIAL_GEMINI_MODELS = {
  * Task Categories and their prioritized fallback cascades
  */
 export const TASK_PRIORITY_CASCADES = {
-  CASUAL_CHAT: ['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite', 'gemini-3.8-flash'],
-  VOICE_INTENT: ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-3.5-flash-lite'],
-  SPEECH_TO_TEXT: ['gemini-3.5-transcribe', 'gemini-3.8-flash'],
-  TRANSLATION: ['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite', 'gemini-3.8-flash'],
-  COMPLEX_TASK: ['gemini-4-argon', 'gemini-3.8-flash'],
+  CASUAL_CHAT: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'],
+  VOICE_INTENT: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.8-flash'],
+  SPEECH_TO_TEXT: ['gemini-3.5-transcribe', 'gemini-2.5-flash'],
+  TRANSLATION: ['gemini-2.5-flash', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'],
+  COMPLEX_TASK: ['gemini-2.5-flash', 'gemini-4-argon', 'gemini-3.8-flash'],
   TEXT_TO_SPEECH: ['gemini-3.8-flash-tts']
 };
 

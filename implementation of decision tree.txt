@@ -1,0 +1,10 @@
+implementation of decision tree
+
+brief intro
+flow of steps
+elaborate the dataset,
+steps of code
+explain cost function,
+
+
+Output

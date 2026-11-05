@@ -362,6 +362,7 @@ export default function LoopraAiCompanion({
   const [speechLang, setSpeechLang] = useState('hi-IN'); // 'hi-IN' default with 'en-IN' toggle
   const [voiceState, setVoiceState] = useState('idle'); // 'idle' | 'listening' | 'processing' | 'speaking'
   const [heardText, setHeardText] = useState('');
+  const [lastAction, setLastAction] = useState('none');
   const speechCooldownTimerRef = useRef(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
@@ -730,6 +731,7 @@ export default function LoopraAiCompanion({
     try {
       const chatRes = await chatBuddyClient.sendMessage(text, backendUrl, getCommandContext());
       const replyText = chatRes.reply || 'Main sun rahi hoon, boliye!';
+      setLastAction(chatRes && chatRes.type === 'command' ? (chatRes.action || 'none') : 'none');
 
       const aiMsg = {
         id: 'ai_' + Date.now(),
@@ -1323,7 +1325,7 @@ export default function LoopraAiCompanion({
 
             {/* Voice & assistant capabilities preserved: "Saloon FM kholo", "Play 5 songs of Arijit Singh", "Trending songs" */}
 
-            {/* Live Voice Feedback Bar (I heard: ...) */}
+            {/* Live Voice Feedback: I heard: "{heardText}" -> Action: {action} */}
             {(voiceState !== 'idle' || heardText) && (
               <div className="px-3.5 py-1.5 bg-neutral-900/95 border-t border-amber-500/30 flex items-center justify-between text-xs text-amber-300 animate-in fade-in duration-100">
                 <div className="flex items-center gap-2 truncate">
@@ -1335,7 +1337,7 @@ export default function LoopraAiCompanion({
                   <span className="font-bold text-neutral-400 text-[11px]">
                     {voiceState === 'listening' ? 'Listening...' : voiceState === 'processing' ? 'Processing...' : 'Speaking:'}
                   </span>
-                  {heardText && <span className="text-white italic text-[11px] truncate">I heard: "{heardText}"</span>}
+                  {heardText && <span className="text-white italic text-[11px] truncate">Heard: "{heardText}"</span>}
                 </div>
                 <button
                   type="button"

@@ -1,0 +1,7 @@
+1.Find the sum of square  residual.
+2.Finding the derivative of sum of square errors
+3.Assuming the 
+
+bias as zero.
+4.Calculate learning weight, Calculate weight.
+5.

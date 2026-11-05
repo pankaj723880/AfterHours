@@ -22,7 +22,7 @@ export const CHARACTERS = {
     glowColor: 'rgba(16, 185, 129, 0.7)',
     voiceId: 'en-IN-NeerjaExpressiveNeural',
     pitch: 1.05,
-    rate: 1.12 // Slightly faster, natural conversational speed
+    rate: 1.5 // 1.5x natural conversational speed
   }
 };
 
@@ -164,23 +164,16 @@ class VoiceBuddyService {
   }
 
   /**
-   * Generates fresh, warm and natural welcome greetings for Loopra AI.
-   * Avoids repetitive "Haan bilkul, Loopra ready hai".
+   * Generates fresh, warm, natural and confident companion greetings for Loopra AI.
+   * Avoids repetitive "kya sunna hai" or "kya baat karenge".
    */
   generateWelcomeGreeting() {
-    const hour = new Date().getHours();
-    let timeGreeting = 'Hello dost!';
-    if (hour >= 5 && hour < 12) timeGreeting = 'Good morning dost!';
-    else if (hour >= 12 && hour < 17) timeGreeting = 'Good afternoon dost!';
-    else if (hour >= 17 && hour < 22) timeGreeting = 'Good evening dost!';
-    else timeGreeting = 'Hey night owl!';
-
     const greetings = [
-      `${timeGreeting} Aaj kya sunna chahenge?`,
-      'Hey! Main Loopra hoon, bataiye kaunsa gaana lagau aapke liye?',
-      'Namaste dost! Kahiye, aaj kaunsa music mood hai?',
-      'Hey there! Loopra sun rahi hai, bataiye kya play karein?',
-      'Hello! Main Loopra hoon. Kahiye, aaj kya sunenge?'
+      'Hey! Kya haal hai?',
+      'Hello! Kaise ho?',
+      'Hey there! I\'m here.',
+      'Hey dost! Kaise ho aap?',
+      'Hello! Good to see you.'
     ];
 
     const randomIndex = Math.floor(Math.random() * greetings.length);
@@ -309,16 +302,34 @@ class VoiceBuddyService {
       return `Volume set kar di hai ${details.value || 50}% par.`;
     }
 
+    // Folders & Applications Navigation
+    if (cleanAction === 'open_folder' || text.includes('folder') || text.includes('download')) {
+      const folderName = details.folder || details.target || 'Downloads';
+      return `${folderName} folder open kar diya hai.`;
+    }
+
+    if (cleanAction === 'open_application' || cleanAction === 'open_app' || text.includes('application')) {
+      const appName = details.app || details.target || 'Application';
+      return `${appName} open kar diya hai.`;
+    }
+
     if (cleanAction === 'play_search' || cleanAction === 'play' || cleanAction === 'play_artist' || cleanAction === 'play_song') {
       const name = details.artist || details.query || details.title || '';
-      return name ? `Haan bilkul! "${name}" play kar diya hai, suniye!` : 'Haan bilkul! Song play kar diya hai, suniye!';
+      return name ? `"${name}" play kar diya hai. Enjoy!` : 'Gaana play kar diya hai. Enjoy!';
     }
 
     if (typeof details === 'string' && details.length > 5) {
+      if (/executed\s*(clarif|action|none|unknown)/i.test(details)) {
+        return 'Music play kar diya hai.';
+      }
       return details;
     }
 
-    return 'Done dost! Command execute ho gaya.';
+    if (details.title) {
+      return `"${details.title}" play kar diya hai. Enjoy!`;
+    }
+
+    return 'Action poora kar diya hai dost!';
   }
 
   detectEmotion(text = '', contextAction = '') {
@@ -590,6 +601,8 @@ class VoiceBuddyService {
       const audio = new Audio(audioUrl);
       this.currentAudio = audio;
       audio.crossOrigin = 'anonymous';
+      audio.defaultPlaybackRate = 1.5;
+      audio.playbackRate = 1.5;
 
       audio.onplay = () => {
         this.isSpeaking = true;
@@ -663,7 +676,7 @@ class VoiceBuddyService {
       const utterance = new SpeechSynthesisUtterance(this.preprocessTextForSpeech(text) || text);
       utterance.voice = indianVoice;
       utterance.lang = indianVoice.lang || 'hi-IN';
-      utterance.rate = 1.0;
+      utterance.rate = 1.5;
       utterance.pitch = 1.0;
 
       utterance.onstart = () => {

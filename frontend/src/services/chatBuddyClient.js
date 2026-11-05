@@ -125,7 +125,13 @@ class ChatBuddyClient {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message: cleanText,
-            history: this.getHistory()
+            history: this.getHistory(),
+            currentMusicState: context.currentSong ? {
+              title: context.currentSong.title,
+              artist: context.currentSong.artist,
+              isPlaying: Boolean(context.isPlaying),
+              volume: context.volume
+            } : (context.currentMusicState || null)
           })
         });
 
@@ -168,6 +174,29 @@ class ChatBuddyClient {
     } finally {
       this.inFlightRequests.delete(dedupeKey);
     }
+  }
+  /**
+   * Fetches a dynamic startup greeting from Gemini for session initialization.
+   */
+  async getStartupGreeting(backendUrl = '', { lang = 'hi-IN', currentMusicState = null } = {}) {
+    const cleanBase = (backendUrl || '').replace(/\/+$/, '');
+    const endpoint = cleanBase ? `${cleanBase}/api/chat/greeting` : '/api/chat/greeting';
+
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lang, currentMusicState })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.greeting) {
+          return data.greeting;
+        }
+      }
+    } catch (_) {}
+
+    return 'Hey! Main Loopra hoon, aapki AI music companion. Boliye, aaj kya baat karenge ya kya sunenge?';
   }
 }
 

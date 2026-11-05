@@ -1,0 +1,11 @@
+1. Code Review AI Assistant (Static Analyzer)
+
+Concept: Analyze code & suggest improvements
+
+Features:
+
+Upload code
+Detect:
+Bugs
+Bad practices
+Suggest fixes

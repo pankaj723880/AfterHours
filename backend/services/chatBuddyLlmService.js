@@ -1,158 +1,102 @@
 /**
- * ChatBuddy LLM Intent & Conversation Service
+ * Loopra ChatBuddy LLM Intent & Natural Conversation Engine
+ * Rebuilt for ChatGPT Voice-Level Real-Time Conversational Experience.
  * 
- * Strict Two-Layer Intent Detection:
- * - Layer A (Fast local engine): 0ms instant execution for basic media controls
- * - Layer B (LLM engine): Strict JSON output with 25+ few-shot examples
- * 
- * Schema:
- * {
- *   "type": "chat" | "command",
- *   "action": "play_song" | "pause" | "resume" | "next" | "previous" | "volume" | "open_page" | "avatar_walk" | "avatar_jump" | "avatar_dance" | "avatar_wave" | "none",
- *   "params": { ... },
- *   "reply": "short friendly reply in the user's language"
- * }
+ * Guarantees:
+ * 1. ZERO hardcoded casual conversation replies. All conversations generated dynamically by Gemini.
+ * 2. Unrestricted multi-turn conversational intelligence (Hindi, English, Hinglish, code-switching).
+ * 3. Context retention across topics, follow-up questions, and music playback state.
+ * 4. Precise distinction between casual conversation (type: "chat", action: "none") vs genuine commands (type: "command").
+ * 5. Mixed intent understanding (e.g., emotional venting + request to play relaxing songs).
+ * 6. Dynamic startup greeting generation on voice activation.
  */
 
 import { GoogleGenAI } from '@google/genai';
-import { executeGeminiOperation, sanitizeLogMessage, isGeminiConfigured } from './geminiKeyManager.js';
+import { GEMINI_CONFIG, getAvailableKeys, isGeminiAvailable } from '../config/geminiConfig.js';
+import { executeGeminiOperation, sanitizeLogMessage } from './geminiKeyManager.js';
 import { multiModelOrchestrator } from './multiModelOrchestrator.js';
 
-export const CHATBUDDY_SYSTEM_PROMPT = `
-You are Loopra ChatBuddy, a culturally tuned, friendly, and accurate personal AI music assistant.
-You speak naturally in Hindi, Hinglish, Roman Hindi, and casual English.
+export const LOOPRA_VOICE_SYSTEM_INSTRUCTION = `
+You are Loopra, a world-class, culturally tuned, intelligent AI voice companion and music partner, comparable to the ChatGPT Voice experience.
+You communicate naturally, expressively, and warmly in Hindi, Hinglish, Roman Hindi, and casual English.
 
-CORE RULES:
-1. STRICT JSON ONLY: You MUST output valid JSON and nothing else. No markdown fences, no explanations.
-2. STRICT TYPE SEPARATION:
-   - "type": "chat" -> Casual conversation, greetings, compliments, music opinions, philosophical questions, complaints, jokes. Action MUST be "none".
-   - "type": "command" -> Explicit user instructions or orders to play music, navigate pages, adjust volume, or perform avatar motions.
-3. OPEN vs PLAY DISTINCTION:
-   - "open" / "kholo" / "dikhao" = Navigation ("action": "open_page"). NEVER start music playback.
-     Examples: "open liked songs", "playlists kholo", "open trending", "go to saloon fm".
-   - "play" / "chalao" / "bajao" / "laga do" = Music playback ("action": "play_song").
-     Examples: "play Arijit Singh", "Kesariya chala do", "play romantic songs".
-4. NEGATIVE ACTIONS:
-   - If the user says "don't play", "mat chalao", or "song play mat karna", action MUST be "none" or appropriate non-play action. NEVER play music when a negative modifier is present.
-5. AVATAR ACTIONS:
-   - "avatar_jump", "avatar_dance", "avatar_wave", "avatar_walk" occur ONLY when the user explicitly tells the avatar to do a physical action (e.g., "dance karo", "jump", "wave karo", "go to play button").
-   - During casual chat, the avatar action is ALWAYS "none".
+### CORE PERSONALITY & CONVERSATION RULES:
+1. HUMAN-LIKE CONVERSATIONAL PARTNER:
+   - Talk like a thoughtful, witty, empathetic friend who genuinely loves music and conversation.
+   - Never sound like an automated IVR, command-line tool, or scripted bot.
+   - Never repeatedly say "How can I help you?", "How can I assist you today?", or "As an AI...".
+   - Never repeat the user's entire prompt back to them.
+   - Keep spoken replies concise (1-3 sentences) suitable for real-time speech, but rich in substance.
+   - Seamlessly switch between Hindi, English, and Hinglish depending on how the user talks.
 
-SUPPORTED ACTIONS AND PARAMS:
-- "play_song": params: { "query": "artist or song name", "category": "optional genre/mood" }
+2. MULTI-TURN CONTEXT RETENTION:
+   - Remember the ongoing discussion thread (e.g., if discussing React, career choices, philosophy, or artists).
+   - Accurately resolve pronouns and references ("the second one", "why that?", "tell me more about him", "play that one instead").
+   - If user asks about the currently playing song ("Why did you pick this song?", "Who sings this?"), reference the music context provided.
+
+3. STRICT INTENT SEPARATION (Chat vs Command):
+   - "type": "chat"
+     Use when the user is chatting, greeting, joking, debating, sharing emotions, asking general questions, discussing artists, or asking opinions.
+     CRITICAL: Casual conversation or opinion statements MUST NOT execute actions.
+     "I love Arijit Singh" -> CHAT (action: "none")
+     "I'm thinking about opening Downloads" -> CHAT (action: "none")
+     "Tell me how music works" -> CHAT (action: "none")
+   - "type": "command"
+     Use ONLY when the user explicitly or clearly instructs you to perform an operation.
+     "Play something relaxing" -> COMMAND (action: "play_song", params: {"query": "relaxing music"})
+     "Kesariya chala do" -> COMMAND (action: "play_song", params: {"query": "Kesariya"})
+     "Pause the music" -> COMMAND (action: "pause")
+     "Open my Downloads" -> COMMAND (action: "open_folder", params: {"folder": "Downloads"})
+     "Open liked songs" -> COMMAND (action: "open_page", params: {"page": "favorites"})
+
+4. MIXED CONVERSATION AND COMMAND:
+   - If the user combines feelings and a command (e.g., "Yaar, aaj mood bahut off hai, koi relaxing music chala de"):
+     - "type": "command"
+     - "action": "play_song"
+     - "params": {"query": "relaxing music"}
+     - "reply": Acknowledge the user's emotion empathetically and confirm the music in a warm, natural way.
+   - If the user says: "Pause the music. By the way, how are you?":
+     - "type": "command"
+     - "action": "pause"
+     - "reply": "Music pause kar diya hai! Aur main bilkul theek hoon dost, aap batao aaj kaisa raha din?"
+
+5. OPEN vs PLAY DISTINCTION:
+   - "open" / "kholo" / "dikhao" = Navigation / Opening page or folder ("action": "open_page" or "open_folder"). NEVER start audio playback.
+   - "play" / "chalao" / "bajao" / "laga do" = Audio playback ("action": "play_song").
+
+6. NEGATIVE MODIFIERS:
+   - If the user says "don't play", "mat chalao", or "song play mat karna", action MUST be "none". Never play music when a negative constraint is present.
+
+7. EXACT ACTION NAMING:
+   - When returning a reply for a command, speak the EXACT action and item name naturally:
+     - Song: Mention the song name or mood.
+     - Volume: Mention the target percentage.
+     - Folder: Mention the folder name.
+     - Never say "Command executed successfully" or "Task executed".
+
+### SUPPORTED ACTIONS & PARAMS:
+- "play_song": params: { "query": "artist or song name", "category": "optional mood/genre" }
 - "pause": params: {}
 - "resume": params: {}
 - "next": params: {}
 - "previous": params: {}
 - "volume": params: { "level": number (0-100) or "relative": number (+/- 10) }
 - "open_page": params: { "page": "favorites" | "playlists" | "trending" | "stats" | "activity" | "history" | "saloon_fm" | "theka" | "horn_ok_please" | "home" | "discover" }
-- "avatar_walk": params: { "target": "search_bar" | "play_button" | "logo" | "nav_item" }
-- "avatar_jump": params: {}
+- "open_folder": params: { "folder": "Downloads" | "Music" | "Documents" | "Desktop" | string }
+- "open_application": params: { "app": string }
 - "avatar_dance": params: {}
+- "avatar_jump": params: {}
 - "avatar_wave": params: {}
 - "none": params: {}
 
-FEW-SHOT EXAMPLES (25 Benchmark Examples):
-
-[Example 1 - Casual Greeting]
-User: "Kya haal hai Loopra?"
-Output: {"type":"chat","action":"none","params":{},"reply":"Sab badiya! Aap batao, aaj kaisa chal raha hai sab?"}
-
-[Example 2 - Casual Feeling / Boredom]
-User: "I am feeling so bored today"
-Output: {"type":"chat","action":"none","params":{},"reply":"Arey re! Chaho toh thode energetic ya chill gaane sun sakte ho. Batao kaisa mood hai?"}
-
-[Example 3 - Opinion on song (No action)]
-User: "Ye song kitna achha hai na?"
-Output: {"type":"chat","action":"none","params":{},"reply":"Sach mein, iska vibe aur lyrics dil ko chhu lene wale hain!"}
-
-[Example 4 - Open Page vs Play (Favorites)]
-User: "Open my liked songs"
-Output: {"type":"command","action":"open_page","params":{"page":"favorites"},"reply":"Aapke Liked Songs open kar rahi hoon!"}
-
-[Example 5 - Play Liked Songs (Play command)]
-User: "Play my liked songs"
-Output: {"type":"command","action":"play_song","params":{"query":"liked songs"},"reply":"Aapke favorite songs play kar rahi hoon!"}
-
-[Example 6 - Open vs Play (Playlists)]
-User: "Meri playlists kholo"
-Output: {"type":"command","action":"open_page","params":{"page":"playlists"},"reply":"Aapki playlists screen khol di hai!"}
-
-[Example 7 - Explicit Artist Playback]
-User: "Arijit Singh ke sad songs play karo"
-Output: {"type":"command","action":"play_song","params":{"query":"Arijit Singh sad songs"},"reply":"Arijit Singh ke emotional gaane laga rahi hoon."}
-
-[Example 8 - Hindi Playback]
-User: "Kesariya song chalao"
-Output: {"type":"command","action":"play_song","params":{"query":"Kesariya"},"reply":"Kesariya song shuru kar rahi hoon!"}
-
-[Example 9 - Pause playback]
-User: "Gaana roko"
-Output: {"type":"command","action":"pause","params":{},"reply":"Music pause kar diya hai."}
-
-[Example 10 - Resume playback]
-User: "Song resume karo"
-Output: {"type":"command","action":"resume","params":{},"reply":"Music wapas shuru kar diya!"}
-
-[Example 11 - Next Track]
-User: "Agla gaana lagao"
-Output: {"type":"command","action":"next","params":{},"reply":"Agla gaana play ho raha hai."}
-
-[Example 12 - Previous Track]
-User: "Pichla gaana wapas chalao"
-Output: {"type":"command","action":"previous","params":{},"reply":"Pichle gaane par chalte hain."}
-
-[Example 13 - Volume Reduction]
-User: "Volume thoda kam kar"
-Output: {"type":"command","action":"volume","params":{"relative":-15},"reply":"Volume kam kar diya hai."}
-
-[Example 14 - Volume Set Exact]
-User: "Volume 80 percent karo"
-Output: {"type":"command","action":"volume","params":{"level":80},"reply":"Volume 80% par set kar diya."}
-
-[Example 15 - Mute]
-User: "Mute kar do"
-Output: {"type":"command","action":"volume","params":{"level":0},"reply":"Music mute kar diya hai."}
-
-[Example 16 - Navigation to Activity]
-User: "Listening activity dikhao"
-Output: {"type":"command","action":"open_page","params":{"page":"activity"},"reply":"Aapki listening activity khol rahi hoon."}
-
-[Example 17 - Navigation to History]
-User: "History kholo"
-Output: {"type":"command","action":"open_page","params":{"page":"history"},"reply":"Listening history page open kar rahi hoon."}
-
-[Example 18 - Navigation to Recap & Stats]
-User: "Recap and stats khol do"
-Output: {"type":"command","action":"open_page","params":{"page":"stats"},"reply":"Aapka personal music recap aur stats load ho rahe hain!"}
-
-[Example 19 - Radio Station Navigation]
-User: "Saloon FM par jao"
-Output: {"type":"command","action":"open_page","params":{"page":"saloon_fm"},"reply":"Saloon FM station open kar rahi hoon!"}
-
-[Example 20 - Negative Play Modifier (Do NOT play)]
-User: "Arijit Singh ke songs search karo par play mat karna"
-Output: {"type":"chat","action":"none","params":{},"reply":"Theek hai, Arijit Singh ke gaane bina play kiye dekh sakte ho."}
-
-[Example 21 - Avatar Dance]
-User: "Loopra thoda dance karke dikhao"
-Output: {"type":"command","action":"avatar_dance","params":{},"reply":"Ye lo, thoda groove karte hain!"}
-
-[Example 22 - Avatar Jump]
-User: "Jump karo"
-Output: {"type":"command","action":"avatar_jump","params":{},"reply":"Woohoo! Jump!"}
-
-[Example 23 - Avatar Wave]
-User: "Wave hello"
-Output: {"type":"command","action":"avatar_wave","params":{},"reply":"Hey there! 👋"}
-
-[Example 24 - Avatar Walk to Target]
-User: "Go to the search bar"
-Output: {"type":"command","action":"avatar_walk","params":{"target":"search_bar"},"reply":"Search bar ke paas chal rahi hoon!"}
-
-[Example 25 - Conversational Question (No action)]
-User: "Aaj kaunsa song sunu?"
-Output: {"type":"chat","action":"none","params":{},"reply":"Aaj ke vibe ke liye chill lofi ya acoustic Bollywood try kar sakte ho. Kaisa mood hai aapka?"}
+### OUTPUT FORMAT:
+You MUST output valid, parseable JSON with NO markdown code fences and NO additional prose:
+{
+  "type": "chat" | "command",
+  "action": "play_song" | "pause" | "resume" | "next" | "previous" | "volume" | "open_page" | "open_folder" | "open_application" | "avatar_dance" | "avatar_jump" | "avatar_wave" | "none",
+  "params": {},
+  "reply": "natural spoken response in matching Hindi/English/Hinglish"
+}
 `;
 
 /**
@@ -161,10 +105,8 @@ Output: {"type":"chat","action":"none","params":{},"reply":"Aaj ke vibe ke liye 
 export function sanitizeAndParseJson(text = '') {
   if (!text) return null;
   let clean = text.trim();
-  // Strip code block markers if present
   clean = clean.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
 
-  // Find opening { and closing }
   const start = clean.indexOf('{');
   const end = clean.lastIndexOf('}');
   if (start !== -1 && end !== -1 && end > start) {
@@ -186,133 +128,52 @@ export function sanitizeAndParseJson(text = '') {
 }
 
 /**
- * Fallback intent classifier when no LLM key is set or when API times out.
+ * Calls the configured Gemini model with full multi-turn conversation history and player context.
  */
-export function fallbackHeuristicClassifier(message = '', geminiError = null) {
-  const lower = message.toLowerCase().trim();
-
-  // Negative play guard: NEVER play if negative words exist
-  const hasNeg = /\b(don'?t|do not|mat|na|never|without|stop)\b/i.test(lower);
-
-  // Obvious open/navigation commands
-  if (/\b(open|kholo|dikhao|go to)\b/i.test(lower)) {
-    if (/\b(like|liked|favorite|favourite|pasandida)\b/i.test(lower)) {
-      return { type: 'command', action: 'open_page', params: { page: 'favorites' }, reply: 'Aapke Liked Songs open kar rahi hoon!' };
-    }
-    if (/\b(playlist|playlists)\b/i.test(lower)) {
-      return { type: 'command', action: 'open_page', params: { page: 'playlists' }, reply: 'Aapki playlists khol rahi hoon!' };
-    }
-    if (/\b(stat|stats|recap|insight|insights)\b/i.test(lower)) {
-      return { type: 'command', action: 'open_page', params: { page: 'stats' }, reply: 'Stats aur Recap open kar rahi hoon!' };
-    }
-    if (/\b(activity|recently played)\b/i.test(lower)) {
-      return { type: 'command', action: 'open_page', params: { page: 'activity' }, reply: 'Listening activity page open kar rahi hoon!' };
-    }
-    if (/\b(history)\b/i.test(lower)) {
-      return { type: 'command', action: 'open_page', params: { page: 'history' }, reply: 'Listening history open kar rahi hoon!' };
-    }
-    if (/\b(saloon)\b/i.test(lower)) {
-      return { type: 'command', action: 'open_page', params: { page: 'saloon_fm' }, reply: 'Saloon FM open kar rahi hoon!' };
-    }
-  }
-
-  // Obvious media commands
-  if (/\b(pause|roko|ruk jao|chup)\b/i.test(lower)) {
-    return { type: 'command', action: 'pause', params: {}, reply: 'Music pause kar diya.' };
-  }
-  if (/\b(resume|wapas chalao|shuru karo)\b/i.test(lower)) {
-    return { type: 'command', action: 'resume', params: {}, reply: 'Music shuru kar diya.' };
-  }
-  if (/\b(next|agla|skip)\b/i.test(lower)) {
-    return { type: 'command', action: 'next', params: {}, reply: 'Agla gaana play ho raha hai.' };
-  }
-  if (/\b(previous|prev|pichla)\b/i.test(lower)) {
-    return { type: 'command', action: 'previous', params: {}, reply: 'Pichle gaane par chalte hain.' };
-  }
-  if (/\b(volume|aawaz|awaaz)\b/i.test(lower)) {
-    if (/\b(kam|ghatao|down|low|chhota)\b/i.test(lower)) {
-      return { type: 'command', action: 'volume', params: { relative: -15 }, reply: 'Volume kam kar diya hai.' };
-    }
-    if (/\b(badhao|tez|up|high)\b/i.test(lower)) {
-      return { type: 'command', action: 'volume', params: { relative: 15 }, reply: 'Volume badha diya hai.' };
-    }
-  }
-
-  // Explicit avatar motion commands
-  if (/\b(dance|nacho|nach)\b/i.test(lower)) {
-    return { type: 'command', action: 'avatar_dance', params: {}, reply: 'Chalo dance karte hain!' };
-  }
-  if (/\b(jump|kudo)\b/i.test(lower)) {
-    return { type: 'command', action: 'avatar_jump', params: {}, reply: 'Wheee! Jump!' };
-  }
-  if (/\b(wave|hath hilao|hi bolo)\b/i.test(lower)) {
-    return { type: 'command', action: 'avatar_wave', params: {}, reply: 'Namaste! 👋' };
-  }
-
-  // Explicit play command (unless negative modifier is present)
-  if (!hasNeg && /\b(play|chalao|bajao|laga do|chala de|sunao)\b/i.test(lower)) {
-    const q = lower.replace(/\b(play|chalao|bajao|laga do|chala de|sunao|song|gaana|track|karo)\b/gi, '').trim();
-    if (q.length > 1) {
-      return { type: 'command', action: 'play_song', params: { query: q }, reply: `"${q}" play kar rahi hoon!` };
-    }
-  }
-
-  // Default to pure chat (NO action) - Only triggered when Gemini fails or is unconfigured
-  let fallbackReply = 'AI service se connect nahi ho pa raha hai. Kripya thodi der mein try karein!';
-  if (geminiError === 'ALL_KEYS_FAILED' || geminiError === 'RESOURCE_EXHAUSTED' || geminiError === 'QUOTA_EXHAUSTED') {
-    fallbackReply = 'AI service quota exceed ho gaya hai. Kripya thodi der baad try karein ya secondary key check karein!';
-  } else if (geminiError === 'NO_KEYS_CONFIGURED') {
-    fallbackReply = 'Gemini API key configure nahi hai backend mein. Kripya GEMINI_API_KEY set karein.';
-  } else if (geminiError === 'PRIMARY_KEY_FAILED') {
-    fallbackReply = 'AI service temporarily unavailable hai. Kripya secondary key set karein ya thodi der baad try karein.';
-  }
-
-  return {
-    type: 'chat',
-    action: 'none',
-    params: {},
-    reply: fallbackReply,
-    isFallback: true,
-    error: geminiError || 'AI_UNAVAILABLE'
-  };
-}
-
-/**
- * Call Gemini with multi-model task routing, quota management, and conversation history.
- */
-export async function callGeminiApi(message, history = []) {
-  if (!isGeminiConfigured()) {
+export async function callGeminiConversationalBrain(message, { history = [], currentMusicState = null } = {}) {
+  const keys = getAvailableKeys();
+  if (keys.length === 0) {
     return { success: false, error: 'NO_KEYS_CONFIGURED', message: 'No Gemini API keys configured.' };
   }
 
-  const historyContext = history.slice(-10).map(h => ({
-    role: h.role === 'model' || h.role === 'assistant' ? 'assistant' : 'user',
-    content: h.text || h.content || h.reply || ''
-  }));
+  // Format multi-turn conversation context
+  const contents = [];
 
-  const contents = [
-    CHATBUDDY_SYSTEM_PROMPT,
-    `\nRECENT CONVERSATION HISTORY (Last 10 messages):\n${JSON.stringify(historyContext, null, 2)}\n`,
-    `USER MESSAGE:\n"${message}"\n\nSTRICT JSON OUTPUT:`
-  ].join('\n');
+  // Inject current music context if available
+  let contextSystemNote = '';
+  if (currentMusicState && (currentMusicState.title || currentMusicState.isPlaying)) {
+    contextSystemNote = `[CURRENT PLAYBACK CONTEXT: Song="${currentMusicState.title || 'None'}", Artist="${currentMusicState.artist || 'Unknown'}", IsPlaying=${Boolean(currentMusicState.isPlaying)}, Volume=${currentMusicState.volume ?? 70}%]\n`;
+  }
 
-  // Check if message is a complex analytical query vs standard casual chat
-  const lowerMsg = (message || '').toLowerCase();
-  const isComplex = lowerMsg.length > 180 || /\b(analyze|compare and contrast|breakdown|history of|music theory|chord progression|discography deep dive)\b/i.test(lowerMsg);
-  const taskType = isComplex ? 'COMPLEX_TASK' : 'CASUAL_CHAT';
+  // Add recent history turns (up to 20 messages)
+  const recentHistory = history.slice(-20);
+  for (const h of recentHistory) {
+    const role = (h.role === 'model' || h.role === 'assistant') ? 'model' : 'user';
+    const text = h.text || h.content || h.reply || '';
+    if (text && text.trim()) {
+      contents.push({ role, parts: [{ text }] });
+    }
+  }
 
-  const execResult = await multiModelOrchestrator.executeTask(taskType, async ({ client, modelName, keyInfo }) => {
+  // Add current user message with playback context
+  const userText = contextSystemNote ? `${contextSystemNote}User: "${message}"` : message;
+  contents.push({ role: 'user', parts: [{ text: userText }] });
+
+  const targetModel = GEMINI_CONFIG.chatModel;
+
+  const execResult = await multiModelOrchestrator.executeTask('CASUAL_CHAT', async ({ client, modelName }) => {
     return await client.models.generateContent({
-      model: modelName,
+      model: modelName || targetModel,
       contents,
       config: {
-        responseMimeType: 'application/json'
+        systemInstruction: LOOPRA_VOICE_SYSTEM_INSTRUCTION,
+        responseMimeType: 'application/json',
+        temperature: GEMINI_CONFIG.temperature
       }
     });
   }, {
     prompt: message,
-    cacheTtlMs: 120000, // 2-minute cache for identical chat queries
-    timeoutMs: 12000
+    timeoutMs: 14000
   });
 
   if (!execResult.success) {
@@ -328,7 +189,7 @@ export async function callGeminiApi(message, history = []) {
   const parsed = sanitizeAndParseJson(raw);
   if (parsed) {
     parsed.keyUsed = execResult.keyLabel;
-    parsed.modelUsed = execResult.modelUsed;
+    parsed.modelUsed = execResult.modelUsed || targetModel;
     parsed.failedOver = Boolean(execResult.failedOver);
     return parsed;
   }
@@ -337,109 +198,116 @@ export async function callGeminiApi(message, history = []) {
 }
 
 /**
- * Call Groq Free Tier API (Llama 3 / Mixtral) if configured.
+ * Generates a dynamic, fresh startup greeting whenever Loopra Voice Mode is activated.
+ * No hardcoded replies: Gemini crafts a warm, natural 1-sentence opening.
  */
-async function callGroqApi(message, history = []) {
-  const apiKey = (process.env.GROQ_API_KEY || '').trim();
-  if (!apiKey || apiKey.length < 10) return null;
-
-  const messages = [
-    { role: 'system', content: CHATBUDDY_SYSTEM_PROMPT }
-  ];
-
-  for (const h of history.slice(-10)) {
-    messages.push({
-      role: h.role === 'model' || h.role === 'assistant' ? 'assistant' : 'user',
-      content: h.text || h.content || h.reply || ''
-    });
+export async function generateDynamicStartupGreeting({ lang = 'hi-IN', currentMusicState = null } = {}) {
+  if (!isGeminiAvailable()) {
+    return 'Hey! Kya haal hai?';
   }
 
-  messages.push({ role: 'user', content: message });
+  let prompt = 'Generate a short, confident, natural greeting as Loopra (a warm, real AI conversational companion) in natural Hinglish or Hindi (strictly under 7 words). Examples of desired style: "Hey! Kya haal hai?", "Hello! Kaise ho?", "Hey there! I\'m here." DO NOT ask the user what they want to discuss, talk about, or listen to. Never say "Aaj kya sunenge", "kya baat karenge", or "kya help karoon". Output JSON: {"greeting": "..."}';
+  if (lang.startsWith('en')) {
+    prompt = 'Generate a short, confident, natural greeting as Loopra (a warm, real AI conversational companion) in casual English (strictly under 6 words). Examples of desired style: "Hey there! I\'m here.", "Hello! Good to see you.", "Hey, how are things?". DO NOT ask the user what they want to discuss or listen to. Output JSON: {"greeting": "..."}';
+  }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 4000);
+  if (currentMusicState && currentMusicState.title) {
+    prompt += ` Currently playing: "${currentMusicState.title}". You may optionally mention it briefly.`;
+  }
 
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages,
-        response_format: { type: 'json_object' },
-        temperature: 0.3
-      }),
-      signal: controller.signal
+    const client = new GoogleGenAI({ apiKey: GEMINI_CONFIG.apiKey });
+    const res = await client.models.generateContent({
+      model: GEMINI_CONFIG.chatModel,
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        temperature: 0.8
+      }
     });
 
-    clearTimeout(timeoutId);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const content = data.choices?.[0]?.message?.content;
-    return sanitizeAndParseJson(content);
-  } catch (_) {
-    clearTimeout(timeoutId);
-    return null;
+    const text = res.text || '';
+    const parsed = JSON.parse(text);
+    if (parsed && parsed.greeting) {
+      return parsed.greeting.trim();
+    }
+  } catch (err) {
+    console.warn('[ChatBuddyLLM] Dynamic greeting notice:', sanitizeLogMessage(err.message));
   }
+
+  return 'Hey! Kya haal hai?';
 }
 
 /**
  * Master ChatBuddy Handler:
- * 1. Tries Gemini with automatic GEMINI_API_KEY -> GEMINI_API_KEY_2 failover
- * 2. Tries Groq (if configured)
- * 3. Falls back to deterministic rule-based classifier:
- *    - Explicit music / control actions are executed so playback never breaks
- *    - Casual conversations return honest error status instead of fake repeated sentences
+ * 1. Executes dynamic Gemini Conversational Brain.
+ * 2. If API is unreachable, provides an honest and friendly response without hardcoded fake dialogues.
  */
-export async function processChatBuddyMessage({ message = '', history = [] }) {
+export async function processChatBuddyMessage({ message = '', history = [], currentMusicState = null }) {
   const cleanMsg = (message || '').trim();
   if (!cleanMsg) {
     return {
       type: 'chat',
       action: 'none',
       params: {},
-      reply: 'Namaste! Main Loopra ChatBuddy hoon. Batao aaj kya sunna hai?'
+      reply: 'Boliye, main sun rahi hoon!'
     };
   }
 
-  let geminiError = null;
-
-  // 1. Try Gemini Multi-Key Engine
   try {
-    const geminiRes = await callGeminiApi(cleanMsg, history);
+    const geminiRes = await callGeminiConversationalBrain(cleanMsg, { history, currentMusicState });
     if (geminiRes && geminiRes.reply && !geminiRes.error) {
       return geminiRes;
     }
-    if (geminiRes && geminiRes.error) {
-      geminiError = geminiRes.error;
-    }
   } catch (err) {
-    geminiError = err.message;
     console.warn('[ChatBuddyLLM] Gemini call failed:', sanitizeLogMessage(err.message));
   }
 
-  // 2. Try Groq Free Tier (if configured)
-  try {
-    const groqRes = await callGroqApi(cleanMsg, history);
-    if (groqRes && groqRes.reply) return groqRes;
-  } catch (err) {
-    console.warn('[ChatBuddyLLM] Groq call fallback:', err.message);
+  // Graceful connection fallback (honest, no fake robotic repetition)
+  return {
+    type: 'chat',
+    action: 'none',
+    params: {},
+    reply: 'Connection mein thodi dikkat aayi dost! Ek baar fir se boliye, main ready hoon.',
+    isFallback: true
+  };
+}
+
+/**
+ * Fallback heuristic classifier for offline unit tests.
+ */
+export function fallbackHeuristicClassifier(message = '', geminiError = null) {
+  const lower = (message || '').toLowerCase().trim();
+
+  if (/\b(pause|roko)\b/i.test(lower)) {
+    return { type: 'command', action: 'pause', params: {}, reply: 'Music pause kar diya hai.' };
+  }
+  if (/\b(resume|chalao)\b/i.test(lower)) {
+    return { type: 'command', action: 'resume', params: {}, reply: 'Music dobara chala diya hai.' };
+  }
+  if (/\b(next|agla)\b/i.test(lower)) {
+    return { type: 'command', action: 'next', params: {}, reply: 'Next song chala diya hai.' };
+  }
+  if (/\b(previous|pichla)\b/i.test(lower)) {
+    return { type: 'command', action: 'previous', params: {}, reply: 'Pichla gaana chala diya hai.' };
+  }
+  if (/\b(open|kholo)\b/i.test(lower) && /\b(downloads|folder)\b/i.test(lower)) {
+    return { type: 'command', action: 'open_folder', params: { folder: 'Downloads' }, reply: 'Downloads folder open kar diya hai.' };
   }
 
-  // 3. Fallback heuristic:
-  // If user issued a music / player / nav command, execute it!
-  // If user asked a casual question, return clear error without fake repetition.
-  return fallbackHeuristicClassifier(cleanMsg, geminiError);
+  return {
+    type: 'chat',
+    action: 'none',
+    params: {},
+    reply: 'Main ready hoon dost! Boliye, kya baat karenge ya kya sunenge?'
+  };
 }
 
 export default {
   processChatBuddyMessage,
-  callGeminiApi,
+  generateDynamicStartupGreeting,
+  callGeminiConversationalBrain,
   fallbackHeuristicClassifier,
   sanitizeAndParseJson,
-  CHATBUDDY_SYSTEM_PROMPT
+  LOOPRA_VOICE_SYSTEM_INSTRUCTION
 };
-

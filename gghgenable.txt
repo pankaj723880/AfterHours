@@ -1,0 +1,6 @@
+enable
+config t
+(config)# interface g 0/0- ipv6 unicast routing
+(config-if)# ipv6 address 2001:db6::/64 eui-64
+#ipv6 address FE80::!- link-local
+no shutdown

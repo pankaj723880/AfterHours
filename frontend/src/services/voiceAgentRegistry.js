@@ -215,8 +215,8 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
   // 9. LIBRARY: LIKE / UNLIKE CURRENT SONG
   // -------------------------------------------------------------
   if (
-    /\b(like this song|like this track|like it|add to favourites|add to favorites|add to liked|add that song to my favorites|dil de do|pasand aaya|favourite karo|usko like karo)\b/i.test(lower) ||
-    /^(like|favourite|favorite)$/i.test(lower)
+    /\b(like this song|like this track|like it|add to favourites|add to favorites|add to liked|add that song to my favorites|dil de do|pasand aaya|pasand karo|favourite karo|usko like karo)\b/i.test(lower) ||
+    /^(like|favourite|favorite|pasand karo)$/i.test(lower)
   ) {
     return {
       type: 'library',
@@ -751,13 +751,8 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
   // -------------------------------------------------------------
   // 24. STRICT DEFAULT GATE (UNKNOWN / AMBIGUOUS)
   // -------------------------------------------------------------
-  // STRICT RULE: Never use playback as fallback!
-  return {
-    type: 'clarify',
-    action: 'clarify',
-    speechResponse: `I did not catch that command. What would you like to play or open?`,
-    description: `Clarify command: "${text}"`
-  };
+  // STRICT RULE: Never use playback as fallback! Return null so caller delegates to ChatBuddy.
+  return null;
 }
 
 export {

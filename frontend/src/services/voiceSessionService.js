@@ -11,14 +11,19 @@
  * 6. Clean deactivation: hardware mic tracks immediately released on OFF.
  */
 
+import { chatBuddyClient } from './chatBuddyClient.js';
+
 export const SESSION_STATES = {
   OFF: 'OFF',
   REQUESTING_PERMISSION: 'REQUESTING_PERMISSION',
   CONNECTING: 'CONNECTING',
   LISTENING: 'LISTENING',
+  THINKING: 'THINKING',
   PROCESSING: 'PROCESSING',
   SPEAKING: 'SPEAKING',
+  INTERRUPTED: 'INTERRUPTED',
   EXECUTING: 'EXECUTING',
+  ACTION_COMPLETED: 'ACTION_COMPLETED',
   ERROR: 'ERROR'
 };
 
@@ -31,6 +36,7 @@ class VoiceSessionController {
     this.errorMessage = '';
     this.lang = 'hi-IN'; // Default Hindi per requirements (toggle for en-IN)
     this.initiator = 'global'; // 'global' | 'voice_agent' | 'ai_companion'
+    this.hasGreetedThisSession = false;
     
     // Hardware & Audio references
     this.mediaStream = null;
@@ -220,8 +226,7 @@ class VoiceSessionController {
               this.setState(SESSION_STATES.SPEAKING, 'Loopra speaking...');
             }
             this.emitInterim(''); // Flush any lingering interim speech
-            // Suppress microphone during TTS playback to avoid hearing own speakers
-            this.safeStopRecognition();
+            // Keep microphone listening so user can barge-in and interrupt at any moment
           } else if (evt === 'speech_end') {
             // Guard: If voiceBuddyService is still processing queued speech, do NOT emit duplicate cooldown
             const isStillSpeaking = typeof window !== 'undefined' && window.voiceBuddyService && window.voiceBuddyService.isSpeaking;
@@ -232,15 +237,11 @@ class VoiceSessionController {
               clearTimeout(this.ttsResumeTimer);
               this.ttsResumeTimer = null;
             }
-            // Exactly one 750ms cooldown prevents speaker reverberation from triggering phantom user speech
-            this.ttsResumeTimer = setTimeout(() => {
-              this.ttsResumeTimer = null;
-              this.isSpeakingTts = false;
-              if (this.isSessionActive && !this.isManualStopping && !this.isExecuting) {
-                this.setState(SESSION_STATES.LISTENING, 'Listening... (Speak your music command)');
-                this.safeStartRecognition();
-              }
-            }, 750);
+            this.isSpeakingTts = false;
+            if (this.isSessionActive && !this.isManualStopping && !this.isExecuting) {
+              this.setState(SESSION_STATES.LISTENING, 'Listening... (Speak your music command or chat)');
+              this.safeStartRecognition();
+            }
           }
         });
         return true;
@@ -486,20 +487,26 @@ class VoiceSessionController {
         isFinal: !!finalTranscript
       });
 
-      // Acoustic Echo & Loop Protection:
-      // 1. If Loopra is actively speaking, voiceBuddy is speaking, or TTS ended less than 750ms ago, discard audio entirely.
+      // Real-Time Barge-In & Interruption Handling:
+      // If Loopra is actively speaking and user speaks, evaluate interruption
       const isBuddySpeaking = typeof window !== 'undefined' && window.voiceBuddyService && window.voiceBuddyService.isSpeaking;
-      if (this.isSpeakingTts || isBuddySpeaking || (this.lastTtsEndTime && Date.now() - this.lastTtsEndTime < 750)) {
-        return;
-      }
+      if (this.isSpeakingTts || isBuddySpeaking) {
+        const candidateText = (finalTranscript || interim || '').toLowerCase().replace(/[^a-z0-9\s]/gi, '').trim();
+        const cleanTts = (this.lastTtsText || '').replace(/[^a-z0-9\s]/gi, '').trim();
 
-      // 2. Echo content filter: Discard any transcript that echoes what the avatar just spoke
-      const candidateText = (finalTranscript || interim || '').toLowerCase().replace(/[^a-z0-9\s]/gi, '').trim();
-      if (candidateText && this.lastTtsText) {
-        const cleanTts = this.lastTtsText.replace(/[^a-z0-9\s]/gi, '').trim();
-        if (cleanTts && (cleanTts.includes(candidateText) || candidateText.includes(cleanTts)) && (Date.now() - (this.lastTtsEndTime || 0) < 4000)) {
-          console.log('[VoiceSession:WebSpeech] Discarded speaker echo from avatar TTS:', candidateText);
+        // Echo filter: Discard if this is just the avatar's own words echoing into mic
+        if (cleanTts && candidateText && cleanTts.includes(candidateText) && candidateText.length < 18) {
           return;
+        }
+
+        // Real user speech detected while speaking -> Instant Interruption!
+        if (candidateText && candidateText.length > 1) {
+          console.log('[VoiceSession:WebSpeech] Barge-in interruption triggered:', candidateText);
+          if (typeof window !== 'undefined' && window.voiceBuddyService) {
+            window.voiceBuddyService.stopSpeech();
+          }
+          this.isSpeakingTts = false;
+          this.setState(SESSION_STATES.INTERRUPTED, 'Interrupted');
         }
       }
 
@@ -720,7 +727,7 @@ class VoiceSessionController {
     // 3. Transition to CONNECTING
     this.setState(
       SESSION_STATES.CONNECTING,
-      'Starting speech recognition...'
+      'Connecting to Loopra AI...'
     );
 
     // 4. Initialize and start continuous speech recognition
@@ -728,6 +735,22 @@ class VoiceSessionController {
 
     // 5. Start 60s inactivity watchdog
     this.startInactivityTimer();
+
+    // 6. Dynamic Startup Greeting (Greets once on new session activation)
+    if (!this.hasGreetedThisSession) {
+      this.hasGreetedThisSession = true;
+      try {
+        const greetingPromise = chatBuddyClient.getStartupGreeting('', {
+          lang: this.lang,
+          currentMusicState: (typeof window !== 'undefined' && window.__loopraCurrentSong) ? window.__loopraCurrentSong : null
+        });
+        greetingPromise.then((greeting) => {
+          if (this.isSessionActive && greeting && typeof window !== 'undefined' && window.voiceBuddyService) {
+            window.voiceBuddyService.speak(greeting);
+          }
+        }).catch(() => {});
+      } catch (_) {}
+    }
   }
 
   /**
@@ -775,6 +798,12 @@ class VoiceSessionController {
     this.isManualStopping = true;
     this.isSessionActive = false;
     this.isExecuting = false;
+    this.hasGreetedThisSession = false;
+
+    // Halt any ongoing assistant TTS output immediately
+    if (typeof window !== 'undefined' && window.voiceBuddyService) {
+      window.voiceBuddyService.stopSpeech();
+    }
 
     // Clear all pending timers
     clearTimeout(this.restartTimer);

@@ -1,0 +1,8 @@
+**Network Fundamentals******
+Introduction & basic concepts, Today's world and networking; Types
+of network- LAN, WAN. Internet, Intranet and Extranet; Internet Connection Providers.
+ **** 
+ **** 
+**Network Protocols and Communication**
+Communication Rules, Network Protocols and Standards, OSI Reference Model and TCP/IP Model, Data Encapsulation & Data Access, Network Architecture: Two-Tier and Three-Tier Architecture, Components of Infrastructure: Firewall, Access Points, Wireless Controller.
+Effect of Cloud Resources on Enterprise Network Architecture- Traffic Path to Internal and External Cloud Services, Virtual Services, Basic Virtual Network Infrastructure. in hinglish. give all answers one by one

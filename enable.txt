@@ -1,0 +1,10 @@
+enable
+show version
+show running-config
+show startup-config
+show ip interface  brief
+show interfaces status
+show spanning-tree
+show logging
+config t
+exit

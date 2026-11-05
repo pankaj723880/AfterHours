@@ -262,7 +262,32 @@ export default function VoiceAgentModal({
     if (!isCompound) {
       const directAction = parseCommandToAction(text, persistentContextRef.current);
 
-      if (directAction && directAction.intent !== INTENT_CATEGORIES.GENERAL_QUESTION) {
+      // A4. Casual Chat & Conversational Inquiries: Route DIRECTLY to Gemini ChatBuddy (/api/chat)
+      // Never attempt task pipeline or emit internal execution labels for natural chat!
+      if (directAction && directAction.intent === INTENT_CATEGORIES.GENERAL_QUESTION) {
+        try {
+          const chatRes = await chatBuddyClient.sendMessage(text, backendUrl, persistentContextRef.current);
+          if (chatRes && chatRes.reply) {
+            voiceBuddyService.speak(chatRes.reply);
+            showToast?.(chatRes.reply);
+            voiceSessionService.notifyExecutionFinish(chatRes.reply);
+            return;
+          }
+        } catch (err) {
+          console.warn('[VoiceAgent] ChatBuddy direct inquiry notice:', err.message);
+        }
+      }
+
+      // A5. Genuine Clarification Check (e.g. "Play that song" when no song is in context)
+      if (directAction && directAction.intent === INTENT_CATEGORIES.CLARIFY) {
+        const clarifyPrompt = directAction.speechResponse || 'Which song would you like to play?';
+        voiceBuddyService.speak(clarifyPrompt);
+        showToast?.(clarifyPrompt, 'info');
+        voiceSessionService.notifyExecutionFinish(clarifyPrompt);
+        return;
+      }
+
+      if (directAction && directAction.intent !== INTENT_CATEGORIES.GENERAL_QUESTION && directAction.intent !== INTENT_CATEGORIES.CLARIFY) {
         if (typeof window !== 'undefined' && typeof window.__loopraRecordCommandDisplay === 'function') {
           window.__loopraRecordCommandDisplay(text, directAction.action || directAction.intent);
         }
@@ -518,6 +543,15 @@ export default function VoiceAgentModal({
       return;
     }
 
+    // Single Clarification Step: directly speak prompt without executing pipeline
+    if (steps.length === 1 && (steps[0].action === 'clarify' || steps[0].type === 'clarify')) {
+      const clarifyPrompt = steps[0].speechResponse || 'Which song would you like to play?';
+      voiceBuddyService.speak(clarifyPrompt);
+      showToast?.(clarifyPrompt, 'info');
+      voiceSessionService.notifyExecutionFinish(clarifyPrompt);
+      return;
+    }
+
     const navStep = steps.find(s => s.type === 'navigation' || s.action === 'navigate_page');
     let hasWalked = false;
 
@@ -572,12 +606,29 @@ export default function VoiceAgentModal({
         return;
       }
 
+      if (pipelineResult.clarificationRequired) {
+        const clarifyMsg = pipelineResult.message || 'Which song would you like to play?';
+        voiceBuddyService.speak(clarifyMsg);
+        showToast?.(clarifyMsg, 'info');
+        voiceSessionService.notifyExecutionFinish(clarifyMsg);
+        return;
+      }
+
       if (pipelineResult.taskContext) {
         persistentContextRef.current = pipelineResult.taskContext;
       }
 
-      const friendVoiceReply = voiceBuddyService.generateFriendReply(text, pipelineResult.message);
+      // Sanitize user-facing speech: Never speak generic "executed" labels; name the actual action
+      let cleanMessage = pipelineResult.message;
+      if (/executed\s*(clarif|action|none|unknown)/i.test(cleanMessage || '')) {
+        const lastCompleted = pipelineResult.completedSteps?.[0]?.result?.description;
+        cleanMessage = lastCompleted || (currentSong?.title ? `"${currentSong.title}" play kar diya hai. Enjoy!` : 'Music play kar diya hai.');
+      }
+
+      const friendVoiceReply = voiceBuddyService.generateFriendReply(text, cleanMessage);
       voiceBuddyService.speak(friendVoiceReply);
+      chatBuddyClient.addHistory('user', text);
+      chatBuddyClient.addHistory('model', friendVoiceReply);
 
       if (pipelineResult.success) {
         showToast?.(pipelineResult.message);

@@ -363,15 +363,15 @@ const handleTtsRequest = async (req, res) => {
   const isHindiVoice = voiceName.startsWith('hi-IN');
   const speechText = optimizeForIndianSpeech(cleanText, isHindiVoice);
 
-  // Natural human conversational pacing (+4% rate)
-  let rateModifier = '+4%';
+  // Conversational pacing: 1.5x speed (+50% rate) with natural pitch
+  let rateModifier = '+50%';
   let pitchModifier = '+0Hz';
   if (emotion === 'enthusiastic') {
-    rateModifier = '+8%';
-    pitchModifier = '+4Hz';
+    rateModifier = '+55%';
+    pitchModifier = '+0Hz';
   } else if (emotion === 'chill') {
-    rateModifier = '-2%';
-    pitchModifier = '-2Hz';
+    rateModifier = '+45%';
+    pitchModifier = '+0Hz';
   }
 
   try {
@@ -391,7 +391,10 @@ const handleTtsRequest = async (req, res) => {
       const fallbackVoice = isHindiDetected ? 'hi-IN-SwaraNeural' : 'en-IN-NeerjaExpressiveNeural';
       const tts2 = new MsEdgeTTS();
       await tts2.setMetadata(fallbackVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-      const readable2 = tts2.toStream(speechText || cleanText);
+      const readable2 = tts2.toStream(speechText || cleanText, {
+        rate: '+50%',
+        pitch: '+0Hz'
+      });
       res.setHeader('Content-Type', 'audio/mpeg');
       return readable2.audioStream.pipe(res);
     } catch (gErr) {

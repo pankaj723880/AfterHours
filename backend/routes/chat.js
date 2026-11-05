@@ -1,5 +1,5 @@
 import express from 'express';
-import { processChatBuddyMessage } from '../services/chatBuddyLlmService.js';
+import { processChatBuddyMessage, generateDynamicStartupGreeting } from '../services/chatBuddyLlmService.js';
 import { optionalAuth } from './aiMusic.js';
 
 const router = express.Router();
@@ -10,13 +10,13 @@ const router = express.Router();
  * Returns strict JSON:
  * {
  *   "type": "chat" | "command",
- *   "action": "play_song|pause|resume|next|previous|volume|open_page|avatar_walk|avatar_jump|avatar_dance|avatar_wave|none",
+ *   "action": "play_song|pause|resume|next|previous|volume|open_page|open_folder|open_application|avatar_walk|avatar_jump|avatar_dance|avatar_wave|none",
  *   "params": { ... },
  *   "reply": "..."
  * }
  */
 router.post('/', optionalAuth, async (req, res) => {
-  const { message, history } = req.body;
+  const { message, history, currentMusicState } = req.body || {};
 
   if (typeof message !== 'string') {
     return res.status(400).json({
@@ -30,7 +30,8 @@ router.post('/', optionalAuth, async (req, res) => {
   try {
     const result = await processChatBuddyMessage({
       message,
-      history: Array.isArray(history) ? history : []
+      history: Array.isArray(history) ? history : [],
+      currentMusicState: currentMusicState || null
     });
 
     return res.json(result);
@@ -45,5 +46,23 @@ router.post('/', optionalAuth, async (req, res) => {
   }
 });
 
-export default router;
+/**
+ * GET /api/chat/greeting & POST /api/chat/greeting
+ * Generates a fresh, dynamic startup greeting on Loopra voice activation.
+ */
+const handleGreeting = async (req, res) => {
+  const lang = req.query?.lang || req.body?.lang || 'hi-IN';
+  const currentMusicState = req.body?.currentMusicState || null;
 
+  try {
+    const greeting = await generateDynamicStartupGreeting({ lang, currentMusicState });
+    return res.json({ success: true, greeting });
+  } catch (err) {
+    return res.json({ success: true, greeting: 'Hey! Main Loopra hoon. Boliye, aaj kya vibe chal rahi hai?' });
+  }
+};
+
+router.get('/greeting', handleGreeting);
+router.post('/greeting', handleGreeting);
+
+export default router;
