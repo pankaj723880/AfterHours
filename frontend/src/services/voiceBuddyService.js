@@ -51,8 +51,19 @@ class VoiceBuddyService {
       if (typeof this.speechSynthesis.onvoiceschanged !== 'undefined') {
         this.speechSynthesis.onvoiceschanged = () => {
           this.hasLoadedVoices = true;
+          this.cachedIndianVoice = this.getIndianVoice();
         };
       }
+    }
+
+    // Mobile / AudioContext audio unlock on first touch or click
+    if (typeof window !== 'undefined') {
+      const handleUserUnlock = () => {
+        this.unlockAudio();
+      };
+      window.addEventListener('touchstart', handleUserUnlock, { passive: true, once: true });
+      window.addEventListener('touchend', handleUserUnlock, { passive: true, once: true });
+      window.addEventListener('pointerdown', handleUserUnlock, { passive: true, once: true });
     }
 
     if (typeof document !== 'undefined') {
@@ -118,6 +129,13 @@ class VoiceBuddyService {
     try {
       if (this.speechSynthesis && this.speechSynthesis.paused) {
         this.speechSynthesis.resume();
+      }
+      if (!this.cachedIndianVoice) {
+        this.cachedIndianVoice = this.getIndianVoice();
+      }
+      // Resume web audio context on user touch
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        this.audioContext.resume().catch(() => {});
       }
     } catch (_) { }
   }
@@ -749,9 +767,9 @@ class VoiceBuddyService {
     const cleanPhonetics = this.preprocessTextForSpeech(text);
     const textToSpeak = cleanPhonetics || text;
 
-    // 1. Primary: Zero-Latency Browser SpeechSynthesis (<20ms start time)
+    // 1. Primary: Zero-Latency Browser SpeechSynthesis with STRICT Indian Accent
     const indianVoice = this.getIndianVoice();
-    if (this.speechSynthesis && (indianVoice || (this.speechSynthesis.getVoices && this.speechSynthesis.getVoices().length > 0))) {
+    if (this.speechSynthesis && indianVoice) {
       this.speakWithSpeechSynthesis(textToSpeak, completeItem, indianVoice);
       return;
     }

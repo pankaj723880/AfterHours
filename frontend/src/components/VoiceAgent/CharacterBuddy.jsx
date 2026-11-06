@@ -1419,19 +1419,22 @@ export default function CharacterBuddy({
 
         {/* ======================================================= */}
         {/* REALTIME COMMAND & LIVE TRANSCRIPT TEXT-ONLY DISPLAY    */}
-        {/* Positioned cleanly on the LEFT side of the character.   */}
-        {/* Auto-dismisses strictly after 2 seconds.               */}
+        {/* Mobile: position on top/inward to prevent clipping      */}
         {/* ======================================================= */}
         {isBubbleVisible && (liveTranscript || isListening || isSpeaking) && (
           <div
-            className="absolute right-full mr-2.5 md:mr-3 bottom-24 md:bottom-28 z-[999999] w-48 md:w-60 pointer-events-none select-none text-right flex flex-col items-end gap-1 animate-in fade-in duration-150"
+            className={`absolute z-[999999] pointer-events-none select-none flex flex-col gap-1 animate-in fade-in duration-150 ${
+              isMobileScreen
+                ? 'bottom-full mb-3 right-0 items-end max-w-[85vw] w-max'
+                : 'right-full mr-2.5 md:mr-3 bottom-24 md:bottom-28 w-48 md:w-60 items-end text-right'
+            }`}
           >
             {isInterim ? (
-              <p className="text-[11px] md:text-xs font-medium text-amber-300 italic drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)] leading-tight break-words">
+              <p className="text-[11px] md:text-xs font-medium text-amber-300 italic drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)] leading-tight break-words bg-black/60 px-2 py-0.5 rounded-md backdrop-blur-sm">
                 "{liveTranscript}"
               </p>
             ) : liveTranscript ? (
-              <div className="flex flex-col items-end gap-0.5">
+              <div className="flex flex-col items-end gap-0.5 bg-black/70 px-2.5 py-1 rounded-lg backdrop-blur-sm border border-white/10 shadow-lg">
                 <p className="text-xs md:text-sm font-semibold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)] leading-tight break-words">
                   "{liveTranscript}"
                 </p>
@@ -1442,11 +1445,11 @@ export default function CharacterBuddy({
                 )}
               </div>
             ) : isListening ? (
-              <p className="text-[11px] md:text-xs font-medium text-amber-400 drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)] animate-pulse">
+              <p className="text-[11px] md:text-xs font-medium text-amber-400 drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)] animate-pulse bg-black/60 px-2 py-0.5 rounded-md">
                 Listening...
               </p>
             ) : isSpeaking ? (
-              <p className="text-[11px] md:text-xs font-medium text-emerald-400 drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]">
+              <p className="text-[11px] md:text-xs font-medium text-emerald-400 drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)] bg-black/60 px-2 py-0.5 rounded-md">
                 Speaking...
               </p>
             ) : null}
