@@ -597,10 +597,13 @@ class VoiceSessionController {
         }
       }
 
-      console.log('[VoiceSession:WebSpeech] onresult:', {
+      console.log('[VoiceSession:WebSpeech] onresult received (mobile/desktop):', {
         interim: interim || undefined,
         final: finalTranscript || undefined,
-        isFinal: !!finalTranscript
+        isFinal: !!finalTranscript,
+        resultsLength: event.results?.length,
+        resultIndex: event.resultIndex,
+        isMobile: isMobileBrowser
       });
 
       // Real-Time Barge-In & Interruption Handling:
@@ -627,11 +630,13 @@ class VoiceSessionController {
       }
 
       if (interim) {
+        this.pendingMobileTranscript = interim;
         const romanInterim = devanagariToHinglish(interim);
         this.emitInterim(romanInterim || interim);
       }
 
       if (finalTranscript) {
+        this.pendingMobileTranscript = '';
         const cleaned = devanagariToHinglish(finalTranscript.trim());
         this.emitInterim(''); // Clear interim
 
@@ -656,8 +661,24 @@ class VoiceSessionController {
     recognition.onerror = (event) => {
       const err = event.error;
 
+      console.warn('[VoiceSession:WebSpeech] mobile onerror diagnostics:', {
+        error: err,
+        message: event.message,
+        isMobile: isMobileBrowser,
+        isSessionActive: this.isSessionActive,
+        isRecognizing: this.isRecognizing
+      });
+
       if (err === 'no-speech' || err === 'aborted') {
-        // Natural speech pause or benign abort on stop/TTS pause - do not flood console or restart loops
+        // Natural speech pause or benign abort on stop/TTS pause - gracefully restart on mobile if active
+        if (err === 'no-speech' && this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts && !this.isExecuting) {
+          clearTimeout(this.restartTimer);
+          this.restartTimer = setTimeout(() => {
+            if (this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts && !this.isExecuting) {
+              this.safeStartRecognition();
+            }
+          }, 350);
+        }
         return;
       }
 
@@ -716,6 +737,19 @@ class VoiceSessionController {
       this.isRecognizing = false;
       this.isStarting = false;
 
+      // Mobile STT Fallback: Finalize pending interim if mobile engine ended before marking isFinal
+      if (this.pendingMobileTranscript && this.pendingMobileTranscript.trim()) {
+        const fallbackText = this.pendingMobileTranscript.trim();
+        this.pendingMobileTranscript = '';
+        console.log('[VoiceSession:WebSpeech] Mobile speech fallback finalizing on onend:', fallbackText);
+        const cleaned = devanagariToHinglish(fallbackText);
+        this.emitInterim('');
+        this.resetInactivityOnValidCommand();
+        this.setState(SESSION_STATES.PROCESSING, `Processing: "${cleaned}"`);
+        this.emitFinalTranscript(cleaned);
+        return;
+      }
+
       // Robust auto-restart on 'end' ONLY when session is genuinely active and ready:
       // NOT while speaking TTS, NOT while processing/executing a command, NOT when manual stopping, NOT when page hidden!
       const isDocumentVisible = typeof document === 'undefined' || !document.hidden;
@@ -762,14 +796,21 @@ class VoiceSessionController {
     }
     if (this.isRecognizing || this.isStarting) return;
 
-    if (!this.recognition) {
+    const isMobileBrowser = typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Brave/i.test(navigator.userAgent);
+    // On mobile viewports/browsers, always re-create fresh instance if not recognizing, since dead instances cannot restart
+    if (!this.recognition || isMobileBrowser) {
+      if (this.recognition && isMobileBrowser && !this.isRecognizing) {
+        try { this.recognition.abort(); } catch (_) {}
+      }
       this.recognition = this.initSpeechRecognition();
     }
 
     if (!this.recognition) {
+      const isOpera = typeof navigator !== 'undefined' && (navigator.userAgent?.includes('OPR/') || navigator.userAgent?.includes('Opera'));
+      const hint = isOpera ? 'Opera Mobile does not support Web Speech Recognition. Please use Chrome, Brave or Edge.' : 'Speech recognition not supported in this browser. Please use Chrome or Edge.';
       this.setState(
         SESSION_STATES.ERROR,
-        'Speech recognition not supported in this browser. Please use Chrome or Edge.'
+        hint
       );
       this.stopSession('unsupported');
       return;
@@ -780,9 +821,18 @@ class VoiceSessionController {
       this.recognition.start();
     } catch (err) {
       this.isStarting = false;
-      // If already started, mark recognizing
       if (err.name === 'InvalidStateError') {
-        this.isRecognizing = true;
+        // Stale instance on mobile - re-instantiate cleanly and retry
+        try {
+          this.recognition = this.initSpeechRecognition();
+          if (this.recognition) {
+            this.isStarting = true;
+            this.recognition.start();
+          }
+        } catch (reErr) {
+          this.isStarting = false;
+          console.warn('[VoiceSessionController] safeStartRecognition mobile re-init error:', reErr.message);
+        }
       } else {
         console.warn('[VoiceSessionController] safeStartRecognition error:', err.message);
       }
@@ -828,13 +878,34 @@ class VoiceSessionController {
     this.initiator = initiator || 'global';
     if (lang) this.lang = lang;
 
-    // 1. Transition to REQUESTING_PERMISSION
+    const isMobileViewport = (typeof window !== 'undefined' && window.innerWidth <= 768) ||
+      (typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Brave/i.test(navigator.userAgent));
+
+    // 1. Explicit Mobile Mic Trigger:
+    // On mobile viewports, start recognition synchronously inside the touch/click event turn
+    // to bypass transient user activation expiration that mobile browsers enforce.
+    if (isMobileViewport) {
+      this.setState(
+        SESSION_STATES.LISTENING,
+        'Listening... (Speak your music command)'
+      );
+      this.safeStartRecognition();
+      this.startInactivityTimer();
+
+      // Setup audio stream in background for visualizer without delaying STT
+      this.setupAudioStream().catch((err) => {
+        console.warn('[VoiceSessionController] Mobile audio visualizer stream notice:', err.message);
+      });
+      return;
+    }
+
+    // 2. Desktop Flow:
     this.setState(
       SESSION_STATES.REQUESTING_PERMISSION,
       'Requesting microphone access...'
     );
 
-    // 2. Request microphone hardware ONCE
+    // Request microphone hardware ONCE
     try {
       await this.setupAudioStream();
     } catch (err) {

@@ -12,7 +12,7 @@ import {
 } from '../../services/voiceTaskEngine';
 import { chatBuddyLearningClient } from '../../services/chatBuddyLearningService';
 import { chatBuddyClient } from '../../services/chatBuddyClient';
-import { Volume2, VolumeX, ChevronDown, ChevronUp, MessageSquare, X } from 'lucide-react';
+import { Volume2, VolumeX, ChevronDown, ChevronUp, MessageSquare, X, Play, Pause, SkipForward, SkipBack } from 'lucide-react';
 
 const STORAGE_KEY_DESKTOP = 'loopra_ai_chat_dims_desktop';
 const STORAGE_KEY_MOBILE = 'loopra_ai_chat_dims_mobile';
@@ -506,12 +506,9 @@ export default function LoopraAiCompanion({
     setIsTyping(true);
     setStreamingText('');
 
-    // In mobile mode: automatically close chatbox immediately after successful command submission
-    // Does not wait for task to finish; preserves conversation history for when reopened
+    // Only auto-close on heavy page navigations/views (e.g. settings, history, listening stats)
+    // Regular conversation and music playback stay open in the chatbox
     const isMobileMode = typeof window !== 'undefined' && window.innerWidth <= 768;
-    if (isMobileMode) {
-      handlePanelClose();
-    }
 
     // 0. Check for Multi-Step Compound Commands (e.g. "Open Saloon FM and play a song")
     const clauses = splitVoiceInstructionIntoClauses(text);
@@ -611,6 +608,7 @@ export default function LoopraAiCompanion({
           (directAction.intent === INTENT_CATEGORIES.OPEN_PAGE && (directAction.target === 'stats' || directAction.target === 'insights' || directAction.target === 'recap_stats'))
         ) {
           if (onOpenInsights) onOpenInsights();
+          handlePanelClose();
           replyText = 'Listening Stats & Recap open kar rahi hoon...';
           chatBuddyLearningClient.recordExecution({
             userPhrase: text,
@@ -635,6 +633,7 @@ export default function LoopraAiCompanion({
           } else if (onNavigate) {
             onNavigate(targetId);
           }
+          handlePanelClose();
 
           replyText = voiceBuddyService.generateFriendReply('navigate_page', { target: targetId });
         }
@@ -642,6 +641,7 @@ export default function LoopraAiCompanion({
         else if (directAction.intent === INTENT_CATEGORIES.OPEN_SECTION) {
           if (directAction.target === 'trending_section') {
             if (onNavigate) onNavigate('home', { showAll: 'trending' });
+            handlePanelClose();
             replyText = voiceBuddyService.generateFriendReply('navigate_section', { target: 'trending_section' });
           }
         }
@@ -649,6 +649,7 @@ export default function LoopraAiCompanion({
         else if (directAction.intent === INTENT_CATEGORIES.SEARCH_SONG) {
           const q = directAction.query || 'songs';
           if (onNavigate) onNavigate('discover', { query: q });
+          handlePanelClose();
           replyText = voiceBuddyService.generateFriendReply('search', { query: q });
         }
         // D. PLAY_SONG (e.g. Arijit Singh, Kesariya, specific track)
@@ -806,6 +807,7 @@ export default function LoopraAiCompanion({
           } else if (onNavigate) {
             onNavigate(page);
           }
+          handlePanelClose();
         } else if (action === 'pause') {
           if (onTogglePlayPause && isPlaying) onTogglePlayPause();
         } else if (action === 'resume') {
@@ -1156,41 +1158,84 @@ export default function LoopraAiCompanion({
           {/* Avatar Controls removed from UI as requested by user */}
           {/* Reference preserved: Loopra Female Voice (Active), /characters/female_bust.png, handleTestVoice, handleToggleVoiceOutput, action: 'wave', action: 'wink', action: 'dance', action: 'jump', action: 'think', Live 2D Rig, Avatar Animation Tests: */}
 
-            {/* Current Playing Song Awareness Pill */}
-            <div className="px-4 py-2 bg-neutral-900/60 border-b border-white/5 flex items-center justify-between gap-2 text-xs shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
+            {/* Embedded Now Playing Player Widget */}
+            <div className="px-3.5 py-2.5 bg-neutral-900/80 border-b border-white/10 flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
                 {currentSong ? (
                   <>
-                    <div className="flex items-end gap-0.5 h-3.5 shrink-0">
-                      <span className={`w-0.5 h-3 bg-amber-400 rounded-full ${isPlaying ? 'animate-pulse' : ''}`} />
-                      <span className={`w-0.5 h-2 bg-amber-300 rounded-full ${isPlaying ? 'animate-ping' : ''}`} />
-                      <span className={`w-0.5 h-3.5 bg-amber-400 rounded-full ${isPlaying ? 'animate-pulse' : ''}`} />
+                    {currentSong.thumbnail ? (
+                      <img
+                        src={currentSong.thumbnail}
+                        alt={currentSong.title}
+                        className="w-9 h-9 rounded-lg object-cover shrink-0 border border-amber-500/30 shadow-sm"
+                      />
+                    ) : (
+                      <div className="w-9 h-9 rounded-lg bg-neutral-800 flex items-center justify-center shrink-0 border border-white/5">
+                        <span className="text-sm">🎵</span>
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-xs font-semibold text-white truncate leading-tight">
+                          {currentSong.title}
+                        </p>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 truncate mt-0.5">
+                        {currentSong.artist || 'Unknown Artist'}
+                      </p>
                     </div>
-                    <button
-                      onClick={() => handleSendMessage("Tell me about this current playing song")}
-                      className="text-left text-neutral-300 hover:text-amber-300 transition truncate max-w-[240px] text-[11px] cursor-pointer"
-                      title="Click to ask about current track"
-                    >
-                      <span className="font-semibold text-amber-400">Now: </span>
-                      {currentSong.title}
-                      {currentSong.artist ? ` • ${currentSong.artist}` : ''}
-                    </button>
                   </>
                 ) : (
-                  <span className="text-[11px] text-neutral-500 flex items-center gap-1.5">
-                    <span>⏸️</span> No music currently playing in Loopra
-                  </span>
+                  <div className="flex items-center gap-2 min-w-0 text-neutral-400 text-xs">
+                    <span className="text-sm">🎧</span>
+                    <span className="truncate">No music playing</span>
+                  </div>
                 )}
               </div>
 
-              {currentSong && (
+              {/* Player Controls */}
+              <div className="flex items-center gap-1 shrink-0">
+                {onPrevTrack && (
+                  <button
+                    type="button"
+                    onClick={onPrevTrack}
+                    className="p-1.5 text-neutral-400 hover:text-white hover:bg-white/10 rounded-lg transition active:scale-95 cursor-pointer"
+                    title="Previous track"
+                  >
+                    <SkipBack className="w-3.5 h-3.5" />
+                  </button>
+                )}
+
                 <button
-                  onClick={() => handleSendMessage("Suggest 4 songs similar to this track")}
-                  className="text-[10px] text-amber-400 hover:text-amber-300 font-medium px-2 py-0.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded shrink-0 transition cursor-pointer"
+                  type="button"
+                  onClick={onTogglePlayPause}
+                  disabled={!currentSong && !onTogglePlayPause}
+                  className={`p-2 rounded-full transition active:scale-95 cursor-pointer shadow-md ${
+                    isPlaying
+                      ? 'bg-amber-500 text-neutral-950 hover:bg-amber-400'
+                      : 'bg-white/10 text-white hover:bg-amber-500 hover:text-neutral-950'
+                  }`}
+                  title={isPlaying ? "Pause playback" : "Play playback"}
+                  aria-label={isPlaying ? "Pause" : "Play"}
                 >
-                  Similar ✨
+                  {isPlaying ? (
+                    <Pause className="w-4 h-4 fill-current" />
+                  ) : (
+                    <Play className="w-4 h-4 fill-current ml-0.5" />
+                  )}
                 </button>
-              )}
+
+                {onNextTrack && (
+                  <button
+                    type="button"
+                    onClick={onNextTrack}
+                    className="p-1.5 text-neutral-400 hover:text-white hover:bg-white/10 rounded-lg transition active:scale-95 cursor-pointer"
+                    title="Next track"
+                  >
+                    <SkipForward className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Speaking banner */}

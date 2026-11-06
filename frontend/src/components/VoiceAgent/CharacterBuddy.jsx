@@ -699,6 +699,13 @@ export default function CharacterBuddy({
       if (snapshot.micState) setMicState(snapshot.micState);
       if (snapshot.lang) setCurrentLang(snapshot.lang);
 
+      // Isolate avatar gestures strictly to active processing state (prevents false visual states on mic error)
+      if (snapshot.state === SESSION_STATES.PROCESSING || snapshot.event === 'final_transcript') {
+        playTransientGesture('think', 1500);
+      } else if (snapshot.state === SESSION_STATES.ERROR || snapshot.state === SESSION_STATES.OFF) {
+        setTransientGesture(null);
+      }
+
       if (snapshot.event === 'interim_transcript') {
         const text = snapshot.interimText || '';
         if (text) {
@@ -720,7 +727,7 @@ export default function CharacterBuddy({
     });
 
     return unsub;
-  }, [recordCommandDisplay, resetAutonomousTimer]);
+  }, [recordCommandDisplay, resetAutonomousTimer, playTransientGesture]);
 
   // Mouse / cursor tracking offset for interactive gaze
   const [cursorOffset, setCursorOffset] = useState({ x: 0, y: 0 });
@@ -1032,14 +1039,21 @@ export default function CharacterBuddy({
     if (e.preventDefault) e.preventDefault();
     clickCountRef.current += 1;
 
+    const isMobile = isMobileScreen || (typeof window !== 'undefined' && window.innerWidth <= 768);
+    if (isMobile) {
+      // Synchronous execution on mobile viewports preserves transient user activation for SpeechRecognition
+      clickCountRef.current = 0;
+      clearTimeout(clickTimerRef.current);
+      onToggleVoiceMode();
+      return;
+    }
+
     if (clickCountRef.current === 1) {
       clearTimeout(clickTimerRef.current);
       clickTimerRef.current = setTimeout(() => {
         clickCountRef.current = 0;
-        // SINGLE CLICK -> WAVE & TOGGLE VOICE MODE
-        playTransientGesture('wave', 1500);
         onToggleVoiceMode();
-      }, 240);
+      }, 200);
     } else if (clickCountRef.current >= 2) {
       // DOUBLE CLICK -> WINK
       clearTimeout(clickTimerRef.current);
