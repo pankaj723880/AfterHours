@@ -693,6 +693,25 @@ export default function CharacterBuddy({
     };
   }, [recordCommandDisplay]);
 
+  // Interaction timer refs for clicks, double-click, drag and long-press
+  const longPressTimerRef = useRef(null);
+  const clickTimerRef = useRef(null);
+  const clickCountRef = useRef(0);
+  const transientAnimTimerRef = useRef(null);
+  const isPointerDownRef = useRef(false);
+  const didLongPressRef = useRef(false);
+
+  // Play transient gesture (wave, wink, pose, dance, jump, think) and smoothly return to resting state
+  const playTransientGesture = useCallback((gestureState, durationMs = 1500) => {
+    clearTimeout(transientAnimTimerRef.current);
+    smoothReturnToFront();
+    resetAutonomousTimer();
+    setTransientGesture(gestureState);
+    transientAnimTimerRef.current = setTimeout(() => {
+      setTransientGesture(null);
+    }, durationMs);
+  }, [resetAutonomousTimer, smoothReturnToFront]);
+
   // Subscribe to voiceSessionService for live Web Speech events
   useEffect(() => {
     const unsub = voiceSessionService.subscribe((snapshot) => {
@@ -733,14 +752,6 @@ export default function CharacterBuddy({
   const [cursorOffset, setCursorOffset] = useState({ x: 0, y: 0 });
   const walkerRef = useRef(null);
 
-  // Interaction timer refs for clicks, double-click, drag and long-press
-  const longPressTimerRef = useRef(null);
-  const clickTimerRef = useRef(null);
-  const clickCountRef = useRef(0);
-  const transientAnimTimerRef = useRef(null);
-  const isPointerDownRef = useRef(false);
-  const didLongPressRef = useRef(false);
-
   // Cursor tracking listener: Character eyes & head follow cursor when idle
   useEffect(() => {
     const handleMouseMove = (e) => {
@@ -757,17 +768,6 @@ export default function CharacterBuddy({
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, [isResizeMode]);
-
-  // Play transient gesture (wave, wink, pose, dance, jump, think) and smoothly return to resting state
-  const playTransientGesture = useCallback((gestureState, durationMs = 1500) => {
-    clearTimeout(transientAnimTimerRef.current);
-    smoothReturnToFront();
-    resetAutonomousTimer();
-    setTransientGesture(gestureState);
-    transientAnimTimerRef.current = setTimeout(() => {
-      setTransientGesture(null);
-    }, durationMs);
-  }, [resetAutonomousTimer, smoothReturnToFront]);
 
   useEffect(() => {
     window.__loopraPlayGesture = playTransientGesture;
