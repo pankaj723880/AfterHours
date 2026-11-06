@@ -29,6 +29,100 @@ export const SESSION_STATES = {
 
 export const INACTIVITY_TIMEOUT_MS = 60 * 1000; // 60 seconds
 
+/**
+ * Lightweight Devanagari to Roman/Hinglish (Latin script) Transliteration Layer.
+ * Ensures spoken Hindi/Hinglish words are converted to phonetic Latin script
+ * (e.g., "हिस्ट्री" -> "history", "गाना" -> "gaana", "मेरा नाम पंकज है" -> "mera naam pankaj hai").
+ */
+export function devanagariToHinglish(text) {
+  if (!text || typeof text !== 'string') return text || '';
+  if (!/[\u0900-\u097F]/.test(text)) return text;
+
+  const dict = {
+    'हिस्ट्री': 'history',
+    'प्लेलिस्ट': 'playlist',
+    'गाना': 'gaana',
+    'गाने': 'gaane',
+    'सॉन्ग': 'song',
+    'सॉन्ग्स': 'songs',
+    'म्यूजिक': 'music',
+    'चलाओ': 'chalao',
+    'चला': 'chala',
+    'बजाओ': 'bajao',
+    'बजा': 'baja',
+    'रोको': 'roko',
+    'रोक': 'rok',
+    'पॉज': 'pause',
+    'प्ले': 'play',
+    'अगला': 'agla',
+    'नेक्स्ट': 'next',
+    'पिछला': 'pichhla',
+    'बैक': 'back',
+    'आवाज': 'aawaz',
+    'आवाज़': 'aawaz',
+    'वॉल्यूम': 'volume',
+    'कम': 'kam',
+    'ज्यादा': 'zyada',
+    'बढ़ाओ': 'badhao',
+    'घटाओ': 'ghatao',
+    'खोजो': 'khojo',
+    'ढूंढो': 'dhundho',
+    'सर्च': 'search',
+    'खोलें': 'kholo',
+    'खोलो': 'kholo',
+    'ओपन': 'open',
+    'बंद': 'band',
+    'पसंद': 'pasand',
+    'लाइक': 'like',
+    'कतार': 'queue',
+    'क्यू': 'queue',
+    'क्यु': 'queue',
+    'होम': 'home',
+    'रेडियो': 'radio',
+    'डिस्कवर': 'discover',
+    'सेटिंग्स': 'settings',
+    'प्रोफाइल': 'profile',
+    'लूप्रा': 'loopra',
+    'मेरा': 'mera',
+    'नाम': 'naam',
+    'पंकज': 'pankaj',
+    'है': 'hai',
+    'करो': 'karo',
+    'दो': 'do',
+    'दे': 'de',
+    'सुनो': 'suno',
+    'सुनाओ': 'sunao',
+    'डांस': 'dance',
+    'नाचो': 'nacho',
+    'कूद': 'jump',
+    'कूदो': 'jump',
+    'बाय': 'byeee',
+    'बाये': 'byeee'
+  };
+
+  let out = text;
+  for (const [hindi, latin] of Object.entries(dict)) {
+    out = out.replace(new RegExp(hindi, 'g'), latin);
+  }
+
+  const charMap = {
+    'अ': 'a', 'आ': 'aa', 'इ': 'i', 'ई': 'ee', 'उ': 'u', 'ऊ': 'oo', 'ऋ': 'ri',
+    'ए': 'e', 'ऐ': 'ai', 'ओ': 'o', 'औ': 'au', 'अं': 'an', 'अः': 'ah',
+    'क': 'k', 'ख': 'kh', 'ग': 'g', 'घ': 'gh', 'ङ': 'ng',
+    'च': 'ch', 'छ': 'chh', 'ज': 'j', 'झ': 'jh', 'ञ': 'ny',
+    'ट': 't', 'ठ': 'th', 'ड': 'd', 'ढ': 'dh', 'ण': 'n',
+    'त': 't', 'थ': 'th', 'द': 'd', 'ध': 'dh', 'न': 'n',
+    'प': 'p', 'फ': 'ph', 'ब': 'b', 'भ': 'bh', 'म': 'm',
+    'य': 'y', 'र': 'r', 'ल': 'l', 'व': 'v', 'श': 'sh', 'ष': 'sh', 'स': 's', 'ह': 'h',
+    'ा': 'a', 'ि': 'i', 'ी': 'ee', 'ु': 'u', 'ू': 'oo', 'ृ': 'ri',
+    'े': 'e', 'ै': 'ai', 'ो': 'o', 'ौ': 'au', 'ं': 'n', 'ः': 'h', '्': '',
+    '़': '', '।': '.', 'ऽ': '', 'ॉ': 'o', 'ॅ': 'e'
+  };
+
+  out = out.replace(/[\u0900-\u097F]/g, char => charMap[char] || '');
+  return out.replace(/\s+/g, ' ').trim();
+}
+
 class VoiceSessionController {
   constructor() {
     this.state = SESSION_STATES.OFF;
@@ -81,9 +175,13 @@ class VoiceSessionController {
       if (this.audioContext && this.audioContext.state === 'suspended') {
         this.audioContext.resume().catch(() => {});
       }
+      if (typeof window !== 'undefined' && window.voiceBuddyService) {
+        window.voiceBuddyService.unlockAudio();
+      }
     };
     window.addEventListener('pointerdown', unlockAudio, { passive: true });
     window.addEventListener('touchstart', unlockAudio, { passive: true });
+    window.addEventListener('touchend', unlockAudio, { passive: true });
 
     // 2. Tab Switching & Mobile Background Resiliency (visibilitychange)
     if (typeof document !== 'undefined') {
@@ -511,11 +609,12 @@ class VoiceSessionController {
       }
 
       if (interim) {
-        this.emitInterim(interim);
+        const romanInterim = devanagariToHinglish(interim);
+        this.emitInterim(romanInterim || interim);
       }
 
       if (finalTranscript) {
-        const cleaned = finalTranscript.trim();
+        const cleaned = devanagariToHinglish(finalTranscript.trim());
         this.emitInterim(''); // Clear interim
 
         if (!cleaned) return;
@@ -715,13 +814,13 @@ class VoiceSessionController {
       await this.setupAudioStream();
     } catch (err) {
       console.warn('[VoiceSessionController] Audio stream setup failed:', err);
-      let errMsg = 'Microphone permission was denied. Please allow microphone access.';
-      if (err.message === 'BROWSER_NO_MEDIA_DEVICES') {
-        errMsg = 'Your browser does not support audio recording.';
+      // On mobile browsers, MediaDevices visualizer stream can safely fail without blocking SpeechRecognition
+      if (err.name === 'NotAllowedError' || err.message === 'Permission denied') {
+        let errMsg = 'Microphone permission was denied. Please allow microphone access.';
+        this.setState(SESSION_STATES.ERROR, errMsg, err.message);
+        this.stopSession('permission_denied');
+        return;
       }
-      this.setState(SESSION_STATES.ERROR, errMsg, err.message);
-      this.stopSession('permission_denied');
-      return;
     }
 
     // 3. Immediate Activation Greeting Sequence:

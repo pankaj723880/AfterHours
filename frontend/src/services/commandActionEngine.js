@@ -11,6 +11,7 @@
  */
 
 import { websiteInteractionRegistry } from './websiteInteractionRegistry.js';
+import { devanagariToHinglish } from './voiceSessionService.js';
 
 // Rule 1: DEFAULT LANGUAGE: Hindi / Bollywood if unspecified
 // Rule 2: MAINSTREAM ARTISTS ONLY: Arijit Singh, Atif Aslam, Shreya Ghoshal, Vishal Mishra, etc.
@@ -92,7 +93,8 @@ export const INTENT_CATEGORIES = {
 
 export function parseCommandToAction(rawInput = '', context = {}) {
   if (!rawInput || typeof rawInput !== 'string') return null;
-  const text = rawInput.trim();
+  const transliterated = devanagariToHinglish(rawInput);
+  const text = transliterated.trim();
   const lower = text.toLowerCase()
     .replace(/[?!,]/g, '')
     .replace(/\.(?!\d)/g, '')
