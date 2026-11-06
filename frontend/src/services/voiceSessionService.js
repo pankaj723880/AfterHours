@@ -149,6 +149,8 @@ class VoiceSessionController {
     this.isSpeakingTts = false;
     this.ttsResumeTimer = null;
 
+    // Track terminal errors to prevent continuous onend restart loops
+    this.hasActiveTerminalError = false;
     this.networkErrorCount = 0;
     this.mobileListenTimeout = null;
 
@@ -559,6 +561,7 @@ class VoiceSessionController {
       this.isStarting = false;
       this.audioCaptureRetries = 0;
       this.networkErrorCount = 0;
+      this.hasActiveTerminalError = false;
       if (this.isSessionActive && !this.isExecuting && !this.isSpeakingTts) {
         this.setState(SESSION_STATES.LISTENING, 'Listening... (Speak your music command)');
       }
@@ -740,15 +743,16 @@ class VoiceSessionController {
         if (err === 'network') {
           this.networkErrorCount = (this.networkErrorCount || 0) + 1;
           console.warn(`[VoiceSession:WebSpeech] network error encountered (attempt ${this.networkErrorCount})`);
-          if (this.networkErrorCount > 2) {
+          if (this.networkErrorCount >= 2) {
+            this.hasActiveTerminalError = true;
             this.setState(SESSION_STATES.ERROR, 'Speech network unavailable. Tap mic to retry.', err);
             return;
           }
-          const backoffDelay = isMobileBrowser ? 1500 * this.networkErrorCount : 1000;
+          const backoffDelay = isMobileBrowser ? 2000 : 1200;
           this.setState(SESSION_STATES.LISTENING, 'Speech network interrupted. Reconnecting...', err);
           clearTimeout(this.restartTimer);
           this.restartTimer = setTimeout(() => {
-            if (this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts && !this.isExecuting) {
+            if (this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts && !this.isExecuting && !this.hasActiveTerminalError) {
               this.safeStartRecognition();
             }
           }, backoffDelay);
@@ -757,10 +761,10 @@ class VoiceSessionController {
 
         clearTimeout(this.restartTimer);
         this.restartTimer = setTimeout(() => {
-          if (this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts && !this.isExecuting) {
+          if (this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts && !this.isExecuting && !this.hasActiveTerminalError) {
             this.safeStartRecognition();
           }
-        }, 350);
+        }, 500);
       }
     };
 
@@ -788,13 +792,15 @@ class VoiceSessionController {
 
       // Robust auto-restart on 'end' ONLY when session is genuinely active and ready:
       // NOT while speaking TTS, NOT while processing/executing a command, NOT when manual stopping, NOT when page hidden!
-      // On mobile browsers, single-shot mode ends naturally; do not trigger tight continuous restart loops on unprompted end
+      // NEVER auto-restart on end if an active error (network, not-allowed, audio-capture) just fired!
       const isDocumentVisible = typeof document === 'undefined' || !document.hidden;
       if (
         this.isSessionActive &&
         !this.isManualStopping &&
         !this.isSpeakingTts &&
         !this.isExecuting &&
+        !this.hasActiveTerminalError &&
+        this.networkErrorCount === 0 &&
         this.state === SESSION_STATES.LISTENING &&
         isDocumentVisible &&
         !isMobileBrowser
@@ -913,6 +919,8 @@ class VoiceSessionController {
     this.isManualStopping = false;
     this.isSessionActive = true;
     this.isExecuting = false;
+    this.hasActiveTerminalError = false;
+    this.networkErrorCount = 0;
     this.initiator = initiator || 'global';
     if (lang) this.lang = lang;
 
@@ -1056,6 +1064,8 @@ class VoiceSessionController {
     this.restartTimer = null;
     clearTimeout(this.ttsResumeTimer);
     this.ttsResumeTimer = null;
+    this.hasActiveTerminalError = false;
+    this.networkErrorCount = 0;
     if (this.mobileListenTimeout) {
       clearTimeout(this.mobileListenTimeout);
       this.mobileListenTimeout = null;
