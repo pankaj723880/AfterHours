@@ -41,10 +41,9 @@ export const getAvatarUrl = (userOrUrl) => {
     return rawUrl;
   }
 
-  // Relative backend upload paths: /uploads/... or uploads/...
+  // Purge /uploads/ custom avatar paths to prevent 404 network errors
   if (rawUrl.startsWith('/uploads/') || rawUrl.startsWith('uploads/')) {
-    const cleanPath = rawUrl.startsWith('/') ? rawUrl : `/${rawUrl}`;
-    return `${BACKEND_URL}${cleanPath}`;
+    return null;
   }
 
   // Any relative path

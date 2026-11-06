@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { getAvatarUrl, getUserInitials } from '../../utils/avatar';
 
 /**
- * Universal UserAvatar component:
- * - Automatically resolves local upload paths (/uploads/...) with BACKEND_URL
- * - Handles Google OAuth avatar URLs with referrerPolicy="no-referrer"
- * - Gracefully falls back to stylish initials on 404/image loading error without showing broken image icon
+ * Clean User Avatar component:
+ * - Completely avoids 404 image requests to backend /uploads/ paths
+ * - Renders a sleek, text-initials fallback avatar
+ * - Supports valid external avatar URLs (Google OAuth / https) when available
  */
 export default function UserAvatar({
   user,
@@ -18,14 +18,13 @@ export default function UserAvatar({
   const targetSrc = getAvatarUrl(src || user);
   const [loadFailed, setLoadFailed] = useState(false);
 
-  // If the targetSrc changes (e.g. user uploaded new avatar or switched accounts), reset error state
   useEffect(() => {
     setLoadFailed(false);
   }, [targetSrc]);
 
   const initials = fallbackInitial || getUserInitials(user);
 
-  if (targetSrc && !loadFailed) {
+  if (targetSrc && !loadFailed && !targetSrc.includes('/uploads/')) {
     return (
       <img
         src={targetSrc}
