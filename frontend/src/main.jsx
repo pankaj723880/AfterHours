@@ -4,6 +4,21 @@ import App from './App.jsx';
 import './index.css';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 
+// Suppress known benign YouTube IFrame API cross-origin postMessage handshake console warnings
+if (typeof window !== 'undefined') {
+  const originalConsoleError = console.error;
+  console.error = function (...args) {
+    if (
+      typeof args[0] === 'string' &&
+      args[0].includes('The target origin provided') &&
+      args[0].includes('youtube.com')
+    ) {
+      return;
+    }
+    originalConsoleError.apply(console, args);
+  };
+}
+
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '335095702236-g3n6b7mgq2d3vbdg9qj9vv53b3nuohs7.apps.googleusercontent.com';
 
 // Handle stale chunk errors after deployment (Vite preload error)

@@ -149,6 +149,9 @@ class VoiceSessionController {
     this.isSpeakingTts = false;
     this.ttsResumeTimer = null;
 
+    this.networkErrorCount = 0;
+    this.mobileListenTimeout = null;
+
     // Timers
     this.restartTimer = null;
     this.inactivityTimer = null;
@@ -555,8 +558,22 @@ class VoiceSessionController {
       this.isRecognizing = true;
       this.isStarting = false;
       this.audioCaptureRetries = 0;
+      this.networkErrorCount = 0;
       if (this.isSessionActive && !this.isExecuting && !this.isSpeakingTts) {
         this.setState(SESSION_STATES.LISTENING, 'Listening... (Speak your music command)');
+      }
+
+      // Safe single-shot auto-timeout for mobile browsers to cleanly finalize listening
+      if (this.mobileListenTimeout) {
+        clearTimeout(this.mobileListenTimeout);
+        this.mobileListenTimeout = null;
+      }
+      if (isMobileBrowser) {
+        this.mobileListenTimeout = setTimeout(() => {
+          if (this.isRecognizing && this.recognition) {
+            try { this.recognition.stop(); } catch (_) {}
+          }
+        }, 8000);
       }
     };
 
@@ -718,11 +735,26 @@ class VoiceSessionController {
         return;
       }
 
-      // For network or non-fatal errors: auto-restart gracefully if session active
+      // For network or non-fatal errors: avoid aggressive loops, debounce with exponential backoff and cap retries
       if (this.isSessionActive && !this.isManualStopping) {
         if (err === 'network') {
-          this.setState(SESSION_STATES.LISTENING, 'Speech network reconnected. Listening...', err);
+          this.networkErrorCount = (this.networkErrorCount || 0) + 1;
+          console.warn(`[VoiceSession:WebSpeech] network error encountered (attempt ${this.networkErrorCount})`);
+          if (this.networkErrorCount > 2) {
+            this.setState(SESSION_STATES.ERROR, 'Speech network unavailable. Tap mic to retry.', err);
+            return;
+          }
+          const backoffDelay = isMobileBrowser ? 1500 * this.networkErrorCount : 1000;
+          this.setState(SESSION_STATES.LISTENING, 'Speech network interrupted. Reconnecting...', err);
+          clearTimeout(this.restartTimer);
+          this.restartTimer = setTimeout(() => {
+            if (this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts && !this.isExecuting) {
+              this.safeStartRecognition();
+            }
+          }, backoffDelay);
+          return;
         }
+
         clearTimeout(this.restartTimer);
         this.restartTimer = setTimeout(() => {
           if (this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts && !this.isExecuting) {
@@ -736,6 +768,10 @@ class VoiceSessionController {
       console.log('[VoiceSession:WebSpeech] onend - recognition instance stopped');
       this.isRecognizing = false;
       this.isStarting = false;
+      if (this.mobileListenTimeout) {
+        clearTimeout(this.mobileListenTimeout);
+        this.mobileListenTimeout = null;
+      }
 
       // Mobile STT Fallback: Finalize pending interim if mobile engine ended before marking isFinal
       if (this.pendingMobileTranscript && this.pendingMobileTranscript.trim()) {
@@ -752,6 +788,7 @@ class VoiceSessionController {
 
       // Robust auto-restart on 'end' ONLY when session is genuinely active and ready:
       // NOT while speaking TTS, NOT while processing/executing a command, NOT when manual stopping, NOT when page hidden!
+      // On mobile browsers, single-shot mode ends naturally; do not trigger tight continuous restart loops on unprompted end
       const isDocumentVisible = typeof document === 'undefined' || !document.hidden;
       if (
         this.isSessionActive &&
@@ -759,7 +796,8 @@ class VoiceSessionController {
         !this.isSpeakingTts &&
         !this.isExecuting &&
         this.state === SESSION_STATES.LISTENING &&
-        isDocumentVisible
+        isDocumentVisible &&
+        !isMobileBrowser
       ) {
         clearTimeout(this.restartTimer);
         this.restartTimer = setTimeout(() => {
@@ -1018,6 +1056,10 @@ class VoiceSessionController {
     this.restartTimer = null;
     clearTimeout(this.ttsResumeTimer);
     this.ttsResumeTimer = null;
+    if (this.mobileListenTimeout) {
+      clearTimeout(this.mobileListenTimeout);
+      this.mobileListenTimeout = null;
+    }
     this.clearInactivityTimer();
 
     // Cancel animation frame & zero volume
