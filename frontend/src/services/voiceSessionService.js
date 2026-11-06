@@ -534,14 +534,18 @@ class VoiceSessionController {
   // -------------------------------------------------------------
 
   initSpeechRecognition() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const SpeechRecognition = typeof window !== 'undefined'
+      ? (window.SpeechRecognition || window.webkitSpeechRecognition || null)
+      : null;
     if (!SpeechRecognition) {
       console.warn('[VoiceSession:WebSpeech] SpeechRecognition API not supported in this browser.');
       return null;
     }
 
     const recognition = new SpeechRecognition();
-    recognition.continuous = true;
+    const isMobileBrowser = typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Brave/i.test(navigator.userAgent);
+    // On mobile browsers (Chrome mobile, Opera, Brave), continuous mode frequently stalls after initial sentence or yields premature errors
+    recognition.continuous = !isMobileBrowser;
     recognition.interimResults = true;
     recognition.lang = this.lang;
     recognition.maxAlternatives = 1;

@@ -226,7 +226,7 @@ export default function LoopraAiCompanion({
     return 'calc(200px + 32px)';
   }, [avatarDockInfo]);
 
-  // Expose chatbox close trigger globally so any avatar movement immediately closes the chatbox
+  // Expose chatbox close trigger globally if needed by other non-avatar components
   useEffect(() => {
     window.__loopraCloseChatbox = handlePanelClose;
     return () => {
@@ -239,8 +239,16 @@ export default function LoopraAiCompanion({
     if (!isOpen) return;
 
     const handleGlobalTapToClose = (e) => {
+      // Don't close if tapping inside the chat panel
       const panel = document.querySelector('.ai-assistant-chat-panel');
       if (panel && panel.contains(e.target)) return;
+      // Don't close if tapping the toggle button itself (toggle button handles its own state switch)
+      const toggleBtn = document.getElementById('loopra-ai-chat-toggle-button');
+      if (toggleBtn && toggleBtn.contains(e.target)) return;
+      // Don't close if tapping mobile nav toggle button
+      const navBtn = e.target.closest?.('[data-nav-ai-toggle]');
+      if (navBtn) return;
+      // Don't close if tapping the 3D character avatar
       const avatarWalker = document.getElementById('loopra-3d-character-walker');
       if (avatarWalker && avatarWalker.contains(e.target)) return;
 
@@ -249,7 +257,7 @@ export default function LoopraAiCompanion({
 
     const timer = setTimeout(() => {
       window.addEventListener('pointerdown', handleGlobalTapToClose, true);
-    }, 120);
+    }, 150);
 
     return () => {
       clearTimeout(timer);
@@ -1059,14 +1067,18 @@ export default function LoopraAiCompanion({
   return ReactDOM.createPortal(
     <>
       {/* ------------------------------------------------------------- */}
-      {/* 1. EXPANDABLE CHAT PANEL & FULL-SCREEN TAP-TO-CLOSE BACKDROP   */}
-      {/* Fixed: anchored strictly to the LEFT of the 3D Avatar         */}
+      {/* 1. EXPANDABLE CHAT PANEL                                       */}
+      {/* Anchored strictly to the fixed left side of the AI chat button */}
       {/* ------------------------------------------------------------- */}
       {isOpen && (
         <div
           id="loopra-chatbox-backdrop"
           className="fixed inset-0 z-[2147483643] bg-transparent cursor-default pointer-events-auto"
-          onPointerDown={handlePanelClose}
+          onPointerDown={(e) => {
+            const toggleBtn = document.getElementById('loopra-ai-chat-toggle-button');
+            if (toggleBtn && toggleBtn.contains(e.target)) return;
+            handlePanelClose();
+          }}
         />
       )}
 
@@ -1075,16 +1087,18 @@ export default function LoopraAiCompanion({
           style={{
             '--chat-panel-width': `${dimensions.width}px`,
             '--chat-panel-height': `${dimensions.height}px`,
-            '--ai-panel-bottom': bottomOffsets.panelBottom,
-            '--ai-panel-right': chatPanelRightOffset,
+            '--ai-panel-bottom': bottomOffsets.btnBottom,
+            '--ai-panel-right': isMobile ? '70px' : '82px',
             '--chat-panel-max-height': bottomOffsets.maxH,
-            right: chatPanelRightOffset,
+            position: 'fixed',
+            bottom: bottomOffsets.btnBottom,
+            right: isMobile ? '70px' : '82px',
             width: `${dimensions.width}px`,
-            height: `${dimensions.height}px`
+            height: `${dimensions.height}px`,
+            maxHeight: bottomOffsets.maxH,
+            zIndex: 2147483644
           }}
-          className={`ai-assistant-chat-panel flex flex-col bg-neutral-950/95 border border-amber-500/40 rounded-2xl shadow-2xl backdrop-blur-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 pointer-events-auto ${
-            isResizing ? 'ring-2 ring-amber-500/40 select-none' : ''
-          }`}
+          className="ai-assistant-chat-panel flex flex-col bg-neutral-950/95 border border-amber-500/40 rounded-2xl shadow-2xl backdrop-blur-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 pointer-events-auto"
         >
           {/* Header */}
           <div className="px-4 py-3 bg-gradient-to-r from-neutral-900 via-neutral-900/95 to-neutral-950 border-b border-white/10 flex items-center justify-between shrink-0 select-none">
