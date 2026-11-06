@@ -56,14 +56,14 @@ class VoiceBuddyService {
       }
     }
 
-    // Mobile / AudioContext audio unlock on first touch or click
+    // Direct user-gesture audio unlock for mobile browsers (Brave, Opera, iOS Safari, Android)
     if (typeof window !== 'undefined') {
       const handleUserUnlock = () => {
         this.unlockAudio();
       };
-      window.addEventListener('touchstart', handleUserUnlock, { passive: true, once: true });
-      window.addEventListener('touchend', handleUserUnlock, { passive: true, once: true });
-      window.addEventListener('pointerdown', handleUserUnlock, { passive: true, once: true });
+      ['touchstart', 'touchend', 'click', 'pointerdown', 'keydown'].forEach((evt) => {
+        window.addEventListener(evt, handleUserUnlock, { capture: true, passive: true });
+      });
     }
 
     if (typeof document !== 'undefined') {
@@ -124,20 +124,77 @@ class VoiceBuddyService {
     return this.isVoiceOutputEnabled;
   }
 
+  /**
+   * Direct user-gesture audio unlock mechanism for mobile browsers (Brave, Opera, iOS, Android).
+   * Prevents speechSynthesis and audio streams from being silenced by privacy shields or autoplay blocks.
+   */
   unlockAudio() {
     if (typeof window === 'undefined') return;
+
+    // 1. Unlock Web SpeechSynthesis
     try {
-      if (this.speechSynthesis && this.speechSynthesis.paused) {
-        this.speechSynthesis.resume();
+      if (this.speechSynthesis) {
+        if (this.speechSynthesis.paused) {
+          this.speechSynthesis.resume();
+        }
+        // Prime mobile speech engine queue with silent utterance
+        if (!this._speechSynthUnlocked) {
+          try {
+            const silentUtt = new SpeechSynthesisUtterance(' ');
+            silentUtt.volume = 0;
+            silentUtt.rate = 2.0;
+            this.speechSynthesis.speak(silentUtt);
+            this._speechSynthUnlocked = true;
+          } catch (_) {}
+        }
       }
-      if (!this.cachedIndianVoice) {
-        this.cachedIndianVoice = this.getIndianVoice();
+    } catch (_) {}
+
+    // 2. Unlock Web AudioContext & Hardware Audio Routing
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        if (!this.audioContext || this.audioContext.state === 'closed') {
+          this.audioContext = new AudioCtx();
+        }
+        if (this.audioContext.state === 'suspended') {
+          this.audioContext.resume().catch(() => {});
+        }
+        // Play 1-sample silent buffer to unlock hardware audio routing across mobile shields
+        if (!this._audioHardwareUnlocked && this.audioContext.state === 'running') {
+          try {
+            const buffer = this.audioContext.createBuffer(1, 1, 22050);
+            const source = this.audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(this.audioContext.destination);
+            source.start(0);
+            this._audioHardwareUnlocked = true;
+          } catch (_) {}
+        }
       }
-      // Resume web audio context on user touch
-      if (this.audioContext && this.audioContext.state === 'suspended') {
-        this.audioContext.resume().catch(() => {});
+    } catch (_) {}
+
+    // 3. Unlock HTML5 Audio element autoplay for backend neural stream
+    try {
+      if (!this._dummyAudioUnlocked) {
+        const dummyAudio = new Audio();
+        dummyAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+        dummyAudio.volume = 0.01;
+        const p = dummyAudio.play();
+        if (p !== undefined) {
+          p.then(() => {
+            dummyAudio.pause();
+            dummyAudio.src = '';
+            this._dummyAudioUnlocked = true;
+          }).catch(() => {});
+        }
       }
-    } catch (_) { }
+    } catch (_) {}
+
+    // 4. Cache verified Indian female voice
+    if (!this.cachedIndianVoice) {
+      this.cachedIndianVoice = this.getIndianVoice();
+    }
   }
 
   setPlaybackActive(isPlaying) {
@@ -617,16 +674,20 @@ class VoiceBuddyService {
   }
 
   /**
-   * Discovers natural Indian female / regional voices from browser SpeechSynthesis.
+   * Discovers natural Indian female voices from browser SpeechSynthesis.
+   * Strictly filters for voice.lang === 'hi-IN' or voices containing Hindi / Google हिन्दी / Lekha.
+   * Excludes British / male voices so users never hear an unnatural British accent.
    */
   getIndianVoice() {
     if (!this.speechSynthesis) return null;
     const voices = this.speechSynthesis.getVoices() || [];
     if (!voices.length) return null;
 
-    const isIndianFemaleVoice = (v) => {
+    const isExplicitIndianFemaleVoice = (v) => {
       const lang = (v.lang || '').replace('_', '-').toLowerCase();
       const name = (v.name || '').toLowerCase();
+      const rawName = v.name || '';
+
       // Strictly exclude male voices
       if (
         name.includes('ravi') ||
@@ -639,39 +700,54 @@ class VoiceBuddyService {
       ) {
         return false;
       }
+
+      // Strictly exclude British / UK accents
+      if (
+        lang === 'en-gb' ||
+        lang === 'en-uk' ||
+        name.includes('british') ||
+        name.includes('united kingdom') ||
+        name.includes('great britain') ||
+        name.includes('serena') ||
+        name.includes('daniel') ||
+        name.includes('oliver') ||
+        name.includes('hazel') ||
+        name.includes('susan')
+      ) {
+        return false;
+      }
+
+      // Explicit filter for hi-IN, Google हिन्दी, Lekha, Hindi, Swara, Neerja, Kalpana, Heera
       return (
         lang === 'hi-in' ||
-        lang === 'en-in' ||
-        lang.startsWith('hi') ||
-        name.includes('india') ||
+        rawName.includes('Google हिन्दी') ||
+        rawName.includes('हिन्दी') ||
+        rawName.includes('Lekha') ||
+        name.includes('lekha') ||
         name.includes('hindi') ||
-        name.includes('हिन्दी') ||
         name.includes('swara') ||
         name.includes('neerja') ||
         name.includes('kalpana') ||
         name.includes('heera') ||
-        name.includes('zira')
+        (lang === 'en-in' && (name.includes('india') || name.includes('neerja') || name.includes('heera') || name.includes('veena')))
       );
     };
 
     // 1. Direct Indian female match
-    let voice = voices.find(isIndianFemaleVoice);
+    let voice = voices.find(isExplicitIndianFemaleVoice);
     if (voice) return voice;
 
-    // 2. Any Indian voice
+    // 2. Strict secondary match: any pure Hindi language voice
     voice = voices.find((v) => {
       const lang = (v.lang || '').replace('_', '-').toLowerCase();
       const name = (v.name || '').toLowerCase();
-      return (
-        lang === 'hi-in' ||
-        lang === 'en-in' ||
-        lang.startsWith('hi') ||
-        name.includes('india') ||
-        name.includes('hindi')
-      );
+      if (name.includes('male') || name.includes('ravi') || name.includes('david') || name.includes('british')) return false;
+      return lang === 'hi-in' || lang.startsWith('hi') || name.includes('hindi') || (v.name && v.name.includes('हिन्दी'));
     });
     if (voice) return voice;
 
+    // If no native Indian voice is installed in browser, return null so executeSpeech
+    // cleanly routes to high-quality Indian Neural TTS stream (/api/voice-agent/tts)
     return null;
   }
 

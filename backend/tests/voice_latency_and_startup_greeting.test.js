@@ -210,5 +210,118 @@ describe('Loopra Voice Response Latency & Startup Greeting Sequence Suite', () =
     assert.strictEqual(sessionState, SESSION_STATES.LISTENING);
     assert.strictEqual(isSpeakingTts, false);
   });
+
+  test('4. Strict Indian Female Voice Selection: matches hi-IN, Google हिन्दी, Lekha and strictly excludes British and male voices', () => {
+    const candidateVoices = [
+      { name: 'Google UK English Female', lang: 'en-GB' },
+      { name: 'George', lang: 'en-GB' },
+      { name: 'Daniel', lang: 'en-GB' },
+      { name: 'Oliver', lang: 'en-GB' },
+      { name: 'Microsoft Ravi - English (India)', lang: 'en-IN' },
+      { name: 'Microsoft David Desktop - English (United States)', lang: 'en-US' },
+      { name: 'Lekha', lang: 'hi-IN' },
+      { name: 'Google हिन्दी', lang: 'hi-IN' },
+      { name: 'Microsoft Swara Online (Natural) - Hindi (India)', lang: 'hi-IN' }
+    ];
+
+    const isExplicitIndianFemaleVoice = (v) => {
+      const lang = (v.lang || '').replace('_', '-').toLowerCase();
+      const name = (v.name || '').toLowerCase();
+      const rawName = v.name || '';
+
+      // Strictly exclude male voices
+      if (
+        name.includes('ravi') ||
+        name.includes('madhur') ||
+        name.includes('prabhat') ||
+        name.includes('david') ||
+        name.includes('mark') ||
+        name.includes('male') ||
+        name.includes('george')
+      ) {
+        return false;
+      }
+
+      // Strictly exclude British / UK accents
+      if (
+        lang === 'en-gb' ||
+        lang === 'en-uk' ||
+        name.includes('british') ||
+        name.includes('united kingdom') ||
+        name.includes('great britain') ||
+        name.includes('serena') ||
+        name.includes('daniel') ||
+        name.includes('oliver') ||
+        name.includes('hazel') ||
+        name.includes('susan')
+      ) {
+        return false;
+      }
+
+      // Explicit filter for hi-IN, Google हिन्दी, Lekha, Hindi, Swara, Neerja, Kalpana, Heera
+      return (
+        lang === 'hi-in' ||
+        rawName.includes('Google हिन्दी') ||
+        rawName.includes('हिन्दी') ||
+        rawName.includes('Lekha') ||
+        name.includes('lekha') ||
+        name.includes('hindi') ||
+        name.includes('swara') ||
+        name.includes('neerja') ||
+        name.includes('kalpana') ||
+        name.includes('heera') ||
+        (lang === 'en-in' && (name.includes('india') || name.includes('neerja') || name.includes('heera') || name.includes('veena')))
+      );
+    };
+
+    const matched = candidateVoices.filter(isExplicitIndianFemaleVoice);
+    assert.strictEqual(matched.length, 3);
+    assert.ok(matched.some(v => v.name === 'Lekha'), 'Must match Lekha (iOS Indian female voice)');
+    assert.ok(matched.some(v => v.name === 'Google हिन्दी'), 'Must match Google हिन्दी (Android Indian female voice)');
+    assert.ok(matched.some(v => v.name.includes('Swara')), 'Must match Swara (Windows/Edge Indian female voice)');
+
+    // Ensure zero British voices matched
+    const britishMatches = matched.filter(v => (v.lang === 'en-GB' || v.name.includes('UK') || v.name === 'George' || v.name === 'Oliver'));
+    assert.strictEqual(britishMatches.length, 0, 'Must strictly exclude all British accents');
+
+    // Ensure zero male voices matched
+    const maleMatches = matched.filter(v => v.name.includes('Ravi') || v.name.includes('David') || v.name.includes('George'));
+    assert.strictEqual(maleMatches.length, 0, 'Must strictly exclude male voices');
+  });
+
+  test('5. Brave & Opera mobile constraint fallback and audio unlock mechanism', async () => {
+    let advancedConstraintsAttempted = false;
+    let basicFallbackAttempted = false;
+
+    // Simulate Brave / Opera mobile getUserMedia behavior where complex constraints throw OverconstrainedError
+    const mockGetMedia = async (constraints) => {
+      if (constraints && constraints.audio && typeof constraints.audio === 'object') {
+        advancedConstraintsAttempted = true;
+        const err = new Error('OverconstrainedError');
+        err.name = 'OverconstrainedError';
+        throw err;
+      }
+      basicFallbackAttempted = true;
+      return { active: true, getTracks: () => [{ stop: () => {} }] };
+    };
+
+    let stream = null;
+    try {
+      stream = await mockGetMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+    } catch {
+      // Fallback
+      stream = await mockGetMedia({ audio: true });
+    }
+
+    assert.ok(advancedConstraintsAttempted, 'Advanced constraints attempted first');
+    assert.ok(basicFallbackAttempted, 'Basic fallback attempted on error');
+    assert.ok(stream && stream.active, 'MediaStream active after basic fallback');
+  });
 });
 

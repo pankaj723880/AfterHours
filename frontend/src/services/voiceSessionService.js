@@ -400,19 +400,33 @@ class VoiceSessionController {
   // -------------------------------------------------------------
 
   async setupAudioStream() {
-    if (!navigator.mediaDevices?.getUserMedia) {
+    // 1. Resolve getUserMedia across modern and legacy mobile implementations (Opera Mobile / Brave)
+    const getMedia = navigator.mediaDevices?.getUserMedia
+      ? (c) => navigator.mediaDevices.getUserMedia(c)
+      : (navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia)
+        ? (c) => new Promise((res, rej) => (navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia).call(navigator, c, res, rej))
+        : null;
+
+    if (!getMedia) {
       throw new Error('BROWSER_NO_MEDIA_DEVICES');
     }
 
-    // Only create a new stream if not already active
+    // 2. Brave & Opera mobile constraint resilience:
+    // Some mobile Brave/Opera versions fail or reject complex audio constraint dictionaries with OverconstrainedError.
+    // Try optimal echoCancellation first, and fall back to simple audio: true.
     if (!this.mediaStream || !this.mediaStream.active) {
-      this.mediaStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
+      try {
+        this.mediaStream = await getMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+      } catch (err) {
+        console.warn('[VoiceSessionController] Advanced audio constraints rejected (Brave/Opera mobile shields), falling back to basic audio:', err.message);
+        this.mediaStream = await getMedia({ audio: true });
+      }
     }
 
     // Setup Web Audio Analyser for 3D visualizer volume metering
@@ -646,9 +660,11 @@ class VoiceSessionController {
       console.warn('[VoiceSession:WebSpeech] onerror:', err);
 
       if (err === 'not-allowed' || err === 'service-not-allowed') {
+        const isBrave = typeof navigator !== 'undefined' && (navigator.brave?.isBrave || navigator.userAgent?.includes('Brave'));
+        const hint = isBrave ? ' (Brave Shields may be blocking Google Speech servers. Disable Shields for this site or allow speech service in settings)' : '';
         this.setState(
           SESSION_STATES.ERROR,
-          'Microphone permission denied. Please allow microphone access in your browser address bar.',
+          `Microphone or speech service permission denied${hint}. Please allow microphone access.`,
           err
         );
         this.stopSession('permission_denied');
@@ -797,6 +813,11 @@ class VoiceSessionController {
       return; // Already active
     }
 
+    // Direct user-gesture audio unlock for mobile browsers (Brave, Opera, iOS Safari, Android)
+    if (typeof window !== 'undefined' && window.voiceBuddyService) {
+      window.voiceBuddyService.unlockAudio();
+    }
+
     this.isManualStopping = false;
     this.isSessionActive = true;
     this.isExecuting = false;
@@ -815,8 +836,10 @@ class VoiceSessionController {
     } catch (err) {
       console.warn('[VoiceSessionController] Audio stream setup failed:', err);
       // On mobile browsers, MediaDevices visualizer stream can safely fail without blocking SpeechRecognition
-      if (err.name === 'NotAllowedError' || err.message === 'Permission denied') {
-        let errMsg = 'Microphone permission was denied. Please allow microphone access.';
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError' || err.message?.includes('denied')) {
+        const isBrave = typeof navigator !== 'undefined' && (navigator.brave?.isBrave || navigator.userAgent?.includes('Brave'));
+        const hint = isBrave ? ' (Please allow microphone access or check Brave Shields)' : '';
+        const errMsg = `Microphone permission was denied${hint}. Please allow microphone access in your browser address bar.`;
         this.setState(SESSION_STATES.ERROR, errMsg, err.message);
         this.stopSession('permission_denied');
         return;
