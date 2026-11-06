@@ -12,6 +12,46 @@
 
 import { websiteInteractionRegistry } from './websiteInteractionRegistry.js';
 
+// Rule 1: DEFAULT LANGUAGE: Hindi / Bollywood if unspecified
+// Rule 2: MAINSTREAM ARTISTS ONLY: Arijit Singh, Atif Aslam, Shreya Ghoshal, Vishal Mishra, etc.
+// Rule 3: NO JUNK / AI / LOW-VIEWS: Official audio / video
+export function formatMainstreamMusicQuery(rawQuery = '') {
+  if (!rawQuery || typeof rawQuery !== 'string') return 'Arijit Singh top bollywood songs official';
+  const clean = rawQuery.trim();
+  const lower = clean.toLowerCase();
+
+  const hasLanguage = /\b(english|punjabi|tamil|telugu|bengali|marathi|kannada|malayalam|bhojpuri|gujarati|kpop|spanish|french|urdu)\b/i.test(lower);
+  const hasArtist = /(arijit|atif|shreya|vishal|jubin|kk|sonu|diljit|badshah|pritam|sachin|jigar|darshan|armaan|neha|sunidhi|lata|kishore|rafi|sanu|alka|udit)/i.test(lower);
+
+  // If already contains artist or language, keep and ensure official search quality
+  if (hasArtist || hasLanguage) {
+    if (!lower.includes('official') && !lower.includes('audio') && !lower.includes('video') && !lower.includes('song')) {
+      return `${clean} official audio`;
+    }
+    return clean;
+  }
+
+  // If mood/vibe without language or artist:
+  if (/\b(romantic|love|dil|pyaar)\b/i.test(lower)) {
+    return 'Arijit Singh Shreya Ghoshal romantic bollywood hindi songs official audio';
+  }
+  if (/\b(sad|dard|heartbreak|alone|gam|gham|udaas)\b/i.test(lower)) {
+    return 'Arijit Singh Atif Aslam sad hindi songs official audio';
+  }
+  if (/\b(relax|chill|sukoon|peaceful|soothing|lofi)\b/i.test(lower)) {
+    return 'Vishal Mishra Arijit Singh relaxing hindi songs official audio';
+  }
+  if (/\b(party|dance|club|dj|masti)\b/i.test(lower)) {
+    return 'Bollywood party dance hits official video';
+  }
+  if (/\b(gym|workout|energy|motivat|josh)\b/i.test(lower)) {
+    return 'Bollywood high energy workout songs official';
+  }
+
+  // Generic request ("koi gaana chala", "play music", "popular song")
+  return `${clean} hindi bollywood song official audio`;
+}
+
 export const INTENT_CATEGORIES = {
   OPEN_PAGE: 'OPEN_PAGE',
   OPEN_SECTION: 'OPEN_SECTION',
@@ -33,6 +73,7 @@ export const INTENT_CATEGORIES = {
   OPEN_RADIO: 'OPEN_RADIO',
   CHANGE_VOLUME: 'CHANGE_VOLUME',
   SCROLL_TO_ELEMENT: 'SCROLL_TO_ELEMENT',
+  OPEN_QUEUE: 'OPEN_QUEUE',
   CLOSE_MODAL: 'CLOSE_MODAL',
   OPEN_INSIGHTS: 'OPEN_INSIGHTS',
   OPEN_DJ_CLUB: 'OPEN_DJ_CLUB',
@@ -256,6 +297,18 @@ export function parseCommandToAction(rawInput = '', context = {}) {
     };
   }
 
+  // Explicit Playback Queue Routing
+  if (
+    /\b(open queue|show queue|view queue|playback queue|set queue|queue kholo|queue dikhao|queue)\b/i.test(cleanLower) ||
+    /^(queue)$/i.test(cleanLower)
+  ) {
+    return {
+      intent: INTENT_CATEGORIES.OPEN_QUEUE,
+      action: 'open_queue',
+      description: 'Open Playback Queue'
+    };
+  }
+
   // Explicit Listening History Routing
   if (
     /\b(listening history|history kholo|open listening history|purane songs)\b/i.test(cleanLower) ||
@@ -411,6 +464,17 @@ export function parseCommandToAction(rawInput = '', context = {}) {
     }
   }
 
+  // Mood / Genre song queries without explicit play verbs (e.g. "gym songs", "workout songs", "party songs")
+  if (/\b(gym|workout|party|dance|sad|romantic|relax|chill|punjabi|bollywood)\s+(?:songs?|gaane|music|tracks?)\b/i.test(cleanLower)) {
+    const q = formatMainstreamMusicQuery(cleanLower);
+    return {
+      intent: INTENT_CATEGORIES.PLAY_SONG,
+      action: 'play_search',
+      query: q,
+      description: `Play "${cleanLower}"`
+    };
+  }
+
   // Conversational requests with spoken entertainment verbs (e.g. "Ek joke sunao", "Shayari sunao", "Koi kahani sunao")
   // MUST route to Gemini Chat, NEVER to music player!
   if (/\b(joke|chutkula|shayari|shayri|kahani|kissa|baat|baatein|story|poem|kavita)\b/i.test(cleanLower)) {
@@ -441,13 +505,14 @@ export function parseCommandToAction(rawInput = '', context = {}) {
     // Pattern B: "Koi romantic song laga", "Thoda party mood ka music chala"
     const moodSongMatch = cleanLower.match(/^(?:koi|thoda|ek)\s+(.+?)\s+(?:play|chalao|chala de|chala do|chala|bajao|baja de|baja do|baja|sunao|suna de|suna do|suna|lagao|laga de|laga do|laga|shuru karo|shuru kar)$/i);
     if (moodSongMatch && moodSongMatch[1]) {
-      const q = moodSongMatch[1].trim();
-      if (q && q !== 'them' && q !== 'music') {
+      const rawTarget = moodSongMatch[1].trim();
+      if (rawTarget && rawTarget !== 'them' && rawTarget !== 'music') {
+        const q = formatMainstreamMusicQuery(rawTarget);
         return {
           intent: INTENT_CATEGORIES.PLAY_SONG,
           action: 'play_search',
           query: q,
-          description: `Play "${q}"`
+          description: `Play "${rawTarget}"`
         };
       }
     }
@@ -481,13 +546,23 @@ export function parseCommandToAction(rawInput = '', context = {}) {
         };
       }
 
+      const q = formatMainstreamMusicQuery(playTarget);
       return {
         intent: INTENT_CATEGORIES.PLAY_SONG,
         action: 'play_search',
-        query: playTarget,
+        query: q,
         description: `Play "${playTarget}"`
       };
     }
+
+    // Generic play command without specific song title: "play song", "gaana chalao", "music bajao"
+    const defaultPlayQuery = formatMainstreamMusicQuery('bollywood top hits');
+    return {
+      intent: INTENT_CATEGORIES.PLAY_SONG,
+      action: 'play_search',
+      query: defaultPlayQuery,
+      description: 'Play trending songs'
+    };
   }
 
   // General Search fallback: "Search Headlights", "Find songs by Arijit Singh"

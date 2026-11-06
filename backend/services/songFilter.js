@@ -41,6 +41,36 @@ const OFFICIAL_CHANNELS = [
   'times music', 'svf music', 't-series apna punjab', 'panj-aab records'
 ];
 
+// Known verified mainstream artists (Hindi / Bollywood & top Indian music)
+export const MAINSTREAM_VERIFIED_ARTISTS = [
+  'arijit singh', 'atif aslam', 'shreya ghoshal', 'vishal mishra', 'jubin nautiyal',
+  'sonu nigam', 'kk', 'mohit chauhan', 'neha kakkar', 'sunidhi chauhan', 'pritam',
+  'sachin-jigar', 'rahat fateh ali khan', 'diljit dosanjh', 'armaan malik', 'darshan raval',
+  'alka yagnik', 'kumar sanu', 'udit narayan', 'lata mangeshkar', 'kishore kumar',
+  'mukesh', 'mohammed rafi', 'asha bhosle', 'badshah', 'guru randhawa', 'anuv jain',
+  'prateek kuhad', 'b praak', 'sidhu moose wala', 'jasleen royal', 'shilpa rao',
+  'sachet tandon', 'parampara', 'monali thakur', 'stebin ben', 'papon', 'neeti mohan',
+  'amit trivedi', 'a.r. rahman', 'ar rahman', 'himesh reshammiya', 'mika singh',
+  'shankar mahadevan', 'hariharan', 'lucky ali'
+];
+
+// Patterns for AI-generated songs, amateur covers, foreign drama clips, and junk
+export const AI_JUNK_AND_COVER_PATTERNS = [
+  // AI-generated music, AI covers, voice cloning, synthetic audio
+  /\b(ai\s+generated|ai\s+cover|ai\s+song|ai\s+music|ai\s+version|suno(?:\.ai)?|udio(?:\.ai)?|voicify|ai\s+voice|covers\s+ai|generated\s+by\s+ai|artificial\s+intelligence\s+music|deepfake\s+music)\b/i,
+  // Random unofficial amateur covers, bedroom covers, fan covers
+  /\b((?:bedroom|acoustic|guitar|piano|ukulele|drum|flute|violin|fan(?:[\s-]made)?|amateur|random|garageband)\s+cover(?:\s+(?:by|with|version|song|tabs))?|cover\s+(?:by|version\s+by)\s+[a-z0-9_]{3,25})\b/i,
+  // Foreign drama clips, drama edits, non-music serial/movie clips, status/reel clips
+  /\b(kdrama\s+edit|k-drama|c-drama|drama\s+scene|chinese\s+drama|pakistani\s+drama|anime\s+edit|movie\s+scene|whatsapp\s+status\s+video|shorts\s+video|status\s+video|reel\s+edit|funny\s+clip|reaction\s+video)\b/i
+];
+
+// Helper to verify if an artist or title belongs to a mainstream verified artist
+export function isMainstreamArtist(artistOrTitle = '') {
+  if (!artistOrTitle || typeof artistOrTitle !== 'string') return false;
+  const lower = artistOrTitle.toLowerCase();
+  return MAINSTREAM_VERIFIED_ARTISTS.some(a => lower.includes(a));
+}
+
 // Multi-song title patterns that MUST ALWAYS be rejected
 const MULTI_SONG_TITLE_REGEXES = [
   // Jukeboxes
@@ -225,6 +255,18 @@ export function verifySingleSong(track) {
         reason: `Title matches multi-song exclusion pattern: ${regex}`,
         songType: 'multi_song_compilation',
         verificationStatus: 'rejected_multi_song'
+      };
+    }
+  }
+
+  // 2b. Rule 3: Strict Rejection of AI-generated music, amateur covers, foreign drama clips, and junk
+  for (const regex of AI_JUNK_AND_COVER_PATTERNS) {
+    if (regex.test(lowerTitle) || regex.test(channel.toLowerCase()) || regex.test(lowerDesc)) {
+      return {
+        isValid: false,
+        reason: `Rejected: AI-generated music, random cover, or drama clip detected (${regex})`,
+        songType: 'junk_or_ai',
+        verificationStatus: 'rejected_junk_or_ai'
       };
     }
   }

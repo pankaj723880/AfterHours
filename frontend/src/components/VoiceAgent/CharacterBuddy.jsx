@@ -784,17 +784,37 @@ export default function CharacterBuddy({
 
   // Subscribe to voiceBuddyService for speech events (Priority 2 driver)
   useEffect(() => {
-    const unsub = voiceBuddyService.subscribe(({ event, volume }) => {
-      if (event === 'speech_start') {
+    const unsub = voiceBuddyService.subscribe(({ event, volume, text }) => {
+      if (event === 'speech_start' || event === 'speech_pending') {
         setIsSpeaking(true);
         resetAutonomousTimer();
+        if (text) {
+          clearTimeout(bubbleDismissTimerRef.current);
+          setIsInterim(false);
+          setLiveTranscript(text);
+          setIsBubbleVisible(true);
+        }
       } else if (event === 'speech_end') {
         setIsSpeaking(false);
         setInternalVolume(0);
         resetAutonomousTimer();
+        bubbleDismissTimerRef.current = setTimeout(() => {
+          setIsBubbleVisible(false);
+          setLiveTranscript('');
+        }, 2000);
       } else if (event === 'speech_text_only') {
         setIsSpeaking(false);
         setInternalVolume(0);
+        if (text) {
+          clearTimeout(bubbleDismissTimerRef.current);
+          setIsInterim(false);
+          setLiveTranscript(text);
+          setIsBubbleVisible(true);
+          bubbleDismissTimerRef.current = setTimeout(() => {
+            setIsBubbleVisible(false);
+            setLiveTranscript('');
+          }, 2500);
+        }
       } else if (event === 'speech_volume' && volume !== undefined) {
         setInternalVolume(volume);
       }

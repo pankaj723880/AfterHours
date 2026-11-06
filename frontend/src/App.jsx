@@ -7516,7 +7516,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 <img 
                   src={getCleanThumbnail(currentSong)} 
                   alt={currentSong.title || ""} 
-                  className="rounded-xl object-cover shrink-0 shadow-md w-10 h-10 border border-amber-500/30" 
+                  className="rounded-xl object-cover shrink-0 shadow-md w-12 h-12 border border-amber-500/30" 
                   onError={(e) => handleImageError(e, currentSong.title, currentSong.id)} 
                 />
                 {isPlaying && (
@@ -7532,7 +7532,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             </div>
 
             {/* Right: Touch Playback Controls */}
-            <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
               {/* Extra controls revealed horizontally when isMiniPlayerExpanded is true */}
               {isMiniPlayerExpanded && (
                 <>
@@ -7541,11 +7541,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       e.stopPropagation();
                       handleOpenExpandedPlayer('queue');
                     }} 
-                    className="text-neutral-400 hover:text-amber-400 transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
+                    className="text-neutral-400 hover:text-amber-400 transition p-2 shrink-0 cursor-pointer active:scale-90 min-w-[48px] min-h-[48px] flex items-center justify-center touch-manipulation" 
                     title="View Queue"
                     aria-label="View Queue"
                   >
-                    <Icon name="list" className="w-4 h-4 shrink-0" />
+                    <Icon name="list" className="w-5 h-5 shrink-0" />
                   </button>
 
                   <button 
@@ -7553,11 +7553,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       e.stopPropagation();
                       handlePrevSong();
                     }} 
-                    className="text-neutral-300 hover:text-white transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
+                    className="text-neutral-300 hover:text-white transition p-2 shrink-0 cursor-pointer active:scale-90 min-w-[48px] min-h-[48px] flex items-center justify-center touch-manipulation" 
                     title="Previous Track"
                     aria-label="Previous Track"
                   >
-                    <Icon name="skipPrev" className="w-4 h-4 shrink-0" />
+                    <Icon name="skipPrev" className="w-5 h-5 shrink-0" />
                   </button>
                 </>
               )}
@@ -7568,11 +7568,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   e.stopPropagation();
                   togglePlayPause();
                 }} 
-                className="w-9 h-9 rounded-full amber-glow-btn text-neutral-950 flex items-center justify-center shadow-md active:scale-95 transition shrink-0 cursor-pointer border border-amber-300/40" 
+                className="w-12 h-12 min-w-[48px] min-h-[48px] rounded-full amber-glow-btn text-neutral-950 flex items-center justify-center shadow-md active:scale-95 transition shrink-0 cursor-pointer border border-amber-300/40 touch-manipulation" 
                 title={isPlaying ? "Pause" : "Play"}
                 aria-label={isPlaying ? "Pause" : "Play"}
               >
-                <Icon name={isPlaying ? "pause" : "play"} className="w-4 h-4 fill-current translate-x-0.5" />
+                <Icon name={isPlaying ? "pause" : "play"} className="w-5 h-5 fill-current translate-x-0.5" />
               </button>
 
               {/* Next button revealed horizontally when isMiniPlayerExpanded is true */}
@@ -7582,11 +7582,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     e.stopPropagation();
                     handleNextSong();
                   }} 
-                  className="text-neutral-300 hover:text-white transition p-1.5 shrink-0 cursor-pointer active:scale-90" 
+                  className="text-neutral-300 hover:text-white transition p-2 shrink-0 cursor-pointer active:scale-90 min-w-[48px] min-h-[48px] flex items-center justify-center touch-manipulation" 
                   title="Next Track"
                   aria-label="Next Track"
                 >
-                  <Icon name="skipNext" className="w-4 h-4 shrink-0" />
+                  <Icon name="skipNext" className="w-5 h-5 shrink-0" />
                 </button>
               )}
 
@@ -7596,7 +7596,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   e.stopPropagation();
                   handleOpenExpandedPlayer('player');
                 }}
-                className="p-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-amber-400 border border-neutral-700/60 transition shrink-0 cursor-pointer flex items-center justify-center active:scale-90"
+                className="p-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-amber-400 border border-neutral-700/60 transition shrink-0 cursor-pointer flex items-center justify-center active:scale-90 min-w-[48px] min-h-[48px] touch-manipulation"
                 title="Open Fullscreen Player"
                 aria-label="Open Fullscreen Player"
               >

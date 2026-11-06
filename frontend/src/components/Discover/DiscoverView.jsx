@@ -240,7 +240,7 @@ export default function DiscoverView({
                         src={cleanThumb}
                         alt={track.title || ""}
                         loading="lazy"
-                        className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl object-cover shadow-md bg-neutral-950 border border-white/10 pointer-events-none select-none transition-all"
+                        className="w-12 h-12 rounded-xl object-cover shadow-md bg-neutral-950 border border-white/10 pointer-events-none select-none transition-all"
                         onLoad={(e) => {
                           const target = e.currentTarget;
                           if (target.naturalWidth <= 1 || (target.naturalWidth === 120 && target.naturalHeight === 90)) {
@@ -278,11 +278,11 @@ export default function DiscoverView({
                       <button
                         type="button"
                         onClick={(e) => handleOpenVideo(track, e)}
-                        className="p-2 sm:p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-neutral-300 hover:text-white border border-white/10 transition flex items-center justify-center shrink-0 min-h-[40px] min-w-[40px] cursor-pointer"
+                        className="p-2.5 sm:p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-neutral-300 hover:text-white border border-white/10 transition flex items-center justify-center shrink-0 min-h-[48px] min-w-[48px] cursor-pointer touch-manipulation"
                         title="Watch video"
                         aria-label={`Watch video for ${track.title}`}
                       >
-                        <Video className="w-3.5 h-3.5" />
+                        <Video className="w-4 h-4" />
                       </button>
                     )}
 
@@ -292,7 +292,7 @@ export default function DiscoverView({
                         e.stopPropagation();
                         setOpenMenuId(isMenuOpen ? null : `${trackId}-${i}`);
                       }}
-                      className="p-2 sm:p-2.5 text-neutral-400 hover:text-white rounded-xl hover:bg-neutral-800 transition shrink-0 min-h-[40px] min-w-[40px] flex items-center justify-center cursor-pointer"
+                      className="p-2.5 sm:p-2.5 text-neutral-400 hover:text-white rounded-xl hover:bg-neutral-800 transition shrink-0 min-h-[48px] min-w-[48px] flex items-center justify-center cursor-pointer touch-manipulation"
                       aria-label="More options"
                     >
                       <MoreVertical className="w-4 h-4" />

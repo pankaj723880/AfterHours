@@ -71,6 +71,11 @@ const NON_MUSIC_PATTERNS = {
   ],
   background_music_only: [
     /\b(with background music|relaxing background music for study|study with me background|ambient background for gaming|gameplay with phonk|tiktok edit with music|satisfying video with music)\b/i
+  ],
+  ai_and_junk_content: [
+    /\b(ai\s+generated|ai\s+cover|ai\s+song|ai\s+music|ai\s+version|suno(?:\.ai)?|udio(?:\.ai)?|voicify|ai\s+voice|covers\s+ai|generated\s+by\s+ai|artificial\s+intelligence\s+music|deepfake\s+music)\b/i,
+    /\b((?:bedroom|acoustic|guitar|piano|ukulele|drum|flute|violin|fan(?:[\s-]made)?|amateur|random|garageband)\s+cover(?:\s+(?:by|with|version|song|tabs))?|cover\s+(?:by|version\s+by)\s+[a-z0-9_]{3,25})\b/i,
+    /\b(kdrama\s+edit|k-drama|c-drama|drama\s+scene|chinese\s+drama|pakistani\s+drama|anime\s+edit|movie\s+scene|whatsapp\s+status\s+video|shorts\s+video|status\s+video|reel\s+edit|funny\s+clip)\b/i
   ]
 };
 

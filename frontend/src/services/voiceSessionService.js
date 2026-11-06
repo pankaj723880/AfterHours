@@ -724,32 +724,43 @@ class VoiceSessionController {
       return;
     }
 
-    // 3. Transition to CONNECTING
-    this.setState(
-      SESSION_STATES.CONNECTING,
-      'Connecting to Loopra AI...'
-    );
+    // 3. Immediate Activation Greeting Sequence:
+    // When Loopra is turned on, play greeting audio immediately first,
+    // and ONLY start active SpeechRecognition listening after the greeting finishes.
+    const greeting = (typeof window !== 'undefined' && window.voiceBuddyService?.generateWelcomeGreeting)
+      ? window.voiceBuddyService.generateWelcomeGreeting()
+      : 'Hey! Kya haal hai?';
 
-    // 4. Initialize and start continuous speech recognition
-    this.safeStartRecognition();
+    const buddy = typeof window !== 'undefined' ? window.voiceBuddyService : null;
 
-    // 5. Start 60s inactivity watchdog
-    this.startInactivityTimer();
+    const startListeningAfterGreeting = () => {
+      if (!this.isSessionActive || this.isManualStopping) return;
+      this.isSpeakingTts = false;
+      this.setState(
+        SESSION_STATES.LISTENING,
+        'Listening... (Speak your music command)'
+      );
+      this.safeStartRecognition();
+      this.startInactivityTimer();
+    };
 
-    // 6. Dynamic Startup Greeting (Greets once on new session activation)
-    if (!this.hasGreetedThisSession) {
+    if (!this.hasGreetedThisSession && buddy && buddy.isVoiceOutputEnabled) {
       this.hasGreetedThisSession = true;
-      try {
-        const greetingPromise = chatBuddyClient.getStartupGreeting('', {
-          lang: this.lang,
-          currentMusicState: (typeof window !== 'undefined' && window.__loopraCurrentSong) ? window.__loopraCurrentSong : null
-        });
-        greetingPromise.then((greeting) => {
-          if (this.isSessionActive && greeting && typeof window !== 'undefined' && window.voiceBuddyService) {
-            window.voiceBuddyService.speak(greeting);
-          }
-        }).catch(() => {});
-      } catch (_) {}
+      this.isSpeakingTts = true;
+      this.setState(
+        SESSION_STATES.SPEAKING,
+        `Loopra: "${greeting}"`
+      );
+
+      // Play greeting audio immediately first
+      buddy.speak(greeting, 'welcome', {
+        onEnd: () => {
+          startListeningAfterGreeting();
+        }
+      });
+    } else {
+      this.hasGreetedThisSession = true;
+      startListeningAfterGreeting();
     }
   }
 

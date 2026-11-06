@@ -141,7 +141,7 @@ export default function HomeSearchBar({
           setIsSearching(false);
         }
       }
-    }, 280);
+    }, 400);
 
     return () => {
       clearTimeout(timer);
@@ -424,7 +424,7 @@ export default function HomeSearchBar({
                         role="option"
                         aria-selected={selectedIndex === idx}
                         onClick={() => handleSelectSong(song)}
-                        className={`flex items-center justify-between gap-3 px-3.5 py-2.5 cursor-pointer transition-colors group select-none ${
+                        className={`flex items-center justify-between gap-3 px-3.5 py-2.5 min-h-[48px] cursor-pointer transition-colors group select-none ${
                           selectedIndex === idx
                             ? 'bg-amber-500/20 text-amber-300 border-l-2 border-amber-500'
                             : 'hover:bg-neutral-800/80 text-neutral-200 hover:text-white'
@@ -432,7 +432,7 @@ export default function HomeSearchBar({
                       >
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div
-                            className="relative w-10 h-10 rounded-xl overflow-hidden bg-neutral-950 shrink-0 border border-neutral-800 shadow-sm pointer-events-none select-none"
+                            className="relative w-12 h-12 rounded-xl overflow-hidden bg-neutral-950 shrink-0 border border-neutral-800 shadow-sm pointer-events-none select-none"
                           >
                             <img
                               src={song.thumbnail}
@@ -518,7 +518,7 @@ export default function HomeSearchBar({
                       role="option"
                       aria-selected={selectedIndex === idx}
                       onClick={() => handleSelectRecentQuery(item)}
-                      className={`flex items-center justify-between px-3.5 py-2.5 cursor-pointer transition-colors group select-none ${
+                      className={`flex items-center justify-between px-3.5 py-2.5 min-h-[48px] cursor-pointer transition-colors group select-none ${
                         selectedIndex === idx
                           ? 'bg-amber-500/20 text-amber-300 border-l-2 border-amber-500'
                           : 'hover:bg-neutral-800/80 text-neutral-300 hover:text-white'

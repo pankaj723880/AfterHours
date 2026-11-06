@@ -26,7 +26,8 @@ import {
   AlertCircle,
   Menu,
   Mic,
-  Star
+  Star,
+  Download
 } from 'lucide-react';
 import AccessDenied from './AccessDenied';
 import AdminOverview from './AdminOverview';
@@ -37,6 +38,7 @@ import ServerHealth from './ServerHealth';
 import MusicAnalytics from './MusicAnalytics';
 import AuditLogs from './AuditLogs';
 import ActivityModeration from './ActivityModeration';
+import OfflineLicenseManagement from './OfflineLicenseManagement';
 import CmsGlobalSettings from './CmsGlobalSettings';
 import CmsLayoutEditor from './CmsLayoutEditor';
 import CmsMusicManager from './CmsMusicManager';
@@ -375,6 +377,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
     { id: 'ai_learning', label: 'AI Learning Engine', icon: Brain, badge: 'Intelligence' },
     { id: 'traffic', label: 'Live Traffic', icon: Activity, badge: isSocketConnected ? 'LIVE' : null },
     { id: 'users', label: 'Users & Roles', icon: Users },
+    { id: 'offline_licenses', label: 'Offline Licenses', icon: Download, badge: 'Rights' },
     { id: 'activity', label: 'Activity Moderation', icon: Activity },
     { id: 'health', label: 'API & Diagnostics', icon: Server },
     { id: 'music', label: 'Music Analytics', icon: Music2 },
@@ -759,6 +762,14 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               currentUser={user}
               showToast={showToast} 
               onUserUpdated={onUserUpdated}
+            />
+          )}
+
+          {activeSubTab === 'offline_licenses' && (
+            <OfflineLicenseManagement
+              token={token}
+              backendUrl={cleanBackendUrl}
+              showToast={showToast}
             />
           )}
 

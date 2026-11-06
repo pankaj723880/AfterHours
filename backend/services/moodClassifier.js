@@ -158,52 +158,54 @@ export function interpretMoodPrompt(prompt = '', userPreferences = {}) {
 
 function generateCatalogSearchQueries({ mood, language, era, energy, prompt }) {
   const queries = [];
-  const langPrefix = language === 'hindi' ? 'hindi' : (language === 'punjabi' ? 'punjabi' : (language === 'english' ? 'english' : ''));
+  // Rule 1: DEFAULT LANGUAGE - If not specified, default to Hindi / Bollywood
+  const isHindi = !language || language === 'hindi';
+  const langPrefix = isHindi ? 'hindi bollywood' : (language === 'punjabi' ? 'punjabi' : (language === 'english' ? 'english' : 'hindi bollywood'));
 
-  // Query 1: Mood + Language + specific keyword
+  // Rule 2 & 3: MAINSTREAM ARTISTS ONLY & NO JUNK / AI / LOW-VIEWS (Official Audio & Top Labels)
   if (mood === 'sad') {
-    queries.push(`${langPrefix} sad heartbreak songs lyrical audio`.trim());
-    queries.push(`${langPrefix} emotional painful songs playlist`.trim());
-    if (era) queries.push(`${era} ${langPrefix} sad songs`.trim());
+    queries.push(`${langPrefix} sad songs arijit singh atif aslam official audio`.trim());
+    queries.push(`arijit singh sad heartbreak songs ${langPrefix} official`.trim());
+    if (era) queries.push(`${era} ${langPrefix} sad songs official`.trim());
   } else if (mood === 'romantic') {
-    queries.push(`${langPrefix} romantic love songs collection`.trim());
-    queries.push(`${langPrefix} couple romantic playlist hits`.trim());
+    queries.push(`${langPrefix} romantic songs arijit singh shreya ghoshal official audio`.trim());
+    queries.push(`arijit singh romantic love songs ${langPrefix} official`.trim());
   } else if (mood === 'energetic') {
-    queries.push(`${langPrefix} gym workout high energy songs`.trim());
-    queries.push(`${langPrefix} motivational upbeat tracks`.trim());
+    queries.push(`${langPrefix} workout high energy gym songs official`.trim());
+    queries.push(`${langPrefix} motivational upbeat tracks official video`.trim());
   } else if (mood === 'party') {
-    queries.push(`${langPrefix} party club dance songs mix`.trim());
-    queries.push(`${langPrefix} wedding dhol blast hits`.trim());
+    queries.push(`${langPrefix} party dance club songs official video`.trim());
+    queries.push(`badshah party hits ${langPrefix} official`.trim());
   } else if (mood === 'chill') {
-    queries.push(`${langPrefix} lofi chill relax songs slowed reverb`.trim());
-    queries.push(`${langPrefix} peaceful acoustic midnight melody`.trim());
+    queries.push(`${langPrefix} relaxing chill songs arijit singh vishal mishra official`.trim());
+    queries.push(`vishal mishra sukoon chill songs ${langPrefix} official audio`.trim());
   } else if (mood === 'focus') {
-    queries.push(`${langPrefix} instrumental calm study coding music`.trim());
-    queries.push(`relaxing ambient flute sitar guitar study music`);
+    queries.push(`${langPrefix} instrumental calm study coding music official`);
+    queries.push(`relaxing ambient flute sitar guitar study music official`);
   } else if (mood === 'nostalgic') {
-    queries.push(`90s 80s evergreen golden hits ${langPrefix}`.trim());
-    queries.push(`retro ${langPrefix} classic melody radio`.trim());
+    queries.push(`90s 2000s evergreen bollywood golden hits kumar sanu udit narayan alka yagnik official`);
+    queries.push(`retro ${langPrefix} classic melody radio official`);
   } else if (mood === 'rainy') {
-    queries.push(`${langPrefix} baarish rain monsoon songs romantic`.trim());
-    queries.push(`rainy day lofi ${langPrefix} soothing songs`.trim());
+    queries.push(`${langPrefix} baarish monsoon rain romantic songs arijit singh official`);
+    queries.push(`rainy day lofi ${langPrefix} soothing songs official audio`);
   } else if (mood === 'roadtrip') {
-    queries.push(`${langPrefix} road trip highway car drive songs`.trim());
-    queries.push(`indie travel ${langPrefix} feel good tracks`.trim());
+    queries.push(`${langPrefix} road trip highway car drive songs arijit singh kk official`);
+    queries.push(`indie travel ${langPrefix} feel good tracks official`);
   } else if (mood === 'happy') {
-    queries.push(`${langPrefix} feel good cheerful happy songs`.trim());
-    queries.push(`${langPrefix} positive vibes dance mix`.trim());
+    queries.push(`${langPrefix} feel good cheerful happy songs arijit singh official`);
+    queries.push(`${langPrefix} positive vibes dance mix official video`);
   }
 
   // If user entered era
   if (era && !queries.some(q => q.includes(era))) {
-    queries.unshift(`${era} ${langPrefix} ${mood} songs`.trim());
+    queries.unshift(`${era} ${langPrefix} ${mood} songs official`.trim());
   }
 
   // If prompt has specific artist names, prioritize them
-  const artists = ['arijit', 'kk', 'atif', 'sidhu', 'diljit', 'kumar sanu', 'kishore', 'rafi', 'lata', 'sonu nigam', 'shreya'];
+  const artists = ['arijit', 'kk', 'atif', 'vishal mishra', 'sidhu', 'diljit', 'kumar sanu', 'kishore', 'rafi', 'lata', 'sonu nigam', 'shreya'];
   for (const art of artists) {
     if (prompt.includes(art)) {
-      queries.unshift(`${art} ${langPrefix} ${mood} best songs`.trim());
+      queries.unshift(`${art} ${langPrefix} ${mood} best songs official`.trim());
       break;
     }
   }

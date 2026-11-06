@@ -312,86 +312,214 @@ export default function VoiceAgentModal({
         // 0. OPEN_INSIGHTS: Strictly opens Recap & Stats modal (NEVER routes to activity)
         if (directAction.intent === INTENT_CATEGORIES.OPEN_INSIGHTS || directAction.action === 'open_insights') {
           if (onOpenInsights) {
-            onOpenInsights();
+            try {
+              onOpenInsights();
+              const reply = 'Opening your Recap and Stats';
+              voiceBuddyService.speak(reply);
+              showToast?.('Opening Recap & Stats');
+            } catch (err) {
+              console.error('[VoiceAgent] Failed to open insights:', err);
+              voiceBuddyService.speak('Recap and stats open nahi ho paya');
+              showToast?.('Could not open Recap & Stats', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Stats option abhi available nahi hai');
+            showToast?.('Recap & Stats not available', 'warning');
           }
-          const reply = 'Opening your Recap and Stats';
-          voiceBuddyService.speak(reply);
-          showToast?.('Opening Recap & Stats');
+          return;
+        }
+
+        // Open Queue
+        if (directAction.intent === INTENT_CATEGORIES.OPEN_QUEUE || directAction.action === 'open_queue') {
+          if (onOpenQueue) {
+            try {
+              onOpenQueue();
+              const reply = 'Opening Playback Queue';
+              voiceBuddyService.speak(reply);
+              showToast?.('Opening Queue');
+            } catch (err) {
+              console.error('[VoiceAgent] Failed to open queue:', err);
+              voiceBuddyService.speak('Queue open nahi ho paya');
+              showToast?.('Could not open Queue', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Queue option abhi available nahi hai');
+            showToast?.('Queue not available', 'warning');
+          }
           return;
         }
 
         // Advanced Modals
         if (directAction.action === 'open_listening_rooms' || directAction.intent === INTENT_CATEGORIES.OPEN_LISTENING_ROOMS) {
-          if (onOpenListeningRooms) onOpenListeningRooms();
-          const reply = 'Opening Social Listening Rooms';
-          voiceBuddyService.speak(reply);
-          showToast?.('Opening Listening Rooms');
+          if (onOpenListeningRooms) {
+            try {
+              onOpenListeningRooms();
+              const reply = 'Opening Social Listening Rooms';
+              voiceBuddyService.speak(reply);
+              showToast?.('Opening Listening Rooms');
+            } catch (err) {
+              console.error('[VoiceAgent] Failed to open listening rooms:', err);
+              voiceBuddyService.speak('Listening rooms open nahi ho paya');
+              showToast?.('Could not open Listening Rooms', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Listening rooms available nahi hai');
+            showToast?.('Listening rooms not available', 'warning');
+          }
           return;
         }
 
         if (directAction.action === 'open_similar_songs' || directAction.intent === INTENT_CATEGORIES.OPEN_SIMILAR_SONGS) {
-          if (onOpenSimilarSongs) onOpenSimilarSongs(currentSong);
-          const reply = 'Finding similar songs for you';
-          voiceBuddyService.speak(reply);
-          showToast?.('Opening Similar Songs');
+          if (onOpenSimilarSongs) {
+            try {
+              onOpenSimilarSongs(currentSong);
+              const reply = 'Finding similar songs for you';
+              voiceBuddyService.speak(reply);
+              showToast?.('Opening Similar Songs');
+            } catch (err) {
+              console.error('[VoiceAgent] Failed to open similar songs:', err);
+              voiceBuddyService.speak('Similar songs open nahi ho paya');
+              showToast?.('Could not open Similar Songs', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Similar songs option available nahi hai');
+            showToast?.('Similar songs not available', 'warning');
+          }
           return;
         }
 
         if (directAction.action === 'open_player_settings' || directAction.intent === INTENT_CATEGORIES.OPEN_PLAYER_SETTINGS) {
-          if (onOpenPlayerSettings) onOpenPlayerSettings();
-          const reply = 'Opening player settings and equalizer';
-          voiceBuddyService.speak(reply);
-          showToast?.('Opening Player Settings');
+          if (onOpenPlayerSettings) {
+            try {
+              onOpenPlayerSettings();
+              const reply = 'Opening player settings and equalizer';
+              voiceBuddyService.speak(reply);
+              showToast?.('Opening Player Settings');
+            } catch (err) {
+              console.error('[VoiceAgent] Failed to open player settings:', err);
+              voiceBuddyService.speak('Settings open nahi ho paya');
+              showToast?.('Could not open settings', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Settings option available nahi hai');
+            showToast?.('Settings not available', 'warning');
+          }
           return;
         }
 
         if (directAction.action === 'open_sleep_timer' || directAction.intent === INTENT_CATEGORIES.OPEN_SLEEP_TIMER) {
-          if (onOpenSleepTimer) onOpenSleepTimer();
-          const reply = 'Opening Sleep Timer';
-          voiceBuddyService.speak(reply);
-          showToast?.('Opening Sleep Timer');
+          if (onOpenSleepTimer) {
+            try {
+              onOpenSleepTimer();
+              const reply = 'Opening Sleep Timer';
+              voiceBuddyService.speak(reply);
+              showToast?.('Opening Sleep Timer');
+            } catch (err) {
+              console.error('[VoiceAgent] Failed to open sleep timer:', err);
+              voiceBuddyService.speak('Sleep timer open nahi ho paya');
+              showToast?.('Could not open Sleep Timer', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Sleep timer option available nahi hai');
+            showToast?.('Sleep timer not available', 'warning');
+          }
           return;
         }
 
         if (directAction.action === 'open_canvas' || directAction.intent === INTENT_CATEGORIES.OPEN_CANVAS) {
-          if (onOpenCanvas) onOpenCanvas();
-          const reply = 'Opening Loopra Canvas visualizer';
-          voiceBuddyService.speak(reply);
-          showToast?.('Opening Loopra Canvas');
+          if (onOpenCanvas) {
+            try {
+              onOpenCanvas();
+              const reply = 'Opening Loopra Canvas visualizer';
+              voiceBuddyService.speak(reply);
+              showToast?.('Opening Loopra Canvas');
+            } catch (err) {
+              console.error('[VoiceAgent] Failed to open canvas:', err);
+              voiceBuddyService.speak('Canvas visualizer open nahi ho paya');
+              showToast?.('Could not open Canvas', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Canvas option available nahi hai');
+            showToast?.('Canvas not available', 'warning');
+          }
           return;
         }
 
         if (directAction.action === 'open_profile' || directAction.intent === INTENT_CATEGORIES.OPEN_PROFILE) {
-          if (onOpenProfile) onOpenProfile();
-          const reply = 'Opening your profile';
-          voiceBuddyService.speak(reply);
-          showToast?.('Opening Profile');
+          if (onOpenProfile) {
+            try {
+              onOpenProfile();
+              const reply = 'Opening your profile';
+              voiceBuddyService.speak(reply);
+              showToast?.('Opening Profile');
+            } catch (err) {
+              console.error('[VoiceAgent] Failed to open profile:', err);
+              voiceBuddyService.speak('Profile open nahi ho paya');
+              showToast?.('Could not open Profile', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Profile option available nahi hai');
+            showToast?.('Profile not available', 'warning');
+          }
           return;
         }
 
         if (directAction.action === 'open_rating_modal' || directAction.intent === INTENT_CATEGORIES.OPEN_RATING_MODAL) {
-          if (onOpenRatingModal) onOpenRatingModal();
-          const reply = 'Opening rating and reviews';
-          voiceBuddyService.speak(reply);
-          showToast?.('Opening Rate & Review');
+          if (onOpenRatingModal) {
+            try {
+              onOpenRatingModal();
+              const reply = 'Opening rating and reviews';
+              voiceBuddyService.speak(reply);
+              showToast?.('Opening Rate & Review');
+            } catch (err) {
+              console.error('[VoiceAgent] Failed to open rating modal:', err);
+              voiceBuddyService.speak('Rating modal open nahi ho paya');
+              showToast?.('Could not open reviews', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Rating option available nahi hai');
+            showToast?.('Rating not available', 'warning');
+          }
           return;
         }
 
         // Live DJ Controls
         if (directAction.intent === INTENT_CATEGORIES.DJ_ACTION) {
-          if (onDjAction) onDjAction(directAction);
-          const reply = directAction.description || 'DJ action executed';
-          voiceBuddyService.speak(reply);
-          showToast?.(reply);
+          if (onDjAction) {
+            try {
+              onDjAction(directAction);
+              const reply = directAction.description || 'DJ action executed';
+              voiceBuddyService.speak(reply);
+              showToast?.(reply);
+            } catch (err) {
+              console.error('[VoiceAgent] Failed DJ action:', err);
+              voiceBuddyService.speak('DJ action perform nahi ho paya');
+              showToast?.('DJ action failed', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('DJ controls available nahi hai');
+            showToast?.('DJ controls not available', 'warning');
+          }
           return;
         }
 
         // Playback Speed
         if (directAction.intent === INTENT_CATEGORIES.CHANGE_SPEED && directAction.action === 'set_playback_speed') {
-          if (onSetPlaybackSpeed) onSetPlaybackSpeed(directAction.value);
-          const reply = `Playback speed set to ${directAction.value}x`;
-          voiceBuddyService.speak(reply);
-          showToast?.(reply);
+          if (onSetPlaybackSpeed) {
+            try {
+              onSetPlaybackSpeed(directAction.value);
+              const reply = `Playback speed set to ${directAction.value}x`;
+              voiceBuddyService.speak(reply);
+              showToast?.(reply);
+            } catch (err) {
+              console.error('[VoiceAgent] Failed playback speed:', err);
+              voiceBuddyService.speak('Playback speed set nahi ho payi');
+              showToast?.('Failed to set speed', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Speed control option available nahi hai');
+            showToast?.('Speed control not available', 'warning');
+          }
           return;
         }
 
@@ -405,23 +533,43 @@ export default function VoiceAgentModal({
             await window.__loopraWalkAndTap(targetId, targetName);
           }
           if (onNavigate) {
-            onNavigate(targetId, directAction.extra);
+            try {
+              onNavigate(targetId, directAction.extra);
+              const reply = voiceBuddyService.generateFriendReply('navigate_page', { target: targetId });
+              voiceBuddyService.speak(reply);
+              showToast?.(`Opening ${targetName}`);
+              voiceSessionService.notifyExecutionFinish(reply);
+            } catch (err) {
+              console.error('[VoiceAgent] Navigation failed:', err);
+              voiceBuddyService.speak(`${targetName} open nahi ho paya`);
+              showToast?.(`Could not open ${targetName}`, 'error');
+              voiceSessionService.notifyExecutionFinish(`Could not open ${targetName}`);
+            }
+          } else {
+            voiceBuddyService.speak('Navigation available nahi hai');
+            showToast?.('Navigation handler unavailable', 'warning');
           }
-
-          const reply = voiceBuddyService.generateFriendReply('navigate_page', { target: targetId });
-          voiceBuddyService.speak(reply);
-          showToast?.(`Opening ${targetName}`);
-          voiceSessionService.notifyExecutionFinish(reply);
           return;
         }
 
         // 2. OPEN_SECTION: In-page section (e.g. Trending Songs)
         if (directAction.intent === INTENT_CATEGORIES.OPEN_SECTION) {
           if (directAction.target === 'trending_section') {
-            if (onNavigate) onNavigate('home', { showAll: 'trending' });
-            const reply = voiceBuddyService.generateFriendReply('navigate_section', { target: 'trending_section' });
-            voiceBuddyService.speak(reply);
-            showToast?.('Opening Trending Songs');
+            if (onNavigate) {
+              try {
+                onNavigate('home', { showAll: 'trending' });
+                const reply = voiceBuddyService.generateFriendReply('navigate_section', { target: 'trending_section' });
+                voiceBuddyService.speak(reply);
+                showToast?.('Opening Trending Songs');
+              } catch (err) {
+                console.error('[VoiceAgent] Open section failed:', err);
+                voiceBuddyService.speak('Section open nahi ho paya');
+                showToast?.('Could not open Trending Songs', 'error');
+              }
+            } else {
+              voiceBuddyService.speak('Section open nahi ho paya');
+              showToast?.('Navigation unavailable', 'warning');
+            }
             return;
           }
         }
@@ -430,58 +578,120 @@ export default function VoiceAgentModal({
         if (directAction.intent === INTENT_CATEGORIES.SEARCH_SONG) {
           const q = directAction.query || 'songs';
           if (onNavigate) {
-            onNavigate('discover', { query: q });
+            try {
+              onNavigate('discover', { query: q });
+              const reply = voiceBuddyService.generateFriendReply('search', { query: q });
+              voiceBuddyService.speak(reply);
+              showToast?.(`Searching for "${q}"`);
+            } catch (err) {
+              console.error('[VoiceAgent] Search navigation failed:', err);
+              voiceBuddyService.speak('Search open nahi ho paya');
+              showToast?.('Search failed', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Search unavailable');
+            showToast?.('Search unavailable', 'warning');
           }
-          const reply = voiceBuddyService.generateFriendReply('search', { query: q });
-          voiceBuddyService.speak(reply);
-          showToast?.(`Searching for "${q}"`);
           return;
         }
 
         // 4. PLAY_SEARCH_RESULT: Plays first song from search
         if (directAction.intent === INTENT_CATEGORIES.PLAY_SEARCH_RESULT) {
           if (persistentContextRef.current.lastSearchResults?.length > 0 && onPlayTrack) {
-            onPlayTrack(persistentContextRef.current.lastSearchResults[0]);
+            try {
+              onPlayTrack(persistentContextRef.current.lastSearchResults[0]);
+              const reply = voiceBuddyService.generateFriendReply('play_index');
+              voiceBuddyService.speak(reply);
+              showToast?.('Playing first song');
+            } catch (err) {
+              console.error('[VoiceAgent] Play search result failed:', err);
+              voiceBuddyService.speak('Song play nahi ho paya');
+              showToast?.('Could not play song', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Koi search result nahi mila play karne ke liye');
+            showToast?.('No search result available', 'warning');
           }
-          const reply = voiceBuddyService.generateFriendReply('play_index');
-          voiceBuddyService.speak(reply);
-          showToast?.('Playing first song');
           return;
         }
 
         // 5. PAUSE_PLAYBACK
         if (directAction.intent === INTENT_CATEGORIES.PAUSE_PLAYBACK) {
-          if (isPlaying && onTogglePlayPause) onTogglePlayPause();
-          const reply = voiceBuddyService.generateFriendReply('pause');
-          voiceBuddyService.speak(reply);
-          showToast?.('Music paused');
+          if (isPlaying && onTogglePlayPause) {
+            try {
+              onTogglePlayPause();
+              const reply = voiceBuddyService.generateFriendReply('pause');
+              voiceBuddyService.speak(reply);
+              showToast?.('Music paused');
+            } catch (err) {
+              console.error('[VoiceAgent] Pause playback failed:', err);
+              voiceBuddyService.speak('Playback pause nahi ho paya');
+              showToast?.('Pause failed', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Gaana pehle se hi paused hai');
+            showToast?.('Already paused', 'info');
+          }
           return;
         }
 
         // 6. RESUME_PLAYBACK
         if (directAction.intent === INTENT_CATEGORIES.RESUME_PLAYBACK) {
-          if (!isPlaying && onTogglePlayPause) onTogglePlayPause();
-          const reply = voiceBuddyService.generateFriendReply('resume');
-          voiceBuddyService.speak(reply);
-          showToast?.('Music resumed');
+          if (!isPlaying && onTogglePlayPause) {
+            try {
+              onTogglePlayPause();
+              const reply = voiceBuddyService.generateFriendReply('resume');
+              voiceBuddyService.speak(reply);
+              showToast?.('Music resumed');
+            } catch (err) {
+              console.error('[VoiceAgent] Resume playback failed:', err);
+              voiceBuddyService.speak('Playback resume nahi ho paya');
+              showToast?.('Resume failed', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Gaana pehle se hi chal raha hai');
+            showToast?.('Already playing', 'info');
+          }
           return;
         }
 
         // 7. NEXT_TRACK
         if (directAction.intent === INTENT_CATEGORIES.NEXT_TRACK) {
-          if (onNextTrack) onNextTrack();
-          const reply = voiceBuddyService.generateFriendReply('next');
-          voiceBuddyService.speak(reply);
-          showToast?.('Next track');
+          if (onNextTrack) {
+            try {
+              onNextTrack();
+              const reply = voiceBuddyService.generateFriendReply('next');
+              voiceBuddyService.speak(reply);
+              showToast?.('Next track');
+            } catch (err) {
+              console.error('[VoiceAgent] Next track failed:', err);
+              voiceBuddyService.speak('Agla gaana play nahi ho paya');
+              showToast?.('Next track failed', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Agla gaana available nahi hai');
+            showToast?.('Next track unavailable', 'warning');
+          }
           return;
         }
 
         // 8. PREVIOUS_TRACK
         if (directAction.intent === INTENT_CATEGORIES.PREVIOUS_TRACK) {
-          if (onPrevTrack) onPrevTrack();
-          const reply = voiceBuddyService.generateFriendReply('previous');
-          voiceBuddyService.speak(reply);
-          showToast?.('Previous track');
+          if (onPrevTrack) {
+            try {
+              onPrevTrack();
+              const reply = voiceBuddyService.generateFriendReply('previous');
+              voiceBuddyService.speak(reply);
+              showToast?.('Previous track');
+            } catch (err) {
+              console.error('[VoiceAgent] Previous track failed:', err);
+              voiceBuddyService.speak('Pichhla gaana play nahi ho paya');
+              showToast?.('Previous track failed', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Pichhla gaana available nahi hai');
+            showToast?.('Previous track unavailable', 'warning');
+          }
           return;
         }
 
@@ -491,10 +701,21 @@ export default function VoiceAgentModal({
           if (directAction.action === 'set_volume') newVol = directAction.value;
           if (directAction.action === 'volume_down') newVol = Math.max(0, volume - 15);
           if (directAction.action === 'volume_up') newVol = Math.min(100, volume + 15);
-          if (onSetVolume) onSetVolume(newVol);
-          const reply = voiceBuddyService.generateFriendReply(directAction.action, { value: newVol });
-          voiceBuddyService.speak(reply);
-          showToast?.(`Volume set to ${newVol}%`);
+          if (onSetVolume) {
+            try {
+              onSetVolume(newVol);
+              const reply = voiceBuddyService.generateFriendReply(directAction.action, { value: newVol });
+              voiceBuddyService.speak(reply);
+              showToast?.(`Volume set to ${newVol}%`);
+            } catch (err) {
+              console.error('[VoiceAgent] Set volume failed:', err);
+              voiceBuddyService.speak('Volume change nahi ho paya');
+              showToast?.('Volume change failed', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Volume control available nahi hai');
+            showToast?.('Volume control unavailable', 'warning');
+          }
           return;
         }
 
@@ -502,11 +723,18 @@ export default function VoiceAgentModal({
         if (directAction.intent === INTENT_CATEGORIES.ADD_TO_FAVOURITES) {
           const targetSong = directAction.target || currentSong || persistentContextRef.current.currentSong || persistentContextRef.current.lastPlayedTrack;
           if (targetSong && onToggleLike) {
-            onToggleLike(targetSong);
-            const reply = voiceBuddyService.generateFriendReply('like', { target: targetSong.title });
-            voiceBuddyService.speak(reply);
-            showToast?.(`Added "${targetSong.title || 'song'}" to Liked Songs`);
+            try {
+              onToggleLike(targetSong);
+              const reply = voiceBuddyService.generateFriendReply('like', { target: targetSong.title });
+              voiceBuddyService.speak(reply);
+              showToast?.(`Added "${targetSong.title || 'song'}" to Liked Songs`);
+            } catch (err) {
+              console.error('[VoiceAgent] Add to favorites failed:', err);
+              voiceBuddyService.speak('Favorites mein add nahi ho paya');
+              showToast?.('Failed to add to favorites', 'error');
+            }
           } else {
+            voiceBuddyService.speak('Koi song play nahi ho raha favorite karne ke liye');
             showToast?.('No song currently playing to add to favorites', 'warning');
           }
           return;
@@ -516,11 +744,18 @@ export default function VoiceAgentModal({
         if (directAction.intent === INTENT_CATEGORIES.REMOVE_FROM_FAVOURITES) {
           const targetSong = directAction.target || currentSong || persistentContextRef.current.currentSong || persistentContextRef.current.lastPlayedTrack;
           if (targetSong && onToggleLike) {
-            onToggleLike(targetSong);
-            const reply = voiceBuddyService.generateFriendReply('unlike', { target: targetSong.title });
-            voiceBuddyService.speak(reply);
-            showToast?.(`Removed "${targetSong.title || 'song'}" from favorites`);
+            try {
+              onToggleLike(targetSong);
+              const reply = voiceBuddyService.generateFriendReply('unlike', { target: targetSong.title });
+              voiceBuddyService.speak(reply);
+              showToast?.(`Removed "${targetSong.title || 'song'}" from favorites`);
+            } catch (err) {
+              console.error('[VoiceAgent] Remove from favorites failed:', err);
+              voiceBuddyService.speak('Favorites se remove nahi ho paya');
+              showToast?.('Failed to remove from favorites', 'error');
+            }
           } else {
+            voiceBuddyService.speak('Koi song selected nahi hai favorites se hatane ke liye');
             showToast?.('No song selected or currently playing to remove', 'warning');
           }
           return;
@@ -545,24 +780,37 @@ export default function VoiceAgentModal({
           const query = directAction.query;
           let track = null;
           if (typeof searchCatalog === 'function') {
-            const results = await searchCatalog(query);
-            if (Array.isArray(results) && results.length > 0) {
-              track = results[0];
-              persistentContextRef.current.lastSearchResults = results;
+            try {
+              const results = await searchCatalog(query);
+              if (Array.isArray(results) && results.length > 0) {
+                track = results[0];
+                persistentContextRef.current.lastSearchResults = results;
+              }
+            } catch (err) {
+              console.warn('[VoiceAgent] searchCatalog error in PLAY_SONG:', err.message);
             }
           }
           if (!track) {
             track = { id: `v_${Date.now()}`, title: query, artist: query };
           }
           if (onPlayTrack) {
-            await onPlayTrack(track);
-            persistentContextRef.current.currentSong = track;
-            persistentContextRef.current.lastPlayedTrack = track;
-            persistentContextRef.current.isPlaying = true;
+            try {
+              await onPlayTrack(track);
+              persistentContextRef.current.currentSong = track;
+              persistentContextRef.current.lastPlayedTrack = track;
+              persistentContextRef.current.isPlaying = true;
+              const reply = voiceBuddyService.generateFriendReply('play_search', { target: track.title });
+              voiceBuddyService.speak(reply);
+              showToast?.(`Playing "${track.title}"`);
+            } catch (err) {
+              console.error('[VoiceAgent] onPlayTrack failed:', err);
+              voiceBuddyService.speak('Song play karne mein error aaya');
+              showToast?.('Song playback failed', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Player available nahi hai gaana play karne ke liye');
+            showToast?.('Playback handler unavailable', 'warning');
           }
-          const reply = voiceBuddyService.generateFriendReply('play_search', { target: track.title });
-          voiceBuddyService.speak(reply);
-          showToast?.(`Playing "${track.title}"`);
           return;
         }
       }

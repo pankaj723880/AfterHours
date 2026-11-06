@@ -72,6 +72,10 @@ class VoiceBuddyService {
     this.stopSpeech = this.stopSpeech.bind(this);
     this.processQueue = this.processQueue.bind(this);
     this.executeSpeech = this.executeSpeech.bind(this);
+    this.getIndianVoice = this.getIndianVoice.bind(this);
+    this.speakWithSpeechSynthesis = this.speakWithSpeechSynthesis.bind(this);
+    this.startSyntheticAudioMeter = this.startSyntheticAudioMeter.bind(this);
+    this.stopSyntheticAudioMeter = this.stopSyntheticAudioMeter.bind(this);
     this.initAudioMeter = this.initAudioMeter.bind(this);
     this.stopAudioMeter = this.stopAudioMeter.bind(this);
     this.fallbackToIndianSpeechSynthesis = this.fallbackToIndianSpeechSynthesis.bind(this);
@@ -413,6 +417,9 @@ class VoiceBuddyService {
     const now = Date.now();
     if (this.lastSpokenText === cleanText && (now - this.lastSpokenTime) < 3000) {
       console.log('[VoiceBuddy] Suppressed duplicate speech utterance within 3000ms:', cleanText);
+      if (typeof options?.onEnd === 'function') {
+        try { options.onEnd(); } catch (_) {}
+      }
       return;
     }
     this.lastSpokenText = cleanText;
@@ -422,10 +429,18 @@ class VoiceBuddyService {
     if (!this.isVoiceOutputEnabled) {
       this.stopSpeech();
       this.notifySubscribers('speech_text_only', { text: cleanText, reason: 'voice_output_disabled' });
+      if (typeof options?.onEnd === 'function') {
+        try { options.onEnd(); } catch (_) {}
+      }
       return;
     }
 
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined') {
+      if (typeof options?.onEnd === 'function') {
+        try { options.onEnd(); } catch (_) {}
+      }
+      return;
+    }
 
     this.unlockAudio();
 
@@ -475,7 +490,7 @@ class VoiceBuddyService {
       }
     }
 
-    this.executeSpeech(current.text, current.contextAction);
+    this.executeSpeech(current.text, current.contextAction, current.options);
   }
 
   /**
@@ -555,7 +570,143 @@ class VoiceBuddyService {
     this.notifySubscribers('speech_volume', { volume: 0 });
   }
 
-  executeSpeech(text, contextAction = '') {
+  /**
+   * Real-time synthetic volume analyser for instant Web SpeechSynthesis lip-sync.
+   */
+  startSyntheticAudioMeter() {
+    this.stopSyntheticAudioMeter();
+    const update = () => {
+      if (!this.isSpeaking) {
+        this.notifySubscribers('speech_volume', { volume: 0 });
+        if (typeof window !== 'undefined') window.__loopraVoiceAudioLevel = 0;
+        return;
+      }
+      const vol = 0.35 + Math.sin(Date.now() / 90) * 0.25;
+      if (typeof window !== 'undefined') window.__loopraVoiceAudioLevel = vol;
+      this.notifySubscribers('speech_volume', { volume: vol });
+      this.syntheticMeterId = requestAnimationFrame(update);
+    };
+    this.syntheticMeterId = requestAnimationFrame(update);
+  }
+
+  stopSyntheticAudioMeter() {
+    if (this.syntheticMeterId) {
+      cancelAnimationFrame(this.syntheticMeterId);
+      this.syntheticMeterId = null;
+    }
+    if (typeof window !== 'undefined') window.__loopraVoiceAudioLevel = 0;
+    this.notifySubscribers('speech_volume', { volume: 0 });
+  }
+
+  /**
+   * Discovers natural Indian female / regional voices from browser SpeechSynthesis.
+   */
+  getIndianVoice() {
+    if (!this.speechSynthesis) return null;
+    const voices = this.speechSynthesis.getVoices() || [];
+    if (!voices.length) return null;
+
+    const isIndianFemaleVoice = (v) => {
+      const lang = (v.lang || '').replace('_', '-').toLowerCase();
+      const name = (v.name || '').toLowerCase();
+      // Strictly exclude male voices
+      if (
+        name.includes('ravi') ||
+        name.includes('madhur') ||
+        name.includes('prabhat') ||
+        name.includes('david') ||
+        name.includes('mark') ||
+        name.includes('male') ||
+        name.includes('george')
+      ) {
+        return false;
+      }
+      return (
+        lang === 'hi-in' ||
+        lang === 'en-in' ||
+        lang.startsWith('hi') ||
+        name.includes('india') ||
+        name.includes('hindi') ||
+        name.includes('हिन्दी') ||
+        name.includes('swara') ||
+        name.includes('neerja') ||
+        name.includes('kalpana') ||
+        name.includes('heera') ||
+        name.includes('zira')
+      );
+    };
+
+    // 1. Direct Indian female match
+    let voice = voices.find(isIndianFemaleVoice);
+    if (voice) return voice;
+
+    // 2. Any Indian voice
+    voice = voices.find((v) => {
+      const lang = (v.lang || '').replace('_', '-').toLowerCase();
+      const name = (v.name || '').toLowerCase();
+      return (
+        lang === 'hi-in' ||
+        lang === 'en-in' ||
+        lang.startsWith('hi') ||
+        name.includes('india') ||
+        name.includes('hindi')
+      );
+    });
+    if (voice) return voice;
+
+    return null;
+  }
+
+  /**
+   * Zero-Latency Instant TTS Speech Synthesis (<20ms start time).
+   */
+  speakWithSpeechSynthesis(text, onComplete, voice = null) {
+    if (!this.speechSynthesis) {
+      if (typeof onComplete === 'function') onComplete();
+      return;
+    }
+
+    try {
+      this.speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(this.preprocessTextForSpeech(text) || text);
+      const selectedVoice = voice || this.getIndianVoice();
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+        utterance.lang = selectedVoice.lang || 'hi-IN';
+      } else {
+        utterance.lang = 'hi-IN';
+      }
+      utterance.rate = 1.35;
+      utterance.pitch = 1.05;
+
+      utterance.onstart = () => {
+        this.isSpeaking = true;
+        this.startHeartbeat();
+        this.notifySubscribers('speech_start', { text });
+        this.startSyntheticAudioMeter();
+      };
+
+      utterance.onend = () => {
+        this.stopSyntheticAudioMeter();
+        if (typeof onComplete === 'function') onComplete();
+      };
+
+      utterance.onerror = () => {
+        this.stopSyntheticAudioMeter();
+        if (typeof onComplete === 'function') onComplete();
+      };
+
+      this._currentUtterance = utterance;
+      this.speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.warn('[VoiceBuddy] Speech synthesis error:', e);
+      this.stopSyntheticAudioMeter();
+      if (typeof onComplete === 'function') onComplete();
+    }
+  }
+
+  executeSpeech(text, contextAction = '', options = {}) {
     clearTimeout(this.watchdogTimer);
 
     let hasFinished = false;
@@ -564,6 +715,7 @@ class VoiceBuddyService {
       hasFinished = true;
       clearTimeout(this.watchdogTimer);
       this.stopAudioMeter();
+      this.stopSyntheticAudioMeter();
       if (this.currentAudio) {
         try {
           this.currentAudio.pause();
@@ -582,8 +734,11 @@ class VoiceBuddyService {
       }
 
       this.isSpeaking = false;
-      this.notifySubscribers('speech_end', { text });
+      this.notifySubscribers('speech_end', { text, action: contextAction });
       this.notifySubscribers('speech_volume', { volume: 0 });
+      if (typeof options?.onEnd === 'function') {
+        try { options.onEnd(); } catch (_) {}
+      }
       this.processQueue();
     };
 
@@ -591,9 +746,17 @@ class VoiceBuddyService {
     const estimatedMs = Math.max(5000, Math.round(text.length * 90) + 6000);
     this.watchdogTimer = setTimeout(completeItem, estimatedMs);
 
-    // 1. Primary: High-Quality Indian Neural TTS via backend stream
     const cleanPhonetics = this.preprocessTextForSpeech(text);
     const textToSpeak = cleanPhonetics || text;
+
+    // 1. Primary: Zero-Latency Browser SpeechSynthesis (<20ms start time)
+    const indianVoice = this.getIndianVoice();
+    if (this.speechSynthesis && (indianVoice || (this.speechSynthesis.getVoices && this.speechSynthesis.getVoices().length > 0))) {
+      this.speakWithSpeechSynthesis(textToSpeak, completeItem, indianVoice);
+      return;
+    }
+
+    // 2. Secondary Fallback: High-Quality Indian Neural TTS via backend stream
     const encoded = encodeURIComponent(textToSpeak);
     const audioUrl = `/api/voice-agent/tts?text=${encoded}&gender=female`;
 
@@ -607,7 +770,7 @@ class VoiceBuddyService {
       audio.onplay = () => {
         this.isSpeaking = true;
         this.startHeartbeat();
-        this.notifySubscribers('speech_start', { text: textToSpeak });
+        this.notifySubscribers('speech_start', { text: textToSpeak, action: contextAction });
         this.initAudioMeter(audio);
       };
 
@@ -706,6 +869,7 @@ class VoiceBuddyService {
     this.clearHeartbeat();
     clearTimeout(this.watchdogTimer);
     this.stopAudioMeter();
+    this.stopSyntheticAudioMeter();
 
     if (this.currentAudio) {
       try {

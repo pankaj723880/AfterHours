@@ -6,6 +6,7 @@ import Activity from '../models/Activity.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { metricsService } from '../services/metrics.js';
 import { liveUsersService } from '../services/liveUsersService.js';
+import { ADMIN_MANAGED_ENTITIES, EXCLUDED_INTERNAL_ENTITIES } from '../config/adminEntityRegistry.js';
 
 const router = express.Router();
 
@@ -24,6 +25,20 @@ router.get('/metrics', authenticateToken, requireAdmin, (req, res) => {
     res.json(snapshot);
   } catch (err) {
     res.status(500).json({ error: 'Failed to retrieve live metrics: ' + err.message });
+  }
+});
+
+// Centralized Admin Entity Registry metadata endpoint
+router.get('/registry', authenticateToken, requireAdmin, (req, res) => {
+  try {
+    res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      entities: ADMIN_MANAGED_ENTITIES,
+      excludedInternalEntities: EXCLUDED_INTERNAL_ENTITIES
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve entity registry: ' + err.message });
   }
 });
 

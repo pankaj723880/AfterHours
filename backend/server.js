@@ -33,7 +33,7 @@ import { analyticsService } from './services/analyticsService.js';
 import analyticsRoutes from './routes/analytics.js';
 import aiMusicRoutes from './routes/aiMusic.js';
 import chatRouter from './routes/chat.js';
-import { isSingleSong, filterSingleSongs } from './services/songFilter.js';
+import { isSingleSong, filterSingleSongs, isMainstreamArtist, isOfficialChannel } from './services/songFilter.js';
 import { liveUsersService } from './services/liveUsersService.js';
 import learningRoutes from './routes/learningIntelligence.js';
 import { learningEngineService } from './services/learningEngineService.js';
@@ -1243,13 +1243,52 @@ const rotateApiKey = () => {
   }
 };
 
+// Helper: Enforce Music Search & Selection Rules:
+// 1. DEFAULT LANGUAGE: Hindi / Bollywood songs matching mood
+// 2. MAINSTREAM ARTISTS ONLY: Arijit Singh, Atif Aslam, Shreya Ghoshal, Vishal Mishra, etc.
+// 3. NO JUNK / AI / LOW-VIEWS: Official audio, lyrical videos, top labels
+export const normalizeMusicSearchQuery = (rawQuery = '') => {
+  if (!rawQuery || typeof rawQuery !== 'string') return '';
+  const clean = rawQuery.trim();
+  const lower = clean.toLowerCase();
+
+  const hasLanguage = /\b(english|punjabi|tamil|telugu|bengali|marathi|kannada|malayalam|bhojpuri|gujarati|kpop|spanish|french|urdu)\b/i.test(lower);
+  const isGenericOrMood = (
+    /^(songs?|music|gaana|gaane|track|tracks|top songs?|popular songs?|trending songs?|latest songs?|hit songs?)$/i.test(lower) ||
+    /^(romantic|sad|relaxing|chill|party|dance|energetic|gym|workout|heartbreak|love|soothing|focus|happy|monsoon|rainy|drive|road trip)\s*(?:songs?|music|tracks?|gaana|vibes?)?$/i.test(lower) ||
+    /\b(koi\s+(?:achha\s+)?(?:gaana|song)|kuch\s+(?:achha\s+)?(?:sunao|bajao|chalao))\b/i.test(lower)
+  );
+
+  if (!hasLanguage && isGenericOrMood) {
+    if (/\b(romantic|love|dil|pyaar)\b/i.test(lower)) {
+      return 'Arijit Singh Shreya Ghoshal romantic bollywood hindi songs official audio';
+    }
+    if (/\b(sad|dard|heartbreak|alone)\b/i.test(lower)) {
+      return 'Arijit Singh Atif Aslam sad hindi songs official audio';
+    }
+    if (/\b(relax|chill|sukoon|peaceful|soothing|lofi)\b/i.test(lower)) {
+      return 'Vishal Mishra Arijit Singh relaxing hindi songs official audio';
+    }
+    if (/\b(party|dance|club|dj)\b/i.test(lower)) {
+      return 'Bollywood party dance hits official video';
+    }
+    if (/\b(gym|workout|energy|motivat)\b/i.test(lower)) {
+      return 'Bollywood high energy workout songs official';
+    }
+    return 'Arijit Singh top bollywood hindi songs official';
+  }
+
+  return clean;
+};
+
 app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async (req, res) => {
   const { q, pageToken } = req.query;
   if (!q || !q.toString().trim()) {
     return res.json({ items: [], nextPageToken: null });
   }
 
-  const queryStr = q.toString().trim();
+  const rawQueryStr = q.toString().trim();
+  const queryStr = normalizeMusicSearchQuery(rawQueryStr);
   const pageTokenStr = (pageToken || req.query.continuation || '').toString().trim();
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 50);
   const cacheKey = `${queryStr.toLowerCase()}_${limit}_${pageTokenStr}`;
@@ -1420,6 +1459,10 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
             const v = toValidate[j];
             const vRes = validationResults[j];
             if (vRes?.eligible) {
+              // Rule 3: Reject low-view videos when view counts are present and higher-view items exist
+              if (typeof v.views === 'number' && v.views < 20000 && !isMainstreamArtist(v.title || '') && !isOfficialChannel(v.channel || v.author?.name || '')) {
+                continue;
+              }
               seenIds.add(v.id || v.videoId);
               cachedPool.videos.push({
                 ...v,
@@ -1434,6 +1477,17 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
       }
       fetchPage++;
     }
+
+    // Sort cachedPool by Mainstream Artist & Official Label priority
+    cachedPool.videos.sort((a, b) => {
+      const aTitle = a.title || '';
+      const bTitle = b.title || '';
+      const aChan = a.channel || a.author?.name || '';
+      const bChan = b.channel || b.author?.name || '';
+      const aScore = (isMainstreamArtist(aTitle) || isMainstreamArtist(aChan) ? 4 : 0) + (isOfficialChannel(aChan) ? 2 : 0);
+      const bScore = (isMainstreamArtist(bTitle) || isMainstreamArtist(bChan) ? 4 : 0) + (isOfficialChannel(bChan) ? 2 : 0);
+      return bScore - aScore;
+    });
 
     // If still need more to fill the page, top up from relevant curated catalog tracks
     if (cachedPool.videos.length < pageOffset + limit && Array.isArray(CORE_CATALOG_TRACKS)) {
