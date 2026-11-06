@@ -973,8 +973,8 @@ export default function VoiceAgentModal({
       showToast?.('Voice Agent: OFF');
     } else {
       showToast?.('Voice Agent: Listening...');
-      // Zero-delay instant mic session activation without blocking spoken greeting
-      await voiceSessionService.startSession({ lang: 'en-IN' });
+      // Zero-delay instant mic session activation with bilingual Hindi/Hinglish/English support
+      await voiceSessionService.startSession({ lang: 'hi-IN' });
     }
   };
 
