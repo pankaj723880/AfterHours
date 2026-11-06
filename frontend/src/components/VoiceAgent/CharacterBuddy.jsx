@@ -486,12 +486,15 @@ export default function CharacterBuddy({
       if (!isIdleWalkingRef.current) return;
 
       const walkerEl = walkerRef.current;
-      const currentWalkerRect = walkerEl
-        ? walkerEl.getBoundingClientRect()
-        : { left: avatarPos.x + walkOffset.x, top: avatarPos.y + walkOffset.y };
+      const walkerRect = walkerEl?.getBoundingClientRect();
 
-      const curX = currentWalkerRect.left;
-      const curY = currentWalkerRect.top;
+      // Ensure dimensions are initialized; fallback to container or safe screen default if 0
+      const curX = (walkerRect && walkerRect.width > 0 && walkerRect.left > 0)
+        ? walkerRect.left
+        : (avatarPos.x + walkOffset.x || (typeof window !== 'undefined' ? window.innerWidth - characterWidth - 24 : 0));
+      const curY = (walkerRect && walkerRect.height > 0 && walkerRect.top > 0)
+        ? walkerRect.top
+        : (avatarPos.y + walkOffset.y || (typeof window !== 'undefined' ? window.innerHeight - characterHeight - 24 : 0));
 
       const dest = selectNextIdleDestination(curX, curY);
       const deltaX = dest.x - curX;
@@ -505,38 +508,73 @@ export default function CharacterBuddy({
 
       setWalkFacing(deltaX < 0 ? 'left' : 'right');
       setAutonomousSubState(shouldRun ? 'running' : 'walking');
-      setMoveTransition(`transform ${duration}ms cubic-bezier(0.25, 0.1, 0.25, 1)`);
 
+      const startOffsetX = walkOffset.x;
+      const startOffsetY = walkOffset.y;
       const targetOffsetX = dest.x - avatarPos.x;
       const targetOffsetY = dest.y - avatarPos.y;
-      setWalkOffset({ x: targetOffsetX, y: targetOffsetY });
+      const startTime = performance.now();
 
-      idleWalkTimerRef.current = setTimeout(() => {
+      // Force continuous RequestAnimationFrame loop for locomotion updates
+      if (walkAnimFrameRef.current) {
+        cancelAnimationFrame(walkAnimFrameRef.current);
+      }
+      setMoveTransition('none');
+
+      const animateLocomotion = (now) => {
         if (!isIdleWalkingRef.current) return;
 
-        setWalkFacing('front');
+        const elapsed = now - startTime;
+        const progress = Math.min(1, Math.max(0, elapsed / duration));
+        // Cubic-bezier smooth easing approximation (ease-in-out)
+        const eased = progress < 0.5
+          ? 4 * progress * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 3) / 2;
 
-        // Multi-Step Heavy Dancing sequence or brief groove pause
-        const shouldDance = Math.random() < 0.65;
-        if (shouldDance) {
-          setAutonomousSubState('heavy_dancing');
-          const danceDuration = 4500 + Math.random() * 2500;
-          idlePauseTimerRef.current = setTimeout(() => {
-            if (!isIdleWalkingRef.current) return;
-            performStep();
-          }, danceDuration);
-        } else {
-          setAutonomousSubState('idle');
-          idlePauseTimerRef.current = setTimeout(() => {
-            if (!isIdleWalkingRef.current) return;
-            performStep();
-          }, 2000 + Math.random() * 1500);
+        const nextX = Math.round(startOffsetX + (targetOffsetX - startOffsetX) * eased);
+        const nextY = Math.round(startOffsetY + (targetOffsetY - startOffsetY) * eased);
+
+        setWalkOffset({ x: nextX, y: nextY });
+
+        if (typeof window !== 'undefined' && (progress === 0 || progress === 1 || Math.random() < 0.08)) {
+          console.debug('[LoopraAvatar] Locomotion rAF tick:', {
+            mode: shouldRun ? 'running' : 'walking',
+            x: nextX,
+            y: nextY,
+            progress: Number(progress.toFixed(2))
+          });
         }
-      }, duration);
+
+        if (progress < 1) {
+          walkAnimFrameRef.current = requestAnimationFrame(animateLocomotion);
+        } else {
+          walkAnimFrameRef.current = null;
+          setWalkFacing('front');
+
+          // Multi-Step Heavy Dancing sequence or brief groove pause
+          const shouldDance = Math.random() < 0.65;
+          if (shouldDance) {
+            setAutonomousSubState('heavy_dancing');
+            const danceDuration = 4500 + Math.random() * 2500;
+            idlePauseTimerRef.current = setTimeout(() => {
+              if (!isIdleWalkingRef.current) return;
+              performStep();
+            }, danceDuration);
+          } else {
+            setAutonomousSubState('idle');
+            idlePauseTimerRef.current = setTimeout(() => {
+              if (!isIdleWalkingRef.current) return;
+              performStep();
+            }, 2000 + Math.random() * 1500);
+          }
+        }
+      };
+
+      walkAnimFrameRef.current = requestAnimationFrame(animateLocomotion);
     };
 
     performStep();
-  }, [isVisible, isListening, isSpeaking, isPlaying, isThinking, isExecuting, avatarPos, walkOffset, selectNextIdleDestination]);
+  }, [isVisible, isListening, isSpeaking, isPlaying, isThinking, isExecuting, avatarPos, walkOffset, characterWidth, characterHeight, selectNextIdleDestination]);
 
   // 5-Second Inactivity Trigger & Interruption Handler
   const inactivityTimerRef = useRef(null);
