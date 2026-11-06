@@ -200,16 +200,9 @@ class VoiceSessionController {
             } catch (_) {}
           }
         } else {
-          // Tab returned to foreground: resume audio context and recognition if session is active
+          // Tab returned to foreground: resume audio context
           if (this.audioContext && this.audioContext.state === 'suspended') {
             this.audioContext.resume().catch(() => {});
-          }
-          if (this.isSessionActive && !this.isSpeakingTts && !this.isExecuting && !this.isManualStopping) {
-            setTimeout(() => {
-              if (this.isSessionActive && !this.isSpeakingTts && !this.isExecuting) {
-                this.safeStartRecognition();
-              }
-            }, 300);
           }
         }
       });
@@ -548,9 +541,7 @@ class VoiceSessionController {
     }
 
     const recognition = new SpeechRecognition();
-    const isMobileBrowser = typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Brave/i.test(navigator.userAgent);
-    // On mobile browsers (Chrome mobile, Opera, Brave), continuous mode frequently stalls after initial sentence or yields premature errors
-    recognition.continuous = !isMobileBrowser;
+    recognition.continuous = false;
     recognition.interimResults = true;
     recognition.lang = this.lang;
     recognition.maxAlternatives = 1;
@@ -566,18 +557,16 @@ class VoiceSessionController {
         this.setState(SESSION_STATES.LISTENING, 'Listening... (Speak your music command)');
       }
 
-      // Safe single-shot auto-timeout for mobile browsers to cleanly finalize listening
+      // Safe single-shot auto-timeout to cleanly finalize listening
       if (this.mobileListenTimeout) {
         clearTimeout(this.mobileListenTimeout);
         this.mobileListenTimeout = null;
       }
-      if (isMobileBrowser) {
-        this.mobileListenTimeout = setTimeout(() => {
-          if (this.isRecognizing && this.recognition) {
-            try { this.recognition.stop(); } catch (_) {}
-          }
-        }, 8000);
-      }
+      this.mobileListenTimeout = setTimeout(() => {
+        if (this.isRecognizing && this.recognition) {
+          try { this.recognition.stop(); } catch (_) {}
+        }
+      }, 10000);
     };
 
     recognition.onaudiostart = () => {
@@ -681,28 +670,25 @@ class VoiceSessionController {
     recognition.onerror = (event) => {
       const err = event.error;
 
-      console.warn('[VoiceSession:WebSpeech] mobile onerror diagnostics:', {
+      console.warn('[VoiceSession:WebSpeech] onerror:', {
         error: err,
         message: event.message,
-        isMobile: isMobileBrowser,
         isSessionActive: this.isSessionActive,
         isRecognizing: this.isRecognizing
       });
 
-      if (err === 'no-speech' || err === 'aborted') {
-        // Natural speech pause or benign abort on stop/TTS pause - gracefully restart on mobile if active
-        if (err === 'no-speech' && this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts && !this.isExecuting) {
-          clearTimeout(this.restartTimer);
-          this.restartTimer = setTimeout(() => {
-            if (this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts && !this.isExecuting) {
-              this.safeStartRecognition();
-            }
-          }, 350);
-        }
-        return;
+      this.isRecognizing = false;
+      this.isStarting = false;
+      clearTimeout(this.restartTimer);
+      if (this.mobileListenTimeout) {
+        clearTimeout(this.mobileListenTimeout);
+        this.mobileListenTimeout = null;
       }
 
-      console.warn('[VoiceSession:WebSpeech] onerror:', err);
+      if (err === 'no-speech' || err === 'aborted') {
+        // Benign end or silence - wait for manual trigger
+        return;
+      }
 
       if (err === 'not-allowed' || err === 'service-not-allowed') {
         const isBrave = typeof navigator !== 'undefined' && (navigator.brave?.isBrave || navigator.userAgent?.includes('Brave'));
@@ -717,71 +703,41 @@ class VoiceSessionController {
       }
 
       if (err === 'audio-capture') {
-        this.audioCaptureRetries = (this.audioCaptureRetries || 0) + 1;
-        console.warn(`[VoiceSession:WebSpeech] audio-capture warning (attempt ${this.audioCaptureRetries}/3)`);
-        if (this.audioCaptureRetries >= 3) {
-          this.setState(
-            SESSION_STATES.ERROR,
-            'Microphone hardware not available or in use by another application.',
-            err
-          );
-          this.stopSession('hardware_error');
-          return;
-        }
-        // Graceful retry after brief pause on mobile
-        clearTimeout(this.restartTimer);
-        this.restartTimer = setTimeout(() => {
-          if (this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts && !this.isExecuting) {
-            this.safeStartRecognition();
-          }
-        }, 800);
+        this.setState(
+          SESSION_STATES.ERROR,
+          'Microphone hardware not available or in use by another application.',
+          err
+        );
+        this.stopSession('hardware_error');
         return;
       }
 
-      // For network or non-fatal errors: avoid aggressive loops, debounce with exponential backoff and cap retries
-      if (this.isSessionActive && !this.isManualStopping) {
-        if (err === 'network') {
-          this.networkErrorCount = (this.networkErrorCount || 0) + 1;
-          console.warn(`[VoiceSession:WebSpeech] network error encountered (attempt ${this.networkErrorCount})`);
-          if (this.networkErrorCount >= 2) {
-            this.hasActiveTerminalError = true;
-            this.setState(SESSION_STATES.ERROR, 'Speech network unavailable. Tap mic to retry.', err);
-            return;
-          }
-          const backoffDelay = isMobileBrowser ? 2000 : 1200;
-          this.setState(SESSION_STATES.LISTENING, 'Speech network interrupted. Reconnecting...', err);
-          clearTimeout(this.restartTimer);
-          this.restartTimer = setTimeout(() => {
-            if (this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts && !this.isExecuting && !this.hasActiveTerminalError) {
-              this.safeStartRecognition();
-            }
-          }, backoffDelay);
-          return;
-        }
-
-        clearTimeout(this.restartTimer);
-        this.restartTimer = setTimeout(() => {
-          if (this.isSessionActive && !this.isManualStopping && !this.isSpeakingTts && !this.isExecuting && !this.hasActiveTerminalError) {
-            this.safeStartRecognition();
-          }
-        }, 500);
+      if (err === 'network') {
+        this.setState(SESSION_STATES.ERROR, 'Speech network unavailable. Tap mic to retry.', err);
+        this.stopSession('network_error');
+        return;
       }
+
+      // Any other error: cleanly display error and terminate session without retries
+      this.setState(SESSION_STATES.ERROR, `Speech error: ${err}. Tap mic to retry.`, err);
+      this.stopSession(err);
     };
 
     recognition.onend = () => {
       console.log('[VoiceSession:WebSpeech] onend - recognition instance stopped');
       this.isRecognizing = false;
       this.isStarting = false;
+      clearTimeout(this.restartTimer);
       if (this.mobileListenTimeout) {
         clearTimeout(this.mobileListenTimeout);
         this.mobileListenTimeout = null;
       }
 
-      // Mobile STT Fallback: Finalize pending interim if mobile engine ended before marking isFinal
+      // Single-Shot STT Fallback: Finalize pending interim if engine ended before marking isFinal
       if (this.pendingMobileTranscript && this.pendingMobileTranscript.trim()) {
         const fallbackText = this.pendingMobileTranscript.trim();
         this.pendingMobileTranscript = '';
-        console.log('[VoiceSession:WebSpeech] Mobile speech fallback finalizing on onend:', fallbackText);
+        console.log('[VoiceSession:WebSpeech] Speech fallback finalizing on onend:', fallbackText);
         const cleaned = devanagariToHinglish(fallbackText);
         this.emitInterim('');
         this.resetInactivityOnValidCommand();
@@ -790,38 +746,8 @@ class VoiceSessionController {
         return;
       }
 
-      // Robust auto-restart on 'end' ONLY when session is genuinely active and ready:
-      // NOT while speaking TTS, NOT while processing/executing a command, NOT when manual stopping, NOT when page hidden!
-      // NEVER auto-restart on end if an active error (network, not-allowed, audio-capture) just fired!
-      const isDocumentVisible = typeof document === 'undefined' || !document.hidden;
-      if (
-        this.isSessionActive &&
-        !this.isManualStopping &&
-        !this.isSpeakingTts &&
-        !this.isExecuting &&
-        !this.hasActiveTerminalError &&
-        this.networkErrorCount === 0 &&
-        this.state === SESSION_STATES.LISTENING &&
-        isDocumentVisible &&
-        !isMobileBrowser
-      ) {
-        clearTimeout(this.restartTimer);
-        this.restartTimer = setTimeout(() => {
-          if (
-            this.isSessionActive &&
-            !this.isManualStopping &&
-            !this.isRecognizing &&
-            !this.isStarting &&
-            !this.isSpeakingTts &&
-            !this.isExecuting &&
-            this.state === SESSION_STATES.LISTENING &&
-            (typeof document === 'undefined' || !document.hidden)
-          ) {
-            console.log('[VoiceSession:WebSpeech] Continuous recognition restart on end');
-            this.safeStartRecognition();
-          }
-        }, 250);
-      }
+      // Single-shot mode: never auto-restart on onend.
+      // Mic cleanly waits for manual user click to trigger next utterance.
     };
 
     return recognition;
