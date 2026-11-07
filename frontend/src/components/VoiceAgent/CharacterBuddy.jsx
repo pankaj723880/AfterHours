@@ -185,11 +185,14 @@ export default function CharacterBuddy({
   const positionRef = useRef({ ...continuousPos });
   const velocityRef = useRef({ vx: 0, vy: 0 });
   const targetPosRef = useRef({ ...continuousPos });
-  const landingModeRef = useRef('walk'); // 'walk' | 'sit' | 'lie_down'
+  const landingModeRef = useRef('walk'); // 'walk' | 'sit' | 'lie_down' | 'hang' | 'mischief'
   const isSleepingRef = useRef(false);
+  const isHangingRef = useRef(false);
+  const isMischiefRef = useRef(false);
   const patrolFrameRef = useRef(null);
   const movementModeRef = useRef('walk'); // 'walk' | 'run' | 'jump'
   const currentHeadingRef = useRef(0); // Motion heading yaw angle (in radians)
+  const lastMischiefTimeRef = useRef(0);
 
   // User Drag Interrupt & Roaming Pause
   const isUserDragging = useRef(false);
@@ -356,10 +359,78 @@ export default function CharacterBuddy({
       movementModeRef.current = 'jump';
     }
 
+    const now = Date.now();
+    const canDoMischief = (now - lastMischiefTimeRef.current) > 28000;
+
+    // Detect section heading baselines across the document (h2, h3, h4) for ledge hanging
+    let headingLedges = [];
+    try {
+      const headings = Array.from(document.querySelectorAll('h2, h3, h4'));
+      headingLedges = headings.map((h) => {
+        const r = h.getBoundingClientRect();
+        return {
+          element: h,
+          text: h.innerText || '',
+          left: r.left,
+          right: r.right,
+          top: r.top,
+          bottom: r.bottom,
+          width: r.width,
+          height: r.height,
+          isVisible: r.width > 30 && r.height > 10 && r.top >= 60 && r.bottom <= winH - 140
+        };
+      }).filter((h) => h.isVisible);
+    } catch (_) {}
+
+    // Comprehensive Action Pool: ['WALK', 'RUN', 'JUMP_AND_HANG_HEADING', 'SIT_ON_CARD', 'MISCHIEF_EMOTE']
     const roll = Math.random();
 
-    // 1. Target Top Horizontal Edge of Song Cards / Vinyls (Sit Spot within 6px)
-    if (waypoints?.sitSpots?.length > 0 && roll < 0.38) {
+    // 1. JUMP_AND_HANG_HEADING: Detect major section headings and jump to hang on ledge
+    if (headingLedges.length > 0 && roll < 0.28) {
+      const chosenHeading = headingLedges[Math.floor(Math.random() * headingLedges.length)];
+      // Position: targetY = headingRect.bottom - 10px, targetX = headingRect.left + headingRect.width / 2
+      const targetX = Math.max(minX, Math.min(maxX, chosenHeading.left + chosenHeading.width / 2 - characterWidth * 0.5));
+      const targetY = Math.max(minY, Math.min(maxY, chosenHeading.bottom - 10));
+      targetPosRef.current = { x: targetX, y: targetY };
+      landingModeRef.current = 'hang';
+      movementModeRef.current = 'jump';
+      return;
+    }
+
+    // 2. MISCHIEF_EMOTE: Playful troll actions (every 25–40s)
+    if (canDoMischief && roll < 0.52) {
+      lastMischiefTimeRef.current = now;
+      const emoteTypes = ['PEEK_AND_BOO', 'TAUNT_DANCE', 'KNOCK_GLASS', 'STICK_OUT_TONGUE'];
+      const chosenEmote = emoteTypes[Math.floor(Math.random() * emoteTypes.length)];
+      landingModeRef.current = 'mischief';
+      landingModeRef.mischiefType = chosenEmote;
+
+      if (chosenEmote === 'KNOCK_GLASS') {
+        // Walk right up to front-center screen edge
+        targetPosRef.current = {
+          x: Math.max(minX, Math.min(maxX, winW * 0.5 - characterWidth * 0.5)),
+          y: Math.max(minY, Math.min(maxY, winH * 0.55))
+        };
+      } else if (chosenEmote === 'PEEK_AND_BOO') {
+        // Walk to side screen border or card edge
+        const pickLeft = Math.random() < 0.5;
+        targetPosRef.current = {
+          x: pickLeft ? minX + 5 : maxX - 15,
+          y: Math.max(minY, Math.min(maxY, Math.floor(minY + Math.random() * (maxY - minY))))
+        };
+      } else {
+        // Center or current spot for TAUNT_DANCE or STICK_OUT_TONGUE
+        const cur = positionRef.current;
+        targetPosRef.current = {
+          x: Math.max(minX, Math.min(maxX, cur.x + (Math.random() * 80 - 40))),
+          y: Math.max(minY, Math.min(maxY, cur.y + (Math.random() * 60 - 30)))
+        };
+      }
+      return;
+    }
+
+    // 3. SIT_ON_CARD: Top Horizontal Edge of Song Cards / Vinyls (Sit Spot)
+    if (waypoints?.sitSpots?.length > 0 && roll < 0.72) {
       const spot = waypoints.sitSpots[Math.floor(Math.random() * waypoints.sitSpots.length)];
       const clampedX = Math.max(minX, Math.min(maxX, spot.x - characterWidth * 0.5));
       const clampedY = Math.max(minY, Math.min(maxY, spot.y - characterHeight + 8));
@@ -368,15 +439,15 @@ export default function CharacterBuddy({
       return;
     }
 
-    // 2. Below Navbar Area: target y = 70px (Lies down or perches along top header bar)
-    if (roll < 0.55) {
+    // 4. Lie Down below Navbar Area
+    if (roll < 0.84) {
       const targetX = Math.floor(minX + Math.random() * (maxX - minX));
       targetPosRef.current = { x: targetX, y: 70 };
       landingModeRef.current = 'lie_down';
       return;
     }
 
-    // 3. Open Floor 8-Directional Traverse (N, NE, E, SE, S, SW, W, NW)
+    // 5. Open Floor 8-Directional Traverse (N, NE, E, SE, S, SW, W, NW)
     const cur = positionRef.current;
     const angles = [0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (deg * Math.PI) / 180);
     const chosenAngle = angles[Math.floor(Math.random() * angles.length)];
@@ -536,7 +607,74 @@ export default function CharacterBuddy({
           avatarContainerRef.current.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`;
         }
 
-        if (landingModeRef.current === 'lie_down') {
+        if (landingModeRef.current === 'hang') {
+          isHangingRef.current = true;
+          setAutonomousSubState('hang');
+          setLastActionTag('🧗 HANGING ON LEDGE');
+
+          // Comic Hindi line while hanging
+          const hangLines = [
+            "Main toh latak gayi, ab dhoondh ke dikhao agla song!",
+            "Dekh kya rahe ho, gaana change karo varna main idhar hi latki rahungi!",
+            "Arey pakdo koi mujhe! Kitna uncha latka diya!",
+            "Haath dukh gaye mere, par main nahi utrungi!"
+          ];
+          const hangLine = hangLines[Math.floor(Math.random() * hangLines.length)];
+          setLiveTranscript(hangLine);
+          setIsBubbleVisible(true);
+
+          // Hang for 5 to 8 seconds before dropping down smoothly to the floor with a soft landing roll
+          if (!nextTargetTimeoutRef.current && !isSleepingRef.current) {
+            const hangDuration = Math.floor(5000 + Math.random() * 3000); // 5 - 8 seconds
+            nextTargetTimeoutRef.current = setTimeout(() => {
+              nextTargetTimeoutRef.current = null;
+              isHangingRef.current = false;
+              setIsBubbleVisible(false);
+              // Soft landing drop down
+              setAutonomousSubState('jump');
+              const floorY = Math.min(maxY, pos.y + 120);
+              targetPosRef.current = { x: pos.x, y: floorY };
+              landingModeRef.current = 'walk';
+              setTimeout(() => {
+                pickNewTarget();
+              }, 1200);
+            }, hangDuration);
+          }
+        } else if (landingModeRef.current === 'mischief') {
+          isMischiefRef.current = true;
+          const emoteType = landingModeRef.mischiefType || 'TAUNT_DANCE';
+
+          let bubbleLine = "Arey gaana sunne aaye ho ya mujhe dekhne?";
+          if (emoteType === 'KNOCK_GLASS') {
+            setAutonomousSubState('knock_glass');
+            setLastActionTag('🚪 KNOCK SCREEN');
+            bubbleLine = "Tuk tuk! Sunai de raha hai? Koi hai wahan?";
+          } else if (emoteType === 'PEEK_AND_BOO') {
+            setAutonomousSubState('walk');
+            setLastActionTag('👀 PEEK-A-BOO');
+            bubbleLine = "Boo! Darr gaye na? Main idhar hi chhipi thi!";
+          } else if (emoteType === 'STICK_OUT_TONGUE') {
+            setAutonomousSubState('stick_out_tongue');
+            setLastActionTag('😜 TEASING');
+            bubbleLine = "Arey gaana sunne aaye ho ya mujhe dekhne?";
+          } else {
+            setAutonomousSubState('taunt_dance');
+            setLastActionTag('💃 MISCHIEF DANCE');
+            bubbleLine = "Bore ho gayi hu, thoda nach lo mere saath!";
+          }
+
+          setLiveTranscript(bubbleLine);
+          setIsBubbleVisible(true);
+
+          if (!nextTargetTimeoutRef.current && !isSleepingRef.current) {
+            nextTargetTimeoutRef.current = setTimeout(() => {
+              nextTargetTimeoutRef.current = null;
+              isMischiefRef.current = false;
+              setIsBubbleVisible(false);
+              pickNewTarget();
+            }, 5500);
+          }
+        } else if (landingModeRef.current === 'lie_down') {
           setAutonomousSubState(isSleepingRef.current ? 'sleeping' : 'lie_down');
         } else if (landingModeRef.current === 'sit') {
           setAutonomousSubState('sitting');
@@ -546,8 +684,8 @@ export default function CharacterBuddy({
           setAutonomousSubState('idle');
         }
 
-        // Trigger next waypoint after 2s pause if none scheduled
-        if (!nextTargetTimeoutRef.current && !isSleepingRef.current) {
+        // Trigger next waypoint after 2s pause if none scheduled and not hanging/mischief
+        if (!nextTargetTimeoutRef.current && !isSleepingRef.current && landingModeRef.current !== 'hang' && landingModeRef.current !== 'mischief') {
           nextTargetTimeoutRef.current = setTimeout(() => {
             nextTargetTimeoutRef.current = null;
             pickNewTarget();
@@ -1583,6 +1721,40 @@ export default function CharacterBuddy({
     // If avatar was in fatigue sleeping mode, click/tap wakes her up!
     if (isSleepingRef.current) {
       handleWakeUpAvatar();
+      return;
+    }
+
+    // If avatar was hanging on a heading ledge or doing an emote, drop with a startled laugh and run to another corner!
+    if (isHangingRef.current || isMischiefRef.current) {
+      isHangingRef.current = false;
+      isMischiefRef.current = false;
+      if (nextTargetTimeoutRef.current) {
+        clearTimeout(nextTargetTimeoutRef.current);
+        nextTargetTimeoutRef.current = null;
+      }
+      setLiveTranscript('Hahaha pakad liya! Main bhaagi!');
+      setIsBubbleVisible(true);
+      setLastActionTag('🏃 ESCAPING');
+
+      // Drop down and run away to a far corner
+      setAutonomousSubState('run');
+      movementModeRef.current = 'run';
+      landingModeRef.current = 'walk';
+
+      const winW = typeof window !== 'undefined' ? window.innerWidth : 1000;
+      const winH = typeof window !== 'undefined' ? window.innerHeight : 800;
+      const minX = 16;
+      const maxX = Math.max(minX + 40, winW - 110);
+      const minY = 64;
+      const maxY = Math.max(minY + 40, winH - 170);
+
+      // Pick opposite side
+      const runToLeft = positionRef.current.x > winW * 0.5;
+      const escapeX = runToLeft ? minX + 20 : maxX - 30;
+      const escapeY = Math.min(maxY, positionRef.current.y + 140);
+
+      targetPosRef.current = { x: escapeX, y: escapeY };
+      setTimeout(() => setIsBubbleVisible(false), 3000);
       return;
     }
 

@@ -404,6 +404,9 @@ export default function ThreeDCharacter({
             fadeToAction('idle', 0.4);
           }
         }
+        else if (curState === 'hang' || curState === 'hanging' || curState === 'hang_heading') fadeToAction(actions['hang'] || actions['climb'] ? (actions['hang'] ? 'hang' : 'climb') : 'idle', 0.25);
+        else if (curState === 'mischief_taunt' || curState === 'taunt_dance') fadeToAction(actions['dance'] ? 'dance' : 'wave', 0.25);
+        else if (curState === 'mischief_knock' || curState === 'knock_glass') fadeToAction(actions['tap'] || actions['touch'] ? (actions['tap'] ? 'tap' : 'touch') : 'idle', 0.2);
         else if (curState === 'walking' || curState === 'walk' || curState === 'idle_walking') fadeToAction('walk', 0.25);
         else if (curState === 'running' || curState === 'run') fadeToAction('run', 0.25);
         else if (curState === 'sitting' || curState === 'sit') fadeToAction(actions['sit'] ? 'sit' : 'idle', 0.35);
@@ -415,17 +418,20 @@ export default function ThreeDCharacter({
         else fadeToAction('idle', 0.35);
       }
 
-      // Realistic Horizontal Human Sleeping Pose:
+      // Check if avatar is in hanging state (ledge / section heading)
+      const isHangingState = curState === 'hang' || curState === 'hanging' || curState === 'hang_heading';
+
+      // Realistic Horizontal Human Sleeping Pose & Heading Ledge Hanging:
       // If sleeping without a dedicated clip, rotate the model mesh horizontally flat (-Math.PI/2) and lower onto resting card.
-      // When waking up: smoothly animate rotation.x back to 0 (transition over 0.6s) so she stands up naturally.
+      // If hanging, apply continuous pendulum swinging physics (model.rotation.z = Math.sin(Date.now() * 0.005) * 0.25).
       if (glbLoadedModel) {
         const targetModelRotX = (isSleepingState && !actions['sleep']) ? -Math.PI / 2 : 0;
-        const targetModelRotZ = 0;
-        const targetModelPosY = (isSleepingState && !actions['sleep']) ? -0.65 : -0.2;
+        const targetModelRotZ = isHangingState ? Math.sin(Date.now() * 0.005) * 0.25 : 0;
+        const targetModelPosY = (isSleepingState && !actions['sleep']) ? -0.65 : (isHangingState ? 0.15 : -0.2);
 
         const sleepTransitionSpeed = Math.min(1.0, delta * 3.5); // ~0.6s natural rise / lie down transition
         glbLoadedModel.rotation.x = THREE.MathUtils.lerp(glbLoadedModel.rotation.x, targetModelRotX, sleepTransitionSpeed);
-        glbLoadedModel.rotation.z = THREE.MathUtils.lerp(glbLoadedModel.rotation.z, targetModelRotZ, sleepTransitionSpeed);
+        glbLoadedModel.rotation.z = THREE.MathUtils.lerp(glbLoadedModel.rotation.z, targetModelRotZ, isHangingState ? 0.35 : sleepTransitionSpeed);
         glbLoadedModel.position.y = THREE.MathUtils.lerp(glbLoadedModel.position.y, targetModelPosY, sleepTransitionSpeed);
       }
 
@@ -525,6 +531,52 @@ export default function ThreeDCharacter({
           setBoneRot('leftleg', -Math.abs(Math.sin(dancePhase * 0.85)) * 0.25, 0, 0, 0.25);
           setBoneRot('rightleg', -Math.abs(Math.cos(dancePhase * 0.85)) * 0.25, 0, 0, 0.25);
         }
+      } else if (curState === 'hang' || curState === 'hanging' || curState === 'hang_heading') {
+        // Heading / Ledge Hanging Kinematics: arms raised upward, legs dangling & swaying
+        const hangSway = Math.sin(time * 4.5);
+        setBonePos('hips', 0, 0.12 + Math.abs(hangSway) * 0.02, 0, 0.25);
+        setBoneRot('spine', 0.04, 0, -hangSway * 0.10, 0.25);
+        // Arms rotated upward to hold the ledge
+        setBoneRot('leftarm', 0.10, 0, Math.PI * 0.85, 0.25);
+        setBoneRot('rightarm', 0.10, 0, -Math.PI * 0.85, 0.25);
+        setBoneRot('leftforearm', 0, 0, 0.15, 0.25);
+        setBoneRot('rightforearm', 0, 0, -0.15, 0.25);
+        // Dangling / dangling pendulum legs
+        setBoneRot('leftupleg', 0.15 + hangSway * 0.18, 0, 0.05, 0.25);
+        setBoneRot('rightupleg', 0.15 - hangSway * 0.18, 0, -0.05, 0.25);
+        setBoneRot('leftleg', -0.25 + hangSway * 0.12, 0, 0, 0.25);
+        setBoneRot('rightleg', -0.25 - hangSway * 0.12, 0, 0, 0.25);
+      } else if (curState === 'mischief_taunt' || curState === 'taunt_dance') {
+        // Mischievous silly wiggle & taunt dance facing user
+        const tauntWiggle = Math.sin(time * 12);
+        setBonePos('hips', tauntWiggle * 0.05, Math.abs(tauntWiggle) * 0.02, 0, 0.25);
+        setBoneRot('spine', 0, tauntWiggle * 0.25, -tauntWiggle * 0.15, 0.25);
+        setBoneRot('head', 0, tauntWiggle * 0.20, tauntWiggle * 0.15, 0.25);
+        setBoneRot('leftarm', 0.25, 0, 0.70 + tauntWiggle * 0.35, 0.25);
+        setBoneRot('rightarm', 0.25, 0, -0.70 - tauntWiggle * 0.35, 0.25);
+        setBoneRot('leftforearm', 0, 0, 0.60, 0.25);
+        setBoneRot('rightforearm', 0, 0, -0.60, 0.25);
+        setBoneRot('leftupleg', 0.1, 0, 0.1, 0.25);
+        setBoneRot('rightupleg', 0.1, 0, -0.1, 0.25);
+      } else if (curState === 'mischief_knock' || curState === 'knock_glass') {
+        // Tapping / knocking right on the screen viewport glass
+        const knockTaps = Math.sin(time * 18);
+        setBonePos('hips', 0, 0, 0.04, 0.25);
+        setBoneRot('spine', 0.08, 0, 0, 0.25);
+        setBoneRot('head', -0.05, 0, 0.05, 0.25);
+        setBoneRot('rightarm', 0.15, 0, -0.45 + knockTaps * 0.18, 0.30);
+        setBoneRot('rightforearm', 0, 0, -0.55 + knockTaps * 0.25, 0.30);
+        setBoneRot('leftarm', 0.45, 0, 0.10, 0.20);
+        setBoneRot('leftforearm', 0, 0, 0.15, 0.20);
+      } else if (curState === 'mischief_tongue' || curState === 'stick_out_tongue') {
+        // Cute playful teasing pose with hands near face
+        const cuteTilt = Math.sin(time * 6) * 0.12;
+        setBoneRot('head', -0.06, cuteTilt, 0.18, 0.25);
+        setBoneRot('spine', 0.02, 0, cuteTilt * 0.5, 0.25);
+        setBoneRot('leftarm', 0.20, 0, 0.55, 0.25);
+        setBoneRot('rightarm', 0.20, 0, -0.55, 0.25);
+        setBoneRot('leftforearm', 0, 0, 0.85, 0.25);
+        setBoneRot('rightforearm', 0, 0, -0.85, 0.25);
       } else if (curState === 'running' || curState === 'run') {
         const runStride = Math.sin(time * 12.0);
         setBonePos('hips', 0, Math.abs(runStride) * 0.04, 0, 0.25);
@@ -705,6 +757,52 @@ export default function ThreeDCharacter({
         setBoneRot('rightleg', kneeBend, 0, 0, 0.25);
         setBoneRot('leftarm', 0, 0, 0.15, 0.25);
         setBoneRot('rightarm', 0, 0, -0.15, 0.25);
+      } else if (curState === 'hang' || curState === 'hanging' || curState === 'hang_heading') {
+        // Heading / Ledge Hanging Kinematics: arms raised upward, legs dangling & swaying
+        const hangSway = Math.sin(time * 4.5);
+        setBonePos('hips', 0, 0.12 + Math.abs(hangSway) * 0.02, 0, 0.25);
+        setBoneRot('spine', 0.04, 0, -hangSway * 0.10, 0.25);
+        // Arms rotated upward to hold the ledge
+        setBoneRot('leftarm', 0.10, 0, Math.PI * 0.85, 0.25);
+        setBoneRot('rightarm', 0.10, 0, -Math.PI * 0.85, 0.25);
+        setBoneRot('leftforearm', 0, 0, 0.15, 0.25);
+        setBoneRot('rightforearm', 0, 0, -0.15, 0.25);
+        // Dangling / dangling pendulum legs
+        setBoneRot('leftupleg', 0.15 + hangSway * 0.18, 0, 0.05, 0.25);
+        setBoneRot('rightupleg', 0.15 - hangSway * 0.18, 0, -0.05, 0.25);
+        setBoneRot('leftleg', -0.25 + hangSway * 0.12, 0, 0, 0.25);
+        setBoneRot('rightleg', -0.25 - hangSway * 0.12, 0, 0, 0.25);
+      } else if (curState === 'mischief_taunt' || curState === 'taunt_dance') {
+        // Mischievous silly wiggle & taunt dance facing user
+        const tauntWiggle = Math.sin(time * 12);
+        setBonePos('hips', tauntWiggle * 0.05, Math.abs(tauntWiggle) * 0.02, 0, 0.25);
+        setBoneRot('spine', 0, tauntWiggle * 0.25, -tauntWiggle * 0.15, 0.25);
+        setBoneRot('head', 0, tauntWiggle * 0.20, tauntWiggle * 0.15, 0.25);
+        setBoneRot('leftarm', 0.25, 0, 0.70 + tauntWiggle * 0.35, 0.25);
+        setBoneRot('rightarm', 0.25, 0, -0.70 - tauntWiggle * 0.35, 0.25);
+        setBoneRot('leftforearm', 0, 0, 0.60, 0.25);
+        setBoneRot('rightforearm', 0, 0, -0.60, 0.25);
+        setBoneRot('leftupleg', 0.1, 0, 0.1, 0.25);
+        setBoneRot('rightupleg', 0.1, 0, -0.1, 0.25);
+      } else if (curState === 'mischief_knock' || curState === 'knock_glass') {
+        // Tapping / knocking right on the screen viewport glass
+        const knockTaps = Math.sin(time * 18);
+        setBonePos('hips', 0, 0, 0.04, 0.25);
+        setBoneRot('spine', 0.08, 0, 0, 0.25);
+        setBoneRot('head', -0.05, 0, 0.05, 0.25);
+        setBoneRot('rightarm', 0.15, 0, -0.45 + knockTaps * 0.18, 0.30);
+        setBoneRot('rightforearm', 0, 0, -0.55 + knockTaps * 0.25, 0.30);
+        setBoneRot('leftarm', 0.45, 0, 0.10, 0.20);
+        setBoneRot('leftforearm', 0, 0, 0.15, 0.20);
+      } else if (curState === 'mischief_tongue' || curState === 'stick_out_tongue') {
+        // Cute playful teasing pose with hands near face
+        const cuteTilt = Math.sin(time * 6) * 0.12;
+        setBoneRot('head', -0.06, cuteTilt, 0.18, 0.25);
+        setBoneRot('spine', 0.02, 0, cuteTilt * 0.5, 0.25);
+        setBoneRot('leftarm', 0.20, 0, 0.55, 0.25);
+        setBoneRot('rightarm', 0.20, 0, -0.55, 0.25);
+        setBoneRot('leftforearm', 0, 0, 0.85, 0.25);
+        setBoneRot('rightforearm', 0, 0, -0.85, 0.25);
       } else if (curState === 'running' || curState === 'run') {
         const stride = Math.sin(time * 16);
         setBonePos('hips', 0, Math.abs(stride) * 0.05, 0, 0.25);
