@@ -2,6 +2,14 @@
   "short_name": "Loopra",
   "name": "Loopra",
   "description": "Stream music with immersive 3D visuals, live Indian radio, curated stations, and AI-powered music exploration.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "categories": ["music", "entertainment", "audio"],
   "icons": [
     {
       "src": "/loopra-logo.png?v=3",
@@ -10,22 +18,28 @@
       "purpose": "any"
     },
     {
-      "src": "/loopra-logo.png?v=3",
+      "src": "/icon-192.png?v=3",
       "type": "image/png",
-      "sizes": "192x192 512x512 1254x1254",
-      "purpose": "maskable"
+      "sizes": "192x192",
+      "purpose": "any"
     },
     {
       "src": "/icon-192.png?v=3",
       "type": "image/png",
       "sizes": "192x192",
-      "purpose": "any maskable"
+      "purpose": "maskable"
     },
     {
       "src": "/icon-512.png?v=3",
       "type": "image/png",
       "sizes": "512x512",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png?v=3",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
     },
     {
       "src": "/favicon.png?v=3",
@@ -34,11 +48,20 @@
       "purpose": "any"
     }
   ],
-  "start_url": "/",
-  "scope": "/",
-  "background_color": "#09090b",
-  "theme_color": "#09090b",
-  "display": "standalone",
-  "orientation": "portrait-primary",
-  "categories": ["music", "entertainment", "audio"]
+  "shortcuts": [
+    {
+      "name": "Live Radio",
+      "short_name": "Radio",
+      "description": "Tune into live curated stations",
+      "url": "/?view=radio",
+      "icons": [{ "src": "/icon-192.png?v=3", "sizes": "192x192" }]
+    },
+    {
+      "name": "Discover Music",
+      "short_name": "Discover",
+      "description": "Explore trending tracks and playlists",
+      "url": "/?view=discover",
+      "icons": [{ "src": "/icon-192.png?v=3", "sizes": "192x192" }]
+    }
+  ]
 }
