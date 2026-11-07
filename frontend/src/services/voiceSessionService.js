@@ -13,6 +13,7 @@
 
 import { chatBuddyClient } from './chatBuddyClient.js';
 import { getApiUrl } from '../utils/apiUrl.js';
+import { USE_V2_VOICE_ENGINE } from '../constants/featureFlags.js';
 
 export const SESSION_STATES = {
   OFF: 'OFF',
@@ -565,9 +566,9 @@ class VoiceSessionController {
 
     const recognition = new SpeechRecognition();
     recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = this.lang;
-    recognition.maxAlternatives = 3;
+    recognition.interimResults = USE_V2_VOICE_ENGINE ? false : true;
+    recognition.lang = USE_V2_VOICE_ENGINE ? 'hi-IN' : this.lang;
+    recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
       console.log('[VoiceSession:WebSpeech] onstart - recognition engine active (lang:', this.lang, ')');

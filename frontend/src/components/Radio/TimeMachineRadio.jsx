@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { USE_COMPACT_TIMEMACHINE_V2 } from '../../constants/featureFlags';
 
 // Built-in default eras if CMS config is empty
 const DEFAULT_ERAS = [
@@ -167,120 +168,257 @@ export default function TimeMachineRadio({
   };
 
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-24 text-white">
-      {/* Header Banner with Vintage Cassette/Radio Dial Aesthetics */}
-      <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-neutral-900 via-neutral-950 to-neutral-900 border border-amber-500/30 p-6 sm:p-10 shadow-[0_15px_50px_rgba(0,0,0,0.8)] mb-8">
-        {/* Retro scanline & grain overlay */}
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-500/10 via-transparent to-transparent pointer-events-none" />
-        <div className="absolute top-0 right-0 w-96 h-96 bg-amber-600/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-mono uppercase tracking-wider mb-3">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-              Analog Time Machine • Vintage Radio Station
-            </div>
-            <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight font-display bg-gradient-to-r from-white via-amber-200 to-amber-500 bg-clip-text text-transparent">
-              Time Machine Radio
-            </h1>
-            <p className="mt-2 text-sm sm:text-base text-neutral-400 leading-relaxed">
-              Step into musical nostalgia. Select an era from the 1970s acoustic golden age to the 2010s streaming explosion.
-              Tune into continuous broadcast stations with authentic vintage vibes.
-            </p>
-          </div>
-
-          {/* Master Station Action Button */}
-          <div className="flex items-center gap-3 shrink-0">
-            <button
-              type="button"
-              onClick={handlePlayEraStation}
-              disabled={isLoading || tracks.length === 0}
-              className="group relative flex items-center gap-3 px-6 py-3.5 sm:px-8 sm:py-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-neutral-950 font-black text-sm sm:text-base tracking-wide shadow-[0_0_30px_rgba(245,158,11,0.4)] active:scale-95 transition-all duration-200 cursor-pointer disabled:opacity-50"
-            >
-              <span className="w-8 h-8 rounded-full bg-neutral-950/20 flex items-center justify-center text-neutral-950 group-hover:scale-110 transition-transform">
-                <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              </span>
-              <span>Play {activeEra?.decade || 'Era'} Station</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Radio Tuning Frequency Bar */}
-        <div className="mt-8 pt-6 border-t border-neutral-800/80">
-          <div className="flex items-center justify-between text-[11px] font-mono text-amber-400/80 mb-2">
-            <span>DIAL: FM 70.0 MHz - 20.1 MHz</span>
-            <span>{radioTuning ? 'TUNING FREQUENCY...' : `LOCKED ON [${activeEra?.decade}]`}</span>
-          </div>
-
-          <div className="relative h-3 bg-neutral-950 rounded-full border border-amber-500/20 overflow-hidden flex items-center">
-            {/* Tuning marks */}
-            <div className="absolute inset-0 flex justify-between px-2 text-[8px] text-neutral-600 font-mono select-none">
-              <span>| 1970</span>
-              <span>| 1980</span>
-              <span>| 1990</span>
-              <span>| 2000</span>
-              <span>| 2010</span>
-            </div>
-            {/* Active needle indicator */}
-            <div
-              className={`h-full w-24 bg-gradient-to-r from-transparent via-amber-500 to-transparent transition-all duration-500 ${
-                radioTuning ? 'animate-pulse' : ''
-              }`}
-              style={{
-                marginLeft: `${Math.max(0, Math.min(85, (eras.findIndex((e) => e.id === activeEra?.id) / Math.max(1, eras.length - 1)) * 85))}%`
-              }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Era Navigation Cards / Radio Dials */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-8">
-        {eras.map((era) => {
-          const isSelected = era.id === activeEra?.id;
-          return (
-            <button
-              key={era.id}
-              type="button"
-              onClick={() => {
-                setSelectedEraId(era.id);
-                setSelectedGenre('All');
-              }}
-              className={`relative text-left p-3.5 sm:p-4 rounded-2xl border transition-all duration-300 group overflow-hidden cursor-pointer ${
-                isSelected
-                  ? 'bg-neutral-900 border-amber-500 ring-2 ring-amber-500/40 shadow-[0_0_25px_rgba(245,158,11,0.25)]'
-                  : 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-900'
-              }`}
-            >
-              {/* Era background image preview with dark gradient */}
-              <div
-                className="absolute inset-0 bg-cover bg-center opacity-20 group-hover:opacity-30 transition-opacity"
-                style={{ backgroundImage: `url(${era.artwork})` }}
-              />
-              <div className="relative z-10">
-                <div className="flex items-center justify-between mb-2">
-                  <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded-full ${
-                    isSelected ? 'bg-amber-500 text-neutral-950' : 'bg-neutral-800 text-neutral-400'
-                  }`}>
-                    {era.decade}
-                  </span>
-                  {isSelected && (
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-                  )}
+    <div className={`w-full max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6 text-white ${USE_COMPACT_TIMEMACHINE_V2 ? 'pb-32' : 'pb-24'}`}>
+      {USE_COMPACT_TIMEMACHINE_V2 ? (
+        /* ========================================================================= */
+        /* V2 COMPACT RETRO TUNER & HIGH-DENSITY JUKEBOX (Feature Flag Gated)        */
+        /* ========================================================================= */
+        <>
+          {/* 1. Sleek Vintage Radio Dashboard / Compact Tuner */}
+          <div className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-neutral-900 via-neutral-950 to-neutral-900 border border-amber-500/35 p-3.5 sm:p-5 shadow-[0_10px_35px_rgba(0,0,0,0.8)] mb-4">
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-500/10 via-transparent to-transparent pointer-events-none" />
+            
+            {/* Top Bar: Title, Frequency Status & Compact Play Station Pill */}
+            <div className="relative z-10 flex items-center justify-between gap-2 mb-3">
+              <div className="min-w-0">
+                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[10px] font-mono uppercase tracking-wider">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  <span>FM 70-20 MHz • {radioTuning ? 'TUNING...' : `LOCKED [${activeEra?.decade}]`}</span>
                 </div>
-                <h3 className="font-bold text-sm sm:text-base text-white group-hover:text-amber-300 transition-colors line-clamp-1">
-                  {era.title}
-                </h3>
-                <p className="text-[11px] text-neutral-400 mt-1 line-clamp-2">
-                  {era.description}
+                <h1 className="text-xl sm:text-2xl font-black tracking-tight font-display bg-gradient-to-r from-white via-amber-200 to-amber-400 bg-clip-text text-transparent mt-0.5">
+                  Time Machine <span className="text-amber-400">Radio</span>
+                </h1>
+              </div>
+
+              {/* Refined Amber Neon Play Station Pill Button */}
+              <button
+                type="button"
+                onClick={handlePlayEraStation}
+                disabled={isLoading || tracks.length === 0}
+                className="group shrink-0 inline-flex items-center gap-2 px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-neutral-950 font-black text-xs sm:text-sm tracking-wide shadow-[0_0_20px_rgba(245,158,11,0.35)] active:scale-95 transition-all cursor-pointer disabled:opacity-40"
+              >
+                <span className="w-5 h-5 rounded-full bg-neutral-950/20 flex items-center justify-center text-neutral-950 group-hover:scale-110 transition-transform">
+                  <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </span>
+                <span>Play {activeEra?.decade || 'Era'}</span>
+              </button>
+            </div>
+
+            {/* Interactive Glowing Horizontal Decade Tuner Bar */}
+            <div className="relative z-10 pt-2 border-t border-neutral-800/80">
+              <div className="flex items-center justify-between gap-1 overflow-x-auto no-scrollbar py-1">
+                {eras.map((era, index) => {
+                  const isSelected = era.id === activeEra?.id;
+                  return (
+                    <button
+                      key={era.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedEraId(era.id);
+                        setSelectedGenre('All');
+                      }}
+                      className={`relative flex-1 min-w-[58px] py-1.5 px-2 rounded-lg text-center font-mono text-xs transition-all duration-200 cursor-pointer ${
+                        isSelected
+                          ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-400/50 shadow-[0_0_12px_rgba(245,158,11,0.35)] scale-102'
+                          : 'bg-neutral-950/60 text-neutral-400 hover:text-white border border-neutral-800/60 hover:bg-neutral-900'
+                      }`}
+                    >
+                      <div className="text-[9px] text-neutral-500 leading-none">MHz</div>
+                      <div className="text-xs sm:text-sm font-black">{era.decade.replace('s', '')}</div>
+                      {isSelected && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-amber-400 mx-auto mt-0.5 animate-ping" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Analog Needle Track */}
+              <div className="relative h-1.5 bg-neutral-950 rounded-full border border-amber-500/20 overflow-hidden flex items-center mt-2">
+                <div
+                  className={`h-full w-20 bg-gradient-to-r from-transparent via-amber-400 to-transparent transition-all duration-500 ${
+                    radioTuning ? 'animate-pulse' : ''
+                  }`}
+                  style={{
+                    marginLeft: `${Math.max(0, Math.min(85, (eras.findIndex((e) => e.id === activeEra?.id) / Math.max(1, eras.length - 1)) * 85))}%`
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Era Selection Cards (Decade Jukebox Rail / 2-Col Mobile Grid) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3.5 mb-5">
+            {eras.map((era) => {
+              const isSelected = era.id === activeEra?.id;
+              return (
+                <button
+                  key={era.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedEraId(era.id);
+                    setSelectedGenre('All');
+                  }}
+                  className={`relative text-left p-2.5 sm:p-3.5 rounded-xl border transition-all duration-200 group overflow-hidden cursor-pointer ${
+                    isSelected
+                      ? 'bg-neutral-900 border-amber-500 ring-2 ring-amber-500/40 shadow-[0_0_18px_rgba(245,158,11,0.25)]'
+                      : 'bg-neutral-900/60 border-neutral-800/80 hover:border-neutral-700 hover:bg-neutral-900/90'
+                  }`}
+                >
+                  {/* Cassette / Vinyl Artwork Background with Dark Gradient */}
+                  <div
+                    className="absolute inset-0 bg-cover bg-center opacity-25 group-hover:opacity-35 transition-opacity"
+                    style={{ backgroundImage: `url(${era.artwork})` }}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/70 to-transparent pointer-events-none" />
+
+                  <div className="relative z-10 flex flex-col justify-between h-full min-h-[68px] sm:min-h-[82px]">
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                        isSelected ? 'bg-amber-400 text-neutral-950' : 'bg-neutral-800/90 text-neutral-300'
+                      }`}>
+                        {era.decade}
+                      </span>
+                      {isSelected && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_#f59e0b] animate-pulse" />
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-xs sm:text-sm text-white group-hover:text-amber-300 transition-colors line-clamp-1">
+                        {era.title}
+                      </h3>
+                      <p className="text-[10px] text-neutral-400 line-clamp-1 mt-0.5">
+                        {era.genres?.[0] || 'Vintage Classic'}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      ) : (
+        /* ========================================================================= */
+        /* V1 ORIGINAL RETRO TUNER & HERO LAYOUT (Exact Legacy Fallback)              */
+        /* ========================================================================= */
+        <>
+          {/* Header Banner with Vintage Cassette/Radio Dial Aesthetics */}
+          <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-neutral-900 via-neutral-950 to-neutral-900 border border-amber-500/30 p-6 sm:p-10 shadow-[0_15px_50px_rgba(0,0,0,0.8)] mb-8">
+            {/* Retro scanline & grain overlay */}
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-500/10 via-transparent to-transparent pointer-events-none" />
+            <div className="absolute top-0 right-0 w-96 h-96 bg-amber-600/10 rounded-full blur-3xl pointer-events-none" />
+
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div className="max-w-2xl">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-mono uppercase tracking-wider mb-3">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                  Analog Time Machine • Vintage Radio Station
+                </div>
+                <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight font-display bg-gradient-to-r from-white via-amber-200 to-amber-500 bg-clip-text text-transparent">
+                  Time Machine Radio
+                </h1>
+                <p className="mt-2 text-sm sm:text-base text-neutral-400 leading-relaxed">
+                  Step into musical nostalgia. Select an era from the 1970s acoustic golden age to the 2010s streaming explosion.
+                  Tune into continuous broadcast stations with authentic vintage vibes.
                 </p>
               </div>
-            </button>
-          );
-        })}
-      </div>
+
+              {/* Master Station Action Button */}
+              <div className="flex items-center gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={handlePlayEraStation}
+                  disabled={isLoading || tracks.length === 0}
+                  className="group relative flex items-center gap-3 px-6 py-3.5 sm:px-8 sm:py-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-neutral-950 font-black text-sm sm:text-base tracking-wide shadow-[0_0_30px_rgba(245,158,11,0.4)] active:scale-95 transition-all duration-200 cursor-pointer disabled:opacity-50"
+                >
+                  <span className="w-8 h-8 rounded-full bg-neutral-950/20 flex items-center justify-center text-neutral-950 group-hover:scale-110 transition-transform">
+                    <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </span>
+                  <span>Play {activeEra?.decade || 'Era'} Station</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Radio Tuning Frequency Bar */}
+            <div className="mt-8 pt-6 border-t border-neutral-800/80">
+              <div className="flex items-center justify-between text-[11px] font-mono text-amber-400/80 mb-2">
+                <span>DIAL: FM 70.0 MHz - 20.1 MHz</span>
+                <span>{radioTuning ? 'TUNING FREQUENCY...' : `LOCKED ON [${activeEra?.decade}]`}</span>
+              </div>
+
+              <div className="relative h-3 bg-neutral-950 rounded-full border border-amber-500/20 overflow-hidden flex items-center">
+                {/* Tuning marks */}
+                <div className="absolute inset-0 flex justify-between px-2 text-[8px] text-neutral-600 font-mono select-none">
+                  <span>| 1970</span>
+                  <span>| 1980</span>
+                  <span>| 1990</span>
+                  <span>| 2000</span>
+                  <span>| 2010</span>
+                </div>
+                {/* Active needle indicator */}
+                <div
+                  className={`h-full w-24 bg-gradient-to-r from-transparent via-amber-500 to-transparent transition-all duration-500 ${
+                    radioTuning ? 'animate-pulse' : ''
+                  }`}
+                  style={{
+                    marginLeft: `${Math.max(0, Math.min(85, (eras.findIndex((e) => e.id === activeEra?.id) / Math.max(1, eras.length - 1)) * 85))}%`
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Era Navigation Cards / Radio Dials */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-8">
+            {eras.map((era) => {
+              const isSelected = era.id === activeEra?.id;
+              return (
+                <button
+                  key={era.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedEraId(era.id);
+                    setSelectedGenre('All');
+                  }}
+                  className={`relative text-left p-3.5 sm:p-4 rounded-2xl border transition-all duration-300 group overflow-hidden cursor-pointer ${
+                    isSelected
+                      ? 'bg-neutral-900 border-amber-500 ring-2 ring-amber-500/40 shadow-[0_0_25px_rgba(245,158,11,0.25)]'
+                      : 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-900'
+                  }`}
+                >
+                  {/* Era background image preview with dark gradient */}
+                  <div
+                    className="absolute inset-0 bg-cover bg-center opacity-20 group-hover:opacity-30 transition-opacity"
+                    style={{ backgroundImage: `url(${era.artwork})` }}
+                  />
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded-full ${
+                        isSelected ? 'bg-amber-500 text-neutral-950' : 'bg-neutral-800 text-neutral-400'
+                      }`}>
+                        {era.decade}
+                      </span>
+                      {isSelected && (
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                      )}
+                    </div>
+                    <h3 className="font-bold text-sm sm:text-base text-white group-hover:text-amber-300 transition-colors line-clamp-1">
+                      {era.title}
+                    </h3>
+                    <p className="text-[11px] text-neutral-400 mt-1 line-clamp-2">
+                      {era.description}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       {/* Era Details & Genre Sub-filters */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">

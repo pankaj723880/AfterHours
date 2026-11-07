@@ -26,6 +26,13 @@ export default function PlayerSettingsModal({
   onToggleDataSaver = () => {}
 }) {
   const [customTimerMinutes, setCustomTimerMinutes] = useState('');
+  const [roamState, setRoamState] = useState(() => {
+    try {
+      return typeof window !== 'undefined' ? localStorage.getItem('loopra_avatar_roam') !== 'false' : true;
+    } catch (_) {
+      return true;
+    }
+  });
 
   // Handle escape key
   useEffect(() => {
@@ -263,7 +270,43 @@ export default function PlayerSettingsModal({
             </div>
           </div>
 
-          <hr className="border-neutral-800/80" />
+          {/* Section: 3D Avatar Autonomous Roaming Mode */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-neutral-300 uppercase tracking-wider">Avatar Autonomous Free Roam</h4>
+                <p className="text-[11px] text-neutral-500">Allow 3D Avatar to walk, dance, and sit on music cards</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    const current = localStorage.getItem('loopra_avatar_roam') !== 'false';
+                    const next = !current;
+                    localStorage.setItem('loopra_avatar_roam', String(next));
+                    window.dispatchEvent(new Event('storage'));
+                    // Force refresh toggle state locally
+                    setRoamState(next);
+                  } catch (_) {}
+                }}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  roamState ? 'bg-amber-500' : 'bg-neutral-800'
+                }`}
+                role="switch"
+                aria-checked={roamState}
+                aria-label="Toggle Avatar Free Roam"
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    roamState ? 'translate-x-5 bg-neutral-950' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+            <div className="p-2.5 rounded-xl bg-neutral-950/60 border border-neutral-800 text-[11px] text-neutral-400">
+              <span>{roamState ? '✨ Autonomous Roaming Active: Avatar freely explores and perches on cards after 2s inactivity.' : '🛑 Avatar Parked: Avatar remains docked in the corner without traversing.'}</span>
+            </div>
+          </div>
 
           <hr className="border-neutral-800/80" />
 

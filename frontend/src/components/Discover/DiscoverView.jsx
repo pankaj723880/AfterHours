@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { USE_V2_DISCOVER_UI } from '../../constants/featureFlags';
 import HomeSearchBar from '../Search/HomeSearchBar';
 import DownloadTrackButton from '../Offline/DownloadTrackButton';
 import {
@@ -82,52 +83,14 @@ export default function DiscoverView({
   };
 
   return (
-    <div className="w-full max-w-5xl mx-auto px-3 sm:px-4 md:px-6 space-y-6 sm:space-y-8 pb-32 md:pb-20 relative z-10">
-      
-      {/* =========================================================================
-          SECTION 1: DISCOVER PAGE HERO (Mobile-First, Compact & Cinematic)
-          ========================================================================= */}
-      <section
-        aria-label="Discover & Search Hero"
-        className="relative z-30 w-full rounded-2xl sm:rounded-3xl p-4 sm:p-7 md:p-9 bg-gradient-to-br from-neutral-900/95 via-neutral-950/95 to-neutral-950 border border-amber-500/25 shadow-[0_15px_40px_rgba(0,0,0,0.85),0_0_30px_rgba(245,158,11,0.08)] overflow-visible"
-      >
-        {/* Background Visual Container: strictly clips ambient artwork without clipping search dropdown */}
-        <div className="absolute inset-0 rounded-2xl sm:rounded-3xl overflow-hidden pointer-events-none">
-          {/* Background Cinematic Visual with Smooth Ambient Glow */}
-          <div
-            className="absolute inset-0 bg-cover bg-right sm:bg-center opacity-25 mix-blend-screen pointer-events-none scale-105"
-            style={{ backgroundImage: `url('/hero-cinematic.png')` }}
-          />
-          <div className="absolute inset-0 bg-gradient-to-r from-neutral-950 via-neutral-950/85 to-transparent pointer-events-none" />
-          <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/40 to-transparent pointer-events-none" />
-
-          {/* Ambient Golden Light Orbs */}
-          <div className="absolute -top-12 -left-12 w-64 h-64 rounded-full bg-amber-500/15 blur-[90px] pointer-events-none" />
-          <div className="absolute -bottom-16 right-0 w-72 h-72 rounded-full bg-orange-500/10 blur-[100px] pointer-events-none" />
-        </div>
-
-        <div className="relative z-10 flex flex-col items-start sm:items-center text-left sm:text-center space-y-3 sm:space-y-4 max-w-2xl sm:mx-auto">
-          {/* Welcome Pill */}
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] sm:text-xs font-semibold tracking-wider backdrop-blur-md">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-            </span>
-            <span className="uppercase font-mono font-bold">Welcome to Loopra</span>
-          </div>
-
-          {/* Main Heading & Subtitle */}
-          <div className="space-y-1 sm:space-y-1.5">
-            <h1 className="text-2xl sm:text-4xl md:text-5xl font-display font-black text-white tracking-tight leading-tight">
-              DISCOVER & <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-amber-400 to-orange-400">SEARCH</span>
-            </h1>
-            <p className="text-xs sm:text-sm md:text-base text-neutral-300 font-medium">
-              Find your next favourite song, artist, album or genre.
-            </p>
-          </div>
-
-          {/* Search Experience Component */}
-          <div className="w-full pt-1 sm:pt-2">
+    <div className={`w-full max-w-5xl mx-auto px-3 sm:px-4 md:px-6 relative z-10 ${USE_V2_DISCOVER_UI ? 'space-y-4 sm:space-y-6 pb-36 md:pb-24' : 'space-y-6 sm:space-y-8 pb-32 md:pb-20'}`}>
+      {USE_V2_DISCOVER_UI ? (
+        /* ========================================================================= */
+        /* V2 COMPACT SEARCH HERO & THIN HORIZONTAL CHIP-STRIP                       */
+        /* ========================================================================= */
+        <section aria-label="Discover & Search Compact Bar" className="relative z-30 w-full pt-1">
+          {/* Integrated Modern Search Bar */}
+          <div className="w-full">
             <HomeSearchBar
               onSearch={(queryText) => {
                 const trimmed = (queryText || '').trim();
@@ -138,50 +101,141 @@ export default function DiscoverView({
               onSelectSong={playSong}
               onPlaySong={playSong}
               onArtistClick={onArtistClick}
-              placeholder={cmsConfig?.searchPage?.placeholder || "Search song, artist, album..."}
+              placeholder={cmsConfig?.searchPage?.placeholder || "Search songs, artists, links..."}
               showQuickTags={false}
               user={user}
               token={authToken}
               backendUrl={backendUrl}
             />
           </div>
-        </div>
-      </section>
 
-      {/* =========================================================================
-          SECTION 2: POPULAR SEARCHES (Horizontal Scrollable Chips)
-          ========================================================================= */}
-      <section aria-label="Popular Searches" className="space-y-2.5 relative z-10">
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-neutral-400 uppercase tracking-wider">
-            <Flame className="w-3.5 h-3.5 text-amber-500" />
-            <span>Popular Searches</span>
+          {/* Thin, horizontally scrollable popular search pill-strip */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-2 -mx-1 px-1">
+            <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+              <Flame className="w-3 h-3 text-amber-400" />
+              <span>Trending:</span>
+            </span>
+            {POPULAR_SEARCH_CHIPS.map((chip, idx) => {
+              const isSelected = selectedChip === chip.label;
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleChipClick(chip)}
+                  className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-150 cursor-pointer active:scale-95 shrink-0 select-none ${
+                    isSelected
+                      ? 'bg-amber-400 text-neutral-950 font-bold shadow-sm shadow-amber-500/20'
+                      : 'bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 hover:border-amber-400/30'
+                  }`}
+                >
+                  <span>{chip.label}</span>
+                </button>
+              );
+            })}
           </div>
-          <span className="text-[11px] text-neutral-500">Quick Picks</span>
-        </div>
+        </section>
+      ) : (
+        /* ========================================================================= */
+        /* V1 ORIGINAL DISCOVER HERO & POPULAR SEARCHES (Legacy Fallback)            */
+        /* ========================================================================= */
+        <>
+          <section
+            aria-label="Discover & Search Hero"
+            className="relative z-30 w-full rounded-2xl sm:rounded-3xl p-4 sm:p-7 md:p-9 bg-gradient-to-br from-neutral-900/95 via-neutral-950/95 to-neutral-950 border border-amber-500/25 shadow-[0_15px_40px_rgba(0,0,0,0.85),0_0_30px_rgba(245,158,11,0.08)] overflow-visible"
+          >
+            {/* Background Visual Container: strictly clips ambient artwork without clipping search dropdown */}
+            <div className="absolute inset-0 rounded-2xl sm:rounded-3xl overflow-hidden pointer-events-none">
+              {/* Background Cinematic Visual with Smooth Ambient Glow */}
+              <div
+                className="absolute inset-0 bg-cover bg-right sm:bg-center opacity-25 mix-blend-screen pointer-events-none scale-105"
+                style={{ backgroundImage: `url('/hero-cinematic.png')` }}
+              />
+              <div className="absolute inset-0 bg-gradient-to-r from-neutral-950 via-neutral-950/85 to-transparent pointer-events-none" />
+              <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/40 to-transparent pointer-events-none" />
 
-        {/* Scrollable chip container with touch inertia */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none -mx-3 px-3 sm:mx-0 sm:px-0">
-          {POPULAR_SEARCH_CHIPS.map((chip, idx) => {
-            const isSelected = selectedChip === chip.label;
-            return (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => handleChipClick(chip)}
-                className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer active:scale-95 shrink-0 min-h-[44px] select-none ${
-                  isSelected
-                    ? 'bg-amber-500 text-neutral-950 font-bold shadow-md shadow-amber-500/20'
-                    : 'bg-neutral-900/90 hover:bg-neutral-850 text-neutral-300 hover:text-white border border-neutral-800 hover:border-amber-500/40 shadow-sm'
-                }`}
-              >
-                <Search className={`w-3.5 h-3.5 ${isSelected ? 'text-neutral-950' : 'text-amber-400'}`} />
-                <span>{chip.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </section>
+              {/* Ambient Golden Light Orbs */}
+              <div className="absolute -top-12 -left-12 w-64 h-64 rounded-full bg-amber-500/15 blur-[90px] pointer-events-none" />
+              <div className="absolute -bottom-16 right-0 w-72 h-72 rounded-full bg-orange-500/10 blur-[100px] pointer-events-none" />
+            </div>
+
+            <div className="relative z-10 flex flex-col items-start sm:items-center text-left sm:text-center space-y-3 sm:space-y-4 max-w-2xl sm:mx-auto">
+              {/* Welcome Pill */}
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] sm:text-xs font-semibold tracking-wider backdrop-blur-md">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                </span>
+                <span className="uppercase font-mono font-bold">Welcome to Loopra</span>
+              </div>
+
+              {/* Main Heading & Subtitle */}
+              <div className="space-y-1 sm:space-y-1.5">
+                <h1 className="text-2xl sm:text-4xl md:text-5xl font-display font-black text-white tracking-tight leading-tight">
+                  DISCOVER & <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-amber-400 to-orange-400">SEARCH</span>
+                </h1>
+                <p className="text-xs sm:text-sm md:text-base text-neutral-300 font-medium">
+                  Find your next favourite song, artist, album or genre.
+                </p>
+              </div>
+
+              {/* Search Experience Component */}
+              <div className="w-full pt-1 sm:pt-2">
+                <HomeSearchBar
+                  onSearch={(queryText) => {
+                    const trimmed = (queryText || '').trim();
+                    if (!trimmed) return;
+                    if (setSearchQuery) setSearchQuery(trimmed);
+                    if (fetchYouTubeMusic) fetchYouTubeMusic(trimmed);
+                  }}
+                  onSelectSong={playSong}
+                  onPlaySong={playSong}
+                  onArtistClick={onArtistClick}
+                  placeholder={cmsConfig?.searchPage?.placeholder || "Search song, artist, album..."}
+                  showQuickTags={false}
+                  user={user}
+                  token={authToken}
+                  backendUrl={backendUrl}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* =========================================================================
+              SECTION 2: POPULAR SEARCHES (Horizontal Scrollable Chips)
+              ========================================================================= */}
+          <section aria-label="Popular Searches" className="space-y-2.5 relative z-10">
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-neutral-400 uppercase tracking-wider">
+                <Flame className="w-3.5 h-3.5 text-amber-500" />
+                <span>Popular Searches</span>
+              </div>
+              <span className="text-[11px] text-neutral-500">Quick Picks</span>
+            </div>
+
+            {/* Scrollable chip container with touch inertia */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none -mx-3 px-3 sm:mx-0 sm:px-0">
+              {POPULAR_SEARCH_CHIPS.map((chip, idx) => {
+                const isSelected = selectedChip === chip.label;
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleChipClick(chip)}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer active:scale-95 shrink-0 min-h-[44px] select-none ${
+                      isSelected
+                        ? 'bg-amber-500 text-neutral-950 font-bold shadow-md shadow-amber-500/20'
+                        : 'bg-neutral-900/90 hover:bg-neutral-850 text-neutral-300 hover:text-white border border-neutral-800 hover:border-amber-500/40 shadow-sm'
+                    }`}
+                  >
+                    <Search className={`w-3.5 h-3.5 ${isSelected ? 'text-neutral-950' : 'text-amber-400'}`} />
+                    <span>{chip.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </>
+      )}
 
 
 
@@ -509,9 +563,13 @@ export default function DiscoverView({
                     <div
                       key={`trending-${trackId || idx}`}
                       onClick={() => playSong(track)}
-                      className="group relative flex flex-col shrink-0 w-36 sm:w-44 bg-neutral-900/60 hover:bg-neutral-850 border border-neutral-800/80 hover:border-amber-500/40 rounded-2xl p-2.5 sm:p-3 transition-all duration-300 hover:shadow-xl hover:shadow-amber-500/10 cursor-pointer select-none"
+                      className={`group relative flex flex-col shrink-0 ${
+                        USE_V2_DISCOVER_UI
+                          ? 'w-28 sm:w-36 bg-gradient-to-br from-neutral-900/80 to-[#121216] border border-white/5 hover:border-amber-400/40 rounded-xl p-2'
+                          : 'w-36 sm:w-44 bg-neutral-900/60 hover:bg-neutral-850 border border-neutral-800/80 hover:border-amber-500/40 rounded-2xl p-2.5 sm:p-3'
+                      } transition-all duration-300 hover:shadow-xl hover:shadow-amber-500/10 cursor-pointer select-none`}
                     >
-                      <div className="relative aspect-square w-full rounded-xl overflow-hidden mb-2 bg-neutral-950">
+                      <div className={`relative aspect-square w-full ${USE_V2_DISCOVER_UI ? 'rounded-lg' : 'rounded-xl'} overflow-hidden mb-1.5 bg-neutral-950 border border-white/5`}>
                         <img
                           src={thumb}
                           alt={track.title}
@@ -532,16 +590,16 @@ export default function DiscoverView({
                           }}
                         />
                         <div className="absolute inset-0 bg-neutral-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <div className="w-9 h-9 rounded-full bg-amber-500 text-neutral-950 flex items-center justify-center shadow-lg shadow-amber-500/40 transform scale-90 group-hover:scale-100 transition">
-                            <Play className="w-4 h-4 fill-current translate-x-0.5" />
+                          <div className="w-8 h-8 rounded-full bg-amber-400 text-neutral-950 flex items-center justify-center shadow-lg shadow-amber-400/40 transform scale-90 group-hover:scale-100 transition">
+                            <Play className="w-3.5 h-3.5 fill-current translate-x-0.5" />
                           </div>
                         </div>
                       </div>
 
-                      <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">
+                      <h4 className="text-xs font-semibold text-white truncate group-hover:text-amber-300 transition line-clamp-1">
                         {track.title}
                       </h4>
-                      <p className="text-[11px] text-neutral-400 truncate mt-0.5 select-none pointer-events-none">
+                      <p className="text-[10px] text-zinc-400 truncate mt-0.5 select-none pointer-events-none line-clamp-1">
                         {track.artist || track.channel}
                       </p>
                     </div>
@@ -578,9 +636,13 @@ export default function DiscoverView({
                     <div
                       key={`album-${albumId || idx}`}
                       onClick={() => handleChipClick(album.query || album.title)}
-                      className="group relative flex flex-col shrink-0 w-36 sm:w-44 bg-neutral-900/60 hover:bg-neutral-850 border border-neutral-800/80 hover:border-amber-500/40 rounded-2xl p-2.5 sm:p-3 transition-all duration-300 hover:shadow-xl hover:shadow-amber-500/10 cursor-pointer select-none"
+                      className={`group relative flex flex-col shrink-0 ${
+                        USE_V2_DISCOVER_UI
+                          ? 'w-28 sm:w-36 bg-gradient-to-br from-neutral-900/80 to-[#121216] border border-white/5 hover:border-amber-400/40 rounded-xl p-2'
+                          : 'w-36 sm:w-44 bg-neutral-900/60 hover:bg-neutral-850 border border-neutral-800/80 hover:border-amber-500/40 rounded-2xl p-2.5 sm:p-3'
+                      } transition-all duration-300 hover:shadow-xl hover:shadow-amber-500/10 cursor-pointer select-none`}
                     >
-                      <div className="relative aspect-square w-full rounded-xl overflow-hidden mb-2 bg-neutral-950">
+                      <div className={`relative aspect-square w-full ${USE_V2_DISCOVER_UI ? 'rounded-lg' : 'rounded-xl'} overflow-hidden mb-1.5 bg-neutral-950 border border-white/5`}>
                         <img
                           src={thumb}
                           alt={album.title}
@@ -601,16 +663,16 @@ export default function DiscoverView({
                           }}
                         />
                         <div className="absolute inset-0 bg-neutral-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <div className="w-9 h-9 rounded-full bg-amber-500 text-neutral-950 flex items-center justify-center shadow-lg shadow-amber-500/40 transform scale-90 group-hover:scale-100 transition">
-                            <Play className="w-4 h-4 fill-current translate-x-0.5" />
+                          <div className="w-8 h-8 rounded-full bg-amber-400 text-neutral-950 flex items-center justify-center shadow-lg shadow-amber-400/40 transform scale-90 group-hover:scale-100 transition">
+                            <Play className="w-3.5 h-3.5 fill-current translate-x-0.5" />
                           </div>
                         </div>
                       </div>
 
-                      <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">
+                      <h4 className="text-xs font-semibold text-white truncate group-hover:text-amber-300 transition line-clamp-1">
                         {album.title}
                       </h4>
-                      <p className="text-[11px] text-neutral-400 truncate mt-0.5 select-none pointer-events-none">
+                      <p className="text-[10px] text-zinc-400 truncate mt-0.5 select-none pointer-events-none line-clamp-1">
                         {album.artist || 'Bollywood Classic'}
                       </p>
                     </div>

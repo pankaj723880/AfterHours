@@ -2,16 +2,24 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Camera, Upload, Loader2, Check, X, AlertCircle, Trash2 } from 'lucide-react';
 import { getApiUrl } from '../../utils/apiUrl';
 import UserAvatar from '../Common/UserAvatar';
+import { USE_V2_PROFILE_MODAL } from '../../constants/featureFlags';
 
 const GENRE_OPTIONS = [
-  '90s Bollywood',
-  'Romantic Retro',
-  'Desi Punjabi Dhol',
-  'Ghazals & Mehfil',
-  'Highway Melodies',
-  'Classic Sufi',
-  'Old School Hip-Hop',
-  'Lofi Chill'
+  // Modern Indian & Desi Urban
+  'Desi Hip-Hop (DHH)',
+  'Punjabi Wave / Drill',
+  'Bollywood Neo-Soul',
+  'Indie Pop & Acoustic',
+  'Modern Ghazal & Mehfil',
+  'Sufi Rock & Fusion',
+
+  // Contemporary Global & Electronic
+  'Melodic Techno & House',
+  'Lofi Beats & Night Chill',
+  'Synthwave / Cyber-Retro',
+  'Afrobeats & Latin Vibes',
+  'Phonk & Drift',
+  'Bedroom Pop & Dream Pop'
 ];
 
 export default function UserProfileModal({
@@ -255,6 +263,254 @@ export default function UserProfileModal({
   };
 
   const activeAvatarSrc = previewUrl || avatarUrl;
+
+  // Determine dynamic Listener Persona based on selected favorite genres
+  const getListenerPersona = () => {
+    if (!favoriteGenres || favoriteGenres.length === 0) return '🎧 Music Explorer';
+    const first = favoriteGenres[0].toLowerCase();
+    if (first.includes('retro') || first.includes('bollywood')) return '📻 Vintage Nostalgic';
+    if (first.includes('punjabi') || first.includes('dhol')) return '🔥 High-Energy Raver';
+    if (first.includes('sufi') || first.includes('ghazal')) return '🎵 Melodic Soul';
+    if (first.includes('highway') || first.includes('melody')) return '🚗 Midnight Cruiser';
+    if (first.includes('lofi') || first.includes('chill')) return '🌙 Lofi Daydreamer';
+    if (first.includes('hip-hop')) return '⚡ Rhythm & Flow';
+    return '🎧 Sonic Explorer';
+  };
+
+  // V2 Profile Modal Rendering Branch
+  if (USE_V2_PROFILE_MODAL) {
+    return (
+      <div
+        className="fixed inset-0 z-[10000] bg-neutral-950/85 backdrop-blur-xl flex items-center justify-center p-3 sm:p-4 animate-fadeIn"
+        onClick={(e) => { if (e.target === e.currentTarget) { clearPreview(); onClose(); } }}
+      >
+        <div
+          className="w-full max-w-md bg-zinc-900/90 backdrop-blur-2xl border border-white/10 rounded-3xl overflow-hidden shadow-[0_25px_60px_rgba(0,0,0,0.9)] flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Top Bar with Clean Close Button */}
+          <div className="relative px-6 pt-5 pb-2 flex items-center justify-between border-b border-white/[0.06]">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-amber-400/90 font-mono">
+              Loopra Music Identity
+            </span>
+            <button
+              type="button"
+              onClick={() => { clearPreview(); onClose(); }}
+              className="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white transition-all active:scale-95 cursor-pointer"
+              aria-label="Close Profile"
+              title="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Modal Body */}
+          <div className="p-5 sm:p-6 overflow-y-auto space-y-5">
+            {/* Header & Identity Card */}
+            <div className="flex flex-col items-center text-center space-y-3 pb-2">
+              {/* Circular Avatar with Amber Glow & Change Photo Camera Trigger */}
+              <div className="relative">
+                <div className="w-24 h-24 rounded-full overflow-hidden bg-neutral-900 border-2 border-amber-500/60 shadow-[0_0_25px_rgba(245,158,11,0.25)] flex items-center justify-center">
+                  <UserAvatar
+                    user={currentUser}
+                    src={activeAvatarSrc}
+                    alt="Profile photo"
+                    className="w-full h-full object-cover"
+                    fallbackClassName="w-full h-full bg-gradient-to-br from-amber-500 to-amber-600 text-neutral-950 flex items-center justify-center font-black text-2xl uppercase select-none"
+                    fallbackInitial={currentUser.username ? currentUser.username.charAt(0) : 'U'}
+                  />
+                </div>
+
+                {/* Camera / Upload Badge Button */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-amber-500 hover:bg-amber-400 text-neutral-950 border-2 border-neutral-900 flex items-center justify-center shadow-lg transition active:scale-90 cursor-pointer"
+                  title={avatarUrl ? "Change profile photo" : "Upload profile photo"}
+                >
+                  <Camera className="w-4 h-4" />
+                </button>
+
+                {/* Hidden File Input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+              </div>
+
+              {/* Persona Pill */}
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-semibold shadow-sm">
+                <span>{getListenerPersona()}</span>
+              </div>
+
+              {/* Names */}
+              <div className="min-w-0">
+                <h3 className="text-xl font-bold text-white tracking-tight truncate">
+                  {displayName || currentUser.username}
+                </h3>
+                <p className="text-xs text-zinc-400 font-mono truncate mt-0.5">
+                  @{currentUser.username} {currentUser.email && `• ${currentUser.email}`}
+                </p>
+              </div>
+
+              {/* Pending Photo Upload Action Bar */}
+              {selectedFile && (
+                <div className="w-full p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2 animate-fadeIn">
+                  <span className="text-[11px] font-mono text-amber-300 truncate">
+                    Selected: {selectedFile.name}
+                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      disabled={isUploadingAvatar}
+                      onClick={clearPreview}
+                      className="px-2.5 py-1 rounded-lg bg-neutral-800 text-neutral-300 text-xs font-semibold hover:bg-neutral-700 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isUploadingAvatar}
+                      onClick={handleSaveAvatar}
+                      className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold shadow-md transition cursor-pointer flex items-center gap-1"
+                    >
+                      {isUploadingAvatar ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                      <span>Save</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {uploadError && (
+                <p className="text-xs text-rose-400 flex items-center justify-center gap-1 font-medium">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{uploadError}</span>
+                </p>
+              )}
+
+              {/* Remove Photo Trigger if active */}
+              {avatarUrl && !selectedFile && (
+                <button
+                  type="button"
+                  onClick={handleRemoveAvatar}
+                  disabled={isUploadingAvatar}
+                  className="text-[11px] text-zinc-500 hover:text-rose-400 transition cursor-pointer flex items-center gap-1"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Remove custom photo</span>
+                </button>
+              )}
+
+              {/* Toggle Edit Details Mode */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearPreview();
+                    setActiveTab(activeTab === 'overview' ? 'edit' : 'overview');
+                  }}
+                  className="px-4 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-neutral-200 text-xs font-semibold border border-white/10 transition active:scale-95 cursor-pointer"
+                >
+                  {activeTab === 'overview' ? 'Edit Display Name' : 'Done Editing'}
+                </button>
+              </div>
+            </div>
+
+            {/* Edit Display Name Input when in edit mode */}
+            {activeTab === 'edit' && (
+              <form onSubmit={handleSaveProfile} className="space-y-3 p-3.5 bg-black/40 rounded-2xl border border-white/[0.08] animate-fadeIn">
+                <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">
+                  Change Display Name
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    maxLength={60}
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="Your Name"
+                    className="flex-1 px-3.5 py-2 bg-neutral-950 border border-neutral-800 rounded-xl text-xs text-white focus:outline-none focus:border-amber-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSaving}
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-neutral-950 text-xs font-bold transition cursor-pointer shrink-0"
+                  >
+                    {isSaving ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Dynamic Music Personalization: Interactive Genre Chip Selector */}
+            <div className="space-y-2.5 pt-1">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold text-neutral-300 uppercase tracking-wider">
+                  Top Taste & Favorite Genres
+                </label>
+                <span className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                  favoriteGenres.length >= 5 
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse' 
+                    : 'bg-white/5 text-amber-400/80 border-white/10'
+                }`}>
+                  {favoriteGenres.length} / 5 Selected
+                </span>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                {GENRE_OPTIONS.map(genre => {
+                  const isSelected = favoriteGenres.includes(genre);
+                  return (
+                    <button
+                      type="button"
+                      key={genre}
+                      onClick={() => {
+                        toggleGenre(genre);
+                        // Auto-persist genre selection to server seamlessly
+                        const token = localStorage.getItem('afterhours_token');
+                        const updated = isSelected 
+                          ? favoriteGenres.filter(g => g !== genre)
+                          : (favoriteGenres.length < 5 ? [...favoriteGenres, genre] : favoriteGenres);
+                        
+                        fetch(getApiUrl('/api/user/profile'), {
+                          method: 'PUT',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${token}`
+                          },
+                          body: JSON.stringify({
+                            displayName,
+                            bio,
+                            avatarUrl,
+                            favoriteGenres: updated,
+                            isPublic
+                          })
+                        }).then(r => r.json()).then(data => {
+                          if (data?.user && onUserUpdated) onUserUpdated(data.user);
+                        }).catch(() => {});
+                      }}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur-md transition-all duration-200 active:scale-95 cursor-pointer ${
+                        isSelected
+                          ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 shadow-sm shadow-amber-500/20 scale-105 border'
+                          : 'bg-white/5 border border-white/10 text-zinc-300 hover:text-white hover:bg-white/10 hover:border-amber-400/30'
+                      }`}
+                    >
+                      {genre} {isSelected && '✓'}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Legacy User Profile Modal Layout (Preserved when USE_V2_PROFILE_MODAL is false)
 
   return (
     <div

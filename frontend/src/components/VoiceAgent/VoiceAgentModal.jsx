@@ -20,6 +20,8 @@ import { voiceBuddyService } from '../../services/voiceBuddyService';
 import { parseCommandToAction, INTENT_CATEGORIES } from '../../services/commandActionEngine';
 import { chatBuddyClient } from '../../services/chatBuddyClient';
 import CharacterBuddy from './CharacterBuddy';
+import FloatingAvatarTriggerV2 from './FloatingAvatarTriggerV2';
+import { USE_COMPACT_V2_UI, USE_V2_AVATAR, USE_V2_AVATAR_COMPANION } from '../../constants/featureFlags';
 
 export default function VoiceAgentModal({
   user,
@@ -1248,35 +1250,19 @@ export default function VoiceAgentModal({
   const unmountTimerRef = useRef(null);
   const prevIsAvatarVisibleRef = useRef(isAvatarVisible);
 
-  // Mount avatar only after splash screen has completely closed, app initialized, AND hasAccess is granted!
+  // Mount avatar ONLY when user explicitly enables it (isAvatarVisible),
+  // splash screen is closed, app is initialized, and hasAccess is granted.
+  // Fully unmounts the 3D Canvas / WebGL context when isAvatarVisible is false!
   useEffect(() => {
-    if (!showSplashScreen && isAppInitialized && !hasMountedAvatar && hasAccess) {
+    if (!showSplashScreen && isAppInitialized && hasAccess && isAvatarVisible) {
       setHasMountedAvatar(true);
-    }
-  }, [showSplashScreen, isAppInitialized, hasAccess, hasMountedAvatar]);
-
-  // Handle the 2-second delay AFTER homepage loading completes AND hasAccess is granted
-  useEffect(() => {
-    // Never start the timer while splash screen is active or before app initialization or without access
-    if (showSplashScreen || !isAppInitialized || initialDelayDone) {
-      return;
-    }
-    if (!hasAccess) {
-      return;
-    }
-
-    // Start 2-second delay AFTER homepage loading is complete and voice control allowed
-    initialDelayTimerRef.current = setTimeout(() => {
       setInitialDelayDone(true);
-    }, 2000);
-
-    return () => {
-      if (initialDelayTimerRef.current) {
-        clearTimeout(initialDelayTimerRef.current);
-        initialDelayTimerRef.current = null;
-      }
-    };
-  }, [showSplashScreen, isAppInitialized, hasAccess, initialDelayDone]);
+    } else if (!isAvatarVisible) {
+      // Unmount avatar immediately when disabled to free WebGL memory
+      setHasMountedAvatar(false);
+      setInitialDelayDone(false);
+    }
+  }, [showSplashScreen, isAppInitialized, hasAccess, isAvatarVisible]);
 
   // Immediate smooth fade-out and unmount when access is revoked by admin
   useEffect(() => {
@@ -1342,16 +1328,13 @@ export default function VoiceAgentModal({
   return ReactDOM.createPortal(
     <>
       {/* ============================================================= */}
-      {/* 1. LOOPRA MOVABLE AI COMPANION AVATAR (Persistent)            */}
+      {/* 1. LOOPRA 3D COMPANION AVATAR (Gated strictly by explicit user toggle) */}
       {/* ============================================================= */}
-      {hasMountedAvatar && hasAccess && (
-        <div
-          className="loopra-character-dock-container pointer-events-auto"
-          style={{
-            '--ai-button-bottom': buttonBottomOffset
-          }}
-        >
-          <CharacterBuddy
+      {hasMountedAvatar && hasAccess && isAvatarVisible && (
+        USE_V2_AVATAR_COMPANION ? (
+          // V2: Sleek, non-intrusive bottom-right hologram bubble with audio reactivity,
+          // zero content obstruction (pointer-events-none on dock), and tap-to-expand assistant sheet
+          <FloatingAvatarTriggerV2
             isSessionActive={isSessionActive}
             isListening={isListening}
             isPlaying={isPlaying}
@@ -1363,7 +1346,28 @@ export default function VoiceAgentModal({
             isBottomPlayerVisible={isBottomPlayerVisible}
             isVisible={isTargetVisible}
           />
-        </div>
+        ) : (
+          // Legacy V1: Movable full-body dock container with CharacterBuddy
+          <div
+            className="loopra-character-dock-container pointer-events-auto"
+            style={{
+              '--ai-button-bottom': buttonBottomOffset
+            }}
+          >
+            <CharacterBuddy
+              isSessionActive={isSessionActive}
+              isListening={isListening}
+              isPlaying={isPlaying}
+              sessionState={sessionState}
+              voiceVolumeScale={voiceVolumeScale}
+              onToggleVoiceMode={handleToggleVoiceMode}
+              onToggleChat={onToggleAi}
+              onCloseAvatar={() => onToggleAvatar?.(false)}
+              isBottomPlayerVisible={isBottomPlayerVisible}
+              isVisible={isTargetVisible}
+            />
+          </div>
+        )
       )}
     </>,
     document.body

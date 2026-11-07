@@ -39,7 +39,9 @@ export default function ThreeDCharacter({
   rotationYaw = 0,
   rotationPitch = 0,
   width = 215,
-  height = 355
+  height = 355,
+  framingMode = 'full', // 'full' | 'bust' (bust focuses camera chest-up on facial expressions)
+  isPaused = false
 }) {
   const mountRef = useRef(null);
   const rendererRef = useRef(null);
@@ -55,7 +57,9 @@ export default function ThreeDCharacter({
     cursorX: 0,
     cursorY: 0,
     rotationYaw: 0,
-    rotationPitch: 0
+    rotationPitch: 0,
+    framingMode,
+    isPaused
   });
 
   const [hasGlbLoaded, setHasGlbLoaded] = useState(false);
@@ -72,17 +76,19 @@ export default function ThreeDCharacter({
       cursorX: cursorOffset?.x || 0,
       cursorY: cursorOffset?.y || 0,
       rotationYaw: rotationYaw || 0,
-      rotationPitch: rotationPitch || 0
+      rotationPitch: rotationPitch || 0,
+      framingMode,
+      isPaused
     };
-  }, [animationState, isSpeaking, isListening, isPlaying, voiceVolumeScale, facing, cursorOffset, rotationYaw, rotationPitch]);
+  }, [animationState, isSpeaking, isListening, isPlaying, voiceVolumeScale, facing, cursorOffset, rotationYaw, rotationPitch, framingMode, isPaused]);
 
   // Decoupled dynamic resizing: NEVER remounts Three.js or reloads the GLB on size change!
   useEffect(() => {
     if (rendererRef.current && cameraRef.current && updateFramingRef.current) {
       rendererRef.current.setSize(width, height);
-      updateFramingRef.current(width, height);
+      updateFramingRef.current(width, height, framingMode);
     }
-  }, [width, height]);
+  }, [width, height, framingMode]);
 
   useEffect(() => {
     const container = mountRef.current;
@@ -95,24 +101,34 @@ export default function ThreeDCharacter({
     const camera = new THREE.PerspectiveCamera(fov, initialAspect, 0.1, 50);
     cameraRef.current = camera;
 
-    const updateCameraFraming = (w, h) => {
+    const updateCameraFraming = (w, h, mode = 'full') => {
       const aspect = w / h;
       camera.aspect = aspect;
       const vFovRad = fov * (Math.PI / 180);
-      const charHeight = 1.49;
-      const charWingspan = 1.20;
-      const requiredVerticalSpan = charHeight * 1.07;
-      const distForHeight = (requiredVerticalSpan / 2) / Math.tan(vFovRad / 2);
-      const distForWidth = (charWingspan * 1.04 / 2) / (Math.tan(vFovRad / 2) * aspect);
-      const targetDist = Math.max(distForHeight, distForWidth);
-      const cameraCenterY = -0.015;
 
-      camera.position.set(0, cameraCenterY, targetDist);
-      camera.lookAt(0, cameraCenterY, 0);
+      if (mode === 'bust') {
+        // Tight chest-up camera framing: close-up on head, face, eyes, and headphones
+        const bustSpan = 0.44;
+        const dist = (bustSpan / 2) / Math.tan(vFovRad / 2);
+        const cameraCenterY = 0.28; // Focus directly on facial region
+        camera.position.set(0, cameraCenterY, dist);
+        camera.lookAt(0, cameraCenterY, 0);
+      } else {
+        const charHeight = 1.49;
+        const charWingspan = 1.20;
+        const requiredVerticalSpan = charHeight * 1.07;
+        const distForHeight = (requiredVerticalSpan / 2) / Math.tan(vFovRad / 2);
+        const distForWidth = (charWingspan * 1.04 / 2) / (Math.tan(vFovRad / 2) * aspect);
+        const targetDist = Math.max(distForHeight, distForWidth);
+        const cameraCenterY = -0.015;
+
+        camera.position.set(0, cameraCenterY, targetDist);
+        camera.lookAt(0, cameraCenterY, 0);
+      }
       camera.updateProjectionMatrix();
     };
     updateFramingRef.current = updateCameraFraming;
-    updateCameraFraming(width, height);
+    updateCameraFraming(width, height, framingMode);
 
     // 2. High-Performance WebGL Renderer
     const renderer = new THREE.WebGLRenderer({
@@ -275,9 +291,10 @@ export default function ThreeDCharacter({
             if (clipName.includes('idle')) actions['idle'] = action;
             else if (clipName.includes('walk')) actions['walk'] = action;
             else if (clipName.includes('run')) actions['run'] = action;
+            else if (clipName.includes('sit')) actions['sit'] = action;
             else if (clipName.includes('jump')) actions['jump'] = action;
             else if (clipName.includes('wave')) actions['wave'] = action;
-            else if (clipName.includes('dance')) actions['dance'] = action;
+            else if (clipName.includes('dance') || clipName.includes('groove')) actions['dance'] = action;
             else if (clipName.includes('talk') || clipName.includes('speak')) actions['speaking'] = action;
             else if (clipName.includes('think')) actions['thinking'] = action;
             else actions[clip.name] = action;
@@ -331,7 +348,7 @@ export default function ThreeDCharacter({
 
     const animate = () => {
       reqId = requestAnimationFrame(animate);
-      if (!isTabVisible) return;
+      if (!isTabVisible || stateRef.current.isPaused) return;
 
       const animNow = performance.now();
       const delta = Math.min((animNow - lastTime) / 1000, 0.1);
@@ -342,6 +359,7 @@ export default function ThreeDCharacter({
       const curState = stateRef.current.animationState;
       const isSpeakingNow = stateRef.current.isSpeaking;
       const isListeningNow = stateRef.current.isListening;
+      const isMusicPlaying = stateRef.current.isPlaying;
       const vol = stateRef.current.voiceVolumeScale;
       const facingDir = stateRef.current.facing;
 
@@ -355,16 +373,27 @@ export default function ThreeDCharacter({
 
       charRoot.rotation.y = THREE.MathUtils.lerp(charRoot.rotation.y, targetCharYaw, 0.12);
       charRoot.rotation.x = THREE.MathUtils.lerp(charRoot.rotation.x, targetCharPitch, 0.12);
-      charRoot.scale.set(1, 1, 1);
+
+      // Music-driven subtle procedural head-bob or scale oscillation when music is active
+      if (isMusicPlaying && !isSpeakingNow && curState === 'idle') {
+        const musicBob = Math.sin(time * 7.2) * 0.015;
+        charRoot.position.y = musicBob;
+        const subtleScale = 1 + Math.sin(time * 7.2) * 0.012;
+        charRoot.scale.set(subtleScale, subtleScale, subtleScale);
+      } else {
+        charRoot.position.y = 0;
+        charRoot.scale.set(1, 1, 1);
+      }
 
       // Update AnimationMixer if GLB contains clips
       if (mixer) {
         mixer.update(delta);
         if (curState === 'walking' || curState === 'walk' || curState === 'idle_walking') fadeToAction('walk', 0.25);
         else if (curState === 'running' || curState === 'run') fadeToAction('run', 0.25);
+        else if (curState === 'sitting' || curState === 'sit') fadeToAction(actions['sit'] ? 'sit' : 'idle', 0.35);
         else if (curState === 'jump') fadeToAction('jump', 0.2);
         else if (curState === 'wave') fadeToAction('wave', 0.25);
-        else if (curState === 'dance' || curState === 'dancing' || curState === 'heavy_dancing') fadeToAction('dance', 0.3);
+        else if (curState === 'dance' || curState === 'dancing' || curState === 'heavy_dancing' || curState === 'groove') fadeToAction('dance', 0.3);
         else if (isSpeakingNow || curState === 'speaking') fadeToAction('speaking', 0.25);
         else if (curState === 'think' || curState === 'thinking') fadeToAction('thinking', 0.3);
         else fadeToAction('idle', 0.35);
@@ -566,8 +595,11 @@ export default function ThreeDCharacter({
         setBoneRot('rightfoot', 0, 0, 0, 0.15);
       } else if (curState === 'idle') {
         // Natural Upright Relaxed Standing (Strict Straight Posture, Arms Naturally at Sides, Feet Flat)
+        // Add subtle music head-bob when music is playing during idle
+        const musicHeadBob = isMusicPlaying ? Math.sin(time * 7.2) * 0.05 : 0;
         setBonePos('hips', 0, breath * 0.003, 0, 0.15);
         setBoneRot('spine', breath * 0.015, 0, 0, 0.15);
+        setBoneRot('head', currentHeadPitch + musicHeadBob, currentHeadYaw, 0, 0.18);
         setBoneRot('leftarm', 0.48 + breath * 0.015, 0, 0.02, 0.15);
         setBoneRot('rightarm', 0.48 + breath * 0.015, 0, -0.02, 0.15);
         setBoneRot('leftforearm', 0, 0, 0.08, 0.15);

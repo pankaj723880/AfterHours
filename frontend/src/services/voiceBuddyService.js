@@ -9,6 +9,7 @@
  */
 
 import { getApiUrl } from '../utils/apiUrl.js';
+import { USE_V2_VOICE_ENGINE } from '../constants/featureFlags.js';
 
 export const CHARACTERS = {
   female: {
@@ -719,19 +720,22 @@ class VoiceBuddyService {
         return false;
       }
 
-      // Explicit filter for hi-IN, Google हिन्दी, Lekha, Hindi, Swara, Neerja, Kalpana, Heera
+      // Explicit filter for hi-IN, Google हिन्दी, Microsoft Swara, Lekha, Hindi, Swara, Neerja, Kalpana, Heera
       return (
         lang === 'hi-in' ||
         rawName.includes('Google हिन्दी') ||
+        rawName.includes('Google हिन्दी (महिला)') ||
+        rawName.includes('Microsoft Swara') ||
+        rawName.includes('Swara') ||
         rawName.includes('हिन्दी') ||
         rawName.includes('Lekha') ||
+        name.includes('swara') ||
         name.includes('lekha') ||
         name.includes('hindi') ||
-        name.includes('swara') ||
         name.includes('neerja') ||
         name.includes('kalpana') ||
         name.includes('heera') ||
-        (lang === 'en-in' && (name.includes('india') || name.includes('neerja') || name.includes('heera') || name.includes('veena')))
+        (lang === 'en-in' && (name.includes('swara') || name.includes('india') || name.includes('neerja') || name.includes('heera') || name.includes('veena')))
       );
     };
 
@@ -773,8 +777,9 @@ class VoiceBuddyService {
       } else {
         utterance.lang = 'hi-IN';
       }
-      utterance.rate = 1.35;
-      utterance.pitch = 1.05;
+      // Voice Engine V2: 1.35x crisp pace & 1.05 natural pitch for Indian female speech
+      utterance.rate = USE_V2_VOICE_ENGINE ? 1.35 : 1.5;
+      utterance.pitch = USE_V2_VOICE_ENGINE ? 1.05 : 1.15;
 
       utterance.onstart = () => {
         this.isSpeaking = true;

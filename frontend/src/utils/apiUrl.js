@@ -12,9 +12,13 @@ let candidateBackend = '';
 if (isLocalhost) {
   candidateBackend = env.VITE_LOCAL_BACKEND_URL || 'http://localhost:5000';
 } else {
+  // If running in browser and VITE_BACKEND_URL is explicitly set to an active backend URL, respect it
   const envVal = (env.VITE_BACKEND_URL || '').trim();
   if (envVal && envVal.startsWith('http')) {
     candidateBackend = envVal;
+  } else if (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('localhost')) {
+    // Relative origin fallback through Vercel rewrites (/socket.io and /api) to prevent CORS or dormant endpoint locks
+    candidateBackend = window.location.origin;
   } else {
     candidateBackend = PROD_RENDER_BACKEND;
   }

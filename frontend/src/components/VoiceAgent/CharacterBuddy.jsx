@@ -3,6 +3,7 @@ import { voiceBuddyService, CHARACTERS } from '../../services/voiceBuddyService'
 import { voiceSessionService, SESSION_STATES } from '../../services/voiceSessionService';
 import ThreeDCharacter from './ThreeDCharacter';
 import { Mic, Volume2, Globe, History, ChevronUp, ChevronDown, CheckCircle2, Sparkles, RotateCcw, X } from 'lucide-react';
+import usePageWaypoints from '../../hooks/usePageWaypoints';
 
 /**
  * CharacterBuddy
@@ -142,8 +143,18 @@ export default function CharacterBuddy({
     } catch (_) {}
   }, []);
 
-  const characterWidth = Math.round(BASE_WIDTH * avatarScale);
-  const characterHeight = Math.round(BASE_HEIGHT * avatarScale);
+  // Autonomous Roaming Mode (Stored in localStorage, default true)
+  const [isRoamEnabled, setIsRoamEnabled] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('loopra_avatar_roam');
+        return stored !== null ? stored === 'true' : true;
+      } catch (_) {}
+    }
+    return true;
+  });
+
+  const waypoints = usePageWaypoints(isBottomPlayerVisible);
 
   // Realtime Live Transcript & Command Display State
   const [liveTranscript, setLiveTranscript] = useState('');
@@ -420,8 +431,19 @@ export default function CharacterBuddy({
     }
   }, [smoothReturnToFront]);
 
-  // Select next destination across the available screen area avoiding repetitive patterns
+  // Select next destination across DOM anchors (sitting/perch spots & walk lanes)
   const selectNextIdleDestination = useCallback((curX, curY) => {
+    // 1. If DOM waypoints found and available, prioritize them
+    if (waypoints?.sitSpots?.length > 0 && Math.random() < 0.45) {
+      const sit = waypoints.sitSpots[Math.floor(Math.random() * waypoints.sitSpots.length)];
+      return { x: sit.x, y: sit.y, type: 'sit' };
+    }
+
+    if (waypoints?.walkLanes?.length > 0 && Math.random() < 0.55) {
+      const lane = waypoints.walkLanes[Math.floor(Math.random() * waypoints.walkLanes.length)];
+      return { x: lane.x, y: lane.y, type: 'walk' };
+    }
+
     const bounds = getUsableScreenBounds();
     const { minX, maxX, minY, maxY, isMobile } = bounds;
 
@@ -471,19 +493,19 @@ export default function CharacterBuddy({
       }
     }
 
-    return { x: Math.round(destX), y: Math.round(destY) };
-  }, [getUsableScreenBounds]);
+    return { x: Math.round(destX), y: Math.round(destY), type: 'walk' };
+  }, [getUsableScreenBounds, waypoints]);
 
   // Autonomous Wandering, Running & Heavy Dancing Engine
   const startAutonomousExploration = useCallback(() => {
-    if (!isVisible || isListening || isSpeaking || isPlaying || isThinking || isExecuting || dragRef.current.isDragging) {
+    if (!isVisible || !isRoamEnabled || isListening || isSpeaking || dragRef.current.isDragging) {
       return;
     }
 
     isIdleWalkingRef.current = true;
 
     const performStep = () => {
-      if (!isIdleWalkingRef.current) return;
+      if (!isIdleWalkingRef.current || !isRoamEnabled) return;
 
       const walkerEl = walkerRef.current;
       const walkerRect = walkerEl?.getBoundingClientRect();
@@ -501,8 +523,19 @@ export default function CharacterBuddy({
       const deltaY = dest.y - curY;
       const dist = Math.hypot(deltaX, deltaY);
 
+      // If music is playing, dance immediately on spot or traverse with groove
+      if (isPlaying) {
+        setAutonomousSubState('dancing');
+        const danceDuration = 4500 + Math.random() * 3000;
+        idlePauseTimerRef.current = setTimeout(() => {
+          if (!isIdleWalkingRef.current) return;
+          performStep();
+        }, danceDuration);
+        return;
+      }
+
       // Dynamic movement: run for longer distances (>180px) or walk for tighter explorations
-      const shouldRun = dist > 180 || Math.random() < 0.4;
+      const shouldRun = dist > 180 || Math.random() < 0.35;
       const speed = shouldRun ? 360 : 160;
       const duration = Math.round(Math.max(650, Math.min(2800, (dist / speed) * 1000)));
 
@@ -536,36 +569,35 @@ export default function CharacterBuddy({
 
         setWalkOffset({ x: nextX, y: nextY });
 
-        if (typeof window !== 'undefined' && (progress === 0 || progress === 1 || Math.random() < 0.08)) {
-          console.debug('[LoopraAvatar] Locomotion rAF tick:', {
-            mode: shouldRun ? 'running' : 'walking',
-            x: nextX,
-            y: nextY,
-            progress: Number(progress.toFixed(2))
-          });
-        }
-
         if (progress < 1) {
           walkAnimFrameRef.current = requestAnimationFrame(animateLocomotion);
         } else {
           walkAnimFrameRef.current = null;
           setWalkFacing('front');
 
-          // Multi-Step Heavy Dancing sequence or brief groove pause
-          const shouldDance = Math.random() < 0.65;
-          if (shouldDance) {
-            setAutonomousSubState('heavy_dancing');
+          // Sit / Perch on cards or groove / heavy dance
+          if (dest.type === 'sit') {
+            setAutonomousSubState('sitting');
+            const sitDuration = 5000 + Math.random() * 4000;
+            idlePauseTimerRef.current = setTimeout(() => {
+              if (!isIdleWalkingRef.current) return;
+              performStep();
+            }, sitDuration);
+          } else if (isPlaying) {
+            setAutonomousSubState('dancing');
             const danceDuration = 4500 + Math.random() * 2500;
             idlePauseTimerRef.current = setTimeout(() => {
               if (!isIdleWalkingRef.current) return;
               performStep();
             }, danceDuration);
           } else {
-            setAutonomousSubState('idle');
+            const shouldHeavyDance = Math.random() < 0.45;
+            setAutonomousSubState(shouldHeavyDance ? 'heavy_dancing' : 'idle');
+            const pauseDuration = shouldHeavyDance ? 4000 : (2000 + Math.random() * 1500);
             idlePauseTimerRef.current = setTimeout(() => {
               if (!isIdleWalkingRef.current) return;
               performStep();
-            }, 2000 + Math.random() * 1500);
+            }, pauseDuration);
           }
         }
       };
@@ -574,9 +606,9 @@ export default function CharacterBuddy({
     };
 
     performStep();
-  }, [isVisible, isListening, isSpeaking, isPlaying, isThinking, isExecuting, avatarPos, walkOffset, characterWidth, characterHeight, selectNextIdleDestination]);
+  }, [isVisible, isRoamEnabled, isListening, isSpeaking, isPlaying, isThinking, isExecuting, avatarPos, walkOffset, characterWidth, characterHeight, selectNextIdleDestination]);
 
-  // 5-Second Inactivity Trigger & Interruption Handler
+  // 2-Second (2000ms) Inactivity Trigger & Interruption Handler
   const inactivityTimerRef = useRef(null);
 
   const resetAutonomousTimer = useCallback(() => {
@@ -588,13 +620,13 @@ export default function CharacterBuddy({
       clearTimeout(inactivityTimerRef.current);
       inactivityTimerRef.current = null;
     }
-    if (!isVisible || isListening || isSpeaking || isPlaying || isThinking || isExecuting || dragRef.current.isDragging) {
+    if (!isVisible || !isRoamEnabled || isListening || isSpeaking || isThinking || isExecuting || dragRef.current.isDragging) {
       return;
     }
     inactivityTimerRef.current = setTimeout(() => {
       startAutonomousExploration();
-    }, 5000); // 5-second inactivity trigger
-  }, [isVisible, isListening, isSpeaking, isPlaying, isThinking, isExecuting, stopAutonomousWalking, startAutonomousExploration]);
+    }, 2000); // 2-second (2000ms) inactivity trigger
+  }, [isVisible, isRoamEnabled, isListening, isSpeaking, isThinking, isExecuting, stopAutonomousWalking, startAutonomousExploration]);
 
   const resetIdleTimer = resetAutonomousTimer;
 
@@ -623,12 +655,29 @@ export default function CharacterBuddy({
   }, [resetAutonomousTimer]);
 
   // State changes immediately stop autonomous exploration if non-idle
+  // When speech ends (isSpeaking becomes false), wait 2 seconds before resuming autonomous roaming
+  const speechResumeTimerRef = useRef(null);
   useEffect(() => {
+    if (speechResumeTimerRef.current) {
+      clearTimeout(speechResumeTimerRef.current);
+      speechResumeTimerRef.current = null;
+    }
+
     if (isListening || isSpeaking || isPlaying || isThinking || isExecuting) {
       stopAutonomousWalking(true);
     } else {
-      resetAutonomousTimer();
+      // Transition back to idle, wait 2 seconds, and then coordinate autonomous roaming resume
+      speechResumeTimerRef.current = setTimeout(() => {
+        resetAutonomousTimer();
+      }, 2000);
     }
+
+    return () => {
+      if (speechResumeTimerRef.current) {
+        clearTimeout(speechResumeTimerRef.current);
+        speechResumeTimerRef.current = null;
+      }
+    };
   }, [isListening, isSpeaking, isPlaying, isThinking, isExecuting, stopAutonomousWalking, resetAutonomousTimer]);
 
   // Tab visibility listener
@@ -1449,8 +1498,32 @@ export default function CharacterBuddy({
         }}
         className="fixed select-none flex flex-col items-center z-[2147483640] will-change-[opacity,transform]"
       >
-        {/* Subtle Avatar Header Controls (Reset Size & Position, Hide) */}
+        {/* Subtle Avatar Header Controls (Free Roam Toggle, Reset Size & Position, Hide) */}
         <div className="absolute -top-7 right-0 flex items-center gap-1 opacity-0 hover:opacity-100 focus-within:opacity-100 transition-opacity z-50">
+          <button
+            type="button"
+            onClick={() => {
+              setIsRoamEnabled(prev => {
+                const next = !prev;
+                try {
+                  localStorage.setItem('loopra_avatar_roam', String(next));
+                } catch (_) {}
+                if (!next) {
+                  stopAutonomousWalking(true);
+                }
+                return next;
+              });
+            }}
+            title={isRoamEnabled ? "Autonomous Free Roam (Active) — Click to Pause Roaming" : "Autonomous Free Roam (Paused) — Click to Enable"}
+            className={`px-1.5 py-0.5 rounded-full text-[9px] font-mono font-bold border transition cursor-pointer flex items-center gap-1 ${
+              isRoamEnabled
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                : 'bg-neutral-900/80 text-neutral-400 border-white/10'
+            }`}
+          >
+            <Sparkles className="w-2.5 h-2.5" />
+            <span>{isRoamEnabled ? 'ROAM' : 'PARKED'}</span>
+          </button>
           <button
             type="button"
             onClick={handleResetPosition}

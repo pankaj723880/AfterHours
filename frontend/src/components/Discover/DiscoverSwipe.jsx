@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getCleanThumbnail, isThumbnailUrlFormatValid } from '../../utils/storage';
 import { filterSingleSongs, normalizeTrack } from '../../services/songFilter';
+import { USE_V2_SWIPE_UI } from '../../constants/featureFlags';
 
 export default function DiscoverSwipe({
   onPlaySong,
@@ -10,7 +11,8 @@ export default function DiscoverSwipe({
   likedSongs = [],
   onToggleLike,
   showToast,
-  fetchTracks
+  fetchTracks,
+  onNavigate
 }) {
   const [deck, setDeck] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -22,8 +24,31 @@ export default function DiscoverSwipe({
   const [playbackError, setPlaybackError] = useState(null);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
-  // Safety & transition control refs
-  const isTransitioningRef = useRef(false);
+  const isBufferingDeckRef = useRef(false);
+
+  // Background queue buffer: appends fresh solo tracks seamlessly when user approaches end of deck
+  const bufferNextTracks = useCallback(async () => {
+    if (isBufferingDeckRef.current || typeof fetchTracks !== 'function') return;
+    isBufferingDeckRef.current = true;
+    try {
+      const moreTracks = await fetchTracks();
+      if (!isMountedRef.current || !Array.isArray(moreTracks)) return;
+
+      const fresh = moreTracks.filter(t => {
+        const id = t.id || t.videoId;
+        return id && !seenIdsRef.current.has(id);
+      });
+
+      if (fresh.length > 0) {
+        fresh.forEach(t => seenIdsRef.current.add(t.id || t.videoId));
+        setDeck(prevDeck => [...prevDeck, ...fresh]);
+      }
+    } catch (_) {
+      // Background buffer errors stay silent to avoid interrupting swipe UX
+    } finally {
+      isBufferingDeckRef.current = false;
+    }
+  }, [fetchTracks]);
   const lastActionTimeRef = useRef(0);
   const isMountedRef = useRef(true);
   const hasLoadedRef = useRef(false);
@@ -158,6 +183,22 @@ export default function DiscoverSwipe({
     }
   }, [isCurrentCardPlaying]);
 
+  // Preload upcoming 2-3 cards' cover images for instant, zero-latency transitions
+  useEffect(() => {
+    if (!deck || deck.length === 0) return;
+    const preloadCount = 3;
+    for (let i = 1; i <= preloadCount; i++) {
+      const upcoming = deck[currentIndex + i];
+      if (upcoming) {
+        const thumbUrl = getCleanThumbnail(upcoming, upcoming.id || upcoming.videoId);
+        if (thumbUrl && typeof Image !== 'undefined') {
+          const img = new Image();
+          img.src = thumbUrl;
+        }
+      }
+    }
+  }, [deck, currentIndex]);
+
   /**
    * Requests playback of the selected track directly through the existing global player.
    * Executed synchronously during the user's swipe interaction so autoplay restrictions do not block it.
@@ -285,8 +326,13 @@ export default function DiscoverSwipe({
           isTransitioningRef.current = false;
         }
       }, 100);
+
+      // Check remaining cards in deck: if <= 4 remaining, silently buffer more solo tracks in background
+      if (currentDeck.length - nextIndex <= 4) {
+        bufferNextTracks();
+      }
     }, 200);
-  }, [likedSongs, showToast, triggerAutoplay]);
+  }, [likedSongs, showToast, triggerAutoplay, bufferNextTracks]);
 
   /**
    * Explicit previous track navigation
@@ -462,19 +508,198 @@ export default function DiscoverSwipe({
   }
 
   // Calculate dynamic transform based on drag or exit animation
-  let computedTransform = `translate(${dragOffset.x}px, ${dragOffset.y * 0.3}px)`;
-  let rotationDeg = Math.min(22, Math.max(-22, dragOffset.x * 0.12));
+  // Optimized for smooth 60fps hardware acceleration with will-change and translate3d
+  let computedTransform = `translate3d(${dragOffset.x}px, ${dragOffset.y * 0.25}px, 0)`;
+  let rotationDeg = Math.min(18, Math.max(-18, dragOffset.x * 0.1));
 
   if (swipeAnimation === 'right') {
-    computedTransform = 'translate(450px, -20px) rotate(22deg)';
+    computedTransform = 'translate3d(480px, -20px, 0) rotate(18deg)';
   } else if (swipeAnimation === 'left') {
-    computedTransform = 'translate(-450px, -20px) rotate(-22deg)';
+    computedTransform = 'translate3d(-480px, -20px, 0) rotate(-18deg)';
   } else {
     computedTransform = `${computedTransform} rotate(${rotationDeg}deg)`;
   }
 
-  const likeOpacity = swipeAnimation === 'right' ? 1 : Math.min(1, Math.max(0, dragOffset.x / 75));
-  const skipOpacity = swipeAnimation === 'left' ? 1 : Math.min(1, Math.max(0, -dragOffset.x / 75));
+  const likeOpacity = swipeAnimation === 'right' ? 1 : Math.min(1, Math.max(0, dragOffset.x / 70));
+  const skipOpacity = swipeAnimation === 'left' ? 1 : Math.min(1, Math.max(0, -dragOffset.x / 70));
+
+  // V2 Discover Swipe UI Rendering Branch
+  if (USE_V2_SWIPE_UI) {
+    return (
+      <div className="w-full h-full max-w-md mx-auto flex flex-col justify-between px-3 py-1 sm:py-2 select-none overflow-hidden touch-pan-y box-border">
+        {/* 1. Ultra-Compact Top Header Row */}
+        <div className="w-full flex items-center justify-between py-1 px-1 shrink-0 z-30">
+          <div className="flex items-center gap-2">
+            {typeof onNavigate === 'function' && (
+              <button
+                type="button"
+                onClick={() => onNavigate('home')}
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 active:scale-95 border border-white/10 flex items-center justify-center text-neutral-300 transition cursor-pointer"
+                aria-label="Back to Home"
+                title="Back to Home"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            )}
+            <div className="flex items-center gap-1.5">
+              <span className="font-extrabold text-sm text-white tracking-tight">Discover Swipe</span>
+              {isBuffering && (
+                <span className="flex items-center gap-1 text-[10px] text-amber-400 font-semibold animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                  Playing...
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="px-2.5 py-1 rounded-full bg-neutral-900/90 border border-neutral-800 text-[11px] font-mono font-medium text-amber-400/90 shadow-sm">
+            {currentIndex + 1} <span className="text-neutral-500 font-normal">/</span> {deck.length}
+          </div>
+        </div>
+
+        {/* 2. Full-Card Visual Depth: Full-Bleed Modern Music Card */}
+        <div className="relative flex-1 w-full min-h-0 my-1 sm:my-2 flex items-center justify-center">
+          <div
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onMouseDown={handleMouseDown}
+            style={{
+              transform: computedTransform,
+              transition: isDragging ? 'none' : 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+              opacity: swipeAnimation ? 0 : 1,
+              willChange: 'transform'
+            }}
+            className="relative w-full h-full max-h-[580px] bg-[#0c0d12] rounded-3xl overflow-hidden border border-white/[0.08] shadow-[0_25px_60px_rgba(0,0,0,0.85)] flex flex-col justify-end cursor-grab active:cursor-grabbing select-none"
+          >
+            {/* Neon Swipe Direction Indicators (Reveal on drag) */}
+            <div
+              style={{ opacity: likeOpacity }}
+              className="absolute top-5 left-5 z-30 px-3.5 py-1.5 rounded-2xl bg-emerald-500 text-neutral-950 font-black text-xs uppercase tracking-widest shadow-xl rotate-[-12deg] pointer-events-none transition-opacity"
+            >
+              LIKE ❤️
+            </div>
+            <div
+              style={{ opacity: skipOpacity }}
+              className="absolute top-5 right-5 z-30 px-3.5 py-1.5 rounded-2xl bg-rose-500 text-white font-black text-xs uppercase tracking-widest shadow-xl rotate-[12deg] pointer-events-none transition-opacity"
+            >
+              SKIP ✕
+            </div>
+
+            {/* High-Resolution Full-Bleed Background Artwork */}
+            <img
+              src={getCleanThumbnail(currentCard, currentCardId)}
+              alt={currentCard.title}
+              className={`absolute inset-0 w-full h-full object-cover pointer-events-none transition-transform duration-700 ease-out ${isBuffering ? 'scale-105 filter blur-[1px]' : 'scale-100'}`}
+              onLoad={(e) => {
+                const target = e.currentTarget;
+                const w = target.naturalWidth;
+                const h = target.naturalHeight;
+                if (w <= 1 || h <= 1 || (w === 120 && h === 90)) {
+                  setCurrentIndex(prev => prev + 1);
+                }
+              }}
+              onError={() => {
+                setCurrentIndex(prev => prev + 1);
+              }}
+            />
+
+            {/* Cinematic Gradient Mask for Text Contrast */}
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0c] via-black/40 to-transparent pointer-events-none z-10" />
+
+            {/* Autoplay Buffering Spinner Overlay */}
+            {isBuffering && (
+              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 backdrop-blur-[2px] transition animate-fadeIn">
+                <div className="w-11 h-11 border-3 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                <p className="mt-2.5 text-xs font-bold text-amber-200 tracking-wide">Starting track...</p>
+              </div>
+            )}
+
+            {/* Autoplay Blocked / Fallback Overlay */}
+            {(autoplayBlocked || playbackError) && (
+              <div className="absolute inset-0 z-25 flex flex-col items-center justify-center p-6 bg-neutral-950/90 backdrop-blur-sm text-center animate-fadeIn">
+                <div className="w-12 h-12 rounded-full bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-400 mb-3">
+                  <svg className="w-6 h-6 fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                </div>
+                <h4 className="text-sm font-bold text-white mb-1">
+                  {playbackError || 'Autoplay Blocked by Browser'}
+                </h4>
+                <p className="text-[11px] text-neutral-400 mb-3 max-w-[220px]">
+                  Tap below to play "{currentCard.title}".
+                </p>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handlePlayToggle();
+                  }}
+                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs shadow-lg transition active:scale-95 cursor-pointer"
+                >
+                  Tap to Play Track
+                </button>
+              </div>
+            )}
+
+            {/* Embedded Track Information Overlay on Card */}
+            <div className="relative z-20 p-4 sm:p-5 flex flex-col justify-end pointer-events-none">
+              <span className="text-[10px] uppercase font-bold tracking-widest text-amber-400/90 mb-0.5">
+                {currentCard.channel || currentCard.artist || 'Desi Nostalgia'}
+              </span>
+              <h3 className="font-extrabold text-base sm:text-lg text-white line-clamp-1 leading-tight drop-shadow-md">
+                {currentCard.title}
+              </h3>
+            </div>
+          </div>
+        </div>
+
+        {/* 3. Streamlined Action Dock (Single Unified Control Row) */}
+        <div className="w-full flex items-center justify-center gap-6 py-2 shrink-0 z-30">
+          {/* Skip / Dislike Button */}
+          <button
+            type="button"
+            onClick={() => handleSwipeAction('skip')}
+            className="w-12 h-12 rounded-full bg-white/5 border border-white/10 text-rose-400 hover:bg-rose-500/20 hover:border-rose-500/40 hover:scale-105 active:scale-95 flex items-center justify-center shadow-lg transition-all cursor-pointer"
+            title="Skip / Dislike (Swipe Left)"
+            aria-label="Skip / Dislike Track"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.4" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
+          {/* Central Amber Neon Play/Pause Button */}
+          <button
+            type="button"
+            onClick={handlePlayToggle}
+            className="w-14 h-14 rounded-full bg-amber-500 text-neutral-950 hover:bg-amber-400 shadow-[0_0_25px_rgba(245,158,11,0.35)] flex items-center justify-center transition-all hover:scale-105 active:scale-95 cursor-pointer"
+            title={isCurrentCardPlaying ? 'Pause Track' : 'Play Track'}
+            aria-label={isCurrentCardPlaying ? 'Pause Track' : 'Play Track'}
+          >
+            {isCurrentCardPlaying ? (
+              <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            ) : (
+              <svg className="w-6 h-6 fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            )}
+          </button>
+
+          {/* Like Button */}
+          <button
+            type="button"
+            onClick={() => handleSwipeAction('like')}
+            className="w-12 h-12 rounded-full bg-white/5 border border-white/10 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/40 hover:scale-105 active:scale-95 flex items-center justify-center shadow-lg transition-all cursor-pointer"
+            title="Like (Swipe Right)"
+            aria-label="Like Track"
+          >
+            <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Legacy Discover Swipe Layout (Fallback when USE_V2_SWIPE_UI is false)
 
   return (
     <div className="w-full max-w-sm mx-auto flex flex-col items-center py-4 select-none">

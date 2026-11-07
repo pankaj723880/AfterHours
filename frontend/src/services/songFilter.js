@@ -42,6 +42,8 @@ const MULTI_SONG_TITLE_REGEXES = [
   /\b(party\s+mix|dj\s+mix|club\s+mix|megamix|mega\s+mix|remix\s+compilation)\b/i,
   /\b(continuous\s+music)\b/i,
   /\b(karaoke\s+collection|multiple\s+songs?\s+karaoke)\b/i,
+  /\b(slowed(\s+and|\s*[\+&]\s*)?\s*reverb|slowed\s+reverb|bass\s+boosted)\b/i,
+  /\b(mega\s*mix|megamix)\b/i,
   /\b(1\.\s+.*\b2\.\s+.*\b3\.\s+)/i // numbered multi-song track listing
 ];
 
