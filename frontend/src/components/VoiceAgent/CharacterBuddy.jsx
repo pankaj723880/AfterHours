@@ -61,6 +61,8 @@ export default function CharacterBuddy({
     startPosY: 0
   });
 
+  const avatarContainerRef = useRef(null);
+
   useEffect(() => {
     if (isInitialMountRef.current) {
       isInitialMountRef.current = false;
@@ -122,10 +124,10 @@ export default function CharacterBuddy({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Base full-body dimensions (unscaled 1.0x):
-  // Responsive 0.605 aspect ratio accommodating complete wingspan, hands, legs, and feet
-  const BASE_WIDTH = isMobileScreen ? 140 : 200;
-  const BASE_HEIGHT = isMobileScreen ? 230 : 330;
+  // Base full-body dimensions:
+  // Increased container size (w-44 h-64, up to ~270px) so floor particles & full body render cleanly without clipping
+  const BASE_WIDTH = isMobileScreen ? 176 : 220; // 44rem proportional base
+  const BASE_HEIGHT = isMobileScreen ? 270 : 360; // Increased height to prevent bottom particle circle clipping
   const MIN_SCALE = 0.65;
   const MAX_SCALE = 1.60;
 
@@ -378,7 +380,7 @@ export default function CharacterBuddy({
     return () => clearInterval(interval);
   }, [isRoamActive, characterWidth, characterHeight, isBottomPlayerVisible, waypoints]);
 
-  // 60 FPS Kinematics Physics Loop (Spring Acceleration, Friction 0.88, 8-Directional Vector Heading)
+  // 60 FPS Kinematics Physics Loop (Continuous Smooth Step-by-Step Walking)
   useEffect(() => {
     if (!isRoamActive) {
       if (patrolFrameRef.current) {
@@ -390,6 +392,7 @@ export default function CharacterBuddy({
 
     let isRunning = true;
     let lastTime = performance.now();
+    const WALK_SPEED = 1.2; // Natural step-by-step walking speed (pixels per frame, leg cycle matches ground movement)
 
     const loop = (time) => {
       if (!isRunning) return;
@@ -397,7 +400,6 @@ export default function CharacterBuddy({
       lastTime = time;
 
       const pos = positionRef.current;
-      const vel = velocityRef.current;
       const target = targetPosRef.current;
 
       const dx = target.x - pos.x;
@@ -412,12 +414,38 @@ export default function CharacterBuddy({
       const minY = 64;
       const maxY = Math.max(minY + 40, winH - (isBottomPlayerVisible ? 170 : 130));
 
-      // Snapping condition when within 6px of resting spot
-      if (distance <= 6) {
-        vel.vx = 0;
-        vel.vy = 0;
+      if (distance > 3) {
+        // Normal step-by-step walking forward along exact motion angle
+        const angle = Math.atan2(dy, dx);
+        // Scale speed with dt normalized to 60fps (dt * 60) for rock-solid frame pacing
+        const step = WALK_SPEED * Math.min(2.0, dt * 60);
+
+        pos.x += Math.cos(angle) * step;
+        pos.y += Math.sin(angle) * step;
+
+        // Clamp inside safe screen bounds
+        pos.x = Math.max(minX, Math.min(maxX, pos.x));
+        pos.y = Math.max(minY, Math.min(maxY, pos.y));
+
+        // Direct DOM translation without transition snapping
+        if (avatarContainerRef.current) {
+          avatarContainerRef.current.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`;
+        }
+
+        // Face movement direction smoothly
+        setWalkFacing(dx < 0 ? 'left' : 'right');
+        setRotationPitch(Math.sin(angle) * 0.08);
+
+        // Keep walking animation active
+        setAutonomousSubState('walking');
+      } else {
+        // Target reached: snap to target and crossfade to resting / idle pose
         pos.x = target.x;
         pos.y = target.y;
+
+        if (avatarContainerRef.current) {
+          avatarContainerRef.current.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`;
+        }
 
         if (landingModeRef.current === 'lie_down') {
           setAutonomousSubState(isSleepingRef.current ? 'sleeping' : 'lie_down');
@@ -428,34 +456,6 @@ export default function CharacterBuddy({
         } else {
           setAutonomousSubState('idle');
         }
-      } else {
-        // Kinematic spring physics with realistic drag
-        const springK = 3.6;
-        const friction = 0.88;
-
-        const ax = dx * springK * dt;
-        const ay = dy * springK * dt;
-
-        vel.vx = (vel.vx + ax) * friction;
-        vel.vy = (vel.vy + ay) * friction;
-
-        pos.x += vel.vx;
-        pos.y += vel.vy;
-
-        // Clamp inside screen bounds
-        pos.x = Math.max(minX, Math.min(maxX, pos.x));
-        pos.y = Math.max(minY, Math.min(maxY, pos.y));
-
-        // 8-Directional Vector Heading & Facing
-        if (Math.abs(vel.vx) > 0.1 || Math.abs(vel.vy) > 0.1) {
-          const headingAngle = Math.atan2(vel.vy, vel.vx);
-          // Set facing Left or Right, with subtle pitch rotation for vertical climb/dive
-          setWalkFacing(vel.vx < 0 ? 'left' : 'right');
-          setRotationPitch(Math.sin(headingAngle) * 0.12);
-        }
-
-        const currentSpeed = Math.hypot(vel.vx, vel.vy);
-        setAutonomousSubState(currentSpeed > 3.2 ? 'running' : 'walking');
       }
 
       setContinuousPos({ x: pos.x, y: pos.y });
@@ -1345,15 +1345,28 @@ export default function CharacterBuddy({
     const deltaY = clientY - dragRef.current.startPointerY;
     const distance = Math.hypot(deltaX, deltaY);
 
-    if (distance > 6) {
+    if (distance > 4) {
       dragRef.current.hasMoved = true;
-      dragRef.current.isDragging = true;
       clearTimeout(resizeHoldTimerRef.current);
 
       if (e.cancelable && e.preventDefault) {
-        e.preventDefault(); // Prevent touch scrolling during drag
+        e.preventDefault(); // Prevent touch scrolling during rotation/drag
       }
 
+      // Check if user is in Roaming mode: Dragging performs full 360° Multi-Directional Inspection & Rotation
+      if (isRoamActive) {
+        isRotatingRef.current = true;
+        const nextYaw = dragRef.current.startYaw + deltaX * 0.01;
+        const nextPitch = Math.max(-0.3, Math.min(0.3, dragRef.current.startPitch + deltaY * 0.005));
+        rotationRef.current.yaw = nextYaw;
+        rotationRef.current.pitch = nextPitch;
+        setRotationYaw(nextYaw);
+        setRotationPitch(nextPitch);
+        return;
+      }
+
+      // Docked / manual positioning mode: drag avatar across screen
+      dragRef.current.isDragging = true;
       setIsCustomPos(true);
 
       const rawX = dragRef.current.startPosX + deltaX;
@@ -1374,7 +1387,7 @@ export default function CharacterBuddy({
       setAutonomousSubState('walking');
       resetAutonomousTimer();
     }
-  }, [characterWidth, characterHeight, isResizeMode, updateAvatarScale, isMobileScreen, isBottomPlayerVisible, resetAutonomousTimer]);
+  }, [characterWidth, characterHeight, isResizeMode, updateAvatarScale, isMobileScreen, isBottomPlayerVisible, resetAutonomousTimer, isRoamActive]);
 
   const handlePointerUp = useCallback((e) => {
     clearTimeout(resizeHoldTimerRef.current);
@@ -1391,6 +1404,16 @@ export default function CharacterBuddy({
       didEnterResizeModeRef.current = false;
       if (e.preventDefault) e.preventDefault();
       return; // Do NOT trigger click, tap, speech or navigation
+    }
+
+    if (isRotatingRef.current) {
+      isRotatingRef.current = false;
+      // Start smooth auto-return to front after inspection
+      autoReturnTimerRef.current = setTimeout(() => {
+        smoothReturnToFront();
+      }, 3000);
+      if (e.preventDefault) e.preventDefault();
+      return;
     }
 
     if (dragRef.current.isDragging) {
@@ -1784,18 +1807,23 @@ export default function CharacterBuddy({
       {/* MOVABLE DOCK CONTAINER (Screen Clamped, Draggable)             */}
       {/* ============================================================= */}
       <div
-        ref={dragRef}
+        ref={(el) => {
+          dragRef.current.container = el;
+          avatarContainerRef.current = el;
+        }}
         id="loopra-3d-character-container"
         style={{
           ...(isRoamActive
             ? {
-                left: `${continuousPos.x}px`,
-                top: `${continuousPos.y}px`
+                left: 0,
+                top: 0,
+                transform: `translate3d(${continuousPos.x}px, ${continuousPos.y}px, 0)`
               }
             : (isCustomPos
                 ? {
                     left: `${avatarPos.x}px`,
-                    top: `${avatarPos.y}px`
+                    top: `${avatarPos.y}px`,
+                    transform: isFadedIn ? 'scale(1) translateY(0)' : 'scale(0.92) translateY(14px)'
                   }
                 : {
                     right: isMobileScreen ? '14px' : '24px',
@@ -1803,7 +1831,8 @@ export default function CharacterBuddy({
                       ? (isBottomPlayerVisible 
                           ? 'calc(134px + env(safe-area-inset-bottom, 0px))' 
                           : 'calc(64px + env(safe-area-inset-bottom, 0px))') 
-                      : (isBottomPlayerVisible ? '100px' : '24px')
+                      : (isBottomPlayerVisible ? '100px' : '24px'),
+                    transform: isFadedIn ? 'scale(1) translateY(0)' : 'scale(0.92) translateY(14px)'
                   })),
           width: `${characterWidth}px`,
           height: `${characterHeight}px`,
@@ -1811,14 +1840,13 @@ export default function CharacterBuddy({
           minHeight: '200px',
           touchAction: 'none',
           opacity: isFadedIn ? 1 : 0,
-          transform: isFadedIn ? 'scale(1) translateY(0)' : 'scale(0.92) translateY(14px)',
           visibility: isDOMVisible ? 'visible' : 'hidden',
           pointerEvents: (isDOMVisible && isFadedIn) ? 'auto' : 'none',
           transition: isFadedIn
-            ? (isRoamActive ? 'opacity 400ms cubic-bezier(0.16, 1, 0.3, 1), transform 400ms cubic-bezier(0.16, 1, 0.3, 1), width 0.22s, height 0.22s' : 'opacity 400ms cubic-bezier(0.16, 1, 0.3, 1), transform 400ms cubic-bezier(0.16, 1, 0.3, 1), width 0.22s cubic-bezier(0.2, 0.8, 0.4, 1), height 0.22s cubic-bezier(0.2, 0.8, 0.4, 1)')
+            ? (isRoamActive ? 'opacity 400ms cubic-bezier(0.16, 1, 0.3, 1), width 0.22s, height 0.22s' : 'opacity 400ms cubic-bezier(0.16, 1, 0.3, 1), transform 400ms cubic-bezier(0.16, 1, 0.3, 1), width 0.22s cubic-bezier(0.2, 0.8, 0.4, 1), height 0.22s cubic-bezier(0.2, 0.8, 0.4, 1)')
             : 'opacity 350ms cubic-bezier(0.4, 0, 0.2, 1), transform 350ms cubic-bezier(0.4, 0, 0.2, 1), width 0.22s cubic-bezier(0.2, 0.8, 0.4, 1), height 0.22s cubic-bezier(0.2, 0.8, 0.4, 1)'
         }}
-        className={`fixed select-none flex flex-col items-center justify-center z-[2147483640] will-change-[opacity,transform,left,top] ${
+        className={`fixed select-none flex flex-col items-center justify-center z-[2147483640] will-change-[opacity,transform] ${
           isRoamActive ? 'pointer-events-auto' : ''
         }`}
       >

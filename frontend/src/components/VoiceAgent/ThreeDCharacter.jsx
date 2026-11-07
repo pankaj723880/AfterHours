@@ -120,9 +120,10 @@ export default function ThreeDCharacter({
         const distForHeight = (requiredVerticalSpan / 2) / Math.tan(vFovRad / 2);
         const distForWidth = (charWingspan * 1.04 / 2) / (Math.tan(vFovRad / 2) * aspect);
         const targetDist = Math.max(distForHeight, distForWidth);
-        const cameraCenterY = -0.015;
+        const cameraCenterY = 0.08;
 
-        camera.position.set(0, cameraCenterY, targetDist);
+        // Position camera to [0, 1.1, 2.7] or aspect adjusted distance focusing cleanly on character
+        camera.position.set(0, 1.1, Math.max(2.7, targetDist));
         camera.lookAt(0, cameraCenterY, 0);
       }
       camera.updateProjectionMatrix();
@@ -163,8 +164,9 @@ export default function ThreeDCharacter({
     rimLight.position.set(0, 2.0, -2.5);
     scene.add(rimLight);
 
-    // Root Group for orientation and scaling
+    // Root Group for orientation and scaling (raised Y by 0.25 to prevent bottom clipping)
     const charRoot = new THREE.Group();
+    charRoot.position.set(0, 0.25, 0);
     scene.add(charRoot);
 
     // Ground Shadow
