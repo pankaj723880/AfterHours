@@ -124,10 +124,10 @@ export default function CharacterBuddy({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Base full-body dimensions (w-56 h-[320px] proportional canvas):
+  // Base full-body dimensions (w-60 h-[340px] proportional canvas):
   // Gives ample vertical and horizontal breathing room so head-to-toe and ground particle circle render completely without clipping
-  const BASE_WIDTH = isMobileScreen ? 200 : 224; // ~w-56 (224px)
-  const BASE_HEIGHT = isMobileScreen ? 300 : 320; // h-[320px]
+  const BASE_WIDTH = isMobileScreen ? 220 : 240; // ~w-60 (240px)
+  const BASE_HEIGHT = isMobileScreen ? 320 : 340; // h-[340px]
   const MIN_SCALE = 0.65;
   const MAX_SCALE = 1.60;
 
@@ -174,7 +174,7 @@ export default function CharacterBuddy({
   const isRoamActive = isRoamEnabled && !isListening && !isSpeaking && !dragRef.current?.isDragging;
 
   const ORIGIN_POS = typeof window !== 'undefined'
-    ? { x: window.innerWidth - 130, y: window.innerHeight - 240 }
+    ? { x: window.innerWidth - 140, y: window.innerHeight - 240 }
     : { x: 200, y: 500 };
 
   // 2D Kinematics Physics State (8-Directional Vector Movement & Friction)
@@ -1845,7 +1845,7 @@ export default function CharacterBuddy({
             ? {
                 left: 0,
                 top: 0,
-                transform: `translate3d(${continuousPos.x}px, ${continuousPos.y}px, 0)`
+                transform: `translate3d(${Number.isFinite(continuousPos.x) ? continuousPos.x : ORIGIN_POS.x}px, ${Number.isFinite(continuousPos.y) ? continuousPos.y : ORIGIN_POS.y}px, 0)`
               }
             : (isCustomPos
                 ? {
@@ -1867,16 +1867,14 @@ export default function CharacterBuddy({
           minWidth: '140px',
           minHeight: '200px',
           touchAction: 'none',
-          opacity: isFadedIn ? 1 : 0,
-          visibility: isDOMVisible ? 'visible' : 'hidden',
-          pointerEvents: (isDOMVisible && isFadedIn) ? 'auto' : 'none',
+          opacity: 1, // Guaranteed visible when mounted
+          visibility: 'visible',
+          pointerEvents: 'auto',
           transition: isFadedIn
             ? (isRoamActive ? 'opacity 400ms cubic-bezier(0.16, 1, 0.3, 1), width 0.22s, height 0.22s' : 'opacity 400ms cubic-bezier(0.16, 1, 0.3, 1), transform 400ms cubic-bezier(0.16, 1, 0.3, 1), width 0.22s cubic-bezier(0.2, 0.8, 0.4, 1), height 0.22s cubic-bezier(0.2, 0.8, 0.4, 1)')
             : 'opacity 350ms cubic-bezier(0.4, 0, 0.2, 1), transform 350ms cubic-bezier(0.4, 0, 0.2, 1), width 0.22s cubic-bezier(0.2, 0.8, 0.4, 1), height 0.22s cubic-bezier(0.2, 0.8, 0.4, 1)'
         }}
-        className={`fixed select-none flex flex-col items-center justify-center z-[2147483640] will-change-[opacity,transform] ${
-          isRoamActive ? 'pointer-events-auto' : ''
-        }`}
+        className="fixed bottom-24 right-6 z-[60] w-60 h-[340px] pointer-events-auto flex items-center justify-center select-none will-change-[transform]"
       >
         {/* Subtle Avatar Header Controls (Free Roam Toggle, Reset Size & Position, Hide) */}
         <div className="absolute -top-7 right-0 flex items-center gap-1 opacity-0 hover:opacity-100 focus-within:opacity-100 transition-opacity z-50">
@@ -2031,7 +2029,7 @@ export default function CharacterBuddy({
               height: `${characterHeight}px`,
               transition: 'width 0.22s cubic-bezier(0.2, 0.8, 0.4, 1), height 0.22s cubic-bezier(0.2, 0.8, 0.4, 1)'
             }}
-            className="w-56 h-[320px] pointer-events-auto flex items-center justify-center relative select-none"
+            className="w-60 h-[340px] pointer-events-auto flex items-center justify-center relative select-none"
           >
             <ThreeDCharacter
               gender={character.gender}

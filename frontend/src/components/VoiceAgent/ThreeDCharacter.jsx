@@ -116,16 +116,9 @@ export default function ThreeDCharacter({
         camera.position.set(0, cameraCenterY, dist);
         camera.lookAt(0, cameraCenterY, 0);
       } else {
-        const charHeight = 1.90; // Includes ground particle circle and headroom
-        const charWingspan = 1.70; // Includes particle radius span r = 0.85 (diameter 1.70)
-        const distForHeight = (charHeight / 2) / Math.tan(vFovRad / 2);
-        const distForWidth = (charWingspan / 2) / (Math.tan(vFovRad / 2) * aspect);
-        const targetDist = Math.max(3.4, Math.max(distForHeight, distForWidth));
-        const cameraCenterY = 0.20;
-
-        // Position camera pulling back along Z-axis so the entire frustum captures head and ground circle
-        camera.position.set(0, 0.9, targetDist);
-        camera.lookAt(0, cameraCenterY, 0);
+        // Pull camera slightly back and tilt slightly down so the full floor ring fits inside camera frustum without clipping
+        camera.position.set(0, 1.4, 3.8);
+        camera.lookAt(0, 0.4, 0);
       }
       camera.updateProjectionMatrix();
     };
@@ -167,12 +160,13 @@ export default function ThreeDCharacter({
 
     // Root Group for orientation and scaling
     const charRoot = new THREE.Group();
-    charRoot.position.set(0, 0.20, 0); // Grounded alignment: head reaches ~y = 1.15 and particle ring sits at y = -0.75
+    charRoot.position.set(0, 0, 0); // Position root cleanly at origin
     scene.add(charRoot);
 
     // Ground Shadow (Optional Clean Toggle via showGroundCircle)
     let shadowMesh = null;
     let particleSystem = null;
+    let particleMat = null;
 
     if (showGroundCircle) {
       const shadowGeo = new THREE.CircleGeometry(0.55, 32);
@@ -183,30 +177,30 @@ export default function ThreeDCharacter({
       });
       shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
       shadowMesh.rotation.x = -Math.PI / 2;
-      shadowMesh.position.y = -0.96;
+      shadowMesh.position.set(0, -0.22, 0);
       charRoot.add(shadowMesh);
 
-      // Audio Reactive Base Particle Ring (Radius fits within r = 0.85, sits at y = -0.75 overall in scene)
+      // Audio Reactive Base Particle Ring (Radius clamped to 0.75, position at [0, -0.22, 0])
       const particleCount = 42;
       const ringGeo = new THREE.BufferGeometry();
       const ringPositions = new Float32Array(particleCount * 3);
       for (let i = 0; i < particleCount; i++) {
         const angle = (i / particleCount) * Math.PI * 2;
-        // Radius safely within r = 0.85 (0.75 base +/- 0.05 variation)
-        const radius = 0.75 + (i % 2 === 0 ? 0.04 : -0.04);
+        // Radius clamped to 0.75 to prevent extending beyond canvas borders
+        const radius = 0.75;
         ringPositions[i * 3] = Math.cos(angle) * radius;
         ringPositions[i * 3 + 1] = 0;
         ringPositions[i * 3 + 2] = Math.sin(angle) * radius;
       }
       ringGeo.setAttribute('position', new THREE.BufferAttribute(ringPositions, 3));
-      const particleMat = new THREE.PointsMaterial({
+      particleMat = new THREE.PointsMaterial({
         color: rimColor,
         size: 0.05,
         transparent: true,
         opacity: 0.85
       });
       particleSystem = new THREE.Points(ringGeo, particleMat);
-      particleSystem.position.y = -0.95; // In charRoot (y = +0.20), sits at overall y = -0.75
+      particleSystem.position.set(0, -0.22, 0);
       charRoot.add(particleSystem);
     }
 
@@ -238,6 +232,7 @@ export default function ThreeDCharacter({
 
     let isGlbActive = false;
     let glbHeadBone = null;
+    let glbLoadedModel = null;
     const glbBones = {};
     const glbModelGroup = new THREE.Group();
     glbModelGroup.visible = false; // Hidden until realistic GLB finishes loading
@@ -269,8 +264,9 @@ export default function ThreeDCharacter({
         setHasGlbLoaded(true);
         glbModelGroup.visible = true;
         const model = gltf.scene;
+        glbLoadedModel = model;
         model.scale.set(0.9, 0.9, 0.9);
-        model.position.set(0, -0.96, 0);
+        model.position.set(0, -0.2, 0);
         // Face the user/camera directly (+Z)
         model.rotation.y = 0;
 
@@ -298,6 +294,7 @@ export default function ThreeDCharacter({
             const clipName = clip.name.toLowerCase();
             const action = mixer.clipAction(clip);
             if (clipName.includes('idle')) actions['idle'] = action;
+            else if (clipName.includes('sleep') || clipName.includes('lay') || clipName.includes('lying')) actions['sleep'] = action;
             else if (clipName.includes('walk')) actions['walk'] = action;
             else if (clipName.includes('run')) actions['run'] = action;
             else if (clipName.includes('sit')) actions['sit'] = action;
@@ -394,10 +391,21 @@ export default function ThreeDCharacter({
         charRoot.scale.set(1, 1, 1);
       }
 
+      // Check if avatar is in sleeping / lying down state
+      const isSleepingState = curState === 'sleep' || curState === 'sleeping' || curState === 'lie_down';
+
       // Update AnimationMixer if GLB contains clips
       if (mixer) {
         mixer.update(delta);
-        if (curState === 'walking' || curState === 'walk' || curState === 'idle_walking') fadeToAction('walk', 0.25);
+        if (isSleepingState) {
+          if (actions['sleep']) {
+            fadeToAction('sleep', 0.4);
+          } else {
+            // Play slow breathing or resting idle animation
+            fadeToAction('idle', 0.4);
+          }
+        }
+        else if (curState === 'walking' || curState === 'walk' || curState === 'idle_walking') fadeToAction('walk', 0.25);
         else if (curState === 'running' || curState === 'run') fadeToAction('run', 0.25);
         else if (curState === 'sitting' || curState === 'sit') fadeToAction(actions['sit'] ? 'sit' : 'idle', 0.35);
         else if (curState === 'jump') fadeToAction('jump', 0.2);
@@ -406,6 +414,20 @@ export default function ThreeDCharacter({
         else if (isSpeakingNow || curState === 'speaking') fadeToAction('speaking', 0.25);
         else if (curState === 'think' || curState === 'thinking') fadeToAction('thinking', 0.3);
         else fadeToAction('idle', 0.35);
+      }
+
+      // Realistic Horizontal Human Sleeping Pose:
+      // If sleeping without a dedicated clip, rotate the model mesh horizontally flat (-Math.PI/2) and lower onto resting card.
+      // When waking up: smoothly animate rotation.x back to 0 (transition over 0.6s) so she stands up naturally.
+      if (glbLoadedModel) {
+        const targetModelRotX = (isSleepingState && !actions['sleep']) ? -Math.PI / 2 : 0;
+        const targetModelRotZ = 0;
+        const targetModelPosY = (isSleepingState && !actions['sleep']) ? -0.65 : -0.2;
+
+        const sleepTransitionSpeed = Math.min(1.0, delta * 3.5); // ~0.6s natural rise / lie down transition
+        glbLoadedModel.rotation.x = THREE.MathUtils.lerp(glbLoadedModel.rotation.x, targetModelRotX, sleepTransitionSpeed);
+        glbLoadedModel.rotation.z = THREE.MathUtils.lerp(glbLoadedModel.rotation.z, targetModelRotZ, sleepTransitionSpeed);
+        glbLoadedModel.position.y = THREE.MathUtils.lerp(glbLoadedModel.position.y, targetModelPosY, sleepTransitionSpeed);
       }
 
       // Subtle Head Tracking Logic: ±8° yaw, ±5° pitch
@@ -432,10 +454,12 @@ export default function ThreeDCharacter({
       const breath = Math.sin(time * 2.6);
 
       // Attentive Listening Glow & Visualizer Ring
-      if (isListeningNow || curState === 'listening') {
-        particleMat.size = 0.075 + vol * 0.04;
-      } else {
-        particleMat.size = 0.05;
+      if (particleMat) {
+        if (isListeningNow || curState === 'listening') {
+          particleMat.size = 0.075 + vol * 0.04;
+        } else {
+          particleMat.size = 0.05;
+        }
       }
 
       // Music-Synchronized & Heavy Dancing rhythm & intensity calculations
