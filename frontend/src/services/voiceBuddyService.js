@@ -8,6 +8,8 @@
  * 3. Varied conversational dialogue generator (no static repetition).
  */
 
+import { getApiUrl } from '../utils/apiUrl';
+
 export const CHARACTERS = {
   female: {
     id: 'female',
@@ -852,7 +854,7 @@ class VoiceBuddyService {
 
     // 2. Secondary Fallback: High-Quality Indian Neural TTS via backend stream
     const encoded = encodeURIComponent(textToSpeak);
-    const audioUrl = `/api/voice-agent/tts?text=${encoded}&gender=female`;
+    const audioUrl = getApiUrl(`/api/voice-agent/tts?text=${encoded}&gender=female`);
 
     try {
       const audio = new Audio(audioUrl);
