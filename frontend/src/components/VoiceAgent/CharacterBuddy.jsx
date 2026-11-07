@@ -64,12 +64,23 @@ export default function CharacterBuddy({
       const next = !prev;
       try {
         localStorage.setItem('loopra_avatar_muted', String(next));
+        window.dispatchEvent(new CustomEvent('loopra:avatar-mute-change', { detail: { isMuted: next } }));
       } catch (_) {}
       if (next && typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
       }
       return next;
     });
+  }, []);
+
+  useEffect(() => {
+    const handleMuteChange = (e) => {
+      if (e?.detail?.isMuted !== undefined) {
+        setIsAvatarMuted(Boolean(e.detail.isMuted));
+      }
+    };
+    window.addEventListener('loopra:avatar-mute-change', handleMuteChange);
+    return () => window.removeEventListener('loopra:avatar-mute-change', handleMuteChange);
   }, []);
 
   // Dance Variation Cycle ('BHANGRA_BOUNCE', 'HIPHOP_GROOVE', 'SPIN_CELEBRATION')
@@ -2284,21 +2295,6 @@ export default function CharacterBuddy({
           className="w-28 h-28 rounded-full border-4 border-amber-400 bg-amber-400/30 animate-ping shadow-[0_0_35px_#f59e0b]"
         />
       )}
-
-      {/* Floating Mute / Unmute Button directly above the bottom-right AI Chat trigger */}
-      <button
-        type="button"
-        onClick={toggleAvatarMute}
-        title={isAvatarMuted ? "Unmute Avatar Voice (Muted)" : "Mute Avatar Voice (Audio ON)"}
-        aria-label={isAvatarMuted ? "Unmute Avatar Voice" : "Mute Avatar Voice"}
-        className="fixed bottom-28 right-6 z-[60] w-10 h-10 rounded-full flex items-center justify-center bg-neutral-950/85 hover:bg-neutral-900 border border-amber-500/40 hover:border-amber-400 text-amber-400 hover:text-amber-300 shadow-[0_4px_20px_rgba(245,158,11,0.25)] backdrop-blur-md transition-all duration-200 cursor-pointer active:scale-95 group"
-      >
-        {isAvatarMuted ? (
-          <VolumeX className="w-5 h-5 text-red-400 group-hover:scale-110 transition-transform" />
-        ) : (
-          <Volume2 className="w-5 h-5 text-amber-400 group-hover:scale-110 transition-transform" />
-        )}
-      </button>
 
       {/* ============================================================= */}
       {/* MOVABLE DOCK CONTAINER (Screen Clamped, Draggable)             */}

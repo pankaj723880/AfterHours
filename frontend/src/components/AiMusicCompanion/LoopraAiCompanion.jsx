@@ -132,6 +132,44 @@ export default function LoopraAiCompanion({
   const [isVoiceOutputEnabled, setIsVoiceOutputEnabled] = useState(() => voiceBuddyService.isVoiceOutputEnabled);
   const [showVoiceControls, setShowVoiceControls] = useState(false);
 
+  // Avatar Mute State synchronized across components & localStorage
+  const [isAvatarMuted, setIsAvatarMuted] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return localStorage.getItem('loopra_avatar_muted') === 'true';
+      } catch (_) {}
+    }
+    return false;
+  });
+
+  const toggleAvatarMute = useCallback((e) => {
+    e?.stopPropagation?.();
+    setIsAvatarMuted((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('loopra_avatar_muted', String(next));
+        window.dispatchEvent(new CustomEvent('loopra:avatar-mute-change', { detail: { isMuted: next } }));
+      } catch (_) {}
+      if (next && typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      if (showToast) {
+        showToast(next ? 'Avatar Voice: Muted' : 'Avatar Voice: Unmuted');
+      }
+      return next;
+    });
+  }, [showToast]);
+
+  useEffect(() => {
+    const handleMuteChange = (e) => {
+      if (e?.detail?.isMuted !== undefined) {
+        setIsAvatarMuted(Boolean(e.detail.isMuted));
+      }
+    };
+    window.addEventListener('loopra:avatar-mute-change', handleMuteChange);
+    return () => window.removeEventListener('loopra:avatar-mute-change', handleMuteChange);
+  }, []);
+
   useEffect(() => {
     const unsub = voiceBuddyService.subscribe(({ event, enabled }) => {
       if (event === 'voice_output_change') {
@@ -1514,43 +1552,63 @@ export default function LoopraAiCompanion({
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* 2. FLOATING SEPARATE AI CHAT BUTTON                           */}
-        {/* Strictly fixed at bottom-right of viewport                   */}
+        {/* 2. FLOATING SEPARATE AI CHAT & AVATAR MUTE TRIGGER COLUMN     */}
+        {/* Vertically centered column fixed at bottom-right of viewport  */}
         {/* ------------------------------------------------------------- */}
         {!hideFloatingButton && (
-          <button
-            type="button"
-            id="loopra-ai-chat-toggle-button"
-            onClick={handleButtonClick}
+          <div
             style={{
               position: 'fixed',
               bottom: bottomOffsets.btnBottom,
               right: isMobile ? '14px' : '20px',
               zIndex: 2147483642
             }}
-            className={`group relative flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 rounded-full shadow-2xl active:scale-95 cursor-pointer pointer-events-auto transition-all duration-200 border ${
-              isOpen
-                ? 'bg-amber-500 text-neutral-950 border-amber-400 shadow-amber-500/40'
-                : 'bg-neutral-950/90 text-amber-400 hover:text-white border-amber-500/40 hover:border-amber-400 shadow-lg shadow-black/80 hover:shadow-amber-500/20 backdrop-blur-xl'
-            }`}
-            aria-label="Toggle Loopra AI Chatbox"
-            title={isOpen ? "Close Loopra AI Chat" : "Open Loopra AI Chat"}
+            className="flex flex-col items-center gap-2.5 pointer-events-auto"
           >
-            {isOpen ? (
-              <X className="w-5 h-5 pointer-events-none transition-transform duration-200" />
-            ) : (
-              <div className="relative flex items-center justify-center pointer-events-none">
-                <span className="absolute -inset-1 rounded-full bg-amber-500/30 blur-sm animate-pulse" />
-                <MessageSquare className="w-5 h-5 text-amber-400 relative" />
-              </div>
-            )}
+            {/* Upper Row: Avatar Mute / Unmute Button */}
+            <button
+              type="button"
+              onClick={toggleAvatarMute}
+              title={isAvatarMuted ? "Unmute Avatar Voice (Muted)" : "Mute Avatar Voice"}
+              aria-label={isAvatarMuted ? "Unmute Avatar Voice" : "Mute Avatar Voice"}
+              className="w-10 h-10 rounded-full bg-neutral-900/80 backdrop-blur-md border border-neutral-700/60 text-amber-400 hover:text-amber-300 hover:border-amber-400/50 flex items-center justify-center shadow-lg transition-all active:scale-95 cursor-pointer group"
+            >
+              {isAvatarMuted ? (
+                <VolumeX size={18} className="text-red-400 group-hover:scale-110 transition-transform" />
+              ) : (
+                <Volume2 size={18} className="text-amber-400 group-hover:scale-110 transition-transform" />
+              )}
+            </button>
 
-            {!isOpen && (
-              <span className="absolute right-14 top-1/2 -translate-y-1/2 hidden md:group-hover:inline-block px-2.5 py-1 bg-neutral-900/95 border border-amber-500/30 text-amber-300 text-xs font-semibold rounded-lg shadow-xl whitespace-nowrap pointer-events-none backdrop-blur-md">
-                AI Chat
-              </span>
-            )}
-          </button>
+            {/* Lower Row: AI Chat / Voice Agent Trigger Button */}
+            <button
+              type="button"
+              id="loopra-ai-chat-toggle-button"
+              onClick={handleButtonClick}
+              className={`group relative flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 rounded-full shadow-2xl active:scale-95 cursor-pointer pointer-events-auto transition-all duration-200 border ${
+                isOpen
+                  ? 'bg-amber-500 text-neutral-950 border-amber-400 shadow-amber-500/40'
+                  : 'bg-neutral-950/90 text-amber-400 hover:text-white border-amber-500/40 hover:border-amber-400 shadow-lg shadow-black/80 hover:shadow-amber-500/20 backdrop-blur-xl'
+              }`}
+              aria-label="Toggle Loopra AI Chatbox"
+              title={isOpen ? "Close Loopra AI Chat" : "Open Loopra AI Chat"}
+            >
+              {isOpen ? (
+                <X className="w-5 h-5 pointer-events-none transition-transform duration-200" />
+              ) : (
+                <div className="relative flex items-center justify-center pointer-events-none">
+                  <span className="absolute -inset-1 rounded-full bg-amber-500/30 blur-sm animate-pulse" />
+                  <MessageSquare className="w-5 h-5 text-amber-400 relative" />
+                </div>
+              )}
+
+              {!isOpen && (
+                <span className="absolute right-14 top-1/2 -translate-y-1/2 hidden md:group-hover:inline-block px-2.5 py-1 bg-neutral-900/95 border border-amber-500/30 text-amber-300 text-xs font-semibold rounded-lg shadow-xl whitespace-nowrap pointer-events-none backdrop-blur-md">
+                  AI Chat
+                </span>
+              )}
+            </button>
+          </div>
         )}
       </>,
       document.body
