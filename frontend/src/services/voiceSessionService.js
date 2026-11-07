@@ -156,10 +156,12 @@ class VoiceSessionController {
 
     // Timers
     this.restartTimer = null;
+    this.speechDebounceTimer = null;
     this.inactivityTimer = null;
     this.inactivityStartTime = null;
     this.inactivityRemainingMs = INACTIVITY_TIMEOUT_MS;
     this.isExecutionPaused = false;
+    this.persistentTranscriptBuffer = '';
 
     // Command deduplication
     this.lastExecuted = { text: '', timestamp: 0 };
@@ -544,7 +546,7 @@ class VoiceSessionController {
     recognition.continuous = false;
     recognition.interimResults = true;
     recognition.lang = this.lang;
-    recognition.maxAlternatives = 1;
+    recognition.maxAlternatives = 3;
 
     recognition.onstart = () => {
       console.log('[VoiceSession:WebSpeech] onstart - recognition engine active (lang:', this.lang, ')');
@@ -553,11 +555,16 @@ class VoiceSessionController {
       this.audioCaptureRetries = 0;
       this.networkErrorCount = 0;
       this.hasActiveTerminalError = false;
+      this.persistentTranscriptBuffer = '';
+      if (this.speechDebounceTimer) {
+        clearTimeout(this.speechDebounceTimer);
+        this.speechDebounceTimer = null;
+      }
       if (this.isSessionActive && !this.isExecuting && !this.isSpeakingTts) {
         this.setState(SESSION_STATES.LISTENING, 'Listening... (Speak your music command)');
       }
 
-      // Safe single-shot auto-timeout to cleanly finalize listening
+      // Safe single-shot auto-timeout to prevent premature 5-second cutoffs (15s total listening window)
       if (this.mobileListenTimeout) {
         clearTimeout(this.mobileListenTimeout);
         this.mobileListenTimeout = null;
@@ -566,7 +573,7 @@ class VoiceSessionController {
         if (this.isRecognizing && this.recognition) {
           try { this.recognition.stop(); } catch (_) {}
         }
-      }, 10000);
+      }, 15000);
     };
 
     recognition.onaudiostart = () => {
@@ -606,13 +613,20 @@ class VoiceSessionController {
         }
       }
 
+      // Aggressively buffer interim and final transcripts into persistent state
+      const rawCurrent = (finalTranscript || interim || '').trim();
+      if (rawCurrent) {
+        this.persistentTranscriptBuffer = rawCurrent;
+        this.pendingMobileTranscript = rawCurrent;
+      }
+
       console.log('[VoiceSession:WebSpeech] onresult received (mobile/desktop):', {
         interim: interim || undefined,
         final: finalTranscript || undefined,
+        buffered: this.persistentTranscriptBuffer,
         isFinal: !!finalTranscript,
         resultsLength: event.results?.length,
-        resultIndex: event.resultIndex,
-        isMobile: isMobileBrowser
+        resultIndex: event.resultIndex
       });
 
       // Real-Time Barge-In & Interruption Handling:
@@ -639,31 +653,41 @@ class VoiceSessionController {
       }
 
       if (interim) {
-        this.pendingMobileTranscript = interim;
         const romanInterim = devanagariToHinglish(interim);
         this.emitInterim(romanInterim || interim);
       }
 
       if (finalTranscript) {
-        this.pendingMobileTranscript = '';
         const cleaned = devanagariToHinglish(finalTranscript.trim());
-        this.emitInterim(''); // Clear interim
+        this.emitInterim(''); // Clear interim preview
 
         if (!cleaned) return;
 
-        // Deduplicate rapid repeat triggers within 2000ms
-        const now = Date.now();
-        if (
-          this.lastExecuted.text === cleaned &&
-          (now - this.lastExecuted.timestamp) < 2000
-        ) {
-          return;
+        // Debounce finalization slightly (300ms) to ensure continuous speech clauses are captured completely
+        if (this.speechDebounceTimer) {
+          clearTimeout(this.speechDebounceTimer);
         }
-        this.lastExecuted = { text: cleaned, timestamp: now };
+        this.speechDebounceTimer = setTimeout(() => {
+          if (!this.isSessionActive) return;
+          const candidateToEmit = devanagariToHinglish(this.persistentTranscriptBuffer.trim() || cleaned);
+          if (!candidateToEmit) return;
 
-        this.resetInactivityOnValidCommand();
-        this.setState(SESSION_STATES.PROCESSING, `Processing: "${cleaned}"`);
-        this.emitFinalTranscript(cleaned);
+          // Deduplicate rapid repeat triggers within 2000ms
+          const now = Date.now();
+          if (
+            this.lastExecuted.text === candidateToEmit &&
+            (now - this.lastExecuted.timestamp) < 2000
+          ) {
+            return;
+          }
+          this.lastExecuted = { text: candidateToEmit, timestamp: now };
+          this.persistentTranscriptBuffer = '';
+          this.pendingMobileTranscript = '';
+
+          this.resetInactivityOnValidCommand();
+          this.setState(SESSION_STATES.PROCESSING, `Processing: "${candidateToEmit}"`);
+          this.emitFinalTranscript(candidateToEmit);
+        }, 300);
       }
     };
 
@@ -733,9 +757,10 @@ class VoiceSessionController {
         this.mobileListenTimeout = null;
       }
 
-      // Single-Shot STT Fallback: Finalize pending interim if engine ended before marking isFinal
-      if (this.pendingMobileTranscript && this.pendingMobileTranscript.trim()) {
-        const fallbackText = this.pendingMobileTranscript.trim();
+      // Single-Shot STT Fallback: Finalize buffered interim/final speech if engine ended before marking isFinal
+      const fallbackText = (this.persistentTranscriptBuffer || this.pendingMobileTranscript || '').trim();
+      if (fallbackText) {
+        this.persistentTranscriptBuffer = '';
         this.pendingMobileTranscript = '';
         console.log('[VoiceSession:WebSpeech] Speech fallback finalizing on onend:', fallbackText);
         const cleaned = devanagariToHinglish(fallbackText);
@@ -988,10 +1013,15 @@ class VoiceSessionController {
     // Clear all pending timers
     clearTimeout(this.restartTimer);
     this.restartTimer = null;
+    if (this.speechDebounceTimer) {
+      clearTimeout(this.speechDebounceTimer);
+      this.speechDebounceTimer = null;
+    }
     clearTimeout(this.ttsResumeTimer);
     this.ttsResumeTimer = null;
     this.hasActiveTerminalError = false;
     this.networkErrorCount = 0;
+    this.persistentTranscriptBuffer = '';
     if (this.mobileListenTimeout) {
       clearTimeout(this.mobileListenTimeout);
       this.mobileListenTimeout = null;
