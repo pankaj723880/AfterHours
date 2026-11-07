@@ -51,6 +51,16 @@ export default function CharacterBuddy({
   const rafTimerRef = useRef(null);
   const isInitialMountRef = useRef(true);
 
+  // Dragging tracking refs (placed before any state/computation reads it)
+  const dragRef = useRef({
+    isDragging: false,
+    hasMoved: false,
+    startPointerX: 0,
+    startPointerY: 0,
+    startPosX: 0,
+    startPosY: 0
+  });
+
   useEffect(() => {
     if (isInitialMountRef.current) {
       isInitialMountRef.current = false;
@@ -146,6 +156,8 @@ export default function CharacterBuddy({
   const characterWidth = Math.round(BASE_WIDTH * avatarScale);
   const characterHeight = Math.round(BASE_HEIGHT * avatarScale);
 
+  const waypoints = usePageWaypoints(isBottomPlayerVisible);
+
   // Autonomous Roaming Mode (Stored in localStorage, default true)
   const [isRoamEnabled, setIsRoamEnabled] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -157,7 +169,309 @@ export default function CharacterBuddy({
     return true;
   });
 
-  const waypoints = usePageWaypoints(isBottomPlayerVisible);
+  const isRoamActive = isRoamEnabled && !isListening && !isSpeaking && !dragRef.current?.isDragging;
+
+  // 2D Kinematics Physics State (8-Directional Vector Movement & Friction)
+  const [continuousPos, setContinuousPos] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const isMobile = window.innerWidth < 768;
+      const charW = isMobile ? 140 : 200;
+      const charH = isMobile ? 230 : 330;
+      const rightMargin = isMobile ? 14 : 24;
+      const bottomMargin = isMobile ? (isBottomPlayerVisible ? 134 : 64) : (isBottomPlayerVisible ? 100 : 24);
+      return {
+        x: Math.max(16, window.innerWidth - charW - rightMargin),
+        y: Math.max(64, window.innerHeight - charH - bottomMargin)
+      };
+    }
+    return { x: 200, y: 500 };
+  });
+
+  const positionRef = useRef({ ...continuousPos });
+  const velocityRef = useRef({ vx: 0, vy: 0 });
+  const targetPosRef = useRef({ ...continuousPos });
+  const landingModeRef = useRef('walk'); // 'walk' | 'sit' | 'lie_down'
+  const isSleepingRef = useRef(false);
+  const patrolFrameRef = useRef(null);
+
+  // 20-Second Active Roaming Fatigue Tracker
+  const [isFatigued, setIsFatigued] = useState(false);
+  const activeRoamSecondsRef = useRef(0);
+  const fatigueCheckIntervalRef = useRef(null);
+
+  // Fatigue Dialogue Trigger with Gemini API & Casual Hindi Relatable Fallbacks
+  const triggerFatigueSleep = useCallback(async () => {
+    if (isSleepingRef.current) return;
+    isSleepingRef.current = true;
+    setIsFatigued(true);
+
+    // 1. Choose nearest resting spot: navbar header horizontal edge (lie_down) or nearest card (sit)
+    const winW = typeof window !== 'undefined' ? window.innerWidth : 1000;
+    const paddingX = 24;
+    const minX = 16;
+    const maxX = Math.max(minX + 40, winW - characterWidth - 110);
+
+    const restBelowNavbar = Math.random() < 0.55;
+    if (restBelowNavbar) {
+      // Rest lying down below navbar at y = 70px
+      const targetX = Math.max(minX, Math.min(maxX, Math.floor(minX + Math.random() * (maxX - minX))));
+      targetPosRef.current = { x: targetX, y: 70 };
+      landingModeRef.current = 'lie_down';
+    } else if (waypoints?.sitSpots?.length > 0) {
+      const spot = waypoints.sitSpots[Math.floor(Math.random() * waypoints.sitSpots.length)];
+      targetPosRef.current = {
+        x: Math.max(minX, Math.min(maxX, spot.x - characterWidth * 0.5)),
+        y: Math.max(64, spot.y - characterHeight + 10)
+      };
+      landingModeRef.current = 'sit';
+    } else {
+      targetPosRef.current = { x: Math.max(minX, Math.min(maxX, 40)), y: 70 };
+      landingModeRef.current = 'lie_down';
+    }
+
+    // 2. Dynamic Gemini or witty relatable Hindi sleep dialogue
+    const fallbackLines = [
+      "Thak gayi yaar, itna toh PT teacher ne bhi nahi daudaya... main so rahi hu!",
+      "Bas mera ho gaya, 20 second me saari calories burn ho gayi, shubh ratri!",
+      "Kaanp rahi hai taangein, main chali navbar ke niche letne, disturb mat karna.",
+      "Haye main marjawa! Itna walk karwaya, ab main thodi der let rahi hoon.",
+      "Battery low ho gayi meri, please thodi der sone do yaar!"
+    ];
+
+    let sleepDialogue = fallbackLines[Math.floor(Math.random() * fallbackLines.length)];
+
+    try {
+      const prompt = "Generate 1 short, funny, relatable Hindi line (max 8-10 words) of a tired Indian girl who ran too much across the music app and wants to sleep now. Casual, witty tone.";
+      const res = await chatBuddyClient.sendMessage(prompt, '', { isFatiguePrompt: true });
+      if (res?.reply && typeof res.reply === 'string' && res.reply.trim().length > 0) {
+        // Strip quotes or excess meta formatting
+        const clean = res.reply.replace(/["“”*]/g, '').trim();
+        if (clean.length > 5) {
+          sleepDialogue = clean;
+        }
+      }
+    } catch (_) {}
+
+    // Show transcript and speak dialogue through female Hindi voice
+    setLiveTranscript(sleepDialogue);
+    setIsBubbleVisible(true);
+    setLastActionTag('💤 SLEEPING (20s FATIGUE)');
+
+    try {
+      voiceBuddyService.speakText(sleepDialogue, {
+        priority: true,
+        pitch: 1.05,
+        rate: 1.35
+      });
+    } catch (_) {}
+
+    setTimeout(() => {
+      setIsBubbleVisible(false);
+    }, 7000);
+  }, [characterWidth, characterHeight, waypoints]);
+
+  // Activity timer tracking 20 seconds of continuous active roaming
+  useEffect(() => {
+    if (!isRoamActive || isSleepingRef.current) {
+      if (fatigueCheckIntervalRef.current) {
+        clearInterval(fatigueCheckIntervalRef.current);
+        fatigueCheckIntervalRef.current = null;
+      }
+      return;
+    }
+
+    activeRoamSecondsRef.current = 0;
+    fatigueCheckIntervalRef.current = setInterval(() => {
+      if (!isRoamActive || isSleepingRef.current) return;
+      activeRoamSecondsRef.current += 1;
+      if (activeRoamSecondsRef.current >= 20) {
+        if (fatigueCheckIntervalRef.current) {
+          clearInterval(fatigueCheckIntervalRef.current);
+          fatigueCheckIntervalRef.current = null;
+        }
+        triggerFatigueSleep();
+      }
+    }, 1000);
+
+    return () => {
+      if (fatigueCheckIntervalRef.current) {
+        clearInterval(fatigueCheckIntervalRef.current);
+        fatigueCheckIntervalRef.current = null;
+      }
+    };
+  }, [isRoamActive, triggerFatigueSleep]);
+
+  // Click/Tap to Wake Up from Fatigue
+  const handleWakeUpAvatar = useCallback(() => {
+    if (!isSleepingRef.current) return;
+    isSleepingRef.current = false;
+    setIsFatigued(false);
+    activeRoamSecondsRef.current = 0;
+    landingModeRef.current = 'walk';
+    setAutonomousSubState('idle');
+    setLiveTranscript('Chalo uth gayi! Ab bolo kahan chalna hai?');
+    setIsBubbleVisible(true);
+    setLastActionTag('⚡ AWAKENED');
+    try {
+      voiceBuddyService.speakText('Chalo uth gayi! Ab bolo kahan chalna hai?', {
+        priority: true,
+        pitch: 1.05,
+        rate: 1.35
+      });
+    } catch (_) {}
+    setTimeout(() => setIsBubbleVisible(false), 4000);
+  }, []);
+
+  // Waypoint selector: 8 compass directions across DOM cards, navbar ledge, and open space
+  useEffect(() => {
+    if (!isRoamActive || isSleepingRef.current) {
+      return;
+    }
+
+    const pickNewTarget = () => {
+      if (typeof window === 'undefined' || isSleepingRef.current) return;
+      const winW = window.innerWidth;
+      const winH = window.innerHeight;
+
+      // Strict safe bounds: minX = 16, maxX = winW - 110, minY = 64 (below navbar), maxY = winH - 170 (above bottom player)
+      const minX = 16;
+      const maxX = Math.max(minX + 40, winW - 110);
+      const minY = 64;
+      const maxY = Math.max(minY + 40, winH - (isBottomPlayerVisible ? 170 : 130));
+
+      const roll = Math.random();
+
+      // 1. Target Top Horizontal Edge of Song Cards / Vinyls (Sit Spot within 6px)
+      if (waypoints?.sitSpots?.length > 0 && roll < 0.38) {
+        const spot = waypoints.sitSpots[Math.floor(Math.random() * waypoints.sitSpots.length)];
+        const clampedX = Math.max(minX, Math.min(maxX, spot.x - characterWidth * 0.5));
+        const clampedY = Math.max(minY, Math.min(maxY, spot.y - characterHeight + 8));
+        targetPosRef.current = { x: clampedX, y: clampedY };
+        landingModeRef.current = 'sit';
+        return;
+      }
+
+      // 2. Below Navbar Area: target y = 70px (Lies down or perches along top header bar)
+      if (roll < 0.55) {
+        const targetX = Math.floor(minX + Math.random() * (maxX - minX));
+        targetPosRef.current = { x: targetX, y: 70 };
+        landingModeRef.current = 'lie_down';
+        return;
+      }
+
+      // 3. Open Floor 8-Directional Traverse (N, NE, E, SE, S, SW, W, NW)
+      const cur = positionRef.current;
+      const angles = [0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (deg * Math.PI) / 180);
+      const chosenAngle = angles[Math.floor(Math.random() * angles.length)];
+      const stepDistance = 120 + Math.random() * 240;
+
+      const destX = Math.max(minX, Math.min(maxX, cur.x + Math.cos(chosenAngle) * stepDistance));
+      const destY = Math.max(minY, Math.min(maxY, cur.y + Math.sin(chosenAngle) * stepDistance));
+
+      targetPosRef.current = { x: destX, y: destY };
+      landingModeRef.current = 'walk';
+    };
+
+    pickNewTarget();
+    const interval = setInterval(pickNewTarget, 5500);
+
+    return () => clearInterval(interval);
+  }, [isRoamActive, characterWidth, characterHeight, isBottomPlayerVisible, waypoints]);
+
+  // 60 FPS Kinematics Physics Loop (Spring Acceleration, Friction 0.88, 8-Directional Vector Heading)
+  useEffect(() => {
+    if (!isRoamActive) {
+      if (patrolFrameRef.current) {
+        cancelAnimationFrame(patrolFrameRef.current);
+        patrolFrameRef.current = null;
+      }
+      return;
+    }
+
+    let isRunning = true;
+    let lastTime = performance.now();
+
+    const loop = (time) => {
+      if (!isRunning) return;
+      const dt = Math.min(0.064, (time - lastTime) / 1000);
+      lastTime = time;
+
+      const pos = positionRef.current;
+      const vel = velocityRef.current;
+      const target = targetPosRef.current;
+
+      const dx = target.x - pos.x;
+      const dy = target.y - pos.y;
+      const distance = Math.hypot(dx, dy);
+
+      // Safe bounds clamping
+      const winW = typeof window !== 'undefined' ? window.innerWidth : 1200;
+      const winH = typeof window !== 'undefined' ? window.innerHeight : 800;
+      const minX = 16;
+      const maxX = Math.max(minX + 40, winW - 110);
+      const minY = 64;
+      const maxY = Math.max(minY + 40, winH - (isBottomPlayerVisible ? 170 : 130));
+
+      // Snapping condition when within 6px of resting spot
+      if (distance <= 6) {
+        vel.vx = 0;
+        vel.vy = 0;
+        pos.x = target.x;
+        pos.y = target.y;
+
+        if (landingModeRef.current === 'lie_down') {
+          setAutonomousSubState(isSleepingRef.current ? 'sleeping' : 'lie_down');
+        } else if (landingModeRef.current === 'sit') {
+          setAutonomousSubState('sitting');
+        } else if (isPlaying) {
+          setAutonomousSubState('dancing');
+        } else {
+          setAutonomousSubState('idle');
+        }
+      } else {
+        // Kinematic spring physics with realistic drag
+        const springK = 3.6;
+        const friction = 0.88;
+
+        const ax = dx * springK * dt;
+        const ay = dy * springK * dt;
+
+        vel.vx = (vel.vx + ax) * friction;
+        vel.vy = (vel.vy + ay) * friction;
+
+        pos.x += vel.vx;
+        pos.y += vel.vy;
+
+        // Clamp inside screen bounds
+        pos.x = Math.max(minX, Math.min(maxX, pos.x));
+        pos.y = Math.max(minY, Math.min(maxY, pos.y));
+
+        // 8-Directional Vector Heading & Facing
+        if (Math.abs(vel.vx) > 0.1 || Math.abs(vel.vy) > 0.1) {
+          const headingAngle = Math.atan2(vel.vy, vel.vx);
+          // Set facing Left or Right, with subtle pitch rotation for vertical climb/dive
+          setWalkFacing(vel.vx < 0 ? 'left' : 'right');
+          setRotationPitch(Math.sin(headingAngle) * 0.12);
+        }
+
+        const currentSpeed = Math.hypot(vel.vx, vel.vy);
+        setAutonomousSubState(currentSpeed > 3.2 ? 'running' : 'walking');
+      }
+
+      setContinuousPos({ x: pos.x, y: pos.y });
+      patrolFrameRef.current = requestAnimationFrame(loop);
+    };
+
+    patrolFrameRef.current = requestAnimationFrame(loop);
+
+    return () => {
+      isRunning = false;
+      if (patrolFrameRef.current) {
+        cancelAnimationFrame(patrolFrameRef.current);
+        patrolFrameRef.current = null;
+      }
+    };
+  }, [isRoamActive, isPlaying, isBottomPlayerVisible]);
 
   // Realtime Live Transcript & Command Display State
   const [liveTranscript, setLiveTranscript] = useState('');
@@ -326,16 +640,6 @@ export default function CharacterBuddy({
     };
     autoReturnFrameRef.current = requestAnimationFrame(step);
   }, []);
-
-  // Dragging tracking refs
-  const dragRef = useRef({
-    isDragging: false,
-    hasMoved: false,
-    startPointerX: 0,
-    startPointerY: 0,
-    startPosX: 0,
-    startPosY: 0
-  });
 
   // Mobile pinch-to-resize ref
   const pinchRef = useRef({
@@ -1127,6 +1431,13 @@ export default function CharacterBuddy({
 
     // Short click handling (not dragged, not resized)
     if (e.preventDefault) e.preventDefault();
+
+    // If avatar was in fatigue sleeping mode, click/tap wakes her up!
+    if (isSleepingRef.current) {
+      handleWakeUpAvatar();
+      return;
+    }
+
     clickCountRef.current += 1;
 
     const isMobile = isMobileScreen || (typeof window !== 'undefined' && window.innerWidth <= 768);
@@ -1150,7 +1461,7 @@ export default function CharacterBuddy({
       clickCountRef.current = 0;
       playTransientGesture('wink', 1300);
     }
-  }, [avatarPos, characterWidth, characterHeight, isMobileScreen, isResizeMode, onToggleVoiceMode, playTransientGesture, resetAutonomousTimer, smoothReturnToFront]);
+  }, [avatarPos, characterWidth, characterHeight, isMobileScreen, isResizeMode, onToggleVoiceMode, playTransientGesture, resetAutonomousTimer, smoothReturnToFront, handleWakeUpAvatar]);
 
   // Window global pointer listeners for robust drag tracking
   useEffect(() => {
@@ -1473,33 +1784,43 @@ export default function CharacterBuddy({
       {/* MOVABLE DOCK CONTAINER (Screen Clamped, Draggable)             */}
       {/* ============================================================= */}
       <div
+        ref={dragRef}
         id="loopra-3d-character-container"
         style={{
-          ...(isCustomPos
+          ...(isRoamActive
             ? {
-                left: `${avatarPos.x}px`,
-                top: `${avatarPos.y}px`
+                left: `${continuousPos.x}px`,
+                top: `${continuousPos.y}px`
               }
-            : {
-                right: isMobileScreen ? '14px' : '24px',
-                bottom: isMobileScreen 
-                  ? (isBottomPlayerVisible 
-                      ? 'calc(134px + env(safe-area-inset-bottom, 0px))' 
-                      : 'calc(64px + env(safe-area-inset-bottom, 0px))') 
-                  : (isBottomPlayerVisible ? '100px' : '24px')
-              }),
+            : (isCustomPos
+                ? {
+                    left: `${avatarPos.x}px`,
+                    top: `${avatarPos.y}px`
+                  }
+                : {
+                    right: isMobileScreen ? '14px' : '24px',
+                    bottom: isMobileScreen 
+                      ? (isBottomPlayerVisible 
+                          ? 'calc(134px + env(safe-area-inset-bottom, 0px))' 
+                          : 'calc(64px + env(safe-area-inset-bottom, 0px))') 
+                      : (isBottomPlayerVisible ? '100px' : '24px')
+                  })),
           width: `${characterWidth}px`,
           height: `${characterHeight}px`,
+          minWidth: '140px',
+          minHeight: '200px',
           touchAction: 'none',
           opacity: isFadedIn ? 1 : 0,
           transform: isFadedIn ? 'scale(1) translateY(0)' : 'scale(0.92) translateY(14px)',
           visibility: isDOMVisible ? 'visible' : 'hidden',
           pointerEvents: (isDOMVisible && isFadedIn) ? 'auto' : 'none',
           transition: isFadedIn
-            ? 'opacity 400ms cubic-bezier(0.16, 1, 0.3, 1), transform 400ms cubic-bezier(0.16, 1, 0.3, 1), width 0.22s cubic-bezier(0.2, 0.8, 0.4, 1), height 0.22s cubic-bezier(0.2, 0.8, 0.4, 1)'
+            ? (isRoamActive ? 'opacity 400ms cubic-bezier(0.16, 1, 0.3, 1), transform 400ms cubic-bezier(0.16, 1, 0.3, 1), width 0.22s, height 0.22s' : 'opacity 400ms cubic-bezier(0.16, 1, 0.3, 1), transform 400ms cubic-bezier(0.16, 1, 0.3, 1), width 0.22s cubic-bezier(0.2, 0.8, 0.4, 1), height 0.22s cubic-bezier(0.2, 0.8, 0.4, 1)')
             : 'opacity 350ms cubic-bezier(0.4, 0, 0.2, 1), transform 350ms cubic-bezier(0.4, 0, 0.2, 1), width 0.22s cubic-bezier(0.2, 0.8, 0.4, 1), height 0.22s cubic-bezier(0.2, 0.8, 0.4, 1)'
         }}
-        className="fixed select-none flex flex-col items-center z-[2147483640] will-change-[opacity,transform]"
+        className={`fixed select-none flex flex-col items-center justify-center z-[2147483640] will-change-[opacity,transform,left,top] ${
+          isRoamActive ? 'pointer-events-auto' : ''
+        }`}
       >
         {/* Subtle Avatar Header Controls (Free Roam Toggle, Reset Size & Position, Hide) */}
         <div className="absolute -top-7 right-0 flex items-center gap-1 opacity-0 hover:opacity-100 focus-within:opacity-100 transition-opacity z-50">

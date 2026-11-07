@@ -519,6 +519,21 @@ export default function ThreeDCharacter({
         setBoneRot('rightarm', 0.15, 0, -0.06, 0.15);
         setBoneRot('leftforearm', 0, 0, 0.10, 0.15);
         setBoneRot('rightforearm', 0, 0, -0.10, 0.15);
+      } else if (curState === 'lie_down' || curState === 'sleeping' || curState === 'sleep') {
+        // Relaxed resting horizontal posture (lying down along horizontal edge / sleeping)
+        setBonePos('hips', 0, -0.28, 0, 0.20);
+        setBoneRot('spine', 0.05, 0, 0, 0.20);
+        setBoneRot('head', 0.18, 0.25, 0.10, 0.20);
+        setBoneRot('leftupleg', 0.10, 0, 0.15, 0.20);
+        setBoneRot('rightupleg', 0.05, 0, -0.15, 0.20);
+        setBoneRot('leftleg', -0.12, 0, 0, 0.20);
+        setBoneRot('rightleg', -0.10, 0, 0, 0.20);
+        setBoneRot('leftfoot', 0.20, 0, 0, 0.20);
+        setBoneRot('rightfoot', 0.20, 0, 0, 0.20);
+        setBoneRot('leftarm', 0.10, 0, 0.40, 0.20);
+        setBoneRot('rightarm', 0.20, 0, -0.35, 0.20);
+        setBoneRot('leftforearm', 0, 0, 0.45, 0.20);
+        setBoneRot('rightforearm', 0, 0, -0.40, 0.20);
       } else if (curState === 'standing') {
         // Relaxed natural standing posture with both legs straight and feet flat
         setBonePos('hips', 0, breath * 0.003, 0, 0.15);
