@@ -425,6 +425,7 @@ export default function ThreeDCharacter({
       // If sleeping without a dedicated clip, rotate the model mesh horizontally flat (-Math.PI/2) and lower onto resting card.
       // If hanging, apply continuous pendulum swinging physics (model.rotation.z = Math.sin(Date.now() * 0.005) * 0.25).
       if (glbLoadedModel) {
+        const isSpinCelebration = curState === 'SPIN_CELEBRATION' || (curState === 'dancing' && danceRoutine === 2);
         const targetModelRotX = (isSleepingState && !actions['sleep']) ? -Math.PI / 2 : 0;
         const targetModelRotZ = isHangingState ? Math.sin(Date.now() * 0.005) * 0.25 : 0;
         const targetModelPosY = (isSleepingState && !actions['sleep']) ? -0.65 : (isHangingState ? 0.15 : -0.2);
@@ -433,6 +434,9 @@ export default function ThreeDCharacter({
         glbLoadedModel.rotation.x = THREE.MathUtils.lerp(glbLoadedModel.rotation.x, targetModelRotX, sleepTransitionSpeed);
         glbLoadedModel.rotation.z = THREE.MathUtils.lerp(glbLoadedModel.rotation.z, targetModelRotZ, isHangingState ? 0.35 : sleepTransitionSpeed);
         glbLoadedModel.position.y = THREE.MathUtils.lerp(glbLoadedModel.position.y, targetModelPosY, sleepTransitionSpeed);
+        if (isSpinCelebration) {
+          glbLoadedModel.rotation.y += delta * 6.28; // Full 360-degree pirouette spin
+        }
       }
 
       // Subtle Head Tracking Logic: ±8° yaw, ±5° pitch
@@ -476,49 +480,76 @@ export default function ThreeDCharacter({
       // =========================================================================
       // D. ANATOMICALLY NATURAL KINEMATICS & SKELETAL ANIMATION SYSTEM
       // =========================================================================
-      if (curState === 'dancing' || curState === 'dance' || curState === 'heavy_dancing') {
-        if (danceRoutine === 0) {
-          const sway = Math.sin(dancePhase);
-          const bounce = Math.abs(Math.cos(dancePhase)) * 0.04 * intensity;
-          setBonePos('hips', sway * 0.04 * intensity, bounce, 0, 0.25);
-          setBoneRot('spine', 0, sway * 0.12 * intensity, -sway * 0.08 * intensity, 0.25);
-          setBoneRot('leftarm', 0.44, Math.cos(dancePhase) * 0.25 * intensity, 0.08 + sway * 0.25 * intensity, 0.25);
-          setBoneRot('rightarm', 0.44, -Math.cos(dancePhase) * 0.25 * intensity, -0.08 - sway * 0.25 * intensity, 0.25);
-          setBoneRot('leftforearm', 0, 0, 0.28, 0.25);
-          setBoneRot('rightforearm', 0, 0, -0.28, 0.25);
-          const leftStep = Math.max(0, Math.sin(dancePhase) * 0.35);
-          const rightStep = Math.max(0, -Math.sin(dancePhase) * 0.35);
-          setBoneRot('leftupleg', leftStep * 0.45, 0, 0.06 + leftStep * 0.12, 0.25);
-          setBoneRot('leftleg', -leftStep * 0.55, 0, 0, 0.25);
-          setBoneRot('rightupleg', rightStep * 0.45, 0, -0.06 - rightStep * 0.12, 0.25);
-          setBoneRot('rightleg', -rightStep * 0.55, 0, 0, 0.25);
-        } else if (danceRoutine === 1) {
-          const beat = Math.sin(dancePhase * 1.4);
-          const bob = Math.abs(Math.sin(dancePhase * 1.4)) * 0.045 * intensity;
-          setBonePos('hips', 0, bob, 0, 0.25);
-          setBoneRot('spine', -bob * 0.6, 0, 0, 0.25);
-          setBoneRot('leftarm', 0.38 + beat * 0.15 * intensity, 0.15, 0.35 + beat * 0.18 * intensity, 0.25);
-          setBoneRot('rightarm', 0.38 - beat * 0.15 * intensity, -0.15, -0.35 - beat * 0.18 * intensity, 0.25);
-          setBoneRot('leftforearm', 0, 0, 0.45 + beat * 0.15, 0.25);
-          setBoneRot('rightforearm', 0, 0, -0.45 - beat * 0.15, 0.25);
-          const kneeFlex = -bob * 3.8;
-          setBoneRot('leftupleg', 0.08, 0, 0.08, 0.25);
-          setBoneRot('rightupleg', 0.08, 0, -0.08, 0.25);
-          setBoneRot('leftleg', kneeFlex, 0, 0, 0.25);
-          setBoneRot('rightleg', kneeFlex, 0, 0, 0.25);
-        } else if (danceRoutine === 2) {
-          const wave = Math.sin(dancePhase * 0.9);
-          setBonePos('hips', wave * 0.04 * intensity, 0, 0, 0.25);
-          setBoneRot('spine', 0, wave * 0.18 * intensity, 0, 0.25);
-          setBoneRot('leftarm', 0.42, 0, 0.35 + Math.cos(dancePhase) * 0.25 * intensity, 0.25);
-          setBoneRot('rightarm', 0.42, 0, -0.35 - Math.sin(dancePhase) * 0.25 * intensity, 0.25);
-          setBoneRot('leftforearm', 0, 0, 0.22, 0.25);
-          setBoneRot('rightforearm', 0, 0, -0.22, 0.25);
-          setBoneRot('leftupleg', 0.10, 0, 0.15 * intensity, 0.25);
-          setBoneRot('rightupleg', 0.10, 0, -0.15 * intensity, 0.25);
-          setBoneRot('leftleg', -0.20, 0, 0, 0.25);
-          setBoneRot('rightleg', -0.20, 0, 0, 0.25);
+      if (
+        curState === 'dancing' ||
+        curState === 'dance' ||
+        curState === 'heavy_dancing' ||
+        curState === 'BHANGRA_BOUNCE' ||
+        curState === 'HIPHOP_GROOVE' ||
+        curState === 'SPIN_CELEBRATION'
+      ) {
+        // Dance Variations:
+        // 1. BHANGRA_BOUNCE: Shoulder bobbing with arms alternating up/down (armBone swaying with rhythmic bounce Math.sin(time * 10) * 0.15)
+        // 2. HIPHOP_GROOVE: Side-to-side torso hip-twist (model.rotation.y = Math.sin(time * 6) * 0.4) with slight knee dipping
+        // 3. SPIN_CELEBRATION: 360-degree pirouette spin with hands raised up high
+        let routineIndex = danceRoutine;
+        if (curState === 'BHANGRA_BOUNCE') routineIndex = 0;
+        else if (curState === 'HIPHOP_GROOVE') routineIndex = 1;
+        else if (curState === 'SPIN_CELEBRATION') routineIndex = 2;
+
+        if (routineIndex === 0) {
+          // 1. BHANGRA_BOUNCE: Shoulder bobbing, alternating arm pumps, rhythmic bounce
+          const bhangraBeat = Math.sin(time * 10);
+          const bounce = Math.abs(Math.sin(time * 10)) * 0.06 * intensity;
+          setBonePos('hips', 0, bounce, 0, 0.25);
+          setBoneRot('spine', -bounce * 0.5, bhangraBeat * 0.12 * intensity, 0, 0.25);
+          // Alternating arm pumps up and down
+          const leftArmZ = 0.55 + bhangraBeat * 0.35 * intensity;
+          const rightArmZ = -0.55 - bhangraBeat * 0.35 * intensity;
+          setBoneRot('leftarm', 0.25, 0.1, leftArmZ, 0.25);
+          setBoneRot('rightarm', 0.25, -0.1, rightArmZ, 0.25);
+          setBoneRot('leftforearm', 0, 0, 0.75 + bhangraBeat * 0.25, 0.25);
+          setBoneRot('rightforearm', 0, 0, -0.75 - bhangraBeat * 0.25, 0.25);
+          // Energetic alternating leg stomp
+          const legStomp = Math.sin(time * 10) * 0.35;
+          setBoneRot('leftupleg', Math.max(0, legStomp), 0, 0.1, 0.25);
+          setBoneRot('rightupleg', Math.max(0, -legStomp), 0, -0.1, 0.25);
+          setBoneRot('leftleg', -Math.max(0, legStomp) * 1.2, 0, 0, 0.25);
+          setBoneRot('rightleg', -Math.max(0, -legStomp) * 1.2, 0, 0, 0.25);
+        } else if (routineIndex === 1) {
+          // 2. HIPHOP_GROOVE: Side-to-side torso hip-twist with slight knee dipping
+          const hipTwist = Math.sin(time * 6) * 0.4;
+          const kneeDip = Math.abs(Math.sin(time * 6)) * 0.04 * intensity;
+          setBonePos('hips', hipTwist * 0.05, kneeDip, 0, 0.25);
+          setBoneRot('spine', 0.08, hipTwist * 0.35, -hipTwist * 0.15, 0.25);
+          setBoneRot('head', -0.04, -hipTwist * 0.25, hipTwist * 0.1, 0.25);
+          // Street style cross-groove arms
+          setBoneRot('leftarm', 0.40, 0.2, 0.30 + hipTwist * 0.25, 0.25);
+          setBoneRot('rightarm', 0.40, -0.2, -0.30 + hipTwist * 0.25, 0.25);
+          setBoneRot('leftforearm', 0, 0, 0.40, 0.25);
+          setBoneRot('rightforearm', 0, 0, -0.40, 0.25);
+          // Knee dipping and wide hip stance
+          setBoneRot('leftupleg', 0.15, 0, 0.18, 0.25);
+          setBoneRot('rightupleg', 0.15, 0, -0.18, 0.25);
+          setBoneRot('leftleg', -kneeDip * 6.0, 0, 0, 0.25);
+          setBoneRot('rightleg', -kneeDip * 6.0, 0, 0, 0.25);
+        } else if (routineIndex === 2) {
+          // 3. SPIN_CELEBRATION: 360-degree pirouette spin with hands raised up
+          const spinWave = Math.sin(time * 8);
+          setBonePos('hips', 0, 0.03 + Math.abs(spinWave) * 0.03, 0, 0.25);
+          setBoneRot('spine', -0.05, 0, 0, 0.25);
+          // Hands raised up high in celebration
+          setBoneRot('leftarm', 0.10, 0, Math.PI * 0.75 + spinWave * 0.15, 0.25);
+          setBoneRot('rightarm', 0.10, 0, -Math.PI * 0.75 - spinWave * 0.15, 0.25);
+          setBoneRot('leftforearm', 0, 0, 0.35, 0.25);
+          setBoneRot('rightforearm', 0, 0, -0.35, 0.25);
+          // Tiptoe balance pirouette stance
+          setBoneRot('leftupleg', 0.04, 0, 0.04, 0.25);
+          setBoneRot('rightupleg', 0.04, 0, -0.04, 0.25);
+          setBoneRot('leftleg', -0.08, 0, 0, 0.25);
+          setBoneRot('rightleg', -0.08, 0, 0, 0.25);
         } else {
+          // Classic chill groove
           const roll = Math.sin(dancePhase * 0.85);
           setBonePos('hips', 0, breath * 0.01, 0, 0.25);
           setBoneRot('spine', 0, 0, -roll * 0.08 * intensity, 0.25);

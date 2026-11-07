@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { voiceBuddyService, CHARACTERS } from '../../services/voiceBuddyService';
 import { voiceSessionService, SESSION_STATES } from '../../services/voiceSessionService';
 import ThreeDCharacter from './ThreeDCharacter';
-import { Mic, Volume2, Globe, History, ChevronUp, ChevronDown, CheckCircle2, Sparkles, RotateCcw, X } from 'lucide-react';
+import { Mic, Volume2, VolumeX, Globe, History, ChevronUp, ChevronDown, CheckCircle2, Sparkles, RotateCcw, X } from 'lucide-react';
 import usePageWaypoints from '../../hooks/usePageWaypoints';
+import { usePlayer } from '../../context/PlayerContext';
 
 /**
  * CharacterBuddy
@@ -43,6 +44,181 @@ export default function CharacterBuddy({
   const character = CHARACTERS.female;
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [internalVolume, setInternalVolume] = useState(0);
+
+  // Player Context for Song Reaction Commentary & Music State
+  const playerContext = usePlayer?.();
+  const currentTrack = playerContext?.currentTrack;
+
+  // Floating Mute / Unmute State (Persistent across sessions)
+  const [isAvatarMuted, setIsAvatarMuted] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return localStorage.getItem('loopra_avatar_muted') === 'true';
+      } catch (_) {}
+    }
+    return false;
+  });
+
+  const toggleAvatarMute = useCallback(() => {
+    setIsAvatarMuted((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('loopra_avatar_muted', String(next));
+      } catch (_) {}
+      if (next && typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      return next;
+    });
+  }, []);
+
+  // Dance Variation Cycle ('BHANGRA_BOUNCE', 'HIPHOP_GROOVE', 'SPIN_CELEBRATION')
+  const [danceVariation, setDanceVariation] = useState('BHANGRA_BOUNCE');
+  const danceCycleTimerRef = useRef(null);
+
+  // Realtime Live Transcript & Sanitized Speech Display State
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const [isInterim, setIsInterim] = useState(false);
+  const [lastActionTag, setLastActionTag] = useState(null);
+  const [commandHistory, setCommandHistory] = useState([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isBubbleVisible, setIsBubbleVisible] = useState(false);
+  const [micState, setMicState] = useState(() => voiceSessionService.getSnapshot?.().micState || 'Idle');
+  const [currentLang, setCurrentLang] = useState(() => voiceSessionService.lang || 'hi-IN');
+  const bubbleDismissTimerRef = useRef(null);
+
+  // Strict Speech Text Sanitizer & 1-Second Auto-Dismiss Controller
+  const showSanitizedSpeechBubble = useCallback((rawText, actionTag = null, customDismissMs = 1000) => {
+    if (isAvatarMuted) return;
+    if (!rawText || typeof rawText !== 'string') return;
+
+    // Filter out intermediate draft tokens, reasoning logs, or prompt candidate arrays
+    let cleanText = rawText.trim();
+    if (cleanText.startsWith('[') && cleanText.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(cleanText);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          cleanText = String(parsed[0]);
+        }
+      } catch (_) {}
+    }
+    // Remove thinking/reasoning tags or JSON structure artifacts
+    cleanText = cleanText.replace(/<think>[\s\S]*?<\/think>/gi, '')
+                         .replace(/```[\s\S]*?```/g, '')
+                         .replace(/["“”]/g, '')
+                         .trim();
+
+    if (!cleanText) return;
+
+    if (bubbleDismissTimerRef.current) {
+      clearTimeout(bubbleDismissTimerRef.current);
+      bubbleDismissTimerRef.current = null;
+    }
+
+    setIsInterim(false);
+    setLiveTranscript(cleanText);
+    if (actionTag) setLastActionTag(actionTag);
+    setIsBubbleVisible(true);
+
+    // Forcefully hide speech bubble exactly 1000ms after text displays
+    bubbleDismissTimerRef.current = setTimeout(() => {
+      setLiveTranscript('');
+      setIsBubbleVisible(false);
+      setLastActionTag(null);
+      bubbleDismissTimerRef.current = null;
+    }, customDismissMs);
+  }, [isAvatarMuted]);
+
+  // Instant Indian Female Voice Model (0ms Latency Client Fallback)
+  const speakInstantHindiFemale = useCallback((text) => {
+    if (typeof window === 'undefined' || isAvatarMuted) return;
+    try {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        const voices = window.speechSynthesis.getVoices();
+        // Prioritize Indian English / Hindi natural female voices
+        const targetVoice = voices.find(v => 
+          (v.lang === 'hi-IN' || v.lang === 'en-IN') && 
+          (v.name.includes('Google') || v.name.includes('Female') || v.name.includes('Natural'))
+        ) || voices.find(v => v.lang.startsWith('hi') || v.lang === 'en-IN' || v.lang === 'hi-IN');
+        if (targetVoice) utterance.voice = targetVoice;
+        utterance.rate = 1.35; // brisk, engaging pace
+        utterance.pitch = 1.15; // natural female tone
+        window.speechSynthesis.speak(utterance);
+        return;
+      }
+    } catch (_) {}
+
+    // Fallback to voiceBuddyService if Web Speech fails
+    try {
+      voiceBuddyService.speakText(text, { priority: true, pitch: 1.15, rate: 1.35 });
+    } catch (_) {}
+  }, [isAvatarMuted]);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      if (danceCycleTimerRef.current) {
+        clearInterval(danceCycleTimerRef.current);
+        danceCycleTimerRef.current = null;
+      }
+      return;
+    }
+
+    const DANCE_VARIATIONS = ['BHANGRA_BOUNCE', 'HIPHOP_GROOVE', 'SPIN_CELEBRATION'];
+    let idx = Math.floor(Math.random() * DANCE_VARIATIONS.length);
+    setDanceVariation(DANCE_VARIATIONS[idx]);
+
+    danceCycleTimerRef.current = setInterval(() => {
+      idx = (idx + 1) % DANCE_VARIATIONS.length;
+      setDanceVariation(DANCE_VARIATIONS[idx]);
+    }, 7000);
+
+    return () => {
+      if (danceCycleTimerRef.current) {
+        clearInterval(danceCycleTimerRef.current);
+        danceCycleTimerRef.current = null;
+      }
+    };
+  }, [isPlaying]);
+
+  // Track Change Reaction Commentary Trigger
+  const lastTrackIdRef = useRef(null);
+
+  const triggerSongReaction = useCallback((track) => {
+    if (!track?.title || isAvatarMuted) return;
+
+    const title = track.title || 'gaana';
+    const artist = track.artist || track.channelTitle || '';
+
+    const reactionTemplates = [
+      `Waah! "${title}" chal gaya! Ekdum zabardast choice!`,
+      `Oh ho! "${title}" toh mera favorite hai, maza aayega!`,
+      `Kya baat hai! "${title}" sunke mood ban gaya!`,
+      `Arre nice! "${title}" baj raha hai, ab thoda dance toh banta hai!`,
+      artist ? `Sahi hai yaar! ${artist} ka "${title}" — full vibe hai!` : `Badhiya gaana lagaya hai — "${title}"!`
+    ];
+
+    const reactionText = reactionTemplates[Math.floor(Math.random() * reactionTemplates.length)];
+
+    showSanitizedSpeechBubble(reactionText, '🎵 NEW TRACK', 1000);
+    speakInstantHindiFemale(reactionText);
+  }, [isAvatarMuted, showSanitizedSpeechBubble, speakInstantHindiFemale]);
+
+  useEffect(() => {
+    const trackKey = currentTrack?.id || currentTrack?.title;
+    if (!trackKey || isAvatarMuted) return;
+
+    if (lastTrackIdRef.current === trackKey) return;
+    lastTrackIdRef.current = trackKey;
+
+    // Debounce to prevent multiple triggers during rapid skipping
+    const commentTimeout = setTimeout(() => {
+      triggerSongReaction(currentTrack);
+    }, 1200);
+
+    return () => clearTimeout(commentTimeout);
+  }, [currentTrack?.title, currentTrack?.id, isAvatarMuted, triggerSongReaction]);
 
   // Smooth Fade & Subtle Scale/Position Transition State
   const [isDOMVisible, setIsDOMVisible] = useState(isVisible);
@@ -198,33 +374,6 @@ export default function CharacterBuddy({
   const isUserDragging = useRef(false);
   const pauseRoamingUntil = useRef(0);
 
-  // Instant Indian Female Voice Model (0ms Latency Client Fallback)
-  const speakInstantHindiFemale = useCallback((text) => {
-    if (typeof window === 'undefined') return;
-    try {
-      if (window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        const voices = window.speechSynthesis.getVoices();
-        // Prioritize Indian English / Hindi natural female voices
-        const targetVoice = voices.find(v => 
-          (v.lang === 'hi-IN' || v.lang === 'en-IN') && 
-          (v.name.includes('Google') || v.name.includes('Female') || v.name.includes('Natural'))
-        ) || voices.find(v => v.lang.startsWith('hi') || v.lang === 'en-IN' || v.lang === 'hi-IN');
-        if (targetVoice) utterance.voice = targetVoice;
-        utterance.rate = 1.35; // brisk, engaging pace
-        utterance.pitch = 1.15; // natural female tone
-        window.speechSynthesis.speak(utterance);
-        return;
-      }
-    } catch (_) {}
-
-    // Fallback to voiceBuddyService if Web Speech fails
-    try {
-      voiceBuddyService.speakText(text, { priority: true, pitch: 1.15, rate: 1.35 });
-    } catch (_) {}
-  }, []);
-
   // 60-Second Dynamic Activity Timer & 45-60s Nap Cycle State
   const [isFatigued, setIsFatigued] = useState(false);
   const activeRoamSecondsRef = useRef(0);
@@ -285,16 +434,9 @@ export default function CharacterBuddy({
     } catch (_) {}
 
     // Show transcript and speak dialogue through female Hindi voice
-    setLiveTranscript(sleepDialogue);
-    setIsBubbleVisible(true);
-    setLastActionTag('💤 SLEEPING (60s NAP)');
-
+    showSanitizedSpeechBubble(sleepDialogue, '💤 SLEEPING (60s NAP)', 2000);
     speakInstantHindiFemale(sleepDialogue);
-
-    setTimeout(() => {
-      setIsBubbleVisible(false);
-    }, 7000);
-  }, [characterWidth, characterHeight, waypoints, speakInstantHindiFemale]);
+  }, [characterWidth, characterHeight, waypoints, speakInstantHindiFemale, showSanitizedSpeechBubble]);
 
   // Click/Tap to Wake Up from Fatigue
   const handleWakeUpAvatar = useCallback(() => {
@@ -307,12 +449,9 @@ export default function CharacterBuddy({
     movementModeRef.current = 'walk';
     setAutonomousSubState('idle');
     const wakeDialogue = 'Chalo uth gayi! Ab bolo kahan chalna hai?';
-    setLiveTranscript(wakeDialogue);
-    setIsBubbleVisible(true);
-    setLastActionTag('⚡ AWAKENED');
+    showSanitizedSpeechBubble(wakeDialogue, '⚡ AWAKENED', 1000);
     speakInstantHindiFemale(wakeDialogue);
-    setTimeout(() => setIsBubbleVisible(false), 4000);
-  }, [speakInstantHindiFemale]);
+  }, [speakInstantHindiFemale, showSanitizedSpeechBubble]);
 
   // 60-Second Dynamic Activity Timer & 45-60s Nap Cycle
   useEffect(() => {
@@ -636,8 +775,7 @@ export default function CharacterBuddy({
             "Haath dukh gaye mere, par main nahi utrungi!"
           ];
           const hangLine = hangLines[Math.floor(Math.random() * hangLines.length)];
-          setLiveTranscript(hangLine);
-          setIsBubbleVisible(true);
+          showSanitizedSpeechBubble(hangLine, '🧗 HANGING ON LEDGE', 1000);
           speakInstantHindiFemale(hangLine);
 
           // Hang for 5 to 8 seconds before dropping down smoothly to the floor with a soft landing roll
@@ -680,8 +818,7 @@ export default function CharacterBuddy({
             bubbleLine = "Bore ho gayi hu, thoda nach lo mere saath!";
           }
 
-          setLiveTranscript(bubbleLine);
-          setIsBubbleVisible(true);
+          showSanitizedSpeechBubble(bubbleLine, null, 1000);
           speakInstantHindiFemale(bubbleLine);
 
           if (!nextTargetTimeoutRef.current && !isSleepingRef.current) {
@@ -729,17 +866,6 @@ export default function CharacterBuddy({
       }
     };
   }, [isRoamActive, isPlaying, isBottomPlayerVisible, pickNewTarget]);
-
-  // Realtime Live Transcript & Command Display State
-  const [liveTranscript, setLiveTranscript] = useState('');
-  const [isInterim, setIsInterim] = useState(false);
-  const [lastActionTag, setLastActionTag] = useState(null);
-  const [commandHistory, setCommandHistory] = useState([]);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [isBubbleVisible, setIsBubbleVisible] = useState(false);
-  const [micState, setMicState] = useState(() => voiceSessionService.getSnapshot?.().micState || 'Idle');
-  const [currentLang, setCurrentLang] = useState(() => voiceSessionService.lang || 'hi-IN');
-  const bubbleDismissTimerRef = useRef(null);
 
   // Position & Dragging State (Default origin strictly in Lower Right Corner, right above mobile navbar)
   const getDefaultPosition = useCallback(() => {
@@ -923,8 +1049,8 @@ export default function CharacterBuddy({
     // 2. Assistant spoken response with synchronized viseme lip-sync
     if (isSpeaking) return 'speaking';
 
-    // 3. Active music playback: continuously dances with natural variations
-    if (isPlaying) return 'dancing';
+    // 3. Active music playback: continuously dances with dynamic variations (BHANGRA_BOUNCE, HIPHOP_GROOVE, SPIN_CELEBRATION)
+    if (isPlaying) return danceVariation || 'dancing';
 
     // 4. Autonomous natural behavior when no active command and no music
     return autonomousSubState;
@@ -1315,12 +1441,13 @@ export default function CharacterBuddy({
       return [entry, ...prev.slice(0, 4)];
     });
 
-    // Auto-dismiss input text bubble strictly after 2 seconds
+    // Auto-dismiss input text bubble strictly after 1 second
     bubbleDismissTimerRef.current = setTimeout(() => {
       setIsBubbleVisible(false);
       setLiveTranscript('');
       setLastActionTag(null);
-    }, 2000);
+      bubbleDismissTimerRef.current = null;
+    }, 1000);
   }, [stopAutonomousWalking]);
 
   // Expose command recorder and thinking/executing/celebrating triggers globally
@@ -1447,31 +1574,25 @@ export default function CharacterBuddy({
         setIsSpeaking(true);
         resetAutonomousTimer();
         if (text) {
-          clearTimeout(bubbleDismissTimerRef.current);
-          setIsInterim(false);
-          setLiveTranscript(text);
-          setIsBubbleVisible(true);
+          showSanitizedSpeechBubble(text, null, 1000);
         }
       } else if (event === 'speech_end') {
         setIsSpeaking(false);
         setInternalVolume(0);
         resetAutonomousTimer();
+        if (bubbleDismissTimerRef.current) {
+          clearTimeout(bubbleDismissTimerRef.current);
+        }
         bubbleDismissTimerRef.current = setTimeout(() => {
           setIsBubbleVisible(false);
           setLiveTranscript('');
-        }, 2000);
+          bubbleDismissTimerRef.current = null;
+        }, 1000);
       } else if (event === 'speech_text_only') {
         setIsSpeaking(false);
         setInternalVolume(0);
         if (text) {
-          clearTimeout(bubbleDismissTimerRef.current);
-          setIsInterim(false);
-          setLiveTranscript(text);
-          setIsBubbleVisible(true);
-          bubbleDismissTimerRef.current = setTimeout(() => {
-            setIsBubbleVisible(false);
-            setLiveTranscript('');
-          }, 2500);
+          showSanitizedSpeechBubble(text, null, 1000);
         }
       } else if (event === 'speech_volume' && volume !== undefined) {
         setInternalVolume(volume);
@@ -1482,7 +1603,7 @@ export default function CharacterBuddy({
       unsub();
       clearTimeout(transientAnimTimerRef.current);
     };
-  }, [resetAutonomousTimer]);
+  }, [resetAutonomousTimer, showSanitizedSpeechBubble]);
 
   // =========================================================================
   // TOUCH-AND-HOLD RESIZING (~500ms) & MOVABLE AVATAR DRAGGING
@@ -2163,6 +2284,21 @@ export default function CharacterBuddy({
           className="w-28 h-28 rounded-full border-4 border-amber-400 bg-amber-400/30 animate-ping shadow-[0_0_35px_#f59e0b]"
         />
       )}
+
+      {/* Floating Mute / Unmute Button directly above the bottom-right AI Chat trigger */}
+      <button
+        type="button"
+        onClick={toggleAvatarMute}
+        title={isAvatarMuted ? "Unmute Avatar Voice (Muted)" : "Mute Avatar Voice (Audio ON)"}
+        aria-label={isAvatarMuted ? "Unmute Avatar Voice" : "Mute Avatar Voice"}
+        className="fixed bottom-28 right-6 z-[60] w-10 h-10 rounded-full flex items-center justify-center bg-neutral-950/85 hover:bg-neutral-900 border border-amber-500/40 hover:border-amber-400 text-amber-400 hover:text-amber-300 shadow-[0_4px_20px_rgba(245,158,11,0.25)] backdrop-blur-md transition-all duration-200 cursor-pointer active:scale-95 group"
+      >
+        {isAvatarMuted ? (
+          <VolumeX className="w-5 h-5 text-red-400 group-hover:scale-110 transition-transform" />
+        ) : (
+          <Volume2 className="w-5 h-5 text-amber-400 group-hover:scale-110 transition-transform" />
+        )}
+      </button>
 
       {/* ============================================================= */}
       {/* MOVABLE DOCK CONTAINER (Screen Clamped, Draggable)             */}
