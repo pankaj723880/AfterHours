@@ -8,7 +8,7 @@
  * 3. Varied conversational dialogue generator (no static repetition).
  */
 
-import { getApiUrl } from '../utils/apiUrl';
+import { getApiUrl } from '../utils/apiUrl.js';
 
 export const CHARACTERS = {
   female: {

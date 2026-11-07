@@ -6,11 +6,13 @@ const isLocalhost = typeof window !== 'undefined' && Boolean(
   window.location.hostname.endsWith('.local')
 );
 
+const env = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : (typeof process !== 'undefined' && process.env ? process.env : {});
+
 let candidateBackend = '';
 if (isLocalhost) {
-  candidateBackend = import.meta.env.VITE_LOCAL_BACKEND_URL || 'http://localhost:5000';
+  candidateBackend = env.VITE_LOCAL_BACKEND_URL || 'http://localhost:5000';
 } else {
-  const envVal = (import.meta.env.VITE_BACKEND_URL || '').trim();
+  const envVal = (env.VITE_BACKEND_URL || '').trim();
   if (envVal && envVal.startsWith('http')) {
     candidateBackend = envVal;
   } else {

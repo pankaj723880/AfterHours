@@ -5,6 +5,7 @@ Allow: /favicon.svg
 Allow: /favicon.png
 Allow: /og-image.png
 Allow: /manifest.json
+Allow: /.well-known/assetlinks.json
 Allow: /sitemap.xml
 
 # Exclude private, administrative, and dynamic API endpoints

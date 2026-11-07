@@ -51,10 +51,11 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // 1. Bypass API, WebSocket, audio streams, and browser extension requests
+  // 1. Bypass API, WebSocket, audio streams, browser extensions, and Android Digital Asset Links
   if (
     url.pathname.startsWith('/api') ||
     url.pathname.startsWith('/socket.io') ||
+    url.pathname.startsWith('/.well-known/') ||
     url.origin.includes('youtube.com') ||
     url.origin.includes('googlevideo.com') ||
     url.origin.includes('ytimg.com') ||

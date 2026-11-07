@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.vercel.loopra1.twa",
+      "sha256_cert_fingerprints": [
+        "EC:06:98:C7:E8:CB:BF:7F:CE:8F:EC:64:45:6E:07:AB:0B:AE:3B:7B:B8:83:14:F5:AA:1B:9F:C0:41:BE:CA:30"
+      ]
+    }
+  }
+]
+

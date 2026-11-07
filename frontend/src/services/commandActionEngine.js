@@ -21,8 +21,23 @@ export function formatMainstreamMusicQuery(rawQuery = '') {
   const clean = rawQuery.trim();
   const lower = clean.toLowerCase();
 
+  // Pattern: "[song] by [artist]" or "[artist] - [song]"
+  const byMatch = clean.match(/^(.+?)\s+(?:by|from)\s+(.+)$/i);
+  if (byMatch && byMatch[1] && byMatch[2]) {
+    const song = byMatch[1].trim();
+    const artist = byMatch[2].trim();
+    return `${artist} - ${song} official audio`;
+  }
+
+  const dashMatch = clean.match(/^(.+?)\s+-\s+(.+)$/i);
+  if (dashMatch && dashMatch[1] && dashMatch[2]) {
+    const part1 = dashMatch[1].trim();
+    const part2 = dashMatch[2].trim();
+    return `${part1} - ${part2} official audio`;
+  }
+
   const hasLanguage = /\b(english|punjabi|tamil|telugu|bengali|marathi|kannada|malayalam|bhojpuri|gujarati|kpop|spanish|french|urdu)\b/i.test(lower);
-  const hasArtist = /(arijit|atif|shreya|vishal|jubin|kk|sonu|diljit|badshah|pritam|sachin|jigar|darshan|armaan|neha|sunidhi|lata|kishore|rafi|sanu|alka|udit)/i.test(lower);
+  const hasArtist = /(arijit|atif|shreya|vishal|jubin|kk|sonu|diljit|badshah|pritam|sachin|jigar|darshan|armaan|neha|sunidhi|lata|kishore|rafi|sanu|alka|udit|alan walker|taylor swift|ed sheeran|bts|eminem|drake|the weeknd|billie eilish|dua lipa|justin bieber|coldplay|charlie puth|selena gomez|ariana grande|post malone|bruno mars|shawn mendes|marshmello|martin garrix|chainsmokers|avicii|david guetta|dj snake)/i.test(lower);
 
   // If already contains artist or language, keep and ensure official search quality
   if (hasArtist || hasLanguage) {
@@ -50,7 +65,7 @@ export function formatMainstreamMusicQuery(rawQuery = '') {
   }
 
   // Generic request ("koi gaana chala", "play music", "popular song")
-  return `${clean} hindi bollywood song official audio`;
+  return `${clean} official audio`;
 }
 
 export const INTENT_CATEGORIES = {
@@ -519,7 +534,24 @@ export function parseCommandToAction(rawInput = '', context = {}) {
       }
     }
 
-    // Pattern C: Standard Play target e.g. "Play Kesariya", "Kesariya chalao"
+    // Pattern C: Standard Play target e.g. "Play Kesariya", "Play Headlight by Alan Walker", "Kesariya chalao"
+    // Extract "song by artist" pattern first to prioritize explicit artist and song
+    const playByMatch = cleanLower.match(/^play\s+(.+?)\s+(?:by|from)\s+(.+)$/i) ||
+                        cleanLower.match(/^(.+?)\s+(?:by|from)\s+(.+?)\s+(?:play|chalao|bajao|sunao|lagao)$/i);
+    if (playByMatch && playByMatch[1] && playByMatch[2]) {
+      const sTitle = playByMatch[1].trim();
+      const sArtist = playByMatch[2].trim();
+      const q = `${sArtist} - ${sTitle} official audio`;
+      return {
+        intent: INTENT_CATEGORIES.PLAY_SONG,
+        action: 'play_search',
+        query: q,
+        songTitle: sTitle,
+        artistName: sArtist,
+        description: `Play "${sTitle}" by ${sArtist}`
+      };
+    }
+
     const playTarget = cleanLower
       .replace(new RegExp('\\b(play|chalao|chala de|chala do|chala|bajao|baja de|baja do|baja|sunao|suna de|suna do|suna|lagao|laga de|laga do|laga|shuru karo|shuru kar|song|gaana|music)\\b', 'gi'), '')
       .replace(/^(?:koi|thoda|ek)\s+/i, '')
