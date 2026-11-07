@@ -410,6 +410,7 @@ export default function CharacterBuddy({
   const movementModeRef = useRef('walk'); // 'walk' | 'run' | 'jump'
   const currentHeadingRef = useRef(0); // Motion heading yaw angle (in radians)
   const lastMischiefTimeRef = useRef(0);
+  const [isMoving, setIsMoving] = useState(false);
 
   // User Drag Interrupt & Roaming Pause
   const isUserDragging = useRef(false);
@@ -753,6 +754,7 @@ export default function CharacterBuddy({
       const maxY = Math.max(minY + 40, winH - (isBottomPlayerVisible ? 170 : 130));
 
       if (distance > 6) {
+        setIsMoving(true);
         // 1. Calculate Motion Direction Angle (Yaw Heading):
         // 2D screen motion vector angle: dx corresponds to screen X, dy corresponds to screen Y.
         // In 3D Three.js space:
@@ -818,6 +820,7 @@ export default function CharacterBuddy({
           setAutonomousSubState('walking');
         }
       } else {
+        setIsMoving(false);
         // Target reached: smoothly turn back to front (facing user) using frame-rate independent damping
         const frontAngle = 0;
         let frontDiff = (frontAngle - currentHeadingRef.current) % (Math.PI * 2);
@@ -1214,6 +1217,7 @@ export default function CharacterBuddy({
       }
 
       // Stop walking locomotion
+      setIsMoving(false);
       stopAutonomousWalking?.(false);
       setContinuousPos({ ...ORIGIN_POS });
       positionRef.current = { ...ORIGIN_POS };
@@ -2627,6 +2631,8 @@ export default function CharacterBuddy({
               width={characterWidth}
               height={characterHeight}
               showGroundCircle={true}
+              isRoaming={isRoamActive}
+              isMoving={isMoving}
             />
           </div>
         </div>

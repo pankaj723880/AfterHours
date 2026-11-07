@@ -42,7 +42,9 @@ export default function ThreeDCharacter({
   height = 355,
   framingMode = 'full', // 'full' | 'bust' (bust focuses camera chest-up on facial expressions)
   isPaused = false,
-  showGroundCircle = true
+  showGroundCircle = true,
+  isRoaming = false,
+  isMoving = false
 }) {
   const mountRef = useRef(null);
   const rendererRef = useRef(null);
@@ -60,7 +62,9 @@ export default function ThreeDCharacter({
     rotationYaw: 0,
     rotationPitch: 0,
     framingMode,
-    isPaused
+    isPaused,
+    isRoaming,
+    isMoving
   });
 
   const [hasGlbLoaded, setHasGlbLoaded] = useState(false);
@@ -79,9 +83,11 @@ export default function ThreeDCharacter({
       rotationYaw: rotationYaw || 0,
       rotationPitch: rotationPitch || 0,
       framingMode,
-      isPaused
+      isPaused,
+      isRoaming,
+      isMoving
     };
-  }, [animationState, isSpeaking, isListening, isPlaying, voiceVolumeScale, facing, cursorOffset, rotationYaw, rotationPitch, framingMode, isPaused]);
+  }, [animationState, isSpeaking, isListening, isPlaying, voiceVolumeScale, facing, cursorOffset, rotationYaw, rotationPitch, framingMode, isPaused, isRoaming, isMoving]);
 
   // Decoupled dynamic resizing: NEVER remounts Three.js or reloads the GLB on size change!
   useEffect(() => {
@@ -387,11 +393,20 @@ export default function ThreeDCharacter({
       // User yaw directly dictates heading and inspection angle, frame-rate independently damped
       const userYaw = stateRef.current.rotationYaw || 0;
       const userPitch = stateRef.current.rotationPitch || 0;
-      const targetCharYaw = userYaw;
-      const targetCharPitch = THREE.MathUtils.clamp(userPitch, -0.25, 0.25);
+      const isRoamingActive = stateRef.current.isRoaming;
+      const isCharacterMoving = stateRef.current.isMoving;
 
-      charRoot.rotation.y = THREE.MathUtils.damp(charRoot.rotation.y, targetCharYaw, 10.0, delta);
-      charRoot.rotation.x = THREE.MathUtils.damp(charRoot.rotation.x, targetCharPitch, 9.0, delta);
+      if (!isCharacterMoving || !isRoamingActive) {
+        // Smoothly damp rotation directly back to 0 (front-facing) and STOP
+        charRoot.rotation.y = THREE.MathUtils.damp(charRoot.rotation.y, 0, 8.0, delta);
+        charRoot.rotation.x = THREE.MathUtils.damp(charRoot.rotation.x, 0, 8.0, delta);
+      } else {
+        // Only rotate towards heading when actually moving
+        const targetCharYaw = userYaw;
+        const targetCharPitch = THREE.MathUtils.clamp(userPitch, -0.25, 0.25);
+        charRoot.rotation.y = THREE.MathUtils.damp(charRoot.rotation.y, targetCharYaw, 10.0, delta);
+        charRoot.rotation.x = THREE.MathUtils.damp(charRoot.rotation.x, targetCharPitch, 9.0, delta);
+      }
 
       // Music-driven subtle procedural head-bob or scale oscillation when music is active
       if (isMusicPlaying && !isSpeakingNow && curState === 'idle') {
@@ -447,8 +462,11 @@ export default function ThreeDCharacter({
         glbLoadedModel.rotation.x = THREE.MathUtils.damp(glbLoadedModel.rotation.x, targetModelRotX, 4.0, delta);
         glbLoadedModel.rotation.z = THREE.MathUtils.damp(glbLoadedModel.rotation.z, targetModelRotZ, isHangingState ? 12.0 : 4.0, delta);
         glbLoadedModel.position.y = THREE.MathUtils.damp(glbLoadedModel.position.y, targetModelPosY, 4.0, delta);
-        if (isSpinCelebration) {
-          glbLoadedModel.rotation.y += delta * 6.28; // Full 360-degree pirouette spin
+        // Do not add continuous spinning/pirouette when stationary or not explicitly celebrating while roaming
+        if (isSpinCelebration && isRoamingActive && isCharacterMoving) {
+          glbLoadedModel.rotation.y += delta * 6.28;
+        } else {
+          glbLoadedModel.rotation.y = THREE.MathUtils.damp(glbLoadedModel.rotation.y, 0, 8.0, delta);
         }
       }
 
