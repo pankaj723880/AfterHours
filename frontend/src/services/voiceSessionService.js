@@ -565,9 +565,9 @@ class VoiceSessionController {
     }
 
     const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = USE_V2_VOICE_ENGINE ? false : true;
-    recognition.lang = USE_V2_VOICE_ENGINE ? 'hi-IN' : this.lang;
+    recognition.continuous = false; // Mobile browsers frequently crash/drop with continuous=true; use single-shot with auto-restart
+    recognition.interimResults = true;
+    recognition.lang = USE_V2_VOICE_ENGINE ? 'hi-IN' : (this.lang || 'hi-IN');
     recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {

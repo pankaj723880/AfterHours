@@ -21,7 +21,7 @@ class VoiceAssistantService {
   constructor() {
     this.recognition = null;
     this.state = VOICE_STATES.IDLE;
-    this.lang = 'en-IN';
+    this.lang = 'hi-IN';
     this.listeners = new Set();
     this.activeStream = null;
     this.safetyTimer = null;
@@ -86,7 +86,7 @@ class VoiceAssistantService {
 
     this.stop(); // Stop any pending session
 
-    const targetLang = lang || this.lang || 'en-IN';
+    const targetLang = lang || this.lang || 'hi-IN';
     this.lang = targetLang;
 
     try {
