@@ -369,15 +369,14 @@ export default function ThreeDCharacter({
       const vol = stateRef.current.voiceVolumeScale;
       const facingDir = stateRef.current.facing;
 
-      // Full 360-Degree Interactive Rotation & Viewing Pitch (Strict Front-Facing by default)
+      // Full 360-Degree Interactive Rotation & Viewing Pitch
+      // User yaw directly dictates heading and inspection angle, smoothly interpolated
       const userYaw = stateRef.current.rotationYaw || 0;
       const userPitch = stateRef.current.rotationPitch || 0;
-      const isTraveling = curState === 'walking' || curState === 'walk' || curState === 'idle_walking' || curState === 'running' || curState === 'run';
-      const baseFacingYaw = isTraveling ? (facingDir === 'right' ? -0.22 : 0.22) : 0;
-      const targetCharYaw = userYaw + baseFacingYaw;
+      const targetCharYaw = userYaw;
       const targetCharPitch = THREE.MathUtils.clamp(userPitch, -0.25, 0.25);
 
-      charRoot.rotation.y = THREE.MathUtils.lerp(charRoot.rotation.y, targetCharYaw, 0.12);
+      charRoot.rotation.y = THREE.MathUtils.lerp(charRoot.rotation.y, targetCharYaw, 0.14);
       charRoot.rotation.x = THREE.MathUtils.lerp(charRoot.rotation.x, targetCharPitch, 0.12);
 
       // Music-driven subtle procedural head-bob or scale oscillation when music is active
@@ -526,6 +525,31 @@ export default function ThreeDCharacter({
           setBoneRot('leftleg', -Math.abs(Math.sin(dancePhase * 0.85)) * 0.25, 0, 0, 0.25);
           setBoneRot('rightleg', -Math.abs(Math.cos(dancePhase * 0.85)) * 0.25, 0, 0, 0.25);
         }
+      } else if (curState === 'running' || curState === 'run') {
+        const runStride = Math.sin(time * 12.0);
+        setBonePos('hips', 0, Math.abs(runStride) * 0.04, 0, 0.25);
+        setBoneRot('spine', 0.18, 0, 0, 0.25); // Forward lean for running
+        setBoneRot('leftupleg', runStride * 0.75, 0, 0, 0.25);
+        setBoneRot('rightupleg', -runStride * 0.75, 0, 0, 0.25);
+        setBoneRot('leftleg', Math.min(0, -runStride * 0.85), 0, 0, 0.25);
+        setBoneRot('rightleg', Math.min(0, runStride * 0.85), 0, 0, 0.25);
+        setBoneRot('leftarm', 0.35, 0, -runStride * 0.65, 0.25);
+        setBoneRot('rightarm', 0.35, 0, runStride * 0.65, 0.25);
+        setBoneRot('leftforearm', 0, 0, 0.35, 0.25);
+        setBoneRot('rightforearm', 0, 0, -0.35, 0.25);
+      } else if (curState === 'jump' || curState === 'jumping') {
+        // Dynamic jumping / hopping pose
+        const jumpPhase = Math.sin(time * 8.0);
+        setBonePos('hips', 0, Math.max(0, jumpPhase) * 0.08, 0, 0.25);
+        setBoneRot('spine', 0.06, 0, 0, 0.25);
+        setBoneRot('leftupleg', 0.35, 0, 0.08, 0.25);
+        setBoneRot('rightupleg', 0.35, 0, -0.08, 0.25);
+        setBoneRot('leftleg', -0.45, 0, 0, 0.25);
+        setBoneRot('rightleg', -0.45, 0, 0, 0.25);
+        setBoneRot('leftarm', 0.20, 0, 0.50, 0.25);
+        setBoneRot('rightarm', 0.20, 0, -0.50, 0.25);
+        setBoneRot('leftforearm', 0, 0, 0.30, 0.25);
+        setBoneRot('rightforearm', 0, 0, -0.30, 0.25);
       } else if (curState === 'walking' || curState === 'walk' || curState === 'idle_walking') {
         const stride = Math.sin(time * 7.5);
         setBonePos('hips', 0, Math.abs(stride) * 0.02, 0, 0.25);

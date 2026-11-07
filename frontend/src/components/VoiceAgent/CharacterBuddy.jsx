@@ -188,25 +188,29 @@ export default function CharacterBuddy({
   const landingModeRef = useRef('walk'); // 'walk' | 'sit' | 'lie_down'
   const isSleepingRef = useRef(false);
   const patrolFrameRef = useRef(null);
+  const movementModeRef = useRef('walk'); // 'walk' | 'run' | 'jump'
+  const currentHeadingRef = useRef(0); // Motion heading yaw angle (in radians)
 
-  // User Drag Interrupt & 60-Second Roaming Pause
+  // User Drag Interrupt & Roaming Pause
   const isUserDragging = useRef(false);
   const pauseRoamingUntil = useRef(0);
 
-  // 20-Second Active Roaming Fatigue Tracker
+  // 60-Second Dynamic Activity Timer & 45-60s Nap Cycle State
   const [isFatigued, setIsFatigued] = useState(false);
   const activeRoamSecondsRef = useRef(0);
+  const sleepDurationSecondsRef = useRef(0);
   const fatigueCheckIntervalRef = useRef(null);
+  const nextTargetTimeoutRef = useRef(null);
 
-  // Fatigue Dialogue Trigger with Gemini API & Casual Hindi Relatable Fallbacks
+  // Fatigue Sleep Trigger with Gemini API & Casual Hindi Relatable Fallbacks
   const triggerFatigueSleep = useCallback(async () => {
     if (isSleepingRef.current) return;
     isSleepingRef.current = true;
     setIsFatigued(true);
+    movementModeRef.current = 'walk';
 
     // 1. Choose nearest resting spot: navbar header horizontal edge (lie_down) or nearest card (sit)
     const winW = typeof window !== 'undefined' ? window.innerWidth : 1000;
-    const paddingX = 24;
     const minX = 16;
     const maxX = Math.max(minX + 40, winW - characterWidth - 110);
 
@@ -228,22 +232,21 @@ export default function CharacterBuddy({
       landingModeRef.current = 'lie_down';
     }
 
-    // 2. Dynamic Gemini or witty relatable Hindi sleep dialogue
+    // 2. Play exhaustion breathing pause & speak sleepy dialogue via Indian female TTS
     const fallbackLines = [
-      "Thak gayi yaar, itna toh PT teacher ne bhi nahi daudaya... main so rahi hu!",
-      "Bas mera ho gaya, 20 second me saari calories burn ho gayi, shubh ratri!",
-      "Kaanp rahi hai taangein, main chali navbar ke niche letne, disturb mat karna.",
-      "Haye main marjawa! Itna walk karwaya, ab main thodi der let rahi hoon.",
-      "Battery low ho gayi meri, please thodi der sone do yaar!"
+      "Ek minute poora bhaga diya yaar... ab main 1 minute so rahi hu, please disturb mat karna!",
+      "Bas mera ho gaya, 60 second me saari energy khatam, shubh ratri!",
+      "Taangein jawab de gayi meri, main chali thoda aaram karne, disturb mat karna.",
+      "Haye main thak gayi! Itna run karwaya, ab 1 minute main so rahi hoon.",
+      "Battery zero ho gayi meri, please 1 minute sone do yaar!"
     ];
 
     let sleepDialogue = fallbackLines[Math.floor(Math.random() * fallbackLines.length)];
 
     try {
-      const prompt = "Generate 1 short, funny, relatable Hindi line (max 8-10 words) of a tired Indian girl who ran too much across the music app and wants to sleep now. Casual, witty tone.";
+      const prompt = "Generate 1 short, funny, relatable Hindi line (max 8-10 words) of a tired Indian girl who ran around the music app for 1 minute and is now sleeping for 1 minute. Casual witty tone.";
       const res = await chatBuddyClient.sendMessage(prompt, '', { isFatiguePrompt: true });
       if (res?.reply && typeof res.reply === 'string' && res.reply.trim().length > 0) {
-        // Strip quotes or excess meta formatting
         const clean = res.reply.replace(/["“”*]/g, '').trim();
         if (clean.length > 5) {
           sleepDialogue = clean;
@@ -254,7 +257,7 @@ export default function CharacterBuddy({
     // Show transcript and speak dialogue through female Hindi voice
     setLiveTranscript(sleepDialogue);
     setIsBubbleVisible(true);
-    setLastActionTag('💤 SLEEPING (20s FATIGUE)');
+    setLastActionTag('💤 SLEEPING (60s NAP)');
 
     try {
       voiceBuddyService.speakText(sleepDialogue, {
@@ -269,44 +272,15 @@ export default function CharacterBuddy({
     }, 7000);
   }, [characterWidth, characterHeight, waypoints]);
 
-  // Activity timer tracking 20 seconds of continuous active roaming
-  useEffect(() => {
-    if (!isRoamActive || isSleepingRef.current) {
-      if (fatigueCheckIntervalRef.current) {
-        clearInterval(fatigueCheckIntervalRef.current);
-        fatigueCheckIntervalRef.current = null;
-      }
-      return;
-    }
-
-    activeRoamSecondsRef.current = 0;
-    fatigueCheckIntervalRef.current = setInterval(() => {
-      if (!isRoamActive || isSleepingRef.current) return;
-      activeRoamSecondsRef.current += 1;
-      if (activeRoamSecondsRef.current >= 20) {
-        if (fatigueCheckIntervalRef.current) {
-          clearInterval(fatigueCheckIntervalRef.current);
-          fatigueCheckIntervalRef.current = null;
-        }
-        triggerFatigueSleep();
-      }
-    }, 1000);
-
-    return () => {
-      if (fatigueCheckIntervalRef.current) {
-        clearInterval(fatigueCheckIntervalRef.current);
-        fatigueCheckIntervalRef.current = null;
-      }
-    };
-  }, [isRoamActive, triggerFatigueSleep]);
-
   // Click/Tap to Wake Up from Fatigue
   const handleWakeUpAvatar = useCallback(() => {
     if (!isSleepingRef.current) return;
     isSleepingRef.current = false;
     setIsFatigued(false);
     activeRoamSecondsRef.current = 0;
+    sleepDurationSecondsRef.current = 0;
     landingModeRef.current = 'walk';
+    movementModeRef.current = 'walk';
     setAutonomousSubState('idle');
     setLiveTranscript('Chalo uth gayi! Ab bolo kahan chalna hai?');
     setIsBubbleVisible(true);
@@ -321,63 +295,112 @@ export default function CharacterBuddy({
     setTimeout(() => setIsBubbleVisible(false), 4000);
   }, []);
 
+  // 60-Second Dynamic Activity Timer & 45-60s Nap Cycle
+  useEffect(() => {
+    if (!isRoamActive) {
+      if (fatigueCheckIntervalRef.current) {
+        clearInterval(fatigueCheckIntervalRef.current);
+        fatigueCheckIntervalRef.current = null;
+      }
+      return;
+    }
+
+    fatigueCheckIntervalRef.current = setInterval(() => {
+      if (!isRoamActive) return;
+
+      if (isSleepingRef.current) {
+        // Sleep duration tracker: 45 to 60 seconds
+        sleepDurationSecondsRef.current += 1;
+        if (sleepDurationSecondsRef.current >= 50) {
+          // Auto wake up after nap timer expires
+          handleWakeUpAvatar();
+        }
+      } else {
+        // Active roaming duration tracker: 60 seconds total activity
+        activeRoamSecondsRef.current += 1;
+        if (activeRoamSecondsRef.current >= 60) {
+          activeRoamSecondsRef.current = 0;
+          triggerFatigueSleep();
+        }
+      }
+    }, 1000);
+
+    return () => {
+      if (fatigueCheckIntervalRef.current) {
+        clearInterval(fatigueCheckIntervalRef.current);
+        fatigueCheckIntervalRef.current = null;
+      }
+    };
+  }, [isRoamActive, triggerFatigueSleep, handleWakeUpAvatar]);
+
   // Waypoint selector: 8 compass directions across DOM cards, navbar ledge, and open space
+  const pickNewTarget = useCallback(() => {
+    if (typeof window === 'undefined' || isSleepingRef.current || isUserDragging.current || Date.now() < pauseRoamingUntil.current) return;
+    const winW = window.innerWidth;
+    const winH = window.innerHeight;
+
+    // Strict safe bounds: minX = 16, maxX = winW - 110, minY = 64 (below navbar), maxY = winH - 170 (above bottom player)
+    const minX = 16;
+    const maxX = Math.max(minX + 40, winW - 110);
+    const minY = 64;
+    const maxY = Math.max(minY + 40, winH - (isBottomPlayerVisible ? 170 : 130));
+
+    // Dynamic movement mode distribution:
+    // 40% Walk (slow steady), 35% Run (1.8x speed boost), 25% Jump / Hop (sine vertical arc)
+    const modeRoll = Math.random();
+    if (modeRoll < 0.40) {
+      movementModeRef.current = 'walk';
+    } else if (modeRoll < 0.75) {
+      movementModeRef.current = 'run';
+    } else {
+      movementModeRef.current = 'jump';
+    }
+
+    const roll = Math.random();
+
+    // 1. Target Top Horizontal Edge of Song Cards / Vinyls (Sit Spot within 6px)
+    if (waypoints?.sitSpots?.length > 0 && roll < 0.38) {
+      const spot = waypoints.sitSpots[Math.floor(Math.random() * waypoints.sitSpots.length)];
+      const clampedX = Math.max(minX, Math.min(maxX, spot.x - characterWidth * 0.5));
+      const clampedY = Math.max(minY, Math.min(maxY, spot.y - characterHeight + 8));
+      targetPosRef.current = { x: clampedX, y: clampedY };
+      landingModeRef.current = 'sit';
+      return;
+    }
+
+    // 2. Below Navbar Area: target y = 70px (Lies down or perches along top header bar)
+    if (roll < 0.55) {
+      const targetX = Math.floor(minX + Math.random() * (maxX - minX));
+      targetPosRef.current = { x: targetX, y: 70 };
+      landingModeRef.current = 'lie_down';
+      return;
+    }
+
+    // 3. Open Floor 8-Directional Traverse (N, NE, E, SE, S, SW, W, NW)
+    const cur = positionRef.current;
+    const angles = [0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (deg * Math.PI) / 180);
+    const chosenAngle = angles[Math.floor(Math.random() * angles.length)];
+    const stepDistance = movementModeRef.current === 'run' ? (180 + Math.random() * 260) : (100 + Math.random() * 200);
+
+    const destX = Math.max(minX, Math.min(maxX, cur.x + Math.cos(chosenAngle) * stepDistance));
+    const destY = Math.max(minY, Math.min(maxY, cur.y + Math.sin(chosenAngle) * stepDistance));
+
+    targetPosRef.current = { x: destX, y: destY };
+    landingModeRef.current = 'walk';
+  }, [characterWidth, characterHeight, isBottomPlayerVisible, waypoints]);
+
   useEffect(() => {
     if (!isRoamActive || isSleepingRef.current) {
       return;
     }
 
-    const pickNewTarget = () => {
-      if (typeof window === 'undefined' || isSleepingRef.current || isUserDragging.current || Date.now() < pauseRoamingUntil.current) return;
-      const winW = window.innerWidth;
-      const winH = window.innerHeight;
-
-      // Strict safe bounds: minX = 16, maxX = winW - 110, minY = 64 (below navbar), maxY = winH - 170 (above bottom player)
-      const minX = 16;
-      const maxX = Math.max(minX + 40, winW - 110);
-      const minY = 64;
-      const maxY = Math.max(minY + 40, winH - (isBottomPlayerVisible ? 170 : 130));
-
-      const roll = Math.random();
-
-      // 1. Target Top Horizontal Edge of Song Cards / Vinyls (Sit Spot within 6px)
-      if (waypoints?.sitSpots?.length > 0 && roll < 0.38) {
-        const spot = waypoints.sitSpots[Math.floor(Math.random() * waypoints.sitSpots.length)];
-        const clampedX = Math.max(minX, Math.min(maxX, spot.x - characterWidth * 0.5));
-        const clampedY = Math.max(minY, Math.min(maxY, spot.y - characterHeight + 8));
-        targetPosRef.current = { x: clampedX, y: clampedY };
-        landingModeRef.current = 'sit';
-        return;
-      }
-
-      // 2. Below Navbar Area: target y = 70px (Lies down or perches along top header bar)
-      if (roll < 0.55) {
-        const targetX = Math.floor(minX + Math.random() * (maxX - minX));
-        targetPosRef.current = { x: targetX, y: 70 };
-        landingModeRef.current = 'lie_down';
-        return;
-      }
-
-      // 3. Open Floor 8-Directional Traverse (N, NE, E, SE, S, SW, W, NW)
-      const cur = positionRef.current;
-      const angles = [0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (deg * Math.PI) / 180);
-      const chosenAngle = angles[Math.floor(Math.random() * angles.length)];
-      const stepDistance = 120 + Math.random() * 240;
-
-      const destX = Math.max(minX, Math.min(maxX, cur.x + Math.cos(chosenAngle) * stepDistance));
-      const destY = Math.max(minY, Math.min(maxY, cur.y + Math.sin(chosenAngle) * stepDistance));
-
-      targetPosRef.current = { x: destX, y: destY };
-      landingModeRef.current = 'walk';
-    };
-
     pickNewTarget();
-    const interval = setInterval(pickNewTarget, 5500);
+    const interval = setInterval(pickNewTarget, 6500);
 
     return () => clearInterval(interval);
-  }, [isRoamActive, characterWidth, characterHeight, isBottomPlayerVisible, waypoints]);
+  }, [isRoamActive, pickNewTarget]);
 
-  // 60 FPS Kinematics Physics Loop (Continuous Smooth Step-by-Step Walking)
+  // 60 FPS Kinematics Physics Loop (Continuous Smooth Step-by-Step Walking, Running & Jumping)
   useEffect(() => {
     if (!isRoamActive) {
       if (patrolFrameRef.current) {
@@ -389,16 +412,28 @@ export default function CharacterBuddy({
 
     let isRunning = true;
     let lastTime = performance.now();
-    const WALK_SPEED = 1.2; // Natural step-by-step walking speed (pixels per frame, leg cycle matches ground movement)
+    const BASE_WALK_SPEED = 1.2; // Natural step-by-step walking speed
 
     const loop = (time) => {
       if (!isRunning) return;
       const dt = Math.min(0.064, (time - lastTime) / 1000);
       lastTime = time;
 
-      // Roaming Loop Guard: Pause roaming while user is dragging or during 60s cooldown
+      // Reset roaming pause if timestamp has expired without active drag
+      if (!isUserDragging.current && Date.now() > pauseRoamingUntil.current && pauseRoamingUntil.current !== 0) {
+        pauseRoamingUntil.current = 0;
+      }
+
+      // Roaming Loop Guard: Pause roaming while user is dragging or during pause cooldown
       if (isUserDragging.current || Date.now() < pauseRoamingUntil.current) {
         setAutonomousSubState('idle');
+        patrolFrameRef.current = requestAnimationFrame(loop);
+        return;
+      }
+
+      // If sleeping, keep in sleeping state and idle
+      if (isSleepingRef.current) {
+        setAutonomousSubState('sleeping');
         patrolFrameRef.current = requestAnimationFrame(loop);
         return;
       }
@@ -418,31 +453,81 @@ export default function CharacterBuddy({
       const minY = 64;
       const maxY = Math.max(minY + 40, winH - (isBottomPlayerVisible ? 170 : 130));
 
-      if (distance > 3) {
-        // Normal step-by-step walking forward along exact motion angle
+      if (distance > 6) {
+        // 1. Calculate Motion Direction Angle (Yaw Heading):
+        // 2D screen motion vector angle: dx corresponds to screen X, dy corresponds to screen Y.
+        // In 3D Three.js space:
+        // dx > 0 (moving right) -> targetHeading > 0
+        // dx < 0 (moving left)  -> targetHeading < 0
+        // dy > 0 (moving down/forward on screen) -> towards user / forward angle
+        // dy < 0 (moving up/backward on screen)  -> away / back angle
+        const targetHeading = Math.atan2(dx, -dy * 0.4);
+
+        // Smooth angle interpolation handling shortest circular distance around 2*PI
+        let angleDiff = (targetHeading - currentHeadingRef.current) % (Math.PI * 2);
+        if (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+        if (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+
+        const TURN_SPEED = Math.min(1.0, 0.16 * (dt * 60)); // Angular lerp speed
+        currentHeadingRef.current += angleDiff * TURN_SPEED;
+        setRotationYaw(currentHeadingRef.current);
+
+        // 2. Turn-in-Place Threshold:
+        // If turning angle difference is large (> 45 deg / 0.78 rad), slow down translation to turn body first
+        const isTurningInPlace = Math.abs(angleDiff) > 0.70;
+
+        const mode = movementModeRef.current;
+        // Speed multiplier: 1.0x walk, 1.8x run, 1.25x jump. If turning in place, reduce translation speed by 75%
+        const speedMultiplier = (mode === 'run' ? 1.8 : (mode === 'jump' ? 1.25 : 1.0)) * (isTurningInPlace ? 0.25 : 1.0);
+        const currentSpeed = BASE_WALK_SPEED * speedMultiplier;
+
         const angle = Math.atan2(dy, dx);
-        // Scale speed with dt normalized to 60fps (dt * 60) for rock-solid frame pacing
-        const step = WALK_SPEED * Math.min(2.0, dt * 60);
+        const step = currentSpeed * Math.min(2.0, dt * 60);
 
         pos.x += Math.cos(angle) * step;
         pos.y += Math.sin(angle) * step;
 
+        // Apply sine-wave vertical jump offset if currently in jump/hop mode and not turning in place
+        let renderY = pos.y;
+        if (mode === 'jump' && !isTurningInPlace) {
+          const hopOffset = -Math.abs(Math.sin(time * 0.007)) * 14;
+          renderY += hopOffset;
+        }
+
         // Clamp inside safe screen bounds
         pos.x = Math.max(minX, Math.min(maxX, pos.x));
         pos.y = Math.max(minY, Math.min(maxY, pos.y));
+        renderY = Math.max(minY - 15, Math.min(maxY, renderY));
 
         // Direct DOM translation without transition snapping
         if (avatarContainerRef.current) {
-          avatarContainerRef.current.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`;
+          avatarContainerRef.current.style.transform = `translate3d(${pos.x}px, ${renderY}px, 0)`;
         }
 
         // Face movement direction smoothly
         setWalkFacing(dx < 0 ? 'left' : 'right');
-        setRotationPitch(Math.sin(angle) * 0.08);
+        setRotationPitch(Math.sin(angle) * 0.06);
 
-        // Keep walking animation active
-        setAutonomousSubState('walking');
+        // Update animation state based on current dynamic movement mode
+        if (isTurningInPlace) {
+          setAutonomousSubState('walking');
+        } else if (mode === 'run') {
+          setAutonomousSubState('run');
+        } else if (mode === 'jump') {
+          setAutonomousSubState('jump');
+        } else {
+          setAutonomousSubState('walking');
+        }
       } else {
+        // Target reached: smoothly turn back to front (facing user)
+        const frontAngle = 0;
+        let frontDiff = (frontAngle - currentHeadingRef.current) % (Math.PI * 2);
+        if (frontDiff > Math.PI) frontDiff -= Math.PI * 2;
+        if (frontDiff < -Math.PI) frontDiff += Math.PI * 2;
+        currentHeadingRef.current += frontDiff * 0.10;
+        setRotationYaw(currentHeadingRef.current);
+        setRotationPitch(0);
+
         // Target reached: snap to target and crossfade to resting / idle pose
         pos.x = target.x;
         pos.y = target.y;
@@ -460,6 +545,14 @@ export default function CharacterBuddy({
         } else {
           setAutonomousSubState('idle');
         }
+
+        // Trigger next waypoint after 2s pause if none scheduled
+        if (!nextTargetTimeoutRef.current && !isSleepingRef.current) {
+          nextTargetTimeoutRef.current = setTimeout(() => {
+            nextTargetTimeoutRef.current = null;
+            pickNewTarget();
+          }, 2000);
+        }
       }
 
       setContinuousPos({ x: pos.x, y: pos.y });
@@ -474,8 +567,12 @@ export default function CharacterBuddy({
         cancelAnimationFrame(patrolFrameRef.current);
         patrolFrameRef.current = null;
       }
+      if (nextTargetTimeoutRef.current) {
+        clearTimeout(nextTargetTimeoutRef.current);
+        nextTargetTimeoutRef.current = null;
+      }
     };
-  }, [isRoamActive, isPlaying, isBottomPlayerVisible]);
+  }, [isRoamActive, isPlaying, isBottomPlayerVisible, pickNewTarget]);
 
   // Realtime Live Transcript & Command Display State
   const [liveTranscript, setLiveTranscript] = useState('');
@@ -1560,6 +1657,44 @@ export default function CharacterBuddy({
    */
   const isNavigatingRef = useRef(false);
 
+  /**
+   * DOM Target Coordinate Locator & Interactive Screen Resolver
+   * Resolves selectors or fuzzy text queries to exact viewport screen coordinates
+   */
+  const resolveTargetPosition = useCallback((targetQuery) => {
+    if (typeof document === 'undefined' || !targetQuery) return null;
+
+    // 1. Check direct querySelector (e.g. '[data-action="play"]', '.search-bar')
+    let el = null;
+    try {
+      el = document.querySelector(targetQuery);
+    } catch (_) {}
+
+    // 2. Fallback: fuzzy text search across clickable buttons, cards, and links
+    if (!el) {
+      const q = String(targetQuery).toLowerCase().trim();
+      const candidates = Array.from(document.querySelectorAll('button, a, h4, input, [role="button"], [data-nav-id]'));
+      el = candidates.find((c) => {
+        const text = (c.innerText || c.getAttribute('aria-label') || c.getAttribute('title') || c.getAttribute('data-nav-id') || '').toLowerCase();
+        return text.includes(q);
+      });
+    }
+
+    if (el) {
+      // Scroll into view if needed
+      try {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } catch (_) {}
+      const rect = el.getBoundingClientRect();
+      return {
+        element: el,
+        x: Math.max(20, Math.min(window.innerWidth - 100, rect.left + rect.width / 2 - 40)),
+        y: Math.max(60, Math.min(window.innerHeight - 180, rect.top + rect.height / 2 - 20))
+      };
+    }
+    return null;
+  }, []);
+
   const walkToTargetAndTap = useCallback((targetNavId, label = '', onFinished = null) => {
     return new Promise((resolve) => {
       const finalize = () => {
@@ -1777,15 +1912,21 @@ export default function CharacterBuddy({
           // CASE C: DESKTOP MODE (Preserves desktop navigation)
           // "Preserve existing desktop navigation behavior"
           // =====================================================================
-          let targetEl = document.querySelector(`[data-nav-id="${resolvedTarget}"]`) ||
-                         document.querySelector(`a[href*="${resolvedTarget}"]`);
+          let targetEl = null;
+          const resolvedCoord = resolveTargetPosition(resolvedTarget);
+          if (resolvedCoord?.element) {
+            targetEl = resolvedCoord.element;
+          } else {
+            targetEl = document.querySelector(`[data-nav-id="${resolvedTarget}"]`) ||
+                       document.querySelector(`a[href*="${resolvedTarget}"]`);
 
-          if (!targetEl) {
-            const candidates = Array.from(document.querySelectorAll('button, a, div[role="button"]'));
-            targetEl = candidates.find((el) => {
-              const text = (el.innerText || el.getAttribute('title') || el.getAttribute('aria-label') || '').toLowerCase();
-              return text.includes(resolvedTarget) || (label && text.includes(label.toLowerCase()));
-            });
+            if (!targetEl) {
+              const candidates = Array.from(document.querySelectorAll('button, a, div[role="button"]'));
+              targetEl = candidates.find((el) => {
+                const text = (el.innerText || el.getAttribute('title') || el.getAttribute('aria-label') || '').toLowerCase();
+                return text.includes(resolvedTarget) || (label && text.includes(label.toLowerCase()));
+              });
+            }
           }
 
           if (targetEl) {
@@ -1809,10 +1950,12 @@ export default function CharacterBuddy({
 
   useEffect(() => {
     window.__loopraWalkAndTap = walkToTargetAndTap;
+    window.__loopraResolveTargetPosition = resolveTargetPosition;
     return () => {
       delete window.__loopraWalkAndTap;
+      delete window.__loopraResolveTargetPosition;
     };
-  }, [walkToTargetAndTap]);
+  }, [walkToTargetAndTap, resolveTargetPosition]);
 
   return (
     <>

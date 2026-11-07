@@ -97,13 +97,26 @@ class VoiceAssistantService {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       const recognition = new SpeechRecognition();
 
-      recognition.continuous = false;
+      // Mobile Chrome drops connections if continuous is true; use false for mobile single commands
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      recognition.continuous = !isMobile;
       recognition.interimResults = true;
-      recognition.lang = targetLang;
+      recognition.lang = targetLang || 'hi-IN'; // Prioritize Hindi/Hinglish Indian accent
       recognition.maxAlternatives = 1;
+
+      // Auto-duck music volume to 10% on listening so background audio doesn't drown user voice
+      if (typeof window !== 'undefined' && window.loopraPlayer?.setVolume) {
+        window.loopraPlayer.setVolume(10);
+      }
 
       let interimBuffer = '';
       let finalBuffer = '';
+
+      const restoreMusicVolume = () => {
+        if (typeof window !== 'undefined' && window.loopraPlayer?.setVolume) {
+          window.loopraPlayer.setVolume(100);
+        }
+      };
 
       recognition.onstart = () => {
         this.state = VOICE_STATES.LISTENING;
@@ -141,6 +154,7 @@ class VoiceAssistantService {
       recognition.onerror = (event) => {
         console.warn('[VoiceAssistant] Speech error:', event.error);
         if (this.safetyTimer) clearTimeout(this.safetyTimer);
+        restoreMusicVolume();
         this.state = VOICE_STATES.ERROR;
 
         let friendlyError = `Speech error: ${event.error}`;
@@ -158,6 +172,7 @@ class VoiceAssistantService {
 
       recognition.onend = () => {
         if (this.safetyTimer) clearTimeout(this.safetyTimer);
+        restoreMusicVolume();
         const resolved = (finalBuffer || interimBuffer).trim();
         this.state = VOICE_STATES.IDLE;
         this.notify({ state: VOICE_STATES.IDLE, transcript: resolved });
@@ -170,6 +185,9 @@ class VoiceAssistantService {
       recognition.start();
     } catch (err) {
       if (this.safetyTimer) clearTimeout(this.safetyTimer);
+      if (typeof window !== 'undefined' && window.loopraPlayer?.setVolume) {
+        window.loopraPlayer.setVolume(100);
+      }
       this.state = VOICE_STATES.ERROR;
       const msg = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError'
         ? 'Microphone permission denied. Please allow microphone access.'
@@ -183,6 +201,9 @@ class VoiceAssistantService {
     if (this.safetyTimer) {
       clearTimeout(this.safetyTimer);
       this.safetyTimer = null;
+    }
+    if (typeof window !== 'undefined' && window.loopraPlayer?.setVolume) {
+      window.loopraPlayer.setVolume(100);
     }
     if (this.recognition) {
       try {

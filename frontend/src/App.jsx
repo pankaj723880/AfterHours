@@ -1836,6 +1836,28 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       localStorage.setItem('afterhours_volume', volume.toString());
     } catch (e) {}
   }, [volume]);
+
+  // Expose global player controls including setVolume for audio ducking
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.loopraPlayer = {
+        ...(window.loopraPlayer || {}),
+        setVolume: (vol) => {
+          setVolume(vol);
+          try { playerRef.current?.setVolume?.(vol); } catch (_) {}
+        },
+        getVolume: () => volume,
+        isPlaying: () => isPlaying
+      };
+    }
+    return () => {
+      if (typeof window !== 'undefined' && window.loopraPlayer) {
+        delete window.loopraPlayer.setVolume;
+        delete window.loopraPlayer.getVolume;
+        delete window.loopraPlayer.isPlaying;
+      }
+    };
+  }, [volume, isPlaying]);
   const [soundProfile, setSoundProfile] = useState('flat');
 
   const [partyTracks, setPartyTracks] = useState([]);

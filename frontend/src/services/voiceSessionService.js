@@ -565,7 +565,9 @@ class VoiceSessionController {
     }
 
     const recognition = new SpeechRecognition();
-    recognition.continuous = false; // Mobile browsers frequently crash/drop with continuous=true; use single-shot with auto-restart
+    // Mobile Chrome drops connections if continuous is true; use false for mobile single commands
+    const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    recognition.continuous = !isMobile;
     recognition.interimResults = true;
     recognition.lang = USE_V2_VOICE_ENGINE ? 'hi-IN' : (this.lang || 'hi-IN');
     recognition.maxAlternatives = 1;
@@ -578,6 +580,12 @@ class VoiceSessionController {
       this.networkErrorCount = 0;
       this.hasActiveTerminalError = false;
       this.persistentTranscriptBuffer = '';
+
+      // Auto-duck music volume to 10% on listening so background audio doesn't drown user voice
+      if (typeof window !== 'undefined' && window.loopraPlayer?.setVolume) {
+        window.loopraPlayer.setVolume(10);
+      }
+
       if (this.speechDebounceTimer) {
         clearTimeout(this.speechDebounceTimer);
         this.speechDebounceTimer = null;
@@ -707,6 +715,10 @@ class VoiceSessionController {
           this.pendingMobileTranscript = '';
 
           this.resetInactivityOnValidCommand();
+          // Restore volume back to 100% on recognition completion
+          if (typeof window !== 'undefined' && window.loopraPlayer?.setVolume) {
+            window.loopraPlayer.setVolume(100);
+          }
           this.setState(SESSION_STATES.PROCESSING, `Processing: "${candidateToEmit}"`);
           this.emitFinalTranscript(candidateToEmit);
         }, 300);
@@ -732,7 +744,10 @@ class VoiceSessionController {
       }
 
       if (err === 'no-speech' || err === 'aborted') {
-        // Benign end or silence - wait for manual trigger
+        // Benign end or silence - restore volume and wait for manual trigger
+        if (typeof window !== 'undefined' && window.loopraPlayer?.setVolume) {
+          window.loopraPlayer.setVolume(100);
+        }
         return;
       }
 
@@ -785,6 +800,11 @@ class VoiceSessionController {
       if (this.mobileListenTimeout) {
         clearTimeout(this.mobileListenTimeout);
         this.mobileListenTimeout = null;
+      }
+
+      // Restore volume back to 100% when recognition concludes
+      if (typeof window !== 'undefined' && window.loopraPlayer?.setVolume) {
+        window.loopraPlayer.setVolume(100);
       }
 
       // Single-Shot STT Fallback: Finalize buffered interim/final speech if engine ended before marking isFinal
@@ -1147,6 +1167,11 @@ class VoiceSessionController {
     this.isSessionActive = false;
     this.isExecuting = false;
     this.hasGreetedThisSession = false;
+
+    // Restore music volume to 100% when recognition stops
+    if (typeof window !== 'undefined' && window.loopraPlayer?.setVolume) {
+      window.loopraPlayer.setVolume(100);
+    }
 
     // Halt any ongoing assistant TTS output immediately
     if (typeof window !== 'undefined' && window.voiceBuddyService) {
