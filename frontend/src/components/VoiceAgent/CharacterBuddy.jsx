@@ -143,11 +143,14 @@ export default function CharacterBuddy({
     } catch (_) {}
   }, []);
 
+  const characterWidth = Math.round(BASE_WIDTH * avatarScale);
+  const characterHeight = Math.round(BASE_HEIGHT * avatarScale);
+
   // Autonomous Roaming Mode (Stored in localStorage, default true)
   const [isRoamEnabled, setIsRoamEnabled] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
-        const stored = localStorage.getItem('loopra_avatar_roam');
+        const stored = localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam');
         return stored !== null ? stored === 'true' : true;
       } catch (_) {}
     }
@@ -1506,6 +1509,7 @@ export default function CharacterBuddy({
               setIsRoamEnabled(prev => {
                 const next = !prev;
                 try {
+                  localStorage.setItem('loopra_avatar_roaming', String(next));
                   localStorage.setItem('loopra_avatar_roam', String(next));
                 } catch (_) {}
                 if (!next) {

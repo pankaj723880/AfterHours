@@ -281,8 +281,9 @@ export default function PlayerSettingsModal({
                 type="button"
                 onClick={() => {
                   try {
-                    const current = localStorage.getItem('loopra_avatar_roam') !== 'false';
+                    const current = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) !== 'false';
                     const next = !current;
+                    localStorage.setItem('loopra_avatar_roaming', String(next));
                     localStorage.setItem('loopra_avatar_roam', String(next));
                     window.dispatchEvent(new Event('storage'));
                     // Force refresh toggle state locally

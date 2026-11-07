@@ -42,6 +42,13 @@ export const USE_V2_AVATAR = true;
 // When false: falls back to original WebSpeech synthesis pipeline.
 export const USE_V2_VOICE_ENGINE = true;
 
+// Autonomous 3D Avatar World-Roaming, Dancing & Sitting Suite Feature Flag
+// When true: full-screen transparent Three.js overlay canvas, DOM-aware landing spot scanner (usePageWaypoints.js),
+// 2-second voice inactivity debounce, smooth lerp locomotion across page sections, card perching, music beat dancing,
+// and dedicated Free Roam settings toggle.
+// When false: cleanly falls back to the static/docked avatar logic.
+export const USE_V2_AVATAR_ROAMING_SUITE = true;
+
 
 
 

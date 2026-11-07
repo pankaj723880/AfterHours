@@ -6019,10 +6019,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   type="button"
                   onClick={() => {
                     try {
-                      const cur = localStorage.getItem('loopra_avatar_roam') !== 'false';
-                      localStorage.setItem('loopra_avatar_roam', String(!cur));
+                      const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) !== 'false';
+                      const next = !cur;
+                      localStorage.setItem('loopra_avatar_roaming', String(next));
+                      localStorage.setItem('loopra_avatar_roam', String(next));
                       window.dispatchEvent(new Event('storage'));
-                      showToast?.(`Avatar Free Roam ${!cur ? 'Enabled' : 'Paused'}`);
+                      showToast?.(`Avatar Free Roam ${next ? 'Enabled' : 'Paused'}`);
                     } catch (_) {}
                   }}
                   className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 text-neutral-300 font-medium text-xs transition cursor-pointer"
