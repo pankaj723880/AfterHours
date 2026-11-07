@@ -144,3 +144,89 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
+// =========================================================================
+// ADVANCED PWA CAPABILITIES: Background Sync, Periodic Sync, Push Notifications
+// =========================================================================
+
+// Background Sync: Replay pending offline interactions & sync playback state
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'loopra-sync-likes' || event.tag === 'loopra-background-sync') {
+    event.waitUntil(
+      self.clients.matchAll({ type: 'window' }).then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({ type: 'LOOPRA_BACKGROUND_SYNC_TRIGGER', tag: event.tag });
+        });
+      })
+    );
+  }
+});
+
+// Periodic Background Sync: Refresh station metadata & cached playlists in background
+self.addEventListener('periodicsync', (event) => {
+  if (event.tag === 'loopra-periodic-update' || event.tag === 'get-daily-mix') {
+    event.waitUntil(
+      caches.open(CACHE_NAME).then(async (cache) => {
+        try {
+          const resp = await fetch('/manifest.json');
+          if (resp && resp.status === 200) {
+            await cache.put('/manifest.json', resp);
+          }
+        } catch (_) {}
+      })
+    );
+  }
+});
+
+// Push Notifications: Display incoming broadcast / radio release notifications
+self.addEventListener('push', (event) => {
+  let data = {
+    title: 'Loopra Music',
+    body: 'New live radio station and curated tracks are ready.',
+    icon: '/icon-192.png?v=3',
+    badge: '/favicon.png?v=3',
+    tag: 'loopra-notification',
+    data: { url: '/' }
+  };
+
+  try {
+    if (event.data) {
+      const parsed = event.data.json();
+      data = { ...data, ...parsed };
+    }
+  } catch (_) {
+    if (event.data) {
+      data.body = event.data.text();
+    }
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: data.icon,
+      badge: data.badge,
+      tag: data.tag,
+      data: data.data,
+      vibrate: [100, 50, 100]
+    })
+  );
+});
+
+// Notification Click: Focus existing client or open target URL
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || '/';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      for (const client of windowClients) {
+        if (client.url === targetUrl && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
+    })
+  );
+});

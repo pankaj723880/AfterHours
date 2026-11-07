@@ -36,6 +36,96 @@ const resolveCallingUser = async (req) => {
 };
 
 /**
+ * POST /api/transcribe & POST /api/voice-agent/transcribe
+ * Express audio transcription endpoint using Gemini (gemini-2.5-flash / SPEECH_TO_TEXT)
+ * Accepts audio data (multipart/form-data or raw/base64 JSON) and returns { transcript: "..." }
+ */
+export const handleTranscribeEndpoint = async (req, res) => {
+  try {
+    let audioBuffer = null;
+    let mimeType = 'audio/webm';
+
+    if (Buffer.isBuffer(req.body) && req.body.length > 0) {
+      const ct = req.headers['content-type'] || '';
+      if (ct.includes('multipart/form-data')) {
+        const boundaryMatch = ct.match(/boundary=([^;]+)/i);
+        if (boundaryMatch) {
+          const boundary = '--' + boundaryMatch[1].trim().replace(/^["']/, '').replace(/["']$/, '');
+          const startIdx = req.body.indexOf(Buffer.from(boundary));
+          if (startIdx !== -1) {
+            const headerEnd = req.body.indexOf(Buffer.from('\r\n\r\n'), startIdx);
+            if (headerEnd !== -1) {
+              const dataStart = headerEnd + 4;
+              const endIdx = req.body.indexOf(Buffer.from('\r\n' + boundary), dataStart);
+              audioBuffer = endIdx !== -1 ? req.body.subarray(dataStart, endIdx) : req.body.subarray(dataStart);
+            }
+          }
+        }
+      }
+      if (!audioBuffer) audioBuffer = req.body;
+      if (ct.includes('audio/')) {
+        mimeType = ct.split(';')[0].trim();
+      }
+    } else if (req.body && typeof req.body === 'object') {
+      const b64 = req.body.audioData || req.body.audio || req.body.data;
+      if (typeof b64 === 'string') {
+        const cleanB64 = b64.includes(';base64,') ? b64.split(';base64,')[1] : b64;
+        audioBuffer = Buffer.from(cleanB64, 'base64');
+      }
+      if (req.body.mimeType) mimeType = req.body.mimeType;
+    }
+
+    if (!audioBuffer || audioBuffer.length === 0) {
+      return res.status(400).json({ success: false, transcript: '', error: 'Missing or empty audio payload' });
+    }
+
+    const cleanBase64 = audioBuffer.toString('base64');
+    const prompt = 'Transcribe the following speech verbatim in Latin/Roman script or Hinglish/Hindi/English. Return only the exact transcribed words and nothing else. No punctuation explanations or markdown formatting.';
+
+    const execResult = await multiModelOrchestrator.executeTask('SPEECH_TO_TEXT', async ({ client }) => {
+      return await client.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  mimeType,
+                  data: cleanBase64
+                }
+              },
+              {
+                text: prompt
+              }
+            ]
+          }
+        ]
+      });
+    }, { timeoutMs: 15000 });
+
+    let rawTranscript = '';
+    if (execResult && execResult.success && execResult.data) {
+      if (typeof execResult.data.text === 'function') {
+        rawTranscript = execResult.data.text();
+      } else if (execResult.data.text) {
+        rawTranscript = execResult.data.text;
+      } else if (execResult.data.candidates?.[0]?.content?.parts?.[0]?.text) {
+        rawTranscript = execResult.data.candidates[0].content.parts[0].text;
+      }
+    }
+
+    const transcript = (rawTranscript || '').trim().replace(/^["']|["']$/g, '');
+    return res.json({ success: true, transcript });
+  } catch (err) {
+    console.error('[TranscribeRoute] Audio transcription error:', err);
+    return res.status(500).json({ success: false, transcript: '', error: err.message });
+  }
+};
+
+router.post('/transcribe', handleTranscribeEndpoint);
+
+/**
  * POST /api/voice-agent/recognize-audio
  * Accepts raw base64 microphone audio directly from the client.
  * Calls Gemini's native multimodal audio model (gemini-3.8-flash) to:

@@ -41,7 +41,7 @@ import { CORE_CATALOG_TRACKS } from './services/catalogService.js';
 import reviewsRoutes from './routes/reviews.js';
 import artistRoutes from './routes/artist.js';
 import featureFlagsRouter from './routes/featureFlags.js';
-import voiceAgentRouter from './routes/voiceAgent.js';
+import voiceAgentRouter, { handleTranscribeEndpoint } from './routes/voiceAgent.js';
 import musicValidationRouter from './routes/musicValidation.js';
 import musicValidationService from './services/musicValidationService.js';
 import chatBuddyLearningRouter from './routes/chatBuddyLearning.js';
@@ -141,6 +141,10 @@ app.use((req, res, next) => {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
   next();
 });
+
+// Route-level raw body parsing for audio uploads (transcription & streaming)
+app.use(['/api/transcribe', '/transcribe', '/api/voice-agent/transcribe'], express.raw({ type: ['multipart/form-data', 'audio/*', 'application/octet-stream'], limit: '25mb' }));
+app.post(['/api/transcribe', '/transcribe'], handleTranscribeEndpoint);
 
 // Generous payload limit so sync never throws 413 or truncates
 app.use(express.json({ limit: '10mb' }));

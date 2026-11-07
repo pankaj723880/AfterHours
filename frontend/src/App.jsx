@@ -79,6 +79,7 @@ if (typeof window !== 'undefined') {
 const ActivityFeed = lazy(() => import('./components/Activity/ActivityFeed'));
 import MobileBottomNav from './components/Navigation/MobileBottomNav';
 import LoopraFooter from './components/Navigation/LoopraFooter';
+const AndroidApkDownloadSection = lazy(() => import('./components/Common/AndroidApkDownloadSection'));
 const ArtistProfileView = lazy(() => import('./components/Artist/ArtistProfileView'));
 import { voiceControlService } from './services/voiceControlService';
 import shuffleService from './services/shuffleService';
@@ -7284,6 +7285,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 }
               }}
             />
+          </div>
+        )}
+
+        {(activeTab === 'download' || activeTab === 'download-app' || activeTab === 'apk') && (
+          <div key="page-download" className="page-transition max-w-5xl mx-auto space-y-6 relative z-10">
+            <AndroidApkDownloadSection onBack={handleGoBack} />
           </div>
         )}
 

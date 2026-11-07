@@ -108,6 +108,7 @@ export default function LoopraFooter({
       title: 'Your Music',
       icon: Music,
       links: [
+        { label: 'Download Android App (APK)', action: () => onNavigate?.('download') },
         { label: 'Liked Songs', action: () => onNavigate?.('library') },
         { label: 'Playlists', action: () => onNavigate?.('playlists') },
         { label: 'Listening History', action: () => onNavigate?.('history') },

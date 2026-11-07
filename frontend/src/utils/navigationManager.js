@@ -42,6 +42,7 @@ export function buildPath(tab, params = {}) {
     return '/downloads';
   }
   if (tab === 'admin') return '/admin';
+  if (tab === 'download' || tab === 'download-app' || tab === 'apk') return '/download';
   if (tab === 'dj-club' || tab === 'djclub' || tab === 'dj') return '/dj-club';
   if (tab === 'radio' || tab === 'indian-radio') return '/radio';
   if (['barber', 'truck', 'pauwa', 'timemachine', 'mood', 'library', 'history', 'activity', 'swipe', 'for-you', 'dj-club'].includes(tab)) {
@@ -62,6 +63,9 @@ export function parseRoute(pathname = '/', search = '') {
 
   if (cleanPath === '/admin') {
     return { tab: 'admin', path: '/admin', params: {} };
+  }
+  if (cleanPath === '/download' || cleanPath === '/download-app' || cleanPath === '/apk') {
+    return { tab: 'download', path: '/download', params: {} };
   }
   if (cleanPath === '/dj-club' || cleanPath === '/djclub' || cleanPath === '/dj') {
     return { tab: 'dj-club', path: '/dj-club', params: {} };

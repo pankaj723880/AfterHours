@@ -12,6 +12,7 @@
  */
 
 import { chatBuddyClient } from './chatBuddyClient.js';
+import { getApiUrl } from '../utils/apiUrl.js';
 
 export const SESSION_STATES = {
   OFF: 'OFF',
@@ -139,6 +140,12 @@ class VoiceSessionController {
     this.animFrameId = null;
     this.recognition = null;
     this.audioCaptureRetries = 0;
+
+    // MediaRecorder Voice Capture Bypass & 60-Second Timeout Integration
+    this.mediaRecorder = null;
+    this.recordedAudioChunks = [];
+    this.recordingTimeout = null;
+    this.isMediaRecorderActive = false;
 
     // Concurrency & lifecycle guards
     this.isSessionActive = false;
@@ -737,6 +744,14 @@ class VoiceSessionController {
       }
 
       if (err === 'network') {
+        // Automatically bypass flaky browser network speech errors via MediaRecorder voice capture
+        if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined') {
+          console.log('[VoiceSession:WebSpeech] Network error encountered. Activating MediaRecorder capture bypass.');
+          this.setState(SESSION_STATES.LISTENING, 'Listening via audio capture... (Speak your music command)');
+          this.startMediaRecorderCapture();
+          return;
+        }
+
         this.setState(SESSION_STATES.ERROR, 'Speech network unavailable. Tap mic to retry.', err);
         this.stopSession('network_error');
         return;
@@ -801,6 +816,14 @@ class VoiceSessionController {
     }
 
     if (!this.recognition) {
+      // Fallback: If Web Speech Recognition is unsupported or blocked, use MediaRecorder voice capture bypass
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined') {
+        console.log('[VoiceSessionController] SpeechRecognition unavailable, falling back to MediaRecorder voice capture bypass');
+        this.setState(SESSION_STATES.LISTENING, 'Listening... (Speak your music command)');
+        this.startMediaRecorderCapture();
+        return;
+      }
+
       const isOpera = typeof navigator !== 'undefined' && (navigator.userAgent?.includes('OPR/') || navigator.userAgent?.includes('Opera'));
       const hint = isOpera ? 'Opera Mobile does not support Web Speech Recognition. Please use Chrome, Brave or Edge.' : 'Speech recognition not supported in this browser. Please use Chrome or Edge.';
       this.setState(
@@ -846,6 +869,111 @@ class VoiceSessionController {
         this.recognition.stop();
       } catch (__) {}
     }
+  }
+
+  // -------------------------------------------------------------
+  // MediaRecorder Voice Capture Bypass & 60-Second Timeout Pipeline
+  // -------------------------------------------------------------
+
+  async startMediaRecorderCapture() {
+    try {
+      if (!this.mediaStream || !this.mediaStream.active) {
+        await this.setupAudioStream();
+      }
+      if (!this.mediaStream || !this.mediaStream.active) return false;
+
+      // Stop any existing recorder instance
+      this.stopMediaRecorderCapture(false);
+
+      const mimeType = (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/webm;codecs=opus'))
+        ? 'audio/webm;codecs=opus'
+        : (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/webm'))
+          ? 'audio/webm'
+          : 'audio/mp4';
+
+      this.recordedAudioChunks = [];
+      const recorder = new MediaRecorder(this.mediaStream, { mimeType });
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          this.recordedAudioChunks.push(e.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        this.isMediaRecorderActive = false;
+        if (this.recordingTimeout) {
+          clearTimeout(this.recordingTimeout);
+          this.recordingTimeout = null;
+        }
+
+        const chunks = [...this.recordedAudioChunks];
+        this.recordedAudioChunks = [];
+
+        if (!this.isSessionActive || chunks.length === 0) return;
+
+        try {
+          const audioBlob = new Blob(chunks, { type: mimeType });
+          if (audioBlob.size < 500) return;
+
+          const formData = new FormData();
+          formData.append('audio', audioBlob, 'recording.webm');
+
+          this.setState(SESSION_STATES.PROCESSING, 'Transcribing voice...');
+          const apiUrl = getApiUrl('/api/transcribe');
+          const resp = await fetch(apiUrl, {
+            method: 'POST',
+            body: formData
+          });
+
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data && data.transcript && data.transcript.trim()) {
+              const cleaned = devanagariToHinglish(data.transcript.trim());
+              console.log('[VoiceSession:MediaRecorder] Transcribed transcript:', cleaned);
+              this.resetInactivityOnValidCommand();
+              this.setState(SESSION_STATES.PROCESSING, `Processing: "${cleaned}"`);
+              this.emitFinalTranscript(cleaned);
+            }
+          }
+        } catch (postErr) {
+          console.warn('[VoiceSession:MediaRecorder] Audio transcription POST error:', postErr.message);
+        }
+      };
+
+      this.mediaRecorder = recorder;
+      recorder.start(1000); // 1-second chunks
+      this.isMediaRecorderActive = true;
+
+      // Strictly enforce 60-second (60000 ms) recording timeout before auto-stopping
+      if (this.recordingTimeout) clearTimeout(this.recordingTimeout);
+      this.recordingTimeout = setTimeout(() => {
+        console.log('[VoiceSession:MediaRecorder] 60-second recording timeout reached, stopping capture');
+        this.stopMediaRecorderCapture(true);
+      }, 60000);
+
+      return true;
+    } catch (err) {
+      console.warn('[VoiceSession:MediaRecorder] Capture start notice:', err.message);
+      return false;
+    }
+  }
+
+  stopMediaRecorderCapture(shouldProcess = true) {
+    if (this.recordingTimeout) {
+      clearTimeout(this.recordingTimeout);
+      this.recordingTimeout = null;
+    }
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      try {
+        if (!shouldProcess) {
+          this.recordedAudioChunks = [];
+        }
+        this.mediaRecorder.stop();
+      } catch (_) {}
+    }
+    this.mediaRecorder = null;
+    this.isMediaRecorderActive = false;
   }
 
   // -------------------------------------------------------------
@@ -1028,6 +1156,9 @@ class VoiceSessionController {
     }
     this.clearInactivityTimer();
 
+    // Stop MediaRecorder capture
+    this.stopMediaRecorderCapture(false);
+
     // Cancel animation frame & zero volume
     if (this.animFrameId) {
       if (typeof cancelAnimationFrame !== 'undefined') {
@@ -1077,6 +1208,27 @@ class VoiceSessionController {
     this.setState(SESSION_STATES.OFF, finalMsg);
     this.isManualStopping = false;
   }
+}
+
+// Hook export for components requiring dedicated MediaRecorder Voice Capture hook
+export function useMediaRecorderVoice({ onTranscript } = {}) {
+  const isRecordingRef = { current: false };
+
+  const startRecording = async () => {
+    isRecordingRef.current = true;
+    return await voiceSessionService.startMediaRecorderCapture();
+  };
+
+  const stopRecording = () => {
+    isRecordingRef.current = false;
+    voiceSessionService.stopMediaRecorderCapture(true);
+  };
+
+  return {
+    startRecording,
+    stopRecording,
+    isRecording: voiceSessionService.isMediaRecorderActive
+  };
 }
 
 // Global singleton instance for single session controller architecture
