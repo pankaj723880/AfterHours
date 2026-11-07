@@ -13,6 +13,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { BACKEND_URL } from '../../utils/apiUrl';
+import { USE_V2_MOBILE_ADMIN } from '../../constants/featureFlags';
 
 export default function AdminOverview({ metrics, health, onNavigate, token, backendUrl, showToast }) {
   const cleanBackendUrl = (backendUrl && backendUrl.trim().startsWith('http'))
@@ -191,83 +192,98 @@ export default function AdminOverview({ metrics, health, onNavigate, token, back
 
   return (
     <div className="space-y-6">
-      {/* Top Metric Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Top Metric Cards (V2: High-Density 2x2 on mobile, 4-col on desktop) */}
+      <div className={USE_V2_MOBILE_ADMIN ? "grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4" : "grid grid-cols-2 md:grid-cols-4 gap-4"}>
         {/* Active Visitors */}
-        <div className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-4 backdrop-blur-md relative overflow-hidden group hover:border-emerald-500/40 transition">
-          <div className="flex items-center justify-between text-neutral-400 mb-2">
-            <span className="text-xs font-medium uppercase tracking-wider" title="Unique active visitor sessions deduplicated across browser tabs and connections">
+        <div className={USE_V2_MOBILE_ADMIN
+          ? "bg-white/5 border border-white/10 rounded-xl p-3 backdrop-blur-md relative overflow-hidden group hover:border-emerald-500/40 transition"
+          : "bg-neutral-900/60 border border-neutral-800 rounded-2xl p-4 backdrop-blur-md relative overflow-hidden group hover:border-emerald-500/40 transition"
+        }>
+          <div className="flex items-center justify-between text-neutral-400 mb-1.5">
+            <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider truncate" title="Unique active visitor sessions deduplicated across browser tabs and connections">
               Live Visitors
             </span>
-            <div className={`w-2.5 h-2.5 rounded-full ${activeVisitors > 0 ? 'bg-emerald-500 animate-pulse shadow-sm shadow-emerald-500/50' : 'bg-neutral-600'}`} />
+            <div className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full shrink-0 ${activeVisitors > 0 ? 'bg-emerald-500 animate-pulse shadow-sm shadow-emerald-500/50' : 'bg-neutral-600'}`} />
           </div>
-          <div className="text-2xl md:text-3xl font-extrabold text-white tracking-tight flex items-baseline gap-2">
+          <div className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white tracking-tight flex items-baseline gap-1.5">
             <span>{activeVisitors}</span>
-            <span className="text-xs font-semibold text-neutral-400">actual</span>
+            <span className="text-[10px] sm:text-xs font-medium px-1.5 py-0.2 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">actual</span>
           </div>
-          <div className="text-[11px] text-neutral-400 mt-1 flex flex-col gap-0.5">
-            <div className="flex items-center gap-1.5">
+          <div className="text-[10px] sm:text-[11px] text-neutral-400 mt-1 flex flex-col gap-0.5">
+            <div className="flex items-center gap-1 truncate">
               <span className="text-emerald-400 font-semibold">{activeAuthUsers}</span> auth • <span className="text-neutral-300 font-semibold">{activeAnonUsers}</span> anon
             </div>
-            <div className="text-[10px] text-amber-400/90 font-medium mt-0.5 truncate">
-              Public: <span className="font-bold">{liveUsersConfig?.mode === 'real' ? activeVisitors : (liveUsersConfig?.currentDisplayCount ?? activeVisitors)}</span> ({liveUsersConfig?.mode === 'manual' ? 'Manual Range' : 'Real'})
+            <div className="text-[9px] sm:text-[10px] text-amber-400/90 font-medium truncate">
+              Public: <span className="font-bold">{liveUsersConfig?.mode === 'real' ? activeVisitors : (liveUsersConfig?.currentDisplayCount ?? activeVisitors)}</span> ({liveUsersConfig?.mode === 'manual' ? 'Range' : 'Real'})
             </div>
           </div>
         </div>
 
         {/* Requests Per Minute */}
-        <div className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-4 backdrop-blur-md relative overflow-hidden group hover:border-emerald-500/40 transition">
-          <div className="flex items-center justify-between text-neutral-400 mb-2">
-            <span className="text-xs font-medium uppercase tracking-wider" title="Rolling 60-second request rate">
+        <div className={USE_V2_MOBILE_ADMIN
+          ? "bg-white/5 border border-white/10 rounded-xl p-3 backdrop-blur-md relative overflow-hidden group hover:border-emerald-500/40 transition"
+          : "bg-neutral-900/60 border border-neutral-800 rounded-2xl p-4 backdrop-blur-md relative overflow-hidden group hover:border-emerald-500/40 transition"
+        }>
+          <div className="flex items-center justify-between text-neutral-400 mb-1.5">
+            <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider truncate" title="Rolling 60-second request rate">
               RPM (Traffic)
             </span>
-            <Activity className="w-4 h-4 text-emerald-400" />
+            <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 shrink-0" />
           </div>
-          <div className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
-            {rpm}
+          <div className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white tracking-tight flex items-baseline gap-1.5">
+            <span>{rpm}</span>
+            <span className="text-[10px] sm:text-xs font-medium px-1.5 py-0.2 rounded-full bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">user RPM</span>
           </div>
-          <div className="text-[11px] text-neutral-400 mt-1">
-            <span className="text-emerald-400 font-semibold">{rpmUser}</span> user RPM (60s rolling)
-            <div className="text-[10px] text-neutral-500 mt-0.5">
-              Proc: {processRequests} • Lifetime: {lifetimeRequests}
+          <div className="text-[10px] sm:text-[11px] text-neutral-400 mt-1 truncate">
+            <span className="text-emerald-400 font-semibold">{rpmUser}</span> user (60s rolling)
+            <div className="text-[9px] sm:text-[10px] text-neutral-500 truncate">
+              Proc: {processRequests}
             </div>
           </div>
         </div>
 
         {/* Latency */}
-        <div className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-4 backdrop-blur-md relative overflow-hidden group hover:border-emerald-500/40 transition">
-          <div className="flex items-center justify-between text-neutral-400 mb-2">
-            <span className="text-xs font-medium uppercase tracking-wider" title="Monotonic request duration (excluding background polling)">
+        <div className={USE_V2_MOBILE_ADMIN
+          ? "bg-white/5 border border-white/10 rounded-xl p-3 backdrop-blur-md relative overflow-hidden group hover:border-emerald-500/40 transition"
+          : "bg-neutral-900/60 border border-neutral-800 rounded-2xl p-4 backdrop-blur-md relative overflow-hidden group hover:border-emerald-500/40 transition"
+        }>
+          <div className="flex items-center justify-between text-neutral-400 mb-1.5">
+            <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider truncate" title="Monotonic request duration (excluding background polling)">
               Avg Latency
             </span>
-            <Zap className="w-4 h-4 text-emerald-400" />
+            <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 shrink-0" />
           </div>
-          <div className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
-            {avgLatency}<span className="text-sm font-normal text-neutral-400 ml-1">ms</span>
+          <div className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white tracking-tight flex items-baseline gap-1.5">
+            <span>{avgLatency}</span><span className="text-xs sm:text-sm font-normal text-neutral-400">ms</span>
+            <span className="text-[10px] sm:text-xs font-medium px-1.5 py-0.2 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30">p95</span>
           </div>
-          <div className="text-[11px] text-neutral-400 mt-1">
-            <span className="text-emerald-400 font-semibold">p95: {p95Latency}ms</span> • p50: {p50Latency}ms
-            <div className="text-[10px] text-neutral-500 mt-0.5">
-              {latencySamples} recent sample{latencySamples !== 1 ? 's' : ''}
+          <div className="text-[10px] sm:text-[11px] text-neutral-400 mt-1 truncate">
+            <span className="text-emerald-400 font-semibold">{p95Latency}ms</span> p95 • {p50Latency}ms p50
+            <div className="text-[9px] sm:text-[10px] text-neutral-500 truncate">
+              {latencySamples} sample{latencySamples !== 1 ? 's' : ''}
             </div>
           </div>
         </div>
 
         {/* Error Rate */}
-        <div className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-4 backdrop-blur-md relative overflow-hidden group hover:border-emerald-500/40 transition">
-          <div className="flex items-center justify-between text-neutral-400 mb-2">
-            <span className="text-xs font-medium uppercase tracking-wider" title="Server errors (5xx) vs client errors (4xx)">
+        <div className={USE_V2_MOBILE_ADMIN
+          ? "bg-white/5 border border-white/10 rounded-xl p-3 backdrop-blur-md relative overflow-hidden group hover:border-emerald-500/40 transition"
+          : "bg-neutral-900/60 border border-neutral-800 rounded-2xl p-4 backdrop-blur-md relative overflow-hidden group hover:border-emerald-500/40 transition"
+        }>
+          <div className="flex items-center justify-between text-neutral-400 mb-1.5">
+            <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider truncate" title="Server errors (5xx) vs client errors (4xx)">
               Error Rate
             </span>
-            <ShieldCheck className={`w-4 h-4 ${serverErrors > 0 ? 'text-amber-400' : 'text-emerald-400'}`} />
+            <ShieldCheck className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${serverErrors > 0 ? 'text-amber-400' : 'text-emerald-400'}`} />
           </div>
-          <div className={`text-2xl md:text-3xl font-extrabold tracking-tight ${serverErrors > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
-            {serverErrorPct}% <span className="text-xs font-normal text-neutral-400">5xx</span>
+          <div className={`text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight flex items-baseline gap-1.5 ${serverErrors > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+            <span>{serverErrorPct}%</span>
+            <span className="text-[10px] sm:text-xs font-medium px-1.5 py-0.2 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/30">5xx</span>
           </div>
-          <div className="text-[11px] text-neutral-400 mt-1">
+          <div className="text-[10px] sm:text-[11px] text-neutral-400 mt-1 truncate">
             <span className="text-red-400 font-medium">{serverErrors} 5xx</span> • <span className="text-amber-400 font-medium">{clientErrors} 4xx</span>
-            <div className="text-[10px] text-neutral-500 mt-0.5">
-              {eligibleTotal} eligible request{eligibleTotal !== 1 ? 's' : ''} ({totalErrorPct}% all)
+            <div className="text-[9px] sm:text-[10px] text-neutral-500 truncate">
+              {eligibleTotal} total ({totalErrorPct}% all)
             </div>
           </div>
         </div>
@@ -303,18 +319,18 @@ export default function AdminOverview({ metrics, health, onNavigate, token, back
           </div>
         </div>
 
-        {/* Two Mode Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Two Mode Cards (V2: sleek compact radio-card toggles) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
           {/* Mode A: Real Live Users */}
           <div
             onClick={() => setSelectedMode('real')}
-            className={`rounded-xl p-4 border transition cursor-pointer relative ${
+            className={`rounded-xl p-3 sm:p-4 border transition cursor-pointer relative ${
               selectedMode === 'real'
-                ? 'bg-emerald-500/10 border-emerald-500/50 shadow-lg shadow-emerald-500/10'
+                ? 'bg-emerald-500/10 border-emerald-500/50 shadow-md shadow-emerald-500/10'
                 : 'bg-neutral-950/60 border-neutral-800 hover:border-neutral-700'
             }`}
           >
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-2">
                 <input
                   type="radio"
@@ -323,16 +339,16 @@ export default function AdminOverview({ metrics, health, onNavigate, token, back
                   onChange={() => setSelectedMode('real')}
                   className="accent-emerald-500 cursor-pointer"
                 />
-                <span className="text-sm font-bold text-white">Mode A: Real Live Users</span>
+                <span className="text-xs sm:text-sm font-bold text-white">Mode A: Real Live Users</span>
               </div>
-              <span className="text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30">
+              <span className="text-[9px] sm:text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30">
                 Genuine Presence
               </span>
             </div>
-            <p className="text-xs text-neutral-400 leading-relaxed">
-              Display the actual number of currently active users tracked in real time. Deduplicated across browser tabs with expired sessions automatically removed.
+            <p className="text-[11px] sm:text-xs text-neutral-400 leading-relaxed">
+              Display the actual number of currently active users tracked in real time. Deduplicated across browser tabs.
             </p>
-            <div className="mt-3 pt-2 border-t border-neutral-800/60 flex items-center justify-between text-xs">
+            <div className="mt-2.5 pt-2 border-t border-neutral-800/60 flex items-center justify-between text-[11px] sm:text-xs">
               <span className="text-neutral-500">Current Genuine Count:</span>
               <span className="font-mono font-bold text-emerald-400">{activeVisitors} active</span>
             </div>
@@ -341,13 +357,13 @@ export default function AdminOverview({ metrics, health, onNavigate, token, back
           {/* Mode B: Manual Display Range */}
           <div
             onClick={() => setSelectedMode('manual')}
-            className={`rounded-xl p-4 border transition cursor-pointer relative ${
+            className={`rounded-xl p-3 sm:p-4 border transition cursor-pointer relative ${
               selectedMode === 'manual'
-                ? 'bg-amber-500/10 border-amber-500/50 shadow-lg shadow-amber-500/10'
+                ? 'bg-amber-500/10 border-amber-500/50 shadow-md shadow-amber-500/10'
                 : 'bg-neutral-950/60 border-neutral-800 hover:border-neutral-700'
             }`}
           >
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-2">
                 <input
                   type="radio"
@@ -356,21 +372,21 @@ export default function AdminOverview({ metrics, health, onNavigate, token, back
                   onChange={() => setSelectedMode('manual')}
                   className="accent-amber-500 cursor-pointer"
                 />
-                <span className="text-sm font-bold text-white">Mode B: Manual Display Range</span>
+                <span className="text-xs sm:text-sm font-bold text-white">Mode B: Manual Range</span>
               </div>
-              <span className="text-[10px] font-semibold bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded border border-amber-500/30">
+              <span className="text-[9px] sm:text-[10px] font-semibold bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded border border-amber-500/30">
                 Configured Range
               </span>
             </div>
-            <p className="text-xs text-neutral-400 leading-relaxed">
-              Generates a realistic display count within a set minimum and maximum range. Refreshed smoothly every 30–60s without sudden spikes.
+            <p className="text-[11px] sm:text-xs text-neutral-400 leading-relaxed">
+              Generates a realistic display count within a set minimum and maximum range, smoothly refreshed.
             </p>
 
-            {/* Inputs */}
-            <div className="mt-3 pt-2 border-t border-neutral-800/60 grid grid-cols-2 gap-3" onClick={(e) => e.stopPropagation()}>
-              <div>
-                <label className="block text-[10px] uppercase font-bold text-neutral-400 mb-1">
-                  Minimum Users
+            {/* Inline inputs for sleek compact mobile display */}
+            <div className="mt-2.5 pt-2 border-t border-neutral-800/60 grid grid-cols-2 gap-2" onClick={(e) => e.stopPropagation()}>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-1.5">
+                <label className="text-[9px] sm:text-[10px] uppercase font-bold text-neutral-400 whitespace-nowrap">
+                  Min:
                 </label>
                 <input
                   type="number"
@@ -378,13 +394,13 @@ export default function AdminOverview({ metrics, health, onNavigate, token, back
                   value={minInput}
                   onChange={(e) => setMinInput(e.target.value)}
                   disabled={selectedMode !== 'manual'}
-                  placeholder="e.g. 500"
-                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono focus:border-amber-500 focus:outline-none disabled:opacity-50"
+                  placeholder="500"
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-1 text-xs text-white font-mono focus:border-amber-500 focus:outline-none disabled:opacity-50"
                 />
               </div>
-              <div>
-                <label className="block text-[10px] uppercase font-bold text-neutral-400 mb-1">
-                  Maximum Users
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-1.5">
+                <label className="text-[9px] sm:text-[10px] uppercase font-bold text-neutral-400 whitespace-nowrap">
+                  Max:
                 </label>
                 <input
                   type="number"
@@ -392,8 +408,8 @@ export default function AdminOverview({ metrics, health, onNavigate, token, back
                   value={maxInput}
                   onChange={(e) => setMaxInput(e.target.value)}
                   disabled={selectedMode !== 'manual'}
-                  placeholder="e.g. 1000"
-                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono focus:border-amber-500 focus:outline-none disabled:opacity-50"
+                  placeholder="1000"
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-1 text-xs text-white font-mono focus:border-amber-500 focus:outline-none disabled:opacity-50"
                 />
               </div>
             </div>
@@ -439,17 +455,20 @@ export default function AdminOverview({ metrics, health, onNavigate, token, back
         </div>
       </div>
 
-      {/* Subsystem Health Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Subsystem Health Cards (V2: High-density 2-col or 3-col on desktop) */}
+      <div className={USE_V2_MOBILE_ADMIN ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4" : "grid grid-cols-1 md:grid-cols-3 gap-4"}>
         {/* MongoDB Status */}
-        <div className="bg-neutral-900/50 border border-neutral-800/80 rounded-2xl p-5 flex flex-col justify-between hover:border-emerald-500/30 transition">
+        <div className={USE_V2_MOBILE_ADMIN
+          ? "bg-white/5 border border-white/10 rounded-xl p-3.5 flex flex-col justify-between hover:border-emerald-500/30 transition backdrop-blur-md"
+          : "bg-neutral-900/50 border border-neutral-800/80 rounded-2xl p-5 flex flex-col justify-between hover:border-emerald-500/30 transition"
+        }>
           <div>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-2">
-                <Database className="w-4 h-4 text-emerald-400" />
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Database className="w-3.5 h-3.5 text-emerald-400" />
                 MongoDB Atlas
               </span>
-              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
+              <span className={`text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded-full border ${
                 isDbConnected
                   ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-sm shadow-emerald-500/20'
                   : 'bg-red-500/10 text-red-400 border-red-500/30'
@@ -457,70 +476,76 @@ export default function AdminOverview({ metrics, health, onNavigate, token, back
                 {isDbConnected ? 'Connected' : 'Disconnected'}
               </span>
             </div>
-            <div className="text-sm text-neutral-300 font-medium">
+            <div className="text-xs sm:text-sm text-neutral-300 font-medium">
               Ping Latency: <span className="text-emerald-400 font-bold">{pingLatency}</span>
             </div>
-            <p className="text-xs text-neutral-400 mt-1">
-              Connection readyState: <span className="text-emerald-400 font-medium">{readyStateText}</span>
+            <p className="text-[11px] sm:text-xs text-neutral-400 mt-0.5">
+              ReadyState: <span className="text-emerald-400 font-medium">{readyStateText}</span>
             </p>
           </div>
           <button 
             onClick={() => onNavigate('health')}
-            className="mt-4 text-xs font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition cursor-pointer"
+            className="mt-3 text-xs font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition cursor-pointer"
           >
             Diagnostics & details <ArrowUpRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
         {/* Server Runtime */}
-        <div className="bg-neutral-900/50 border border-neutral-800/80 rounded-2xl p-5 flex flex-col justify-between hover:border-emerald-500/30 transition">
+        <div className={USE_V2_MOBILE_ADMIN
+          ? "bg-white/5 border border-white/10 rounded-xl p-3.5 flex flex-col justify-between hover:border-emerald-500/30 transition backdrop-blur-md"
+          : "bg-neutral-900/50 border border-neutral-800/80 rounded-2xl p-5 flex flex-col justify-between hover:border-emerald-500/30 transition"
+        }>
           <div>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-2">
-                <Clock className="w-4 h-4 text-emerald-400" />
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-emerald-400" />
                 Server Runtime
               </span>
-              <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">
+              <span className="text-[10px] sm:text-[11px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">
                 Node {health?.server?.nodeVersion || 'v20.18.0'}
               </span>
             </div>
-            <div className="text-sm text-neutral-300 font-medium">
+            <div className="text-xs sm:text-sm text-neutral-300 font-medium">
               Uptime: <span className="text-emerald-400 font-bold">{formatUptime(uptimeSeconds)}</span>
             </div>
-            <p className="text-xs text-neutral-400 mt-1">
+            <p className="text-[11px] sm:text-xs text-neutral-400 mt-0.5">
               Memory: {health?.server?.memoryUsage?.heapUsedMB ?? 0} MB used / {health?.server?.memoryUsage?.heapTotalMB ?? 0} MB heap
             </p>
           </div>
           <button 
             onClick={() => onNavigate('health')}
-            className="mt-4 text-xs font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition cursor-pointer"
+            className="mt-3 text-xs font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition cursor-pointer"
           >
             Server performance <ArrowUpRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
         {/* YouTube API Status */}
-        <div className="bg-neutral-900/50 border border-neutral-800/80 rounded-2xl p-5 flex flex-col justify-between hover:border-emerald-500/30 transition">
+        <div className={USE_V2_MOBILE_ADMIN
+          ? "bg-white/5 border border-white/10 rounded-xl p-3.5 flex flex-col justify-between hover:border-emerald-500/30 transition backdrop-blur-md sm:col-span-2 lg:col-span-1"
+          : "bg-neutral-900/50 border border-neutral-800/80 rounded-2xl p-5 flex flex-col justify-between hover:border-emerald-500/30 transition"
+        }>
           <div>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-2">
-                <Music2 className="w-4 h-4 text-emerald-400" />
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Music2 className="w-3.5 h-3.5 text-emerald-400" />
                 Music Search Engine
               </span>
-              <span className="text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold shadow-sm shadow-emerald-500/20">
+              <span className="text-[10px] sm:text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold shadow-sm shadow-emerald-500/20">
                 Operational
               </span>
             </div>
-            <div className="text-sm text-neutral-300 font-medium">
+            <div className="text-xs sm:text-sm text-neutral-300 font-medium">
               API Hits: <span className="text-white font-bold">{metrics?.youtubeStats?.apiHits ?? 0}</span> | Fallback: <span className="text-white font-bold">{metrics?.youtubeStats?.fallbackHits ?? 0}</span>
             </div>
-            <p className="text-xs text-neutral-400 mt-1">
+            <p className="text-[11px] sm:text-xs text-neutral-400 mt-0.5">
               Curated Hits: {metrics?.youtubeStats?.curatedFallbackHits ?? 0} | Quota errors: {metrics?.youtubeStats?.quotaErrors ?? 0}
             </p>
           </div>
           <button 
             onClick={() => onNavigate('music')}
-            className="mt-4 text-xs font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition cursor-pointer"
+            className="mt-3 text-xs font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition cursor-pointer"
           >
             Music analytics & searches <ArrowUpRight className="w-3.5 h-3.5" />
           </button>

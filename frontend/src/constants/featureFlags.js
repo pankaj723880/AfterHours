@@ -49,9 +49,16 @@ export const USE_V2_VOICE_ENGINE = true;
 // When false: cleanly falls back to the static/docked avatar logic.
 export const USE_V2_AVATAR_ROAMING_SUITE = true;
 
+// V2 Mobile-Optimized Admin Dashboard Feature Flag (/admin)
+// When true: defaults to 'overview' tab, compact mobile header, horizontal category pill navigation strip,
+// high-density 2x2 metric stat cards, compact live counter & server diagnostics, and pb-36 bottom player clearance.
+// When false: restores original vertical admin layout and legacy CMS landing.
+export const USE_V2_MOBILE_ADMIN = true;
 
-
-
-
-
+// V2 Mobile-First High-Density CMS Pages Feature Flag (/admin?section=cms_settings)
+// When true: single-line horizontal sub-tab carousel pill strip, compound asset inputs with inline thumbnail,
+// theme preset cards + swatches, live banner preview card, aesthetic maintenance card toggle, collapsible policy accordions,
+// and sticky frosted bottom save/publish bar with pb-36 clearance.
+// When false: restores 100% original multi-row wrapped tabs and legacy CMS form layout.
+export const USE_V2_CMS_PAGES = true;
 

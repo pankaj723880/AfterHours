@@ -99,7 +99,16 @@ export function parseRoute(pathname = '/', search = '') {
     const stationId = cleanPath.replace('/station/', '');
     return { tab: stationId, path: `/${stationId}`, params: {} };
   }
-  const knownTabs = ['barber', 'truck', 'pauwa', 'mood', 'timemachine', 'activity', 'library', 'history', 'swipe', 'dj-club'];
+  if (cleanPath === '/saloon') {
+    return { tab: 'barber', path: '/saloon', params: {} };
+  }
+  if (cleanPath === '/theka') {
+    return { tab: 'pauwa', path: '/theka', params: {} };
+  }
+  if (cleanPath === '/truck') {
+    return { tab: 'truck', path: '/truck', params: {} };
+  }
+  const knownTabs = ['barber', 'truck', 'pauwa', 'saloon', 'theka', 'mood', 'timemachine', 'activity', 'library', 'history', 'swipe', 'dj-club'];
   const stripped = cleanPath.replace(/^\//, '');
   if (knownTabs.includes(stripped)) {
     return { tab: stripped, path: `/${stripped}`, params: {} };

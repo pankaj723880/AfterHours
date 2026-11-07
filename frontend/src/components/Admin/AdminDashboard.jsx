@@ -49,12 +49,23 @@ import VoiceControlManagement from './VoiceControlManagement';
 import { safeParseJsonResponse } from '../../utils/errorHandler';
 import { DEFAULT_CMS_CONFIG, getCachedCmsConfig, normalizeCmsConfig, applyThemeToDom } from '../../services/cmsClient';
 import { BACKEND_URL } from '../../utils/apiUrl';
+import { USE_V2_MOBILE_ADMIN } from '../../constants/featureFlags';
 
 export default function AdminDashboard({ user, token, backendUrl, onExit, onOpenAuth, showToast, onPreviewConfig, onUserUpdated, onReviewsUpdated }) {
   const cleanBackendUrl = (backendUrl && backendUrl.trim().startsWith('http'))
     ? backendUrl.trim().replace(/\/+$/, '')
     : BACKEND_URL;
-  const [activeSubTab, setActiveSubTab] = useState('cms_settings');
+  // V2 Mobile Admin: Default strictly to 'overview' section on mount
+  const [activeSubTab, setActiveSubTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const sectionParam = params.get('section');
+        if (sectionParam) return sectionParam;
+      } catch (_) {}
+    }
+    return USE_V2_MOBILE_ADMIN ? 'overview' : 'cms_settings';
+  });
   const [metrics, setMetrics] = useState(null);
   const [health, setHealth] = useState(null);
   const [isHealthLoading, setIsHealthLoading] = useState(false);
@@ -384,6 +395,16 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
     { id: 'audit', label: 'Audit Logs', icon: ShieldCheck }
   ];
 
+  // Primary V2 Category Pill Tabs for sleek mobile horizontal strip
+  const mobilePillTabs = [
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'traffic', label: 'Live Traffic', icon: Activity },
+    { id: 'cms_settings', label: 'CMS', icon: Globe },
+    { id: 'ai_learning', label: 'AI Engine', icon: Brain },
+    { id: 'health', label: 'Diagnostics', icon: Server },
+    { id: 'audit', label: 'Audit', icon: ShieldCheck }
+  ];
+
   const isCmsTab = activeSubTab.startsWith('cms_');
   const isAuthError = Boolean(
     cmsError && (
@@ -475,22 +496,61 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
         </div>
 
         {/* Mobile secondary status row (md:hidden) */}
-        <div className="md:hidden mt-2 pt-2 border-t border-neutral-800/60 flex items-center justify-between text-[11px] text-neutral-400 min-w-0">
-          <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-2">
-            <span className="text-neutral-500 shrink-0">Section:</span>
-            <span className="text-amber-400 font-semibold truncate">
-              {[...cmsNavItems, ...operationsNavItems].find(i => i.id === activeSubTab)?.label || activeSubTab}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="flex items-center gap-1">
-              <span className={`w-1.5 h-1.5 rounded-full ${isSocketConnected ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-400'}`} />
-              <span className="text-[10px] font-mono text-emerald-400">{isSocketConnected ? 'Live' : 'Ready'}</span>
+        {USE_V2_MOBILE_ADMIN ? (
+          <div className="md:hidden mt-2 pt-2 border-t border-neutral-800/60 flex items-center justify-between text-[11px] text-neutral-400 min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-white font-bold text-xs">Admin Dashboard</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-400 font-mono text-[9px] font-bold">Live</span>
             </div>
-            <span className="text-neutral-700">|</span>
-            <span className="text-neutral-300 font-mono text-[10px] truncate max-w-[100px]">{user?.username}</span>
+            <div className="flex items-center gap-1.5 text-neutral-300 font-mono text-[10px] bg-neutral-900 border border-neutral-800 px-2 py-0.5 rounded-full shrink-0">
+              <ShieldCheck className="w-3 h-3 text-amber-400" />
+              <span className="truncate max-w-[90px]">{user?.username}</span>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="md:hidden mt-2 pt-2 border-t border-neutral-800/60 flex items-center justify-between text-[11px] text-neutral-400 min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-2">
+              <span className="text-neutral-500 shrink-0">Section:</span>
+              <span className="text-amber-400 font-semibold truncate">
+                {[...cmsNavItems, ...operationsNavItems].find(i => i.id === activeSubTab)?.label || activeSubTab}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1">
+                <span className={`w-1.5 h-1.5 rounded-full ${isSocketConnected ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-400'}`} />
+                <span className="text-[10px] font-mono text-emerald-400">{isSocketConnected ? 'Live' : 'Ready'}</span>
+              </div>
+              <span className="text-neutral-700">|</span>
+              <span className="text-neutral-300 font-mono text-[10px] truncate max-w-[100px]">{user?.username}</span>
+            </div>
+          </div>
+        )}
+
+        {/* V2 Mobile Category Pill Strip: Horizontal scrollable navigation */}
+        {USE_V2_MOBILE_ADMIN && (
+          <div className="md:hidden mt-2 pt-1.5 pb-0.5 overflow-x-auto no-scrollbar flex items-center gap-2 border-t border-white/10">
+            {mobilePillTabs.map((tab) => {
+              const TabIcon = tab.icon;
+              const isActive = activeSubTab === tab.id || (tab.id === 'cms_settings' && activeSubTab.startsWith('cms_'));
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveSubTab(tab.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition cursor-pointer shrink-0 ${
+                    isActive
+                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 shadow-sm shadow-amber-500/20'
+                      : 'bg-white/5 border border-white/10 text-neutral-400 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <TabIcon className={`w-3.5 h-3.5 ${isActive ? 'text-amber-400' : 'text-neutral-400'}`} />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </header>
 
       {/* Main Layout Container */}
@@ -609,7 +669,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
         </aside>
 
         {/* Content Area */}
-        <main className="flex-1 min-w-0 pb-12 md:pb-8">
+        <main className={`flex-1 min-w-0 ${USE_V2_MOBILE_ADMIN ? 'pb-36 md:pb-12' : 'pb-12 md:pb-8'}`}>
           {/* CMS Loading / Error Notices */}
           {cmsError && (
             <div className="mb-5 p-3.5 sm:p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-rose-300 text-xs">

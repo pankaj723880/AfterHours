@@ -21,6 +21,7 @@ const ListeningStatsModal = lazy(() => import('./components/Stats/ListeningStats
 const UserProfileModal = lazy(() => import('./components/Profile/UserProfileModal'));
 const DiscoverSwipe = lazy(() => import('./components/Discover/DiscoverSwipe'));
 const DjClubPage = lazy(() => import('./components/DjClub/DjClubPage'));
+import NostalgiaStationView from './components/Radio/NostalgiaStationView';
 import CinematicVideoPlayer from './components/Player/CinematicVideoPlayer';
 import AppSplashScreen from './components/Common/AppSplashScreen';
 import CmsAnnouncementBar from './components/Common/CmsAnnouncementBar';
@@ -6596,33 +6597,51 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         {/* Site-wide CMS Announcement Bar */}
         {activeTab !== 'dj-club' && <CmsAnnouncementBar announcement={cmsConfig?.announcement} />}
 
-        <main ref={mainScrollRef} onScroll={(e) => { if (activeTab === 'home') setIsHomeScrolled(e.currentTarget.scrollTop > 320); }} className={`flex-1 h-full min-h-0 ${activeTab === 'dj-club' ? 'overflow-hidden p-0' : (USE_V2_SWIPE_UI && activeTab === 'swipe' ? 'overflow-hidden p-0' : 'overflow-y-auto px-2.5 py-3 sm:px-4 sm:py-4 md:p-8')} bg-neutral-950 box-border relative w-full transition-all duration-300 ${activeTab === 'dj-club' ? 'pb-0' : (USE_V2_SWIPE_UI && activeTab === 'swipe' ? 'pb-0' : (isBottomPlayerVisible ? 'pb-44 md:pb-28' : 'pb-24 md:pb-8'))}`}>
-          {currentStation && currentBgImage && activeTab !== 'dj-club' && (
-            <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden transition-all duration-700">
-              <img 
-                key={currentBgImage}
-                src={currentBgImage} 
-                alt="Station Background" 
-                loading="lazy"
-                className="w-full h-full object-cover filter brightness-[0.75] contrast-100 scale-105 transition-opacity duration-1000 animate-fadeIn"
-              />
-              <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/85" />
-            </div>
-          )}
-
-
-
-        {canGoBack(navigationStack, activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio, selectedPlaylistForView, offlineSubView }) && activeTab !== 'artist' && activeTab !== 'dj-club' && (
-          <div className="relative z-20 mb-6 flex justify-start">
-            <button
-              onClick={handleGoBack}
-              className="flex items-center gap-2 px-4 py-2 bg-neutral-900/80 hover:bg-neutral-800 backdrop-blur-xl border border-neutral-700/50 rounded-2xl text-neutral-300 hover:text-white transition shadow-lg group cursor-pointer active:scale-95"
+        {(() => {
+          const isStationPage = Boolean(
+            currentStation &&
+            !['home', 'discover', 'swipe', 'for-you', 'library', 'history', 'radio', 'indian-radio', 'mood', 'timemachine', 'activity', 'admin', 'offline', 'offline-explore'].includes(activeTab)
+          );
+          return (
+            <main
+              ref={mainScrollRef}
+              onScroll={(e) => {
+                if (activeTab === 'home') setIsHomeScrolled(e.currentTarget.scrollTop > 320);
+              }}
+              className={`flex-1 h-full min-h-0 ${
+                activeTab === 'dj-club' || isStationPage
+                  ? 'overflow-hidden p-0'
+                  : (USE_V2_SWIPE_UI && activeTab === 'swipe' ? 'overflow-hidden p-0' : 'overflow-y-auto px-2.5 py-3 sm:px-4 sm:py-4 md:p-8')
+              } bg-neutral-950 box-border relative w-full transition-all duration-300 ${
+                activeTab === 'dj-club' || isStationPage
+                  ? 'pb-0'
+                  : (USE_V2_SWIPE_UI && activeTab === 'swipe' ? 'pb-0' : (isBottomPlayerVisible ? 'pb-44 md:pb-28' : 'pb-24 md:pb-8'))
+              }`}
             >
-              <Icon name="arrowLeft" className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-              <span className="text-sm font-medium tracking-wide">Back</span>
-            </button>
-          </div>
-        )}
+              {currentStation && currentBgImage && activeTab !== 'dj-club' && (
+                <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden transition-all duration-700">
+                  <img 
+                    key={currentBgImage}
+                    src={currentBgImage} 
+                    alt="Station Background" 
+                    loading="lazy"
+                    className="w-full h-full object-cover filter brightness-[0.75] contrast-100 scale-105 transition-opacity duration-1000 animate-fadeIn"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/85" />
+                </div>
+              )}
+
+              {canGoBack(navigationStack, activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio, selectedPlaylistForView, offlineSubView }) && activeTab !== 'artist' && activeTab !== 'dj-club' && !isStationPage && (
+                <div className="relative z-20 mb-6 flex justify-start">
+                  <button
+                    onClick={handleGoBack}
+                    className="flex items-center gap-2 px-4 py-2 bg-neutral-900/80 hover:bg-neutral-800 backdrop-blur-xl border border-neutral-700/50 rounded-2xl text-neutral-300 hover:text-white transition shadow-lg group cursor-pointer active:scale-95"
+                  >
+                    <Icon name="arrowLeft" className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                    <span className="text-sm font-medium tracking-wide">Back</span>
+                  </button>
+                </div>
+              )}
 
         {activeTab === 'artist' && (
           <div key={`page-artist-${selectedArtistId}`} className="page-transition max-w-7xl mx-auto px-0 md:px-4 pt-0.5 md:pt-2 w-full min-w-0">
@@ -7131,121 +7150,32 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {Boolean(currentStation && !['home', 'discover', 'swipe', 'for-you', 'library', 'history', 'radio', 'indian-radio', 'mood', 'timemachine', 'activity', 'admin', 'offline', 'offline-explore'].includes(activeTab)) && (
-          <div key={`page-station-${activeTab}`} className="page-transition max-w-4xl mx-auto space-y-6 relative z-10">
-            <div className="p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl border border-neutral-700/50 relative overflow-hidden shadow-2xl backdrop-blur-md bg-neutral-900/40 w-full min-w-0">
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
-                <div className="space-y-3">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full border border-amber-500/40 bg-neutral-900/80 backdrop-blur-xl text-amber-300 shadow-sm">
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-                    {currentStation.badge}
-                  </span>
-                  <h1 className="text-3xl md:text-5xl font-extrabold text-white tracking-tight drop-shadow-lg">{currentStation.title}</h1>
-                  <p className="text-xs md:text-sm text-neutral-200 max-w-xl font-medium drop-shadow">{currentStation.subtitle}</p>
-                </div>
-              </div>
-            </div>
-
-            {stationLoading ? (
-              <div className="text-center py-6">
-                <span className="text-xs text-amber-400 animate-pulse flex items-center justify-center gap-2">
-                  <Icon name="sparkles" className="w-4 h-4 animate-spin shrink-0" /> Fetching station music tracks...
-                </span>
-              </div>
-            ) : (
-              <>
-                {songs.length > 0 && (
-                  <div className="flex items-center justify-between px-2 text-xs text-neutral-400 font-medium">
-                    <span>Showing {Math.min(stationVisibleCount, songs.length)} of {songs.length} curated tracks</span>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 gap-2">
-                  {songs.slice(0, stationVisibleCount).map((track, i) => {
-                    const isCurrent = currentSong?.id === track.id;
-                    const isMenuOpen = openMenuId === `${track.id}-${i}`;
-                    return (
-                      <div
-                        key={track.id + '-' + i}
-                        onClick={() => playSong(track)}
-                        className={`p-3.5 rounded-2xl border flex items-center justify-between cursor-pointer transition backdrop-blur-md relative ${
-                          isMenuOpen ? 'z-30' : 'z-auto'
-                        } ${
-                          isCurrent
-                            ? 'bg-neutral-900/90 border-amber-500/80 shadow-xl'
-                            : 'bg-neutral-900/50 border-neutral-800/70 hover:bg-neutral-900 active:scale-[0.98]/80'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3.5 min-w-0">
-                          <span className="text-xs font-mono text-neutral-400 w-6 text-center">{i + 1}</span>
-                          <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0 shadow-md" onError={(e) => handleImageError(e, track.title, track.id)} />
-                          <div className="min-w-0">
-                            <h4 className={`font-bold text-xs truncate ${isCurrent ? 'text-amber-400' : 'text-white'}`}>
-                              {track.title}
-                            </h4>
-                            <p className="text-[10px] text-neutral-400 truncate">{track.channel || track.artist}</p>
-                          </div>
-                        </div>
-
-                        <div className={`flex items-center gap-2 shrink-0 relative ${isMenuOpen ? 'z-40' : ''}`}>
-                          <button onClick={(e) => handleOpenVideo(track, e)} className="p-1.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition flex items-center shrink-0" title="See Video">
-                            <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
-                          </button>
-                          
-                          <button 
-                            onClick={(e) => { 
-                              e.stopPropagation(); 
-                              setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); 
-                            }} 
-                            className="p-1 text-neutral-500 hover:text-white transition shrink-0"
-                          >
-                            <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
-                          </button>
-
-                          {isMenuOpen && (
-                            <div className="absolute right-0 top-full mt-1.5 w-44 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
-                              {currentSong?.id !== track.id && (
-                                <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
-                              )}
-                              <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
-                              <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
-                                <span>⏭️</span>
-                                <span>Play Next</span>
-                              </button>
-                              <button onClick={(e) => { e.stopPropagation(); handleFindSimilar(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-amber-400 hover:bg-neutral-800 transition flex items-center gap-2">
-                                <span>✨</span>
-                                <span>Similar Songs</span>
-                              </button>
-                              <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
-                              <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {songs.length > 0 && (
-                  <div className="text-center pt-6 pb-4">
-                    <button
-                      onClick={handleLoadMoreStationSongs}
-                      disabled={isLoadingMoreStation}
-                      className="px-6 py-3 rounded-2xl bg-neutral-800 hover:bg-neutral-700 active:scale-[0.98] text-xs font-bold text-amber-400 border border-neutral-700 transition shadow-xl cursor-pointer inline-flex items-center justify-center gap-2"
-                    >
-                      {isLoadingMoreStation ? (
-                        <>
-                          <Icon name="sparkles" className="w-3.5 h-3.5 animate-spin" />
-                          <span>Loading more songs...</span>
-                        </>
-                      ) : (
-                        <span>Load More Songs</span>
-                      )}
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+          <NostalgiaStationView
+            key={`page-station-${activeTab}`}
+            station={currentStation}
+            songs={songs}
+            stationLoading={stationLoading}
+            stationVisibleCount={stationVisibleCount}
+            currentSong={currentSong}
+            openMenuId={openMenuId}
+            setOpenMenuId={setOpenMenuId}
+            playSong={playSong}
+            handleOpenVideo={handleOpenVideo}
+            queue={queue}
+            removeFromQueue={removeFromQueue}
+            addToQueue={addToQueue}
+            toggleLike={toggleLike}
+            likedSongs={likedSongs}
+            playNext={playNext}
+            handleFindSimilar={handleFindSimilar}
+            handleAddToPlaylistClick={handleAddToPlaylistClick}
+            showToast={showToast}
+            handleLoadMoreStationSongs={handleLoadMoreStationSongs}
+            isLoadingMoreStation={isLoadingMoreStation}
+            onGoBack={canGoBack(navigationStack, activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio, selectedPlaylistForView, offlineSubView }) ? handleGoBack : null}
+            getCleanThumbnail={getCleanThumbnail}
+            handleImageError={handleImageError}
+          />
         )}
 
         {activeTab === 'library' && (
@@ -8047,6 +7977,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
         )}
       </main>
+    );
+  })()}
       <ListeningRoomsModal
         isOpen={isListeningRoomsOpen}
         onClose={() => setIsListeningRoomsOpen(false)}
