@@ -3696,8 +3696,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       return;
     }
 
-    const nextIdx = (currentIndex + 1) % effectiveQueue.length;
-    playSong(effectiveQueue[nextIdx]);
+    // Auto-play continuation when playlist/queue reaches the end
+    const nextIdx = (currentIndex + 1);
+    if (nextIdx < effectiveQueue.length) {
+      playSong(effectiveQueue[nextIdx]);
+    } else {
+      // Loop seamlessly or fallback to trending pool to ensure music never halts
+      if (trendingSongs && trendingSongs.length > 0) {
+        const nextFallback = trendingSongs.find(s => (s.id || s.videoId) !== currentId) || trendingSongs[0];
+        playSong(nextFallback);
+      } else {
+        playSong(effectiveQueue[0]);
+      }
+    }
   }, [queue, trendingSongs, isShuffle, isRepeat, currentSong, isPlaying, playSong]);
 
   useEffect(() => {

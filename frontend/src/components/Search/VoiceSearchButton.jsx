@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { voiceControlService } from '../../services/voiceControlService';
 import { voiceSessionService } from '../../services/voiceSessionService';
+import { voiceAssistant, VOICE_STATES } from '../../services/voiceAssistant';
 
 // Supported recognition languages
 const SUPPORTED_LANGUAGES = [
@@ -81,16 +82,22 @@ export default function VoiceSearchButton({
     return () => unsubscribe();
   }, [allowed, user, token, backendUrl, onAccessRevoked]);
 
-  // Check browser support
+  // Subscribe to voiceAssistant service
   useEffect(() => {
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition || null;
+    setIsSupported(voiceAssistant.isSupported());
 
-    if (SpeechRecognition) {
-      setIsSupported(true);
-    } else {
-      setIsSupported(false);
-    }
+    const unsub = voiceAssistant.subscribe((payload) => {
+      if (payload.state === VOICE_STATES.LISTENING) {
+        setIsListening(true);
+      } else if (payload.state === VOICE_STATES.IDLE) {
+        setIsListening(false);
+      } else if (payload.state === VOICE_STATES.ERROR && payload.error) {
+        setIsListening(false);
+        setErrorMessage(payload.error);
+      }
+    });
+
+    return () => unsub();
   }, []);
 
   // Close language popup when clicked outside
@@ -109,26 +116,13 @@ export default function VoiceSearchButton({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.abort();
-        } catch {
-          // ignore
-        }
-      }
+      voiceAssistant.stop();
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, []);
 
   const abortListening = (reason = null) => {
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.abort();
-      } catch {
-        // ignore
-      }
-      recognitionRef.current = null;
-    }
+    voiceAssistant.stop();
     setIsListening(false);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     if (reason) {
@@ -199,10 +193,7 @@ export default function VoiceSearchButton({
       // If network fails, rely on cached permission
     }
 
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition || null;
-
-    if (!SpeechRecognition) {
+    if (!voiceAssistant.isSupported()) {
       setErrorMessage('Voice recognition is not supported in this browser. Please try Google Chrome or Microsoft Edge.');
       return;
     }
@@ -212,69 +203,25 @@ export default function VoiceSearchButton({
       voiceSessionService.stopSession('search_active');
     }
 
-    try {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = selectedLang;
-      recognition.maxAlternatives = 1;
-
-      recognition.onstart = () => {
-        setIsListening(true);
-        // Safety timeout in case speech ends with no audio event
-        timeoutRef.current = setTimeout(() => {
-          stopListening();
-        }, 12000);
-      };
-
-      recognition.onresult = (event) => {
-        let interim = '';
-        let final = '';
-
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const item = event.results[i];
-          const transcriptText = item[0]?.transcript || '';
-          if (item.isFinal) {
-            final += transcriptText;
-          } else {
-            interim += transcriptText;
-          }
-        }
-
-        const activeText = final || interim;
+    voiceAssistant.start({
+      lang: selectedLang,
+      onTranscript: ({ interim, final, transcript }) => {
         setInterimTranscript(interim);
         if (final) setFinalTranscript(final);
 
-        if (onTranscriptChange && activeText) {
-          onTranscriptChange(activeText);
+        if (onTranscriptChange && transcript) {
+          onTranscriptChange(transcript);
         }
 
-        const parsed = parseVoiceCommand(activeText);
+        const parsed = parseVoiceCommand(transcript);
         if (parsed.command === 'play') {
           setDetectedCommand('play');
         } else {
           setDetectedCommand('search');
         }
-      };
-
-      recognition.onerror = (event) => {
-        console.warn('Speech recognition error:', event.error);
-        if (event.error === 'not-allowed') {
-          setErrorMessage('Microphone access blocked. Please allow microphone permissions in your browser settings.');
-        } else if (event.error === 'no-speech') {
-          setErrorMessage('No voice detected. Please try speaking closer to your microphone.');
-        } else if (event.error === 'network') {
-          setErrorMessage('Speech service network error. Check your internet connection.');
-        } else {
-          setErrorMessage(`Speech error: ${event.error}`);
-        }
+      },
+      onFinal: async (speechToProcess) => {
         setIsListening(false);
-        if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      };
-
-      recognition.onend = async () => {
-        setIsListening(false);
-        if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
         // Recheck permissions before executing any parsed voice command
         const currentState = voiceControlService.getAccessState();
@@ -288,8 +235,6 @@ export default function VoiceSearchButton({
           return;
         }
 
-        // Process final speech
-        const speechToProcess = finalTranscript || interimTranscript;
         if (speechToProcess && speechToProcess.trim()) {
           const { command, query } = parseVoiceCommand(speechToProcess);
           const finalQuery = query || speechToProcess;
@@ -299,25 +244,16 @@ export default function VoiceSearchButton({
             onSearch(finalQuery);
           }
         }
-      };
-
-      recognitionRef.current = recognition;
-      recognition.start();
-    } catch (err) {
-      console.error('Failed to start speech recognition:', err);
-      setErrorMessage('Could not initialize speech recognition.');
-      setIsListening(false);
-    }
+      },
+      onError: (errText) => {
+        setErrorMessage(errText);
+        setIsListening(false);
+      }
+    });
   };
 
   const stopListening = () => {
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {
-        // ignore
-      }
-    }
+    voiceAssistant.stop();
     setIsListening(false);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
   };
