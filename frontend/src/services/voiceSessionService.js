@@ -407,7 +407,22 @@ class VoiceSessionController {
   // -------------------------------------------------------------
 
   async setupAudioStream() {
-    // 1. Resolve getUserMedia across modern and legacy mobile implementations (Opera Mobile / Brave)
+    // 1. Android WebView / TWA & Insecure Context Check
+    if (typeof window !== 'undefined' && !window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      console.warn('[VoiceSessionController] Insecure context detected; getUserMedia requires HTTPS or localhost in WebView/TWA');
+    }
+
+    // Explicitly query Android WebView permissions if Permissions API is supported
+    if (typeof navigator !== 'undefined' && navigator.permissions?.query) {
+      try {
+        const perm = await navigator.permissions.query({ name: 'microphone' });
+        if (perm.state === 'denied') {
+          console.warn('[VoiceSessionController] Microphone permission is currently denied by device or WebView container');
+        }
+      } catch (_) {}
+    }
+
+    // 2. Resolve getUserMedia across modern and legacy mobile implementations (Android WebView / Opera / Brave)
     const getMedia = navigator.mediaDevices?.getUserMedia
       ? (c) => navigator.mediaDevices.getUserMedia(c)
       : (navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia)
@@ -418,9 +433,8 @@ class VoiceSessionController {
       throw new Error('BROWSER_NO_MEDIA_DEVICES');
     }
 
-    // 2. Brave & Opera mobile constraint resilience:
-    // Some mobile Brave/Opera versions fail or reject complex audio constraint dictionaries with OverconstrainedError.
-    // Try optimal echoCancellation first, and fall back to simple audio: true.
+    // 3. Android WebView / Mobile constraint resilience:
+    // Try optimal echoCancellation first, and fall back to simple audio: true for WebViews.
     if (!this.mediaStream || !this.mediaStream.active) {
       try {
         this.mediaStream = await getMedia({
@@ -431,7 +445,7 @@ class VoiceSessionController {
           }
         });
       } catch (err) {
-        console.warn('[VoiceSessionController] Advanced audio constraints rejected (Brave/Opera mobile shields), falling back to basic audio:', err.message);
+        console.warn('[VoiceSessionController] Advanced audio constraints rejected in WebView/mobile, requesting clean audio: true:', err.message);
         this.mediaStream = await getMedia({ audio: true });
       }
     }

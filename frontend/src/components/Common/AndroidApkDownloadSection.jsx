@@ -41,7 +41,7 @@ export default function AndroidApkDownloadSection({ onBack = null }) {
 
           <div className="flex flex-col items-center md:items-end gap-2 w-full md:w-auto shrink-0">
             <a
-              href="/Loopra-unsigned.apk"
+              href="/Loopra.apk"
               download="Loopra.apk"
               className="w-full md:w-auto inline-flex items-center justify-center gap-2.5 px-7 py-3.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-neutral-950 font-bold text-sm sm:text-base shadow-xl shadow-amber-500/25 active:scale-95 transition cursor-pointer"
             >

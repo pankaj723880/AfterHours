@@ -3817,6 +3817,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             { src: absoluteArtworkUrl, sizes: '512x512', type: 'image/png' },
           ] : []
         });
+
+        navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
       } catch (err) {
         console.warn('[MediaSession] Error setting metadata:', err);
       }
@@ -3829,12 +3831,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             if (p && typeof p.catch === 'function') p.catch(() => {});
           } catch (e) {}
           setIsPlaying(true);
+          if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
         });
 
         navigator.mediaSession.setActionHandler('pause', () => {
           playerRef.current?.pauseVideo?.();
           if (silentAudioRef.current) silentAudioRef.current.pause();
           setIsPlaying(false);
+          if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
         });
 
         navigator.mediaSession.setActionHandler('previoustrack', handlePrevSong);
@@ -3846,11 +3850,22 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             currentTimeRef.current = details.seekTime;
           }
         });
+
+        // Background playback support: update positionState for lockscreen scrubber
+        if (typeof navigator.mediaSession.setPositionState === 'function' && durationRef.current > 0) {
+          try {
+            navigator.mediaSession.setPositionState({
+              duration: Math.max(0, durationRef.current || 0),
+              playbackRate: 1.0,
+              position: Math.min(durationRef.current || 0, Math.max(0, currentTimeRef.current || 0))
+            });
+          } catch (_) {}
+        }
       } catch (handlerErr) {
         console.warn('[MediaSession] Error registering handlers:', handlerErr);
       }
     }
-  }, [currentSong, handlePrevSong, handleNextSong]);
+  }, [currentSong, isPlaying, handlePrevSong, handleNextSong]);
 
   // Periodic mediaSession sync is removed to optimize performance
   // Let the browser infer playback position while playing
@@ -6023,21 +6038,25 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </button>
             )}
             {/* Mobile Circular Download Button / Desktop Pill */}
-            <button
-              onClick={handleInstallClick}
+            <a
+              href="/Loopra.apk"
+              download="Loopra.apk"
               className="md:hidden w-8 h-8 rounded-full bg-amber-500 hover:bg-amber-400 text-neutral-950 flex items-center justify-center shadow-md active:scale-95 transition shrink-0 cursor-pointer"
-              title="Install App"
-              aria-label="Install App"
+              title="Download Android APK"
+              aria-label="Download Android APK"
             >
               <Icon name="download" className="w-4 h-4 text-neutral-950 shrink-0" />
-            </button>
-            <button
-              onClick={handleInstallClick}
-              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-500 hover:from-amber-400 hover:to-amber-500 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0"
+            </a>
+            <a
+              href="/Loopra.apk"
+              download="Loopra.apk"
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-500 hover:from-amber-400 hover:to-amber-500 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0 cursor-pointer"
+              title="Download Android APK"
+              aria-label="Download Android APK"
             >
               <Icon name="download" className="w-3.5 h-3.5 text-white shrink-0" />
-              <span className="hidden sm:inline">Install App</span>
-            </button>
+              <span className="hidden sm:inline">Download APK</span>
+            </a>
 
             {/* Mobile Shield Button (Admin Only) */}
             {isAdmin && (
