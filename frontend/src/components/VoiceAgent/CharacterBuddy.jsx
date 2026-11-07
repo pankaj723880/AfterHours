@@ -124,10 +124,10 @@ export default function CharacterBuddy({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Base full-body dimensions:
-  // Increased container size (w-44 h-64, up to ~270px) so floor particles & full body render cleanly without clipping
-  const BASE_WIDTH = isMobileScreen ? 176 : 220; // 44rem proportional base
-  const BASE_HEIGHT = isMobileScreen ? 270 : 360; // Increased height to prevent bottom particle circle clipping
+  // Base full-body dimensions (w-56 h-[320px] proportional canvas):
+  // Gives ample vertical and horizontal breathing room so head-to-toe and ground particle circle render completely without clipping
+  const BASE_WIDTH = isMobileScreen ? 200 : 224; // ~w-56 (224px)
+  const BASE_HEIGHT = isMobileScreen ? 300 : 320; // h-[320px]
   const MIN_SCALE = 0.65;
   const MAX_SCALE = 1.60;
 
@@ -173,20 +173,13 @@ export default function CharacterBuddy({
 
   const isRoamActive = isRoamEnabled && !isListening && !isSpeaking && !dragRef.current?.isDragging;
 
+  const ORIGIN_POS = typeof window !== 'undefined'
+    ? { x: window.innerWidth - 130, y: window.innerHeight - 240 }
+    : { x: 200, y: 500 };
+
   // 2D Kinematics Physics State (8-Directional Vector Movement & Friction)
   const [continuousPos, setContinuousPos] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const isMobile = window.innerWidth < 768;
-      const charW = isMobile ? 140 : 200;
-      const charH = isMobile ? 230 : 330;
-      const rightMargin = isMobile ? 14 : 24;
-      const bottomMargin = isMobile ? (isBottomPlayerVisible ? 134 : 64) : (isBottomPlayerVisible ? 100 : 24);
-      return {
-        x: Math.max(16, window.innerWidth - charW - rightMargin),
-        y: Math.max(64, window.innerHeight - charH - bottomMargin)
-      };
-    }
-    return { x: 200, y: 500 };
+    return typeof window !== 'undefined' ? { ...ORIGIN_POS } : { x: 200, y: 500 };
   });
 
   const positionRef = useRef({ ...continuousPos });
@@ -195,6 +188,10 @@ export default function CharacterBuddy({
   const landingModeRef = useRef('walk'); // 'walk' | 'sit' | 'lie_down'
   const isSleepingRef = useRef(false);
   const patrolFrameRef = useRef(null);
+
+  // User Drag Interrupt & 60-Second Roaming Pause
+  const isUserDragging = useRef(false);
+  const pauseRoamingUntil = useRef(0);
 
   // 20-Second Active Roaming Fatigue Tracker
   const [isFatigued, setIsFatigued] = useState(false);
@@ -331,7 +328,7 @@ export default function CharacterBuddy({
     }
 
     const pickNewTarget = () => {
-      if (typeof window === 'undefined' || isSleepingRef.current) return;
+      if (typeof window === 'undefined' || isSleepingRef.current || isUserDragging.current || Date.now() < pauseRoamingUntil.current) return;
       const winW = window.innerWidth;
       const winH = window.innerHeight;
 
@@ -398,6 +395,13 @@ export default function CharacterBuddy({
       if (!isRunning) return;
       const dt = Math.min(0.064, (time - lastTime) / 1000);
       lastTime = time;
+
+      // Roaming Loop Guard: Pause roaming while user is dragging or during 60s cooldown
+      if (isUserDragging.current || Date.now() < pauseRoamingUntil.current) {
+        setAutonomousSubState('idle');
+        patrolFrameRef.current = requestAnimationFrame(loop);
+        return;
+      }
 
       const pos = positionRef.current;
       const target = targetPosRef.current;
@@ -1286,11 +1290,12 @@ export default function CharacterBuddy({
       hasMoved: false,
       startPointerX: clientX,
       startPointerY: clientY,
-      startPosX: curLeft,
-      startPosY: curTop,
+      startPosX: isRoamActive ? positionRef.current.x : curLeft,
+      startPosY: isRoamActive ? positionRef.current.y : curTop,
       startYaw: rotationRef.current.yaw,
       startPitch: rotationRef.current.pitch
     };
+    isUserDragging.current = true;
     isRotatingRef.current = false;
     clearTimeout(autoReturnTimerRef.current);
     cancelAnimationFrame(autoReturnFrameRef.current);
@@ -1350,18 +1355,31 @@ export default function CharacterBuddy({
       clearTimeout(resizeHoldTimerRef.current);
 
       if (e.cancelable && e.preventDefault) {
-        e.preventDefault(); // Prevent touch scrolling during rotation/drag
+        e.preventDefault(); // Prevent touch scrolling during drag
       }
 
-      // Check if user is in Roaming mode: Dragging performs full 360° Multi-Directional Inspection & Rotation
+      // In Roam mode: Direct drag interaction follows pointer coordinates and pauses movement
       if (isRoamActive) {
-        isRotatingRef.current = true;
-        const nextYaw = dragRef.current.startYaw + deltaX * 0.01;
-        const nextPitch = Math.max(-0.3, Math.min(0.3, dragRef.current.startPitch + deltaY * 0.005));
-        rotationRef.current.yaw = nextYaw;
-        rotationRef.current.pitch = nextPitch;
-        setRotationYaw(nextYaw);
-        setRotationPitch(nextPitch);
+        isUserDragging.current = true;
+        setAutonomousSubState('idle');
+
+        const winW = typeof window !== 'undefined' ? window.innerWidth : 1200;
+        const winH = typeof window !== 'undefined' ? window.innerHeight : 800;
+        const minX = 16;
+        const maxX = Math.max(minX + 40, winW - 110);
+        const minY = 64;
+        const maxY = Math.max(minY + 40, winH - (isBottomPlayerVisible ? 170 : 130));
+
+        const newX = Math.max(minX, Math.min(maxX, dragRef.current.startPosX + deltaX));
+        const newY = Math.max(minY, Math.min(maxY, dragRef.current.startPosY + deltaY));
+
+        positionRef.current = { x: newX, y: newY };
+        targetPosRef.current = { x: newX, y: newY };
+        setContinuousPos({ x: newX, y: newY });
+
+        if (avatarContainerRef.current) {
+          avatarContainerRef.current.style.transform = `translate3d(${newX}px, ${newY}px, 0)`;
+        }
         return;
       }
 
@@ -1405,6 +1423,16 @@ export default function CharacterBuddy({
       if (e.preventDefault) e.preventDefault();
       return; // Do NOT trigger click, tap, speech or navigation
     }
+
+    if (isRoamActive && dragRef.current.hasMoved) {
+      isUserDragging.current = false;
+      // Freeze roaming for exactly 60 seconds at the dropped location
+      pauseRoamingUntil.current = Date.now() + 60000;
+      setAutonomousSubState('idle');
+      if (e.preventDefault) e.preventDefault();
+      return;
+    }
+    isUserDragging.current = false;
 
     if (isRotatingRef.current) {
       isRotatingRef.current = false;
@@ -1863,6 +1891,13 @@ export default function CharacterBuddy({
                 } catch (_) {}
                 if (!next) {
                   stopAutonomousWalking(true);
+                  // Smoothly dock avatar back to ORIGIN_POS when roaming is toggled OFF
+                  positionRef.current = { ...ORIGIN_POS };
+                  targetPosRef.current = { ...ORIGIN_POS };
+                  setContinuousPos({ ...ORIGIN_POS });
+                  if (avatarContainerRef.current) {
+                    avatarContainerRef.current.style.transform = `translate3d(${ORIGIN_POS.x}px, ${ORIGIN_POS.y}px, 0)`;
+                  }
                 }
                 return next;
               });
@@ -1996,7 +2031,7 @@ export default function CharacterBuddy({
               height: `${characterHeight}px`,
               transition: 'width 0.22s cubic-bezier(0.2, 0.8, 0.4, 1), height 0.22s cubic-bezier(0.2, 0.8, 0.4, 1)'
             }}
-            className="relative flex items-center justify-center pointer-events-none"
+            className="w-56 h-[320px] pointer-events-auto flex items-center justify-center relative select-none"
           >
             <ThreeDCharacter
               gender={character.gender}
@@ -2011,6 +2046,7 @@ export default function CharacterBuddy({
               rotationPitch={rotationPitch}
               width={characterWidth}
               height={characterHeight}
+              showGroundCircle={true}
             />
           </div>
         </div>

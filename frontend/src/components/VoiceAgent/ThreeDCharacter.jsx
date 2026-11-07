@@ -41,7 +41,8 @@ export default function ThreeDCharacter({
   width = 215,
   height = 355,
   framingMode = 'full', // 'full' | 'bust' (bust focuses camera chest-up on facial expressions)
-  isPaused = false
+  isPaused = false,
+  showGroundCircle = true
 }) {
   const mountRef = useRef(null);
   const rendererRef = useRef(null);
@@ -94,9 +95,9 @@ export default function ThreeDCharacter({
     const container = mountRef.current;
     if (!container) return;
 
-    // 1. Scene & Dynamically Calibrated Perspective Camera
+    // 1. Scene & Dynamically Calibrated Perspective Camera (Pull camera to [0, 0.9, 3.4], fov: 42 for complete head-to-toe & ground circle view)
     const scene = new THREE.Scene();
-    const fov = 30;
+    const fov = 42;
     const initialAspect = width / height;
     const camera = new THREE.PerspectiveCamera(fov, initialAspect, 0.1, 50);
     cameraRef.current = camera;
@@ -104,6 +105,7 @@ export default function ThreeDCharacter({
     const updateCameraFraming = (w, h, mode = 'full') => {
       const aspect = w / h;
       camera.aspect = aspect;
+      camera.fov = fov;
       const vFovRad = fov * (Math.PI / 180);
 
       if (mode === 'bust') {
@@ -114,16 +116,15 @@ export default function ThreeDCharacter({
         camera.position.set(0, cameraCenterY, dist);
         camera.lookAt(0, cameraCenterY, 0);
       } else {
-        const charHeight = 1.49;
-        const charWingspan = 1.20;
-        const requiredVerticalSpan = charHeight * 1.07;
-        const distForHeight = (requiredVerticalSpan / 2) / Math.tan(vFovRad / 2);
-        const distForWidth = (charWingspan * 1.04 / 2) / (Math.tan(vFovRad / 2) * aspect);
-        const targetDist = Math.max(distForHeight, distForWidth);
-        const cameraCenterY = 0.08;
+        const charHeight = 1.90; // Includes ground particle circle and headroom
+        const charWingspan = 1.70; // Includes particle radius span r = 0.85 (diameter 1.70)
+        const distForHeight = (charHeight / 2) / Math.tan(vFovRad / 2);
+        const distForWidth = (charWingspan / 2) / (Math.tan(vFovRad / 2) * aspect);
+        const targetDist = Math.max(3.4, Math.max(distForHeight, distForWidth));
+        const cameraCenterY = 0.20;
 
-        // Position camera to [0, 1.1, 2.7] or aspect adjusted distance focusing cleanly on character
-        camera.position.set(0, 1.1, Math.max(2.7, targetDist));
+        // Position camera pulling back along Z-axis so the entire frustum captures head and ground circle
+        camera.position.set(0, 0.9, targetDist);
         camera.lookAt(0, cameraCenterY, 0);
       }
       camera.updateProjectionMatrix();
@@ -164,44 +165,50 @@ export default function ThreeDCharacter({
     rimLight.position.set(0, 2.0, -2.5);
     scene.add(rimLight);
 
-    // Root Group for orientation and scaling (raised Y by 0.25 to prevent bottom clipping)
+    // Root Group for orientation and scaling
     const charRoot = new THREE.Group();
-    charRoot.position.set(0, 0.25, 0);
+    charRoot.position.set(0, 0.20, 0); // Grounded alignment: head reaches ~y = 1.15 and particle ring sits at y = -0.75
     scene.add(charRoot);
 
-    // Ground Shadow
-    const shadowGeo = new THREE.CircleGeometry(0.52, 32);
-    const shadowMat = new THREE.MeshBasicMaterial({
-      color: 0x000000,
-      transparent: true,
-      opacity: 0.35
-    });
-    const shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
-    shadowMesh.rotation.x = -Math.PI / 2;
-    shadowMesh.position.y = -0.98;
-    charRoot.add(shadowMesh);
+    // Ground Shadow (Optional Clean Toggle via showGroundCircle)
+    let shadowMesh = null;
+    let particleSystem = null;
 
-    // Audio Reactive Base Particle Ring
-    const particleCount = 42;
-    const ringGeo = new THREE.BufferGeometry();
-    const ringPositions = new Float32Array(particleCount * 3);
-    for (let i = 0; i < particleCount; i++) {
-      const angle = (i / particleCount) * Math.PI * 2;
-      const radius = 0.55 + (i % 2 === 0 ? 0.04 : -0.04);
-      ringPositions[i * 3] = Math.cos(angle) * radius;
-      ringPositions[i * 3 + 1] = 0;
-      ringPositions[i * 3 + 2] = Math.sin(angle) * radius;
+    if (showGroundCircle) {
+      const shadowGeo = new THREE.CircleGeometry(0.55, 32);
+      const shadowMat = new THREE.MeshBasicMaterial({
+        color: 0x000000,
+        transparent: true,
+        opacity: 0.35
+      });
+      shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
+      shadowMesh.rotation.x = -Math.PI / 2;
+      shadowMesh.position.y = -0.96;
+      charRoot.add(shadowMesh);
+
+      // Audio Reactive Base Particle Ring (Radius fits within r = 0.85, sits at y = -0.75 overall in scene)
+      const particleCount = 42;
+      const ringGeo = new THREE.BufferGeometry();
+      const ringPositions = new Float32Array(particleCount * 3);
+      for (let i = 0; i < particleCount; i++) {
+        const angle = (i / particleCount) * Math.PI * 2;
+        // Radius safely within r = 0.85 (0.75 base +/- 0.05 variation)
+        const radius = 0.75 + (i % 2 === 0 ? 0.04 : -0.04);
+        ringPositions[i * 3] = Math.cos(angle) * radius;
+        ringPositions[i * 3 + 1] = 0;
+        ringPositions[i * 3 + 2] = Math.sin(angle) * radius;
+      }
+      ringGeo.setAttribute('position', new THREE.BufferAttribute(ringPositions, 3));
+      const particleMat = new THREE.PointsMaterial({
+        color: rimColor,
+        size: 0.05,
+        transparent: true,
+        opacity: 0.85
+      });
+      particleSystem = new THREE.Points(ringGeo, particleMat);
+      particleSystem.position.y = -0.95; // In charRoot (y = +0.20), sits at overall y = -0.75
+      charRoot.add(particleSystem);
     }
-    ringGeo.setAttribute('position', new THREE.BufferAttribute(ringPositions, 3));
-    const particleMat = new THREE.PointsMaterial({
-      color: rimColor,
-      size: 0.05,
-      transparent: true,
-      opacity: 0.85
-    });
-    const particleSystem = new THREE.Points(ringGeo, particleMat);
-    particleSystem.position.y = -0.96;
-    charRoot.add(particleSystem);
 
     // Animation Mixer & Action Registry
     let mixer = null;
