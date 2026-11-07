@@ -198,6 +198,33 @@ export default function CharacterBuddy({
   const isUserDragging = useRef(false);
   const pauseRoamingUntil = useRef(0);
 
+  // Instant Indian Female Voice Model (0ms Latency Client Fallback)
+  const speakInstantHindiFemale = useCallback((text) => {
+    if (typeof window === 'undefined') return;
+    try {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        const voices = window.speechSynthesis.getVoices();
+        // Prioritize Indian English / Hindi natural female voices
+        const targetVoice = voices.find(v => 
+          (v.lang === 'hi-IN' || v.lang === 'en-IN') && 
+          (v.name.includes('Google') || v.name.includes('Female') || v.name.includes('Natural'))
+        ) || voices.find(v => v.lang.startsWith('hi') || v.lang === 'en-IN' || v.lang === 'hi-IN');
+        if (targetVoice) utterance.voice = targetVoice;
+        utterance.rate = 1.35; // brisk, engaging pace
+        utterance.pitch = 1.15; // natural female tone
+        window.speechSynthesis.speak(utterance);
+        return;
+      }
+    } catch (_) {}
+
+    // Fallback to voiceBuddyService if Web Speech fails
+    try {
+      voiceBuddyService.speakText(text, { priority: true, pitch: 1.15, rate: 1.35 });
+    } catch (_) {}
+  }, []);
+
   // 60-Second Dynamic Activity Timer & 45-60s Nap Cycle State
   const [isFatigued, setIsFatigued] = useState(false);
   const activeRoamSecondsRef = useRef(0);
@@ -262,18 +289,12 @@ export default function CharacterBuddy({
     setIsBubbleVisible(true);
     setLastActionTag('💤 SLEEPING (60s NAP)');
 
-    try {
-      voiceBuddyService.speakText(sleepDialogue, {
-        priority: true,
-        pitch: 1.05,
-        rate: 1.35
-      });
-    } catch (_) {}
+    speakInstantHindiFemale(sleepDialogue);
 
     setTimeout(() => {
       setIsBubbleVisible(false);
     }, 7000);
-  }, [characterWidth, characterHeight, waypoints]);
+  }, [characterWidth, characterHeight, waypoints, speakInstantHindiFemale]);
 
   // Click/Tap to Wake Up from Fatigue
   const handleWakeUpAvatar = useCallback(() => {
@@ -285,18 +306,13 @@ export default function CharacterBuddy({
     landingModeRef.current = 'walk';
     movementModeRef.current = 'walk';
     setAutonomousSubState('idle');
-    setLiveTranscript('Chalo uth gayi! Ab bolo kahan chalna hai?');
+    const wakeDialogue = 'Chalo uth gayi! Ab bolo kahan chalna hai?';
+    setLiveTranscript(wakeDialogue);
     setIsBubbleVisible(true);
     setLastActionTag('⚡ AWAKENED');
-    try {
-      voiceBuddyService.speakText('Chalo uth gayi! Ab bolo kahan chalna hai?', {
-        priority: true,
-        pitch: 1.05,
-        rate: 1.35
-      });
-    } catch (_) {}
+    speakInstantHindiFemale(wakeDialogue);
     setTimeout(() => setIsBubbleVisible(false), 4000);
-  }, []);
+  }, [speakInstantHindiFemale]);
 
   // 60-Second Dynamic Activity Timer & 45-60s Nap Cycle
   useEffect(() => {
@@ -622,6 +638,7 @@ export default function CharacterBuddy({
           const hangLine = hangLines[Math.floor(Math.random() * hangLines.length)];
           setLiveTranscript(hangLine);
           setIsBubbleVisible(true);
+          speakInstantHindiFemale(hangLine);
 
           // Hang for 5 to 8 seconds before dropping down smoothly to the floor with a soft landing roll
           if (!nextTargetTimeoutRef.current && !isSleepingRef.current) {
@@ -665,6 +682,7 @@ export default function CharacterBuddy({
 
           setLiveTranscript(bubbleLine);
           setIsBubbleVisible(true);
+          speakInstantHindiFemale(bubbleLine);
 
           if (!nextTargetTimeoutRef.current && !isSleepingRef.current) {
             nextTargetTimeoutRef.current = setTimeout(() => {
