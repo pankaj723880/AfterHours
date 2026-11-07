@@ -394,6 +394,71 @@ const formatTime = (secs) => {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 };
 
+/**
+ * Production-Grade Track Metadata Sanitizer & Artist Extraction
+ * Strips noisy YouTube suffixes, bracket tags, lyric/official clutter, and maps "Artist - Title" properly
+ */
+export const sanitizeTrackMetadata = (rawTitle = '', rawArtist = '') => {
+  if (!rawTitle) return { title: 'Untitled Track', artist: rawArtist || 'Unknown Artist' };
+
+  let title = rawTitle
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .trim();
+
+  let artist = (rawArtist || '').trim();
+
+  // 1. Strip common label suffixes from artist / channel title (e.g. "T-Series Official Channel" -> "T-Series")
+  if (artist) {
+    artist = artist
+      .replace(/\s*-\s*Topic$/i, '')
+      .replace(/\s*VEVO$/i, '')
+      .replace(/\s+Official(?:\s+(?:Channel|Music|Page|Audio))?$/i, '')
+      .trim();
+  }
+
+  // 2. Parse "Artist - Title" or "Artist | Title" pattern
+  const separatorMatch = title.match(/^([^|\-–—:]+?)\s*[-–—|:]\s*(.+)$/);
+  if (separatorMatch) {
+    const candidateArtist = separatorMatch[1].trim();
+    const candidateTitle = separatorMatch[2].trim();
+
+    // Verify candidate artist doesn't look like an episode or promo tag
+    if (candidateArtist.length > 1 && candidateArtist.length < 40 && !/^(episode|ep|full|new|top|official)/i.test(candidateArtist)) {
+      if (!artist || artist === 'Unknown Artist' || /VEVO|Topic|Official|Records|Music/i.test(artist)) {
+        artist = candidateArtist;
+      }
+      title = candidateTitle;
+    }
+  }
+
+  // 3. Strip noisy bracket tags and YouTube clickbait/format phrases
+  title = title
+    // Bracketed noise: [Official Video], (Audio), (Lyrics Video), etc.
+    .replace(/\s*[([{\u3010][^)\]}\u3011]*(?:official|audio|video|lyric|lyrics|full song|hd|4k|8k|remix|lofi|slowed|reverb|teaser|trailer|visualizer|short|mashup|jukebox|uhd|music video|prod\.|feat|ft\.)[^)\]}\u3011]*[)\]}\u3011]/gi, '')
+    // Trailing hyphens with noise: - Official Video / - Audio
+    .replace(/\s*-\s*(?:official\s*(?:video|audio|music|lyric)?|audio|video|lyrics?|full\s*song|remix|lo-?fi|slowed).*$/gi, '')
+    // Common promotional phrases
+    .replace(/\s*\|\s*(?:official|lyrics?|video|audio|full song|hd).*$/gi, '')
+    // Emojis and excess punctuation symbols
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+    // Clean redundant spaces
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Fallback if cleaning stripped too aggressively
+  if (!title) {
+    title = rawTitle.replace(/[\[\]\(\)]/g, '').trim() || 'Untitled Track';
+  }
+
+  if (!artist || artist.toLowerCase() === 'unknown artist') {
+    artist = 'Loopra Music';
+  }
+
+  return { title, artist };
+};
+
 const handleImageLoad = (e) => {
   const target = e.currentTarget || e.target;
   if (!target) return;
@@ -3215,6 +3280,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     listeningStatsService.clearLocalStats?.();
     setUser(null);
     setAuthToken('');
+    setIsAccountMenuOpen(false);
     localStorage.removeItem('afterhours_token');
     localStorage.removeItem('afterhours_user');
     localStorage.removeItem('liked_songs');
@@ -3224,6 +3290,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     localStorage.removeItem('afterhours_current_song');
     localStorage.removeItem('afterhours_current_time');
     localStorage.removeItem('afterhours_duration');
+    try {
+      sessionStorage.removeItem('afterhours_user');
+      sessionStorage.removeItem('afterhours_token');
+      sessionStorage.removeItem('loopra_user');
+      sessionStorage.removeItem('loopra_token');
+    } catch (_) {}
     setLikedSongs([]);
     setHistory([]);
     setPlaylists([]);
@@ -5280,6 +5352,40 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     setSelectedSongForPlaylist(null);
   };
 
+  const handleRemoveSongFromPlaylist = (playlistId, trackId) => {
+    if (!playlistId || !trackId) return;
+    const targetSongId = trackId;
+    let removed = false;
+    let targetName = 'playlist';
+
+    const updatedPlaylists = playlists.map(pl => {
+      if (pl.id === playlistId) {
+        targetName = pl.name;
+        const filteredSongs = pl.songs.filter(s => (s.id || s.videoId) !== targetSongId);
+        if (filteredSongs.length !== pl.songs.length) {
+          removed = true;
+          return { ...pl, songs: filteredSongs };
+        }
+      }
+      return pl;
+    });
+
+    if (removed) {
+      setPlaylists(updatedPlaylists);
+      if (selectedPlaylistForView && selectedPlaylistForView.id === playlistId) {
+        setSelectedPlaylistForView(prev => prev ? { ...prev, songs: prev.songs.filter(s => (s.id || s.videoId) !== targetSongId) } : null);
+      }
+      try {
+        if (user) {
+          localStorage.setItem('playlists', JSON.stringify(updatedPlaylists));
+        } else {
+          localStorage.setItem('guest_playlists', JSON.stringify(updatedPlaylists));
+        }
+      } catch (e) {}
+      showToast(`Removed from "${targetName}"`);
+    }
+  };
+
   const clearHistory = () => {
     setHistory([]);
     localStorage.removeItem('history_songs');
@@ -5339,12 +5445,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       if (data && Array.isArray(data.items) && data.items.length > 0) {
         const fetchedTracks = data.items.map(item => {
           const vid = item.id?.videoId || (typeof item.id === 'string' ? item.id : null) || item.videoId;
+          const { title, artist } = sanitizeTrackMetadata(item.snippet?.title || 'Untitled', item.snippet?.channelTitle || 'Unknown Artist');
           return {
             id: vid,
             videoId: vid,
-            title: item.snippet?.title ? item.snippet.title.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&") : 'Untitled',
-            channel: item.snippet?.channelTitle || 'Unknown Artist',
-            artist: item.snippet?.channelTitle || 'Unknown Artist',
+            title,
+            channel: artist,
+            artist,
+            duration: '3:45',
             thumbnail: getCleanThumbnail(item, vid),
           };
         }).filter(t => t.id && typeof t.id === 'string' && t.id.length >= 5);
@@ -5458,12 +5566,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       const rawItems = Array.isArray(data?.items) ? data.items : [];
       const fetchedTracks = rawItems.map(item => {
         const vid = item.id?.videoId || (typeof item.id === 'string' ? item.id : null) || item.videoId;
+        const { title, artist } = sanitizeTrackMetadata(item.snippet?.title || 'Untitled', item.snippet?.channelTitle || 'Unknown Artist');
         return {
           id: vid,
           videoId: vid,
-          title: item.snippet?.title ? item.snippet.title.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&") : 'Untitled',
-          channel: item.snippet?.channelTitle || 'Unknown Artist',
-          artist: item.snippet?.channelTitle || 'Unknown Artist',
+          title,
+          channel: artist,
+          artist,
+          duration: '3:45',
           thumbnail: getCleanThumbnail(item, vid),
         };
       }).filter(t => t.id && typeof t.id === 'string' && t.id.length >= 5);
@@ -6446,23 +6556,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             </div>
           </div>
 
-          {/* CENTER (Desktop only): ACTIVE USERS */}
-          <div className="hidden md:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-900/80 backdrop-blur-xl border border-neutral-800 shadow-lg shrink-0">
-            <span className="relative flex h-2.5 w-2.5">
+          {/* CENTER (Desktop only): ACTIVE USERS (Subtle, muted presence indicator) */}
+          <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-900/40 border border-neutral-800/50 shadow-sm shrink-0">
+            <span className="relative flex h-2 w-2">
               <span className={`animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite] absolute inline-flex h-full w-full rounded-full ${
-                isLiveCountStale ? 'bg-amber-400 opacity-40' : 'bg-orange-400 opacity-75'
+                isLiveCountStale ? 'bg-amber-400 opacity-40' : 'bg-emerald-400 opacity-60'
               }`}></span>
-              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
-                isLiveCountStale ? 'bg-amber-500' : 'bg-orange-500'
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                isLiveCountStale ? 'bg-amber-500' : 'bg-emerald-500'
               }`}></span>
             </span>
-            <span className="text-xs font-semibold text-neutral-200 tracking-wide flex items-center gap-1">
-              <span className="text-orange-400 font-bold font-mono">
+            <span className="text-[11px] font-normal text-neutral-400 tracking-wide flex items-center gap-1.5">
+              <span className="text-neutral-300 font-mono font-medium">
                 {activeUsersCount !== null ? activeUsersCount : '--'}
               </span>
-              <span>Active Users</span>
+              <span className="text-neutral-500 text-[10.5px]">online</span>
               {isLiveCountStale && (
-                <span className="text-[10px] text-neutral-500 font-normal" title="Connection stale, showing last verified count">
+                <span className="text-[9px] text-neutral-600 font-normal" title="Connection stale, showing last verified count">
                   (stale)
                 </span>
               )}
@@ -6587,18 +6697,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                {/* Mobile avatar shortcut opening auth modal */}
+                {/* Mobile login button opening auth modal */}
                 <button
                   type="button"
                   onClick={() => {
                     if (isPlaying) togglePlayPause();
                     openAuthModal();
                   }}
-                  className="md:hidden w-8 h-8 rounded-full bg-[#E11D48] text-white font-extrabold text-xs flex items-center justify-center border border-pink-400/30 shadow-md active:scale-95 transition cursor-pointer"
+                  className="md:hidden w-8 h-8 rounded-full bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs flex items-center justify-center border border-amber-400/40 shadow-md active:scale-95 transition cursor-pointer"
                   title="Sign In / Account"
                   aria-label="Sign In / Account"
                 >
-                  <span>P</span>
+                  <Icon name="user" className="w-4 h-4 shrink-0" />
                 </button>
 
                 <button
@@ -7283,7 +7393,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         <div
                           key={track.id + i}
                           onClick={() => playSong(track, likedSongs)}
-                          className={`p-3 rounded-2xl border flex items-center justify-between cursor-pointer transition-all duration-200 group relative backdrop-blur-md ${
+                          className={`px-3.5 py-2.5 rounded-2xl border grid grid-cols-12 items-center gap-2 cursor-pointer transition-all duration-200 group relative backdrop-blur-md select-none ${
                             isMenuOpen ? 'z-30' : 'z-auto'
                           } ${
                             isCurrent
@@ -7291,25 +7401,24 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                               : 'bg-neutral-900/50 hover:bg-neutral-900/90 border-white/5 hover:border-amber-500/30 active:scale-[0.99]'
                           }`}
                         >
-                          {/* Left: Index + Artwork + Title */}
-                          <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 pr-2">
-                            {/* Track Index or Animated Waveform */}
-                            <div className="w-5 text-center shrink-0">
-                              {isCurrent && isPlaying ? (
-                                <span className="inline-flex items-center gap-0.5 h-3">
-                                  <span className="w-0.5 h-3 bg-amber-400 animate-pulse" />
-                                  <span className="w-0.5 h-2 bg-amber-400 animate-ping" />
-                                  <span className="w-0.5 h-3 bg-amber-400 animate-pulse" />
-                                </span>
-                              ) : (
-                                <span className={`text-xs font-mono font-medium ${isCurrent ? 'text-amber-400' : 'text-zinc-500'}`}>
-                                  {i + 1}
-                                </span>
-                              )}
-                            </div>
+                          {/* Col 1: # Index / Waveform (1 col on desktop, auto on mobile) */}
+                          <div className="col-span-1 sm:col-span-1 flex items-center justify-center">
+                            {isCurrent && isPlaying ? (
+                              <span className="inline-flex items-center gap-0.5 h-3">
+                                <span className="w-0.5 h-3 bg-amber-400 animate-pulse" />
+                                <span className="w-0.5 h-2 bg-amber-400 animate-ping" />
+                                <span className="w-0.5 h-3 bg-amber-400 animate-pulse" />
+                              </span>
+                            ) : (
+                              <span className={`text-xs font-mono font-medium ${isCurrent ? 'text-amber-400' : 'text-zinc-500 group-hover:text-amber-300'}`}>
+                                {i + 1}
+                              </span>
+                            )}
+                          </div>
 
-                            {/* Thumbnail with fallback */}
-                            <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-neutral-800 shrink-0 border border-white/10 shadow-md">
+                          {/* Col 2: Thumbnail + Title + Artist (7 cols on desktop, 9 cols on mobile) */}
+                          <div className="col-span-8 sm:col-span-7 flex items-center gap-3 min-w-0 pr-2">
+                            <div className="relative w-11 h-11 rounded-xl overflow-hidden bg-neutral-800 shrink-0 border border-white/10 shadow-md">
                               {thumb ? (
                                 <img
                                   src={thumb}
@@ -7320,13 +7429,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                                 />
                               ) : (
                                 <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-amber-400">
-                                  <Icon name="music" className="w-5 h-5" />
+                                  <Icon name="music" className="w-4 h-4" />
                                 </div>
                               )}
                             </div>
-
-                            {/* Title & Artist */}
-                            <div className="min-w-0">
+                            <div className="min-w-0 flex-1">
                               <h4 className={`font-bold text-xs sm:text-sm truncate transition ${isCurrent ? 'text-amber-300' : 'text-white group-hover:text-amber-300'}`}>
                                 {track.title}
                               </h4>
@@ -7336,15 +7443,39 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                             </div>
                           </div>
 
-                          {/* Right: Actions */}
-                          <div className={`flex items-center gap-1.5 shrink-0 relative ${isMenuOpen ? 'z-40' : ''}`}>
+                          {/* Col 3: Duration (2 cols on desktop, hidden on tiny mobile) */}
+                          <div className="hidden sm:flex col-span-2 items-center justify-center text-xs font-mono text-zinc-400">
+                            <span>{track.duration || '3:30'}</span>
+                          </div>
+
+                          {/* Col 4: Hover Actions [Play, ✕ Remove, ⋮ More] (2 cols on desktop, 3 cols on mobile) */}
+                          <div className={`col-span-3 sm:col-span-2 flex items-center justify-end gap-1.5 relative ${isMenuOpen ? 'z-40' : ''}`} onClick={(e) => e.stopPropagation()}>
+                            {/* Quick Play button on hover */}
                             <button
                               type="button"
-                              onClick={(e) => handleOpenVideo(track, e)}
-                              className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 transition flex items-center shrink-0"
-                              title="Watch Video"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                playSong(track, likedSongs);
+                              }}
+                              className="p-1.5 rounded-xl bg-white/5 hover:bg-amber-500/20 text-zinc-400 hover:text-amber-400 border border-white/10 hover:border-amber-500/40 transition opacity-80 sm:opacity-0 group-hover:opacity-100 shrink-0 cursor-pointer"
+                              title="Play Track"
+                              aria-label="Play Track"
                             >
-                              <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
+                              <Icon name={isCurrent && isPlaying ? "pause" : "play"} className="w-3.5 h-3.5 fill-current" />
+                            </button>
+
+                            {/* Quick Delete / Unlike Button (One-Tap Cross Icon) */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleLike(track);
+                              }}
+                              className="p-1.5 rounded-xl bg-white/5 hover:bg-red-500/15 text-zinc-400 hover:text-red-400 border border-white/10 hover:border-red-500/30 transition flex items-center shrink-0 cursor-pointer active:scale-95"
+                              title="Remove from Liked Songs"
+                              aria-label="Remove from Liked Songs"
+                            >
+                              <Icon name="close" className="w-3.5 h-3.5 shrink-0" />
                             </button>
                             
                             <button 
@@ -7353,7 +7484,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                                 e.stopPropagation(); 
                                 setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); 
                               }} 
-                              className="p-2 text-zinc-400 hover:text-white rounded-full hover:bg-white/10 transition shrink-0"
+                              className="p-1.5 text-zinc-400 hover:text-white rounded-xl hover:bg-white/10 transition shrink-0 cursor-pointer"
+                              title="More Options"
+                              aria-label="More Options"
                             >
                               <Icon name="moreVertical" className="w-4 h-4 shrink-0" />
                             </button>
@@ -7373,6 +7506,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                                   <span>Similar Songs</span>
                                 </button>
                                 <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveSongFromPlaylist(selectedPlaylistForView.id, track.id || track.videoId);
+                                    setOpenMenuId(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-neutral-800 transition"
+                                >
+                                  Remove from Playlist
+                                </button>
                                 <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
                               </div>
                             )}
@@ -7408,8 +7551,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                             </div>
                           </div>
                           <div className={`flex items-center gap-2 shrink-0 relative ${isMenuOpen ? 'z-40' : ''}`}>
-                            <button onClick={(e) => handleOpenVideo(track, e)} className="p-1.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition flex items-center shrink-0" title="See Video">
-                              <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
+                            {/* Quick Delete / Unlike Button (One-Tap Cross Icon) */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleLike(track);
+                              }}
+                              className="p-1.5 rounded-2xl bg-white/5 hover:bg-red-500/15 text-neutral-400 hover:text-red-400 border border-white/10 hover:border-red-500/30 transition flex items-center shrink-0 cursor-pointer active:scale-95"
+                              title="Remove from Liked Songs"
+                              aria-label="Remove from Liked Songs"
+                            >
+                              <Icon name="close" className="w-3.5 h-3.5 shrink-0" />
                             </button>
                             
                             <button 
@@ -7498,11 +7651,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         </div>
                       </div>
                       <div className={`flex items-center gap-1.5 relative ${isMenuOpen ? 'z-40' : ''}`}>
+                        {/* Quick Delete from History (One-Tap Cross Icon) */}
                         <button
-                          onClick={(e) => handleOpenVideo(track, e)}
-                          className="p-1.5 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center text-[10px] shrink-0 cursor-pointer"
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setHistory(prev => prev.filter((_, idx) => idx !== i));
+                            showToast("Removed from history");
+                          }}
+                          className="p-1.5 rounded-2xl bg-white/5 hover:bg-red-500/15 text-neutral-400 hover:text-red-400 border border-white/10 hover:border-red-500/30 transition flex items-center shrink-0 cursor-pointer active:scale-95"
+                          title="Remove from History"
+                          aria-label="Remove from History"
                         >
-                          <Icon name="video" className="w-3.5 h-3.5 shrink-0" />
+                          <Icon name="close" className="w-3.5 h-3.5 shrink-0" />
                         </button>
                         <div className="relative">
                           <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); }} className="p-1.5 rounded-2xl hover:bg-white/10 text-neutral-400 transition flex items-center shrink-0 cursor-pointer">
@@ -7750,19 +7911,48 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               )
             ) : (
               <>
-                <div className="flex items-center gap-4">
-                  <button 
-                    onClick={handleGoBack}
-                    className="p-2 rounded-2xl bg-neutral-800 hover:bg-neutral-700 text-white transition flex items-center justify-center cursor-pointer active:scale-95"
-                    title="Back to Playlists"
-                    aria-label="Back to Playlists"
-                  >
-                    <Icon name="skipPrev" className="w-4 h-4 rotate-180" />
-                  </button>
-                  <div>
-                    <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">{selectedPlaylistForView.name}</h2>
-                    <p className="text-xs text-neutral-400">{selectedPlaylistForView.songs.length} tracks</p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-4">
+                    <button 
+                      onClick={handleGoBack}
+                      className="p-2 rounded-2xl bg-neutral-800 hover:bg-neutral-700 text-white transition flex items-center justify-center cursor-pointer active:scale-95"
+                      title="Back to Playlists"
+                      aria-label="Back to Playlists"
+                    >
+                      <Icon name="skipPrev" className="w-4 h-4 rotate-180" />
+                    </button>
+                    <div>
+                      <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">{selectedPlaylistForView.name}</h2>
+                      <p className="text-xs text-neutral-400">{selectedPlaylistForView.songs.length} tracks</p>
+                    </div>
                   </div>
+
+                  {/* Share Playlist Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const shareUrl = `${window.location.origin}?playlist=${encodeURIComponent(selectedPlaylistForView.id || selectedPlaylistForView.name)}`;
+                      const shareTitle = `${selectedPlaylistForView.name} - Loopra Playlist`;
+                      const shareText = `Check out the "${selectedPlaylistForView.name}" playlist on Loopra with ${selectedPlaylistForView.songs.length} tracks!`;
+
+                      if (navigator.share) {
+                        navigator.share({
+                          title: shareTitle,
+                          text: shareText,
+                          url: shareUrl
+                        }).catch(() => {});
+                      } else {
+                        navigator.clipboard?.writeText(shareUrl);
+                        showToast("Playlist link copied to clipboard!");
+                      }
+                    }}
+                    className="self-start sm:self-auto inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition shadow-sm cursor-pointer active:scale-95"
+                    title="Share Playlist"
+                    aria-label="Share Playlist"
+                  >
+                    <Icon name="share" className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>Share Playlist</span>
+                  </button>
                 </div>
                 
                 <div className="grid grid-cols-1 gap-2 mt-4">
@@ -7772,23 +7962,79 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     selectedPlaylistForView.songs.map((track, i) => {
                       const isMenuOpen = openMenuId === `${track.id}-${i}`;
                       return (
-                        <div key={track.id + i} onClick={() => playSong(track)} className={`p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition group relative ${isMenuOpen ? 'z-30' : 'z-auto'}`}>
-                          <div className="flex items-center gap-3.5 min-w-0">
-                            <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => handleImageError(e, track.title, track.id)} />
-                            <div className="min-w-0 pr-4">
-                              <h4 className="font-bold text-sm text-white truncate group-hover:text-amber-400 transition">{track.title}</h4>
-                              <p className="text-[11px] text-amber-500/80 truncate mt-0.5">{track.channel}</p>
+                        <div
+                          key={track.id + i}
+                          onClick={() => playSong(track)}
+                          className={`px-3.5 py-2.5 rounded-2xl border grid grid-cols-12 items-center gap-2 cursor-pointer transition-all duration-200 group relative backdrop-blur-md select-none ${
+                            isMenuOpen ? 'z-30' : 'z-auto'
+                          } ${
+                            (currentSong?.id || currentSong?.videoId) === (track.id || track.videoId)
+                              ? 'bg-amber-500/15 border-amber-500/60 shadow-[0_0_20px_rgba(245,158,11,0.2)]'
+                              : 'bg-neutral-900/50 hover:bg-neutral-900/90 border-neutral-800 hover:border-amber-500/30 active:scale-[0.99]'
+                          }`}
+                        >
+                          {/* Col 1: # Index */}
+                          <div className="col-span-1 flex items-center justify-center">
+                            <span className="text-xs font-mono font-medium text-zinc-500 group-hover:text-amber-300">
+                              {i + 1}
+                            </span>
+                          </div>
+
+                          {/* Col 2: Thumbnail + Title + Artist */}
+                          <div className="col-span-8 sm:col-span-7 flex items-center gap-3 min-w-0 pr-2">
+                            <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-11 h-11 rounded-xl object-cover shrink-0 border border-white/10 shadow-md" onError={(e) => handleImageError(e, track.title, track.id)} />
+                            <div className="min-w-0 flex-1">
+                              <h4 className="font-bold text-xs sm:text-sm text-white truncate group-hover:text-amber-400 transition">{track.title}</h4>
+                              <p className="text-[11px] text-zinc-400 truncate mt-0.5">{track.channel || track.artist || 'Artist'}</p>
                             </div>
                           </div>
-                          <div className={`flex items-center gap-2 shrink-0 opacity-100 sm:opacity-0 group-hover:opacity-100 transition relative ${isMenuOpen ? 'z-40' : ''}`}>
+
+                          {/* Col 3: Duration */}
+                          <div className="hidden sm:flex col-span-2 items-center justify-center text-xs font-mono text-zinc-400">
+                            <span>{track.duration || '3:30'}</span>
+                          </div>
+
+                          {/* Col 4: Hover Actions [Play, ✕ Remove, ⋮ More] */}
+                          <div className={`col-span-3 sm:col-span-2 flex items-center justify-end gap-1.5 relative ${isMenuOpen ? 'z-40' : ''}`} onClick={(e) => e.stopPropagation()}>
+                            {/* Quick Play on hover */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                playSong(track);
+                              }}
+                              className="p-1.5 rounded-xl bg-white/5 hover:bg-amber-500/20 text-zinc-400 hover:text-amber-400 border border-white/10 hover:border-amber-500/40 transition opacity-80 sm:opacity-0 group-hover:opacity-100 shrink-0 cursor-pointer"
+                              title="Play Track"
+                              aria-label="Play Track"
+                            >
+                              <Icon name={(currentSong?.id || currentSong?.videoId) === (track.id || track.videoId) && isPlaying ? "pause" : "play"} className="w-3.5 h-3.5 fill-current" />
+                            </button>
+
+                            {/* Quick Delete from Playlist (One-Tap Cross Icon) */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveSongFromPlaylist(selectedPlaylistForView.id, track.id || track.videoId);
+                              }}
+                              className="p-1.5 rounded-xl bg-white/5 hover:bg-red-500/15 text-neutral-400 hover:text-red-400 border border-white/10 hover:border-red-500/30 transition flex items-center shrink-0 cursor-pointer active:scale-95"
+                              title="Remove from Playlist"
+                              aria-label="Remove from Playlist"
+                            >
+                              <Icon name="close" className="w-3.5 h-3.5 shrink-0" />
+                            </button>
+
                             <button 
+                              type="button"
                               onClick={(e) => { 
                                 e.stopPropagation(); 
                                 setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); 
                               }} 
-                              className="p-1 text-neutral-500 hover:text-white transition shrink-0"
+                              className="p-1.5 text-neutral-400 hover:text-white rounded-xl hover:bg-white/10 transition shrink-0 cursor-pointer"
+                              title="More Options"
+                              aria-label="More Options"
                             >
-                              <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
+                              <Icon name="moreVertical" className="w-4 h-4 shrink-0" />
                             </button>
 
                             {isMenuOpen && (
@@ -8056,8 +8302,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
 
           {/* Desktop Full 3-Section Footer (>= md) */}
-          <div className="hidden md:flex max-w-7xl mx-auto items-center justify-between gap-4">
-            {/* Left: Metadata & Secondary Actions */}
+          <div className="hidden md:flex max-w-7xl mx-auto items-center justify-between gap-6">
+            {/* Zone 1 (Left): Artwork, Track Info with overflow marquee, and Like Button */}
             <div 
               className="flex items-center gap-3 w-1/4 min-w-0 select-none cursor-pointer"
               onClick={() => handleOpenExpandedPlayer('player')}
@@ -8076,56 +8322,43 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   </div>
                 )}
               </div>
-              <div className="min-w-0 flex-1">
-                <h4 className="font-bold text-xs text-white truncate group-hover:text-amber-300 transition-colors">{currentSong.title}</h4>
-                <p className="text-[10px] text-amber-400 truncate select-none">{currentSong.channel || currentSong.artist}</p>
+              <div className="min-w-0 flex-1 overflow-hidden">
+                <h4 className="font-bold text-xs text-white truncate group-hover:text-amber-300 transition-colors whitespace-nowrap">{currentSong.title}</h4>
+                <p className="text-[10px] text-amber-400/90 truncate select-none mt-0.5">{currentSong.channel || currentSong.artist}</p>
               </div>
-              <div className="flex items-center gap-1 shrink-0 ml-2" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-1 shrink-0 ml-1" onClick={(e) => e.stopPropagation()}>
                 <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (videoModalSong) {
-                      handleCloseVideo();
-                    } else {
-                      handleOpenVideo(currentSong, e);
-                    }
-                  }} 
-                  className="text-amber-400 hover:text-amber-300 transition p-1 shrink-0 cursor-pointer" 
-                  title={videoModalSong ? "Switch to Music Mode" : "Watch Video"}
+                  onClick={(e) => { e.stopPropagation(); toggleLike(currentSong); }} 
+                  className="p-1.5 rounded-full hover:bg-white/10 text-neutral-400 hover:text-pink-500 transition cursor-pointer shrink-0" 
+                  title={likedSongs.some(s => s.id === currentSong.id) ? "Unlike" : "Like"}
+                  aria-label="Toggle Like"
                 >
-                  <Icon name={videoModalSong ? "music" : "video"} className="w-4 h-4 shrink-0" />
+                  <Icon name={likedSongs.some(s => s.id === currentSong.id) ? "heart" : "heartOutline"} className={`w-4 h-4 ${likedSongs.some(s => s.id === currentSong.id) ? 'text-pink-500 fill-pink-500' : 'text-neutral-400'}`} />
                 </button>
-                <button onClick={(e) => handleAddToPlaylistClick(currentSong, e)} className="text-neutral-500 hover:text-amber-500 transition p-1 shrink-0 cursor-pointer" title="Add to Playlist">
-                  <Icon name="plus" className="w-4 h-4 shrink-0" />
+                <button onClick={(e) => handleAddToPlaylistClick(currentSong, e)} className="p-1.5 rounded-full hover:bg-white/10 text-neutral-400 hover:text-amber-400 transition cursor-pointer shrink-0" title="Add to Playlist">
+                  <Icon name="plus" className="w-3.5 h-3.5" />
                 </button>
-                <button onClick={(e) => { e.stopPropagation(); handleOpenExpandedPlayer('queue'); }} className="text-neutral-500 hover:text-amber-500 transition p-1 shrink-0 cursor-pointer" title="View Queue">
-                  <Icon name="list" className="w-4 h-4 shrink-0" />
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); toggleLike(currentSong); }} className="text-neutral-500 hover:text-pink-500 transition p-1 shrink-0 cursor-pointer" title="Like">
-                  <Icon name={likedSongs.some(s => s.id === currentSong.id) ? "heart" : "heartOutline"} className="w-4 h-4 text-pink-500 shrink-0" />
-                </button>
-                <DownloadTrackButton track={currentSong} variant="icon" showToast={showToast} />
               </div>
             </div>
 
-            {/* Middle: Controls & Scrubber */}
+            {/* Zone 2 (Center): Playback Controls & Scrubber */}
             <div className="flex flex-col items-center w-2/4 gap-1.5 animate-fadeIn" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center gap-4 shrink-0">
-                <button onClick={toggleShuffle} className={`transition cursor-pointer ${isShuffle ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} title={isShuffle ? "Shuffle On" : "Shuffle Off"}>
+              <div className="flex items-center gap-5 shrink-0">
+                <button onClick={toggleShuffle} className={`transition cursor-pointer p-1 rounded-full hover:bg-white/5 ${isShuffle ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} title={isShuffle ? "Shuffle On" : "Shuffle Off"}>
                   <Icon name="shuffle" className="w-4 h-4 shrink-0" />
                 </button>
-                <button onClick={handlePrevSong} className="text-neutral-300 hover:text-white transition cursor-pointer" title="Previous Track">
+                <button onClick={handlePrevSong} className="text-neutral-300 hover:text-white transition cursor-pointer p-1 rounded-full hover:bg-white/5" title="Previous Track">
                   <Icon name="skipPrev" className="w-5 h-5 shrink-0" />
                 </button>
-                <button onClick={togglePlayPause} className="w-11 h-11 rounded-full amber-glow-btn text-neutral-950 flex items-center justify-center font-bold shadow-[0_0_20px_rgba(var(--accent-rgb,245,158,11),0.4)] hover:shadow-[0_0_28px_rgba(var(--accent-rgb,245,158,11),0.6)] active:scale-95 transition-all shrink-0 cursor-pointer border border-amber-300/40" title={isPlaying ? "Pause" : "Play"}>
+                <button onClick={togglePlayPause} className="w-11 h-11 rounded-full bg-amber-500 hover:bg-amber-400 active:scale-95 text-neutral-950 flex items-center justify-center font-bold shadow-[0_0_20px_rgba(245,158,11,0.5)] hover:shadow-[0_0_28px_rgba(245,158,11,0.7)] transition-all shrink-0 cursor-pointer border border-amber-300/40" title={isPlaying ? "Pause" : "Play"}>
                   <Icon name={isPlaying ? "pause" : "play"} className="w-5 h-5 fill-current" />
                 </button>
-                <button onClick={handleNextSong} className="text-neutral-300 hover:text-white transition cursor-pointer" title="Next Track">
+                <button onClick={handleNextSong} className="text-neutral-300 hover:text-white transition cursor-pointer p-1 rounded-full hover:bg-white/5" title="Next Track">
                   <Icon name="skipNext" className="w-5 h-5 shrink-0" />
                 </button>
                 <button 
                   onClick={toggleRepeatMode} 
-                  className={`relative transition cursor-pointer ${isRepeat ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} 
+                  className={`relative transition cursor-pointer p-1 rounded-full hover:bg-white/5 ${isRepeat ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} 
                   title={isRepeat === 'one' ? 'Repeat One' : isRepeat === 'all' ? 'Repeat All' : 'Repeat Off'}
                 >
                   <Icon name="repeat" className="w-4 h-4 shrink-0" />
@@ -8138,52 +8371,66 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} currentSongId={currentSong?.id} isRadio={Boolean(currentSong?.isRadio)} />
             </div>
 
-            {/* Right: Actions & Volume */}
-            <div className="flex items-center justify-end w-1/4 gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+            {/* Zone 3 (Right): Volume Slider with Mute Toggle, Queue Toggle, and Avatar Roam Status */}
+            <div className="flex items-center justify-end w-1/4 gap-2.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+              {/* Avatar Free Roam Quick Status Pill */}
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (videoModalSong) {
-                    handleCloseVideo();
-                  } else {
-                    handleOpenVideo(currentSong, e);
-                  }
+                type="button"
+                onClick={() => {
+                  try {
+                    const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) !== 'false';
+                    const next = !cur;
+                    localStorage.setItem('loopra_avatar_roaming', String(next));
+                    localStorage.setItem('loopra_avatar_roam', String(next));
+                    window.dispatchEvent(new Event('storage'));
+                    showToast?.(`Avatar Roam ${next ? 'Active' : 'Parked'}`);
+                  } catch (_) {}
                 }}
-                className={`px-3 py-1.5 rounded-2xl border transition flex items-center gap-1.5 text-xs font-bold shrink-0 cursor-pointer ${
-                  videoModalSong
-                    ? 'bg-amber-500 text-neutral-950 border-amber-400'
-                    : 'bg-amber-500/20 hover:bg-amber-500/30 border-amber-500/30 text-amber-300'
-                }`}
-                title={videoModalSong ? "Switch to Music Mode" : "Watch Video"}
+                className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-900/80 hover:bg-neutral-800 border border-neutral-800 text-[10px] font-mono text-neutral-400 hover:text-amber-300 transition cursor-pointer shadow-sm shrink-0"
+                title="Toggle Avatar Roam Status"
               >
-                <Icon name={videoModalSong ? "music" : "video"} className="w-4 h-4 shrink-0" />
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <span>ROAM</span>
               </button>
 
-              <Icon name="volume" className="w-4 h-4 text-neutral-400 ml-2 shrink-0" />
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={volume}
-                onChange={handleVolumeChange}
-                className="w-20 h-1 bg-neutral-800 rounded-xl appearance-none cursor-pointer accent-amber-500 shrink-0"
-              />
+              {/* Volume Slider & Click-to-Mute Toggle Icon */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleToggleMute}
+                  className="p-1 text-neutral-400 hover:text-white transition cursor-pointer shrink-0"
+                  title={isMuted ? "Unmute" : "Mute Audio"}
+                  aria-label={isMuted ? "Unmute" : "Mute Audio"}
+                >
+                  <Icon name={isMuted ? "volumeMute" : volume === 0 ? "volumeMute" : "volume"} className="w-4 h-4 shrink-0" />
+                </button>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={isMuted ? 0 : volume}
+                  onChange={handleVolumeChange}
+                  className="w-18 lg:w-22 h-1 bg-neutral-800 rounded-xl appearance-none cursor-pointer accent-amber-500 shrink-0"
+                />
+              </div>
 
+              {/* Queue Panel Toggle Button */}
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (showQueuePanel) {
-                    setShowQueuePanel(false);
-                  } else {
-                    handleOpenExpandedPlayer('player');
-                  }
+                  setShowQueuePanel(prev => !prev);
                 }}
-                className="p-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-amber-400 border border-neutral-700/60 transition shrink-0 cursor-pointer flex items-center gap-1 text-xs active:scale-95 ml-1"
-                title={showQueuePanel ? "Collapse Player" : "Expand Now Playing"}
-                aria-label={showQueuePanel ? "Collapse Player" : "Expand Now Playing"}
+                className={`p-1.5 rounded-xl border transition shrink-0 cursor-pointer flex items-center gap-1 text-xs active:scale-95 ${
+                  showQueuePanel
+                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 shadow-sm'
+                    : 'bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-amber-400 border-neutral-700/60'
+                }`}
+                title={showQueuePanel ? "Close Queue" : "Open Queue"}
+                aria-label="Queue list toggle"
               >
-                <Icon name={showQueuePanel ? "chevronDown" : "chevronUp"} className="w-4 h-4 shrink-0" />
-                <span className="hidden lg:inline text-[11px] font-medium">{showQueuePanel ? 'Collapse' : 'Expand'}</span>
+                <Icon name="list" className="w-4 h-4 shrink-0" />
+                <span className="hidden lg:inline text-[11px] font-medium">Queue</span>
               </button>
             </div>
           </div>

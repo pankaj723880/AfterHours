@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import * as THREE from 'three';
 import { voiceBuddyService, CHARACTERS } from '../../services/voiceBuddyService';
 import { voiceSessionService, SESSION_STATES } from '../../services/voiceSessionService';
+import { chatBuddyClient } from '../../services/chatBuddyClient';
 import ThreeDCharacter from './ThreeDCharacter';
 import { Mic, Volume2, VolumeX, Globe, History, ChevronUp, ChevronDown, CheckCircle2, Sparkles, RotateCcw, X } from 'lucide-react';
 import usePageWaypoints from '../../hooks/usePageWaypoints';
@@ -358,11 +360,39 @@ export default function CharacterBuddy({
     return true;
   });
 
+  // Listen for storage events (e.g. from Sidebar toggle or PlayerSettingsModal toggle)
+  useEffect(() => {
+    const handleStorageChange = () => {
+      try {
+        const stored = localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam');
+        const nextVal = stored !== null ? stored === 'true' : true;
+        setIsRoamEnabled(nextVal);
+      } catch (_) {}
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   const isRoamActive = isRoamEnabled && !isListening && !isSpeaking && !dragRef.current?.isDragging;
 
-  const ORIGIN_POS = typeof window !== 'undefined'
-    ? { x: window.innerWidth - 140, y: window.innerHeight - 240 }
-    : { x: 200, y: 500 };
+  // 1. Fixed Origin Anchor (Stacked directly above mute button in bottom-right corner)
+  const ORIGIN_STYLE = {
+    position: 'fixed',
+    bottom: isMobileScreen
+      ? (isBottomPlayerVisible ? 'calc(134px + env(safe-area-inset-bottom, 0px))' : 'calc(64px + env(safe-area-inset-bottom, 0px))')
+      : (isBottomPlayerVisible ? '90px' : '24px'), // Directly above the bottom player bar / mute button row
+    right: isMobileScreen ? '14px' : '24px',       // Same right alignment as the mute/volume button
+    zIndex: 60,
+    pointerEvents: 'auto'
+  };
+
+  const ORIGIN_POS = useMemo(() => {
+    if (typeof window === 'undefined') return { x: 200, y: 500 };
+    return {
+      x: Math.max(8, window.innerWidth - characterWidth - (isMobileScreen ? 14 : 24)),
+      y: Math.max(50, window.innerHeight - characterHeight - (isMobileScreen ? (isBottomPlayerVisible ? 134 : 64) : (isBottomPlayerVisible ? 90 : 24)))
+    };
+  }, [characterWidth, characterHeight, isMobileScreen, isBottomPlayerVisible]);
 
   // 2D Kinematics Physics State (8-Directional Vector Movement & Friction)
   const [continuousPos, setContinuousPos] = useState(() => {
@@ -528,6 +558,34 @@ export default function CharacterBuddy({
     const now = Date.now();
     const canDoMischief = (now - lastMischiefTimeRef.current) > 28000;
 
+    // Exclude protected UI elements so avatar doesn't awkwardly overlap playlist hero banners or Play All CTAs
+    const protectedRects = [];
+    try {
+      const protectedElements = Array.from(document.querySelectorAll(
+        '[data-protected-banner="true"], .playlist-hero-banner, button:has(svg), .amber-glow-btn, a[href*="playlist"]'
+      ));
+      protectedElements.forEach(el => {
+        const r = el.getBoundingClientRect();
+        if (r.width > 20 && r.height > 20 && r.bottom > 0 && r.top < winH) {
+          protectedRects.push({
+            left: r.left - 20,
+            right: r.right + 20,
+            top: r.top - 20,
+            bottom: r.bottom + 20
+          });
+        }
+      });
+    } catch (_) {}
+
+    const isInsideProtectedArea = (x, y) => {
+      return protectedRects.some(p => (
+        x + characterWidth > p.left &&
+        x < p.right &&
+        y + characterHeight > p.top &&
+        y < p.bottom
+      ));
+    };
+
     // Detect section heading baselines across the document (h2, h3, h4) for ledge hanging
     let headingLedges = [];
     try {
@@ -545,7 +603,7 @@ export default function CharacterBuddy({
           height: r.height,
           isVisible: r.width > 30 && r.height > 10 && r.top >= 60 && r.bottom <= winH - 140
         };
-      }).filter((h) => h.isVisible);
+      }).filter((h) => h.isVisible && !isInsideProtectedArea(h.left, h.top));
     } catch (_) {}
 
     // Comprehensive Action Pool: ['WALK', 'RUN', 'JUMP_AND_HANG_HEADING', 'SIT_ON_CARD', 'MISCHIEF_EMOTE']
@@ -653,6 +711,10 @@ export default function CharacterBuddy({
 
     const loop = (time) => {
       if (!isRunning) return;
+      // 3. Strict Loop Guard: if roaming is off, bypass all pathfinding, lerp, and velocity updates
+      if (!isRoamActive || !isRoamEnabled) {
+        return;
+      }
       const dt = Math.min(0.064, (time - lastTime) / 1000);
       lastTime = time;
 
@@ -700,13 +762,13 @@ export default function CharacterBuddy({
         // dy < 0 (moving up/backward on screen)  -> away / back angle
         const targetHeading = Math.atan2(dx, -dy * 0.4);
 
-        // Smooth angle interpolation handling shortest circular distance around 2*PI
+        // Smooth angle interpolation handling shortest circular distance around 2*PI with exponential damping
         let angleDiff = (targetHeading - currentHeadingRef.current) % (Math.PI * 2);
         if (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
         if (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
 
-        const TURN_SPEED = Math.min(1.0, 0.16 * (dt * 60)); // Angular lerp speed
-        currentHeadingRef.current += angleDiff * TURN_SPEED;
+        const turnFactor = Math.min(1.0, 1 - Math.exp(-9.0 * dt)); // Frame-rate independent angular damping
+        currentHeadingRef.current += angleDiff * turnFactor;
         setRotationYaw(currentHeadingRef.current);
 
         // 2. Turn-in-Place Threshold:
@@ -719,7 +781,7 @@ export default function CharacterBuddy({
         const currentSpeed = BASE_WALK_SPEED * speedMultiplier;
 
         const angle = Math.atan2(dy, dx);
-        const step = currentSpeed * Math.min(2.0, dt * 60);
+        const step = currentSpeed * (dt * 60);
 
         pos.x += Math.cos(angle) * step;
         pos.y += Math.sin(angle) * step;
@@ -756,18 +818,20 @@ export default function CharacterBuddy({
           setAutonomousSubState('walking');
         }
       } else {
-        // Target reached: smoothly turn back to front (facing user)
+        // Target reached: smoothly turn back to front (facing user) using frame-rate independent damping
         const frontAngle = 0;
         let frontDiff = (frontAngle - currentHeadingRef.current) % (Math.PI * 2);
         if (frontDiff > Math.PI) frontDiff -= Math.PI * 2;
         if (frontDiff < -Math.PI) frontDiff += Math.PI * 2;
-        currentHeadingRef.current += frontDiff * 0.10;
+        const frontTurnFactor = Math.min(1.0, 1 - Math.exp(-6.0 * dt));
+        currentHeadingRef.current += frontDiff * frontTurnFactor;
         setRotationYaw(currentHeadingRef.current);
         setRotationPitch(0);
 
-        // Target reached: snap to target and crossfade to resting / idle pose
-        pos.x = target.x;
-        pos.y = target.y;
+        // Target reached: smoothly damp to target position to prevent abrupt snapping
+        const dampFactor = 1 - Math.exp(-8.0 * dt);
+        pos.x += (target.x - pos.x) * dampFactor;
+        pos.y += (target.y - pos.y) * dampFactor;
 
         if (avatarContainerRef.current) {
           avatarContainerRef.current.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`;
@@ -1131,6 +1195,50 @@ export default function CharacterBuddy({
       setWalkOffset({ x: 0, y: 0 });
     }
   }, [smoothReturnToFront]);
+
+  // 2. Immediate Roam Toggle Handling
+  useEffect(() => {
+    if (!isRoamEnabled) {
+      // Immediately cancel/halt all roaming movement loops, random waypoint targets, and position velocity updates
+      if (patrolFrameRef.current) {
+        cancelAnimationFrame(patrolFrameRef.current);
+        patrolFrameRef.current = null;
+      }
+      if (nextTargetTimeoutRef.current) {
+        clearTimeout(nextTargetTimeoutRef.current);
+        nextTargetTimeoutRef.current = null;
+      }
+      if (fatigueCheckIntervalRef.current) {
+        clearInterval(fatigueCheckIntervalRef.current);
+        fatigueCheckIntervalRef.current = null;
+      }
+
+      // Stop walking locomotion
+      stopAutonomousWalking?.(false);
+      setContinuousPos({ ...ORIGIN_POS });
+      positionRef.current = { ...ORIGIN_POS };
+      targetPosRef.current = { ...ORIGIN_POS };
+      velocityRef.current = { vx: 0, vy: 0 };
+      landingModeRef.current = 'walk';
+      movementModeRef.current = 'walk';
+      currentHeadingRef.current = 0;
+
+      // Reset avatar 3D bone / mesh position & rotation immediately
+      setRotationYaw(0);
+      setRotationPitch(0);
+      rotationRef.current = { yaw: 0, pitch: 0 };
+      setWalkFacing('front');
+
+      // Teleport instantly to home anchor
+      if (avatarContainerRef.current) {
+        avatarContainerRef.current.style.transform = `translate3d(${ORIGIN_POS.x}px, ${ORIGIN_POS.y}px, 0)`;
+      }
+
+      // Switch animation state instantly to 'idle'
+      setAutonomousSubState('idle');
+      setTransientGesture(null);
+    }
+  }, [isRoamEnabled, ORIGIN_POS, stopAutonomousWalking]);
 
   // Select next destination across DOM anchors (sitting/perch spots & walk lanes)
   const selectNextIdleDestination = useCallback((curX, curY) => {
@@ -2319,12 +2427,11 @@ export default function CharacterBuddy({
                     transform: isFadedIn ? 'scale(1) translateY(0)' : 'scale(0.92) translateY(14px)'
                   }
                 : {
-                    right: isMobileScreen ? '14px' : '24px',
-                    bottom: isMobileScreen 
-                      ? (isBottomPlayerVisible 
-                          ? 'calc(134px + env(safe-area-inset-bottom, 0px))' 
-                          : 'calc(64px + env(safe-area-inset-bottom, 0px))') 
-                      : (isBottomPlayerVisible ? '100px' : '24px'),
+                    position: ORIGIN_STYLE.position,
+                    bottom: ORIGIN_STYLE.bottom,
+                    right: ORIGIN_STYLE.right,
+                    zIndex: ORIGIN_STYLE.zIndex,
+                    pointerEvents: ORIGIN_STYLE.pointerEvents,
                     transform: isFadedIn ? 'scale(1) translateY(0)' : 'scale(0.92) translateY(14px)'
                   })),
           width: `${characterWidth}px`,
@@ -2487,7 +2594,7 @@ export default function CharacterBuddy({
             </div>
           )}
 
-          {/* 3D Humanoid Full-Body Container */}
+          {/* 3D Humanoid Full-Body Container with Subtle Dark Vignette & Ground Radial Blend */}
           <div
             style={{
               width: `${characterWidth}px`,
@@ -2496,6 +2603,16 @@ export default function CharacterBuddy({
             }}
             className="w-60 h-[340px] pointer-events-auto flex items-center justify-center relative select-none"
           >
+            {/* Soft Ambient Vignette / Theme Glow Ring behind canvas */}
+            <div 
+              className="absolute inset-2 -z-10 rounded-full opacity-60 pointer-events-none blur-xl transition-all duration-500"
+              style={{
+                background: isPlaying 
+                  ? 'radial-gradient(circle, rgba(245, 158, 11, 0.15) 0%, rgba(0, 0, 0, 0) 70%)' 
+                  : 'radial-gradient(circle, rgba(255, 255, 255, 0.05) 0%, rgba(0, 0, 0, 0) 70%)'
+              }}
+            />
+
             <ThreeDCharacter
               gender={character.gender}
               animationState={activeAnimationState}

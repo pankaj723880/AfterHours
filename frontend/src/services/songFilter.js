@@ -23,12 +23,15 @@
  * - Bollywood "Full Video Song" / "Full Song" singles (not full album)
  */
 
-// Regex for multi-song titles and collections
+// Regex for multi-song titles, mashups, and non-original compilations
 const MULTI_SONG_TITLE_REGEXES = [
   /\b(audio\s+jukebox|video\s+jukebox|jukebox)\b/i,
   /\b(full\s+album|complete\s+album|all\s+album\s+songs|album\s+jukebox)\b/i,
   /\b(all\s+songs|all\s+song|all\s+video\s+songs|songs\s+collection|song\s+collection|music\s+collection)\b/i,
-  /\b(mashup|mash\s+up|mash-up)\b/i,
+  // Strict mashup exclusions (case-insensitive): "mashup", "mash-up", "mash up", "mega mashup", "non-stop mashup", "remix", "mixtape"
+  /\b(mega\s+mashup|non[\s-]?stop\s+mashup|mashup|mash\s+up|mash-up)\b/i,
+  /\b(remix|re-mix|remixes)\b/i,
+  /\b(mixtape|mix-tape|mix\s+tape)\b/i,
   /\b(medley|medly)\b/i,
   /\b(non[\s-]?stop|nonstop)\b/i,
   /\b(compilation|song\s+compilation)\b/i,

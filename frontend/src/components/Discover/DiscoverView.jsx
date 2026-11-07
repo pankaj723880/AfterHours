@@ -267,7 +267,7 @@ export default function DiscoverView({
                 <div
                   key={`${trackId}-${i}`}
                   onClick={() => playSong(track)}
-                  className={`p-3 sm:p-3.5 rounded-2xl border flex items-center justify-between cursor-pointer transition-all duration-200 backdrop-blur-xl relative select-none min-h-[58px] ${
+                  className={`px-3.5 py-2.5 rounded-2xl border grid grid-cols-12 items-center gap-2 cursor-pointer transition-all duration-200 backdrop-blur-xl relative select-none min-h-[58px] group ${
                     isMenuOpen ? 'z-30' : 'z-auto'
                   } ${
                     isCurrent
@@ -275,26 +275,28 @@ export default function DiscoverView({
                       : 'bg-neutral-900/60 border-neutral-800/80 hover:bg-neutral-850 hover:border-amber-500/40 active:scale-[0.99]'
                   }`}
                 >
-                  {/* Left: Index, Thumbnail, Title & Artist */}
-                  <div className="flex items-center gap-3 sm:gap-3.5 min-w-0 flex-1 pr-2">
+                  {/* Col 1: # Index (1 col) */}
+                  <div className="col-span-1 flex items-center justify-center">
                     <span
                       onClick={(e) => {
                         e.stopPropagation();
                         playSong(track);
                       }}
-                      className="text-xs font-mono text-neutral-500 w-5 text-center shrink-0 cursor-pointer hover:text-amber-400"
+                      className="text-xs font-mono text-neutral-500 text-center shrink-0 cursor-pointer group-hover:text-amber-400"
                       title="Play track"
                     >
                       {i + 1}
                     </span>
-                    <div
-                      className="relative shrink-0 pointer-events-none select-none"
-                    >
+                  </div>
+
+                  {/* Col 2: Thumbnail + Title + Artist (7 cols on desktop, 8 cols on mobile) */}
+                  <div className="col-span-8 sm:col-span-7 flex items-center gap-3 min-w-0 pr-2">
+                    <div className="relative shrink-0 pointer-events-none select-none">
                       <img
                         src={cleanThumb}
                         alt={track.title || ""}
                         loading="lazy"
-                        className="w-12 h-12 rounded-xl object-cover shadow-md bg-neutral-950 border border-white/10 pointer-events-none select-none transition-all"
+                        className="w-11 h-11 rounded-xl object-cover shadow-md bg-neutral-950 border border-white/10 pointer-events-none select-none transition-all"
                         onLoad={(e) => {
                           const target = e.currentTarget;
                           if (target.naturalWidth <= 1 || (target.naturalWidth === 120 && target.naturalHeight === 90)) {
@@ -314,31 +316,52 @@ export default function DiscoverView({
                     <div className="min-w-0 flex-1 pointer-events-none select-none">
                       <h4
                         title={`Play ${track.title}`}
-                        className={`font-bold text-xs sm:text-sm truncate transition-colors ${isCurrent ? 'text-amber-400 font-extrabold' : 'text-white'}`}
+                        className={`font-bold text-xs sm:text-sm truncate transition-colors ${isCurrent ? 'text-amber-400 font-extrabold' : 'text-white group-hover:text-amber-300'}`}
                       >
                         {track.title}
                       </h4>
                       <p
-                        className="text-[11px] sm:text-xs text-neutral-400 truncate mt-0.5 inline-block max-w-full select-none"
+                        className="text-[11px] text-neutral-400 truncate mt-0.5 inline-block max-w-full select-none"
                       >
                         {track.channel || track.artist || 'Loopra Music'}
                       </p>
                     </div>
                   </div>
 
-                  {/* Right: Video Button & More Menu */}
-                  <div className={`flex items-center gap-1.5 sm:gap-2 shrink-0 relative ${isMenuOpen ? 'z-40' : ''}`}>
-                    {handleOpenVideo && (
-                      <button
-                        type="button"
-                        onClick={(e) => handleOpenVideo(track, e)}
-                        className="p-2.5 sm:p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-neutral-300 hover:text-white border border-white/10 transition flex items-center justify-center shrink-0 min-h-[48px] min-w-[48px] cursor-pointer touch-manipulation"
-                        title="Watch video"
-                        aria-label={`Watch video for ${track.title}`}
-                      >
-                        <Video className="w-4 h-4" />
-                      </button>
-                    )}
+                  {/* Col 3: Duration (2 cols on desktop, hidden on tiny screens) */}
+                  <div className="hidden sm:flex col-span-2 items-center justify-center text-xs font-mono text-neutral-400">
+                    <span>{track.duration || '3:30'}</span>
+                  </div>
+
+                  {/* Col 4: Hover Actions [Play, ✕ Remove/Favorite, ⋮ More] (2 cols desktop, 3 cols mobile) */}
+                  <div className={`col-span-3 sm:col-span-2 flex items-center justify-end gap-1.5 relative ${isMenuOpen ? 'z-40' : ''}`} onClick={(e) => e.stopPropagation()}>
+                    {/* Hover Play Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        playSong(track);
+                      }}
+                      className="p-1.5 rounded-xl bg-white/5 hover:bg-amber-500/20 text-neutral-300 hover:text-amber-400 border border-white/10 hover:border-amber-500/40 transition opacity-80 sm:opacity-0 group-hover:opacity-100 shrink-0 cursor-pointer"
+                      title="Play track"
+                      aria-label="Play track"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                    </button>
+
+                    {/* Quick Like / Heart Toggle Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (toggleLike) toggleLike(track);
+                      }}
+                      className="p-1.5 rounded-xl bg-white/5 hover:bg-pink-500/15 text-neutral-400 hover:text-pink-400 border border-white/10 hover:border-pink-500/30 transition flex items-center shrink-0 cursor-pointer active:scale-95"
+                      title={likedSongs.some(s => (s.id || s.videoId) === trackId) ? "Remove from Favorites" : "Add to Favorites"}
+                      aria-label="Toggle favorite"
+                    >
+                      <Heart className={`w-3.5 h-3.5 ${likedSongs.some(s => (s.id || s.videoId) === trackId) ? 'text-pink-500 fill-pink-500' : ''}`} />
+                    </button>
 
                     <button
                       type="button"
@@ -346,7 +369,7 @@ export default function DiscoverView({
                         e.stopPropagation();
                         setOpenMenuId(isMenuOpen ? null : `${trackId}-${i}`);
                       }}
-                      className="p-2.5 sm:p-2.5 text-neutral-400 hover:text-white rounded-xl hover:bg-neutral-800 transition shrink-0 min-h-[48px] min-w-[48px] flex items-center justify-center cursor-pointer touch-manipulation"
+                      className="p-1.5 text-neutral-400 hover:text-white rounded-xl hover:bg-neutral-800 transition shrink-0 flex items-center justify-center cursor-pointer"
                       aria-label="More options"
                     >
                       <MoreVertical className="w-4 h-4" />

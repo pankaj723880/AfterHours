@@ -216,7 +216,12 @@ export default function ThreeDCharacter({
         if (activeAction) {
           activeAction.fadeOut(duration);
         }
-        nextAction.reset().fadeIn(duration).play();
+        nextAction
+          .reset()
+          .setEffectiveTimeScale(1)
+          .setEffectiveWeight(1)
+          .fadeIn(duration)
+          .play();
         activeAction = nextAction;
       }
     };
@@ -238,23 +243,31 @@ export default function ThreeDCharacter({
     glbModelGroup.visible = false; // Hidden until realistic GLB finishes loading
     charRoot.add(glbModelGroup);
 
-    const setBoneRot = (boneName, eulerX, eulerY, eulerZ, slerpSpeed = 0.20) => {
+    // Frame-rate independent bone rotation smoothing using exponential damping
+    const tempEuler = new THREE.Euler(0, 0, 0, 'XYZ');
+    const tempDeltaQuat = new THREE.Quaternion();
+    const tempTargetQuat = new THREE.Quaternion();
+
+    const setBoneRot = (boneName, eulerX, eulerY, eulerZ, lambda = 10, dt = 0.016) => {
       const bone = glbBones[boneName.toLowerCase()];
       if (!bone || !bone.userData.restQuat) return;
-      const delta = new THREE.Quaternion().setFromEuler(new THREE.Euler(eulerX, eulerY, eulerZ, 'XYZ'));
-      const targetQuat = bone.userData.restQuat.clone().multiply(delta);
-      bone.quaternion.slerp(targetQuat, slerpSpeed);
+      tempEuler.set(eulerX, eulerY, eulerZ, 'XYZ');
+      tempDeltaQuat.setFromEuler(tempEuler);
+      tempTargetQuat.copy(bone.userData.restQuat).multiply(tempDeltaQuat);
+      // Frame-rate independent slerp factor: 1 - exp(-lambda * delta)
+      const slerpFactor = THREE.MathUtils.clamp(1 - Math.exp(-lambda * dt), 0.001, 1);
+      bone.quaternion.slerp(tempTargetQuat, slerpFactor);
     };
 
-    const setBonePos = (boneName, posX, posY, posZ, lerpSpeed = 0.20) => {
+    const setBonePos = (boneName, posX, posY, posZ, lambda = 10, dt = 0.016) => {
       const bone = glbBones[boneName.toLowerCase()];
       if (!bone || !bone.userData.restPos) return;
       const targetX = bone.userData.restPos.x + posX;
       const targetY = bone.userData.restPos.y + posY;
       const targetZ = bone.userData.restPos.z + posZ;
-      bone.position.x = THREE.MathUtils.lerp(bone.position.x, targetX, lerpSpeed);
-      bone.position.y = THREE.MathUtils.lerp(bone.position.y, targetY, lerpSpeed);
-      bone.position.z = THREE.MathUtils.lerp(bone.position.z, targetZ, lerpSpeed);
+      bone.position.x = THREE.MathUtils.damp(bone.position.x, targetX, lambda, dt);
+      bone.position.y = THREE.MathUtils.damp(bone.position.y, targetY, lambda, dt);
+      bone.position.z = THREE.MathUtils.damp(bone.position.z, targetZ, lambda, dt);
     };
 
     gltfLoader.load(
@@ -338,6 +351,7 @@ export default function ThreeDCharacter({
     let lastMouseMoveTime = Date.now();
     let currentHeadYaw = 0;
     let currentHeadPitch = 0;
+    let locomotionWeight = 0; // Smooth continuous weight blending between idle (0) and walk/run (1)
 
     const handlePointerTrack = () => {
       lastMouseMoveTime = Date.now();
@@ -370,14 +384,14 @@ export default function ThreeDCharacter({
       const facingDir = stateRef.current.facing;
 
       // Full 360-Degree Interactive Rotation & Viewing Pitch
-      // User yaw directly dictates heading and inspection angle, smoothly interpolated
+      // User yaw directly dictates heading and inspection angle, frame-rate independently damped
       const userYaw = stateRef.current.rotationYaw || 0;
       const userPitch = stateRef.current.rotationPitch || 0;
       const targetCharYaw = userYaw;
       const targetCharPitch = THREE.MathUtils.clamp(userPitch, -0.25, 0.25);
 
-      charRoot.rotation.y = THREE.MathUtils.lerp(charRoot.rotation.y, targetCharYaw, 0.14);
-      charRoot.rotation.x = THREE.MathUtils.lerp(charRoot.rotation.x, targetCharPitch, 0.12);
+      charRoot.rotation.y = THREE.MathUtils.damp(charRoot.rotation.y, targetCharYaw, 10.0, delta);
+      charRoot.rotation.x = THREE.MathUtils.damp(charRoot.rotation.x, targetCharPitch, 9.0, delta);
 
       // Music-driven subtle procedural head-bob or scale oscillation when music is active
       if (isMusicPlaying && !isSpeakingNow && curState === 'idle') {
@@ -430,10 +444,9 @@ export default function ThreeDCharacter({
         const targetModelRotZ = isHangingState ? Math.sin(Date.now() * 0.005) * 0.25 : 0;
         const targetModelPosY = (isSleepingState && !actions['sleep']) ? -0.65 : (isHangingState ? 0.15 : -0.2);
 
-        const sleepTransitionSpeed = Math.min(1.0, delta * 3.5); // ~0.6s natural rise / lie down transition
-        glbLoadedModel.rotation.x = THREE.MathUtils.lerp(glbLoadedModel.rotation.x, targetModelRotX, sleepTransitionSpeed);
-        glbLoadedModel.rotation.z = THREE.MathUtils.lerp(glbLoadedModel.rotation.z, targetModelRotZ, isHangingState ? 0.35 : sleepTransitionSpeed);
-        glbLoadedModel.position.y = THREE.MathUtils.lerp(glbLoadedModel.position.y, targetModelPosY, sleepTransitionSpeed);
+        glbLoadedModel.rotation.x = THREE.MathUtils.damp(glbLoadedModel.rotation.x, targetModelRotX, 4.0, delta);
+        glbLoadedModel.rotation.z = THREE.MathUtils.damp(glbLoadedModel.rotation.z, targetModelRotZ, isHangingState ? 12.0 : 4.0, delta);
+        glbLoadedModel.position.y = THREE.MathUtils.damp(glbLoadedModel.position.y, targetModelPosY, 4.0, delta);
         if (isSpinCelebration) {
           glbLoadedModel.rotation.y += delta * 6.28; // Full 360-degree pirouette spin
         }
@@ -454,11 +467,11 @@ export default function ThreeDCharacter({
       const targetYaw = isCursorIdle ? 0 : THREE.MathUtils.clamp(rawX * maxYawRad, -maxYawRad, maxYawRad);
       const targetPitch = isCursorIdle ? 0 : THREE.MathUtils.clamp(-rawY * maxPitchRad, -maxPitchRad, maxPitchRad);
 
-      currentHeadYaw = THREE.MathUtils.lerp(currentHeadYaw, targetYaw, 0.04);
-      currentHeadPitch = THREE.MathUtils.lerp(currentHeadPitch, targetPitch, 0.04);
+      currentHeadYaw = THREE.MathUtils.damp(currentHeadYaw, targetYaw, 6.0, delta);
+      currentHeadPitch = THREE.MathUtils.damp(currentHeadPitch, targetPitch, 6.0, delta);
 
       // Apply subtle head tracking to GLB head bone
-      setBoneRot('head', currentHeadPitch, currentHeadYaw, 0, 0.20);
+      setBoneRot('head', currentHeadPitch, currentHeadYaw, 0, 10, delta);
 
       const breath = Math.sin(time * 2.6);
 
@@ -470,6 +483,16 @@ export default function ThreeDCharacter({
           particleMat.size = 0.05;
         }
       }
+
+      // Continuous locomotion blending weight (smoothly ramp up when moving, ramp down when stopping)
+      const isLocomotionState = (
+        curState === 'walking' ||
+        curState === 'walk' ||
+        curState === 'idle_walking' ||
+        curState === 'running' ||
+        curState === 'run'
+      );
+      locomotionWeight = THREE.MathUtils.damp(locomotionWeight, isLocomotionState ? 1.0 : 0.0, 9.0, delta);
 
       // Music-Synchronized & Heavy Dancing rhythm & intensity calculations
       const isHeavyDance = curState === 'heavy_dancing';
@@ -609,42 +632,50 @@ export default function ThreeDCharacter({
         setBoneRot('leftforearm', 0, 0, 0.85, 0.25);
         setBoneRot('rightforearm', 0, 0, -0.85, 0.25);
       } else if (curState === 'running' || curState === 'run') {
-        const runStride = Math.sin(time * 12.0);
-        setBonePos('hips', 0, Math.abs(runStride) * 0.04, 0, 0.25);
-        setBoneRot('spine', 0.18, 0, 0, 0.25); // Forward lean for running
-        setBoneRot('leftupleg', runStride * 0.75, 0, 0, 0.25);
-        setBoneRot('rightupleg', -runStride * 0.75, 0, 0, 0.25);
-        setBoneRot('leftleg', Math.min(0, -runStride * 0.85), 0, 0, 0.25);
-        setBoneRot('rightleg', Math.min(0, runStride * 0.85), 0, 0, 0.25);
-        setBoneRot('leftarm', 0.35, 0, -runStride * 0.65, 0.25);
-        setBoneRot('rightarm', 0.35, 0, runStride * 0.65, 0.25);
-        setBoneRot('leftforearm', 0, 0, 0.35, 0.25);
-        setBoneRot('rightforearm', 0, 0, -0.35, 0.25);
+        const runStride = Math.sin(time * 12.0) * Math.max(0.1, locomotionWeight);
+        setBonePos('hips', 0, Math.abs(runStride) * 0.04, 0, 11, delta);
+        setBoneRot('spine', 0.18 * locomotionWeight, 0, 0, 10, delta); // Forward lean for running
+        // Legs: Left Leg forward when runStride > 0, Right Leg forward when runStride < 0
+        setBoneRot('leftupleg', runStride * 0.75, 0, 0, 11, delta);
+        setBoneRot('rightupleg', -runStride * 0.75, 0, 0, 11, delta);
+        setBoneRot('leftleg', Math.min(0, -runStride * 0.85), 0, 0, 11, delta);
+        setBoneRot('rightleg', Math.min(0, runStride * 0.85), 0, 0, 11, delta);
+        // Natural Human Running Gait (180° out-of-phase, opposite arm to opposite leg):
+        // Left Leg forward -> Right Arm forward, Left Arm backward
+        // Right Leg forward -> Left Arm forward, Right Arm backward
+        setBoneRot('leftarm', 0.40 - runStride * 0.55, 0, 0.06 - runStride * 0.20, 11, delta);
+        setBoneRot('rightarm', 0.40 + runStride * 0.55, 0, -0.06 - runStride * 0.20, 11, delta);
+        setBoneRot('leftforearm', 0, 0, 0.35 + Math.max(0, -runStride) * 0.25, 11, delta);
+        setBoneRot('rightforearm', 0, 0, -0.35 - Math.max(0, runStride) * 0.25, 11, delta);
       } else if (curState === 'jump' || curState === 'jumping') {
         // Dynamic jumping / hopping pose
         const jumpPhase = Math.sin(time * 8.0);
-        setBonePos('hips', 0, Math.max(0, jumpPhase) * 0.08, 0, 0.25);
-        setBoneRot('spine', 0.06, 0, 0, 0.25);
-        setBoneRot('leftupleg', 0.35, 0, 0.08, 0.25);
-        setBoneRot('rightupleg', 0.35, 0, -0.08, 0.25);
-        setBoneRot('leftleg', -0.45, 0, 0, 0.25);
-        setBoneRot('rightleg', -0.45, 0, 0, 0.25);
-        setBoneRot('leftarm', 0.20, 0, 0.50, 0.25);
-        setBoneRot('rightarm', 0.20, 0, -0.50, 0.25);
-        setBoneRot('leftforearm', 0, 0, 0.30, 0.25);
-        setBoneRot('rightforearm', 0, 0, -0.30, 0.25);
+        setBonePos('hips', 0, Math.max(0, jumpPhase) * 0.08, 0, 10, delta);
+        setBoneRot('spine', 0.06, 0, 0, 10, delta);
+        setBoneRot('leftupleg', 0.35, 0, 0.08, 10, delta);
+        setBoneRot('rightupleg', 0.35, 0, -0.08, 10, delta);
+        setBoneRot('leftleg', -0.45, 0, 0, 10, delta);
+        setBoneRot('rightleg', -0.45, 0, 0, 10, delta);
+        setBoneRot('leftarm', 0.20, 0, 0.50, 10, delta);
+        setBoneRot('rightarm', 0.20, 0, -0.50, 10, delta);
+        setBoneRot('leftforearm', 0, 0, 0.30, 10, delta);
+        setBoneRot('rightforearm', 0, 0, -0.30, 10, delta);
       } else if (curState === 'walking' || curState === 'walk' || curState === 'idle_walking') {
-        const stride = Math.sin(time * 7.5);
-        setBonePos('hips', 0, Math.abs(stride) * 0.02, 0, 0.25);
-        setBoneRot('spine', 0.04, 0, 0, 0.25);
-        setBoneRot('leftupleg', stride * 0.42, 0, 0, 0.25);
-        setBoneRot('rightupleg', -stride * 0.42, 0, 0, 0.25);
-        setBoneRot('leftleg', Math.min(0, -stride * 0.45), 0, 0, 0.25);
-        setBoneRot('rightleg', Math.min(0, stride * 0.45), 0, 0, 0.25);
-        setBoneRot('leftarm', 0.46, 0, -stride * 0.32, 0.25);
-        setBoneRot('rightarm', 0.46, 0, stride * 0.32, 0.25);
-        setBoneRot('leftforearm', 0, 0, 0.18, 0.25);
-        setBoneRot('rightforearm', 0, 0, -0.18, 0.25);
+        const stride = Math.sin(time * 7.5) * Math.max(0.1, locomotionWeight);
+        setBonePos('hips', 0, Math.abs(stride) * 0.02, 0, 10, delta);
+        setBoneRot('spine', 0.04 * locomotionWeight, 0, 0, 10, delta);
+        // Legs: Left Leg forward when stride > 0, Right Leg forward when stride < 0
+        setBoneRot('leftupleg', stride * 0.42, 0, 0, 10, delta);
+        setBoneRot('rightupleg', -stride * 0.42, 0, 0, 10, delta);
+        setBoneRot('leftleg', Math.min(0, -stride * 0.45), 0, 0, 10, delta);
+        setBoneRot('rightleg', Math.min(0, stride * 0.45), 0, 0, 10, delta);
+        // Natural Human Walking Gait (180° out-of-phase, opposite arm to opposite leg):
+        // When Left Leg swings forward (+stride), Right Arm swings forward (+pitch), Left Arm swings backward (-pitch)
+        // When Right Leg swings forward (-stride), Left Arm swings forward (+pitch), Right Arm swings backward (-pitch)
+        setBoneRot('leftarm', 0.46 - stride * 0.32, 0, 0.02 - stride * 0.12, 10, delta);
+        setBoneRot('rightarm', 0.46 + stride * 0.32, 0, -0.02 - stride * 0.12, 10, delta);
+        setBoneRot('leftforearm', 0, 0, 0.12 + Math.max(0, -stride) * 0.16, 10, delta);
+        setBoneRot('rightforearm', 0, 0, -0.12 - Math.max(0, stride) * 0.16, 10, delta);
       } else if (curState === 'sitting' || curState === 'sit') {
         // Safe natural seated posture without inverted leg distortion
         setBonePos('hips', 0, -0.15, 0, 0.15);
@@ -837,10 +868,12 @@ export default function ThreeDCharacter({
       } else if (curState === 'running' || curState === 'run') {
         const stride = Math.sin(time * 16);
         setBonePos('hips', 0, Math.abs(stride) * 0.05, 0, 0.25);
-        setBoneRot('leftarm', 0.20, 0, -stride * 0.45, 0.25);
-        setBoneRot('rightarm', 0.20, 0, stride * 0.45, 0.25);
-        setBoneRot('leftforearm', 0, 0, 0.20, 0.25);
-        setBoneRot('rightforearm', 0, 0, -0.20, 0.25);
+        // Opposite arm to opposite leg coordination:
+        // Left Leg forward -> Right Arm forward (+X), Left Arm backward (-X)
+        setBoneRot('leftarm', 0.40 - stride * 0.50, 0, 0.05 - stride * 0.15, 0.25);
+        setBoneRot('rightarm', 0.40 + stride * 0.50, 0, -0.05 - stride * 0.15, 0.25);
+        setBoneRot('leftforearm', 0, 0, 0.25 + Math.max(0, -stride) * 0.20, 0.25);
+        setBoneRot('rightforearm', 0, 0, -0.25 - Math.max(0, stride) * 0.20, 0.25);
         setBoneRot('leftupleg', stride * 0.35, 0, 0, 0.25);
         setBoneRot('rightupleg', -stride * 0.35, 0, 0, 0.25);
         setBoneRot('leftleg', Math.min(0, -stride * 0.35), 0, 0, 0.25);
