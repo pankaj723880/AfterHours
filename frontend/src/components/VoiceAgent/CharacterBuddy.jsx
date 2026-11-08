@@ -100,8 +100,39 @@ export default function CharacterBuddy({
   const [currentLang, setCurrentLang] = useState(() => voiceSessionService.lang || 'hi-IN');
   const bubbleDismissTimerRef = useRef(null);
 
-  // Strict Speech Text Sanitizer & 1-Second Auto-Dismiss Controller
-  const showSanitizedSpeechBubble = useCallback((rawText, actionTag = null, customDismissMs = 1000) => {
+  // Pre-warm SpeechSynthesis voices on page load / voice changes
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    const warmVoices = () => {
+      try {
+        window.speechSynthesis.getVoices();
+      } catch (_) {}
+    };
+    warmVoices();
+    if (typeof window.speechSynthesis.onvoiceschanged !== 'undefined') {
+      window.speechSynthesis.onvoiceschanged = warmVoices;
+    }
+    return () => {
+      if (typeof window.speechSynthesis.onvoiceschanged !== 'undefined') {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+    };
+  }, []);
+
+  // Filter strictly for high-clarity Indian female voices
+  const getBestHindiVoice = useCallback(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return null;
+    const voices = window.speechSynthesis.getVoices() || [];
+    return (
+      voices.find(v => v.lang === 'hi-IN' && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Swara'))) ||
+      voices.find(v => v.lang === 'hi-IN') ||
+      voices.find(v => v.lang === 'en-IN' && (v.name.includes('Google') || v.name.includes('India'))) ||
+      voices.find(v => v.lang.startsWith('hi'))
+    );
+  }, []);
+
+  // Atomic Speech Gate: Text Sanitizer & 1.2-Second Auto-Dismiss Controller
+  const showSanitizedSpeechBubble = useCallback((rawText, actionTag = null, customDismissMs = 1200) => {
     if (isAvatarMuted) return;
     if (!rawText || typeof rawText !== 'string') return;
 
@@ -115,49 +146,55 @@ export default function CharacterBuddy({
         }
       } catch (_) {}
     }
-    // Remove thinking/reasoning tags or JSON structure artifacts
+    // Remove thinking/reasoning tags, JSON structure artifacts, and markdown symbols
     cleanText = cleanText.replace(/<think>[\s\S]*?<\/think>/gi, '')
                          .replace(/```[\s\S]*?```/g, '')
-                         .replace(/["“”]/g, '')
+                         .replace(/[*_#`"“”]/g, '')
                          .trim();
 
     if (!cleanText) return;
 
+    // Take only the first natural sentence (prevent long multi-paragraph rambling)
+    const firstSentence = cleanText.split(/[.!?।\n]/).filter(Boolean)[0] || cleanText;
+    const finalSpeech = firstSentence.trim().slice(0, 100); // Strict length cap
+
+    if (!finalSpeech) return;
+
+    // Clear any pending bubble timeouts before rendering new text
     if (bubbleDismissTimerRef.current) {
       clearTimeout(bubbleDismissTimerRef.current);
       bubbleDismissTimerRef.current = null;
     }
 
     setIsInterim(false);
-    setLiveTranscript(cleanText);
+    setLiveTranscript(finalSpeech);
     if (actionTag) setLastActionTag(actionTag);
     setIsBubbleVisible(true);
 
-    // Forcefully hide speech bubble exactly 1000ms after text displays
+    // Auto-dismiss exactly after 1.2s (or custom dismiss ms)
     bubbleDismissTimerRef.current = setTimeout(() => {
       setLiveTranscript('');
       setIsBubbleVisible(false);
       setLastActionTag(null);
       bubbleDismissTimerRef.current = null;
-    }, customDismissMs);
+    }, customDismissMs || 1200);
   }, [isAvatarMuted]);
 
-  // Instant Indian Female Voice Model (0ms Latency Client Fallback)
+  // Instant Indian Female Voice Model (Clear, crisp female tuning without robotic pitch artifacts)
   const speakInstantHindiFemale = useCallback((text) => {
-    if (typeof window === 'undefined' || isAvatarMuted) return;
+    if (typeof window === 'undefined' || isAvatarMuted || !text) return;
     try {
       if (window.speechSynthesis) {
-        window.speechSynthesis.cancel();
+        window.speechSynthesis.cancel(); // Stop any pending speech
         const utterance = new SpeechSynthesisUtterance(text);
-        const voices = window.speechSynthesis.getVoices();
-        // Prioritize Indian English / Hindi natural female voices
-        const targetVoice = voices.find(v => 
-          (v.lang === 'hi-IN' || v.lang === 'en-IN') && 
-          (v.name.includes('Google') || v.name.includes('Female') || v.name.includes('Natural'))
-        ) || voices.find(v => v.lang.startsWith('hi') || v.lang === 'en-IN' || v.lang === 'hi-IN');
-        if (targetVoice) utterance.voice = targetVoice;
-        utterance.rate = 1.35; // brisk, engaging pace
-        utterance.pitch = 1.15; // natural female tone
+        const voice = getBestHindiVoice();
+        if (voice) utterance.voice = voice;
+
+        // Clear, crisp female tuning (avoid robotic pitch artifacts)
+        utterance.rate = 1.05; // Normal clear speed (not rushed)
+        utterance.pitch = 1.0; // Natural female pitch (avoid robotic 1.2+)
+        utterance.volume = 1.0;
+
         window.speechSynthesis.speak(utterance);
         return;
       }
@@ -165,9 +202,9 @@ export default function CharacterBuddy({
 
     // Fallback to voiceBuddyService if Web Speech fails
     try {
-      voiceBuddyService.speakText(text, { priority: true, pitch: 1.15, rate: 1.35 });
+      voiceBuddyService.speakText(text, { priority: true, pitch: 1.0, rate: 1.05 });
     } catch (_) {}
-  }, [isAvatarMuted]);
+  }, [isAvatarMuted, getBestHindiVoice]);
 
   useEffect(() => {
     if (!isPlaying) {
@@ -415,6 +452,214 @@ export default function CharacterBuddy({
   // User Drag Interrupt & Roaming Pause
   const isUserDragging = useRef(false);
   const pauseRoamingUntil = useRef(0);
+
+  // Synchronized DOM Actions & Movement Controller
+  const runTo = useCallback((targetX, targetY, mode = 'run', timeoutMs = 3500) => {
+    return new Promise((resolve) => {
+      pauseRoamingUntil.current = Date.now() + timeoutMs + 1000;
+      movementModeRef.current = mode;
+      targetPosRef.current = { x: targetX, y: targetY };
+
+      const startTime = Date.now();
+      const checkArrival = setInterval(() => {
+        const cur = positionRef.current;
+        const dist = Math.hypot(targetX - cur.x, targetY - cur.y);
+        if (dist <= 16 || Date.now() - startTime >= timeoutMs) {
+          clearInterval(checkArrival);
+          // Snap cleanly to target pos
+          positionRef.current.x = targetX;
+          positionRef.current.y = targetY;
+          if (avatarContainerRef.current) {
+            avatarContainerRef.current.style.transform = `translate3d(${targetX}px, ${targetY}px, 0)`;
+          }
+          resolve();
+        }
+      }, 50);
+    });
+  }, []);
+
+  const crossFadeTo = useCallback((state, durationSec = 0.2) => {
+    setAutonomousSubState(state);
+    if (state === 'idle' || state === 'walking' || state === 'run') {
+      setTransientGesture(null);
+    } else {
+      setTransientGesture(state);
+    }
+  }, []);
+
+  // Synchronized Action Registry: Every dialogue is strictly bound to physical DOM interaction
+  const SYNCHRONIZED_ACTIONS = useMemo(() => [
+    {
+      id: 'HIDE_BEHIND_CARD',
+      triggers: ['chhip', 'dar gaye', 'hide', 'darr gaye', 'chhuppi'],
+      dialogue: "Darr gaye na? Main yahin piche chhuppi thi!",
+      actionTag: '🫣 HIDING BEHIND CARD',
+      execute: async () => {
+        const card = document.querySelector('.card, [class*="card"], [class*="QUICK"], [class*="quick"]') || document.querySelector('input');
+        const winW = typeof window !== 'undefined' ? window.innerWidth : 1000;
+        const winH = typeof window !== 'undefined' ? window.innerHeight : 800;
+        let targetX = winW * 0.5;
+        let targetY = winH * 0.5;
+
+        if (card) {
+          const rect = card.getBoundingClientRect();
+          targetX = Math.max(16, Math.min(winW - 140, rect.right - 20));
+          targetY = Math.max(64, Math.min(winH - 180, rect.top - 10));
+        }
+
+        // Step 1: Sprint behind element
+        await runTo(targetX, targetY, 'run', 3000);
+
+        // Step 2: Crouch / scale down and lower z-index behind the card
+        if (avatarContainerRef.current) {
+          avatarContainerRef.current.style.zIndex = '10';
+          avatarContainerRef.current.style.transform += ' scale(0.65)';
+        }
+        crossFadeTo('crouch', 0.2);
+
+        // Step 3: Peek out head after 2 seconds, pop back up to normal z-index with cheer
+        setTimeout(() => {
+          if (avatarContainerRef.current) {
+            avatarContainerRef.current.style.zIndex = '70';
+            avatarContainerRef.current.style.transform = avatarContainerRef.current.style.transform.replace(' scale(0.65)', '');
+          }
+          crossFadeTo('cheer', 0.2);
+          setTimeout(() => {
+            crossFadeTo('idle', 0.2);
+            pauseRoamingUntil.current = 0;
+          }, 1500);
+        }, 2000);
+      }
+    },
+    {
+      id: 'HANG_ON_HEADING',
+      triggers: ['latak', 'gir jaungi', 'hang', 'pakdo'],
+      dialogue: "Dekho main yahan latak gayi! Ab dhoondho agla gaana!",
+      actionTag: '🧗 HANGING ON LEDGE',
+      execute: async () => {
+        const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4'));
+        const winW = typeof window !== 'undefined' ? window.innerWidth : 1000;
+        const winH = typeof window !== 'undefined' ? window.innerHeight : 800;
+        let targetHeading = null;
+        for (const h of headings) {
+          const r = h.getBoundingClientRect();
+          if (r.width > 40 && r.height > 15 && r.top >= 70 && r.bottom <= winH - 160) {
+            targetHeading = r;
+            break;
+          }
+        }
+
+        let targetX = winW * 0.5 - 60;
+        let targetY = 140;
+        if (targetHeading) {
+          targetX = Math.max(16, Math.min(winW - 140, targetHeading.left + targetHeading.width / 2 - 60));
+          targetY = Math.max(64, Math.min(winH - 180, targetHeading.bottom - 15));
+        }
+
+        // Step 1: Jump towards ledge
+        await runTo(targetX, targetY, 'jump', 3200);
+
+        // Step 2: Grab ledge and swing legs
+        isHangingRef.current = true;
+        crossFadeTo('hang', 0.2);
+
+        // Step 3: Hang for 4.5s then drop smoothly to the floor
+        setTimeout(() => {
+          isHangingRef.current = false;
+          crossFadeTo('jump', 0.2);
+          const dropY = Math.min(winH - 170, targetY + 120);
+          runTo(targetX, dropY, 'walk', 1200).then(() => {
+            crossFadeTo('idle', 0.2);
+            pauseRoamingUntil.current = 0;
+          });
+        }, 4500);
+      }
+    },
+    {
+      id: 'KNOCK_SCREEN',
+      triggers: ['screen', 'kaanch', 'knock', 'sun rahe ho', 'tuk tuk', 'so gaye'],
+      dialogue: "Hello! Sun rahe ho ya so gaye? Screen pe dhyaan do!",
+      actionTag: '🚪 KNOCKING SCREEN',
+      execute: async () => {
+        const winW = typeof window !== 'undefined' ? window.innerWidth : 1000;
+        const winH = typeof window !== 'undefined' ? window.innerHeight : 800;
+        const targetX = Math.max(16, Math.min(winW - 140, winW / 2 - 60));
+        const targetY = Math.max(64, winH - 220);
+
+        // Step 1: Walk to bottom center viewport
+        await runTo(targetX, targetY, 'walk', 2800);
+
+        // Step 2: Trigger knock screen animation and device vibration
+        crossFadeTo('knock_glass', 0.2);
+        try {
+          if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            navigator.vibrate([40, 80, 40]);
+          }
+        } catch (_) {}
+
+        // Step 3: Return to idle after 3.5s
+        setTimeout(() => {
+          crossFadeTo('idle', 0.2);
+          pauseRoamingUntil.current = 0;
+        }, 3500);
+      }
+    },
+    {
+      id: 'SIT_ON_PLAYER',
+      triggers: ['baith', 'thak', 'rest', 'aaram', 'thak gayi'],
+      dialogue: "Thoda thak gayi, player ke upar hi thoda aaram kar leti hu!",
+      actionTag: '🛋️ SITTING ON PLAYER',
+      execute: async () => {
+        const playerBar = document.querySelector('[class*="bottom-0"], footer, .LOOPRA-3D-VINYL-LOUNGE, #bottom-music-player');
+        const winW = typeof window !== 'undefined' ? window.innerWidth : 1000;
+        const winH = typeof window !== 'undefined' ? window.innerHeight : 800;
+        let targetX = 150;
+        let targetY = winH - 180;
+
+        if (playerBar) {
+          const rect = playerBar.getBoundingClientRect();
+          targetX = Math.max(16, Math.min(winW - 160, rect.left + 150));
+          targetY = Math.max(64, rect.top - 80);
+        }
+
+        // Step 1: Run to player bar ledge
+        await runTo(targetX, targetY, 'run', 3000);
+
+        // Step 2: Crossfade to sit
+        crossFadeTo('sitting', 0.3);
+
+        // Step 3: Sit for 6s then return to idle
+        setTimeout(() => {
+          crossFadeTo('idle', 0.2);
+          pauseRoamingUntil.current = 0;
+        }, 6000);
+      }
+    }
+  ], [runTo, crossFadeTo]);
+
+  // Unified Physical-Dialogue Dispatcher
+  const triggerSynchronizedAction = useCallback(async (actionIdOrKeyword, customText = null) => {
+    if (!actionIdOrKeyword) return;
+    const lower = String(actionIdOrKeyword).toLowerCase();
+
+    const action = SYNCHRONIZED_ACTIONS.find(a => 
+      a.id.toLowerCase() === lower || 
+      a.triggers.some(t => lower.includes(t))
+    );
+
+    if (action) {
+      const speech = customText || action.dialogue;
+      // Core rule: The avatar must NEVER speak a dialogue without physically performing the exact action simultaneously on the real DOM.
+      showSanitizedSpeechBubble(speech, action.actionTag, 1500);
+      speakInstantHindiFemale(speech);
+      try {
+        await action.execute();
+      } catch (_) {}
+    } else if (customText) {
+      showSanitizedSpeechBubble(customText, null, 1200);
+      speakInstantHindiFemale(customText);
+    }
+  }, [SYNCHRONIZED_ACTIONS, showSanitizedSpeechBubble, speakInstantHindiFemale]);
 
   // 60-Second Dynamic Activity Timer & 45-60s Nap Cycle State
   const [isFatigued, setIsFatigued] = useState(false);
@@ -1697,7 +1942,16 @@ export default function CharacterBuddy({
         setIsSpeaking(true);
         resetAutonomousTimer();
         if (text) {
-          showSanitizedSpeechBubble(text, null, 1000);
+          // Check if speech matches any synchronized physical action
+          const lower = text.toLowerCase();
+          const matchedAction = SYNCHRONIZED_ACTIONS.find(a => 
+            a.triggers.some(t => lower.includes(t))
+          );
+          if (matchedAction) {
+            triggerSynchronizedAction(matchedAction.id, text);
+          } else {
+            showSanitizedSpeechBubble(text, null, 1200);
+          }
         }
       } else if (event === 'speech_end') {
         setIsSpeaking(false);
@@ -1710,12 +1964,20 @@ export default function CharacterBuddy({
           setIsBubbleVisible(false);
           setLiveTranscript('');
           bubbleDismissTimerRef.current = null;
-        }, 1000);
+        }, 1200);
       } else if (event === 'speech_text_only') {
         setIsSpeaking(false);
         setInternalVolume(0);
         if (text) {
-          showSanitizedSpeechBubble(text, null, 1000);
+          const lower = text.toLowerCase();
+          const matchedAction = SYNCHRONIZED_ACTIONS.find(a => 
+            a.triggers.some(t => lower.includes(t))
+          );
+          if (matchedAction) {
+            triggerSynchronizedAction(matchedAction.id, text);
+          } else {
+            showSanitizedSpeechBubble(text, null, 1200);
+          }
         }
       } else if (event === 'speech_volume' && volume !== undefined) {
         setInternalVolume(volume);

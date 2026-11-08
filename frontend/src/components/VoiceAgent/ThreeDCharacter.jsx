@@ -434,8 +434,10 @@ export default function ThreeDCharacter({
           }
         }
         else if (curState === 'hang' || curState === 'hanging' || curState === 'hang_heading') fadeToAction(actions['hang'] || actions['climb'] ? (actions['hang'] ? 'hang' : 'climb') : 'idle', 0.25);
+        else if (curState === 'crouch' || curState === 'hide') fadeToAction(actions['crouch'] || actions['sit'] || 'idle', 0.2);
+        else if (curState === 'cheer' || curState === 'celebrate') fadeToAction(actions['cheer'] || actions['wave'] || actions['dance'] || 'wave', 0.2);
         else if (curState === 'mischief_taunt' || curState === 'taunt_dance') fadeToAction(actions['dance'] ? 'dance' : 'wave', 0.25);
-        else if (curState === 'mischief_knock' || curState === 'knock_glass') fadeToAction(actions['tap'] || actions['touch'] ? (actions['tap'] ? 'tap' : 'touch') : 'idle', 0.2);
+        else if (curState === 'mischief_knock' || curState === 'knock_glass' || curState === 'tap_glass') fadeToAction(actions['tap'] || actions['touch'] ? (actions['tap'] ? 'tap' : 'touch') : 'idle', 0.2);
         else if (curState === 'walking' || curState === 'walk' || curState === 'idle_walking') fadeToAction('walk', 0.25);
         else if (curState === 'running' || curState === 'run') fadeToAction('run', 0.25);
         else if (curState === 'sitting' || curState === 'sit') fadeToAction(actions['sit'] ? 'sit' : 'idle', 0.35);
@@ -618,6 +620,33 @@ export default function ThreeDCharacter({
         setBoneRot('rightupleg', 0.15 - hangSway * 0.18, 0, -0.05, 0.25);
         setBoneRot('leftleg', -0.25 + hangSway * 0.12, 0, 0, 0.25);
         setBoneRot('rightleg', -0.25 - hangSway * 0.12, 0, 0, 0.25);
+      } else if (curState === 'crouch' || curState === 'hide') {
+        // Deep stealth crouch hiding posture
+        setBonePos('hips', 0, -0.22, 0, 10, delta);
+        setBoneRot('spine', 0.22, 0, 0, 10, delta);
+        setBoneRot('head', -0.15, 0, 0, 10, delta);
+        setBoneRot('leftupleg', 0.65, 0, 0.12, 10, delta);
+        setBoneRot('rightupleg', 0.65, 0, -0.12, 10, delta);
+        setBoneRot('leftleg', -0.85, 0, 0, 10, delta);
+        setBoneRot('rightleg', -0.85, 0, 0, 10, delta);
+        setBoneRot('leftarm', 0.35, 0, 0.45, 10, delta);
+        setBoneRot('rightarm', 0.35, 0, -0.45, 10, delta);
+        setBoneRot('leftforearm', 0, 0, 0.65, 10, delta);
+        setBoneRot('rightforearm', 0, 0, -0.65, 10, delta);
+      } else if (curState === 'cheer' || curState === 'celebrate') {
+        // Joyful two-handed celebration bounce
+        const cheerWave = Math.sin(time * 12);
+        setBonePos('hips', 0, Math.abs(cheerWave) * 0.04, 0, 10, delta);
+        setBoneRot('spine', -0.05, 0, 0, 10, delta);
+        setBoneRot('head', -0.10, 0, cheerWave * 0.10, 10, delta);
+        setBoneRot('leftarm', 0.10, 0, Math.PI * 0.70 + cheerWave * 0.20, 10, delta);
+        setBoneRot('rightarm', 0.10, 0, -Math.PI * 0.70 - cheerWave * 0.20, 10, delta);
+        setBoneRot('leftforearm', 0, 0, 0.35, 10, delta);
+        setBoneRot('rightforearm', 0, 0, -0.35, 10, delta);
+        setBoneRot('leftupleg', 0.05, 0, 0.05, 10, delta);
+        setBoneRot('rightupleg', 0.05, 0, -0.05, 10, delta);
+        setBoneRot('leftleg', -0.10, 0, 0, 10, delta);
+        setBoneRot('rightleg', -0.10, 0, 0, 10, delta);
       } else if (curState === 'mischief_taunt' || curState === 'taunt_dance') {
         // Mischievous silly wiggle & taunt dance facing user
         const tauntWiggle = Math.sin(time * 12);
@@ -852,6 +881,33 @@ export default function ThreeDCharacter({
         setBoneRot('rightupleg', 0.15 - hangSway * 0.18, 0, -0.05, 0.25);
         setBoneRot('leftleg', -0.25 + hangSway * 0.12, 0, 0, 0.25);
         setBoneRot('rightleg', -0.25 - hangSway * 0.12, 0, 0, 0.25);
+      } else if (curState === 'crouch' || curState === 'hide') {
+        // Deep stealth crouch hiding posture
+        setBonePos('hips', 0, -0.22, 0, 10, delta);
+        setBoneRot('spine', 0.22, 0, 0, 10, delta);
+        setBoneRot('head', -0.15, 0, 0, 10, delta);
+        setBoneRot('leftupleg', 0.65, 0, 0.12, 10, delta);
+        setBoneRot('rightupleg', 0.65, 0, -0.12, 10, delta);
+        setBoneRot('leftleg', -0.85, 0, 0, 10, delta);
+        setBoneRot('rightleg', -0.85, 0, 0, 10, delta);
+        setBoneRot('leftarm', 0.35, 0, 0.45, 10, delta);
+        setBoneRot('rightarm', 0.35, 0, -0.45, 10, delta);
+        setBoneRot('leftforearm', 0, 0, 0.65, 10, delta);
+        setBoneRot('rightforearm', 0, 0, -0.65, 10, delta);
+      } else if (curState === 'cheer' || curState === 'celebrate') {
+        // Joyful two-handed celebration bounce
+        const cheerWave = Math.sin(time * 12);
+        setBonePos('hips', 0, Math.abs(cheerWave) * 0.04, 0, 10, delta);
+        setBoneRot('spine', -0.05, 0, 0, 10, delta);
+        setBoneRot('head', -0.10, 0, cheerWave * 0.10, 10, delta);
+        setBoneRot('leftarm', 0.10, 0, Math.PI * 0.70 + cheerWave * 0.20, 10, delta);
+        setBoneRot('rightarm', 0.10, 0, -Math.PI * 0.70 - cheerWave * 0.20, 10, delta);
+        setBoneRot('leftforearm', 0, 0, 0.35, 10, delta);
+        setBoneRot('rightforearm', 0, 0, -0.35, 10, delta);
+        setBoneRot('leftupleg', 0.05, 0, 0.05, 10, delta);
+        setBoneRot('rightupleg', 0.05, 0, -0.05, 10, delta);
+        setBoneRot('leftleg', -0.10, 0, 0, 10, delta);
+        setBoneRot('rightleg', -0.10, 0, 0, 10, delta);
       } else if (curState === 'mischief_taunt' || curState === 'taunt_dance') {
         // Mischievous silly wiggle & taunt dance facing user
         const tauntWiggle = Math.sin(time * 12);

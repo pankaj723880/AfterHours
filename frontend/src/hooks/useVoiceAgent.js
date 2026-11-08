@@ -16,16 +16,97 @@ export function useVoiceAgent({
   onTranscript,
   onFinal,
   onError,
-  autoDuck = true
+  autoDuck = true,
+  isMuted = false
 } = {}) {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [interimText, setInterimText] = useState('');
   const [error, setError] = useState(null);
+  const [speechText, setSpeechText] = useState('');
+  const [showSpeechBubble, setShowSpeechBubble] = useState(false);
 
   const recognitionRef = useRef(null);
   const isListeningRef = useRef(false);
   const safetyTimeoutRef = useRef(null);
+  const speechTimerRef = useRef(null);
+
+  // Pre-warm voices on page load / voices changed
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    const warmVoices = () => {
+      try {
+        window.speechSynthesis.getVoices();
+      } catch (_) {}
+    };
+    warmVoices();
+    if (typeof window.speechSynthesis.onvoiceschanged !== 'undefined') {
+      window.speechSynthesis.onvoiceschanged = warmVoices;
+    }
+  }, []);
+
+  // Filter strictly for high-clarity Indian female voices
+  const getBestHindiVoice = useCallback(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return null;
+    const voices = window.speechSynthesis.getVoices() || [];
+    return (
+      voices.find(v => v.lang === 'hi-IN' && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Swara'))) ||
+      voices.find(v => v.lang === 'hi-IN') ||
+      voices.find(v => v.lang === 'en-IN' && (v.name.includes('Google') || v.name.includes('India'))) ||
+      voices.find(v => v.lang.startsWith('hi'))
+    );
+  }, []);
+
+  // Atomic speech gate and clean text renderer (avoids multiple draft flashing)
+  const showSpeech = useCallback((rawText, customDismissMs = 1200) => {
+    if (!rawText || typeof rawText !== 'string') return;
+
+    // Strip markdown, JSON tokens, reasoning tags, and clean up
+    let cleanText = rawText
+      .replace(/<think>[\s\S]*?<\/think>/gi, '')
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/[*_#`"“”]/g, '')
+      .trim();
+
+    // Take only the first natural sentence (prevent long multi-paragraph rambling)
+    const firstSentence = cleanText.split(/[.!?।\n]/).filter(Boolean)[0] || cleanText;
+    const finalSpeech = firstSentence.trim().slice(0, 100); // Strict length cap
+
+    if (!finalSpeech) return;
+
+    if (speechTimerRef.current) clearTimeout(speechTimerRef.current);
+    setSpeechText(finalSpeech);
+    setShowSpeechBubble(true);
+
+    // Auto-dismiss exactly after 1.2s
+    speechTimerRef.current = setTimeout(() => {
+      setSpeechText('');
+      setShowSpeechBubble(false);
+      speechTimerRef.current = null;
+    }, customDismissMs || 1200);
+  }, []);
+
+  // Clear, crisp female tuning (avoid robotic pitch artifacts)
+  const speakLine = useCallback((text) => {
+    if (isMuted || !text || typeof window === 'undefined') return;
+    if (!window.speechSynthesis) return;
+
+    // First gate and display the clean bubble
+    showSpeech(text);
+
+    window.speechSynthesis.cancel(); // Stop any pending speech
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voice = getBestHindiVoice();
+    if (voice) utterance.voice = voice;
+
+    // Clear, crisp female tuning (avoid robotic pitch artifacts)
+    utterance.rate = 1.05; // Normal clear speed (not rushed)
+    utterance.pitch = 1.0; // Natural female pitch (avoid robotic 1.2+)
+    utterance.volume = 1.0;
+
+    window.speechSynthesis.speak(utterance);
+  }, [isMuted, getBestHindiVoice, showSpeech]);
 
   // Audio ducking helpers
   const duckVolume = useCallback(() => {
@@ -180,6 +261,10 @@ export function useVoiceAgent({
   useEffect(() => {
     return () => {
       stopListening();
+      if (speechTimerRef.current) {
+        clearTimeout(speechTimerRef.current);
+        speechTimerRef.current = null;
+      }
     };
   }, [stopListening]);
 
@@ -188,6 +273,11 @@ export function useVoiceAgent({
     transcript,
     interimText,
     error,
+    speechText,
+    showSpeechBubble,
+    speakLine,
+    showSpeech,
+    getBestHindiVoice,
     startListening,
     stopListening,
     toggleListening
