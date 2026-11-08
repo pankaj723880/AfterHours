@@ -414,6 +414,63 @@ export const PlayerProvider = ({ children }) => {
     };
   }, [handleNext, handlePlaybackError]);
 
+  // MediaSession API Integration for background playback & lockscreen controls
+  useEffect(() => {
+    if (!currentTrack || typeof window === 'undefined' || !('mediaSession' in navigator)) return;
+
+    try {
+      const artworkSrc = currentTrack.thumbnail || currentTrack.image || '/loopra-logo.png';
+      const formattedArtwork = artworkSrc.startsWith('http') || artworkSrc.startsWith('blob:')
+        ? artworkSrc
+        : `${window.location.origin}${artworkSrc.startsWith('/') ? '' : '/'}${artworkSrc}`;
+
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: currentTrack.title || 'Unknown Track',
+        artist: currentTrack.artist || currentTrack.channel || 'Loopra Artist',
+        album: currentTrack.album || 'Loopra Music',
+        artwork: [
+          {
+            src: formattedArtwork,
+            sizes: '512x512',
+            type: 'image/jpeg'
+          }
+        ]
+      });
+
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+
+      // Bind playback handlers to OS media notification controls
+      navigator.mediaSession.setActionHandler('play', () => {
+        initAudioContext();
+        audioRef.current.play().catch(handlePlaybackError);
+        setIsPlaying(true);
+        if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+      });
+
+      navigator.mediaSession.setActionHandler('pause', () => {
+        audioRef.current.pause();
+        setIsPlaying(false);
+        if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+      });
+
+      navigator.mediaSession.setActionHandler('previoustrack', () => {
+        handlePrevious?.();
+      });
+
+      navigator.mediaSession.setActionHandler('nexttrack', () => {
+        handleNext?.();
+      });
+
+      navigator.mediaSession.setActionHandler('seekto', (details) => {
+        if (details.seekTime !== undefined && audioRef.current) {
+          audioRef.current.currentTime = details.seekTime;
+        }
+      });
+    } catch (err) {
+      console.warn('[PlayerContext] MediaSession initialization error:', err);
+    }
+  }, [currentTrack, isPlaying, handleNext, handlePrevious, handlePlaybackError]);
+
   return (
     <PlayerContext.Provider
       value={{

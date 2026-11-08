@@ -410,7 +410,9 @@ class VoiceSessionController {
   async setupAudioStream() {
     // 1. Android WebView / TWA & Insecure Context Check
     if (typeof window !== 'undefined' && !window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      console.warn('[VoiceSessionController] Insecure context detected; getUserMedia requires HTTPS or localhost in WebView/TWA');
+      const warningMsg = 'Microphone access requires HTTPS or localhost';
+      console.warn(`[VoiceSessionController] Insecure context: ${warningMsg}`);
+      window.dispatchEvent(new CustomEvent('loopra:show-toast', { detail: { message: warningMsg, duration: 4000 } }));
     }
 
     // Explicitly query Android WebView permissions if Permissions API is supported
@@ -565,9 +567,9 @@ class VoiceSessionController {
     }
 
     const recognition = new SpeechRecognition();
-    // Mobile Chrome drops connections if continuous is true; use false for mobile single commands
-    const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    recognition.continuous = !isMobile;
+    // In Chromium/Brave PWA, speech recognition terminates quickly on silence; single-shot is vastly more reliable
+    const isMobileOrBrave = (typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Brave/i.test(navigator.userAgent)) || Boolean(typeof navigator !== 'undefined' && navigator.brave?.isBrave);
+    recognition.continuous = !isMobileOrBrave;
     recognition.interimResults = true;
     recognition.lang = USE_V2_VOICE_ENGINE ? 'hi-IN' : (this.lang || 'hi-IN');
     recognition.maxAlternatives = 1;

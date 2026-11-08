@@ -59,6 +59,13 @@ class VoiceAssistantService {
    * Required by Android WebViews & modern mobile browsers before speech engine activation.
    */
   async requestMicPermission() {
+    if (typeof window !== 'undefined' && !window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      const warningMsg = 'Microphone access requires HTTPS or localhost';
+      console.warn(`[VoiceAssistant] Insecure context: ${warningMsg}`);
+      window.dispatchEvent(new CustomEvent('loopra:show-toast', { detail: { message: warningMsg, duration: 4000 } }));
+      throw new Error(warningMsg);
+    }
+
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       throw new Error('BROWSER_UNSUPPORTED');
     }
@@ -97,9 +104,9 @@ class VoiceAssistantService {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       const recognition = new SpeechRecognition();
 
-      // Mobile Chrome drops connections if continuous is true; use false for mobile single commands
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      recognition.continuous = !isMobile;
+      // Mobile Chrome/Brave PWA drops connections if continuous is true; use false for single-shot commands
+      const isMobileOrBrave = /Android|iPhone|iPad|iPod|Brave/i.test(navigator.userAgent) || Boolean(navigator.brave?.isBrave);
+      recognition.continuous = !isMobileOrBrave;
       recognition.interimResults = true;
       recognition.lang = targetLang || 'hi-IN'; // Prioritize Hindi/Hinglish Indian accent
       recognition.maxAlternatives = 1;

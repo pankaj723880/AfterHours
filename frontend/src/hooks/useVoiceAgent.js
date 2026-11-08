@@ -172,9 +172,19 @@ export function useVoiceAgent({
   const startListening = useCallback(async () => {
     if (typeof window === 'undefined') return;
 
+    // Check insecure context
+    if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      const warningMsg = 'Microphone access requires HTTPS or localhost';
+      console.warn(`[useVoiceAgent] Insecure context: ${warningMsg}`);
+      window.dispatchEvent(new CustomEvent('loopra:show-toast', { detail: { message: warningMsg, duration: 4000 } }));
+      setError(warningMsg);
+      onError?.(warningMsg);
+      return;
+    }
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      const err = new Error('Speech recognition not supported in this browser.');
+      const err = new Error('Speech recognition not supported in this browser engine.');
       setError(err.message);
       onError?.(err.message);
       return;
@@ -186,15 +196,34 @@ export function useVoiceAgent({
     setInterimText('');
 
     try {
+      // Gracefully prompt for mic permission via getUserMedia before initializing webkitSpeechRecognition
+      // to ensure Brave Browser / PWA grants device-level audio access
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          stream.getTracks().forEach((track) => track.stop());
+        } catch (permErr) {
+          console.warn('[useVoiceAgent] getUserMedia permission check notice:', permErr.message);
+          if (permErr.name === 'NotAllowedError' || permErr.name === 'PermissionDeniedError') {
+            const isBrave = (navigator.brave && typeof navigator.brave.isBrave === 'function') || navigator.userAgent?.includes('Brave');
+            const hint = isBrave ? ' (Please allow microphone access or check Brave Shields)' : '';
+            const msg = `Microphone permission denied${hint}. Please allow microphone access.`;
+            setError(msg);
+            onError?.(msg);
+            return;
+          }
+        }
+      }
+
       // Duck music volume as soon as user taps mic
       duckVolume();
 
       const recognition = new SpeechRecognition();
       recognitionRef.current = recognition;
 
-      // Mobile Chrome drops connections if continuous is true; use false for mobile single commands
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      recognition.continuous = !isMobile;
+      // In Chromium/Brave PWA, speech recognition terminates quickly on silence; single-shot is vastly more reliable
+      const isMobileOrBrave = /Android|iPhone|iPad|iPod|Brave/i.test(navigator.userAgent) || Boolean(navigator.brave?.isBrave);
+      recognition.continuous = !isMobileOrBrave;
       recognition.interimResults = true;
       recognition.lang = lang || 'hi-IN'; // Prioritize Hindi/Hinglish Indian accent
       recognition.maxAlternatives = 1;

@@ -2254,6 +2254,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }, duration);
   }, []);
 
+  // Listen for global toast events dispatched across services (e.g. voiceAgent/Brave PWA alerts)
+  useEffect(() => {
+    const handleGlobalToast = (e) => {
+      if (e.detail?.message) {
+        showToast(e.detail.message, e.detail.duration || 3500);
+      }
+    };
+    window.addEventListener('loopra:show-toast', handleGlobalToast);
+    return () => window.removeEventListener('loopra:show-toast', handleGlobalToast);
+  }, [showToast]);
+
   // Keep stable refs to avoid infinite re-render loops in socket & effect callbacks
   const userRef = useRef(user);
   useEffect(() => {
@@ -3921,6 +3932,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
   }, [likedSongs, history, trendingSongs]);
 
+  const handleSeek = useCallback((seekTime) => {
+    currentTimeRef.current = seekTime;
+    try {
+      localStorage.setItem('afterhours_current_time', seekTime.toString());
+    } catch (e) {}
+    playerRef.current?.seekTo?.(seekTime, true);
+  }, []);
+
   const toggleRepeatMode = () => {
     if (isRepeat === false || isRepeat === 'off') {
       setIsRepeat('all');
@@ -3931,6 +3950,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
   };
 
+  // MediaSession API Integration & Page Visibility lifecycle for background playback (Desktop & Android)
   useEffect(() => {
     if (typeof window !== 'undefined' && 'mediaSession' in navigator && currentSong) {
       try {
@@ -3940,16 +3960,22 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           ? artworkUrl
           : `${window.location.origin}${artworkUrl.startsWith('/') ? '' : '/'}${artworkUrl}`;
 
+        // Set Lockscreen / Notification Bar Metadata
         navigator.mediaSession.metadata = new MediaMetadata({
-          title: currentSong.title || 'Playing Track',
-          artist: currentSong.artist || currentSong.channel || cmsConfig?.branding?.siteName || "Loopra",
-          album: currentSong.album || "Live Music Stream",
-          artwork: absoluteArtworkUrl ? [
+          title: currentSong.title || 'Unknown Track',
+          artist: currentSong.artist || currentSong.channel || cmsConfig?.branding?.siteName || "Loopra Artist",
+          album: currentSong.album || "Loopra Music",
+          artwork: [
+            {
+              src: absoluteArtworkUrl,
+              sizes: '512x512',
+              type: 'image/jpeg'
+            },
             { src: absoluteArtworkUrl, sizes: '96x96', type: 'image/png' },
             { src: absoluteArtworkUrl, sizes: '128x128', type: 'image/png' },
             { src: absoluteArtworkUrl, sizes: '192x192', type: 'image/png' },
             { src: absoluteArtworkUrl, sizes: '512x512', type: 'image/png' },
-          ] : []
+          ]
         });
 
         navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
@@ -3958,6 +3984,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
 
       try {
+        // Bind playback handlers to OS media notification controls
         navigator.mediaSession.setActionHandler('play', () => {
           if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
           try {
@@ -3975,13 +4002,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
         });
 
-        navigator.mediaSession.setActionHandler('previoustrack', handlePrevSong);
-        navigator.mediaSession.setActionHandler('nexttrack', handleNextSong);
+        navigator.mediaSession.setActionHandler('previoustrack', () => {
+          handlePrevSong?.();
+        });
+
+        navigator.mediaSession.setActionHandler('nexttrack', () => {
+          handleNextSong?.();
+        });
 
         navigator.mediaSession.setActionHandler('seekto', (details) => {
-          if (details.seekTime !== undefined && playerRef.current?.seekTo) {
-            playerRef.current.seekTo(details.seekTime, true);
-            currentTimeRef.current = details.seekTime;
+          if (details.seekTime !== undefined) {
+            handleSeek(details.seekTime);
           }
         });
 
@@ -3999,7 +4030,37 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         console.warn('[MediaSession] Error registering handlers:', handlerErr);
       }
     }
-  }, [currentSong, isPlaying, handlePrevSong, handleNextSong]);
+  }, [currentSong, isPlaying, handlePrevSong, handleNextSong, handleSeek]);
+
+  // Page Visibility lifecycle: ensures active silent audio stream keeps audio context alive in background
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+
+    const handlePageVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        // When user switches tabs or locks mobile screen, ensure silent audio remains active if playing
+        if (isPlaying && silentAudioRef.current && silentAudioRef.current.paused) {
+          silentAudioRef.current.play().catch(() => {});
+        }
+      } else if (document.visibilityState === 'visible') {
+        // When tab becomes visible again, refresh positionState on mediaSession
+        if ('mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function' && durationRef.current > 0) {
+          try {
+            navigator.mediaSession.setPositionState({
+              duration: Math.max(0, durationRef.current || 0),
+              playbackRate: 1.0,
+              position: Math.min(durationRef.current || 0, Math.max(0, currentTimeRef.current || 0))
+            });
+          } catch (_) {}
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handlePageVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handlePageVisibilityChange);
+    };
+  }, [isPlaying]);
 
   // Periodic mediaSession sync is removed to optimize performance
   // Let the browser infer playback position while playing
@@ -5004,14 +5065,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
     }
   };
-
-  const handleSeek = useCallback((seekTime) => {
-    currentTimeRef.current = seekTime;
-    try {
-      localStorage.setItem('afterhours_current_time', seekTime.toString());
-    } catch (e) {}
-    playerRef.current?.seekTo?.(seekTime, true);
-  }, []);
 
   const handleVolumeChange = (e) => {
     const raw = (e && typeof e === 'object' && e.target) ? e.target.value : e;
