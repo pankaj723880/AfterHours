@@ -86,6 +86,7 @@ import LoopraFooter from './components/Navigation/LoopraFooter';
 const AndroidApkDownloadSection = lazy(() => import('./components/Common/AndroidApkDownloadSection'));
 const ArtistProfileView = lazy(() => import('./components/Artist/ArtistProfileView'));
 import { voiceControlService } from './services/voiceControlService';
+import { useVoiceRollout } from './hooks/useVoiceRollout';
 import shuffleService from './services/shuffleService';
 import { filterSingleSongs, isSingleSong } from './services/songFilter';
 import { curateSwipeDeck, filterStrictSoloTracks } from './services/swipeCurationService';
@@ -1463,7 +1464,7 @@ export default function App() {
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
-  const isAdmin = Boolean(user && user.role === 'admin');
+  const isAdmin = Boolean(user && (user.isAdmin === true || user.role === 'admin'));
 
   const [reviewsRefreshKey, setReviewsRefreshKey] = useState(0);
   const [isRatingModalOpen, setIsRatingModalOpen] = useState(false);
@@ -1474,10 +1475,15 @@ export default function App() {
     setIsRatingModalOpen(true);
   }, []);
 
-  // Synchronize voice control access on auth changes
+  // Synchronize voice control access on auth & rollout changes
+  const { canAccessVoice } = useVoiceRollout(user);
   const [isVoiceControlAllowed, setIsVoiceControlAllowed] = useState(() => {
     return voiceControlService.getAccessState().allowed;
   });
+
+  useEffect(() => {
+    setIsVoiceControlAllowed(Boolean(canAccessVoice));
+  }, [canAccessVoice]);
 
   useEffect(() => {
     const unsub = voiceControlService.subscribe((state) => {
@@ -6202,32 +6208,34 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
               {/* Bottom Action Area: User Profile, APK Download & Auth / Logout */}
               <div className="pt-3 pb-6 border-t border-white/[0.06] mt-4 space-y-2">
-                {/* Avatar Autonomous Free Roam Toggle Button */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) !== 'false';
-                      const next = !cur;
-                      localStorage.setItem('loopra_avatar_roaming', String(next));
-                      localStorage.setItem('loopra_avatar_roam', String(next));
-                      window.dispatchEvent(new Event('storage'));
-                      showToast?.(`Avatar Free Roam ${next ? 'Enabled' : 'Paused'}`);
-                    } catch (_) {}
-                  }}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 text-neutral-300 font-medium text-xs transition cursor-pointer"
-                  title="Toggle Avatar Autonomous Roaming"
-                >
-                  <div className="flex items-center gap-2">
-                    <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
-                    {!isSidebarCollapsed && <span>Avatar Free Roam</span>}
-                  </div>
-                  {!isSidebarCollapsed && (
-                    <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
-                      ON/OFF
-                    </span>
-                  )}
-                </button>
+                {/* Avatar Autonomous Free Roam Toggle Button (Gated by Voice Rollout Permissions) */}
+                {canAccessVoice && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) !== 'false';
+                        const next = !cur;
+                        localStorage.setItem('loopra_avatar_roaming', String(next));
+                        localStorage.setItem('loopra_avatar_roam', String(next));
+                        window.dispatchEvent(new Event('storage'));
+                        showToast?.(`Avatar Free Roam ${next ? 'Enabled' : 'Paused'}`);
+                      } catch (_) {}
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 text-neutral-300 font-medium text-xs transition cursor-pointer"
+                    title="Toggle Avatar Autonomous Roaming"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
+                      {!isSidebarCollapsed && <span>Avatar Free Roam</span>}
+                    </div>
+                    {!isSidebarCollapsed && (
+                      <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                        ON/OFF
+                      </span>
+                    )}
+                  </button>
+                )}
 
                 {/* Download Android APK CTA Button */}
                 <a
@@ -6634,21 +6642,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
           {/* RIGHT: AUTH/LOGOUT & VOICE AI */}
           <div className="flex items-center gap-2">
-            {/* 3D Avatar / AI Assistant toggle button */}
-            <button
-              id="loopra-header-ai-icon"
-              type="button"
-              onClick={() => setIsAvatarVisible(prev => !prev)}
-              title={isAvatarVisible ? "Toggle AI Companion (Active)" : "Talk to Loopra Avatar"}
-              aria-label={isAvatarVisible ? "Hide Loopra AI Companion" : "Talk to Loopra Avatar"}
-              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all duration-300 shadow-md active:scale-95 cursor-pointer shrink-0 ${
-                isAvatarVisible
-                  ? 'ring-2 ring-amber-500 bg-amber-500/20 text-amber-400 shadow-amber-500/30'
-                  : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10'
-              }`}
-            >
-              <Icon name="sparkles" className={`w-4 h-4 ${isAvatarVisible ? 'text-amber-400 animate-pulse' : 'text-zinc-300'}`} />
-            </button>
+            {/* 3D Avatar / AI Assistant toggle button (Gated by Voice Rollout Permissions) */}
+            {canAccessVoice && (
+              <button
+                id="loopra-header-ai-icon"
+                type="button"
+                onClick={() => setIsAvatarVisible(prev => !prev)}
+                title={isAvatarVisible ? "Toggle AI Companion (Active)" : "Talk to Loopra Avatar"}
+                aria-label={isAvatarVisible ? "Hide Loopra AI Companion" : "Talk to Loopra Avatar"}
+                className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all duration-300 shadow-md active:scale-95 cursor-pointer shrink-0 ${
+                  isAvatarVisible
+                    ? 'ring-2 ring-amber-500 bg-amber-500/20 text-amber-400 shadow-amber-500/30'
+                    : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10'
+                }`}
+              >
+                <Icon name="sparkles" className={`w-4 h-4 ${isAvatarVisible ? 'text-amber-400 animate-pulse' : 'text-zinc-300'}`} />
+              </button>
+            )}
             
             {user ? (
               <div className="flex items-center gap-2 relative" ref={accountMenuRef}>
@@ -9360,14 +9370,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         onToggleOpen={(open) => setActiveAssistantPanel(open ? 'ai' : null)}
         onClose={() => setActiveAssistantPanel(null)}
         hideFloatingButton={showSplashScreen || !isAppInitialized}
+        canAccessVoice={canAccessVoice}
       />
 
       {/* Loopra Dedicated Voice Agent & Shared Floating Assistant Action Bar */}
-      <VoiceAgentModal
-        user={user}
-        token={authToken}
-        backendUrl={BACKEND_URL}
-        currentSong={currentSong}
+      {canAccessVoice && (
+        <VoiceAgentModal
+          user={user}
+          token={authToken}
+          backendUrl={BACKEND_URL}
+          currentSong={currentSong}
         isPlaying={isPlaying}
         volume={volume}
         isSongLiked={isSongLiked}
@@ -9527,6 +9539,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         onOpenArtist={(artistName) => handleArtistClick(artistName)}
         showToast={showToast}
       />
+      )}
 
       {/* Automatic 5-Minute Active Usage & Direct Rate/Review Modal */}
       <RatingPopupModal

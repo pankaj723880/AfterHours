@@ -122,7 +122,8 @@ export default function LoopraAiCompanion({
   isOpen: controlledIsOpen,
   onToggleOpen,
   onClose,
-  hideFloatingButton = false
+  hideFloatingButton = false,
+  canAccessVoice = true
 }) {
   const [uncontrolledIsOpen, setUncontrolledIsOpen] = useState(false);
   const isControlled = controlledIsOpen !== undefined;
@@ -1591,20 +1592,22 @@ export default function LoopraAiCompanion({
             }}
             className="flex flex-col items-center gap-2.5 pointer-events-auto"
           >
-            {/* Upper Row: Avatar Mute / Unmute Button */}
-            <button
-              type="button"
-              onClick={toggleAvatarMute}
-              title={isAvatarMuted ? "Unmute Avatar Voice (Muted)" : "Mute Avatar Voice"}
-              aria-label={isAvatarMuted ? "Unmute Avatar Voice" : "Mute Avatar Voice"}
-              className="w-10 h-10 rounded-full bg-neutral-900/80 backdrop-blur-md border border-neutral-700/60 text-amber-400 hover:text-amber-300 hover:border-amber-400/50 flex items-center justify-center shadow-lg transition-all active:scale-95 cursor-pointer group"
-            >
-              {isAvatarMuted ? (
-                <VolumeX size={18} className="text-red-400 group-hover:scale-110 transition-transform" />
-              ) : (
-                <Volume2 size={18} className="text-amber-400 group-hover:scale-110 transition-transform" />
-              )}
-            </button>
+            {/* Upper Row: Avatar Mute / Unmute Button (Only visible if voice features allowed) */}
+            {canAccessVoice && (
+              <button
+                type="button"
+                onClick={toggleAvatarMute}
+                title={isAvatarMuted ? "Unmute Avatar Voice (Muted)" : "Mute Avatar Voice"}
+                aria-label={isAvatarMuted ? "Unmute Avatar Voice" : "Mute Avatar Voice"}
+                className="w-10 h-10 rounded-full bg-neutral-900/80 backdrop-blur-md border border-neutral-700/60 text-amber-400 hover:text-amber-300 hover:border-amber-400/50 flex items-center justify-center shadow-lg transition-all active:scale-95 cursor-pointer group"
+              >
+                {isAvatarMuted ? (
+                  <VolumeX size={18} className="text-red-400 group-hover:scale-110 transition-transform" />
+                ) : (
+                  <Volume2 size={18} className="text-amber-400 group-hover:scale-110 transition-transform" />
+                )}
+              </button>
+            )}
 
             {/* Lower Row: AI Chat / Voice Agent Trigger Button */}
             <button

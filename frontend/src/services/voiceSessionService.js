@@ -14,6 +14,7 @@
 import { chatBuddyClient } from './chatBuddyClient.js';
 import { getApiUrl } from '../utils/apiUrl.js';
 import { USE_V2_VOICE_ENGINE } from '../constants/featureFlags.js';
+import { voiceControlService } from './voiceControlService.js';
 
 export const SESSION_STATES = {
   OFF: 'OFF',
@@ -1022,6 +1023,14 @@ class VoiceSessionController {
    * Can ONLY be invoked via explicit user interaction (e.g. clicking the mic button).
    */
   async startSession({ lang, initiator = 'global' } = {}) {
+    // Enforce Voice Control Rollout Permissions: block background / unauthorized triggers
+    const accessState = voiceControlService.getAccessState();
+    if (accessState && accessState.allowed === false) {
+      console.warn('[voiceSessionService] Voice access denied by rollout permissions.');
+      this.setState(SESSION_STATES.OFF);
+      return;
+    }
+
     if (this.isSessionActive) {
       if (initiator) this.initiator = initiator;
       return; // Already active

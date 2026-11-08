@@ -3,7 +3,9 @@ import { BACKEND_URL } from '../utils/apiUrl';
 let currentAccessState = {
   allowed: true,
   enabled: true,
+  voiceControlEnabled: true,
   globalRollout: true,
+  enableVoiceControlForAllUsers: true,
   adminAccess: true,
   lastChecked: 0
 };
@@ -35,9 +37,18 @@ export const voiceControlService = {
    * Local evaluation helper for instant UI reactivity
    */
   evaluateLocalAccess(config, user) {
-    if (!config || !config.enabled) return false;
-    if (user && user.role === 'admin') return Boolean(config.adminAccess);
-    return config.globalRollout !== false;
+    if (!config) return false;
+    const masterEnabled = typeof config.voiceControlEnabled === 'boolean'
+      ? config.voiceControlEnabled
+      : Boolean(config.enabled);
+    if (!masterEnabled) return false;
+
+    const isAdmin = Boolean(user && (user.isAdmin === true || user.role === 'admin'));
+    const publicRollout = typeof config.enableVoiceControlForAllUsers === 'boolean'
+      ? config.enableVoiceControlForAllUsers
+      : (typeof config.globalRollout === 'boolean' ? config.globalRollout : true);
+
+    return Boolean(publicRollout || isAdmin);
   },
 
   /**
@@ -62,11 +73,19 @@ export const voiceControlService = {
 
       if (res.ok) {
         const data = await res.json();
+        const enabled = Boolean(data.enabled ?? data.voiceControlEnabled ?? true);
+        const globalRollout = Boolean(data.globalRollout ?? data.enableVoiceControlForAllUsers ?? true);
+        const adminAccess = Boolean(data.adminAccess ?? true);
+        const isAdmin = Boolean(user && (user.isAdmin === true || user.role === 'admin'));
+        const allowed = enabled && (globalRollout || isAdmin);
+
         currentAccessState = {
-          allowed: Boolean(data.allowed),
-          enabled: Boolean(data.enabled),
-          globalRollout: Boolean(data.globalRollout),
-          adminAccess: Boolean(data.adminAccess),
+          allowed,
+          enabled,
+          voiceControlEnabled: enabled,
+          globalRollout,
+          enableVoiceControlForAllUsers: globalRollout,
+          adminAccess,
           lastChecked: Date.now()
         };
         this.notify();
@@ -93,17 +112,33 @@ export const voiceControlService = {
     if (!payload || payload.featureKey !== 'voice_control') return;
     const config = payload.config || {};
 
-    const enabled = typeof config.enabled === 'boolean' ? config.enabled : currentAccessState.enabled;
-    const globalRollout = typeof config.globalRollout === 'boolean' ? config.globalRollout : currentAccessState.globalRollout;
+    const rawEnabled = typeof config.voiceControlEnabled === 'boolean'
+      ? config.voiceControlEnabled
+      : (typeof config.enabled === 'boolean' ? config.enabled : currentAccessState.enabled);
+    const enabled = Boolean(rawEnabled);
+
+    const rawRollout = typeof config.enableVoiceControlForAllUsers === 'boolean'
+      ? config.enableVoiceControlForAllUsers
+      : (typeof config.globalRollout === 'boolean' ? config.globalRollout : currentAccessState.globalRollout);
+    const globalRollout = Boolean(rawRollout);
+
     const adminAccess = typeof config.adminAccess === 'boolean' ? config.adminAccess : currentAccessState.adminAccess;
 
-    const updatedConfig = { enabled, globalRollout, adminAccess };
+    const updatedConfig = {
+      enabled,
+      voiceControlEnabled: enabled,
+      globalRollout,
+      enableVoiceControlForAllUsers: globalRollout,
+      adminAccess
+    };
     const allowed = this.evaluateLocalAccess(updatedConfig, currentUser);
 
     currentAccessState = {
       allowed,
       enabled,
+      voiceControlEnabled: enabled,
       globalRollout,
+      enableVoiceControlForAllUsers: globalRollout,
       adminAccess,
       lastChecked: Date.now()
     };
