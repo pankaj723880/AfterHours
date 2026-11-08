@@ -430,6 +430,32 @@ export default function LoopraAiCompanion({
     } catch (e) {}
   }, [messages]);
 
+  // Auto-speak incoming assistant responses without requiring user to click Listen
+  const speakText = useCallback((text) => {
+    if (!text || isAvatarMuted) return;
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel();
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+      } catch (_) {}
+    }
+    const cleanSpeech = text.replace(/[*_#`]/g, '').trim();
+    if (!cleanSpeech) return;
+    voiceBuddyService.speakText(cleanSpeech, { priority: true, pitch: 1.0, rate: 1.05, volume: 1.0 });
+  }, [isAvatarMuted]);
+
+  useEffect(() => {
+    if (!messages || messages.length === 0) return;
+    const lastMessage = messages[messages.length - 1];
+    // Welcome message on fresh load is not auto-spoken unless user interacts
+    if (lastMessage && (lastMessage.role === 'model' || lastMessage.sender === 'ai') && !lastMessage.spoken && lastMessage.id !== 'welcome') {
+      speakText(lastMessage.text);
+      lastMessage.spoken = true;
+    }
+  }, [messages, speakText]);
+
   // Scroll to bottom on updates
   useEffect(() => {
     if (chatScrollRef.current) {

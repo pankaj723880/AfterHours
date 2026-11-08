@@ -8,14 +8,52 @@ const sanitizeApiKey = (key) => {
   return clean;
 };
 
-const YOUTUBE_API_KEYS = [
-  import.meta.env.VITE_YOUTUBE_KEY_1,
-  import.meta.env.VITE_YOUTUBE_KEY_2,
-  import.meta.env.VITE_YOUTUBE_KEY_3,
-  import.meta.env.VITE_YOUTUBE_KEY_4,
-  import.meta.env.VITE_YOUTUBE_KEY_5,
-  import.meta.env.VITE_YOUTUBE_KEY_6,
-].map(sanitizeApiKey).filter(Boolean);
+// Parse single or comma/newline/space-separated keys
+const parseKeyList = (raw) => {
+  if (!raw || typeof raw !== 'string') return [];
+  return raw
+    .split(/[,\r\n\s]+/)
+    .map(sanitizeApiKey)
+    .filter(Boolean);
+};
+
+// Multi-key support: Comma-separated list in VITE_YOUTUBE_API_KEYS, or discrete VITE_YOUTUBE_KEY_1..10
+const getEnvYouTubeKeys = () => {
+  const env = import.meta.env || {};
+  const listFromCombined = [
+    ...parseKeyList(env.VITE_YOUTUBE_API_KEYS),
+    ...parseKeyList(env.VITE_YOUTUBE_KEYS),
+    ...parseKeyList(env.YOUTUBE_API_KEYS),
+  ];
+
+  const discreteKeys = [
+    env.VITE_YOUTUBE_KEY_1,
+    env.VITE_YOUTUBE_KEY_2,
+    env.VITE_YOUTUBE_KEY_3,
+    env.VITE_YOUTUBE_KEY_4,
+    env.VITE_YOUTUBE_KEY_5,
+    env.VITE_YOUTUBE_KEY_6,
+    env.VITE_YOUTUBE_KEY_7,
+    env.VITE_YOUTUBE_KEY_8,
+    env.VITE_YOUTUBE_KEY_9,
+    env.VITE_YOUTUBE_KEY_10,
+    env.VITE_YOUTUBE_API_KEY,
+    env.YOUTUBE_API_KEY,
+  ].map(sanitizeApiKey).filter(Boolean);
+
+  // Return unique keys preserving order
+  const unique = [];
+  const seen = new Set();
+  for (const k of [...listFromCombined, ...discreteKeys]) {
+    if (k && !seen.has(k)) {
+      seen.add(k);
+      unique.push(k);
+    }
+  }
+  return unique;
+};
+
+const YOUTUBE_API_KEYS = getEnvYouTubeKeys();
 
 let currentApiKeyIndex = parseInt(localStorage.getItem('yt_key_index') || '0', 10);
 

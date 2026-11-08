@@ -10,6 +10,7 @@ import ytSearch from 'yt-search';
 import { OAuth2Client } from 'google-auth-library';
 import User from './models/User.js';
 import AuditLog from './models/AuditLog.js';
+import ApiKey from './models/ApiKeyConfig.js';
 import { generateToken, verifyToken, authenticateToken, requireAdmin } from './middleware/auth.js';
 import { metricsService } from './services/metrics.js';
 import adminRoutes from './routes/admin.js';
@@ -1225,22 +1226,72 @@ const sanitizeApiKey = (key) => {
   return clean;
 };
 
-const getYoutubeApiKeys = () => {
-  return [
+// Parse single or comma/newline/space-separated keys
+const parseKeyList = (raw) => {
+  if (!raw || typeof raw !== 'string') return [];
+  return raw
+    .split(/[,\r\n\s]+/)
+    .map(sanitizeApiKey)
+    .filter(Boolean);
+};
+
+// In-memory cache for DB YouTube API keys with short 10s TTL
+let cachedDbYoutubeKeys = [];
+let lastDbYoutubeKeysFetch = 0;
+
+export const refreshDbYoutubeKeys = async () => {
+  try {
+    if (mongoose.connection.readyState === 1) {
+      const dbKeys = await ApiKey.find({ service: 'youtube', isExhausted: false }).select('key').lean();
+      cachedDbYoutubeKeys = dbKeys.map(d => sanitizeApiKey(d.key)).filter(Boolean);
+      lastDbYoutubeKeysFetch = Date.now();
+    }
+  } catch (e) {
+    // Fail silently, use in-memory / env fallback
+  }
+};
+
+export const getYoutubeApiKeys = () => {
+  // Trigger non-blocking async refresh if cache is older than 10 seconds
+  if (Date.now() - lastDbYoutubeKeysFetch > 10000) {
+    refreshDbYoutubeKeys();
+  }
+
+  const combinedKeys = [
+    ...cachedDbYoutubeKeys,
+    ...parseKeyList(process.env.VITE_YOUTUBE_API_KEYS),
+    ...parseKeyList(process.env.YOUTUBE_API_KEYS),
+    ...parseKeyList(process.env.VITE_YOUTUBE_KEYS),
+    ...parseKeyList(process.env.YOUTUBE_KEYS),
+  ];
+
+  const discreteKeys = [
     process.env.YOUTUBE_KEY_1 || process.env.VITE_YOUTUBE_KEY_1,
     process.env.YOUTUBE_KEY_2 || process.env.VITE_YOUTUBE_KEY_2,
     process.env.YOUTUBE_KEY_3 || process.env.VITE_YOUTUBE_KEY_3,
     process.env.YOUTUBE_KEY_4 || process.env.VITE_YOUTUBE_KEY_4,
     process.env.YOUTUBE_KEY_5 || process.env.VITE_YOUTUBE_KEY_5,
     process.env.YOUTUBE_KEY_6 || process.env.VITE_YOUTUBE_KEY_6,
+    process.env.YOUTUBE_KEY_7 || process.env.VITE_YOUTUBE_KEY_7,
+    process.env.YOUTUBE_KEY_8 || process.env.VITE_YOUTUBE_KEY_8,
+    process.env.YOUTUBE_KEY_9 || process.env.VITE_YOUTUBE_KEY_9,
+    process.env.YOUTUBE_KEY_10 || process.env.VITE_YOUTUBE_KEY_10,
     process.env.YOUTUBE_API_KEY,
-  ]
-    .map(sanitizeApiKey)
-    .filter(Boolean);
+  ].map(sanitizeApiKey).filter(Boolean);
+
+  const unique = [];
+  const seen = new Set();
+  for (const k of [...combinedKeys, ...discreteKeys]) {
+    if (k && !seen.has(k)) {
+      seen.add(k);
+      unique.push(k);
+    }
+  }
+  return unique;
 };
 
 let currentApiKeyIndex = 0;
-const rotateApiKey = () => {
+export const rotateApiKey = () => {
   const keys = getYoutubeApiKeys().filter(k => !isKeyDead(k));
   if (keys.length > 0) {
     currentApiKeyIndex = (currentApiKeyIndex + 1) % keys.length;
@@ -1331,7 +1382,7 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
   const activeKeys = allKeys.filter(k => !isKeyDead(k));
 
   if (activeKeys.length > 0) {
-    const maxKeyTries = Math.min(activeKeys.length, 2);
+    const maxKeyTries = Math.min(activeKeys.length, 5);
     for (let i = 0; i < maxKeyTries; i++) {
       const apiKeyIndex = (currentApiKeyIndex + i) % activeKeys.length;
       const apiKey = activeKeys[apiKeyIndex];
@@ -1410,12 +1461,15 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
         if (status === 400 || (errMsg && errMsg.includes('API key not valid')) || errReason === 'keyInvalid') {
           deadApiKeys.set(apiKey, { reason: 'invalid', time: Date.now() });
           metricsService.recordYouTube('invalid_key');
+          ApiKey.updateOne({ service: 'youtube', key: apiKey }, { $set: { isExhausted: true }, $inc: { failureCount: 1 } }).catch(() => {});
         } else if (status === 403 || errReason === 'quotaExceeded' || errReason === 'dailyLimitExceeded' || (errMsg && errMsg.includes('quota'))) {
           deadApiKeys.set(apiKey, { reason: 'quota', time: Date.now() });
           metricsService.recordYouTube('quota');
+          ApiKey.updateOne({ service: 'youtube', key: apiKey }, { $set: { isExhausted: true }, $inc: { failureCount: 1 } }).catch(() => {});
         } else if (status === 429 || errReason === 'rateLimitExceeded' || errReason === 'userRateLimitExceeded') {
           deadApiKeys.set(apiKey, { reason: 'rate_limit', time: Date.now() });
           metricsService.recordYouTube('rate_limit');
+          ApiKey.updateOne({ service: 'youtube', key: apiKey }, { $inc: { failureCount: 1 } }).catch(() => {});
         } else if (status >= 500) {
           deadApiKeys.set(apiKey, { reason: 'server_error', time: Date.now() });
           metricsService.recordYouTube('server_error');

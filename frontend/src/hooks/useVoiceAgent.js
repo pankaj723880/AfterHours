@@ -1,5 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
+// Fallback Curated List of witty, funny Hinglish greetings
+export const FALLBACK_GREETINGS = [
+  "Arey badhiya! Phir se boring playlist chhod ke mere paas aa gaye?",
+  "Aaye haaye, DJ saab padhar chuke hain! Boliye, dil toota hai ya mood party wala hai?",
+  "Namaste boss! Aaj gaana sunenge ya bas meri taareef karne aaye ho?",
+  "Welcome back! Chai-paani ho gaya ho toh chaliye gaane shuru karein?",
+  "Arey aao aao! Earphones lagao aur batao aaj kya sunne ka plan hai?"
+];
+
 /**
  * useVoiceAgent
  * 
@@ -10,6 +19,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
  *    - continuous: false on mobile (Android/iOS) to prevent abrupt disconnections.
  *    - lang: 'hi-IN' default with Indian Hindi/Hinglish priority.
  *    - interimResults: true, maxAlternatives: 1.
+ * 3. Dynamic Gemini API avatar greetings with instantaneous funny Hinglish fallback.
  */
 export function useVoiceAgent({
   lang = 'hi-IN',
@@ -45,17 +55,33 @@ export function useVoiceAgent({
     }
   }, []);
 
-  // Filter strictly for high-clarity Indian female voices
-  const getBestHindiVoice = useCallback(() => {
+  // Clean & Direct In-Browser Voice Selection
+  const pickNaturalFemaleVoice = useCallback(() => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return null;
-    const voices = window.speechSynthesis.getVoices() || [];
-    return (
-      voices.find(v => v.lang === 'hi-IN' && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Swara'))) ||
-      voices.find(v => v.lang === 'hi-IN') ||
-      voices.find(v => v.lang === 'en-IN' && (v.name.includes('Google') || v.name.includes('India'))) ||
-      voices.find(v => v.lang.startsWith('hi'))
+    const voices = window.speechSynthesis.getVoices();
+    if (!voices || voices.length === 0) return null;
+
+    // 1. First priority: Indian English / Hindi Neural or Natural Female voices
+    const preferred = voices.find(v => 
+      (v.lang.startsWith('en-IN') || v.lang.startsWith('hi-IN')) &&
+      /natural|online|google|female|neerja|swara/i.test(v.name)
     );
+    if (preferred) return preferred;
+
+    // 2. Second priority: Any Natural / Neural female voice (Google/Microsoft)
+    const naturalFemale = voices.find(v => 
+      /natural|online|google/i.test(v.name) && 
+      /female|zira|samantha/i.test(v.name)
+    );
+    if (naturalFemale) return naturalFemale;
+
+    // 3. Fallback: Any Indian English/Hindi voice or standard female voice
+    return voices.find(v => v.lang.startsWith('en-IN') || v.lang.startsWith('hi-IN')) ||
+           voices.find(v => /female/i.test(v.name)) ||
+           voices[0];
   }, []);
+
+  const getBestHindiVoice = pickNaturalFemaleVoice;
 
   // Atomic speech gate and clean text renderer (avoids multiple draft flashing)
   const showSpeech = useCallback((rawText, customDismissMs = 1200) => {
@@ -94,10 +120,14 @@ export function useVoiceAgent({
     // First gate and display the clean bubble
     showSpeech(text);
 
-    window.speechSynthesis.cancel(); // Stop any pending speech
+    // Cancel any hanging speech and resume if paused
+    window.speechSynthesis.cancel();
+    if (window.speechSynthesis.paused) {
+      try { window.speechSynthesis.resume(); } catch (_) {}
+    }
 
     const utterance = new SpeechSynthesisUtterance(text);
-    const voice = getBestHindiVoice();
+    const voice = pickNaturalFemaleVoice();
     if (voice) utterance.voice = voice;
 
     // Clear, crisp female tuning (avoid robotic pitch artifacts)
@@ -106,7 +136,7 @@ export function useVoiceAgent({
     utterance.volume = 1.0;
 
     window.speechSynthesis.speak(utterance);
-  }, [isMuted, getBestHindiVoice, showSpeech]);
+  }, [isMuted, pickNaturalFemaleVoice, showSpeech]);
 
   // Audio ducking helpers
   const duckVolume = useCallback(() => {
@@ -258,6 +288,38 @@ export function useVoiceAgent({
     }
   }, [startListening, stopListening]);
 
+  // Dynamic witty avatar greeting powered by Gemini API with fast local fallback
+  const greetUser = useCallback(async () => {
+    const getRandomFallback = () => {
+      const idx = Math.floor(Math.random() * FALLBACK_GREETINGS.length);
+      return FALLBACK_GREETINGS[idx];
+    };
+
+    let greeting = getRandomFallback();
+
+    if (typeof window !== 'undefined' && navigator.onLine) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch('/api/voice-agent/greeting', {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal
+        });
+        clearTimeout(timer);
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.greeting && typeof data.greeting === 'string') {
+            greeting = data.greeting.trim();
+          }
+        }
+      } catch (_) {}
+    }
+
+    speakLine(greeting);
+    return greeting;
+  }, [speakLine]);
+
   useEffect(() => {
     return () => {
       stopListening();
@@ -280,7 +342,8 @@ export function useVoiceAgent({
     getBestHindiVoice,
     startListening,
     stopListening,
-    toggleListening
+    toggleListening,
+    greetUser
   };
 }
 

@@ -246,20 +246,67 @@ class VoiceBuddyService {
   }
 
   /**
-   * Generates fresh, warm, natural and confident companion greetings for Loopra AI.
-   * Avoids repetitive "kya sunna hai" or "kya baat karenge".
+   * Curated funny and witty fallback greetings
+   */
+  fallbackGreetings = [
+    "Arey badhiya! Phir se boring playlist chhod ke mere paas aa gaye?",
+    "Aaye haaye, DJ saab padhar chuke hain! Boliye, dil toota hai ya mood party wala hai?",
+    "Namaste boss! Aaj gaana sunenge ya bas meri taareef karne aaye ho?",
+    "Welcome back! Chai-paani ho gaya ho toh chaliye gaane shuru karein?",
+    "Arey aao aao! Earphones lagao aur batao aaj kya sunne ka plan hai?"
+  ];
+
+  /**
+   * Generates fresh, warm, witty companion greetings for Loopra AI.
+   * Returns a witty Hinglish greeting instantly.
    */
   generateWelcomeGreeting() {
-    const greetings = [
-      'Hey! Kya haal hai?',
-      'Hello! Kaise ho?',
-      'Hey there! I\'m here.',
-      'Hey dost! Kaise ho aap?',
-      'Hello! Good to see you.'
-    ];
+    const list = this.fallbackGreetings && this.fallbackGreetings.length > 0
+      ? this.fallbackGreetings
+      : [
+          'Arey badhiya! Phir se boring playlist chhod ke mere paas aa gaye?',
+          'Aaye haaye, DJ saab padhar chuke hain! Boliye, dil toota hai ya mood party wala hai?',
+          'Namaste boss! Aaj gaana sunenge ya bas meri taareef karne aaye ho?',
+          'Welcome back! Chai-paani ho gaya ho toh chaliye gaane shuru karein?',
+          'Arey aao aao! Earphones lagao aur batao aaj kya sunne ka plan hai?'
+        ];
 
-    const randomIndex = Math.floor(Math.random() * greetings.length);
-    return greetings[randomIndex];
+    const randomIndex = Math.floor(Math.random() * list.length);
+    return list[randomIndex];
+  }
+
+  /**
+   * Asynchronously fetches dynamic witty Gemini avatar greeting with instantaneous local fallback.
+   */
+  async fetchDynamicAvatarGreeting(backendUrl = '') {
+    const fallback = this.generateWelcomeGreeting();
+    if (typeof window === 'undefined' || !navigator.onLine) {
+      return fallback;
+    }
+
+    try {
+      const cleanBase = (backendUrl || '').replace(/\/+$/, '');
+      const endpoint = cleanBase ? `${cleanBase}/api/voice-agent/greeting` : '/api/voice-agent/greeting';
+      
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 2000);
+
+      const res = await fetch(endpoint, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.greeting && typeof data.greeting === 'string') {
+          return data.greeting.trim();
+        }
+      }
+    } catch (_) {}
+
+    return fallback;
   }
 
   /**
@@ -478,6 +525,13 @@ class VoiceBuddyService {
    * Speaks out the reply using a reliable sequential Speech Queue.
    * Prevents multiple calls from cutting each other off and handles Android speech limits.
    */
+  /**
+   * Alias for speak() allowing speakText(text, options) invocation
+   */
+  speakText(text, options = {}) {
+    return this.speak(text, options?.action || options?.contextAction || '', options);
+  }
+
   speak(text, contextAction = '', options = {}) {
     if (!text || typeof text !== 'string') return;
     let cleanText = text.trim();
@@ -768,6 +822,9 @@ class VoiceBuddyService {
 
     try {
       this.speechSynthesis.cancel();
+      if (this.speechSynthesis.paused) {
+        try { this.speechSynthesis.resume(); } catch (_) {}
+      }
 
       const utterance = new SpeechSynthesisUtterance(this.preprocessTextForSpeech(text) || text);
       const selectedVoice = voice || this.getIndianVoice();
@@ -777,9 +834,10 @@ class VoiceBuddyService {
       } else {
         utterance.lang = 'hi-IN';
       }
-      // Voice Engine V2: 1.35x crisp pace & 1.05 natural pitch for Indian female speech
-      utterance.rate = USE_V2_VOICE_ENGINE ? 1.35 : 1.5;
-      utterance.pitch = USE_V2_VOICE_ENGINE ? 1.05 : 1.15;
+      // Natural conversational cadence
+      utterance.rate = 1.05;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
 
       utterance.onstart = () => {
         this.isSpeaking = true;
@@ -940,8 +998,9 @@ class VoiceBuddyService {
       const utterance = new SpeechSynthesisUtterance(this.preprocessTextForSpeech(text) || text);
       utterance.voice = indianVoice;
       utterance.lang = indianVoice.lang || 'hi-IN';
-      utterance.rate = 1.5;
+      utterance.rate = 1.05;
       utterance.pitch = 1.0;
+      utterance.volume = 1.0;
 
       utterance.onstart = () => {
         this.isSpeaking = true;

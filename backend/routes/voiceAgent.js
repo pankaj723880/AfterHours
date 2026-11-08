@@ -4,12 +4,15 @@
  */
 
 import express from 'express';
+import { GoogleGenAI } from '@google/genai';
 import { voiceAgentService } from '../services/voiceAgentService.js';
 import { featureFlagService } from '../services/featureFlagService.js';
 import { verifyToken } from '../middleware/auth.js';
 import User from '../models/User.js';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import { multiModelOrchestrator } from '../services/multiModelOrchestrator.js';
+import { GEMINI_CONFIG, isGeminiAvailable } from '../config/geminiConfig.js';
+import { sanitizeLogMessage } from '../services/geminiKeyManager.js';
 
 const router = express.Router();
 
@@ -449,18 +452,18 @@ const handleTtsRequest = async (req, res) => {
     return res.send(vexylAudio);
   }
 
-  // 4. Hosted High-Fidelity Neural Indian Voice (Swara / Neerja)
+  // 4. Clean & Direct In-Browser Voice Selection & Hosted Neural Engine fallback
   const isHindiVoice = voiceName.startsWith('hi-IN');
   const speechText = optimizeForIndianSpeech(cleanText, isHindiVoice);
 
-  // Conversational pacing: 1.5x speed (+50% rate) with natural pitch
-  let rateModifier = '+50%';
+  // Conversational pacing: 1.05x natural cadence with natural pitch
+  let rateModifier = '+5%';
   let pitchModifier = '+0Hz';
   if (emotion === 'enthusiastic') {
-    rateModifier = '+55%';
+    rateModifier = '+8%';
     pitchModifier = '+0Hz';
   } else if (emotion === 'chill') {
-    rateModifier = '+45%';
+    rateModifier = '+0%';
     pitchModifier = '+0Hz';
   }
 
@@ -482,7 +485,7 @@ const handleTtsRequest = async (req, res) => {
       const tts2 = new MsEdgeTTS();
       await tts2.setMetadata(fallbackVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
       const readable2 = tts2.toStream(speechText || cleanText, {
-        rate: '+50%',
+        rate: '+5%',
         pitch: '+0Hz'
       });
       res.setHeader('Content-Type', 'audio/mpeg');
@@ -493,6 +496,147 @@ const handleTtsRequest = async (req, res) => {
     }
   }
 };
+
+// Clean & Direct In-Browser Voice Selection
+function pickNaturalFemaleVoice() {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return null;
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices || voices.length === 0) return null;
+
+  // 1. First priority: Indian English / Hindi Neural or Natural Female voices
+  const preferred = voices.find(v => 
+    (v.lang.startsWith('en-IN') || v.lang.startsWith('hi-IN')) &&
+    /natural|online|google|female|neerja|swara/i.test(v.name)
+  );
+  if (preferred) return preferred;
+
+  // 2. Second priority: Any Natural / Neural female voice (Google/Microsoft)
+  const naturalFemale = voices.find(v => 
+    /natural|online|google/i.test(v.name) && 
+    /female|zira|samantha/i.test(v.name)
+  );
+  if (naturalFemale) return naturalFemale;
+
+  // 3. Fallback: Any Indian English/Hindi voice or standard female voice
+  return voices.find(v => v.lang.startsWith('en-IN') || v.lang.startsWith('hi-IN')) ||
+         voices.find(v => /female/i.test(v.name)) ||
+         voices[0];
+}
+
+// In your speak() or TTS trigger:
+export function speakText(text) {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+
+  // Clear any hanging speech queue before speaking new utterance
+  window.speechSynthesis.cancel();
+
+  // If speech synthesis was left paused, resume it to prevent stuck queues
+  if (window.speechSynthesis.paused) {
+    try {
+      window.speechSynthesis.resume();
+    } catch (_) {}
+  }
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  const voice = pickNaturalFemaleVoice();
+  if (voice) utterance.voice = voice;
+  
+  // Natural conversational cadence (avoids high-pitch robotic chipmunk effect)
+  utterance.rate = 1.05;
+  utterance.pitch = 1.0;
+  utterance.volume = 1.0;
+
+  window.speechSynthesis.speak(utterance);
+}
+
+// Fallback Curated List of witty, funny Hinglish greetings
+export const FALLBACK_GREETINGS = [
+  "Arey badhiya! Phir se boring playlist chhod ke mere paas aa gaye?",
+  "Aaye haaye, DJ saab padhar chuke hain! Boliye, dil toota hai ya mood party wala hai?",
+  "Namaste boss! Aaj gaana sunenge ya bas meri taareef karne aaye ho?",
+  "Welcome back! Chai-paani ho gaya ho toh chaliye gaane shuru karein?",
+  "Arey aao aao! Earphones lagao aur batao aaj kya sunne ka plan hai?"
+];
+
+/**
+ * Generates a dynamic, witty, and funny avatar greeting powered by Gemini API,
+ * with instant fallback to curated funny dialogues on delay or error.
+ */
+export async function generateAvatarGreeting(options = {}) {
+  const getRandomFallback = () => {
+    const idx = Math.floor(Math.random() * FALLBACK_GREETINGS.length);
+    return FALLBACK_GREETINGS[idx];
+  };
+
+  if (!isGeminiAvailable()) {
+    return getRandomFallback();
+  }
+
+  // Get current hour for time-of-day contextual banter
+  const currentHour = new Date().getHours();
+  let timeContext = 'afternoon';
+  if (currentHour >= 5 && currentHour < 12) {
+    timeContext = 'morning';
+  } else if (currentHour >= 12 && currentHour < 17) {
+    timeContext = 'afternoon';
+  } else if (currentHour >= 17 && currentHour < 22) {
+    timeContext = 'evening';
+  } else {
+    timeContext = 'late night';
+  }
+
+  const systemInstruction = "You are the witty, cool female voice avatar for Loopra, an Indian music streaming platform. Generate exactly ONE short, humorous, funny greeting in Hinglish (maximum 12-15 words) welcoming the user back to listen to music. Vary your vibe based on the current time of day. Be cheeky and charming, never boring or robotic. Output only the spoken line without quotes or emojis.";
+  const prompt = `Current time of day: ${timeContext}. Generate one witty, cheeky Hinglish greeting (under 15 words) welcoming the user back.`;
+
+  try {
+    const client = new GoogleGenAI({ apiKey: GEMINI_CONFIG.apiKey });
+    // Race Gemini against a 2500ms timeout for zero perceived lag
+    const geminiPromise = client.models.generateContent({
+      model: GEMINI_CONFIG.chatModel || 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        systemInstruction,
+        temperature: 0.85,
+        maxOutputTokens: 60
+      }
+    });
+
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('GEMINI_GREETING_TIMEOUT')), 2500);
+    });
+
+    const res = await Promise.race([geminiPromise, timeoutPromise]);
+    let text = res?.text || '';
+    // Clean quotes, emojis, markdown and extra whitespaces
+    text = text.replace(/^["'`“”]+|["'`“”]+$/g, '').trim();
+    text = text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
+
+    if (text && text.length >= 8 && text.length <= 150) {
+      return text;
+    }
+  } catch (err) {
+    console.warn('[VoiceAgent] Gemini greeting fallback used:', sanitizeLogMessage(err.message));
+  }
+
+  return getRandomFallback();
+}
+
+/**
+ * GET & POST /api/voice-agent/greeting
+ * Dynamic avatar greeting endpoint powered by Gemini API with fast curated fallback
+ */
+export const handleGreetingEndpoint = async (req, res) => {
+  try {
+    const greeting = await generateAvatarGreeting(req.body || req.query || {});
+    return res.json({ success: true, greeting });
+  } catch (err) {
+    const idx = Math.floor(Math.random() * FALLBACK_GREETINGS.length);
+    return res.json({ success: true, greeting: FALLBACK_GREETINGS[idx] });
+  }
+};
+
+router.get('/greeting', handleGreetingEndpoint);
+router.post('/greeting', handleGreetingEndpoint);
 
 router.get('/tts', handleTtsRequest);
 router.post('/tts', handleTtsRequest);

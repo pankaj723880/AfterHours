@@ -8,10 +8,57 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+const sanitizeApiKey = (key) => {
+  if (typeof key !== 'string') return '';
+  let clean = key.trim().replace(/^['"]|['"]$/g, '');
+  return clean;
+};
+
+const parseKeyList = (raw) => {
+  if (!raw || typeof raw !== 'string') return [];
+  return raw
+    .split(/[,\r\n\s]+/)
+    .map(sanitizeApiKey)
+    .filter(k => k && k.length > 5);
+};
+
+export const getGeminiConfigKeys = () => {
+  const combined = [
+    ...parseKeyList(process.env.VITE_GEMINI_API_KEYS),
+    ...parseKeyList(process.env.GEMINI_API_KEYS),
+    ...parseKeyList(process.env.VITE_GEMINI_KEYS),
+    ...parseKeyList(process.env.GEMINI_KEYS),
+  ];
+
+  const discrete = [
+    process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.VITE_GEMINI_API_KEY_1 || process.env.GEMINI_KEY_1,
+    process.env.GEMINI_API_KEY_2 || process.env.VITE_GEMINI_API_KEY_2 || process.env.GEMINI_KEY_2,
+    process.env.GEMINI_API_KEY_3 || process.env.VITE_GEMINI_API_KEY_3 || process.env.GEMINI_KEY_3,
+    process.env.GEMINI_API_KEY_4 || process.env.VITE_GEMINI_API_KEY_4 || process.env.GEMINI_KEY_4,
+    process.env.GEMINI_API_KEY_5 || process.env.VITE_GEMINI_API_KEY_5 || process.env.GEMINI_KEY_5,
+  ].map(sanitizeApiKey).filter(k => k && k.length > 5);
+
+  const unique = [];
+  const seen = new Set();
+  for (const k of [...combined, ...discrete]) {
+    if (k && !seen.has(k)) {
+      seen.add(k);
+      unique.push(k);
+    }
+  }
+  return unique;
+};
+
 export const GEMINI_CONFIG = {
   // API Keys
-  apiKey: (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim(),
-  secondaryApiKey: (process.env.GEMINI_API_KEY_2 || '').trim(),
+  get apiKey() {
+    const keys = getGeminiConfigKeys();
+    return keys[0] || (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
+  },
+  get secondaryApiKey() {
+    const keys = getGeminiConfigKeys();
+    return keys[1] || (process.env.GEMINI_API_KEY_2 || '').trim();
+  },
 
   // Verified Model IDs (Default to latest stable Flash & Live models)
   liveModel: (process.env.GEMINI_LIVE_MODEL || 'gemini-3.8-live').trim(),
@@ -36,6 +83,15 @@ export const GEMINI_CONFIG = {
  * Returns available Gemini API keys with validation.
  */
 export function getAvailableKeys() {
+  const rawKeys = getGeminiConfigKeys();
+  if (rawKeys.length > 0) {
+    return rawKeys.map((key, index) => ({
+      index,
+      label: index === 0 ? 'primary' : (index === 1 ? 'secondary' : `key_${index + 1}`),
+      key
+    }));
+  }
+
   const keys = [];
   if (GEMINI_CONFIG.apiKey && GEMINI_CONFIG.apiKey.length > 5) {
     keys.push({ index: 0, label: 'primary', key: GEMINI_CONFIG.apiKey });

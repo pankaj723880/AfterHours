@@ -119,17 +119,33 @@ export default function CharacterBuddy({
     };
   }, []);
 
-  // Filter strictly for high-clarity Indian female voices
-  const getBestHindiVoice = useCallback(() => {
+  // Clean & Direct In-Browser Voice Selection
+  const pickNaturalFemaleVoice = useCallback(() => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return null;
-    const voices = window.speechSynthesis.getVoices() || [];
-    return (
-      voices.find(v => v.lang === 'hi-IN' && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Swara'))) ||
-      voices.find(v => v.lang === 'hi-IN') ||
-      voices.find(v => v.lang === 'en-IN' && (v.name.includes('Google') || v.name.includes('India'))) ||
-      voices.find(v => v.lang.startsWith('hi'))
+    const voices = window.speechSynthesis.getVoices();
+    if (!voices || voices.length === 0) return null;
+
+    // 1. First priority: Indian English / Hindi Neural or Natural Female voices
+    const preferred = voices.find(v => 
+      (v.lang.startsWith('en-IN') || v.lang.startsWith('hi-IN')) &&
+      /natural|online|google|female|neerja|swara/i.test(v.name)
     );
+    if (preferred) return preferred;
+
+    // 2. Second priority: Any Natural / Neural female voice (Google/Microsoft)
+    const naturalFemale = voices.find(v => 
+      /natural|online|google/i.test(v.name) && 
+      /female|zira|samantha/i.test(v.name)
+    );
+    if (naturalFemale) return naturalFemale;
+
+    // 3. Fallback: Any Indian English/Hindi voice or standard female voice
+    return voices.find(v => v.lang.startsWith('en-IN') || v.lang.startsWith('hi-IN')) ||
+           voices.find(v => /female/i.test(v.name)) ||
+           voices[0];
   }, []);
+
+  const getBestHindiVoice = pickNaturalFemaleVoice;
 
   // Atomic Speech Gate: Text Sanitizer & 1.2-Second Auto-Dismiss Controller
   const showSanitizedSpeechBubble = useCallback((rawText, actionTag = null, customDismissMs = 1200) => {
@@ -180,19 +196,24 @@ export default function CharacterBuddy({
     }, customDismissMs || 1200);
   }, [isAvatarMuted]);
 
-  // Instant Indian Female Voice Model (Clear, crisp female tuning without robotic pitch artifacts)
+  // Clean & Direct Speech Synthesis Output
   const speakInstantHindiFemale = useCallback((text) => {
     if (typeof window === 'undefined' || isAvatarMuted || !text) return;
     try {
       if (window.speechSynthesis) {
-        window.speechSynthesis.cancel(); // Stop any pending speech
-        const utterance = new SpeechSynthesisUtterance(text);
-        const voice = getBestHindiVoice();
-        if (voice) utterance.voice = voice;
+        window.speechSynthesis.cancel();
 
-        // Clear, crisp female tuning (avoid robotic pitch artifacts)
-        utterance.rate = 1.05; // Normal clear speed (not rushed)
-        utterance.pitch = 1.0; // Natural female pitch (avoid robotic 1.2+)
+        if (window.speechSynthesis.paused) {
+          try { window.speechSynthesis.resume(); } catch (_) {}
+        }
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        const voice = pickNaturalFemaleVoice();
+        if (voice) utterance.voice = voice;
+        
+        // Natural conversational cadence (avoids high-pitch robotic chipmunk effect)
+        utterance.rate = 1.05;
+        utterance.pitch = 1.0;
         utterance.volume = 1.0;
 
         window.speechSynthesis.speak(utterance);
@@ -202,9 +223,9 @@ export default function CharacterBuddy({
 
     // Fallback to voiceBuddyService if Web Speech fails
     try {
-      voiceBuddyService.speakText(text, { priority: true, pitch: 1.0, rate: 1.05 });
+      voiceBuddyService.speakText(text, { priority: true, pitch: 1.0, rate: 1.05, volume: 1.0 });
     } catch (_) {}
-  }, [isAvatarMuted, getBestHindiVoice]);
+  }, [isAvatarMuted, pickNaturalFemaleVoice]);
 
   useEffect(() => {
     if (!isPlaying) {
@@ -1478,9 +1499,16 @@ export default function CharacterBuddy({
       rotationRef.current = { yaw: 0, pitch: 0 };
       setWalkFacing('front');
 
-      // Teleport instantly to home anchor
+      // Dock to anchor right above mute button and clear inline transforms
+      setAvatarPos({
+        x: typeof window !== 'undefined' ? window.innerWidth - 200 : 800,
+        y: typeof window !== 'undefined' ? window.innerHeight - 340 : 500
+      });
       if (avatarContainerRef.current) {
-        avatarContainerRef.current.style.transform = `translate3d(${ORIGIN_POS.x}px, ${ORIGIN_POS.y}px, 0)`;
+        avatarContainerRef.current.style.transform = 'none';
+        avatarContainerRef.current.style.opacity = '1';
+        avatarContainerRef.current.style.visibility = 'visible';
+        avatarContainerRef.current.style.pointerEvents = 'auto';
       }
 
       // Switch animation state instantly to 'idle'
@@ -2727,12 +2755,19 @@ export default function CharacterBuddy({
                 } catch (_) {}
                 if (!next) {
                   stopAutonomousWalking(true);
-                  // Smoothly dock avatar back to ORIGIN_POS when roaming is toggled OFF
+                  // Smoothly dock avatar back to anchor when roaming is toggled OFF
                   positionRef.current = { ...ORIGIN_POS };
                   targetPosRef.current = { ...ORIGIN_POS };
                   setContinuousPos({ ...ORIGIN_POS });
+                  setAvatarPos({
+                    x: typeof window !== 'undefined' ? window.innerWidth - 200 : 800,
+                    y: typeof window !== 'undefined' ? window.innerHeight - 340 : 500
+                  });
                   if (avatarContainerRef.current) {
-                    avatarContainerRef.current.style.transform = `translate3d(${ORIGIN_POS.x}px, ${ORIGIN_POS.y}px, 0)`;
+                    avatarContainerRef.current.style.transform = 'none';
+                    avatarContainerRef.current.style.opacity = '1';
+                    avatarContainerRef.current.style.visibility = 'visible';
+                    avatarContainerRef.current.style.pointerEvents = 'auto';
                   }
                 }
                 return next;

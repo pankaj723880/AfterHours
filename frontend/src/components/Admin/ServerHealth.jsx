@@ -1,4 +1,5 @@
 import React from 'react';
+import ApiKeyManagement from './ApiKeyManagement';
 import { 
   Server, 
   Database, 
@@ -11,7 +12,7 @@ import {
   RefreshCw 
 } from 'lucide-react';
 
-export default function ServerHealth({ health, metrics, onRefresh, isLoading }) {
+export default function ServerHealth({ health, metrics, onRefresh, isLoading, backendUrl, token, showToast }) {
   const formatUptime = (sec = 0) => {
     const d = Math.floor(sec / 86400);
     const h = Math.floor((sec % 86400) / 3600);
@@ -174,6 +175,13 @@ export default function ServerHealth({ health, metrics, onRefresh, isLoading }) 
           </div>
         </div>
       </div>
+
+      {/* Multi-Key Pool Manager (YouTube & Gemini) */}
+      <ApiKeyManagement 
+        backendUrl={backendUrl} 
+        token={token} 
+        showToast={showToast} 
+      />
 
       {/* Recent Errors Log */}
       <div className="bg-neutral-900/40 border border-neutral-800 rounded-2xl p-5">

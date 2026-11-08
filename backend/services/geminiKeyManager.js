@@ -11,6 +11,8 @@
  */
 
 import { GoogleGenAI } from '@google/genai';
+import mongoose from 'mongoose';
+import ApiKey from '../models/ApiKeyConfig.js';
 
 export const geminiDiagnostics = {
   totalCalls: 0,
@@ -32,24 +34,77 @@ export function sanitizeLogMessage(msg = '') {
   return text.replace(/AIza[0-9A-Za-z-_]{35}/g, '[REDACTED_API_KEY]');
 }
 
+const sanitizeApiKey = (key) => {
+  if (typeof key !== 'string') return '';
+  let clean = key.trim().replace(/^['"]|['"]$/g, '');
+  return clean;
+};
+
+const parseKeyList = (raw) => {
+  if (!raw || typeof raw !== 'string') return [];
+  return raw
+    .split(/[,\r\n\s]+/)
+    .map(sanitizeApiKey)
+    .filter(k => k && k.length > 5);
+};
+
+// In-memory cache for DB Gemini API keys with 10s TTL
+let cachedDbGeminiKeys = [];
+let lastDbGeminiKeysFetch = 0;
+
+export const refreshDbGeminiKeys = async () => {
+  try {
+    if (mongoose.connection && mongoose.connection.readyState === 1) {
+      const dbKeys = await ApiKey.find({ service: 'gemini', isExhausted: false }).select('key').lean();
+      cachedDbGeminiKeys = dbKeys.map(d => sanitizeApiKey(d.key)).filter(k => k && k.length > 5);
+      lastDbGeminiKeysFetch = Date.now();
+    }
+  } catch (e) {
+    // Fail silently, use in-memory / env fallback
+  }
+};
+
 /**
- * Returns available keys securely from environment.
- * Reads dynamically at runtime so environment changes take effect immediately.
+ * Returns available keys securely from environment and MongoDB pool.
+ * Supports dynamic DB pool, comma-separated VITE_GEMINI_API_KEYS / GEMINI_API_KEYS (e.g. 5 keys)
+ * or individual GEMINI_API_KEY, GEMINI_API_KEY_2..5.
+ * Reads dynamically at runtime so environment/dashboard changes take effect immediately.
  */
 export function getGeminiKeys() {
-  const keys = [];
-  const primary = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
-  const secondary = (process.env.GEMINI_API_KEY_2 || '').trim();
-
-  if (primary && primary.length > 5) {
-    keys.push({ index: 0, label: 'primary', key: primary });
+  if (Date.now() - lastDbGeminiKeysFetch > 10000) {
+    refreshDbGeminiKeys();
   }
 
-  if (secondary && secondary.length > 5 && secondary !== primary) {
-    keys.push({ index: 1, label: 'secondary', key: secondary });
+  const combined = [
+    ...cachedDbGeminiKeys,
+    ...parseKeyList(process.env.VITE_GEMINI_API_KEYS),
+    ...parseKeyList(process.env.GEMINI_API_KEYS),
+    ...parseKeyList(process.env.VITE_GEMINI_KEYS),
+    ...parseKeyList(process.env.GEMINI_KEYS),
+  ];
+
+  const discrete = [
+    process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.VITE_GEMINI_API_KEY_1 || process.env.GEMINI_KEY_1,
+    process.env.GEMINI_API_KEY_2 || process.env.VITE_GEMINI_API_KEY_2 || process.env.GEMINI_KEY_2,
+    process.env.GEMINI_API_KEY_3 || process.env.VITE_GEMINI_API_KEY_3 || process.env.GEMINI_KEY_3,
+    process.env.GEMINI_API_KEY_4 || process.env.VITE_GEMINI_API_KEY_4 || process.env.GEMINI_KEY_4,
+    process.env.GEMINI_API_KEY_5 || process.env.VITE_GEMINI_API_KEY_5 || process.env.GEMINI_KEY_5,
+  ].map(sanitizeApiKey).filter(k => k && k.length > 5);
+
+  const unique = [];
+  const seen = new Set();
+  for (const k of [...combined, ...discrete]) {
+    if (k && !seen.has(k)) {
+      seen.add(k);
+      unique.push(k);
+    }
   }
 
-  return keys;
+  return unique.map((key, index) => ({
+    index,
+    label: index === 0 ? 'primary' : (index === 1 ? 'secondary' : `key_${index + 1}`),
+    key
+  }));
 }
 
 /**
@@ -154,6 +209,12 @@ export function createGeminiClient(keyOrIndex = 0) {
  * @param {Function} operationFn - async ({ client, keyInfo, modelName }) => result
  * @param {Object} options - { modelName, timeoutMs, operationName }
  */
+/**
+ * Execute a Gemini operation with automatic multi-key quota and error failover across all configured keys.
+ * 
+ * @param {Function} operationFn - async ({ client, keyInfo, modelName }) => result
+ * @param {Object} options - { modelName, timeoutMs, operationName }
+ */
 export async function executeGeminiOperation(operationFn, options = {}) {
   const startTime = Date.now();
   geminiDiagnostics.totalCalls += 1;
@@ -170,12 +231,9 @@ export async function executeGeminiOperation(operationFn, options = {}) {
     return {
       success: false,
       error: 'NO_KEYS_CONFIGURED',
-      message: 'Gemini API key is not configured in GEMINI_API_KEY or GEMINI_API_KEY_2.'
+      message: 'Gemini API key is not configured in GEMINI_API_KEY, GEMINI_API_KEY_2, or VITE_GEMINI_API_KEYS.'
     };
   }
-
-  const firstKey = keys[0];
-  const fallbackKey = keys.length > 1 && keys[1].key !== firstKey.key ? keys[1] : null;
 
   // Helper to execute with per-call timeout and model 404 resilience
   const runWithKey = async (keyInfo) => {
@@ -203,86 +261,83 @@ export async function executeGeminiOperation(operationFn, options = {}) {
     }
   };
 
-  // 1. Try Primary Key (or first available key)
-  try {
-    const result = await runWithKey(firstKey);
-    if (firstKey.label === 'primary') {
-      geminiDiagnostics.primarySuccess += 1;
-    } else {
-      geminiDiagnostics.secondarySuccess += 1;
-    }
-    geminiDiagnostics.lastLatencyMs = Date.now() - startTime;
-    return {
-      success: true,
-      data: result,
-      keyLabel: firstKey.label,
-      keyIndex: firstKey.index
-    };
-  } catch (primaryErr) {
-    const isRetryable = isFailoverError(primaryErr);
-    const safeErrorMsg = sanitizeLogMessage(primaryErr.message || 'Unknown error');
-    geminiDiagnostics.lastError = safeErrorMsg;
+  let lastError = null;
+  let allQuota = true;
 
-    // Check if we have a secondary key and this error qualifies for failover
-    if (isRetryable && fallbackKey) {
-      geminiDiagnostics.totalFailovers += 1;
-      geminiDiagnostics.lastFailoverReason = safeErrorMsg;
-      console.warn(`[GeminiKeyManager] Key ${firstKey.label} failed for ${opName} (${safeErrorMsg}). Automatically failing over to ${fallbackKey.label}...`);
-
-      // Brief jittered backoff before secondary attempt (80ms - 150ms)
-      await new Promise(res => setTimeout(res, 80 + Math.floor(Math.random() * 70)));
-
-      try {
-        const secondaryResult = await runWithKey(fallbackKey);
+  for (let i = 0; i < keys.length; i++) {
+    const keyInfo = keys[i];
+    try {
+      const result = await runWithKey(keyInfo);
+      if (keyInfo.label === 'primary') {
+        geminiDiagnostics.primarySuccess += 1;
+      } else {
         geminiDiagnostics.secondarySuccess += 1;
-        geminiDiagnostics.lastLatencyMs = Date.now() - startTime;
-        console.info(`[GeminiKeyManager] Request succeeded for ${opName} using ${fallbackKey.label}.`);
-        return {
-          success: true,
-          data: secondaryResult,
-          keyLabel: fallbackKey.label,
-          keyIndex: fallbackKey.index,
-          failedOver: true
-        };
-      } catch (secondaryErr) {
-        const safeSecMsg = sanitizeLogMessage(secondaryErr.message || 'Unknown error');
-        geminiDiagnostics.failedCalls += 1;
-        geminiDiagnostics.lastError = safeSecMsg;
-        console.error(`[GeminiKeyManager] Both primary and secondary keys failed for ${opName}. Secondary error: ${safeSecMsg}`);
+      }
+      geminiDiagnostics.lastLatencyMs = Date.now() - startTime;
+      if (i > 0) {
+        console.info(`[GeminiKeyManager] Request succeeded for ${opName} using ${keyInfo.label}.`);
+      }
+      return {
+        success: true,
+        data: result,
+        keyLabel: keyInfo.label,
+        keyIndex: keyInfo.index,
+        failedOver: i > 0
+      };
+    } catch (err) {
+      lastError = err;
+      const isRetryable = isFailoverError(err);
+      const isQuota = isQuotaError(err);
+      if (!isQuota) allQuota = false;
 
-        const bothQuotaExhausted = isQuotaError(primaryErr) || isQuotaError(secondaryErr);
+      const safeErrorMsg = sanitizeLogMessage(err.message || 'Unknown error');
+      geminiDiagnostics.lastError = safeErrorMsg;
+
+      // If non-retryable (e.g. client parameter error), abort immediately
+      if (!isRetryable) {
+        geminiDiagnostics.failedCalls += 1;
+        console.warn(`[GeminiKeyManager] Non-retryable error for ${opName}: ${safeErrorMsg}`);
         return {
           success: false,
-          error: bothQuotaExhausted ? 'QUOTA_EXHAUSTED' : 'ALL_KEYS_FAILED',
-          message: safeSecMsg,
-          primaryError: safeErrorMsg,
-          secondaryError: safeSecMsg,
-          allKeysExhausted: bothQuotaExhausted,
-          code: bothQuotaExhausted ? 429 : (secondaryErr.status || 500)
+          error: 'CLIENT_OR_INPUT_ERROR',
+          message: safeErrorMsg
         };
       }
-    }
 
-    // No secondary key available, or non-retryable client error
-    geminiDiagnostics.failedCalls += 1;
-    if (!isRetryable) {
-      console.warn(`[GeminiKeyManager] Non-retryable error for ${opName}: ${safeErrorMsg}`);
-      return {
-        success: false,
-        error: 'CLIENT_OR_INPUT_ERROR',
-        message: safeErrorMsg
-      };
-    }
+      // Check if there is another key to try
+      if (isQuota) {
+        ApiKey.updateOne({ service: 'gemini', key: keyInfo.key }, { $set: { isExhausted: true }, $inc: { failureCount: 1 } }).catch(() => {});
+      } else {
+        ApiKey.updateOne({ service: 'gemini', key: keyInfo.key }, { $inc: { failureCount: 1 } }).catch(() => {});
+      }
 
-    const quotaExhausted = isQuotaError(primaryErr);
-    console.error(`[GeminiKeyManager] Primary key failed for ${opName} and no secondary key is configured: ${safeErrorMsg}`);
-    return {
-      success: false,
-      error: quotaExhausted ? 'QUOTA_EXHAUSTED' : 'PRIMARY_KEY_FAILED',
-      message: safeErrorMsg,
-      code: quotaExhausted ? 429 : (primaryErr.status || 500)
-    };
+      if (i < keys.length - 1) {
+        geminiDiagnostics.totalFailovers += 1;
+        geminiDiagnostics.lastFailoverReason = safeErrorMsg;
+        const nextKey = keys[i + 1];
+        console.warn(`[GeminiKeyManager] Key ${keyInfo.label} failed for ${opName} (${safeErrorMsg}). Automatically failing over to ${nextKey.label}...`);
+        // Jittered backoff between key attempts
+        await new Promise(res => setTimeout(res, 80 + Math.floor(Math.random() * 70)));
+        continue;
+      }
+    }
   }
+
+  // All keys exhausted
+  geminiDiagnostics.failedCalls += 1;
+  const safeFinalMsg = sanitizeLogMessage(lastError?.message || 'All keys failed');
+  const isFinalQuota = allQuota || isQuotaError(lastError);
+  console.error(`[GeminiKeyManager] All configured Gemini keys (${keys.length}) failed for ${opName}. Last error: ${safeFinalMsg}`);
+
+  return {
+    success: false,
+    error: isFinalQuota ? 'QUOTA_EXHAUSTED' : (keys.length > 1 ? 'ALL_KEYS_FAILED' : 'PRIMARY_KEY_FAILED'),
+    message: safeFinalMsg,
+    primaryError: safeFinalMsg,
+    secondaryError: safeFinalMsg,
+    allKeysExhausted: isFinalQuota,
+    code: isFinalQuota ? 429 : (lastError?.status || 500)
+  };
 }
 
 /**
@@ -307,9 +362,6 @@ export async function executeGeminiStreamOperation(streamInitFn, options = {}) {
     };
   }
 
-  const firstKey = keys[0];
-  const fallbackKey = keys.length > 1 && keys[1].key !== firstKey.key ? keys[1] : null;
-
   // Helper to test if stream can produce its first chunk
   const tryStartStream = async (keyInfo) => {
     const client = new GoogleGenAI({ apiKey: keyInfo.key });
@@ -320,51 +372,54 @@ export async function executeGeminiStreamOperation(streamInitFn, options = {}) {
     return { client, stream, keyInfo };
   };
 
-  try {
-    const started = await tryStartStream(firstKey);
-    return {
-      success: true,
-      stream: started.stream,
-      keyLabel: firstKey.label,
-      keyIndex: firstKey.index
-    };
-  } catch (primaryErr) {
-    const isRetryable = isFailoverError(primaryErr);
-    const safeMsg = sanitizeLogMessage(primaryErr.message);
+  let lastErr = null;
+  let allQuota = true;
 
-    if (isRetryable && fallbackKey) {
-      console.warn(`[GeminiKeyManager] Stream initiation failed on ${firstKey.label} (${safeMsg}). Failing over to ${fallbackKey.label} before streaming...`);
-      try {
-        const startedSec = await tryStartStream(fallbackKey);
-        return {
-          success: true,
-          stream: startedSec.stream,
-          keyLabel: fallbackKey.label,
-          keyIndex: fallbackKey.index,
-          failedOver: true
-        };
-      } catch (secondaryErr) {
-        const safeSecMsg = sanitizeLogMessage(secondaryErr.message);
-        const bothQuota = isQuotaError(primaryErr) || isQuotaError(secondaryErr);
+  for (let i = 0; i < keys.length; i++) {
+    const keyInfo = keys[i];
+    try {
+      const started = await tryStartStream(keyInfo);
+      return {
+        success: true,
+        stream: started.stream,
+        keyLabel: keyInfo.label,
+        keyIndex: keyInfo.index,
+        failedOver: i > 0
+      };
+    } catch (err) {
+      lastErr = err;
+      const isRetryable = isFailoverError(err);
+      const isQuota = isQuotaError(err);
+      if (!isQuota) allQuota = false;
+
+      const safeMsg = sanitizeLogMessage(err.message);
+      if (!isRetryable) {
         return {
           success: false,
-          error: bothQuota ? 'QUOTA_EXHAUSTED' : 'ALL_KEYS_FAILED',
-          message: safeSecMsg,
-          primaryError: safeMsg,
-          secondaryError: safeSecMsg,
-          code: bothQuota ? 429 : 500
+          error: 'CLIENT_OR_INPUT_ERROR',
+          message: safeMsg,
+          code: 500
         };
       }
-    }
 
-    const quotaExhausted = isQuotaError(primaryErr);
-    return {
-      success: false,
-      error: quotaExhausted ? 'QUOTA_EXHAUSTED' : (isRetryable ? 'PRIMARY_KEY_FAILED' : 'CLIENT_OR_INPUT_ERROR'),
-      message: safeMsg,
-      code: quotaExhausted ? 429 : 500
-    };
+      if (i < keys.length - 1) {
+        const nextKey = keys[i + 1];
+        console.warn(`[GeminiKeyManager] Stream initiation failed on ${keyInfo.label} (${safeMsg}). Failing over to ${nextKey.label} before streaming...`);
+        continue;
+      }
+    }
   }
+
+  const safeLastMsg = sanitizeLogMessage(lastErr?.message || 'All keys failed');
+  const isFinalQuota = allQuota || isQuotaError(lastErr);
+  return {
+    success: false,
+    error: isFinalQuota ? 'QUOTA_EXHAUSTED' : 'ALL_KEYS_FAILED',
+    message: safeLastMsg,
+    primaryError: safeLastMsg,
+    secondaryError: safeLastMsg,
+    code: isFinalQuota ? 429 : 500
+  };
 }
 
 export default {

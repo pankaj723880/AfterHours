@@ -16,6 +16,15 @@ import { GEMINI_CONFIG, getAvailableKeys, isGeminiAvailable } from '../config/ge
 import { executeGeminiOperation, sanitizeLogMessage } from './geminiKeyManager.js';
 import { multiModelOrchestrator } from './multiModelOrchestrator.js';
 
+export const CHATBUDDY_SYSTEM_PROMPT = `You are Loopra, an enthusiastic, friendly female AI music companion.
+Speak naturally in crisp, polite, modern conversational Hindi / Hinglish (Indian accent).
+Keep your responses brief (1-2 short sentences max) because you are a live voice avatar.
+When asked to play songs, execute the music action and confirm in a warm, cheerful tone.
+FEW-SHOT EXAMPLES:
+[Example 1] User: "kya haal hai" -> {"type":"chat","action":"none","params":{},"reply":"Sab badiya! Aap batao, aaj kya chal raha hai?"}
+[Example 2] User: "play Kesariya" -> {"type":"command","action":"play_song","params":{"query":"Kesariya official audio"},"reply":"Sure, Kesariya play kar rahi hoon!"}
+`;
+
 export const LOOPRA_VOICE_SYSTEM_INSTRUCTION = `
 Role & Persona:
 You are Loopra, an enthusiastic, friendly female AI music companion.
@@ -304,11 +313,16 @@ export async function processChatBuddyMessage({ message = '', history = [], curr
 export function fallbackHeuristicClassifier(message = '', geminiError = null) {
   const lower = (message || '').toLowerCase().trim();
 
+  // Negative modifier check
+  if (/\b(mat\s+(?:chalao|karna|bajao)|don'?t\s+play|never\s+play)\b/i.test(lower)) {
+    return { type: 'chat', action: 'none', params: {}, reply: 'Theek hai, gaana nahi chala rahi.' };
+  }
+
+  if (/\b(volume\s+kam|kam\s+kar|volume\s+down)\b/i.test(lower)) {
+    return { type: 'command', action: 'volume', params: { relative: -15 }, reply: 'Volume kam kar diya hai.' };
+  }
   if (/\b(pause|roko)\b/i.test(lower)) {
     return { type: 'command', action: 'pause', params: {}, reply: 'Music pause kar diya hai.' };
-  }
-  if (/\b(resume|chalao)\b/i.test(lower)) {
-    return { type: 'command', action: 'resume', params: {}, reply: 'Music dobara chala diya hai.' };
   }
   if (/\b(next|agla)\b/i.test(lower)) {
     return { type: 'command', action: 'next', params: {}, reply: 'Next song chala diya hai.' };
@@ -316,8 +330,22 @@ export function fallbackHeuristicClassifier(message = '', geminiError = null) {
   if (/\b(previous|pichla)\b/i.test(lower)) {
     return { type: 'command', action: 'previous', params: {}, reply: 'Pichla gaana chala diya hai.' };
   }
+  if (/\b(resume)\b/i.test(lower) || (/\b(chalao)\b/i.test(lower) && !/\b(song|gaana|music|play)\b/i.test(lower))) {
+    return { type: 'command', action: 'resume', params: {}, reply: 'Music dobara chala diya hai.' };
+  }
+  if (/\b(open|kholo|dikhao)\b/i.test(lower) && /\b(playlists?)\b/i.test(lower)) {
+    return { type: 'command', action: 'open_page', params: { page: 'playlists' }, reply: 'Playlists open kar di hain.' };
+  }
   if (/\b(open|kholo)\b/i.test(lower) && /\b(downloads|folder)\b/i.test(lower)) {
     return { type: 'command', action: 'open_folder', params: { folder: 'Downloads' }, reply: 'Downloads folder open kar diya hai.' };
+  }
+  if (/\b(play)\s+(.+)/i.test(lower)) {
+    const match = lower.match(/\b(play)\s+(.+)/i);
+    const query = match ? match[2].trim() : '';
+    return { type: 'command', action: 'play_song', params: { query }, reply: `Sure, ${query} play kar rahi hoon!` };
+  }
+  if (/\b(chalao|bajao|laga\s+do)\b/i.test(lower) && /\b(gaana|song|music)\b/i.test(lower)) {
+    return { type: 'command', action: 'play_song', params: { query: 'trending' }, reply: 'Music play kar diya hai.' };
   }
 
   return {

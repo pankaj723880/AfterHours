@@ -847,6 +847,9 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               metrics={metrics} 
               onRefresh={fetchHealthDiagnostics}
               isLoading={isHealthLoading}
+              backendUrl={cleanBackendUrl}
+              token={token}
+              showToast={showToast}
             />
           )}
 

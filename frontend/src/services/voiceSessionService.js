@@ -1084,11 +1084,10 @@ class VoiceSessionController {
     // 3. Immediate Activation Greeting Sequence:
     // When Loopra is turned on, play greeting audio immediately first,
     // and ONLY start active SpeechRecognition listening after the greeting finishes.
-    const greeting = (typeof window !== 'undefined' && window.voiceBuddyService?.generateWelcomeGreeting)
-      ? window.voiceBuddyService.generateWelcomeGreeting()
-      : 'Hey! Kya haal hai?';
-
     const buddy = typeof window !== 'undefined' ? window.voiceBuddyService : null;
+    const initialGreeting = (buddy && typeof buddy.generateWelcomeGreeting === 'function')
+      ? buddy.generateWelcomeGreeting()
+      : 'Arey aao aao! Earphones lagao aur batao aaj kya sunne ka plan hai?';
 
     const startListeningAfterGreeting = () => {
       if (!this.isSessionActive || this.isManualStopping) return;
@@ -1104,17 +1103,44 @@ class VoiceSessionController {
     if (!this.hasGreetedThisSession && buddy && buddy.isVoiceOutputEnabled) {
       this.hasGreetedThisSession = true;
       this.isSpeakingTts = true;
-      this.setState(
-        SESSION_STATES.SPEAKING,
-        `Loopra: "${greeting}"`
-      );
 
-      // Play greeting audio immediately first
-      buddy.speak(greeting, 'welcome', {
-        onEnd: () => {
-          startListeningAfterGreeting();
-        }
-      });
+      // Attempt dynamic witty greeting via Gemini API with quick fallback
+      if (typeof buddy.fetchDynamicAvatarGreeting === 'function') {
+        buddy.fetchDynamicAvatarGreeting().then((dynamicGreeting) => {
+          if (!this.isSessionActive || this.isManualStopping) return;
+          const greetingToSpeak = dynamicGreeting || initialGreeting;
+          this.setState(
+            SESSION_STATES.SPEAKING,
+            `Loopra: "${greetingToSpeak}"`
+          );
+          buddy.speak(greetingToSpeak, 'welcome', {
+            onEnd: () => {
+              startListeningAfterGreeting();
+            }
+          });
+        }).catch(() => {
+          if (!this.isSessionActive || this.isManualStopping) return;
+          this.setState(
+            SESSION_STATES.SPEAKING,
+            `Loopra: "${initialGreeting}"`
+          );
+          buddy.speak(initialGreeting, 'welcome', {
+            onEnd: () => {
+              startListeningAfterGreeting();
+            }
+          });
+        });
+      } else {
+        this.setState(
+          SESSION_STATES.SPEAKING,
+          `Loopra: "${initialGreeting}"`
+        );
+        buddy.speak(initialGreeting, 'welcome', {
+          onEnd: () => {
+            startListeningAfterGreeting();
+          }
+        });
+      }
     } else {
       this.hasGreetedThisSession = true;
       startListeningAfterGreeting();

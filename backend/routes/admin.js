@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import User from '../models/User.js';
 import AuditLog from '../models/AuditLog.js';
 import Activity from '../models/Activity.js';
+import ApiKey from '../models/ApiKeyConfig.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { metricsService } from '../services/metrics.js';
 import { liveUsersService } from '../services/liveUsersService.js';
@@ -915,6 +916,192 @@ router.delete('/activities/:id', authenticateToken, requireAdmin, async (req, re
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete activity: ' + err.message });
+  }
+});
+
+// Helper to mask key: e.g. "AIzaSyD...4Xk9"
+const maskKey = (key = '') => {
+  if (!key || typeof key !== 'string') return '';
+  if (key.length <= 8) return '••••••••';
+  return `${key.slice(0, 6)}...${key.slice(-4)}`;
+};
+
+// ==========================================
+// 13. Dynamic Multi-Key Pool Management
+// ==========================================
+
+// GET /api/admin/keys - List all keys (masked for security)
+router.get('/keys', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const keys = await ApiKey.find().sort({ createdAt: -1 }).lean();
+    const formatted = keys.map(k => ({
+      ...k,
+      maskedKey: maskKey(k.key),
+      rawKeyLength: k.key?.length || 0
+    }));
+    res.json({ success: true, keys: formatted });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve API keys: ' + err.message });
+  }
+});
+
+// POST /api/admin/keys - Add single or bulk keys
+router.post('/keys', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { service, rawKeys, key, label } = req.body;
+    const targetService = (service || '').toLowerCase().trim();
+
+    if (!['youtube', 'gemini'].includes(targetService)) {
+      return res.status(400).json({ error: 'Service must be either "youtube" or "gemini"' });
+    }
+
+    // Support single key or rawKeys containing multiline/comma-separated keys
+    const inputString = rawKeys || key || '';
+    const parsedKeys = inputString
+      .split(/[\r\n,]+/)
+      .map(k => k.trim())
+      .filter(k => k && k.length > 5);
+
+    if (parsedKeys.length === 0) {
+      return res.status(400).json({ error: 'No valid API key strings provided' });
+    }
+
+    let addedCount = 0;
+    let duplicateCount = 0;
+    const addedKeys = [];
+
+    for (const singleKey of parsedKeys) {
+      const exists = await ApiKey.findOne({ service: targetService, key: singleKey });
+      if (exists) {
+        duplicateCount++;
+        continue;
+      }
+
+      const newKey = await ApiKey.create({
+        service: targetService,
+        key: singleKey,
+        label: label ? label.trim() : '',
+        isExhausted: false,
+        failureCount: 0,
+        createdAt: new Date(),
+        lastUsedAt: new Date()
+      });
+
+      addedKeys.push({
+        _id: newKey._id,
+        service: newKey.service,
+        maskedKey: maskKey(newKey.key),
+        label: newKey.label,
+        isExhausted: newKey.isExhausted
+      });
+      addedCount++;
+    }
+
+    await AuditLog.create({
+      adminId: (req.user._id || req.user.id || req.user.userId)?.toString(),
+      adminUsername: req.user.username,
+      action: 'API_KEYS_POOL_ADD',
+      details: { service: targetService, addedCount, duplicateCount },
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.json({
+      success: true,
+      message: `Successfully added ${addedCount} key(s) (${duplicateCount} duplicate(s) skipped)`,
+      addedCount,
+      duplicateCount,
+      keys: addedKeys
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to add API keys: ' + err.message });
+  }
+});
+
+// PATCH /api/admin/keys/:id/toggle - Toggle exhausted / active status
+router.patch('/keys/:id/toggle', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const keyDoc = await ApiKey.findById(req.params.id);
+    if (!keyDoc) {
+      return res.status(404).json({ error: 'API key not found' });
+    }
+
+    keyDoc.isExhausted = !keyDoc.isExhausted;
+    if (!keyDoc.isExhausted) {
+      keyDoc.failureCount = 0;
+    }
+    await keyDoc.save();
+
+    res.json({
+      success: true,
+      message: `Key marked as ${keyDoc.isExhausted ? 'Exhausted' : 'Active'}`,
+      key: {
+        _id: keyDoc._id,
+        service: keyDoc.service,
+        maskedKey: maskKey(keyDoc.key),
+        isExhausted: keyDoc.isExhausted,
+        failureCount: keyDoc.failureCount
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update key status: ' + err.message });
+  }
+});
+
+// POST /api/admin/keys/reset-all - Reset all exhausted keys back to active
+router.post('/keys/reset-all', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const result = await ApiKey.updateMany(
+      { isExhausted: true },
+      { $set: { isExhausted: false, failureCount: 0 } }
+    );
+
+    await AuditLog.create({
+      adminId: (req.user._id || req.user.id || req.user.userId)?.toString(),
+      adminUsername: req.user.username,
+      action: 'API_KEYS_POOL_RESET_ALL',
+      details: { modifiedCount: result.modifiedCount },
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.json({
+      success: true,
+      message: `Successfully reset ${result.modifiedCount} exhausted key(s) to Active`,
+      modifiedCount: result.modifiedCount
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to reset keys: ' + err.message });
+  }
+});
+
+// DELETE /api/admin/keys/:id - Remove key from pool
+router.delete('/keys/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const keyDoc = await ApiKey.findById(req.params.id);
+    if (!keyDoc) {
+      return res.status(404).json({ error: 'API key not found' });
+    }
+
+    await ApiKey.findByIdAndDelete(req.params.id);
+
+    await AuditLog.create({
+      adminId: (req.user._id || req.user.id || req.user.userId)?.toString(),
+      adminUsername: req.user.username,
+      action: 'API_KEYS_POOL_DELETE',
+      targetId: req.params.id,
+      details: { service: keyDoc.service, label: keyDoc.label },
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.json({
+      success: true,
+      message: 'API key deleted from pool successfully',
+      id: req.params.id
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete API key: ' + err.message });
   }
 });
 
