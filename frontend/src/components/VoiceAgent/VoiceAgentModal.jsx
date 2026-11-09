@@ -88,13 +88,23 @@ export default function VoiceAgentModal({
 
   // 2. Authoritative voice session state
   const [sessionState, setSessionState] = useState(SESSION_STATES.OFF);
+  const sessionStateRef = useRef(SESSION_STATES.OFF);
+
   const [isSessionActive, setIsSessionActive] = useState(false);
+  const isSessionActiveRef = useRef(false);
+
   const [isListening, setIsListening] = useState(false);
+  const isListeningRef = useRef(false);
+
   const [statusMessage, setStatusMessage] = useState('Voice Agent: OFF (Click Loopra to start)');
+  const statusMessageRef = useRef('Voice Agent: OFF (Click Loopra to start)');
+
   const [activeActionLabel, setActiveActionLabel] = useState('');
   const [transcript, setTranscript] = useState('');
   const [interimText, setInterimText] = useState('');
+
   const [voiceVolumeScale, setVoiceVolumeScale] = useState(0);
+  const voiceVolumeScaleRef = useRef(0);
 
   // Persistent task context across consecutive voice inputs
   const persistentContextRef = useRef({
@@ -1183,12 +1193,29 @@ export default function VoiceAgentModal({
   // 5. Subscribe to the Voice Session Controller (stable single subscription)
   useEffect(() => {
     const unsub = voiceSessionService.subscribe((snapshot) => {
-      setSessionState(snapshot.state);
-      setIsSessionActive(snapshot.isSessionActive);
-      setIsListening(snapshot.isListening);
-      if (snapshot.statusMessage) setStatusMessage(snapshot.statusMessage);
-      if (snapshot.volumeScale !== undefined) setVoiceVolumeScale(snapshot.volumeScale);
-      if (snapshot.interimText !== undefined) setInterimText(snapshot.interimText);
+      if (snapshot.state !== undefined && sessionStateRef.current !== snapshot.state) {
+        sessionStateRef.current = snapshot.state;
+        setSessionState(snapshot.state);
+      }
+      if (snapshot.isSessionActive !== undefined && isSessionActiveRef.current !== snapshot.isSessionActive) {
+        isSessionActiveRef.current = snapshot.isSessionActive;
+        setIsSessionActive(snapshot.isSessionActive);
+      }
+      if (snapshot.isListening !== undefined && isListeningRef.current !== snapshot.isListening) {
+        isListeningRef.current = snapshot.isListening;
+        setIsListening(snapshot.isListening);
+      }
+      if (snapshot.statusMessage && statusMessageRef.current !== snapshot.statusMessage) {
+        statusMessageRef.current = snapshot.statusMessage;
+        setStatusMessage(snapshot.statusMessage);
+      }
+      if (snapshot.volumeScale !== undefined && Math.abs(voiceVolumeScaleRef.current - snapshot.volumeScale) > 0.05) {
+        voiceVolumeScaleRef.current = snapshot.volumeScale;
+        setVoiceVolumeScale(snapshot.volumeScale);
+      }
+      if (snapshot.interimText !== undefined) {
+        setInterimText(snapshot.interimText);
+      }
 
       // Finalized transcript received from recognition engine
       if (snapshot.event === 'final_transcript' && snapshot.transcript) {

@@ -96,8 +96,25 @@ export default function CharacterBuddy({
   const [commandHistory, setCommandHistory] = useState([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isBubbleVisible, setIsBubbleVisible] = useState(false);
-  const [micState, setMicState] = useState(() => voiceSessionService.getSnapshot?.().micState || 'Idle');
-  const [currentLang, setCurrentLang] = useState(() => voiceSessionService.lang || 'hi-IN');
+  const [micState, setMicStateState] = useState(() => voiceSessionService.getSnapshot?.().micState || 'Idle');
+  const micStateRef = useRef(voiceSessionService.getSnapshot?.().micState || 'Idle');
+  const setMicState = useCallback((val) => {
+    const next = typeof val === 'function' ? val(micStateRef.current) : val;
+    if (micStateRef.current !== next) {
+      micStateRef.current = next;
+      setMicStateState(next);
+    }
+  }, []);
+
+  const [currentLang, setCurrentLangState] = useState(() => voiceSessionService.lang || 'hi-IN');
+  const currentLangRef = useRef(voiceSessionService.lang || 'hi-IN');
+  const setCurrentLang = useCallback((val) => {
+    const next = typeof val === 'function' ? val(currentLangRef.current) : val;
+    if (currentLangRef.current !== next) {
+      currentLangRef.current = next;
+      setCurrentLangState(next);
+    }
+  }, []);
   const bubbleDismissTimerRef = useRef(null);
 
   // Pre-warm SpeechSynthesis voices on page load / voice changes
@@ -1314,14 +1331,49 @@ export default function CharacterBuddy({
   }, [isCustomPos, avatarPos, characterWidth, characterHeight, isMobileScreen, isBottomPlayerVisible]);
 
   // Centralized Animation & Task Priority States
-  const [autonomousSubState, setAutonomousSubState] = useState('idle');
+  const [autonomousSubState, setAutonomousSubStateState] = useState('idle');
+  const autonomousSubStateRef = useRef('idle');
+  const setAutonomousSubState = useCallback((val) => {
+    const next = typeof val === 'function' ? val(autonomousSubStateRef.current) : val;
+    if (autonomousSubStateRef.current !== next) {
+      autonomousSubStateRef.current = next;
+      setAutonomousSubStateState(next);
+    }
+  }, []);
+
   const [isThinking, setIsThinking] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [transientGesture, setTransientGesture] = useState(null);
 
-  const [walkOffset, setWalkOffset] = useState({ x: 0, y: 0 });
-  const [walkFacing, setWalkFacing] = useState('front');
-  const [moveTransition, setMoveTransition] = useState('transform 0.3s ease-out');
+  const [walkOffset, setWalkOffsetState] = useState({ x: 0, y: 0 });
+  const walkOffsetRef = useRef({ x: 0, y: 0 });
+  const setWalkOffset = useCallback((val) => {
+    const next = typeof val === 'function' ? val(walkOffsetRef.current) : val;
+    if (walkOffsetRef.current.x !== next.x || walkOffsetRef.current.y !== next.y) {
+      walkOffsetRef.current = next;
+      setWalkOffsetState(next);
+    }
+  }, []);
+
+  const [walkFacing, setWalkFacingState] = useState('front');
+  const walkFacingRef = useRef('front');
+  const setWalkFacing = useCallback((val) => {
+    const next = typeof val === 'function' ? val(walkFacingRef.current) : val;
+    if (walkFacingRef.current !== next) {
+      walkFacingRef.current = next;
+      setWalkFacingState(next);
+    }
+  }, []);
+
+  const [moveTransition, setMoveTransitionState] = useState('transform 0.3s ease-out');
+  const moveTransitionRef = useRef('transform 0.3s ease-out');
+  const setMoveTransition = useCallback((val) => {
+    const next = typeof val === 'function' ? val(moveTransitionRef.current) : val;
+    if (moveTransitionRef.current !== next) {
+      moveTransitionRef.current = next;
+      setMoveTransitionState(next);
+    }
+  }, []);
   const [tapRipple, setTapRipple] = useState(null);
 
   // Resize Mode State (Touch-and-Hold ~500ms)
@@ -1333,8 +1385,26 @@ export default function CharacterBuddy({
   const initialScaleRef = useRef(1.0);
 
   // 360-Degree Interactive Drag-to-Rotate & Smooth Auto-Return
-  const [rotationYaw, setRotationYaw] = useState(0);
-  const [rotationPitch, setRotationPitch] = useState(0);
+  const [rotationYaw, setRotationYawState] = useState(0);
+  const rotationYawRef = useRef(0);
+  const setRotationYaw = useCallback((val) => {
+    const next = typeof val === 'function' ? val(rotationYawRef.current) : val;
+    if (Math.abs(rotationYawRef.current - next) > 0.0001) {
+      rotationYawRef.current = next;
+      setRotationYawState(next);
+    }
+  }, []);
+
+  const [rotationPitch, setRotationPitchState] = useState(0);
+  const rotationPitchRef = useRef(0);
+  const setRotationPitch = useCallback((val) => {
+    const next = typeof val === 'function' ? val(rotationPitchRef.current) : val;
+    if (Math.abs(rotationPitchRef.current - next) > 0.0001) {
+      rotationPitchRef.current = next;
+      setRotationPitchState(next);
+    }
+  }, []);
+
   const rotationRef = useRef({ yaw: 0, pitch: 0 });
   const isRotatingRef = useRef(false);
   const autoReturnTimerRef = useRef(null);
@@ -1451,7 +1521,10 @@ export default function CharacterBuddy({
       idlePauseTimerRef.current = null;
     }
     if (resetSubState) {
-      setAutonomousSubState((prev) => (prev === 'idle' ? prev : 'idle'));
+      if (autonomousSubStateRef.current !== 'idle') {
+        autonomousSubStateRef.current = 'idle';
+        setAutonomousSubState('idle');
+      }
       setWalkFacing('front');
       smoothReturnToFront();
       // Seamless Interruption: Smoothly cross-fade and return walkOffset back to origin
@@ -1738,15 +1811,23 @@ export default function CharacterBuddy({
   // State changes immediately stop autonomous exploration if non-idle
   // When speech ends (isSpeaking becomes false), wait 2 seconds before resuming autonomous roaming
   const speechResumeTimerRef = useRef(null);
+  const wasActiveStateRef = useRef(false);
+
   useEffect(() => {
     if (speechResumeTimerRef.current) {
       clearTimeout(speechResumeTimerRef.current);
       speechResumeTimerRef.current = null;
     }
 
-    if (isListening || isSpeaking || isPlaying || isThinking || isExecuting) {
-      stopAutonomousWalking(true);
-    } else {
+    const isActive = Boolean(isListening || isSpeaking || isPlaying || isThinking || isExecuting);
+
+    if (isActive) {
+      wasActiveStateRef.current = true;
+      if (isIdleWalkingRef.current) {
+        stopAutonomousWalking(true);
+      }
+    } else if (wasActiveStateRef.current) {
+      wasActiveStateRef.current = false;
       // Transition back to idle, wait 2 seconds, and then coordinate autonomous roaming resume
       speechResumeTimerRef.current = setTimeout(() => {
         resetAutonomousTimer();

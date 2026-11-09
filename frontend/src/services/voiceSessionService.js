@@ -508,6 +508,16 @@ class VoiceSessionController {
   }
 
   emitVolume(scale) {
+    if (typeof window !== 'undefined') {
+      window.__loopraVoiceAudioLevel = scale;
+    }
+    // Only dispatch volume_change subscriber updates if the level changes significantly (> 0.08)
+    // or goes to/from 0, preventing high-frequency RAF setState re-renders in subscriber components
+    if (Math.abs((this._lastEmittedVolumeScale || 0) - scale) < 0.08 && scale > 0 && this._lastEmittedVolumeScale > 0) {
+      return;
+    }
+    this._lastEmittedVolumeScale = scale;
+
     const snapshot = this.getSnapshot();
     snapshot.event = 'volume_change';
     snapshot.volumeScale = scale;
