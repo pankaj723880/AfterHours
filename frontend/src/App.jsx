@@ -560,29 +560,31 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
           const player = playerRef?.current;
 
           if (player && typeof player.getCurrentTime === 'function') {
-            let state = 1;
+            let state = -1;
             try {
               if (typeof player.getPlayerState === 'function') {
                 state = player.getPlayerState();
               }
             } catch (_) {}
 
-            // Update if playing (1), paused (2), or buffering (3), or if state check isn't strictly ready
-            if (state === 1 || state === 2 || state === 3 || typeof state !== 'number') {
-              const cur = player.getCurrentTime();
-              if (typeof cur === 'number' && !isNaN(cur)) {
-                curTime = cur;
-                setCurrentTime(cur);
-                if (currentTimeRef) {
-                  currentTimeRef.current = cur;
+            // Check player.getPlayerState() === 1 before querying getCurrentTime so it doesn't fire aggressively while initializing
+            if (state === 1) {
+              try {
+                const cur = player.getCurrentTime();
+                if (typeof cur === 'number' && !isNaN(cur)) {
+                  curTime = cur;
+                  setCurrentTime(cur);
+                  if (currentTimeRef) {
+                    currentTimeRef.current = cur;
+                  }
+                  if (Math.abs(cur - lastSavedTimeRef.current) >= 3) {
+                    lastSavedTimeRef.current = cur;
+                    try {
+                      localStorage.setItem('afterhours_current_time', cur.toString());
+                    } catch (e) {}
+                  }
                 }
-                if (Math.abs(cur - lastSavedTimeRef.current) >= 3) {
-                  lastSavedTimeRef.current = cur;
-                  try {
-                    localStorage.setItem('afterhours_current_time', cur.toString());
-                  } catch (e) {}
-                }
-              }
+              } catch (_) {}
             }
           }
 
@@ -4271,9 +4273,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       ytContainerRef.current.innerHTML = '<div id="yt-player-instance"></div>';
     }
 
-    const appOrigin = typeof window !== 'undefined' && window.location.origin
+    const currentOrigin = (typeof window !== 'undefined' && window.location.origin)
       ? window.location.origin
-      : undefined;
+      : (typeof window !== 'undefined' ? (window.location.protocol + '//' + window.location.host) : '');
 
     playerRef.current = new window.YT.Player('yt-player-instance', {
       height: '100%',
@@ -4291,9 +4293,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         enablejsapi: 1,
         playsinline: 1,
         start: startSeconds > 0 ? Math.floor(startSeconds) : 0,
-        origin: appOrigin,
-        host: 'https://www.youtube.com',
-        widget_referrer: appOrigin
+        origin: currentOrigin,
+        widget_referrer: currentOrigin
       },
       events: {
         onReady: (e) => {
@@ -4302,6 +4303,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             playerRef.current._isReady = true;
             playerRef.current.isReady = true;
           }
+          try {
+            // Fix: ensure the underlying iframe element src has explicit encoded origin parameter
+            const iframe = e.target?.getIframe ? e.target.getIframe() : document.getElementById('yt-player-instance');
+            if (iframe && iframe.tagName === 'IFRAME' && iframe.src && !iframe.src.includes('origin=')) {
+              const delim = iframe.src.includes('?') ? '&' : '?';
+              iframe.src = iframe.src + delim + 'origin=' + encodeURIComponent(currentOrigin);
+            }
+          } catch (_) {}
           try {
             e.target.setVolume(volume);
             if (startSeconds > 0) {
