@@ -522,7 +522,7 @@ const handleImageError = (e, fallbackTitle, explicitId) => {
   }
 };
 
-const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId, isRadio = false }) => {
+const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId, isRadio = false, currentTimeRef, durationRef }) => {
   const [currentTime, setCurrentTime] = useState(() => {
     try {
       const savedSong = JSON.parse(localStorage.getItem('afterhours_current_song') || 'null');
@@ -553,18 +553,29 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
   useEffect(() => {
     let interval;
     if (isPlaying && !isSeeking) {
-      interval = setInterval(() => {
+      const checkAndUpdateTime = () => {
         try {
           let curTime = 0;
           let totalDur = 0;
+          const player = playerRef?.current;
 
-          if (playerRef.current?.isReady && playerRef.current?.getCurrentTime) {
-            const state = typeof playerRef.current.getPlayerState === 'function' ? playerRef.current.getPlayerState() : 1;
-            if (state === 1 || state === 2 || state === 3) {
-              const cur = playerRef.current.getCurrentTime();
+          if (player && typeof player.getCurrentTime === 'function') {
+            let state = 1;
+            try {
+              if (typeof player.getPlayerState === 'function') {
+                state = player.getPlayerState();
+              }
+            } catch (_) {}
+
+            // Update if playing (1), paused (2), or buffering (3), or if state check isn't strictly ready
+            if (state === 1 || state === 2 || state === 3 || typeof state !== 'number') {
+              const cur = player.getCurrentTime();
               if (typeof cur === 'number' && !isNaN(cur)) {
                 curTime = cur;
                 setCurrentTime(cur);
+                if (currentTimeRef) {
+                  currentTimeRef.current = cur;
+                }
                 if (Math.abs(cur - lastSavedTimeRef.current) >= 3) {
                   lastSavedTimeRef.current = cur;
                   try {
@@ -574,12 +585,22 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
               }
             }
           }
-          if (playerRef.current?.isReady && playerRef.current?.getDuration) {
-            const state = typeof playerRef.current.getPlayerState === 'function' ? playerRef.current.getPlayerState() : 1;
-            if (state === 1 || state === 2 || state === 3) {
-              const dur = playerRef.current.getDuration();
+
+          if (player && typeof player.getDuration === 'function') {
+            let state = 1;
+            try {
+              if (typeof player.getPlayerState === 'function') {
+                state = player.getPlayerState();
+              }
+            } catch (_) {}
+
+            if (state === 1 || state === 2 || state === 3 || typeof state !== 'number') {
+              const dur = player.getDuration();
               if (typeof dur === 'number' && !isNaN(dur) && dur > 0) {
                 totalDur = dur;
+                if (durationRef) {
+                  durationRef.current = dur;
+                }
                 setDuration(prev => {
                   if (prev !== dur) {
                     try { localStorage.setItem('afterhours_duration', dur.toString()); } catch (e) {}
@@ -601,10 +622,16 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
             } catch (_) {}
           }
         } catch (e) {}
-      }, 500);
+      };
+
+      // Call once immediately upon entering playing state
+      checkAndUpdateTime();
+      interval = setInterval(checkAndUpdateTime, 250);
     }
-    return () => clearInterval(interval);
-  }, [isPlaying, isSeeking, playerRef, currentSongId]);
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isPlaying, isSeeking, playerRef, currentSongId, currentTimeRef, durationRef]);
 
   const handleSeekChange = (e) => {
     setCurrentTime(parseFloat(e.target.value));
@@ -4252,7 +4279,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       height: '100%',
       width: '100%',
       videoId: videoId,
-      host: 'https://www.youtube-nocookie.com',
+      host: 'https://www.youtube.com',
       playerVars: { 
         autoplay: shouldAutoPlay ? 1 : 0, 
         controls: 0, 
@@ -4265,7 +4292,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         playsinline: 1,
         start: startSeconds > 0 ? Math.floor(startSeconds) : 0,
         origin: appOrigin,
-        host: 'https://www.youtube-nocookie.com',
+        host: 'https://www.youtube.com',
         widget_referrer: appOrigin
       },
       events: {
@@ -4273,6 +4300,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           isPlayerReadyRef.current = true;
           if (playerRef.current) {
             playerRef.current._isReady = true;
+            playerRef.current.isReady = true;
           }
           try {
             e.target.setVolume(volume);
@@ -8554,7 +8582,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
               {/* Dedicated Scrubber & Time Display Row */}
               <div className="w-full flex items-center gap-3">
-                <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} currentSongId={currentSong?.id} isRadio={Boolean(currentSong?.isRadio)} />
+                <PlayerProgress 
+                  playerRef={playerRef} 
+                  isPlaying={isPlaying} 
+                  onSeek={handleSeek} 
+                  currentSongId={currentSong?.id} 
+                  isRadio={Boolean(currentSong?.isRadio)} 
+                  currentTimeRef={currentTimeRef} 
+                  durationRef={durationRef} 
+                />
               </div>
             </div>
 
@@ -8988,7 +9024,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
                 {/* Progress Bar */}
                 <div className="w-full px-2 shrink-0 my-1">
-                  <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} currentSongId={currentSong?.id} isRadio={Boolean(currentSong?.isRadio)} />
+                  <PlayerProgress 
+                    playerRef={playerRef} 
+                    isPlaying={isPlaying} 
+                    onSeek={handleSeek} 
+                    currentSongId={currentSong?.id} 
+                    isRadio={Boolean(currentSong?.isRadio)} 
+                    currentTimeRef={currentTimeRef} 
+                    durationRef={durationRef} 
+                  />
                 </div>
 
                 {/* Main Playback Controls with Tactile 3D Buttons */}
