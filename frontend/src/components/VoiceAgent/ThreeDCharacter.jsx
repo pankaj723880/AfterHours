@@ -205,8 +205,9 @@ export default function ThreeDCharacter({
         ringPositions[i * 3 + 2] = Math.sin(angle) * radius;
       }
       ringGeo.setAttribute('position', new THREE.BufferAttribute(ringPositions, 3));
+      const ringColor = 0xf59e0b; // Loopra Gold / Amber neon accent
       particleMat = new THREE.PointsMaterial({
-        color: rimColor,
+        color: ringColor,
         size: 0.05,
         transparent: true,
         opacity: 0.85
