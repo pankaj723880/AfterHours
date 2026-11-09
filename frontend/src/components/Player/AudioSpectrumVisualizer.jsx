@@ -27,8 +27,15 @@ export default function AudioSpectrumVisualizer({
     if (!ctx) return;
 
     let step = 0;
+    let lastRenderTime = 0;
+    const targetFps = 25; // Throttle audio visualizer updates to ~25 FPS to save battery & CPU on budget devices
+    const frameInterval = 1000 / targetFps;
 
-    const render = () => {
+    const render = (timestamp) => {
+      animationFrameRef.current = requestAnimationFrame(render);
+      if (timestamp - lastRenderTime < frameInterval) return;
+      lastRenderTime = timestamp;
+
       step += 0.08;
       const width = canvas.width;
       const h = canvas.height;
@@ -96,8 +103,6 @@ export default function AudioSpectrumVisualizer({
           ctx.fillRect(x, Math.max(0, h - bar.peak - 2), barWidth, 1.5);
         }
       });
-
-      animationFrameRef.current = requestAnimationFrame(render);
     };
 
     animationFrameRef.current = requestAnimationFrame(render);

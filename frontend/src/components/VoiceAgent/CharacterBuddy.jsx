@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { voiceBuddyService, CHARACTERS } from '../../services/voiceBuddyService';
 import { voiceSessionService, SESSION_STATES } from '../../services/voiceSessionService';
 import { chatBuddyClient } from '../../services/chatBuddyClient';
-import ThreeDCharacter from './ThreeDCharacter';
+const ThreeDCharacter = React.lazy(() => import('./ThreeDCharacter'));
 import { Mic, Volume2, VolumeX, Globe, History, ChevronUp, ChevronDown, CheckCircle2, Sparkles, RotateCcw, X } from 'lucide-react';
 import usePageWaypoints from '../../hooks/usePageWaypoints';
 import { usePlayer } from '../../context/PlayerContext';
@@ -437,8 +437,8 @@ export default function CharacterBuddy({
   const ORIGIN_STYLE = {
     position: 'fixed',
     bottom: isMobileScreen
-      ? (isBottomPlayerVisible ? 'calc(134px + env(safe-area-inset-bottom, 0px))' : 'calc(64px + env(safe-area-inset-bottom, 0px))')
-      : (isBottomPlayerVisible ? '90px' : '24px'), // Directly above the bottom player bar / mute button row
+      ? (isBottomPlayerVisible ? 'calc(142px + env(safe-area-inset-bottom, 0px))' : 'calc(64px + env(safe-area-inset-bottom, 0px))')
+      : (isBottomPlayerVisible ? '112px' : '24px'), // Shifted strictly ABOVE bottom player bar so auxiliary actions never collide with timeline
     right: isMobileScreen ? '14px' : '24px',       // Same right alignment as the mute/volume button
     zIndex: 60,
     pointerEvents: 'auto'
@@ -448,7 +448,7 @@ export default function CharacterBuddy({
     if (typeof window === 'undefined') return { x: 200, y: 500 };
     return {
       x: Math.max(8, window.innerWidth - characterWidth - (isMobileScreen ? 14 : 24)),
-      y: Math.max(50, window.innerHeight - characterHeight - (isMobileScreen ? (isBottomPlayerVisible ? 134 : 64) : (isBottomPlayerVisible ? 90 : 24)))
+      y: Math.max(50, window.innerHeight - characterHeight - (isMobileScreen ? (isBottomPlayerVisible ? 142 : 64) : (isBottomPlayerVisible ? 112 : 24)))
     };
   }, [characterWidth, characterHeight, isMobileScreen, isBottomPlayerVisible]);
 
@@ -1019,28 +1019,27 @@ export default function CharacterBuddy({
       const minY = 64;
       const maxY = Math.max(minY + 40, winH - (isBottomPlayerVisible ? 170 : 130));
 
-      if (distance > 6) {
+      // 1. Deadzone / Arrival Threshold (Check horizontal distance to target)
+      // Only apply movement and rotation if distance > 12px. Once within 12px, freeze rotation and trigger idle or land
+      if (distance > 12) {
         setIsMoving(true);
-        // 1. Calculate Motion Direction Angle (Yaw Heading):
-        // 2D screen motion vector angle: dx corresponds to screen X, dy corresponds to screen Y.
-        // In 3D Three.js space:
-        // dx > 0 (moving right) -> targetHeading > 0
-        // dx < 0 (moving left)  -> targetHeading < 0
-        // dy > 0 (moving down/forward on screen) -> towards user / forward angle
-        // dy < 0 (moving up/backward on screen)  -> away / back angle
+        // 2. Angle Wrap-around (Shortest Path):
+        // Prevent 360° flip glitches by wrapping the delta angle within [-Math.PI, Math.PI]:
+        // diff = targetAngle - avatar.rotation.y;
+        // diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+        // avatar.rotation.y += diff * Math.min(1, 6 * dt);
         const targetHeading = Math.atan2(dx, -dy * 0.4);
 
-        // Smooth angle interpolation handling shortest circular distance around 2*PI with exponential damping
-        let angleDiff = (targetHeading - currentHeadingRef.current) % (Math.PI * 2);
-        if (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-        if (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+        let angleDiff = targetHeading - currentHeadingRef.current;
+        angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
 
-        const turnFactor = Math.min(1.0, 1 - Math.exp(-9.0 * dt)); // Frame-rate independent angular damping
+        const turnFactor = Math.min(1.0, 6.0 * dt);
         currentHeadingRef.current += angleDiff * turnFactor;
         setRotationYaw(currentHeadingRef.current);
+        // Lock pitch and roll to 0 so avatar stays completely upright on the floor plane
+        setRotationPitch(0);
 
-        // 2. Turn-in-Place Threshold:
-        // If turning angle difference is large (> 45 deg / 0.78 rad), slow down translation to turn body first
+        // Turn-in-Place Threshold: If turning angle difference is large (> 45 deg / 0.78 rad), slow down translation
         const isTurningInPlace = Math.abs(angleDiff) > 0.70;
 
         const mode = movementModeRef.current;
@@ -1073,7 +1072,6 @@ export default function CharacterBuddy({
 
         // Face movement direction smoothly
         setWalkFacing(dx < 0 ? 'left' : 'right');
-        setRotationPitch(Math.sin(angle) * 0.06);
 
         // Update animation state based on current dynamic movement mode
         if (isTurningInPlace) {
@@ -1087,20 +1085,17 @@ export default function CharacterBuddy({
         }
       } else {
         setIsMoving(false);
-        // Target reached: smoothly turn back to front (facing user) using frame-rate independent damping
-        const frontAngle = 0;
-        let frontDiff = (frontAngle - currentHeadingRef.current) % (Math.PI * 2);
-        if (frontDiff > Math.PI) frontDiff -= Math.PI * 2;
-        if (frontDiff < -Math.PI) frontDiff += Math.PI * 2;
-        const frontTurnFactor = Math.min(1.0, 1 - Math.exp(-6.0 * dt));
-        currentHeadingRef.current += frontDiff * frontTurnFactor;
-        setRotationYaw(currentHeadingRef.current);
+        // Target reached (Deadzone arrival): freeze rotation and lock upright
         setRotationPitch(0);
+        // Smoothly orient back towards front (0) using shortest circular wrap without snapping
+        let frontDiff = 0 - currentHeadingRef.current;
+        frontDiff = Math.atan2(Math.sin(frontDiff), Math.cos(frontDiff));
+        currentHeadingRef.current += frontDiff * Math.min(1.0, 6.0 * dt);
+        setRotationYaw(currentHeadingRef.current);
 
-        // Target reached: smoothly damp to target position to prevent abrupt snapping
-        const dampFactor = 1 - Math.exp(-8.0 * dt);
-        pos.x += (target.x - pos.x) * dampFactor;
-        pos.y += (target.y - pos.y) * dampFactor;
+        // Snap/damp cleanly to target position to prevent endless oscillations
+        pos.x = target.x;
+        pos.y = target.y;
 
         if (avatarContainerRef.current) {
           avatarContainerRef.current.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`;
@@ -1216,8 +1211,8 @@ export default function CharacterBuddy({
     if (typeof window === 'undefined') return { x: 20, y: 70 };
     const rightMargin = isMobileScreen ? 14 : 24;
     const bottomMargin = isMobileScreen
-      ? (isBottomPlayerVisible ? 134 : 64)
-      : (isBottomPlayerVisible ? 100 : 24);
+      ? (isBottomPlayerVisible ? 142 : 64)
+      : (isBottomPlayerVisible ? 112 : 24);
     const defaultX = Math.max(8, window.innerWidth - characterWidth - rightMargin);
     const defaultY = Math.max(50, window.innerHeight - characterHeight - bottomMargin);
     return { x: defaultX, y: defaultY };
@@ -1303,8 +1298,8 @@ export default function CharacterBuddy({
   useEffect(() => {
     const rightMargin = isMobileScreen ? 14 : 24;
     const bottomMargin = isMobileScreen 
-      ? (isBottomPlayerVisible ? 134 : 64) 
-      : (isBottomPlayerVisible ? 100 : 24);
+      ? (isBottomPlayerVisible ? 142 : 64) 
+      : (isBottomPlayerVisible ? 112 : 24);
     const curX = isCustomPos 
       ? avatarPos.x 
       : (typeof window !== 'undefined' ? window.innerWidth - characterWidth - rightMargin : 0);
@@ -2740,7 +2735,7 @@ export default function CharacterBuddy({
             ? (isRoamActive ? 'opacity 400ms cubic-bezier(0.16, 1, 0.3, 1), width 0.22s, height 0.22s' : 'opacity 400ms cubic-bezier(0.16, 1, 0.3, 1), transform 400ms cubic-bezier(0.16, 1, 0.3, 1), width 0.22s cubic-bezier(0.2, 0.8, 0.4, 1), height 0.22s cubic-bezier(0.2, 0.8, 0.4, 1)')
             : 'opacity 350ms cubic-bezier(0.4, 0, 0.2, 1), transform 350ms cubic-bezier(0.4, 0, 0.2, 1), width 0.22s cubic-bezier(0.2, 0.8, 0.4, 1), height 0.22s cubic-bezier(0.2, 0.8, 0.4, 1)'
         }}
-        className="fixed bottom-24 right-6 z-[60] w-60 h-[340px] pointer-events-auto flex items-center justify-center select-none will-change-[transform]"
+        className="fixed bottom-28 right-6 z-[60] w-60 h-[340px] pointer-events-auto flex items-center justify-center select-none will-change-[transform]"
       >
         {/* Subtle Avatar Header Controls (Free Roam Toggle, Reset Size & Position, Hide) */}
         <div className="absolute -top-7 right-0 flex items-center gap-1 opacity-0 hover:opacity-100 focus-within:opacity-100 transition-opacity z-50">
@@ -2914,23 +2909,29 @@ export default function CharacterBuddy({
               }}
             />
 
-            <ThreeDCharacter
-              gender={character.gender}
-              animationState={activeAnimationState}
-              isSpeaking={isSpeaking}
-              isListening={isListening}
-              isPlaying={isPlaying}
-              voiceVolumeScale={voiceVolumeScale || internalVolume || (typeof window !== 'undefined' ? window.__loopraVoiceAudioLevel || 0 : 0)}
-              facing={walkFacing}
-              cursorOffset={cursorOffset}
-              rotationYaw={rotationYaw}
-              rotationPitch={rotationPitch}
-              width={characterWidth}
-              height={characterHeight}
-              showGroundCircle={true}
-              isRoaming={isRoamActive}
-              isMoving={isMoving}
-            />
+            <React.Suspense fallback={
+              <div className="w-full h-full flex items-center justify-center">
+                <span className="w-6 h-6 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
+              </div>
+            }>
+              <ThreeDCharacter
+                gender={character.gender}
+                animationState={activeAnimationState}
+                isSpeaking={isSpeaking}
+                isListening={isListening}
+                isPlaying={isPlaying}
+                voiceVolumeScale={voiceVolumeScale || internalVolume || (typeof window !== 'undefined' ? window.__loopraVoiceAudioLevel || 0 : 0)}
+                facing={walkFacing}
+                cursorOffset={cursorOffset}
+                rotationYaw={rotationYaw}
+                rotationPitch={rotationPitch}
+                width={characterWidth}
+                height={characterHeight}
+                showGroundCircle={true}
+                isRoaming={isRoamActive}
+                isMoving={isMoving}
+              />
+            </React.Suspense>
           </div>
         </div>
       </div>

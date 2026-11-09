@@ -93,6 +93,7 @@ import { curateSwipeDeck, filterStrictSoloTracks } from './services/swipeCuratio
 const RatingPopupModal = lazy(() => import('./components/Rating/RatingPopupModal'));
 import HomepageReviewsSection from './components/Rating/HomepageReviewsSection';
 import { updateRouteMetadata } from './utils/seo';
+import { formatTrackDuration } from './utils/duration';
 import { TrackDeduplicator, getCanonicalSongKey } from './utils/trackIdentity';
 import {
   isThumbnailUrlFormatValid,
@@ -542,17 +543,27 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
   });
   const [isSeeking, setIsSeeking] = useState(false);
   const lastSavedTimeRef = useRef(0);
+  const hasPreloadedNextRef = useRef(false);
+
+  // Reset preload state on track change
+  useEffect(() => {
+    hasPreloadedNextRef.current = false;
+  }, [currentSongId]);
 
   useEffect(() => {
     let interval;
     if (isPlaying && !isSeeking) {
       interval = setInterval(() => {
         try {
+          let curTime = 0;
+          let totalDur = 0;
+
           if (playerRef.current?.isReady && playerRef.current?.getCurrentTime) {
             const state = typeof playerRef.current.getPlayerState === 'function' ? playerRef.current.getPlayerState() : 1;
             if (state === 1 || state === 2 || state === 3) {
               const cur = playerRef.current.getCurrentTime();
               if (typeof cur === 'number' && !isNaN(cur)) {
+                curTime = cur;
                 setCurrentTime(cur);
                 if (Math.abs(cur - lastSavedTimeRef.current) >= 3) {
                   lastSavedTimeRef.current = cur;
@@ -568,6 +579,7 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
             if (state === 1 || state === 2 || state === 3) {
               const dur = playerRef.current.getDuration();
               if (typeof dur === 'number' && !isNaN(dur) && dur > 0) {
+                totalDur = dur;
                 setDuration(prev => {
                   if (prev !== dur) {
                     try { localStorage.setItem('afterhours_duration', dur.toString()); } catch (e) {}
@@ -578,11 +590,21 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
               }
             }
           }
+
+          // Pre-fetch / preload the next up-next track when current track hits 80% duration
+          if (totalDur > 10 && curTime > 0 && (curTime / totalDur >= 0.8) && !hasPreloadedNextRef.current) {
+            hasPreloadedNextRef.current = true;
+            try {
+              window.dispatchEvent(new CustomEvent('loopra:preload-next-track', {
+                detail: { currentSongId, curTime, totalDur }
+              }));
+            } catch (_) {}
+          }
         } catch (e) {}
       }, 500);
     }
     return () => clearInterval(interval);
-  }, [isPlaying, isSeeking, playerRef]);
+  }, [isPlaying, isSeeking, playerRef, currentSongId]);
 
   const handleSeekChange = (e) => {
     setCurrentTime(parseFloat(e.target.value));
@@ -610,8 +632,8 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
   }
 
   return (
-    <div className="w-full flex items-center gap-2 text-[10px] font-mono text-neutral-400">
-      <span>{formatTime(currentTime)}</span>
+    <div className="w-full flex items-center gap-3 text-[10px] font-mono text-neutral-400 select-none">
+      <span className="shrink-0 tabular-nums min-w-[32px] text-right">{formatTime(currentTime)}</span>
       <input
         type="range"
         min="0"
@@ -624,7 +646,7 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
         onTouchEnd={handleSeekCommit}
         className="flex-1 h-1 bg-neutral-800 rounded-xl appearance-none cursor-pointer accent-amber-500"
       />
-      <span>{formatTime(duration)}</span>
+      <span className="shrink-0 tabular-nums min-w-[32px] text-left">{formatTime(duration)}</span>
     </div>
   );
 });
@@ -761,7 +783,9 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove, c
 
       {track.duration && (
         <span className="text-xs text-neutral-500 font-mono shrink-0 pointer-events-none">
-          {track.duration}
+          {typeof track.duration === 'object'
+            ? (track.duration?.timestamp || (track.duration?.seconds ? `${Math.round(track.duration.seconds)}s` : ''))
+            : track.duration}
         </span>
       )}
 
@@ -3325,6 +3349,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   };
 
   const silentAudioRef = useRef(null);
+  const isUserPausedRef = useRef(false);
+  const autoResumeTimerRef = useRef(null);
   const videoTimeRef = useRef(0);
   const loadedVideoIdRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -3849,6 +3875,49 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     handleNextSongRef.current = handleNextSong;
   }, [handleNextSong]);
 
+  // Preload next track metadata / image / stream cache at 80% mark
+  useEffect(() => {
+    const handlePreloadEvent = () => {
+      const effectiveQueue = (queue && queue.length > 0)
+        ? queue
+        : (trendingSongs && trendingSongs.length > 0 ? trendingSongs : TRENDING_SONGS);
+      if (!effectiveQueue || effectiveQueue.length === 0) return;
+
+      let nextTrack = null;
+      if (isShuffle) {
+        nextTrack = shuffleService.getNextTrack(currentSong?.id);
+      } else {
+        const currentId = currentSong?.id || currentSong?.videoId;
+        const currentIndex = effectiveQueue.findIndex(s => (s.id || s.videoId) === currentId);
+        if (currentIndex !== -1 && currentIndex + 1 < effectiveQueue.length) {
+          nextTrack = effectiveQueue[currentIndex + 1];
+        } else if (effectiveQueue.length > 0) {
+          nextTrack = effectiveQueue[0];
+        }
+      }
+
+      if (nextTrack) {
+        const nextId = nextTrack.id || nextTrack.videoId;
+        // Pre-warm thumbnail image cache
+        const thumbUrl = getCleanThumbnail(nextTrack);
+        if (thumbUrl) {
+          const img = new Image();
+          img.src = thumbUrl;
+        }
+        // Pre-warm DNS / connection for YouTube stream
+        if (nextId) {
+          const link = document.createElement('link');
+          link.rel = 'prefetch';
+          link.href = `https://i.ytimg.com/vi/${nextId}/hqdefault.jpg`;
+          document.head.appendChild(link);
+        }
+      }
+    };
+
+    window.addEventListener('loopra:preload-next-track', handlePreloadEvent);
+    return () => window.removeEventListener('loopra:preload-next-track', handlePreloadEvent);
+  }, [queue, trendingSongs, isShuffle, currentSong]);
+
   const handlePrevSong = useCallback(() => {
     const effectiveQueue = (queue && queue.length > 0)
       ? queue
@@ -3992,7 +4061,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       try {
         // Bind playback handlers to OS media notification controls
         navigator.mediaSession.setActionHandler('play', () => {
-          if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
+          isUserPausedRef.current = false;
+          if (silentAudioRef.current) {
+            try { silentAudioRef.current.volume = 0.01; } catch (_) {}
+            silentAudioRef.current.play().catch(() => {});
+          }
           try {
             const p = playerRef.current?.playVideo?.();
             if (p && typeof p.catch === 'function') p.catch(() => {});
@@ -4002,6 +4075,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         });
 
         navigator.mediaSession.setActionHandler('pause', () => {
+          isUserPausedRef.current = true;
+          if (autoResumeTimerRef.current) {
+            clearTimeout(autoResumeTimerRef.current);
+            autoResumeTimerRef.current = null;
+          }
           playerRef.current?.pauseVideo?.();
           if (silentAudioRef.current) silentAudioRef.current.pause();
           setIsPlaying(false);
@@ -4213,13 +4291,35 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         onStateChange: (e) => {
           if (e.data === 1) { // Playing
             setIsPlaying(true);
+            isUserPausedRef.current = false;
             isInitialMountRef.current = false;
+            if (autoResumeTimerRef.current) {
+              clearTimeout(autoResumeTimerRef.current);
+              autoResumeTimerRef.current = null;
+            }
             if (!trackPlaybackStartTimeRef.current) {
               trackPlaybackStartTimeRef.current = Date.now();
             }
-            if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
+            if (silentAudioRef.current) {
+              try { silentAudioRef.current.volume = 0.01; } catch (_) {}
+              silentAudioRef.current.play().catch(() => {});
+            }
           } else if (e.data === 2) { // Paused
-            setIsPlaying(false);
+            // Background Auto-Resume Guard: If paused by browser throttling / wake-lock kill while isUserPaused is false, auto-resume
+            if (!isUserPausedRef.current && !isInitialMountRef.current && currentSongRef.current) {
+              if (autoResumeTimerRef.current) clearTimeout(autoResumeTimerRef.current);
+              autoResumeTimerRef.current = setTimeout(() => {
+                if (!isUserPausedRef.current && playerRef.current && typeof playerRef.current.playVideo === 'function') {
+                  console.info('[Loopra Background Guard] Auto-resuming background playback throttled by browser...');
+                  try {
+                    playerRef.current.playVideo();
+                    if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
+                  } catch (_) {}
+                }
+              }, 100);
+            } else {
+              setIsPlaying(false);
+            }
           } else if (e.data === 0) { // Ended
             if (currentSongRef.current && !hasLoggedCompletionRef.current) {
               const dur = durationRef.current || 200;
@@ -4695,19 +4795,31 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
       if (playerRef.current && isPlayerReadyRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline) {
         try {
+          // Detect low-end or mobile device for stream quality optimization
+          const isLowEndDevice = typeof navigator !== 'undefined' && (
+            (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
+            (window.innerWidth < 768)
+          );
+          const quality = isLowEndDevice ? 'small' : 'medium';
+
           if (isFirstMount) {
             if (typeof playerRef.current.cueVideoById === 'function') {
               playerRef.current.cueVideoById({
                 videoId: currentSong.id,
-                startSeconds: savedSeekTime
+                startSeconds: savedSeekTime,
+                suggestedQuality: quality
               });
             } else {
-              playerRef.current.loadVideoById({ videoId: currentSong.id, startSeconds: savedSeekTime });
+              playerRef.current.loadVideoById({ videoId: currentSong.id, startSeconds: savedSeekTime, suggestedQuality: quality });
               playerRef.current.pauseVideo();
             }
             setIsPlaying(false);
           } else {
-            playerRef.current.loadVideoById({ videoId: currentSong.id });
+            // Direct video switch without destroying or recreating the iframe instance
+            playerRef.current.loadVideoById({
+              videoId: currentSong.id,
+              suggestedQuality: quality
+            });
             playerRef.current.playVideo();
             setIsPlaying(true);
           }
@@ -5042,10 +5154,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
     isInitialMountRef.current = false;
     if (isPlaying) {
+      isUserPausedRef.current = true;
+      if (autoResumeTimerRef.current) {
+        clearTimeout(autoResumeTimerRef.current);
+        autoResumeTimerRef.current = null;
+      }
       playerRef.current?.pauseVideo?.();
       if (silentAudioRef.current) silentAudioRef.current.pause();
       setIsPlaying(false);
     } else {
+      isUserPausedRef.current = false;
       if (!playerRef.current || typeof playerRef.current.playVideo !== 'function') {
         let savedSeek = 0;
         try {
@@ -5065,7 +5183,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           if (p && typeof p.catch === 'function') p.catch(() => {});
         } catch (e) {}
       }
-      if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
+      if (silentAudioRef.current) {
+        try { silentAudioRef.current.volume = 0.01; } catch (_) {}
+        silentAudioRef.current.play().catch(() => {});
+      }
       if (!currentSong?.isRadio) {
         setIsPlaying(true);
       }
@@ -7508,7 +7629,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
                           {/* Col 3: Duration (2 cols on desktop, hidden on tiny mobile) */}
                           <div className="hidden sm:flex col-span-2 items-center justify-center text-xs font-mono text-zinc-400">
-                            <span>{track.duration || '3:30'}</span>
+                            <span>{formatTrackDuration(track.duration)}</span>
                           </div>
 
                           {/* Col 4: Hover Actions [Play, ✕ Remove, ⋮ More] (2 cols on desktop, 3 cols on mobile) */}
@@ -8054,7 +8175,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
                           {/* Col 3: Duration */}
                           <div className="hidden sm:flex col-span-2 items-center justify-center text-xs font-mono text-zinc-400">
-                            <span>{track.duration || '3:30'}</span>
+                            <span>{formatTrackDuration(track.duration)}</span>
                           </div>
 
                           {/* Col 4: Hover Actions [Play, ✕ Remove, ⋮ More] */}
@@ -8405,7 +8526,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             </div>
 
             {/* Zone 2 (Center): Playback Controls & Scrubber */}
-            <div className="flex flex-col items-center w-2/4 gap-1.5 animate-fadeIn" onClick={(e) => e.stopPropagation()}>
+            <div className="flex flex-col items-center w-2/4 gap-1.5 animate-fadeIn min-w-0" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center gap-5 shrink-0">
                 <button onClick={toggleShuffle} className={`transition cursor-pointer p-1 rounded-full hover:bg-white/5 ${isShuffle ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} title={isShuffle ? "Shuffle On" : "Shuffle Off"}>
                   <Icon name="shuffle" className="w-4 h-4 shrink-0" />
@@ -8431,7 +8552,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 </button>
               </div>
 
-              <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} currentSongId={currentSong?.id} isRadio={Boolean(currentSong?.isRadio)} />
+              {/* Dedicated Scrubber & Time Display Row */}
+              <div className="w-full flex items-center gap-3">
+                <PlayerProgress playerRef={playerRef} isPlaying={isPlaying} onSeek={handleSeek} currentSongId={currentSong?.id} isRadio={Boolean(currentSong?.isRadio)} />
+              </div>
             </div>
 
             {/* Zone 3 (Right): Volume Slider with Mute Toggle, Queue Toggle, and Avatar Roam Status */}

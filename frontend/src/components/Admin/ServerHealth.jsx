@@ -1,5 +1,6 @@
 import React from 'react';
 import ApiKeyManagement from './ApiKeyManagement';
+import { formatUptime, formatAdminTimestamp } from '../../utils/adminDateUtils';
 import { 
   Server, 
   Database, 
@@ -13,16 +14,6 @@ import {
 } from 'lucide-react';
 
 export default function ServerHealth({ health, metrics, onRefresh, isLoading, backendUrl, token, showToast }) {
-  const formatUptime = (sec = 0) => {
-    const d = Math.floor(sec / 86400);
-    const h = Math.floor((sec % 86400) / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    const s = Math.floor(sec % 60);
-    if (d > 0) return `${d}d ${h}h ${m}m`;
-    if (h > 0) return `${h}h ${m}m ${s}s`;
-    return `${m}m ${s}s`;
-  };
-
   const dbStatus = health?.database ? (health.database.status === 'connected') : true;
   const pingLatency = (typeof health?.database?.pingLatencyMs === 'number' && health.database.pingLatencyMs >= 0)
     ? `${health.database.pingLatencyMs} ms`
@@ -209,7 +200,7 @@ export default function ServerHealth({ health, metrics, onRefresh, isLoading, ba
               <tbody className="divide-y divide-neutral-800/50 font-mono">
                 {metrics.recentErrors.map((err, idx) => (
                   <tr key={idx} className="hover:bg-neutral-800/30 transition">
-                    <td className="py-2.5 text-neutral-400">{new Date(err.timestamp).toLocaleTimeString()}</td>
+                    <td className="py-2.5 text-neutral-400">{formatAdminTimestamp(err.timestamp, { timeOnly: true })}</td>
                     <td className="py-2.5 text-red-400 font-bold">{err.status}</td>
                     <td className="py-2.5 text-neutral-300">{err.method} {err.path}</td>
                     <td className="py-2.5 text-neutral-400 truncate max-w-xs">{err.message}</td>

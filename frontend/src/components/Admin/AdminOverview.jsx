@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { BACKEND_URL } from '../../utils/apiUrl';
 import { USE_V2_MOBILE_ADMIN } from '../../constants/featureFlags';
+import { formatUptime } from '../../utils/adminDateUtils';
 
 export default function AdminOverview({ metrics, health, onNavigate, token, backendUrl, showToast }) {
   const cleanBackendUrl = (backendUrl && backendUrl.trim().startsWith('http'))
@@ -140,15 +141,6 @@ export default function AdminOverview({ metrics, health, onNavigate, token, back
     } finally {
       setIsSaving(false);
     }
-  };
-  const formatUptime = (sec = 0) => {
-    const d = Math.floor(sec / 86400);
-    const h = Math.floor((sec % 86400) / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    const s = Math.floor(sec % 60);
-    if (d > 0) return `${d}d ${h}h ${m}m`;
-    if (h > 0) return `${h}h ${m}m ${s}s`;
-    return `${m}m ${s}s`;
   };
 
   const statusTotal = (metrics?.requestsByStatus?.['2xx'] || 0) +

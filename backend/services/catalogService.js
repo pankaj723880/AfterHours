@@ -523,37 +523,41 @@ export const catalogService = {
       }
     }
 
-    // 2. Fetch dynamic candidates matching user intent to broaden pool if needed
+    // 2 & 3. Parallelize dynamic intent and user preference YouTube candidate queries concurrently
+    const queryPromises = [];
     if (intent.dynamicQueries && intent.dynamicQueries.length > 0) {
-      try {
-        const dynamicTracks = await this.fetchDynamicCandidates(intent.dynamicQueries, 5);
-        for (const t of dynamicTracks) {
-          const id = t.id || t.videoId;
-          if (id && !candidateMap.has(id)) {
-            candidateMap.set(id, { ...t, isDynamic: true });
-          }
-        }
-      } catch (e) {
-        console.warn('[CatalogService] Dynamic candidate fetch notice:', e.message);
-      }
+      queryPromises.push(
+        this.fetchDynamicCandidates(intent.dynamicQueries, 5)
+          .then(tracks => ({ type: 'dynamic', tracks }))
+          .catch(e => {
+            console.warn('[CatalogService] Dynamic candidate fetch notice:', e.message);
+            return { type: 'dynamic', tracks: [] };
+          })
+      );
     }
 
-    // 3. User personalized preferences
     if (userPreferences) {
       const topArtists = (userPreferences.topArtists || []).slice(0, 2).map(a => `${a.name} best single songs`);
       const topGenres = (userPreferences.topGenres || []).slice(0, 1).map(g => `${g.name} hit songs`);
-      const queries = [...topArtists, ...topGenres];
+      const prefQueries = [...topArtists, ...topGenres];
+      if (prefQueries.length > 0) {
+        queryPromises.push(
+          this.fetchDynamicCandidates(prefQueries, 4)
+            .then(tracks => ({ type: 'pref', tracks }))
+            .catch(() => ({ type: 'pref', tracks: [] }))
+        );
+      }
+    }
 
-      if (queries.length > 0) {
-        try {
-          const prefTracks = await this.fetchDynamicCandidates(queries, 4);
-          for (const track of prefTracks) {
-            const id = track.id || track.videoId;
-            if (id && !candidateMap.has(id)) {
-              candidateMap.set(id, track);
-            }
+    if (queryPromises.length > 0) {
+      const queryResults = await Promise.all(queryPromises);
+      for (const res of queryResults) {
+        for (const t of res.tracks || []) {
+          const id = t.id || t.videoId;
+          if (id && !candidateMap.has(id)) {
+            candidateMap.set(id, res.type === 'dynamic' ? { ...t, isDynamic: true } : t);
           }
-        } catch (e) {}
+        }
       }
     }
 

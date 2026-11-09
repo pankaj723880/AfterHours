@@ -4,6 +4,30 @@ import App from './App.jsx';
 import './index.css';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 
+// Page Visibility & Background Playback Spoof for Brave Browser & Android Chrome:
+// 1. Intercept document.hidden and document.visibilityState to always report visible.
+// 2. Stop propagation of visibilitychange events at the capture phase.
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  try {
+    Object.defineProperty(document, 'hidden', {
+      get: () => false,
+      configurable: true
+    });
+    Object.defineProperty(document, 'visibilityState', {
+      get: () => 'visible',
+      configurable: true
+    });
+    window.addEventListener('visibilitychange', (e) => {
+      e.stopImmediatePropagation();
+    }, true);
+    document.addEventListener('visibilitychange', (e) => {
+      e.stopImmediatePropagation();
+    }, true);
+  } catch (err) {
+    console.warn('[Loopra] Page visibility spoof notice:', err);
+  }
+}
+
 // Suppress known benign YouTube IFrame API cross-origin postMessage handshake console warnings
 if (typeof window !== 'undefined') {
   const originalConsoleError = console.error;

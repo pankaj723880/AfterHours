@@ -323,10 +323,10 @@ export default function LoopraAiCompanion({
         : `calc(100dvh - ${hasVoiceAccess ? '225px' : '160px'} - env(safe-area-inset-bottom, 0px))`;
       return { btnBottom, panelBottom, maxH };
     }
-    // Desktop: comfortably clear bottom music player bar
-    const btnBottom = isBottomPlayerVisible ? '106px' : '36px';
-    const panelBottom = isBottomPlayerVisible ? `calc(106px + ${barHeight} + 12px)` : `calc(36px + ${barHeight} + 12px)`;
-    const maxH = isBottomPlayerVisible ? `calc(100vh - ${hasVoiceAccess ? '250px' : '185px'})` : `calc(100vh - ${hasVoiceAccess ? '185px' : '120px'})`;
+    // Desktop: comfortably clear bottom music player bar (elevated cleanly above scrubber and timeline)
+    const btnBottom = isBottomPlayerVisible ? '112px' : '36px';
+    const panelBottom = isBottomPlayerVisible ? `calc(112px + ${barHeight} + 12px)` : `calc(36px + ${barHeight} + 12px)`;
+    const maxH = isBottomPlayerVisible ? `calc(100vh - ${hasVoiceAccess ? '260px' : '195px'})` : `calc(100vh - ${hasVoiceAccess ? '185px' : '120px'})`;
     return { btnBottom, panelBottom, maxH };
   }, [isBottomPlayerVisible, hasVoiceAccess]);
 

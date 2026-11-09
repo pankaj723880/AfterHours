@@ -131,38 +131,44 @@ export default function ThreeDCharacter({
     updateFramingRef.current = updateCameraFraming;
     updateCameraFraming(width, height, framingMode);
 
-    // 2. High-Performance WebGL Renderer
+    // Hardware detection for low-end devices and budget mobile phones
+    const isLowEndDevice = typeof navigator !== 'undefined' && (
+      (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
+      (navigator.deviceMemory && navigator.deviceMemory <= 4) ||
+      (window.innerWidth < 768 && window.devicePixelRatio < 2)
+    );
+
+    // 2. High-Performance WebGL Renderer (Ultra-lightweight configuration)
+    // gl={{ antialias: false, powerPreference: "high-performance", precision: "mediump", stencil: false }}
+    // dpr={[1, 1.5]} clamped to max 1.5
     const renderer = new THREE.WebGLRenderer({
       alpha: true,
-      antialias: true,
-      powerPreference: 'high-performance'
+      antialias: false,
+      powerPreference: 'high-performance',
+      precision: 'mediump',
+      stencil: false,
+      depth: true
     });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(Math.max(window.devicePixelRatio || 1, 1), 1.5));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
+    // Disable all real-time dynamic shadows
     renderer.shadowMap.enabled = false;
     rendererRef.current = renderer;
 
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
 
-    // 3. Studio 3-Point & Neon Accent Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.4);
+    // 3. Lightweight Lighting (Zero costly point/spot lights or post-processing passes)
+    // Basic ambientLight (~0.8) and a clean directional light
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
     scene.add(ambientLight);
 
-    const keyLight = new THREE.DirectionalLight(0xfff7ed, 1.8);
-    keyLight.position.set(2.0, 3.0, 2.5);
-    scene.add(keyLight);
-
-    const fillLight = new THREE.DirectionalLight(0x93c5fd, 0.9);
-    fillLight.position.set(-2.0, 1.5, 2.0);
-    scene.add(fillLight);
-
-    const rimColor = 0xf59e0b; // Loopra Gold / Amber neon
-    const rimLight = new THREE.DirectionalLight(rimColor, 2.2);
-    rimLight.position.set(0, 2.0, -2.5);
-    scene.add(rimLight);
+    const dirLight = new THREE.DirectionalLight(0xfff7ed, 1.4);
+    dirLight.position.set(1.5, 2.5, 2.0);
+    dirLight.castShadow = false;
+    scene.add(dirLight);
 
     // Root Group for orientation and scaling
     const charRoot = new THREE.Group();
@@ -219,9 +225,13 @@ export default function ThreeDCharacter({
       if (!actions[name]) return;
       const nextAction = actions[name];
       if (activeAction !== nextAction) {
-        if (activeAction) {
-          activeAction.fadeOut(duration);
-        }
+        // Fade out any other playing actions completely to prevent conflict
+        Object.keys(actions).forEach((key) => {
+          const act = actions[key];
+          if (act && act !== nextAction && act.isRunning()) {
+            act.fadeOut(duration);
+          }
+        });
         nextAction
           .reset()
           .setEffectiveTimeScale(1)
@@ -290,6 +300,10 @@ export default function ThreeDCharacter({
         model.rotation.y = 0;
 
         model.traverse((child) => {
+          // Disable dynamic shadows across all meshes
+          child.castShadow = false;
+          child.receiveShadow = false;
+
           if (child.isBone) {
             const lower = child.name.toLowerCase();
             glbBones[lower] = child;
@@ -299,9 +313,15 @@ export default function ThreeDCharacter({
               glbHeadBone = child;
             }
           }
-          if (child.isMesh && child.material) {
-            child.material.roughness = Math.max(0.2, child.material.roughness || 0.5);
-            child.material.metalness = Math.min(0.8, child.material.metalness || 0.1);
+          if (child.isMesh) {
+            // Frustum culling enabled on all meshes so off-screen bones/meshes don't compute
+            child.frustumCulled = true;
+
+            if (child.material) {
+              child.material.precision = 'mediump';
+              child.material.roughness = Math.max(0.2, child.material.roughness || 0.5);
+              child.material.metalness = Math.min(0.8, child.material.metalness || 0.1);
+            }
           }
         });
 
@@ -372,17 +392,30 @@ export default function ThreeDCharacter({
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
+    let lastRenderTime = performance.now();
+
     const animate = () => {
       reqId = requestAnimationFrame(animate);
       if (!isTabVisible || stateRef.current.isPaused) return;
 
       const animNow = performance.now();
-      const delta = Math.min((animNow - lastTime) / 1000, 0.1);
+      const curState = stateRef.current.animationState;
+      const isRoamingActive = stateRef.current.isRoaming;
+      const isCharacterMoving = stateRef.current.isMoving;
+
+      // Adaptive FPS throttling: Cap Three.js render loop to 30 FPS when idle or on low-end mobile devices
+      const isIdleStationary = !isRoamingActive || (!isCharacterMoving && curState === 'idle');
+      const minIntervalMs = (isLowEndDevice || isIdleStationary) ? 33.3 : 16.6; // 30 FPS vs 60 FPS
+      if (animNow - lastRenderTime < minIntervalMs) return;
+
+      // Clamp delta time to prevent massive frame drops or jumps
+      const safeDelta = Math.min((animNow - lastTime) / 1000, 0.1);
       lastTime = animNow;
-      elapsedTime += delta;
+      lastRenderTime = animNow;
+      elapsedTime += safeDelta;
+      const delta = safeDelta;
       const time = elapsedTime;
 
-      const curState = stateRef.current.animationState;
       const isSpeakingNow = stateRef.current.isSpeaking;
       const isListeningNow = stateRef.current.isListening;
       const isMusicPlaying = stateRef.current.isPlaying;
@@ -393,19 +426,21 @@ export default function ThreeDCharacter({
       // User yaw directly dictates heading and inspection angle, frame-rate independently damped
       const userYaw = stateRef.current.rotationYaw || 0;
       const userPitch = stateRef.current.rotationPitch || 0;
-      const isRoamingActive = stateRef.current.isRoaming;
-      const isCharacterMoving = stateRef.current.isMoving;
+
+      // Lock pitch and roll: keep rotation.x = 0 and rotation.z = 0 so avatar stays completely upright on floor plane
+      charRoot.rotation.x = 0;
+      charRoot.rotation.z = 0;
 
       if (!isCharacterMoving || !isRoamingActive) {
-        // Smoothly damp rotation directly back to 0 (front-facing) and STOP
-        charRoot.rotation.y = THREE.MathUtils.damp(charRoot.rotation.y, 0, 8.0, delta);
-        charRoot.rotation.x = THREE.MathUtils.damp(charRoot.rotation.x, 0, 8.0, delta);
+        // Smoothly damp rotation directly back to 0 (front-facing) using wrapped shortest angle
+        let diff = 0 - charRoot.rotation.y;
+        diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+        charRoot.rotation.y += diff * Math.min(1.0, 6.0 * delta);
       } else {
-        // Only rotate towards heading when actually moving
-        const targetCharYaw = userYaw;
-        const targetCharPitch = THREE.MathUtils.clamp(userPitch, -0.25, 0.25);
-        charRoot.rotation.y = THREE.MathUtils.damp(charRoot.rotation.y, targetCharYaw, 10.0, delta);
-        charRoot.rotation.x = THREE.MathUtils.damp(charRoot.rotation.x, targetCharPitch, 9.0, delta);
+        // Only rotate towards heading when actually moving using wrapped angle calculation
+        let diff = userYaw - charRoot.rotation.y;
+        diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+        charRoot.rotation.y += diff * Math.min(1.0, 6.0 * delta);
       }
 
       // Music-driven subtle procedural head-bob or scale oscillation when music is active
@@ -422,9 +457,9 @@ export default function ThreeDCharacter({
       // Check if avatar is in sleeping / lying down state
       const isSleepingState = curState === 'sleep' || curState === 'sleeping' || curState === 'lie_down';
 
-      // Update AnimationMixer if GLB contains clips
+      // Update AnimationMixer if GLB contains clips (using clamped safeDelta)
       if (mixer) {
-        mixer.update(delta);
+        mixer.update(safeDelta);
         if (isSleepingState) {
           if (actions['sleep']) {
             fadeToAction('sleep', 0.4);
@@ -456,24 +491,31 @@ export default function ThreeDCharacter({
       // If sleeping without a dedicated clip, rotate the model mesh horizontally flat (-Math.PI/2) and lower onto resting card.
       // If hanging, apply continuous pendulum swinging physics (model.rotation.z = Math.sin(Date.now() * 0.005) * 0.25).
       if (glbLoadedModel) {
-        const isSpinCelebration = curState === 'SPIN_CELEBRATION' || (curState === 'dancing' && danceRoutine === 2);
-        const targetModelRotX = (isSleepingState && !actions['sleep']) ? -Math.PI / 2 : 0;
-        const targetModelRotZ = isHangingState ? Math.sin(Date.now() * 0.005) * 0.25 : 0;
-        const targetModelPosY = (isSleepingState && !actions['sleep']) ? -0.65 : (isHangingState ? 0.15 : -0.2);
-
-        glbLoadedModel.rotation.x = THREE.MathUtils.damp(glbLoadedModel.rotation.x, targetModelRotX, 4.0, delta);
-        glbLoadedModel.rotation.z = THREE.MathUtils.damp(glbLoadedModel.rotation.z, targetModelRotZ, isHangingState ? 12.0 : 4.0, delta);
-        glbLoadedModel.position.y = THREE.MathUtils.damp(glbLoadedModel.position.y, targetModelPosY, 4.0, delta);
-        // Do not add continuous spinning/pirouette when stationary or not explicitly celebrating while roaming
-        if (isSpinCelebration && isRoamingActive && isCharacterMoving) {
-          glbLoadedModel.rotation.y += delta * 6.28;
+        if (!isRoamingActive && (curState === 'idle' || curState === 'standing')) {
+          // Strictly locked coordinates when parked in Idle state to prevent jitter
+          glbLoadedModel.position.set(0, -0.2, 0);
+          glbLoadedModel.rotation.set(0, 0, 0);
         } else {
-          glbLoadedModel.rotation.y = THREE.MathUtils.damp(glbLoadedModel.rotation.y, 0, 8.0, delta);
+          const isSpinCelebration = curState === 'SPIN_CELEBRATION' || (curState === 'dancing' && danceRoutine === 2);
+          const targetModelRotX = (isSleepingState && !actions['sleep']) ? -Math.PI / 2 : 0;
+          const targetModelRotZ = isHangingState ? Math.sin(Date.now() * 0.005) * 0.25 : 0;
+          const targetModelPosY = (isSleepingState && !actions['sleep']) ? -0.65 : (isHangingState ? 0.15 : -0.2);
+
+          glbLoadedModel.rotation.x = THREE.MathUtils.damp(glbLoadedModel.rotation.x, targetModelRotX, 4.0, delta);
+          glbLoadedModel.rotation.z = THREE.MathUtils.damp(glbLoadedModel.rotation.z, targetModelRotZ, isHangingState ? 12.0 : 4.0, delta);
+          glbLoadedModel.position.y = THREE.MathUtils.damp(glbLoadedModel.position.y, targetModelPosY, 4.0, delta);
+          // Do not add continuous spinning/pirouette when stationary or not explicitly celebrating while roaming
+          if (isSpinCelebration && isRoamingActive && isCharacterMoving) {
+            glbLoadedModel.rotation.y += delta * 6.28;
+          } else {
+            glbLoadedModel.rotation.y = THREE.MathUtils.damp(glbLoadedModel.rotation.y, 0, 8.0, delta);
+          }
         }
       }
 
       // Subtle Head Tracking Logic: ±8° yaw, ±5° pitch
-      const isCursorIdle = (Date.now() - lastMouseMoveTime) > 3000;
+      // When parked in idle, freeze dynamic head look-at to maintain rock-solid stability
+      const isCursorIdle = (Date.now() - lastMouseMoveTime) > 3000 || (!isRoamingActive && curState === 'idle');
 
       let rawX = stateRef.current.cursorX || 0;
       let rawY = stateRef.current.cursorY || 0;

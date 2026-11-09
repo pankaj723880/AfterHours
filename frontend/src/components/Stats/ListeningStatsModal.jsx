@@ -1104,7 +1104,21 @@ export default function ListeningStatsModal({
                       {/* Right Play Count & Play Action */}
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-[10px] font-mono text-neutral-400">
-                          {track.plays || track.count || 0} plays
+                          {typeof track?.plays === 'object'
+                            ? (track?.plays?.seconds ? `${Math.round(track.plays.seconds)}s` : '0')
+                            : (track?.plays || track?.count || 0)} plays
+                          {track?.duration ? (
+                            <span className="ml-1 text-neutral-500">
+                              • {typeof track.duration === 'object'
+                                ? (track.duration?.timestamp || (track.duration?.seconds ? `${Math.round(track.duration.seconds)}s` : ''))
+                                : track.duration}
+                            </span>
+                          ) : null}
+                          {track?.timestamp && typeof track.timestamp !== 'object' ? (
+                            <span className="ml-1 text-neutral-500">
+                              • {new Date(track.timestamp).toLocaleTimeString()}
+                            </span>
+                          ) : null}
                         </span>
                         <button
                           onClick={(e) => handleTrackPlayClick(track, e)}

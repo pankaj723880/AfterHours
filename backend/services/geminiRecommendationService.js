@@ -90,13 +90,13 @@ ${JSON.stringify(compactCandidates.slice(0, 40), null, 2)}
 ### CRITICAL INSTRUCTIONS:
 1. You MUST ONLY pick song IDs that exist verbatim in the "Candidate Song Catalogue" above.
 2. DO NOT invent, hallucinate, or generate any new YouTube IDs, URLs, or tracks not in the list.
-3. Organize the selected songs into the following structured sections:
-   - "madeForYou": Top 5-8 songs tailored to their overall artist, mood, and genre affinity.
-   - "dailyMix": 4-6 songs offering a cohesive, smooth listening blend of familiar favorites.
-   - "discover": 3-5 high-quality tracks that broaden their musical horizon with novel artists or adjacent genres.
+3. Organize the selected songs into the following structured sections (strictly maximum 6-8 tracks total to minimize latency):
+   - "madeForYou": Top 3-4 songs tailored to their overall artist, mood, and genre affinity.
+   - "dailyMix": 2-3 songs offering a cohesive, smooth listening blend of familiar favorites.
+   - "discover": 2-3 high-quality tracks that broaden their musical horizon with novel artists or adjacent genres.
    * ABSOLUTE RULE ACROSS ALL SECTIONS: Every section ("madeForYou", "dailyMix", "discover", "moreLikeRecent") MUST BE COMPLETELY MUTUALLY DISJOINT. No song ID or song title may appear in more than one section.
    - "becauseYouListenedToReason": A brief 1-sentence explanation of who or what inspired this mix (e.g., "Because you enjoy romantic melodies by Arijit Singh").
-   - "moreLikeRecent": 3-5 songs matching the vibe of their recent plays.
+   - "moreLikeRecent": 2-3 songs matching the vibe of their recent plays.
 4. For each selected song, provide:
    - "id": the exact matching candidate ID
    - "reason": a concise, friendly reason (e.g., "Matches your love for soulful acoustic vocals")
@@ -104,17 +104,46 @@ ${JSON.stringify(compactCandidates.slice(0, 40), null, 2)}
 Output strictly valid JSON complying with this structure.
 `;
 
-    const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+    const modelName = process.env.GEMINI_RECOMMENDATION_MODEL || process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 
     try {
-      // Use Interactions API with structured response format
-      const response = await client.interactions.create({
-        model: modelName,
-        input: prompt,
-        response_format: {
-          type: 'json_object'
+      let rawOutput = '';
+      
+      // Attempt generation with gemini-1.5-flash and responseMimeType: "application/json"
+      try {
+        const response = await client.models.generateContent({
+          model: modelName,
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          config: {
+            responseMimeType: 'application/json',
+            temperature: 0.2
+          }
+        });
+        rawOutput = response.text || '';
+      } catch (genContentErr) {
+        // Fallback to interactions API or standard generateContent if client methods vary
+        if (client.interactions && typeof client.interactions.create === 'function') {
+          const response = await client.interactions.create({
+            model: modelName,
+            input: prompt,
+            response_format: {
+              type: 'json_object'
+            }
+          });
+          rawOutput = response.output_text;
+          if (!rawOutput && response.steps) {
+            for (const step of response.steps) {
+              if (step.content) {
+                for (const part of step.content) {
+                  if (part.text) rawOutput = part.text;
+                }
+              }
+            }
+          }
+        } else {
+          throw genContentErr;
         }
-      });
+      }
 
       const latency = Date.now() - startTime;
       geminiDiagnostics.lastLatencyMs = latency;
@@ -122,18 +151,6 @@ Output strictly valid JSON complying with this structure.
         ? latency
         : Math.round((geminiDiagnostics.averageLatencyMs + latency) / 2);
       geminiDiagnostics.modelName = modelName;
-
-      let rawOutput = response.output_text;
-      if (!rawOutput && response.steps) {
-        // Fallback for steps output
-        for (const step of response.steps) {
-          if (step.content) {
-            for (const part of step.content) {
-              if (part.text) rawOutput = part.text;
-            }
-          }
-        }
-      }
 
       if (!rawOutput) {
         throw new Error('Gemini returned empty response text');

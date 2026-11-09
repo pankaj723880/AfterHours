@@ -311,7 +311,7 @@ export default function CinematicVideoPlayer({
       }}
       className={
         !videoModalSong
-          ? "fixed top-0 left-0 w-1 h-1 opacity-0 pointer-events-none -z-50 overflow-hidden"
+          ? "fixed top-0 left-0 w-[1px] h-[1px] opacity-[0.01] pointer-events-none -z-[999] overflow-hidden"
           : isPipActive
             ? "fixed bottom-24 right-4 z-[9999] w-72 sm:w-84 max-w-[calc(100vw-2rem)] transition-all duration-300 pointer-events-auto"
             : "fixed inset-0 z-[9999] bg-neutral-950/90 backdrop-blur-xl flex items-center justify-center p-2 sm:p-4 md:p-6 transition-all duration-300 pointer-events-auto overflow-y-auto"

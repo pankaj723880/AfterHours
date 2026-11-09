@@ -27,7 +27,8 @@ import {
   Menu,
   Mic,
   Star,
-  Download
+  Download,
+  Zap
 } from 'lucide-react';
 import AccessDenied from './AccessDenied';
 import AdminOverview from './AdminOverview';
@@ -46,6 +47,8 @@ import CmsMediaLibrary from './CmsMediaLibrary';
 import CmsPublishingHistory from './CmsPublishingHistory';
 import AiLearningIntelligence from './AiLearningIntelligence';
 import VoiceControlManagement from './VoiceControlManagement';
+import AiLiveCodePatcher from './AiLiveCodePatcher';
+import ApiKeyManagement from './ApiKeyManagement';
 import { safeParseJsonResponse } from '../../utils/errorHandler';
 import { DEFAULT_CMS_CONFIG, getCachedCmsConfig, normalizeCmsConfig, applyThemeToDom } from '../../services/cmsClient';
 import { BACKEND_URL } from '../../utils/apiUrl';
@@ -383,6 +386,8 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
 
   const operationsNavItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'live_patcher', label: 'Live Code Patcher', icon: Zap, badge: 'Vite HMR' },
+    { id: 'api_keys', label: 'API Keys Pool', icon: Key, badge: 'Multi-Key' },
     { id: 'voice_control', label: 'Voice Control', icon: Mic, badge: 'Rollout' },
     { id: 'reviews', label: 'Ratings & Reviews', icon: Star, badge: 'Community' },
     { id: 'ai_learning', label: 'AI Learning Engine', icon: Brain, badge: 'Intelligence' },
@@ -398,6 +403,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
   // Primary V2 Category Pill Tabs for sleek mobile horizontal strip
   const mobilePillTabs = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'live_patcher', label: 'Live Patcher', icon: Zap },
     { id: 'traffic', label: 'Live Traffic', icon: Activity },
     { id: 'cms_settings', label: 'CMS', icon: Globe },
     { id: 'ai_learning', label: 'AI Engine', icon: Brain },
@@ -780,6 +786,22 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               metrics={metrics} 
               health={health} 
               onNavigate={setActiveSubTab} 
+              token={token}
+              backendUrl={cleanBackendUrl}
+              showToast={showToast}
+            />
+          )}
+
+          {activeSubTab === 'live_patcher' && (
+            <AiLiveCodePatcher
+              token={token}
+              backendUrl={cleanBackendUrl}
+              showToast={showToast}
+            />
+          )}
+
+          {activeSubTab === 'api_keys' && (
+            <ApiKeyManagement
               token={token}
               backendUrl={cleanBackendUrl}
               showToast={showToast}

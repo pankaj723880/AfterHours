@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import ThreeDCharacter from './ThreeDCharacter';
+const ThreeDCharacter = React.lazy(() => import('./ThreeDCharacter'));
 import { Mic, MessageSquare, X, Sparkles } from 'lucide-react';
 import { voiceBuddyService, CHARACTERS } from '../../services/voiceBuddyService';
 import { voiceSessionService } from '../../services/voiceSessionService';
@@ -85,18 +85,20 @@ export default function FloatingAvatarTriggerV2({
 
           {/* 3D Head-up / Bust Canvas inside circular aperture */}
           <div className="relative w-full h-full flex items-center justify-center pointer-events-none overflow-hidden rounded-full">
-            <ThreeDCharacter
-              gender={character.gender}
-              animationState={isSpeaking ? 'speaking' : isListening ? 'listening' : 'idle'}
-              isSpeaking={isSpeaking}
-              isListening={isListening}
-              isPlaying={isPlaying}
-              voiceVolumeScale={voiceVolumeScale}
-              framingMode="bust"
-              width={72}
-              height={72}
-              isPaused={isExpanded} // Pause background bubble render loop when modal is open
-            />
+            <React.Suspense fallback={<div className="w-4 h-4 rounded-full border border-amber-400 border-t-transparent animate-spin" />}>
+              <ThreeDCharacter
+                gender={character.gender}
+                animationState={isSpeaking ? 'speaking' : isListening ? 'listening' : 'idle'}
+                isSpeaking={isSpeaking}
+                isListening={isListening}
+                isPlaying={isPlaying}
+                voiceVolumeScale={voiceVolumeScale}
+                framingMode="bust"
+                width={72}
+                height={72}
+                isPaused={isExpanded} // Pause background bubble render loop when modal is open
+              />
+            </React.Suspense>
           </div>
 
           {/* Live Mic Activity Indicator Dot */}
@@ -146,18 +148,20 @@ export default function FloatingAvatarTriggerV2({
 
             {/* Upper section: Full 3D interactive avatar with natural animations */}
             <div className="relative w-full h-64 flex items-center justify-center overflow-hidden my-1">
-              <ThreeDCharacter
-                gender={character.gender}
-                animationState={isSpeaking ? 'speaking' : isListening ? 'listening' : 'idle'}
-                isSpeaking={isSpeaking}
-                isListening={isListening}
-                isPlaying={isPlaying}
-                voiceVolumeScale={voiceVolumeScale}
-                framingMode="full"
-                width={220}
-                height={260}
-                isPaused={!isExpanded}
-              />
+              <React.Suspense fallback={<div className="w-8 h-8 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />}>
+                <ThreeDCharacter
+                  gender={character.gender}
+                  animationState={isSpeaking ? 'speaking' : isListening ? 'listening' : 'idle'}
+                  isSpeaking={isSpeaking}
+                  isListening={isListening}
+                  isPlaying={isPlaying}
+                  voiceVolumeScale={voiceVolumeScale}
+                  framingMode="full"
+                  width={220}
+                  height={260}
+                  isPaused={!isExpanded}
+                />
+              </React.Suspense>
             </div>
 
             {/* Middle: Live speech transcription bubble (Hindi/English) */}
