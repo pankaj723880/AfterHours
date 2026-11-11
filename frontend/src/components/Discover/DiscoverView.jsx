@@ -10,7 +10,8 @@ import {
   Play,
   Video,
   MoreVertical,
-  TrendingUp
+  TrendingUp,
+  Heart
 } from 'lucide-react';
 import { getCleanThumbnail, isThumbnailUrlFormatValid } from '../../utils/thumbnailValidator';
 

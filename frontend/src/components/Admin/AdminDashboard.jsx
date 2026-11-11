@@ -28,7 +28,8 @@ import {
   Mic,
   Star,
   Download,
-  Zap
+  Zap,
+  Key
 } from 'lucide-react';
 import AccessDenied from './AccessDenied';
 import AdminOverview from './AdminOverview';

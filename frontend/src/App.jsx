@@ -4304,14 +4304,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             playerRef.current.isReady = true;
           }
           try {
-            // Fix: ensure the underlying iframe element src has explicit encoded origin parameter
-            const iframe = e.target?.getIframe ? e.target.getIframe() : document.getElementById('yt-player-instance');
-            if (iframe && iframe.tagName === 'IFRAME' && iframe.src && !iframe.src.includes('origin=')) {
-              const delim = iframe.src.includes('?') ? '&' : '?';
-              iframe.src = iframe.src + delim + 'origin=' + encodeURIComponent(currentOrigin);
-            }
-          } catch (_) {}
-          try {
             e.target.setVolume(volume);
             if (startSeconds > 0) {
               e.target.seekTo(startSeconds, true);

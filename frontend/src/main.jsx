@@ -32,10 +32,10 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
 if (typeof window !== 'undefined') {
   const originalConsoleError = console.error;
   console.error = function (...args) {
+    const message = args.map(arg => (typeof arg === 'string' ? arg : (arg?.message || ''))).join(' ');
     if (
-      typeof args[0] === 'string' &&
-      args[0].includes('The target origin provided') &&
-      args[0].includes('youtube.com')
+      message.includes("Failed to execute 'postMessage' on 'DOMWindow'") ||
+      (message.includes('The target origin provided') && message.includes('youtube.com'))
     ) {
       return;
     }
