@@ -162,6 +162,7 @@ export default function ThreeDCharacter({
 
     // 3. Lightweight Lighting (Zero costly point/spot lights or post-processing passes)
     // Basic ambientLight (~0.8) and a clean directional light
+    const rimColor = '#4f46e5'; // Safe default rim/accent lighting tone
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
     scene.add(ambientLight);
 

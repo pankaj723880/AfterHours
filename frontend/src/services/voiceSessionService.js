@@ -511,11 +511,16 @@ class VoiceSessionController {
     if (typeof window !== 'undefined') {
       window.__loopraVoiceAudioLevel = scale;
     }
-    // Only dispatch volume_change subscriber updates if the level changes significantly (> 0.08)
-    // or goes to/from 0, preventing high-frequency RAF setState re-renders in subscriber components
+    const now = Date.now();
+    // Throttle volume emissions from requestAnimationFrame to at most once every 60ms (approx 16fps)
+    // and skip insignificant fluctuations (< 0.08) unless going to or from 0
+    if (scale !== 0 && (now - (this._lastVolumeEmitTime || 0)) < 60) {
+      return;
+    }
     if (Math.abs((this._lastEmittedVolumeScale || 0) - scale) < 0.08 && scale > 0 && this._lastEmittedVolumeScale > 0) {
       return;
     }
+    this._lastVolumeEmitTime = now;
     this._lastEmittedVolumeScale = scale;
 
     const snapshot = this.getSnapshot();
