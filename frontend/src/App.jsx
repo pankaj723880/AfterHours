@@ -567,8 +567,8 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
               }
             } catch (_) {}
 
-            // Check player.getPlayerState() === 1 before querying getCurrentTime so it doesn't fire aggressively while initializing
-            if (state === 1) {
+            // Check state: playing (1) or buffering (3) or when player is marked ready
+            if (state === 1 || state === 3 || (state === -1 && player._isReady)) {
               try {
                 const cur = player.getCurrentTime();
                 if (typeof cur === 'number' && !isNaN(cur)) {
