@@ -62,7 +62,7 @@ export const invalidateGeminiKeyCache = () => {
 
 /**
  * Fetch active Gemini keys directly from MongoDB pool.
- * Matches service 'gemini' (case-insensitive), isExhausted !== true, status !== 'Exhausted'.
+ * Matches service 'gemini' (case-insensitive), isExhausted !== true, status === 'Active'.
  */
 export const getActiveDbGeminiKeys = async () => {
   try {
@@ -70,7 +70,7 @@ export const getActiveDbGeminiKeys = async () => {
       const dbKeys = await ApiKey.find({
         service: { $regex: /^gemini$/i },
         isExhausted: { $ne: true },
-        status: { $ne: 'Exhausted' }
+        status: { $regex: /^active$/i }
       })
       .sort({ failureCount: 1, lastUsedAt: 1 })
       .lean();
@@ -354,17 +354,20 @@ export async function executeGeminiOperation(operationFn, options = {}) {
 
       // Check if there is another key to try
       if (isQuota) {
-        ApiKey.updateOne(
-          { service: { $regex: /^gemini$/i }, key: keyInfo.key },
-          { $set: { isExhausted: true, status: 'Exhausted', lastUsedAt: new Date() }, $inc: { failureCount: 1 } }
-        ).then(() => {
+        try {
+          await ApiKey.updateOne(
+            { service: { $regex: /^gemini$/i }, key: keyInfo.key },
+            { $set: { isExhausted: true, status: 'Exhausted', lastUsedAt: new Date() }, $inc: { failureCount: 1 } }
+          );
           invalidateGeminiKeyCache();
-        }).catch(() => {});
+        } catch (_) {}
       } else {
-        ApiKey.updateOne(
-          { service: { $regex: /^gemini$/i }, key: keyInfo.key },
-          { $set: { lastUsedAt: new Date() }, $inc: { failureCount: 1 } }
-        ).catch(() => {});
+        try {
+          await ApiKey.updateOne(
+            { service: { $regex: /^gemini$/i }, key: keyInfo.key },
+            { $set: { lastUsedAt: new Date() }, $inc: { failureCount: 1 } }
+          );
+        } catch (_) {}
       }
 
       if (i < keys.length - 1) {

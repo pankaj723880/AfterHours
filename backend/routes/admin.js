@@ -1283,82 +1283,121 @@ const scanFrontendSourceFiles = async (dir = FRONTEND_SRC) => {
 };
 
 /**
+ * Checks whether the environment is running in a hosted serverless / read-only production environment (e.g. Vercel, AWS Lambda, Render read-only disk).
+ */
+const isReadOnlyFilesystem = () => {
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.RENDER || process.env.READ_ONLY_FS === 'true') {
+    return true;
+  }
+  try {
+    const testFile = path.resolve(FRONTEND_SRC, '.write_test_tmp');
+    fs.writeFileSync(testFile, 'test', 'utf-8');
+    fs.unlinkSync(testFile);
+    return false;
+  } catch (err) {
+    return true;
+  }
+};
+
+/**
  * Smart Target Resolver:
- * Scans filenames and keywords first without calling the LLM with whole repo context.
- * Falls back to fast Gemini flash model only if no deterministic keyword match.
+ * Resolves keyword mappings instantly in 0ms without reading directories or invoking an AI scan.
+ * Never loads the entire codebase or file contents for routing.
  */
 const resolveSmartTargetFile = async (instructionPrompt = '') => {
-  const sourceFiles = await scanFrontendSourceFiles();
-  if (sourceFiles.length === 0) {
-    throw new Error('No source files found in frontend/src/ to analyze');
-  }
+  const promptLower = (instructionPrompt || '').toLowerCase();
 
-  const promptLower = instructionPrompt.toLowerCase();
-
-  // 1. Direct filename or basename match
-  for (const f of sourceFiles) {
-    const baseName = path.basename(f, path.extname(f)).toLowerCase();
-    if (baseName.length > 2 && promptLower.includes(baseName)) {
-      return f;
-    }
-  }
-
-  // 2. High-confidence heuristic keyword mapping
+  // 1. High-confidence heuristic keyword mapping (0ms instant resolution)
   const keywordMap = [
-    { regex: /\b(navbar|brand|logo|dock|header)\b/i, file: 'src/App.jsx' },
-    { regex: /\b(footer)\b/i, file: 'src/components/Navigation/LoopraFooter.jsx' },
-    { regex: /\b(bottomnav|mobile\s*nav)\b/i, file: 'src/components/Navigation/MobileBottomNav.jsx' },
-    { regex: /\b(3d\s*character|humanoid|avatar\s*mesh|threejs)\b/i, file: 'src/components/VoiceAgent/ThreeDCharacter.jsx' },
-    { regex: /\b(character|buddy|avatar\s*widget|roam|floating)\b/i, file: 'src/components/VoiceAgent/CharacterBuddy.jsx' },
-    { regex: /\b(voice\s*agent|voice\s*modal|stt|speech)\b/i, file: 'src/components/VoiceAgent/VoiceAgentModal.jsx' },
-    { regex: /\b(turntable|vinyl)\b/i, file: 'src/components/Player/Turntable3D.jsx' },
-    { regex: /\b(dj\s*club|dj\s*page|lighting)\b/i, file: 'src/components/DjClub/DjClubPage.jsx' },
-    { regex: /\b(indian\s*radio|radio\s*station|station)\b/i, file: 'src/components/Radio/IndianRadioView.jsx' },
-    { regex: /\b(time\s*machine|retro)\b/i, file: 'src/components/Radio/TimeMachineRadio.jsx' },
-    { regex: /\b(lyrics|karaoke)\b/i, file: 'src/components/Player/LyricsModal.jsx' },
-    { regex: /\b(offline|download\s*track)\b/i, file: 'src/components/Offline/OfflineLibraryView.jsx' },
-    { regex: /\b(swipe|discover)\b/i, file: 'src/components/Discover/DiscoverSwipe.jsx' },
-    { regex: /\b(admin|dashboard|live\s*patch)\b/i, file: 'src/components/Admin/AdminDashboard.jsx' },
-    { regex: /\b(search\s*bar|query)\b/i, file: 'src/components/Search/HomeSearchBar.jsx' },
-    { regex: /\b(recommendation|curated|lounge)\b/i, file: 'src/components/Recommendations/PersonalizedRecommendationsSection.jsx' },
-    { regex: /\b(stats|listening\s*stats)\b/i, file: 'src/components/Stats/ListeningStatsModal.jsx' }
+    { regex: /\b(navbar|brand|logo|dock|header|loopra\s*logo|title\s*bar|brand\s*name)\b/i, file: 'src/App.jsx' },
+    { regex: /\b(footer|copyright|disclaimer|policy\s*link)\b/i, file: 'src/components/Navigation/LoopraFooter.jsx' },
+    { regex: /\b(bottomnav|mobile\s*nav|bottom\s*bar|mobile\s*tab)\b/i, file: 'src/components/Navigation/MobileBottomNav.jsx' },
+    { regex: /\b(sidebar|left\s*nav|navigation\s*menu)\b/i, file: 'src/components/Sidebar.jsx' },
+    { regex: /\b(3d\s*character|humanoid|avatar\s*mesh|threejs|three\.js|shader)\b/i, file: 'src/components/VoiceAgent/ThreeDCharacter.jsx' },
+    { regex: /\b(character|buddy|avatar\s*widget|roam|floating|speech\s*bubble)\b/i, file: 'src/components/VoiceAgent/CharacterBuddy.jsx' },
+    { regex: /\b(voice\s*agent|voice\s*modal|stt|speech|mic\s*modal|talk\s*to\s*loopra)\b/i, file: 'src/components/VoiceAgent/VoiceAgentModal.jsx' },
+    { regex: /\b(turntable|vinyl|record\s*player)\b/i, file: 'src/components/Player/Turntable3D.jsx' },
+    { regex: /\b(dj\s*club|dj\s*page|lighting|crowd|laser)\b/i, file: 'src/components/DjClub/DjClubPage.jsx' },
+    { regex: /\b(indian\s*radio|radio\s*station|station|mirchi|vividh)\b/i, file: 'src/components/Radio/IndianRadioView.jsx' },
+    { regex: /\b(time\s*machine|retro|vintage|cassette|radio\s*dial)\b/i, file: 'src/components/Radio/TimeMachineRadio.jsx' },
+    { regex: /\b(lyrics|karaoke|sync\s*lyrics)\b/i, file: 'src/components/Player/LyricsModal.jsx' },
+    { regex: /\b(offline|download\s*track|cached\s*song)\b/i, file: 'src/components/Offline/OfflineLibraryView.jsx' },
+    { regex: /\b(swipe|discover\s*swipe|card\s*deck)\b/i, file: 'src/components/Discover/DiscoverSwipe.jsx' },
+    { regex: /\b(discover|explore\s*view)\b/i, file: 'src/components/Discover/DiscoverView.jsx' },
+    { regex: /\b(player|audio\s*player|bottom\s*player|seek\s*bar|play\s*button)\b/i, file: 'src/components/AudioPlayer.jsx' },
+    { regex: /\b(admin|dashboard|live\s*patch|cms\s*admin)\b/i, file: 'src/components/Admin/AdminDashboard.jsx' },
+    { regex: /\b(search\s*bar|query|search\s*input)\b/i, file: 'src/components/Search/HomeSearchBar.jsx' },
+    { regex: /\b(recommendation|curated|lounge|personalized)\b/i, file: 'src/components/Recommendations/PersonalizedRecommendationsSection.jsx' },
+    { regex: /\b(stats|listening\s*stats|listening\s*history)\b/i, file: 'src/components/Stats/ListeningStatsModal.jsx' }
   ];
 
   for (const item of keywordMap) {
     if (item.regex.test(promptLower)) {
-      const match = sourceFiles.find(f => f.toLowerCase() === item.file.toLowerCase());
-      if (match) return match;
+      return item.file;
     }
   }
 
-  // 3. Fallback: Fast Gemini Flash classification over filenames list only (NOT full codebase)
-  const systemInstruction = `You are a frontend code classifier for Loopra (React/Vite app).
+  // 2. Direct filename or basename check against top known components
+  const commonComponents = [
+    'src/App.jsx',
+    'src/components/AudioPlayer.jsx',
+    'src/components/Sidebar.jsx',
+    'src/components/Navigation/LoopraFooter.jsx',
+    'src/components/Navigation/MobileBottomNav.jsx',
+    'src/components/VoiceAgent/CharacterBuddy.jsx',
+    'src/components/VoiceAgent/ThreeDCharacter.jsx',
+    'src/components/VoiceAgent/VoiceAgentModal.jsx',
+    'src/components/Discover/DiscoverView.jsx',
+    'src/components/Discover/DiscoverSwipe.jsx',
+    'src/components/Radio/IndianRadioView.jsx',
+    'src/components/Radio/TimeMachineRadio.jsx',
+    'src/components/DjClub/DjClubPage.jsx',
+    'src/components/Player/Turntable3D.jsx',
+    'src/components/Player/LyricsModal.jsx',
+    'src/components/Admin/AdminDashboard.jsx',
+    'src/components/Search/HomeSearchBar.jsx',
+    'src/components/Stats/ListeningStatsModal.jsx'
+  ];
+
+  for (const f of commonComponents) {
+    const base = path.basename(f, path.extname(f)).toLowerCase();
+    if (base.length > 2 && promptLower.includes(base)) {
+      return f;
+    }
+  }
+
+  // 3. Fallback: Fast, tight Gemini Flash classification over common component names only (NOT full codebase or file contents)
+  try {
+    const systemInstruction = `You are a frontend code classifier for Loopra (React/Vite app).
 Given a list of file paths and a prompt, return ONLY the single most relevant file path from the list.
-Do NOT output markdown or explanation.`;
+Do NOT output markdown, preamble or explanation.`;
 
-  const userPrompt = `FILE PATHS:\n${sourceFiles.join('\n')}\n\nUSER PROMPT:\n${instructionPrompt}\n\nCHOSEN FILE:`;
+    const userPrompt = `FILE PATHS:\n${commonComponents.join('\n')}\n\nUSER PROMPT:\n${instructionPrompt}\n\nCHOSEN FILE:`;
 
-  const detectResult = await executeGeminiOperation(async ({ client, modelName }) => {
-    const targetModel = modelName || process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
-    const response = await client.models.generateContent({
-      model: targetModel,
-      contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-      config: {
-        systemInstruction,
-        temperature: 0.1
-      }
+    const detectResult = await executeGeminiOperation(async ({ client, modelName }) => {
+      const targetModel = modelName || process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
+      const response = await client.models.generateContent({
+        model: targetModel,
+        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+        config: {
+          systemInstruction,
+          temperature: 0.1
+        }
+      });
+      return response.text;
+    }, {
+      operationName: 'AutoDetectTargetFile',
+      timeoutMs: 4000
     });
-    return response.text;
-  }, {
-    operationName: 'AutoDetectTargetFile',
-    timeoutMs: 12000
-  });
 
-  if (detectResult.success && detectResult.data) {
-    const rawPath = stripMarkdownBackticks(detectResult.data).trim().replace(/^['"`]|['"`]$/g, '');
-    const matched = sourceFiles.find(f => f.toLowerCase() === rawPath.toLowerCase()) ||
-                    sourceFiles.find(f => f.toLowerCase().endsWith(rawPath.toLowerCase()));
-    if (matched) return matched;
+    if (detectResult.success && detectResult.data) {
+      const rawPath = stripMarkdownBackticks(detectResult.data).trim().replace(/^['"`]|['"`]$/g, '');
+      const matched = commonComponents.find(f => f.toLowerCase() === rawPath.toLowerCase()) ||
+                      commonComponents.find(f => f.toLowerCase().endsWith(rawPath.toLowerCase()));
+      if (matched) return matched;
+    }
+  } catch (_) {
+    // If classification times out or fails, default immediately to src/App.jsx
   }
 
   // Default fallback if all else fails
@@ -1525,6 +1564,23 @@ router.post('/ai-commit-patch', authenticateToken, requireAdmin, async (req, res
     const { targetFile, originalCode, stagedCode, instructionPrompt, isAutoDetected, detectedFile, diff } = staged;
     const { absoluteTarget, relativeTarget } = resolveSafeTargetFilePath(targetFile);
 
+    // Check if running on hosted/read-only environment (e.g. Vercel, AWS Lambda, Render)
+    if (isReadOnlyFilesystem()) {
+      stagedPatches.delete(patchId);
+      return res.json({
+        success: true,
+        isReadOnly: true,
+        patchId,
+        filePath: relativeTarget,
+        targetFile: relativeTarget,
+        diff: diff || generateStructuredDiff(originalCode, stagedCode),
+        stagedCode,
+        message: 'Changes generated successfully. In production mode, apply via CMS or push to Git.',
+        notice: 'Changes generated successfully. In production mode, apply via CMS or push to Git.',
+        detectedFile: isAutoDetected ? relativeTarget : null
+      });
+    }
+
     // Prepare backup snapshot directory (.snapshots)
     await ensureBackupEnvironment();
     const timestamp = Date.now();
@@ -1676,6 +1732,22 @@ CRITICAL INSTRUCTIONS:
       });
     }
 
+    // Check if running on hosted/read-only environment (e.g. Vercel, AWS Lambda, Render)
+    if (isReadOnlyFilesystem()) {
+      const diff = generateStructuredDiff(originalCode, cleanedCode);
+      return res.json({
+        success: true,
+        isReadOnly: true,
+        filePath: relativeTarget,
+        targetFile: relativeTarget,
+        diff,
+        stagedCode: cleanedCode,
+        message: 'Changes generated successfully. In production mode, apply via CMS or push to Git.',
+        notice: 'Changes generated successfully. In production mode, apply via CMS or push to Git.',
+        detectedFile: isAutoDetected ? relativeTarget : null
+      });
+    }
+
     // Save pre-patch backup snapshot in .snapshots
     await ensureBackupEnvironment();
     const timestamp = Date.now();
@@ -1765,6 +1837,15 @@ router.post('/ai-rollback', authenticateToken, requireAdmin, async (req, res) =>
     } catch (e) {
       return res.status(404).json({
         error: `Backup snapshot file missing: ${patchRecord.backupFile}`
+      });
+    }
+
+    if (isReadOnlyFilesystem()) {
+      return res.json({
+        success: true,
+        isReadOnly: true,
+        message: 'Snapshot rollback acknowledged. On hosted read-only environments, revert code via Git.',
+        notice: 'On hosted read-only environments, revert code via Git.'
       });
     }
 

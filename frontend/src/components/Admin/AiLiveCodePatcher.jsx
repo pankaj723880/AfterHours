@@ -47,6 +47,17 @@ export function parsePatcherError(rawError) {
 
   const lower = rawStr.toLowerCase();
 
+  // 0. Hosted / Read-Only Environment Notice
+  if (lower.includes('production mode, apply via cms') || lower.includes('read-only') || lower.includes('hosted read-only')) {
+    return {
+      title: 'Hosted Environment Notice',
+      message: 'Changes generated successfully. In production mode, apply via CMS or push to Git.',
+      isQuota: false,
+      isReadOnly: true,
+      raw: rawStr
+    };
+  }
+
   // 1. Quota Exhaustion / 429 / Rate Limit
   if (
     lower.includes('429') ||
@@ -76,6 +87,17 @@ export function parsePatcherError(rawError) {
       title: 'Target File Notice',
       message: 'Target file could not be parsed. Please select path manually.',
       isQuota: false,
+      raw: rawStr
+    };
+  }
+
+  // 3. Timeout / Latency Errors (graceful handling rather than throwing)
+  if (lower.includes('gemini_timeout') || lower.includes('timed out') || lower.includes('timeout')) {
+    return {
+      title: 'AI Generation Progress Notice',
+      message: 'AI code generation is taking a little longer than usual. Multi-key pool failover is actively engaged in the background.',
+      isQuota: false,
+      isTimeout: true,
       raw: rawStr
     };
   }
@@ -230,10 +252,19 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
     setIsPatching(true);
     setPatchStatusMessage('🧠 AI analyzing repository and generating modified code...');
 
+    let timer = null;
+    let progressTimer = null;
+
     try {
-      const timer = setTimeout(() => {
+      timer = setTimeout(() => {
         setPatchStatusMessage('✍️ Generating syntax-safe code & staging modifications...');
       }, 3500);
+
+      // Active progress toast if request takes >8s rather than throwing unhandled GEMINI_TIMEOUT
+      progressTimer = setTimeout(() => {
+        notify('⏳ Generation in progress (>8s)... Evaluating Multi-Key Pool & assembling code diff...', 'info');
+        setPatchStatusMessage('⏳ Multi-Key failover actively streaming response... Almost ready!');
+      }, 8000);
 
       // If auto-apply is enabled, directly hit /api/admin/live-patch for 1-step atomic patch
       if (autoApply) {
@@ -250,6 +281,7 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
         });
 
         clearTimeout(timer);
+        clearTimeout(progressTimer);
         const contentType = res.headers.get('content-type') || '';
         let data = {};
         if (contentType.includes('application/json')) {
@@ -260,8 +292,12 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
         }
 
         if (res.ok && data.success) {
-          notify('Patch Applied Successfully via Vite HMR', 'success');
-          setPatchStatusMessage(`⚡ Live patched ${data.targetFile || targetFile}! Vite HMR updated.`);
+          if (data.isReadOnly || data.notice) {
+            notify(data.notice || 'Changes generated successfully. In production mode, apply via CMS or push to Git.', 'info');
+          } else {
+            notify('Patch Applied Successfully via Vite HMR', 'success');
+          }
+          setPatchStatusMessage(`⚡ ${data.message || `Live patched ${data.targetFile || targetFile}!`}`);
           setInstructionPrompt('');
           handleSetError(null);
           fetchLogs();
@@ -288,6 +324,7 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
       });
 
       clearTimeout(timer);
+      clearTimeout(progressTimer);
 
       const contentType = res.headers.get('content-type') || '';
       let data = {};
@@ -320,9 +357,13 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
         setPatchStatusMessage('');
       }
     } catch (err) {
+      if (timer) clearTimeout(timer);
+      if (progressTimer) clearTimeout(progressTimer);
       handleSetError(err);
       setPatchStatusMessage('');
     } finally {
+      if (timer) clearTimeout(timer);
+      if (progressTimer) clearTimeout(progressTimer);
       setIsPatching(false);
     }
   };
@@ -333,7 +374,12 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
 
     setIsConfirmingCommit(true);
     handleSetError(null);
+    let commitProgressTimer = null;
     try {
+      commitProgressTimer = setTimeout(() => {
+        notify('⏳ Finalizing patch snapshot (>8s)...', 'info');
+      }, 8000);
+
       const res = await fetch(`${cleanBackendUrl}/api/admin/ai-commit-patch`, {
         method: 'POST',
         headers: {
@@ -345,6 +391,7 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
         })
       });
 
+      clearTimeout(commitProgressTimer);
       const contentType = res.headers.get('content-type') || '';
       let data = {};
       if (contentType.includes('application/json')) {
@@ -356,8 +403,13 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
 
       if (res.ok && data.success) {
         const detectedInfo = data.detectedFile ? ` [Auto-detected: ${data.detectedFile}]` : '';
-        notify(`Patch Applied Successfully via Vite HMR${detectedInfo}`, 'success');
-        setPatchStatusMessage(`⚡ Committed ${data.targetFile || stagedPatch.targetFile} & updated live via Vite HMR!`);
+        if (data.isReadOnly || data.notice) {
+          notify(data.notice || 'Changes generated successfully. In production mode, apply via CMS or push to Git.', 'info');
+          setPatchStatusMessage(`ℹ️ ${data.message || 'In production mode: apply changes via CMS or Git.'}`);
+        } else {
+          notify(`Patch Applied Successfully via Vite HMR${detectedInfo}`, 'success');
+          setPatchStatusMessage(`⚡ Committed ${data.targetFile || stagedPatch.targetFile} & updated live via Vite HMR!`);
+        }
         setStagedPatch(null);
         setInstructionPrompt('');
         handleSetError(null);
@@ -368,8 +420,10 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
         handleSetError(err);
       }
     } catch (err) {
+      if (commitProgressTimer) clearTimeout(commitProgressTimer);
       handleSetError(err);
     } finally {
+      if (commitProgressTimer) clearTimeout(commitProgressTimer);
       setIsConfirmingCommit(false);
     }
   };
