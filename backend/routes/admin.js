@@ -1301,15 +1301,19 @@ const isReadOnlyFilesystem = () => {
 
 /**
  * Smart Target Resolver:
- * Resolves keyword mappings instantly in 0ms without reading directories or invoking an AI scan.
- * Never loads the entire codebase or file contents for routing.
+ * Instantly resolves keyword/regex patterns without scanning files or calling Gemini with repository data.
+ * If target is 'auto', words like 'loopra', 'brand', 'navbar', etc. immediately map to 'src/App.jsx'.
  */
-const resolveSmartTargetFile = async (instructionPrompt = '') => {
+const resolveSmartTargetFile = (instructionPrompt = '') => {
   const promptLower = (instructionPrompt || '').toLowerCase();
 
-  // 1. High-confidence heuristic keyword mapping (0ms instant resolution)
+  // 1. Core regex match for Loopra, brand, navbar, title, header -> src/App.jsx
+  if (/\b(loopra|brand|navbar|logo|header|dock|title\s*bar|brand\s*name)\b/i.test(promptLower)) {
+    return 'src/App.jsx';
+  }
+
+  // 2. High-confidence heuristic keyword mapping (0ms instant resolution)
   const keywordMap = [
-    { regex: /\b(navbar|brand|logo|dock|header|loopra\s*logo|title\s*bar|brand\s*name)\b/i, file: 'src/App.jsx' },
     { regex: /\b(footer|copyright|disclaimer|policy\s*link)\b/i, file: 'src/components/Navigation/LoopraFooter.jsx' },
     { regex: /\b(bottomnav|mobile\s*nav|bottom\s*bar|mobile\s*tab)\b/i, file: 'src/components/Navigation/MobileBottomNav.jsx' },
     { regex: /\b(sidebar|left\s*nav|navigation\s*menu)\b/i, file: 'src/components/Sidebar.jsx' },
@@ -1337,7 +1341,7 @@ const resolveSmartTargetFile = async (instructionPrompt = '') => {
     }
   }
 
-  // 2. Direct filename or basename check against top known components
+  // 3. Direct filename or basename check against top known components
   const commonComponents = [
     'src/App.jsx',
     'src/components/AudioPlayer.jsx',
@@ -1366,41 +1370,7 @@ const resolveSmartTargetFile = async (instructionPrompt = '') => {
     }
   }
 
-  // 3. Fallback: Fast, tight Gemini Flash classification over common component names only (NOT full codebase or file contents)
-  try {
-    const systemInstruction = `You are a frontend code classifier for Loopra (React/Vite app).
-Given a list of file paths and a prompt, return ONLY the single most relevant file path from the list.
-Do NOT output markdown, preamble or explanation.`;
-
-    const userPrompt = `FILE PATHS:\n${commonComponents.join('\n')}\n\nUSER PROMPT:\n${instructionPrompt}\n\nCHOSEN FILE:`;
-
-    const detectResult = await executeGeminiOperation(async ({ client, modelName }) => {
-      const targetModel = modelName || process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
-      const response = await client.models.generateContent({
-        model: targetModel,
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-        config: {
-          systemInstruction,
-          temperature: 0.1
-        }
-      });
-      return response.text;
-    }, {
-      operationName: 'AutoDetectTargetFile',
-      timeoutMs: 4000
-    });
-
-    if (detectResult.success && detectResult.data) {
-      const rawPath = stripMarkdownBackticks(detectResult.data).trim().replace(/^['"`]|['"`]$/g, '');
-      const matched = commonComponents.find(f => f.toLowerCase() === rawPath.toLowerCase()) ||
-                      commonComponents.find(f => f.toLowerCase().endsWith(rawPath.toLowerCase()));
-      if (matched) return matched;
-    }
-  } catch (_) {
-    // If classification times out or fails, default immediately to src/App.jsx
-  }
-
-  // Default fallback if all else fails
+  // Default fallback if no keyword matches — instantly return App.jsx without calling Gemini
   return 'src/App.jsx';
 };
 
@@ -1488,13 +1458,14 @@ CRITICAL INSTRUCTIONS:
         contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
         config: {
           systemInstruction,
-          temperature: 0.15
+          temperature: 0.15,
+          maxOutputTokens: 1024
         }
       });
       return response.text;
     }, {
       operationName: `LiveCodeStage:${relativeTarget}`,
-      timeoutMs: 45000
+      timeoutMs: 8000
     });
 
     if (!geminiResult.success || !geminiResult.data) {
@@ -1708,13 +1679,14 @@ CRITICAL INSTRUCTIONS:
         contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
         config: {
           systemInstruction,
-          temperature: 0.15
+          temperature: 0.15,
+          maxOutputTokens: 1024
         }
       });
       return response.text;
     }, {
       operationName: `LiveCodePatch:${relativeTarget}`,
-      timeoutMs: 45000
+      timeoutMs: 8000
     });
 
     if (!geminiResult.success || !geminiResult.data) {
