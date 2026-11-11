@@ -52,38 +52,71 @@ const parseKeyList = (raw) => {
 let cachedDbGeminiKeys = [];
 let lastDbGeminiKeysFetch = 0;
 
-export const refreshDbGeminiKeys = async () => {
+/**
+ * Invalidate the in-memory Gemini key cache so dashboard changes take effect immediately
+ */
+export const invalidateGeminiKeyCache = () => {
+  cachedDbGeminiKeys = [];
+  lastDbGeminiKeysFetch = 0;
+};
+
+/**
+ * Fetch active Gemini keys directly from MongoDB pool.
+ * Matches service 'gemini' (case-insensitive), isExhausted !== true, status !== 'Exhausted'.
+ */
+export const getActiveDbGeminiKeys = async () => {
   try {
     if (mongoose.connection && mongoose.connection.readyState === 1) {
-      const dbKeys = await ApiKey.find({ service: 'gemini', isExhausted: false }).select('key').lean();
-      cachedDbGeminiKeys = dbKeys.map(d => sanitizeApiKey(d.key)).filter(k => k && k.length > 5);
-      lastDbGeminiKeysFetch = Date.now();
+      const dbKeys = await ApiKey.find({
+        service: { $regex: /^gemini$/i },
+        isExhausted: { $ne: true },
+        status: { $ne: 'Exhausted' }
+      })
+      .sort({ failureCount: 1, lastUsedAt: 1 })
+      .lean();
+
+      return dbKeys
+        .map(d => ({
+          key: sanitizeApiKey(d.key),
+          _id: d._id,
+          label: d.label || '',
+          source: 'mongodb'
+        }))
+        .filter(item => item.key && item.key.length > 5);
     }
+  } catch (e) {
+    // Fail silently, use fallback
+  }
+  return [];
+};
+
+export const refreshDbGeminiKeys = async () => {
+  try {
+    const active = await getActiveDbGeminiKeys();
+    cachedDbGeminiKeys = active.map(item => item.key);
+    lastDbGeminiKeysFetch = Date.now();
   } catch (e) {
     // Fail silently, use in-memory / env fallback
   }
 };
 
 /**
- * Returns available keys securely from environment and MongoDB pool.
- * Supports dynamic DB pool, comma-separated VITE_GEMINI_API_KEYS / GEMINI_API_KEYS (e.g. 5 keys)
- * or individual GEMINI_API_KEY, GEMINI_API_KEY_2..5.
- * Reads dynamically at runtime so environment/dashboard changes take effect immediately.
+ * Returns available keys securely prioritizing the MongoDB API Keys pool.
+ * Fallback to environment variables only if no active MongoDB keys are available.
  */
 export function getGeminiKeys() {
   if (Date.now() - lastDbGeminiKeysFetch > 10000) {
     refreshDbGeminiKeys();
   }
 
-  const combined = [
-    ...cachedDbGeminiKeys,
+  // If active keys exist in MongoDB pool, prioritize them first!
+  const hasDbKeys = cachedDbGeminiKeys.length > 0;
+
+  const envKeys = [
     ...parseKeyList(process.env.VITE_GEMINI_API_KEYS),
     ...parseKeyList(process.env.GEMINI_API_KEYS),
     ...parseKeyList(process.env.VITE_GEMINI_KEYS),
     ...parseKeyList(process.env.GEMINI_KEYS),
-  ];
-
-  const discrete = [
     process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.VITE_GEMINI_API_KEY_1 || process.env.GEMINI_KEY_1,
     process.env.GEMINI_API_KEY_2 || process.env.VITE_GEMINI_API_KEY_2 || process.env.GEMINI_KEY_2,
     process.env.GEMINI_API_KEY_3 || process.env.VITE_GEMINI_API_KEY_3 || process.env.GEMINI_KEY_3,
@@ -91,9 +124,13 @@ export function getGeminiKeys() {
     process.env.GEMINI_API_KEY_5 || process.env.VITE_GEMINI_API_KEY_5 || process.env.GEMINI_KEY_5,
   ].map(sanitizeApiKey).filter(k => k && k.length > 5);
 
+  const prioritizedList = hasDbKeys
+    ? [...cachedDbGeminiKeys, ...envKeys]
+    : envKeys;
+
   const unique = [];
   const seen = new Set();
-  for (const k of [...combined, ...discrete]) {
+  for (const k of prioritizedList) {
     if (k && !seen.has(k)) {
       seen.add(k);
       unique.push(k);
@@ -103,7 +140,8 @@ export function getGeminiKeys() {
   return unique.map((key, index) => ({
     index,
     label: index === 0 ? 'primary' : (index === 1 ? 'secondary' : `key_${index + 1}`),
-    key
+    key,
+    isFromDb: cachedDbGeminiKeys.includes(key)
   }));
 }
 
@@ -316,9 +354,17 @@ export async function executeGeminiOperation(operationFn, options = {}) {
 
       // Check if there is another key to try
       if (isQuota) {
-        ApiKey.updateOne({ service: 'gemini', key: keyInfo.key }, { $set: { isExhausted: true }, $inc: { failureCount: 1 } }).catch(() => {});
+        ApiKey.updateOne(
+          { service: { $regex: /^gemini$/i }, key: keyInfo.key },
+          { $set: { isExhausted: true, status: 'Exhausted', lastUsedAt: new Date() }, $inc: { failureCount: 1 } }
+        ).then(() => {
+          invalidateGeminiKeyCache();
+        }).catch(() => {});
       } else {
-        ApiKey.updateOne({ service: 'gemini', key: keyInfo.key }, { $inc: { failureCount: 1 } }).catch(() => {});
+        ApiKey.updateOne(
+          { service: { $regex: /^gemini$/i }, key: keyInfo.key },
+          { $set: { lastUsedAt: new Date() }, $inc: { failureCount: 1 } }
+        ).catch(() => {});
       }
 
       if (i < keys.length - 1) {
@@ -434,6 +480,9 @@ export async function executeGeminiStreamOperation(streamInitFn, options = {}) {
 
 export default {
   getGeminiKeys,
+  getActiveDbGeminiKeys,
+  refreshDbGeminiKeys,
+  invalidateGeminiKeyCache,
   isGeminiConfigured,
   isFailoverError,
   isQuotaError,

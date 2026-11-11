@@ -11,7 +11,7 @@ import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { metricsService } from '../services/metrics.js';
 import { liveUsersService } from '../services/liveUsersService.js';
 import { ADMIN_MANAGED_ENTITIES, EXCLUDED_INTERNAL_ENTITIES } from '../config/adminEntityRegistry.js';
-import { executeGeminiOperation, sanitizeLogMessage } from '../services/geminiKeyManager.js';
+import { executeGeminiOperation, sanitizeLogMessage, invalidateGeminiKeyCache } from '../services/geminiKeyManager.js';
 
 const router = express.Router();
 
@@ -985,6 +985,7 @@ router.post('/keys', authenticateToken, requireAdmin, async (req, res) => {
         service: targetService,
         key: singleKey,
         label: label ? label.trim() : '',
+        status: 'Active',
         isExhausted: false,
         failureCount: 0,
         createdAt: new Date(),
@@ -996,9 +997,14 @@ router.post('/keys', authenticateToken, requireAdmin, async (req, res) => {
         service: newKey.service,
         maskedKey: maskKey(newKey.key),
         label: newKey.label,
+        status: newKey.status,
         isExhausted: newKey.isExhausted
       });
       addedCount++;
+    }
+
+    if (targetService === 'gemini') {
+      invalidateGeminiKeyCache();
     }
 
     await AuditLog.create({
@@ -1031,10 +1037,15 @@ router.patch('/keys/:id/toggle', authenticateToken, requireAdmin, async (req, re
     }
 
     keyDoc.isExhausted = !keyDoc.isExhausted;
+    keyDoc.status = keyDoc.isExhausted ? 'Exhausted' : 'Active';
     if (!keyDoc.isExhausted) {
       keyDoc.failureCount = 0;
     }
     await keyDoc.save();
+
+    if (keyDoc.service && keyDoc.service.toLowerCase() === 'gemini') {
+      invalidateGeminiKeyCache();
+    }
 
     res.json({
       success: true,
@@ -1043,6 +1054,7 @@ router.patch('/keys/:id/toggle', authenticateToken, requireAdmin, async (req, re
         _id: keyDoc._id,
         service: keyDoc.service,
         maskedKey: maskKey(keyDoc.key),
+        status: keyDoc.status,
         isExhausted: keyDoc.isExhausted,
         failureCount: keyDoc.failureCount
       }
@@ -1056,9 +1068,11 @@ router.patch('/keys/:id/toggle', authenticateToken, requireAdmin, async (req, re
 router.post('/keys/reset-all', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const result = await ApiKey.updateMany(
-      { isExhausted: true },
-      { $set: { isExhausted: false, failureCount: 0 } }
+      { $or: [{ isExhausted: true }, { status: 'Exhausted' }] },
+      { $set: { isExhausted: false, status: 'Active', failureCount: 0 } }
     );
+
+    invalidateGeminiKeyCache();
 
     await AuditLog.create({
       adminId: (req.user._id || req.user.id || req.user.userId)?.toString(),
@@ -1088,6 +1102,10 @@ router.delete('/keys/:id', authenticateToken, requireAdmin, async (req, res) => 
     }
 
     await ApiKey.findByIdAndDelete(req.params.id);
+
+    if (keyDoc.service && keyDoc.service.toLowerCase() === 'gemini') {
+      invalidateGeminiKeyCache();
+    }
 
     await AuditLog.create({
       adminId: (req.user._id || req.user.id || req.user.userId)?.toString(),

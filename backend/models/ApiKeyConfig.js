@@ -1,9 +1,10 @@
 import mongoose from 'mongoose';
 
 const ApiKeySchema = new mongoose.Schema({
-  service: { type: String, enum: ['youtube', 'gemini'], required: true },
+  service: { type: String, required: true },
   key: { type: String, required: true, trim: true },
   label: { type: String, default: '' },
+  status: { type: String, enum: ['Active', 'Exhausted', 'Suspended'], default: 'Active' },
   isExhausted: { type: Boolean, default: false },
   failureCount: { type: Number, default: 0 },
   lastUsedAt: { type: Date, default: Date.now },
