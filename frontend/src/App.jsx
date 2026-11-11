@@ -1885,6 +1885,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [newPlaylistName, setNewPlaylistName] = useState('');
 
   const [searchCache, setSearchCache] = useState(() => sanitizeCache(JSON.parse(localStorage.getItem('youtube_search_cache') || '{}')));
+  const searchCacheMapRef = useRef(new Map());
   const [stationCache, setStationCache] = useState(() => sanitizeCache(JSON.parse(localStorage.getItem('youtube_station_cache') || '{}')));
 
   const [currentSong, setCurrentSong] = useState(() => {
@@ -5628,9 +5629,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       });
     }
 
-    // 1. Instant Cache Hit: Return cached search results in 0ms
-    const cachedEntry = searchCache[trimmedQuery];
+    // 1. Instant Cache Hit: Return cached search results in 0ms (In-Memory MapRef -> localStorage State)
+    const mapEntry = searchCacheMapRef.current.get(trimmedQuery);
+    const cachedEntry = mapEntry || searchCache[trimmedQuery];
     if (cachedEntry && !Array.isArray(cachedEntry) && Array.isArray(cachedEntry.items) && cachedEntry.items.length > 0) {
+      if (!mapEntry) {
+        searchCacheMapRef.current.set(trimmedQuery, cachedEntry);
+      }
       setSearchResults(cachedEntry.items);
       setSearchVisibleCount(cachedEntry.items.length);
       setSearchNextPageToken(cachedEntry.nextPageToken || null);
@@ -5681,12 +5686,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         setHasMoreSearchResults(Boolean(nextToken));
 
         if (uniqueTracks.length > 0) {
+          const newCacheEntry = {
+            items: uniqueTracks,
+            nextPageToken: nextToken
+          };
+          searchCacheMapRef.current.set(trimmedQuery, newCacheEntry);
           setSearchCache(prev => ({
             ...prev,
-            [trimmedQuery]: {
-              items: uniqueTracks,
-              nextPageToken: nextToken
-            }
+            [trimmedQuery]: newCacheEntry
           }));
         }
       } else {
@@ -5801,12 +5808,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           setSearchVisibleCount(updated.length);
 
           // Update cache with accumulated results and latest continuation token
+          const updatedCacheEntry = {
+            items: updated,
+            nextPageToken: nextToken
+          };
+          searchCacheMapRef.current.set(currentQuery, updatedCacheEntry);
           setSearchCache(cachePrev => ({
             ...cachePrev,
-            [currentQuery]: {
-              items: updated,
-              nextPageToken: nextToken
-            }
+            [currentQuery]: updatedCacheEntry
           }));
 
           return updated;

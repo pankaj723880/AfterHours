@@ -1092,7 +1092,7 @@ app.use(['/api/learning-intelligence', '/learning-intelligence'], learningRoutes
 
 // YouTube API Search with In-Memory Caching & Rotating Keys
 const searchCache = new Map();
-const SEARCH_CACHE_TTL = 60 * 60 * 1000; // 60 minutes TTL
+const SEARCH_CACHE_TTL = 12 * 60 * 60 * 1000; // 12 hours TTL
 const deadApiKeys = new Map(); // key -> { reason, time }
 
 const isKeyDead = (key) => {
@@ -1435,9 +1435,8 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
               title: item.title,
               channelTitle: item.channel,
               thumbnails: {
-                high: { url: `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg` },
                 medium: { url: `https://i.ytimg.com/vi/${item.id}/mqdefault.jpg` },
-                default: { url: `https://i.ytimg.com/vi/${item.id}/default.jpg` }
+                default: { url: `https://i.ytimg.com/vi/${item.id}/mqdefault.jpg` }
               }
             }
           }));
@@ -1445,8 +1444,7 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
           metricsService.recordYouTube('api');
           const resultPayload = {
             items,
-            nextPageToken: response.data.nextPageToken || null,
-            pageInfo: response.data.pageInfo || null
+            nextPageToken: response.data.nextPageToken || null
           };
           setCachedSearch(cacheKey, resultPayload);
           return res.json(resultPayload);
@@ -1582,9 +1580,8 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
             title: decodeHtml(v.title || ''),
             channelTitle: decodeHtml(v.channel || v.author?.name || 'Unknown'),
             thumbnails: {
-              high: { url: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` },
               medium: { url: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` },
-              default: { url: `https://i.ytimg.com/vi/${videoId}/default.jpg` }
+              default: { url: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` }
             }
           }
         };

@@ -297,6 +297,7 @@ export default function DiscoverView({
                         src={cleanThumb}
                         alt={track.title || ""}
                         loading="lazy"
+                        decoding="async"
                         className="w-11 h-11 rounded-xl object-cover shadow-md bg-neutral-950 border border-white/10 pointer-events-none select-none transition-all"
                         onLoad={(e) => {
                           const target = e.currentTarget;
@@ -597,6 +598,8 @@ export default function DiscoverView({
                         <img
                           src={thumb}
                           alt={track.title}
+                          loading="lazy"
+                          decoding="async"
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                           onLoad={(e) => {
                             const target = e.currentTarget;
@@ -670,6 +673,8 @@ export default function DiscoverView({
                         <img
                           src={thumb}
                           alt={album.title}
+                          loading="lazy"
+                          decoding="async"
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                           onLoad={(e) => {
                             const target = e.currentTarget;

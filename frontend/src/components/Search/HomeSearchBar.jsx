@@ -115,10 +115,10 @@ export default function HomeSearchBar({
             title: decodeHtml(item.snippet?.title || 'Untitled Track'),
             channel: decodeHtml(item.snippet?.channelTitle || 'Unknown Artist'),
             thumbnail:
-              item.snippet?.thumbnails?.high?.url ||
               item.snippet?.thumbnails?.medium?.url ||
               item.snippet?.thumbnails?.default?.url ||
-              `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+              item.snippet?.thumbnails?.high?.url ||
+              `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
             rawItem: item
           };
         });
@@ -438,9 +438,10 @@ export default function HomeSearchBar({
                               src={song.thumbnail}
                               alt={song.title}
                               loading="lazy"
+                              decoding="async"
                               className="w-full h-full object-cover pointer-events-none select-none"
                               onError={(e) => {
-                                e.currentTarget.src = `https://i.ytimg.com/vi/${song.id}/hqdefault.jpg`;
+                                e.currentTarget.src = `https://i.ytimg.com/vi/${song.id}/mqdefault.jpg`;
                               }}
                             />
                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">

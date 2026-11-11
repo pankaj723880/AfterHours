@@ -125,7 +125,7 @@ export function getCleanThumbnail(itemOrUrl, explicitId) {
   // If explicit YouTube video ID exists and is 11-chars
   if (id && /^[a-zA-Z0-9_-]{11}$/.test(id)) {
     if (!url || !isThumbnailUrlFormatValid(url)) {
-      url = `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+      url = `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
     }
   }
 
@@ -139,9 +139,10 @@ export function getCleanThumbnail(itemOrUrl, explicitId) {
 
     if (url.includes('ytimg.com') || url.includes('ggpht.com')) {
       const normalized = url
-        .replace(/\/[^/]*hq720[^/]*\.(?:jpg|webp)(?:\?.*)?$/i, '/hqdefault.jpg')
-        .replace(/\/[^/]*custom[^/]*\.(?:jpg|webp)(?:\?.*)?$/i, '/hqdefault.jpg')
-        .replace(/\/maxresdefault\.(?:jpg|webp)(?:\?.*)?$/i, '/hqdefault.jpg')
+        .replace(/\/[^/]*hq720[^/]*\.(?:jpg|webp)(?:\?.*)?$/i, '/mqdefault.jpg')
+        .replace(/\/[^/]*custom[^/]*\.(?:jpg|webp)(?:\?.*)?$/i, '/mqdefault.jpg')
+        .replace(/\/maxresdefault\.(?:jpg|webp)(?:\?.*)?$/i, '/mqdefault.jpg')
+        .replace(/\/hqdefault\.(?:jpg|webp)(?:\?.*)?$/i, '/mqdefault.jpg')
         .replace(/\?.*$/i, '');
 
       return isThumbnailUrlFormatValid(normalized) ? normalized : null;
