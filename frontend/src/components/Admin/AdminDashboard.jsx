@@ -798,6 +798,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               token={token}
               backendUrl={cleanBackendUrl}
               showToast={showToast}
+              onNavigateTab={(tab) => setActiveSubTab(tab)}
             />
           )}
 

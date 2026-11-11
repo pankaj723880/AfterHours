@@ -251,11 +251,21 @@ export async function executeGeminiOperation(operationFn, options = {}) {
     try {
       return await executeWithModel(requestedModel);
     } catch (modelErr) {
-      // If configured model 404s, fallback to gemini-3.8-flash
-      const is404 = modelErr.status === 404 || String(modelErr.message || '').includes('not found');
-      if (is404 && requestedModel !== 'gemini-3.8-flash') {
-        console.warn(`[GeminiKeyManager] Model ${requestedModel} not found for ${opName}. Retrying with gemini-3.8-flash on key ${keyInfo.label}...`);
-        return await executeWithModel('gemini-3.8-flash');
+      // If configured model 404s or 429 quota exhausts, cascade to fallback models (e.g. gemini-3.1-flash-lite, gemini-3.8-flash)
+      const is404 = modelErr.status === 404 || String(modelErr.message || '').includes('not found') || String(modelErr.message || '').includes('no longer available');
+      const is429 = isQuotaError(modelErr);
+
+      if ((is404 || is429) && requestedModel !== 'gemini-3.1-flash-lite') {
+        try {
+          console.warn(`[GeminiKeyManager] Model ${requestedModel} encountered ${is429 ? 'quota limit (429)' : 'not found (404)'} for ${opName}. Auto-cascading to gemini-3.1-flash-lite...`);
+          return await executeWithModel('gemini-3.1-flash-lite');
+        } catch (cascadeErr) {
+          if (requestedModel !== 'gemini-3.8-flash' && !isQuotaError(cascadeErr)) {
+            console.warn(`[GeminiKeyManager] Cascade to gemini-3.1-flash-lite failed. Trying gemini-3.8-flash...`);
+            return await executeWithModel('gemini-3.8-flash');
+          }
+          throw cascadeErr;
+        }
       }
       throw modelErr;
     }

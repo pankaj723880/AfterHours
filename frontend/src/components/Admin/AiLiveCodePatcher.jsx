@@ -19,9 +19,85 @@ import {
   Monitor,
   Bot,
   X,
-  Code2
+  Code2,
+  Key,
+  ChevronDown
 } from 'lucide-react';
 import { formatAdminTimestamp } from '../../utils/adminDateUtils';
+
+/**
+ * Sanitizes and parses raw backend or AI errors into clear user-friendly notifications and banners.
+ * Detects 429 quota exhaustion, syntax / file parsing errors, and preserves raw technical stack for collapsible inspection.
+ */
+export function parsePatcherError(rawError) {
+  if (!rawError) return null;
+
+  let rawStr = '';
+  if (typeof rawError === 'string') {
+    rawStr = rawError;
+  } else if (rawError instanceof Error) {
+    rawStr = rawError.message || String(rawError);
+  } else {
+    try {
+      rawStr = JSON.stringify(rawError);
+    } catch {
+      rawStr = String(rawError);
+    }
+  }
+
+  const lower = rawStr.toLowerCase();
+
+  // 1. Quota Exhaustion / 429 / Rate Limit
+  if (
+    lower.includes('429') ||
+    lower.includes('resource_exhausted') ||
+    lower.includes('quota') ||
+    lower.includes('rate limit') ||
+    lower.includes('too many requests')
+  ) {
+    return {
+      title: '⚠️ AI Generation Daily Limit Reached',
+      message: 'Gemini 2.5 Free Tier quota exhausted for today. Please retry later, add your own Gemini API Key in API Keys Pool, or target files manually.',
+      isQuota: true,
+      raw: rawStr
+    };
+  }
+
+  // 2. Syntax, Resolution or Target File Errors
+  if (
+    lower.includes('could not be parsed') ||
+    lower.includes('syntaxerror') ||
+    lower.includes('target file not found') ||
+    lower.includes('enoent') ||
+    lower.includes('auto file detection failed') ||
+    lower.includes('failed to parse')
+  ) {
+    return {
+      title: 'Target File Notice',
+      message: 'Target file could not be parsed. Please select path manually.',
+      isQuota: false,
+      raw: rawStr
+    };
+  }
+
+  // 3. Fallback / Generic Sanitization
+  // Strip out ugly JSON RPC headers or stack traces from the main 1-liner
+  let sanitizedOneLiner = rawStr;
+  const rpcMatch = rawStr.match(/\[(?:GoogleGenerativeAI|GoogleRPC|Error)?[^\]]*\]\s*(.*)/i);
+  if (rpcMatch && rpcMatch[1]) {
+    sanitizedOneLiner = rpcMatch[1].trim();
+  }
+  if (sanitizedOneLiner.length > 140) {
+    sanitizedOneLiner = sanitizedOneLiner.slice(0, 140).trim() + '...';
+  }
+
+  return {
+    title: 'Patch Operation Notice',
+    message: sanitizedOneLiner || 'An error occurred during the live patch operation.',
+    isQuota: false,
+    raw: rawStr
+  };
+}
 
 const COMMON_TARGETS = [
   { label: '🤖 Auto-Detect (AI scans & selects the right file)', path: 'auto' },
@@ -44,7 +120,7 @@ const PREVIEW_ROUTES = [
   { label: '3D Turntable / DJ Club', path: '/?station=dj-club' }
 ];
 
-export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToast }) {
+export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToast, onNavigateTab }) {
   const [selectedTarget, setSelectedTarget] = useState('auto');
   const [customPath, setCustomPath] = useState('');
   const [instructionPrompt, setInstructionPrompt] = useState('');
@@ -52,14 +128,17 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
   // Status states
   const [isPatching, setIsPatching] = useState(false);
   const [patchStatusMessage, setPatchStatusMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [parsedError, setParsedError] = useState(null);
+  const [autoApply, setAutoApply] = useState(false);
   const [isRollingBack, setIsRollingBack] = useState(null); // patchId
   const [logs, setLogs] = useState([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
 
   // Review & Confirmation Modal states
-  const [stagedPatch, setStagedPatch] = useState(null); // { patchId, detectedFile, targetFile, originalCode, stagedCode, linesBefore, linesAfter }
+  const [stagedPatch, setStagedPatch] = useState(null); // { patchId, detectedFile, targetFile, originalCode, stagedCode, linesBefore, linesAfter, diff }
   const [isConfirmingCommit, setIsConfirmingCommit] = useState(false);
-  const [diffViewMode, setDiffViewMode] = useState('staged'); // 'staged' | 'original'
+  const [diffViewMode, setDiffViewMode] = useState('diff'); // 'diff' | 'staged' | 'original'
 
   // Live Sandbox Preview states
   const [previewRoute, setPreviewRoute] = useState(PREVIEW_ROUTES[0].path);
@@ -76,6 +155,18 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
     } else {
       console.log(`[AiPatcher] [${type}] ${msg}`);
     }
+  };
+
+  const handleSetError = (rawErr) => {
+    if (!rawErr) {
+      setErrorMessage('');
+      setParsedError(null);
+      return;
+    }
+    const parsed = parsePatcherError(rawErr);
+    setParsedError(parsed);
+    setErrorMessage(parsed.message);
+    notify(parsed.message, 'error');
   };
 
   const getEffectivePath = () => {
@@ -119,29 +210,71 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
     fetchLogs();
   }, [fetchLogs]);
 
-  // Stage patch without modifying disk, then trigger Review & Confirmation Modal
+  // Stage patch without modifying disk, then trigger Review & Confirmation Modal (or auto-apply if enabled)
   const handleStagePatch = async (e) => {
     e.preventDefault();
     const targetFile = getEffectivePath();
 
     if (!targetFile) {
       notify('Please select or specify a target file path', 'error');
+      setErrorMessage('Please select or specify a target file path.');
       return;
     }
     if (!instructionPrompt.trim()) {
       notify('Please enter a natural language instruction prompt', 'error');
+      setErrorMessage('Please enter a natural language instruction prompt.');
       return;
     }
 
+    setErrorMessage('');
     setIsPatching(true);
     setPatchStatusMessage('🧠 AI analyzing repository and generating modified code...');
 
     try {
-      // Step timer updates to show rich feedback
       const timer = setTimeout(() => {
         setPatchStatusMessage('✍️ Generating syntax-safe code & staging modifications...');
       }, 3500);
 
+      // If auto-apply is enabled, directly hit /api/admin/live-patch for 1-step atomic patch
+      if (autoApply) {
+        const res = await fetch(`${cleanBackendUrl}/api/admin/live-patch`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            targetFile,
+            instructionPrompt: instructionPrompt.trim()
+          })
+        });
+
+        clearTimeout(timer);
+        const contentType = res.headers.get('content-type') || '';
+        let data = {};
+        if (contentType.includes('application/json')) {
+          data = await res.json();
+        } else {
+          const text = await res.text();
+          throw new Error(text.slice(0, 100) || `Server returned ${res.status}`);
+        }
+
+        if (res.ok && data.success) {
+          notify('Patch Applied Successfully via Vite HMR', 'success');
+          setPatchStatusMessage(`⚡ Live patched ${data.targetFile || targetFile}! Vite HMR updated.`);
+          setInstructionPrompt('');
+          handleSetError(null);
+          fetchLogs();
+          setTimeout(() => setPatchStatusMessage(''), 4500);
+        } else {
+          const err = data.error || 'Failed to live patch target file';
+          handleSetError(err);
+          setPatchStatusMessage('');
+        }
+        return;
+      }
+
+      // Default staged mode with interactive review & diff confirmation
       const res = await fetch(`${cleanBackendUrl}/api/admin/ai-stage-patch`, {
         method: 'POST',
         headers: {
@@ -172,19 +305,22 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
           detectedFile: data.detectedFile,
           originalCode: data.originalCode,
           stagedCode: data.stagedCode,
+          diff: data.diff || [],
           linesBefore: data.linesBefore,
           linesAfter: data.linesAfter,
           instructionPrompt: instructionPrompt.trim()
         });
-        setDiffViewMode('staged');
+        setDiffViewMode(data.diff && data.diff.length > 0 ? 'diff' : 'staged');
         setPatchStatusMessage('🔍 Ready for review! Opening confirmation modal...');
+        handleSetError(null);
         setTimeout(() => setPatchStatusMessage(''), 2000);
       } else {
-        notify(data.error || 'Failed to stage patch', 'error');
+        const err = data.error || 'Failed to stage patch';
+        handleSetError(err);
         setPatchStatusMessage('');
       }
     } catch (err) {
-      notify('Network error staging patch: ' + err.message, 'error');
+      handleSetError(err);
       setPatchStatusMessage('');
     } finally {
       setIsPatching(false);
@@ -196,6 +332,7 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
     if (!stagedPatch || !stagedPatch.patchId) return;
 
     setIsConfirmingCommit(true);
+    handleSetError(null);
     try {
       const res = await fetch(`${cleanBackendUrl}/api/admin/ai-commit-patch`, {
         method: 'POST',
@@ -219,17 +356,19 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
 
       if (res.ok && data.success) {
         const detectedInfo = data.detectedFile ? ` [Auto-detected: ${data.detectedFile}]` : '';
-        notify(`Patch Applied!${detectedInfo} Live preview updated via Vite HMR.`, "success");
+        notify(`Patch Applied Successfully via Vite HMR${detectedInfo}`, 'success');
         setPatchStatusMessage(`⚡ Committed ${data.targetFile || stagedPatch.targetFile} & updated live via Vite HMR!`);
         setStagedPatch(null);
         setInstructionPrompt('');
+        handleSetError(null);
         fetchLogs();
         setTimeout(() => setPatchStatusMessage(''), 4500);
       } else {
-        notify(data.error || 'Failed to commit patch', 'error');
+        const err = data.error || 'Failed to commit patch';
+        handleSetError(err);
       }
     } catch (err) {
-      notify('Network error committing patch: ' + err.message, 'error');
+      handleSetError(err);
     } finally {
       setIsConfirmingCommit(false);
     }
@@ -310,6 +449,85 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
         </div>
       </div>
 
+      {/* Error Banner Alert with Glassmorphism & Sanitized Feedback */}
+      {(errorMessage || parsedError) && (
+        <div className={`p-4 rounded-xl backdrop-blur-md border transition-all animate-fadeIn ${
+          parsedError?.isQuota 
+            ? 'bg-amber-500/10 border-amber-500/30 text-amber-200' 
+            : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+        }`}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5 min-w-0">
+              <AlertCircle className={`w-4 h-4 shrink-0 mt-0.5 ${
+                parsedError?.isQuota ? 'text-amber-400' : 'text-rose-400'
+              }`} />
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`font-bold text-xs ${
+                    parsedError?.isQuota ? 'text-amber-200' : 'text-rose-200'
+                  }`}>
+                    {parsedError?.title || 'Patch Operation Notice'}
+                  </span>
+                  {parsedError?.isQuota && (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-semibold border border-amber-500/30">
+                      Quota Limit
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs leading-relaxed text-neutral-200/95 break-words">
+                  {parsedError?.message || errorMessage}
+                </p>
+
+                {/* Quota failover action: Switch or add keys */}
+                {parsedError?.isQuota && (
+                  <div className="pt-2 flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (typeof onNavigateTab === 'function') {
+                          onNavigateTab('api_keys');
+                        } else {
+                          window.dispatchEvent(new CustomEvent('admin-switch-tab', { detail: { tab: 'api_keys' } }));
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-medium transition cursor-pointer"
+                    >
+                      <Key className="w-3.5 h-3.5" />
+                      Switch Key in API Keys Pool
+                    </button>
+                    <span className="text-[11px] text-neutral-400">
+                      or switch target from Auto-Detect to manual file.
+                    </span>
+                  </div>
+                )}
+
+                {/* Collapsible details for raw technical / RPC trace */}
+                {parsedError?.raw && (
+                  <details className="mt-2 text-[11px] group">
+                    <summary className="cursor-pointer text-neutral-400 hover:text-neutral-200 select-none flex items-center gap-1 transition">
+                      <ChevronDown className="w-3 h-3 transition-transform group-open:rotate-180" />
+                      <span>View technical diagnostics</span>
+                    </summary>
+                    <pre className="mt-2 p-2.5 rounded-lg bg-black/60 border border-neutral-800 font-mono text-[10px] text-neutral-400 whitespace-pre-wrap break-all max-h-36 overflow-y-auto">
+                      {parsedError.raw}
+                    </pre>
+                  </details>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => handleSetError(null)}
+              className="p-1 rounded-lg hover:bg-neutral-800/60 text-neutral-400 hover:text-white transition cursor-pointer shrink-0"
+              title="Dismiss notice"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Form */}
       <form onSubmit={handleStagePatch} className="bg-neutral-950/60 border border-neutral-800/80 rounded-xl p-4 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -383,11 +601,20 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
           />
         </div>
 
-        {/* Submit Button */}
+        {/* Submit & Options Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
-          <span className="text-[11px] text-neutral-400">
-            A safe preview will be staged for review before changes are written to disk. A <code className="text-neutral-300">.bak</code> snapshot is preserved.
-          </span>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-neutral-300">
+              <input
+                type="checkbox"
+                checked={autoApply}
+                onChange={(e) => setAutoApply(e.target.checked)}
+                className="w-3.5 h-3.5 rounded accent-amber-500 cursor-pointer"
+              />
+              <span className="font-semibold text-amber-300">Auto-Apply directly</span>
+              <span className="text-[10px] text-neutral-500">(write to disk & HMR without review modal)</span>
+            </label>
+          </div>
 
           <button
             type="submit"
@@ -397,12 +624,12 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
             {isPatching ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Staging & Analyzing Code...</span>
+                <span>{autoApply ? 'Patching & Applying via HMR...' : 'Staging & Analyzing Code...'}</span>
               </>
             ) : (
               <>
                 <Zap className="w-4 h-4 fill-current" />
-                <span>Review & Live Patch</span>
+                <span>{autoApply ? '⚡ Instant Live Patch' : 'Review & Live Patch'}</span>
               </>
             )}
           </button>
@@ -677,6 +904,20 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
 
               {/* View Switcher Toggle */}
               <div className="flex items-center bg-neutral-800/90 border border-neutral-700/80 rounded-lg p-0.5">
+                {stagedPatch.diff && stagedPatch.diff.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setDiffViewMode('diff')}
+                    className={`px-3 py-1 rounded-md text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                      diffViewMode === 'diff'
+                        ? 'bg-amber-500 text-neutral-950 shadow-sm'
+                        : 'text-neutral-300 hover:text-white'
+                    }`}
+                  >
+                    <Code2 className="w-3.5 h-3.5" />
+                    <span>Line Diff ({stagedPatch.diff.length})</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setDiffViewMode('staged')}
@@ -715,13 +956,36 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
               </div>
             )}
 
-            {/* Code Viewer Container */}
+            {/* Code / Diff Viewer Container */}
             <div className="flex-1 overflow-auto bg-neutral-950 p-4 font-mono text-xs text-neutral-200 select-text">
-              <pre className="overflow-x-auto whitespace-pre font-mono leading-relaxed">
-                <code>
-                  {diffViewMode === 'staged' ? stagedPatch.stagedCode : stagedPatch.originalCode}
-                </code>
-              </pre>
+              {diffViewMode === 'diff' && stagedPatch.diff && stagedPatch.diff.length > 0 ? (
+                <div className="space-y-0.5 font-mono text-xs">
+                  {stagedPatch.diff.map((item, idx) => (
+                    <div
+                      key={idx}
+                      className={`flex items-start gap-2 px-2 py-0.5 rounded font-mono ${
+                        item.type === 'insert'
+                          ? 'bg-emerald-500/15 text-emerald-300'
+                          : 'bg-rose-500/15 text-rose-300 line-through opacity-75'
+                      }`}
+                    >
+                      <span className="text-neutral-500 select-none w-10 text-right shrink-0">
+                        {item.lineNum}
+                      </span>
+                      <span className="select-none font-bold shrink-0">
+                        {item.type === 'insert' ? '+' : '-'}
+                      </span>
+                      <span className="whitespace-pre overflow-x-auto">{item.content}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <pre className="overflow-x-auto whitespace-pre font-mono leading-relaxed">
+                  <code>
+                    {diffViewMode === 'staged' ? stagedPatch.stagedCode : stagedPatch.originalCode}
+                  </code>
+                </pre>
+              )}
             </div>
 
             {/* Modal Footer Actions */}

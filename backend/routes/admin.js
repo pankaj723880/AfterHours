@@ -1117,7 +1117,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const FRONTEND_SRC = path.resolve(PROJECT_ROOT, 'frontend', 'src');
-const BACKUPS_DIR = path.resolve(PROJECT_ROOT, 'backups', 'code_patches');
+const BACKUPS_DIR = path.resolve(PROJECT_ROOT, '.snapshots');
 const PATCH_LOG_FILE = path.resolve(BACKUPS_DIR, 'patch_history.json');
 
 // Ensure backups folder and metadata log file exist
@@ -1146,21 +1146,25 @@ const savePatchLogs = async (logs) => {
 };
 
 /**
- * Validates and resolves the target file path.
- * Strictly confines read/write operations to frontend/src/ to prevent directory traversal.
+ * Validates and resolves the target file path to an absolute disk path under frontend/src/.
+ * Removes strict whitelisting and accepts relative paths like:
+ *   - src/App.jsx
+ *   - frontend/src/App.jsx
+ *   - components/Admin/AdminDashboard.jsx
+ *   - /components/Navigation/LoopraFooter.jsx
  */
 const resolveSafeTargetFilePath = (targetPath = '') => {
   if (!targetPath || typeof targetPath !== 'string') {
     throw new Error('Target file path is required');
   }
 
-  // Clean leading slashes, src/ or frontend/src/ prefixes
+  // Normalize path separators and strip leading slashes and prefixes
   let normalizedInput = targetPath.trim().replace(/\\/g, '/');
-  normalizedInput = normalizedInput.replace(/^(?:\/|frontend\/src\/|src\/)/, '');
+  normalizedInput = normalizedInput.replace(/^(?:\/+|frontend\/src\/+|src\/+)/i, '');
 
   const absoluteTarget = path.resolve(FRONTEND_SRC, normalizedInput);
 
-  // Path boundary check
+  // Path boundary check to prevent directory traversal outside frontend/src/
   const relativeToSrc = path.relative(FRONTEND_SRC, absoluteTarget);
   if (relativeToSrc.startsWith('..') || path.isAbsolute(relativeToSrc)) {
     throw new Error('Access denied: Operations are restricted strictly within frontend/src/');
@@ -1188,6 +1192,56 @@ const stripMarkdownBackticks = (raw = '') => {
 };
 
 /**
+ * Line diff generator: generates structured diff entries for UI consumption
+ */
+const generateStructuredDiff = (original = '', modified = '') => {
+  const origLines = original.split('\n');
+  const modLines = modified.split('\n');
+  const diff = [];
+  const maxLines = Math.max(origLines.length, modLines.length);
+  let changeCount = 0;
+
+  for (let i = 0; i < maxLines && changeCount < 200; i++) {
+    const o = origLines[i];
+    const m = modLines[i];
+    if (o !== m) {
+      if (o !== undefined) {
+        diff.push({ type: 'delete', lineNum: i + 1, content: o });
+        changeCount++;
+      }
+      if (m !== undefined) {
+        diff.push({ type: 'insert', lineNum: i + 1, content: m });
+        changeCount++;
+      }
+    }
+  }
+
+  return diff;
+};
+
+/**
+ * Searches and replaces blocks if LLM returned <<<<<<< SEARCH / ======= / >>>>>>> blocks.
+ */
+const applySearchReplaceBlocks = (originalCode, patchOutput) => {
+  if (patchOutput.includes('<<<<<<< SEARCH') && patchOutput.includes('=======')) {
+    const blocks = patchOutput.split('<<<<<<< SEARCH');
+    let patched = originalCode;
+    for (let i = 1; i < blocks.length; i++) {
+      const parts = blocks[i].split('=======');
+      if (parts.length >= 2) {
+        const searchPart = parts[0].replace(/^\r?\n/, '').replace(/\r?\n$/, '');
+        const replacePart = parts[1].split('>>>>>>>')[0].replace(/^\r?\n/, '').replace(/\r?\n$/, '');
+        if (searchPart && patched.includes(searchPart)) {
+          patched = patched.replace(searchPart, replacePart);
+        }
+      }
+    }
+    return patched;
+  }
+  return patchOutput;
+};
+
+/**
  * Recursively scans frontend/src to gather all source file paths (.jsx, .js, .css, .json).
  */
 const scanFrontendSourceFiles = async (dir = FRONTEND_SRC) => {
@@ -1196,7 +1250,6 @@ const scanFrontendSourceFiles = async (dir = FRONTEND_SRC) => {
     entries.map(async (entry) => {
       const fullPath = path.resolve(dir, entry.name);
       if (entry.isDirectory()) {
-        // Skip hidden or node_modules directories if any
         if (entry.name.startsWith('.') || entry.name === 'node_modules') return [];
         return await scanFrontendSourceFiles(fullPath);
       }
@@ -1212,74 +1265,90 @@ const scanFrontendSourceFiles = async (dir = FRONTEND_SRC) => {
 };
 
 /**
- * Uses gemini-1.5-flash / default flash model to automatically detect which single file needs to be patched.
+ * Smart Target Resolver:
+ * Scans filenames and keywords first without calling the LLM with whole repo context.
+ * Falls back to fast Gemini flash model only if no deterministic keyword match.
  */
-const detectTargetFileFromPrompt = async (instructionPrompt) => {
+const resolveSmartTargetFile = async (instructionPrompt = '') => {
   const sourceFiles = await scanFrontendSourceFiles();
   if (sourceFiles.length === 0) {
     throw new Error('No source files found in frontend/src/ to analyze');
   }
 
-  const systemInstruction = `You are an expert full-stack code repository analyzer.
-Given a list of frontend source files and a user instruction/bug description, identify the single most relevant file that must be modified to achieve the task.
+  const promptLower = instructionPrompt.toLowerCase();
 
-CRITICAL INSTRUCTIONS:
-1. Return ONLY the exact single file path from the provided list (e.g., "src/components/VoiceAgent/CharacterBuddy.jsx").
-2. Absolutely DO NOT wrap in quotes, markdown code fences, or backticks.
-3. DO NOT output any explanation, commentary, or multiple paths.`;
+  // 1. Direct filename or basename match
+  for (const f of sourceFiles) {
+    const baseName = path.basename(f, path.extname(f)).toLowerCase();
+    if (baseName.length > 2 && promptLower.includes(baseName)) {
+      return f;
+    }
+  }
 
-  const userPrompt = `SOURCE FILES LIST:\n${sourceFiles.join('\n')}\n\nUSER INSTRUCTION / TASK:\n"${instructionPrompt.trim()}"\n\nEXACT TARGET FILE PATH:`;
+  // 2. High-confidence heuristic keyword mapping
+  const keywordMap = [
+    { regex: /\b(navbar|brand|logo|dock|header)\b/i, file: 'src/App.jsx' },
+    { regex: /\b(footer)\b/i, file: 'src/components/Navigation/LoopraFooter.jsx' },
+    { regex: /\b(bottomnav|mobile\s*nav)\b/i, file: 'src/components/Navigation/MobileBottomNav.jsx' },
+    { regex: /\b(3d\s*character|humanoid|avatar\s*mesh|threejs)\b/i, file: 'src/components/VoiceAgent/ThreeDCharacter.jsx' },
+    { regex: /\b(character|buddy|avatar\s*widget|roam|floating)\b/i, file: 'src/components/VoiceAgent/CharacterBuddy.jsx' },
+    { regex: /\b(voice\s*agent|voice\s*modal|stt|speech)\b/i, file: 'src/components/VoiceAgent/VoiceAgentModal.jsx' },
+    { regex: /\b(turntable|vinyl)\b/i, file: 'src/components/Player/Turntable3D.jsx' },
+    { regex: /\b(dj\s*club|dj\s*page|lighting)\b/i, file: 'src/components/DjClub/DjClubPage.jsx' },
+    { regex: /\b(indian\s*radio|radio\s*station|station)\b/i, file: 'src/components/Radio/IndianRadioView.jsx' },
+    { regex: /\b(time\s*machine|retro)\b/i, file: 'src/components/Radio/TimeMachineRadio.jsx' },
+    { regex: /\b(lyrics|karaoke)\b/i, file: 'src/components/Player/LyricsModal.jsx' },
+    { regex: /\b(offline|download\s*track)\b/i, file: 'src/components/Offline/OfflineLibraryView.jsx' },
+    { regex: /\b(swipe|discover)\b/i, file: 'src/components/Discover/DiscoverSwipe.jsx' },
+    { regex: /\b(admin|dashboard|live\s*patch)\b/i, file: 'src/components/Admin/AdminDashboard.jsx' },
+    { regex: /\b(search\s*bar|query)\b/i, file: 'src/components/Search/HomeSearchBar.jsx' },
+    { regex: /\b(recommendation|curated|lounge)\b/i, file: 'src/components/Recommendations/PersonalizedRecommendationsSection.jsx' },
+    { regex: /\b(stats|listening\s*stats)\b/i, file: 'src/components/Stats/ListeningStatsModal.jsx' }
+  ];
+
+  for (const item of keywordMap) {
+    if (item.regex.test(promptLower)) {
+      const match = sourceFiles.find(f => f.toLowerCase() === item.file.toLowerCase());
+      if (match) return match;
+    }
+  }
+
+  // 3. Fallback: Fast Gemini Flash classification over filenames list only (NOT full codebase)
+  const systemInstruction = `You are a frontend code classifier for Loopra (React/Vite app).
+Given a list of file paths and a prompt, return ONLY the single most relevant file path from the list.
+Do NOT output markdown or explanation.`;
+
+  const userPrompt = `FILE PATHS:\n${sourceFiles.join('\n')}\n\nUSER PROMPT:\n${instructionPrompt}\n\nCHOSEN FILE:`;
 
   const detectResult = await executeGeminiOperation(async ({ client, modelName }) => {
-    // Prefer fast flash model if available, falling back to modelName
-    const flashModel = 'gemini-1.5-flash';
-    let chosenModel = flashModel;
-    try {
-      const response = await client.models.generateContent({
-        model: chosenModel,
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-        config: {
-          systemInstruction,
-          temperature: 0.1
-        }
-      });
-      return response.text;
-    } catch {
-      // Fallback to active modelName
-      const response = await client.models.generateContent({
-        model: modelName,
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-        config: {
-          systemInstruction,
-          temperature: 0.1
-        }
-      });
-      return response.text;
-    }
+    const targetModel = modelName || process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
+    const response = await client.models.generateContent({
+      model: targetModel,
+      contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+      config: {
+        systemInstruction,
+        temperature: 0.1
+      }
+    });
+    return response.text;
   }, {
     operationName: 'AutoDetectTargetFile',
-    timeoutMs: 15000
+    timeoutMs: 12000
   });
 
-  if (!detectResult.success || !detectResult.data) {
-    throw new Error(detectResult.message || 'AI file detection failed');
+  if (detectResult.success && detectResult.data) {
+    const rawPath = stripMarkdownBackticks(detectResult.data).trim().replace(/^['"`]|['"`]$/g, '');
+    const matched = sourceFiles.find(f => f.toLowerCase() === rawPath.toLowerCase()) ||
+                    sourceFiles.find(f => f.toLowerCase().endsWith(rawPath.toLowerCase()));
+    if (matched) return matched;
   }
 
-  const rawPath = stripMarkdownBackticks(detectResult.data).trim().replace(/^['"`]|['"`]$/g, '');
-  // Find closest exact or normalized match in sourceFiles
-  const matched = sourceFiles.find(f => f.toLowerCase() === rawPath.toLowerCase()) ||
-                  sourceFiles.find(f => f.toLowerCase().endsWith(rawPath.toLowerCase())) ||
-                  sourceFiles.find(f => rawPath.toLowerCase().includes(f.toLowerCase()));
-
-  if (!matched) {
-    throw new Error(`AI suggested file "${rawPath}", which does not exist in frontend/src/`);
-  }
-
-  return matched;
+  // Default fallback if all else fails
+  return 'src/App.jsx';
 };
 
-// GET /api/admin/ai-patch-logs - Fetch chronological patch history
-router.get('/ai-patch-logs', authenticateToken, requireAdmin, async (req, res) => {
+// GET /api/admin/ai-patch-logs & /api/admin/patch-logs - Fetch chronological patch history
+router.get(['/ai-patch-logs', '/patch-logs'], authenticateToken, requireAdmin, async (req, res) => {
   try {
     const logs = await readPatchLogs();
     res.json({
@@ -1304,7 +1373,7 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
-// POST /api/admin/ai-stage-patch - Analyzes the file, generates modified code, and returns staged patch WITHOUT writing to disk
+// POST /api/admin/ai-stage-patch - Analyzes the targeted file, generates code, and returns staged patch
 router.post('/ai-stage-patch', authenticateToken, requireAdmin, async (req, res) => {
   try {
     let { targetFile, instructionPrompt } = req.body;
@@ -1316,10 +1385,9 @@ router.post('/ai-stage-patch', authenticateToken, requireAdmin, async (req, res)
     let isAutoDetected = false;
     let detectedFile = null;
 
-    // 1. Full Auto File Detection if targetFile is "auto", empty, or unspecified
     if (!targetFile || targetFile === 'auto' || targetFile.trim() === '') {
       try {
-        detectedFile = await detectTargetFileFromPrompt(instructionPrompt);
+        detectedFile = await resolveSmartTargetFile(instructionPrompt);
         targetFile = detectedFile;
         isAutoDetected = true;
       } catch (autoErr) {
@@ -1331,7 +1399,7 @@ router.post('/ai-stage-patch', authenticateToken, requireAdmin, async (req, res)
 
     const { absoluteTarget, relativeTarget } = resolveSafeTargetFilePath(targetFile);
 
-    // Read original file content
+    // Read original file content safely
     let originalCode = '';
     try {
       originalCode = await fs.promises.readFile(absoluteTarget, 'utf-8');
@@ -1341,18 +1409,21 @@ router.post('/ai-stage-patch', authenticateToken, requireAdmin, async (req, res)
       });
     }
 
-    // Call Gemini with multi-key failover and quota resilience
     const systemInstruction = `You are an expert AI live code patcher for Loopra (a Vite + React + Tailwind + Three.js application).
-You are modifying the full content of the file: "${relativeTarget}".
+You are modifying the file: "${relativeTarget}".
 
 CRITICAL INSTRUCTIONS:
-1. Return ONLY the complete, raw, syntactically valid source code for this entire file.
-2. Absolutely DO NOT wrap your output in markdown code fences (NO \`\`\` or \`\`\`jsx or \`\`\`js).
-3. Do NOT include explanations, preamble, greetings, or postscript comments.
-4. Preserve all existing necessary imports, exports, functions, and state unless requested otherwise.
-5. Address the user's instruction precisely and cleanly.`;
+1. For files under 500 lines, return the complete updated file content.
+2. For large files, you may return the full modified file OR targeted search-and-replace blocks using:
+<<<<<<< SEARCH
+[exact original code to replace]
+=======
+[replacement code]
+>>>>>>>
+3. Absolutely DO NOT wrap output in markdown code blocks (\`\`\` or \`\`\`jsx). Return raw executable code only.
+4. Preserve all necessary imports, state, and exports.`;
 
-    const userPrompt = `ORIGINAL FILE CONTENT (${relativeTarget}):\n${originalCode}\n\nUSER INSTRUCTION / FIX REQUEST:\n${instructionPrompt.trim()}\n\nOUTPUT (raw executable code only, NO markdown):`;
+    const userPrompt = `ORIGINAL FILE (${relativeTarget}):\n${originalCode}\n\nINSTRUCTION / FIX:\n${instructionPrompt.trim()}\n\nOUTPUT:`;
 
     const geminiResult = await executeGeminiOperation(async ({ client, modelName }) => {
       const response = await client.models.generateContent({
@@ -1375,8 +1446,8 @@ CRITICAL INSTRUCTIONS:
       });
     }
 
-    const rawPatch = geminiResult.data;
-    const cleanedCode = stripMarkdownBackticks(rawPatch);
+    const cleanedOutput = stripMarkdownBackticks(geminiResult.data);
+    const cleanedCode = applySearchReplaceBlocks(originalCode, cleanedOutput);
 
     if (!cleanedCode || cleanedCode.length < 20) {
       return res.status(500).json({
@@ -1385,6 +1456,8 @@ CRITICAL INSTRUCTIONS:
     }
 
     const patchId = `stage_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const diff = generateStructuredDiff(originalCode, cleanedCode);
+
     const stagedData = {
       patchId,
       stagedAt: Date.now(),
@@ -1394,6 +1467,7 @@ CRITICAL INSTRUCTIONS:
       instructionPrompt: instructionPrompt.trim(),
       originalCode,
       stagedCode: cleanedCode,
+      diff,
       linesBefore: originalCode.split('\n').length,
       linesAfter: cleanedCode.split('\n').length,
       stagedBy: req.user?.username || 'admin'
@@ -1409,14 +1483,15 @@ CRITICAL INSTRUCTIONS:
       linesBefore: stagedData.linesBefore,
       linesAfter: stagedData.linesAfter,
       originalCode,
-      stagedCode: cleanedCode
+      stagedCode: cleanedCode,
+      diff
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to stage patch: ' + err.message });
   }
 });
 
-// POST /api/admin/ai-commit-patch - Commits staged patch to disk with .bak backup and triggers Vite HMR
+// POST /api/admin/ai-commit-patch - Commits staged patch to disk with .bak backup in .snapshots/ and triggers Vite HMR
 router.post('/ai-commit-patch', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { patchId } = req.body;
@@ -1429,10 +1504,10 @@ router.post('/ai-commit-patch', authenticateToken, requireAdmin, async (req, res
       return res.status(404).json({ error: 'Staged patch expired or not found. Please regenerate patch.' });
     }
 
-    const { targetFile, originalCode, stagedCode, instructionPrompt, isAutoDetected, detectedFile } = staged;
+    const { targetFile, originalCode, stagedCode, instructionPrompt, isAutoDetected, detectedFile, diff } = staged;
     const { absoluteTarget, relativeTarget } = resolveSafeTargetFilePath(targetFile);
 
-    // Prepare backup snapshot
+    // Prepare backup snapshot directory (.snapshots)
     await ensureBackupEnvironment();
     const timestamp = Date.now();
     const sanitizedFileName = path.basename(relativeTarget).replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -1442,8 +1517,8 @@ router.post('/ai-commit-patch', authenticateToken, requireAdmin, async (req, res
     // Save pre-patch backup snapshot
     await fs.promises.writeFile(backupPath, originalCode, 'utf-8');
 
-    // Overwrite target file (triggers Vite HMR in browser in real time)
-    await fs.promises.writeFile(absoluteTarget, stagedCode, 'utf-8');
+    // Synchronously write modified code to disk using fs.writeFileSync (triggers Vite HMR in browser)
+    fs.writeFileSync(absoluteTarget, stagedCode, 'utf-8');
 
     // Clean from staged memory
     stagedPatches.delete(patchId);
@@ -1486,9 +1561,12 @@ router.post('/ai-commit-patch', authenticateToken, requireAdmin, async (req, res
 
     res.json({
       success: true,
+      patchId: committedPatchId,
+      filePath: relativeTarget,
+      targetFile: relativeTarget,
+      diff: diff || generateStructuredDiff(originalCode, stagedCode),
       message: `Successfully live patched ${relativeTarget}! Vite HMR updated.`,
       detectedFile: isAutoDetected ? relativeTarget : null,
-      targetFile: relativeTarget,
       patch: patchRecord
     });
   } catch (err) {
@@ -1496,10 +1574,12 @@ router.post('/ai-commit-patch', authenticateToken, requireAdmin, async (req, res
   }
 });
 
-// POST /api/admin/ai-patch - Legacy/Direct Endpoint (Stages and commits directly for backward compatibility)
-router.post('/ai-patch', authenticateToken, requireAdmin, async (req, res) => {
+// POST /api/admin/live-patch & /api/admin/ai-patch - Unified Direct Endpoint (stages, snapshots in .snapshots, and writes to disk)
+router.post(['/live-patch', '/ai-patch'], authenticateToken, requireAdmin, async (req, res) => {
   try {
-    let { targetFile, instructionPrompt } = req.body;
+    let { targetFile, filePath, instructionPrompt, prompt } = req.body;
+    targetFile = targetFile || filePath;
+    instructionPrompt = instructionPrompt || prompt;
 
     if (!instructionPrompt || !instructionPrompt.trim()) {
       return res.status(400).json({ error: 'Instruction prompt is required' });
@@ -1508,10 +1588,9 @@ router.post('/ai-patch', authenticateToken, requireAdmin, async (req, res) => {
     let isAutoDetected = false;
     let detectedFile = null;
 
-    // 1. Full Auto File Detection if targetFile is "auto", empty, or unspecified
     if (!targetFile || targetFile === 'auto' || targetFile.trim() === '') {
       try {
-        detectedFile = await detectTargetFileFromPrompt(instructionPrompt);
+        detectedFile = await resolveSmartTargetFile(instructionPrompt);
         targetFile = detectedFile;
         isAutoDetected = true;
       } catch (autoErr) {
@@ -1533,18 +1612,21 @@ router.post('/ai-patch', authenticateToken, requireAdmin, async (req, res) => {
       });
     }
 
-    // Call Gemini with multi-key failover and quota resilience
     const systemInstruction = `You are an expert AI live code patcher for Loopra (a Vite + React + Tailwind + Three.js application).
-You are modifying the full content of the file: "${relativeTarget}".
+You are modifying the file: "${relativeTarget}".
 
 CRITICAL INSTRUCTIONS:
-1. Return ONLY the complete, raw, syntactically valid source code for this entire file.
-2. Absolutely DO NOT wrap your output in markdown code fences (NO \`\`\` or \`\`\`jsx or \`\`\`js).
-3. Do NOT include explanations, preamble, greetings, or postscript comments.
-4. Preserve all existing necessary imports, exports, functions, and state unless requested otherwise.
-5. Address the user's instruction precisely and cleanly.`;
+1. Return the complete updated source code OR targeted search-and-replace blocks:
+<<<<<<< SEARCH
+[exact original code]
+=======
+[replacement code]
+>>>>>>>
+2. Absolutely DO NOT wrap your output in markdown code fences (\`\`\` or \`\`\`jsx).
+3. Do NOT include explanations, preamble, or comments.
+4. Preserve all existing necessary imports, functions, and state.`;
 
-    const userPrompt = `ORIGINAL FILE CONTENT (${relativeTarget}):\n${originalCode}\n\nUSER INSTRUCTION / FIX REQUEST:\n${instructionPrompt.trim()}\n\nOUTPUT (raw executable code only, NO markdown):`;
+    const userPrompt = `ORIGINAL FILE (${relativeTarget}):\n${originalCode}\n\nINSTRUCTION / FIX:\n${instructionPrompt.trim()}\n\nOUTPUT:`;
 
     const geminiResult = await executeGeminiOperation(async ({ client, modelName }) => {
       const response = await client.models.generateContent({
@@ -1567,8 +1649,8 @@ CRITICAL INSTRUCTIONS:
       });
     }
 
-    const rawPatch = geminiResult.data;
-    const cleanedCode = stripMarkdownBackticks(rawPatch);
+    const cleanedOutput = stripMarkdownBackticks(geminiResult.data);
+    const cleanedCode = applySearchReplaceBlocks(originalCode, cleanedOutput);
 
     if (!cleanedCode || cleanedCode.length < 20) {
       return res.status(500).json({
@@ -1576,21 +1658,22 @@ CRITICAL INSTRUCTIONS:
       });
     }
 
-    // Prepare backup snapshot
+    // Save pre-patch backup snapshot in .snapshots
     await ensureBackupEnvironment();
     const timestamp = Date.now();
     const sanitizedFileName = path.basename(relativeTarget).replace(/[^a-zA-Z0-9._-]/g, '_');
     const backupFileName = `${timestamp}_${sanitizedFileName}.bak`;
     const backupPath = path.resolve(BACKUPS_DIR, backupFileName);
 
-    // Save pre-patch backup snapshot
     await fs.promises.writeFile(backupPath, originalCode, 'utf-8');
 
-    // Overwrite target file (triggers Vite HMR in browser in real time)
-    await fs.promises.writeFile(absoluteTarget, cleanedCode, 'utf-8');
+    // Write modified code to disk using fs.writeFileSync
+    fs.writeFileSync(absoluteTarget, cleanedCode, 'utf-8');
 
     // Record in patch history log
     const patchId = `patch_${timestamp}_${Math.random().toString(36).slice(2, 7)}`;
+    const diff = generateStructuredDiff(originalCode, cleanedCode);
+
     const patchRecord = {
       id: patchId,
       timestamp,
@@ -1627,9 +1710,12 @@ CRITICAL INSTRUCTIONS:
 
     res.json({
       success: true,
+      patchId,
+      filePath: relativeTarget,
+      targetFile: relativeTarget,
+      diff,
       message: `Successfully live patched ${relativeTarget}! Vite HMR updated.`,
       detectedFile: isAutoDetected ? relativeTarget : null,
-      targetFile: relativeTarget,
       patch: patchRecord
     });
   } catch (err) {
@@ -1665,7 +1751,7 @@ router.post('/ai-rollback', authenticateToken, requireAdmin, async (req, res) =>
     }
 
     // Restore backup snapshot back to original file
-    await fs.promises.writeFile(absoluteTarget, backupContent, 'utf-8');
+    fs.writeFileSync(absoluteTarget, backupContent, 'utf-8');
 
     // Update patch record status
     patchRecord.status = 'ROLLED_BACK';
@@ -1695,5 +1781,4 @@ router.post('/ai-rollback', authenticateToken, requireAdmin, async (req, res) =>
     res.status(500).json({ error: 'Rollback failed: ' + err.message });
   }
 });
-
 export default router;
