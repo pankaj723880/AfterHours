@@ -77,14 +77,38 @@ export default function VoiceAgentModal({
   onOpenArtist,
   showToast
 }) {
-  // 1. Permission check via voiceControlService
+  // 1. Permission check via dynamic user role & voiceControlService
+  const isAdmin = Boolean(user && (user.isAdmin === true || user.role === 'admin'));
   const [hasAccess, setHasAccess] = useState(() => {
+    if (isAdmin) return true;
     const initial = voiceControlService.getAccessState();
     if (user) {
       return voiceControlService.evaluateLocalAccess(initial, user);
     }
     return Boolean(initial.allowed);
   });
+
+  // Track avatar roam preference from localStorage
+  const [avatarRoamEnabled, setAvatarRoamEnabled] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam');
+        return stored !== null ? stored === 'true' : true;
+      } catch (_) {}
+    }
+    return true;
+  });
+
+  useEffect(() => {
+    const handleStorageChange = () => {
+      try {
+        const stored = localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam');
+        setAvatarRoamEnabled(stored !== null ? stored === 'true' : true);
+      } catch (_) {}
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
   // 2. Authoritative voice session state
   const [sessionState, setSessionState] = useState(SESSION_STATES.OFF);
@@ -146,6 +170,10 @@ export default function VoiceAgentModal({
 
   // Permission subscription
   useEffect(() => {
+    if (isAdmin) {
+      setHasAccess(true);
+      return;
+    }
     const unsub = voiceControlService.subscribe((state) => {
       const allowed = user ? voiceControlService.evaluateLocalAccess(state, user) : Boolean(state.allowed);
       setHasAccess(allowed);
@@ -154,7 +182,7 @@ export default function VoiceAgentModal({
       }
     });
     return unsub;
-  }, [user]);
+  }, [user, isAdmin]);
 
   // Catalog search helper
   const searchCatalog = useCallback(async (query = '') => {
@@ -1278,22 +1306,22 @@ export default function VoiceAgentModal({
   const prevIsAvatarVisibleRef = useRef(isAvatarVisible);
 
   // Mount avatar ONLY when user explicitly enables it (isAvatarVisible),
-  // splash screen is closed, app is initialized, and hasAccess is granted.
-  // Fully unmounts the 3D Canvas / WebGL context when isAvatarVisible is false!
+  // splash screen is closed, app is initialized, and hasAccess && avatarRoamEnabled is granted.
+  // Fully unmounts the 3D Canvas / WebGL context when isAvatarVisible or avatarRoamEnabled is false!
   useEffect(() => {
-    if (!showSplashScreen && isAppInitialized && hasAccess && isAvatarVisible) {
+    if (!showSplashScreen && isAppInitialized && hasAccess && isAvatarVisible && avatarRoamEnabled) {
       setHasMountedAvatar(true);
       setInitialDelayDone(true);
-    } else if (!isAvatarVisible) {
+    } else if (!isAvatarVisible || !avatarRoamEnabled) {
       // Unmount avatar immediately when disabled to free WebGL memory
       setHasMountedAvatar(false);
       setInitialDelayDone(false);
     }
-  }, [showSplashScreen, isAppInitialized, hasAccess, isAvatarVisible]);
+  }, [showSplashScreen, isAppInitialized, hasAccess, isAvatarVisible, avatarRoamEnabled]);
 
-  // Immediate smooth fade-out and unmount when access is revoked by admin
+  // Immediate smooth fade-out and unmount when access is revoked or roam is disabled
   useEffect(() => {
-    if (!hasAccess) {
+    if (!hasAccess || !avatarRoamEnabled) {
       setInitialDelayDone(false);
       // Allow 400ms for smooth fade-out animation before fully removing from DOM
       unmountTimerRef.current = setTimeout(() => {
@@ -1303,25 +1331,25 @@ export default function VoiceAgentModal({
         if (unmountTimerRef.current) clearTimeout(unmountTimerRef.current);
       };
     }
-  }, [hasAccess]);
+  }, [hasAccess, avatarRoamEnabled]);
 
   // Respect manual user toggles:
   // If user explicitly turns on avatar before 2s delay completes, reveal immediately.
   // If user explicitly turns off avatar, cancel delay timer.
   useEffect(() => {
-    if (!prevIsAvatarVisibleRef.current && isAvatarVisible && !initialDelayDone && !showSplashScreen && isAppInitialized && hasAccess) {
+    if (!prevIsAvatarVisibleRef.current && isAvatarVisible && !initialDelayDone && !showSplashScreen && isAppInitialized && hasAccess && avatarRoamEnabled) {
       if (initialDelayTimerRef.current) {
         clearTimeout(initialDelayTimerRef.current);
         initialDelayTimerRef.current = null;
       }
       setInitialDelayDone(true);
     }
-    if (!isAvatarVisible && initialDelayTimerRef.current) {
+    if ((!isAvatarVisible || !avatarRoamEnabled) && initialDelayTimerRef.current) {
       clearTimeout(initialDelayTimerRef.current);
       initialDelayTimerRef.current = null;
     }
     prevIsAvatarVisibleRef.current = isAvatarVisible;
-  }, [isAvatarVisible, initialDelayDone, showSplashScreen, isAppInitialized, hasAccess]);
+  }, [isAvatarVisible, initialDelayDone, showSplashScreen, isAppInitialized, hasAccess, avatarRoamEnabled]);
 
   // Cleanup timers on component unmount
   useEffect(() => {
@@ -1344,7 +1372,8 @@ export default function VoiceAgentModal({
     isAppInitialized &&
     initialDelayDone &&
     isAvatarVisible &&
-    hasAccess
+    hasAccess &&
+    avatarRoamEnabled
   );
 
   // Responsive button bottom offset

@@ -1534,6 +1534,9 @@ export default function App() {
     return voiceControlService.getAccessState().allowed;
   });
 
+  // Dynamic role-based & CMS-driven voice access
+  const isVoiceActive = isAdmin || Boolean(cmsConfig?.voiceControlEnabled || isVoiceControlAllowed || canAccessVoice);
+
   useEffect(() => {
     setIsVoiceControlAllowed(Boolean(canAccessVoice));
   }, [canAccessVoice]);
@@ -6367,8 +6370,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
               {/* Bottom Action Area: User Profile, APK Download & Auth / Logout */}
               <div className="pt-3 pb-6 border-t border-white/[0.06] mt-4 space-y-2">
-                {/* Avatar Autonomous Free Roam Toggle Button (Gated by Voice Rollout Permissions) */}
-                {canAccessVoice && (
+                {/* Avatar Autonomous Free Roam Toggle Button (Gated strictly by dynamic role & voice permissions) */}
+                {isVoiceActive && (
                   <button
                     type="button"
                     onClick={() => {
@@ -6801,8 +6804,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
           {/* RIGHT: AUTH/LOGOUT & VOICE AI */}
           <div className="flex items-center gap-2">
-            {/* 3D Avatar / AI Assistant toggle button (Gated by Voice Rollout Permissions) */}
-            {canAccessVoice && (
+            {/* 3D Avatar / AI Assistant toggle button (Gated strictly by dynamic role & voice permissions) */}
+            {isVoiceActive && (
               <button
                 id="loopra-header-ai-icon"
                 type="button"
@@ -8606,25 +8609,27 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
             {/* Zone 3 (Right): Volume Slider with Mute Toggle, Queue Toggle, and Avatar Roam Status */}
             <div className="flex items-center justify-end w-1/4 gap-2.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-              {/* Avatar Free Roam Quick Status Pill */}
-              <button
-                type="button"
-                onClick={() => {
-                  try {
-                    const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) !== 'false';
-                    const next = !cur;
-                    localStorage.setItem('loopra_avatar_roaming', String(next));
-                    localStorage.setItem('loopra_avatar_roam', String(next));
-                    window.dispatchEvent(new Event('storage'));
-                    showToast?.(`Avatar Roam ${next ? 'Active' : 'Parked'}`);
-                  } catch (_) {}
-                }}
-                className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-900/80 hover:bg-neutral-800 border border-neutral-800 text-[10px] font-mono text-neutral-400 hover:text-amber-300 transition cursor-pointer shadow-sm shrink-0"
-                title="Toggle Avatar Roam Status"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                <span>ROAM</span>
-              </button>
+              {/* Avatar Free Roam Quick Status Pill (Role/Voice Gated) */}
+              {isVoiceActive && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) !== 'false';
+                      const next = !cur;
+                      localStorage.setItem('loopra_avatar_roaming', String(next));
+                      localStorage.setItem('loopra_avatar_roam', String(next));
+                      window.dispatchEvent(new Event('storage'));
+                      showToast?.(`Avatar Roam ${next ? 'Active' : 'Parked'}`);
+                    } catch (_) {}
+                  }}
+                  className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-900/80 hover:bg-neutral-800 border border-neutral-800 text-[10px] font-mono text-neutral-400 hover:text-amber-300 transition cursor-pointer shadow-sm shrink-0"
+                  title="Toggle Avatar Roam Status"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  <span>ROAM</span>
+                </button>
+              )}
 
               {/* Volume Slider & Click-to-Mute Toggle Icon */}
               <div className="flex items-center gap-1.5">
@@ -9552,7 +9557,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       />
 
       {/* Loopra Dedicated Voice Agent & Shared Floating Assistant Action Bar */}
-      {canAccessVoice && (
+      {isVoiceActive && (
         <VoiceAgentModal
           user={user}
           token={authToken}
