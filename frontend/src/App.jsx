@@ -6692,8 +6692,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         videoModalSong={videoModalSong}
         currentSong={currentSong}
         isPlaying={isPlaying}
-        currentTime={currentTime || currentTimeRef.current || 0}
-        duration={duration || durationRef.current || 0}
+        currentTime={currentTimeRef.current || 0}
+        duration={durationRef.current || 0}
         volume={volume}
         isMuted={isMuted}
         isPipActive={isPipActive}
@@ -10647,6 +10647,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     </div>
   );
 }
+
 
 
 
