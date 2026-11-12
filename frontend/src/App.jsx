@@ -2027,6 +2027,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarHidden, setIsSidebarHidden] = useState(false);
   const [isPlayerMinimized, setIsPlayerMinimized] = useState(false);
 
   const [videoModalSong, setVideoModalSong] = useState(null);
@@ -6864,17 +6865,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             } p-3.5 sm:p-4 flex flex-col shrink-0 transform transition-all duration-300 ease-in-out overflow-y-auto overflow-x-hidden ${
               activeTab === 'dj-club'
                 ? 'hidden'
-                : isSidebarOpen ? 'translate-x-0 w-72' : `-translate-x-full md:translate-x-0 ${isSidebarCollapsed ? 'w-20' : 'w-72'}`
+                : isSidebarHidden
+                  ? '-translate-x-full md:-translate-x-full md:w-0 md:p-0 md:border-none pointer-events-none'
+                  : isSidebarOpen ? 'translate-x-0 w-72' : `-translate-x-full md:translate-x-0 ${isSidebarCollapsed ? 'w-20' : 'w-72'}`
             }`}
           >
             {/* Header Section */}
             <div className="flex-1 flex flex-col">
-              <div className="flex items-center justify-between px-1.5 py-2 mb-4 border-b border-white/[0.06] pb-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500/20 to-neutral-900 border border-amber-500/40 p-1 flex items-center justify-center shadow-lg shadow-amber-500/10 shrink-0 overflow-hidden">
-                    <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
-                  </div>
-                  {!isSidebarCollapsed && (
+              <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center flex-col gap-2' : 'justify-between'} px-1.5 py-2 mb-4 border-b border-white/[0.06] pb-3`}>
+                {!isSidebarCollapsed && (
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500/20 to-neutral-900 border border-amber-500/40 p-1 flex items-center justify-center shadow-lg shadow-amber-500/10 shrink-0 overflow-hidden">
+                      <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
+                    </div>
                     <div className="min-w-0 flex flex-col">
                       <div className="flex items-center gap-1.5">
                         <span className="text-sm font-display font-black tracking-tight text-white truncate">
@@ -6886,10 +6889,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       </div>
                       <span className="text-[10px] text-zinc-500 truncate">Indian Music Streaming</span>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
 
-                <div className="relative z-50 pointer-events-auto flex items-center gap-1">
+                <div className={`relative z-50 pointer-events-auto flex items-center ${isSidebarCollapsed ? 'flex-col gap-2 w-full items-center justify-center' : 'gap-1'}`}>
                   <button 
                     type="button"
                     onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
@@ -6898,6 +6901,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     aria-label="Toggle sidebar collapse"
                   >
                     <Icon name="menu" className="w-4 h-4 pointer-events-none" />
+                  </button>
+
+                  {/* Desktop close/hide toggle button */}
+                  <button
+                    type="button"
+                    onClick={() => setIsSidebarHidden(true)}
+                    className="hidden md:flex p-1.5 rounded-xl text-neutral-400 hover:text-red-400 hover:bg-red-500/10 active:scale-[0.98] transition shrink-0 cursor-pointer pointer-events-auto"
+                    title="Close sidebar"
+                    aria-label="Close sidebar"
+                  >
+                    <Icon name="close" className="w-4 h-4 pointer-events-none" />
                   </button>
 
                   <button 
@@ -7225,17 +7239,32 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             className={`${isStatsOpen && isSidebarOpen ? 'fixed' : 'fixed md:fixed'} top-14 md:top-16 bottom-0 left-0 h-[calc(100dvh-3.5rem)] md:h-[calc(100vh-4rem)] z-40 bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80 p-4 flex flex-col shrink-0 transform transition-all duration-300 ease-in-out overflow-y-auto overflow-x-hidden ${
               activeTab === 'dj-club'
                 ? 'hidden'
-                : isSidebarOpen ? 'translate-x-0 w-72' : `-translate-x-full md:translate-x-0 ${isSidebarCollapsed ? 'w-20' : 'w-72'}`
+                : isSidebarHidden
+                  ? '-translate-x-full md:-translate-x-full md:w-0 md:p-0 md:border-none pointer-events-none'
+                  : isSidebarOpen ? 'translate-x-0 w-72' : `-translate-x-full md:translate-x-0 ${isSidebarCollapsed ? 'w-20' : 'w-72'}`
             }`}
           >
         <div className="flex-1">
-          <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'} px-2 py-3 mb-6`}>
-            <div className={`flex items-center ${isSidebarCollapsed ? 'flex-col gap-4' : 'gap-3'}`}>
+          <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center flex-col gap-2' : 'justify-between'} px-2 py-3 mb-6`}>
+            <div className={`flex items-center ${isSidebarCollapsed ? 'flex-col gap-2' : 'gap-3'}`}>
               <button 
                 onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
                 className="hidden md:flex p-1.5 rounded-xl text-neutral-400 hover:text-white hover:bg-neutral-800 active:scale-[0.98] transition shrink-0"
+                title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                aria-label="Toggle sidebar collapse"
               >
                 <Icon name="menu" className="w-5 h-5" />
+              </button>
+
+              {/* Desktop close/hide toggle button */}
+              <button
+                type="button"
+                onClick={() => setIsSidebarHidden(true)}
+                className="hidden md:flex p-1.5 rounded-xl text-neutral-400 hover:text-red-400 hover:bg-red-500/10 active:scale-[0.98] transition shrink-0 cursor-pointer pointer-events-auto"
+                title="Close sidebar"
+                aria-label="Close sidebar"
+              >
+                <Icon name="close" className="w-4 h-4 pointer-events-none" />
               </button>
               
               {!isSidebarCollapsed && (
@@ -7524,12 +7553,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               id="loopra-mobile-hamburger-btn"
               data-nav-id="hamburger"
               type="button"
-              onClick={() => setIsSidebarOpen(prev => !prev)}
-              className={`${isStatsOpen ? 'flex' : 'md:hidden flex'} items-center justify-center p-2 rounded-2xl bg-neutral-800 text-neutral-200 hover:text-white focus:outline-none shrink-0 min-w-[42px] min-h-[42px] active:scale-95 transition cursor-pointer shadow-sm`}
+              onClick={() => {
+                if (isSidebarHidden) {
+                  setIsSidebarHidden(false);
+                } else {
+                  setIsSidebarOpen(prev => !prev);
+                }
+              }}
+              className={`${isStatsOpen || isSidebarHidden ? 'flex' : 'md:hidden flex'} items-center justify-center p-2 rounded-2xl bg-neutral-800 text-neutral-200 hover:text-white focus:outline-none shrink-0 min-w-[42px] min-h-[42px] active:scale-95 transition cursor-pointer shadow-sm`}
               aria-label="Toggle Menu"
               title="Toggle Menu"
             >
-              <Icon name={isSidebarOpen ? "close" : "menu"} className="w-5 h-5 text-amber-400 pointer-events-none" />
+              <Icon name={isSidebarOpen && !isSidebarHidden ? "close" : "menu"} className="w-5 h-5 text-amber-400 pointer-events-none" />
             </button>
             <div className="flex items-center gap-2 sm:gap-2.5">
               <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow-md overflow-hidden shrink-0">
@@ -9292,7 +9327,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             shadow-[0_10px_35px_rgba(0,0,0,0.8),0_0_20px_rgba(var(--accent-rgb,245,158,11),0.06)]
             py-2 px-3
             ${isMiniPlayerExpanded ? 'w-[calc(100%-1rem)] max-w-xl' : 'w-[calc(100%-1.75rem)] max-w-sm sm:max-w-md'}
-            md:bottom-0 md:right-0 md:translate-x-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'}
+            md:bottom-0 md:right-0 md:translate-x-0 ${isSidebarHidden ? 'md:left-0' : (isSidebarCollapsed ? 'md:left-20' : 'md:left-72')}
             md:w-auto md:max-w-none md:rounded-none md:border-t md:border-x-0 md:border-b-0 md:border-amber-500/20 md:bg-neutral-950/95 md:py-3 md:pl-6 md:pr-28 md:shadow-[0_-10px_35px_rgba(0,0,0,0.8),0_0_20px_rgba(var(--accent-rgb,245,158,11),0.06)]`}
         >
           {/* Quick Horizontal Expand/Collapse Pill for Mobile */}
@@ -9595,7 +9630,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
 
       {showQueuePanel && (
-        <div className={`fixed top-14 md:top-16 inset-x-0 bottom-0 ${isSidebarCollapsed ? 'md:left-20' : 'md:left-72'} z-50 bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn pb-[env(safe-area-inset-bottom,0px)]`}>
+        <div className={`fixed top-14 md:top-16 inset-x-0 bottom-0 ${isSidebarHidden ? 'md:left-0' : (isSidebarCollapsed ? 'md:left-20' : 'md:left-72')} z-50 bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn pb-[env(safe-area-inset-bottom,0px)]`}>
           {/* Mobile Tab Header with Segmented Switcher & Close Button */}
           <div className="md:hidden flex items-center justify-between px-3 py-1.5 border-b border-neutral-800/80 bg-neutral-900/95 backdrop-blur-xl shrink-0 z-50">
             <div className="flex bg-neutral-800/90 p-0.5 rounded-xl gap-1 border border-neutral-700/60 shadow-inner">
