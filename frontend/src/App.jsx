@@ -6949,20 +6949,21 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       {USE_V2_DRAWER ? (
         <>
           {/* Glassmorphic Backdrop overlay only on mobile (< md) - hidden on desktop */}
-          {isSidebarOpen && (
-            <div 
-              onClick={() => setIsSidebarOpen(false)}
-              className="md:hidden fixed inset-0 bg-black/80 backdrop-blur-md z-[90] transition-opacity duration-300 animate-fadeIn cursor-pointer pointer-events-auto"
-              aria-label="Close sidebar backdrop"
-            />
-          )}
+          <div 
+            onClick={() => setIsSidebarOpen(false)}
+            className={`md:hidden fixed inset-0 bg-black/80 backdrop-blur-md z-[90] transition-opacity duration-300 ease-out cursor-pointer ${
+              isSidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+            }`}
+            aria-label="Close sidebar backdrop"
+            aria-hidden={!isSidebarOpen}
+          />
 
           <aside 
             style={{
               paddingTop: isMobileScreen ? 'max(env(safe-area-inset-top, 0px), 16px)' : undefined,
               paddingBottom: isMobileScreen ? 'max(env(safe-area-inset-bottom, 0px), 16px)' : undefined,
             }}
-            className={`h-full flex flex-col shrink-0 transition-[width,padding,opacity] duration-300 ease-in-out overflow-y-auto overflow-x-hidden md:sticky md:top-0 md:h-full ${
+            className={`h-full flex flex-col shrink-0 transition-transform duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform overflow-y-auto overflow-x-hidden md:sticky md:top-0 md:h-full ${
               activeTab === 'dj-club'
                 ? 'hidden'
                 : isSidebarOpen
@@ -7303,20 +7304,21 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       ) : (
         <>
           {/* Backdrop overlay only for mobile drawer - hidden on desktop */}
-          {isSidebarOpen && (
-            <div 
-              onClick={() => setIsSidebarOpen(false)}
-              className="md:hidden fixed inset-0 bg-black/80 backdrop-blur-md z-[90] transition-opacity cursor-pointer pointer-events-auto"
-              aria-label="Close sidebar backdrop"
-            />
-          )}
+          <div 
+            onClick={() => setIsSidebarOpen(false)}
+            className={`md:hidden fixed inset-0 bg-black/80 backdrop-blur-md z-[90] transition-opacity duration-300 ease-out cursor-pointer ${
+              isSidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+            }`}
+            aria-label="Close sidebar backdrop"
+            aria-hidden={!isSidebarOpen}
+          />
 
           <aside 
             style={{
               paddingTop: isMobileScreen ? 'max(env(safe-area-inset-top, 0px), 16px)' : undefined,
               paddingBottom: isMobileScreen ? 'max(env(safe-area-inset-bottom, 0px), 16px)' : undefined,
             }}
-            className={`h-full flex flex-col shrink-0 transition-[width,padding,opacity] duration-300 ease-in-out overflow-y-auto overflow-x-hidden md:sticky md:top-0 md:h-full ${
+            className={`h-full flex flex-col shrink-0 transition-transform duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform overflow-y-auto overflow-x-hidden md:sticky md:top-0 md:h-full ${
               activeTab === 'dj-club'
                 ? 'hidden'
                 : isSidebarOpen
