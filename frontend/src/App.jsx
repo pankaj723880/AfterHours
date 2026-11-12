@@ -2048,6 +2048,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     videoModalSongRef.current = videoModalSong;
   }, [videoModalSong]);
 
+  // Keep videoModalSong in sync with currentSong whenever playing in Video Mode
+  useEffect(() => {
+    if (videoModalSongRef.current && currentSong && (currentSong.id || currentSong.videoId)) {
+      const activeVidId = currentSong.id || currentSong.videoId;
+      const modalVidId = videoModalSongRef.current.id || videoModalSongRef.current.videoId;
+      if (activeVidId !== modalVidId) {
+        setVideoModalSong({ ...currentSong, id: activeVidId, videoId: activeVidId });
+      }
+    }
+  }, [currentSong]);
+
   useEffect(() => {
     isPipActiveRef.current = isPipActive;
   }, [isPipActive]);
@@ -3472,11 +3483,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const autoResumeTimerRef = useRef(null);
   const videoTimeRef = useRef(0);
   const loadedVideoIdRef = useRef(null);
-  const audioContextRef = useRef(null);
-  const gainNodeRef = useRef(null);
-  const eqNodesRef = useRef(null);
-  const convolverRef = useRef(null);
-  const audioElemRef = useRef(null);
   const isRepeatRef = useRef(isRepeat);
   const handleNextSongRef = useRef(null);
 
@@ -4338,58 +4344,20 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
   }, [cmsConfig]);
 
-  // PWA & Standalone Web Audio Keep-Alive for OS Audio Focus Lock
-  const pwaAudioContextRef = useRef(null);
-  const pwaOscillatorRef = useRef(null);
-  const pwaGainRef = useRef(null);
-
+  // PWA & Standalone Web Audio Keep-Alive for OS Audio Focus Lock (Clean silent audio element preferred to avoid Web Audio buffer underruns & crackling)
   const startPwaAudioWakeLock = useCallback(() => {
     try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-
-      if (!pwaAudioContextRef.current) {
-        pwaAudioContextRef.current = new AudioCtx();
+      if (silentAudioRef.current && silentAudioRef.current.paused) {
+        silentAudioRef.current.volume = 0.001;
+        silentAudioRef.current.play().catch(() => {});
       }
-
-      const ctx = pwaAudioContextRef.current;
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
-      }
-
-      if (!pwaGainRef.current) {
-        const gain = ctx.createGain();
-        gain.gain.setValueAtTime(0.0001, ctx.currentTime); // Inaudible gain to hold OS audio hardware awake
-        gain.connect(ctx.destination);
-        pwaGainRef.current = gain;
-      }
-
-      if (!pwaOscillatorRef.current) {
-        const osc = ctx.createOscillator();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(440, ctx.currentTime);
-        osc.connect(pwaGainRef.current);
-        osc.start();
-        pwaOscillatorRef.current = osc;
-      }
-    } catch (e) {
-      console.warn('[PWA Audio Guard] Wake lock audio init notice:', e?.message || e);
-    }
+    } catch (_) {}
   }, []);
 
   const stopPwaAudioWakeLock = useCallback(() => {
     try {
-      if (pwaOscillatorRef.current) {
-        pwaOscillatorRef.current.stop();
-        pwaOscillatorRef.current.disconnect();
-        pwaOscillatorRef.current = null;
-      }
-      if (pwaGainRef.current) {
-        pwaGainRef.current.disconnect();
-        pwaGainRef.current = null;
-      }
-      if (pwaAudioContextRef.current && pwaAudioContextRef.current.state === 'running') {
-        pwaAudioContextRef.current.suspend().catch(() => {});
+      if (silentAudioRef.current) {
+        silentAudioRef.current.pause();
       }
     } catch (_) {}
   }, []);
@@ -4550,67 +4518,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   // Periodic mediaSession sync is removed to optimize performance
   // Let the browser infer playback position while playing
-
-  const fetchImpulseResponse = async (type) => {
-    if (!audioContextRef.current) return null;
-    const ctx = audioContextRef.current;
-    let duration = 0.5, decay = 2.0;
-    if (type === 'hall') { duration = 2.5; decay = 2.0; }
-    else if (type === 'theatre') { duration = 1.0; decay = 4.0; }
-    else return null;
-    const sampleRate = ctx.sampleRate;
-    const length = Math.floor(sampleRate * duration);
-    const impulse = ctx.createBuffer(2, length, sampleRate);
-    for (let i = 0; i < 2; i++) {
-      const channel = impulse.getChannelData(i);
-      for (let j = 0; j < length; j++) {
-        channel[j] = (Math.random() * 2 - 1) * Math.pow(1 - j / length, decay);
-      }
-    }
-    return impulse;
-  };
-
-  const applySoundProfile = async () => {
-    if (!audioContextRef.current || !eqNodesRef.current) return;
-    const ctx = audioContextRef.current;
-    
-    // Disconnect old
-    if (audioElemRef.current?.sourceNode) {
-      try { audioElemRef.current.sourceNode.disconnect(); } catch(e){}
-    }
-    eqNodesRef.current.forEach(n => { try { n.disconnect(); } catch(e){} });
-    if (convolverRef.current) { try { convolverRef.current.disconnect(); } catch(e){} }
-    if (gainNodeRef.current) { try { gainNodeRef.current.disconnect(); } catch(e){} }
-
-    const eq = eqNodesRef.current;
-    eq.forEach(node => node.gain.value = 0);
-    let ir = null;
-
-    if (soundProfile === 'hall') {
-      ir = await fetchImpulseResponse('hall');
-      eq[0].gain.value = 4; // bass
-      eq[4].gain.value = 5; // treble
-    } else if (soundProfile === 'theatre') {
-      ir = await fetchImpulseResponse('theatre');
-      eq[1].gain.value = 3;
-      eq[2].gain.value = 3;
-    }
-
-    if (!convolverRef.current) convolverRef.current = ctx.createConvolver();
-    convolverRef.current.buffer = ir;
-
-    let currentNode = audioElemRef.current?.sourceNode;
-    if (currentNode) {
-      eq.forEach(node => { currentNode.connect(node); currentNode = node; });
-      if (ir) { currentNode.connect(convolverRef.current); currentNode = convolverRef.current; }
-      currentNode.connect(gainNodeRef.current);
-      gainNodeRef.current.connect(ctx.destination);
-    }
-  };
-
-  useEffect(() => {
-    applySoundProfile();
-  }, [soundProfile]);
 
   const queueRef = useRef(queue);
   useEffect(() => {
@@ -6151,8 +6058,20 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       });
     }
 
-    // 1. Instant Cache Hit: Return cached search results in 0ms (In-Memory MapRef -> localStorage State)
-    const mapEntry = searchCacheMapRef.current.get(trimmedQuery);
+    // 1. Instant Cache Hit: Return cached search results in 0ms (In-Memory MapRef -> sessionStorage -> state)
+    let mapEntry = searchCacheMapRef.current.get(trimmedQuery);
+    if (!mapEntry && typeof window !== 'undefined' && window.sessionStorage) {
+      try {
+        const rawSession = sessionStorage.getItem(`loopra_search_cache_${trimmedQuery}`);
+        if (rawSession) {
+          const parsed = JSON.parse(rawSession);
+          if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
+            mapEntry = parsed;
+            searchCacheMapRef.current.set(trimmedQuery, parsed);
+          }
+        }
+      } catch (_) {}
+    }
     const cachedEntry = mapEntry || searchCache[trimmedQuery];
     if (cachedEntry && !Array.isArray(cachedEntry) && Array.isArray(cachedEntry.items) && cachedEntry.items.length > 0) {
       if (!mapEntry) {
@@ -6171,7 +6090,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     try {
       const data = await fetchFromBackend(trimmedQuery + " official video original", {
         limit: 10,
-        timeoutMs: 9000,
+        timeoutMs: 4000,
         signal: searchController.signal
       });
 
@@ -6213,6 +6132,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             nextPageToken: nextToken
           };
           searchCacheMapRef.current.set(trimmedQuery, newCacheEntry);
+          try {
+            if (typeof window !== 'undefined' && window.sessionStorage) {
+              sessionStorage.setItem(`loopra_search_cache_${trimmedQuery}`, JSON.stringify(newCacheEntry));
+            }
+          } catch (_) {}
           setSearchCache(prev => ({
             ...prev,
             [trimmedQuery]: newCacheEntry
@@ -7315,7 +7239,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
       <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 relative overflow-hidden">
         {/* Unified Top Navbar for both Mobile and Desktop (hidden on DJ Club where full-screen dedicated navbar is active) */}
-        <header className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-2.5 sm:px-4 md:px-8 py-2.5 sm:py-3 h-14 md:h-16 flex items-center justify-between shrink-0 w-full box-border'}`}>
+        <header
+          style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 28px)' }}
+          className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-2.5 sm:px-4 md:px-8 pb-2.5 sm:pb-3 h-auto md:h-16 flex items-center justify-between shrink-0 w-full box-border'}`}
+        >
           {/* LEFT: Mobile Menu & Logo | Desktop Logo & Brand */}
           <div className="flex items-center gap-2 sm:gap-3">
             <button
