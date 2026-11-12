@@ -854,6 +854,80 @@ app.get(['/api/user/me', '/user/me', '/api/auth/me', '/auth/me'], authenticateTo
   }
 });
 
+// GET /api/auth/google endpoint for mobile/Android OAuth initiation & redirect
+app.get(['/api/auth/google', '/auth/google'], async (req, res) => {
+  const platform = req.query.platform || '';
+  const clientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '335095702236-g3n6b7mgq2d3vbdg9qj9vv53b3nuohs7.apps.googleusercontent.com';
+  
+  // If returning from Google with a code or credential
+  const credential = req.query.credential || req.query.token;
+  if (credential) {
+    try {
+      const ticket = await oauthClient.verifyIdToken({
+        idToken: credential,
+        audience: clientId,
+      });
+      const payload = ticket.getPayload();
+      const email = payload?.email;
+      if (email) {
+        const cleanEmail = email.trim().toLowerCase();
+        let user = await User.findOne({ username: cleanEmail });
+        if (!user) {
+          user = new User({
+            username: cleanEmail,
+            displayName: payload?.name || cleanEmail.split('@')[0],
+            avatarUrl: payload?.picture || '',
+            password: 'google_oauth_user',
+            role: 'user',
+            status: 'active'
+          });
+          await user.save();
+        }
+        const appToken = generateToken(user);
+        if (platform === 'android') {
+          return res.redirect(`web+loopra://auth?token=${encodeURIComponent(appToken)}`);
+        }
+        return res.redirect(`https://loopra1.vercel.app/?token=${encodeURIComponent(appToken)}`);
+      }
+    } catch (err) {
+      console.warn('[Google OAuth GET Error]:', err.message);
+    }
+  }
+
+  // If initiated from Android WebView, open Google OAuth accounts prompt directly
+  const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/google/callback?platform=${encodeURIComponent(platform)}`;
+  const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token%20id_token&scope=openid%20email%20profile&nonce=${Date.now()}`;
+  res.redirect(googleAuthUrl);
+});
+
+// Callback for OAuth redirect
+app.get(['/api/auth/google/callback', '/auth/google/callback'], async (req, res) => {
+  const platform = req.query.platform || '';
+  // HTML responder to extract fragment (#id_token=...) and complete authentication
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+      <head><title>Authenticating with Loopra...</title></head>
+      <body style="background:#09090b;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+        <div style="text-align:center;">
+          <h2 style="color:#f59e0b;">Completing Loopra Sign-In...</h2>
+          <p>Please wait while we redirect you back to the app.</p>
+        </div>
+        <script>
+          const hash = window.location.hash.substring(1);
+          const params = new URLSearchParams(hash);
+          const idToken = params.get('id_token');
+          if (idToken) {
+            window.location.href = '/api/auth/google?platform=${encodeURIComponent(platform)}&credential=' + encodeURIComponent(idToken);
+          } else {
+            document.body.innerHTML = '<p style="color:#ef4444;text-align:center;margin-top:20vh;">Authentication cancelled or failed. Please reopen Loopra.</p>';
+          }
+        </script>
+      </body>
+    </html>
+  `);
+});
+
 app.post(['/api/auth/google', '/auth/google'], async (req, res) => {
   if (!isDatabaseReady()) {
     return res.status(503).json({ error: 'Database service is temporarily unavailable. Please try again shortly.', retryable: true });
