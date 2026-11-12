@@ -10181,6 +10181,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           setSleepTimerRemaining(null);
           showToast('Sleep timer cancelled');
         }}
+        isAdmin={isAdmin}
         crossfadeDuration={crossfadeDuration}
         onSetCrossfadeDuration={handleSetCrossfadeDuration}
         isGaplessEnabled={isGaplessEnabled}
