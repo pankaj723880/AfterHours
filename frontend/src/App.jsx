@@ -4308,13 +4308,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   const startPwaAudioWakeLock = useCallback(() => {
     try {
-      const isStandalone = typeof window !== 'undefined' && (
-        window.matchMedia('(display-mode: standalone)').matches ||
-        window.navigator.standalone === true ||
-        document.referrer.includes('android-app://')
-      );
-
-      // Only engage Web Audio oscillator node in standalone or mobile browser environments
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
 
@@ -4363,6 +4356,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
     } catch (_) {}
   }, []);
+
+  // Sync global playback flag to window for background visibility event interceptor
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.__loopra_is_playing = isPlaying;
+    }
+  }, [isPlaying]);
 
   // MediaSession API Integration & Page Visibility lifecycle for background playback (Desktop & Android)
   useEffect(() => {
@@ -4648,10 +4648,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               silentAudioRef.current.play().catch(() => {});
             }
           } else if (e.data === 2) { // Paused
-            // Background Auto-Resume Guard: If paused by browser throttling / wake-lock kill while user intent was to play, immediately recover
-            if (userIntentPlayingRef.current && !isUserPausedRef.current && !isInitialMountRef.current && currentSongRef.current) {
+            // Background Auto-Resume Guard: If paused while user intent or React isPlaying is true (i.e. not an explicit user pause), immediately auto-resume
+            const isPlayingIntent = isPlayingRef.current || userIntentPlayingRef.current;
+            if (isPlayingIntent && !isUserPausedRef.current && !isInitialMountRef.current && currentSongRef.current) {
               try {
                 e.target.playVideo();
+                startPwaAudioWakeLock();
                 if (silentAudioRef.current && silentAudioRef.current.paused) {
                   try { silentAudioRef.current.volume = 0.01; } catch (_) {}
                   silentAudioRef.current.play().catch(() => {});
@@ -4660,14 +4662,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
               if (autoResumeTimerRef.current) clearTimeout(autoResumeTimerRef.current);
               autoResumeTimerRef.current = setTimeout(() => {
-                if (userIntentPlayingRef.current && !isUserPausedRef.current && playerRef.current && typeof playerRef.current.playVideo === 'function') {
+                const stillPlayingIntent = isPlayingRef.current || userIntentPlayingRef.current;
+                if (stillPlayingIntent && !isUserPausedRef.current && playerRef.current && typeof playerRef.current.playVideo === 'function') {
                   console.info('[Loopra Background Guard] Auto-resuming background playback throttled by browser...');
                   try {
                     playerRef.current.playVideo();
+                    startPwaAudioWakeLock();
                     if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
                   } catch (_) {}
                 }
-              }, 100);
+              }, 50);
             } else {
               setIsPlaying(false);
             }

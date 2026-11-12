@@ -122,6 +122,58 @@
         } catch (e) {}
       })();
     </script>
+
+    <!-- Background Audio Resilience: Prevent embedded player visibility auto-pause on Android Chrome / TWA -->
+    <script>
+      (function() {
+        try {
+          // Override document.hidden and document.visibilityState before any player iframe or script loads
+          Object.defineProperty(document, 'hidden', {
+            get: function() { return false; },
+            configurable: true
+          });
+          Object.defineProperty(document, 'visibilityState', {
+            get: function() { return 'visible'; },
+            configurable: true
+          });
+          if ('webkitHidden' in document) {
+            Object.defineProperty(document, 'webkitHidden', {
+              get: function() { return false; },
+              configurable: true
+            });
+          }
+          if ('webkitVisibilityState' in document) {
+            Object.defineProperty(document, 'webkitVisibilityState', {
+              get: function() { return 'visible'; },
+              configurable: true
+            });
+          }
+
+          // Intercept visibilitychange, webkitvisibilitychange, and pagehide listeners from suspending iframe playback
+          var originalAddEventListener = EventTarget.prototype.addEventListener;
+          var blockedEvents = ['visibilitychange', 'webkitvisibilitychange', 'pagehide'];
+          EventTarget.prototype.addEventListener = function(type, listener, options) {
+            if (blockedEvents.indexOf(type) !== -1) {
+              // Wrap listener to ensure events reporting 'hidden' or 'pagehide' do not propagate to pause YouTube player
+              var wrapped = function(event) {
+                if (window.__loopra_allow_visibility_event) {
+                  return typeof listener === 'function' ? listener.call(this, event) : listener.handleEvent(event);
+                }
+                // Suppress event if media is playing or app is active in background
+                if (window.__loopra_is_playing) {
+                  return;
+                }
+                return typeof listener === 'function' ? listener.call(this, event) : listener.handleEvent(event);
+              };
+              return originalAddEventListener.call(this, type, wrapped, options);
+            }
+            return originalAddEventListener.call(this, type, listener, options);
+          };
+        } catch (err) {
+          console.warn('[Loopra Audio Guard] Error initializing visibility override:', err);
+        }
+      })();
+    </script>
   </head>
   <body style="background-color: #09090b; margin: 0; padding: 0; overflow-x: hidden;">
     <noscript>
