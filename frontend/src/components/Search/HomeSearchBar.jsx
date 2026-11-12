@@ -284,7 +284,7 @@ export default function HomeSearchBar({
   return (
     <div
       ref={containerRef}
-      className={`w-full max-w-4xl mx-auto mb-5 sm:mb-8 px-0 min-w-0 relative ${
+      className={`w-full mb-5 sm:mb-8 px-0 min-w-0 relative ${
         showDropdown ? 'z-50' : 'z-20'
       }`}
     >

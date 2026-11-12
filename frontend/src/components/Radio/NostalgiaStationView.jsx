@@ -38,7 +38,7 @@ const NostalgiaStationView = memo(function NostalgiaStationView({
   if (!station) return null;
 
   return (
-    <div className="h-full max-h-full overflow-hidden flex flex-col w-full max-w-4xl mx-auto relative z-10 box-border">
+    <div className="h-full max-h-full overflow-hidden flex flex-col w-full px-2 sm:px-4 md:px-8 relative z-10 box-border">
       {/* 1. Static Locked Hero Header (flex-shrink-0 w-full) */}
       <header className="flex-shrink-0 w-full pt-2 sm:pt-4 pb-3 px-3 sm:px-4 space-y-3 z-20">
         {/* Navigation row with back button */}

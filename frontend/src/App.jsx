@@ -5406,7 +5406,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   };
 
   const handleGoBack = () => {
-    // 1. First check if any modal, drawer, or dialog is open - dismiss it first
+    // 1. Dismiss any open modal, drawer, or dialog first
     if (showAuthModal) {
       closeAuthModal(false);
       return;
@@ -5467,28 +5467,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       return;
     }
 
-    // 2. Next check if active page has an explicit DOM back button [data-voice-back]
-    if (typeof document !== 'undefined') {
-      try {
-        const domBackBtn = document.querySelector('[data-voice-back]');
-        if (domBackBtn && typeof domBackBtn.click === 'function') {
-          // If the button is visible and not disabled
-          const style = window.getComputedStyle ? window.getComputedStyle(domBackBtn) : {};
-          if (style.display !== 'none' && style.visibility !== 'hidden' && !domBackBtn.disabled) {
-            domBackBtn.click();
-            return;
-          }
-        }
-      } catch (_) {}
-    }
-
-    // 3. Home is the authoritative final navigation destination:
-    // If on Home root, prevent infinite popping
-    if (isHomePage(activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio })) {
-      return;
-    }
-
-    // If on Home with any "See all" expanded, collapse it back to Home root
+    // 2. Sub-views inside current page: collapse them before navigating away
+    // If on Home with any "See all" expanded, collapse back to Home root
     if (activeTab === "home" && (showAllTrending || showAllArtists || showAllAlbums || showAllRadio)) {
       setShowAllTrending(false);
       setShowAllArtists(false);
@@ -5503,7 +5483,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       return;
     }
 
-    // If inside playlist view, go back to playlists list
+    // If inside playlist view, return to playlists list
     if (selectedPlaylistForView) {
       setSelectedPlaylistForView(null);
       const { target, stack: newStack } = popNavigation(navigationStackRef.current);
@@ -5515,7 +5495,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       return;
     }
 
-    // If inside downloads explore view, go back to downloads library
+    // If inside downloads explore view, return to downloads library
     if (offlineSubView === 'explore') {
       setOfflineSubView('library');
       const { target, stack: newStack } = popNavigation(navigationStackRef.current);
@@ -5527,24 +5507,25 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       return;
     }
 
-    // Check if browser history has an internal navigation step
-    const navIdx = (typeof window !== 'undefined' && window.history?.state?.loopraNavIdx) || 0;
-    if (navIdx > 0 && typeof window !== 'undefined' && window.history?.back) {
-      window.history.back();
+    // If already at Home root with nothing else to pop, do nothing
+    if (isHomePage(activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio })) {
       return;
     }
 
-    // Fallback: direct in-app navigation pop
+    // 3. Reliable Internal Stack Navigation:
+    // Pop the previous destination from the internal navigation stack
     const { target, stack: newStack } = popNavigation(navigationStackRef.current);
     navigationStackRef.current = newStack;
     setNavigationStack(newStack);
 
+    // Apply the popped destination immediately
     applyNavRoute(target);
 
+    // Sync URL without triggering an unreliable browser history loop
     if (typeof window !== 'undefined') {
       try {
         window.history.replaceState(
-          { ...target, loopraNavIdx: newStack.length - 1, loopraInit: true },
+          { ...target, loopraNavIdx: Math.max(0, newStack.length - 1), loopraInit: true },
           '',
           target.path || '/'
         );
@@ -7629,7 +7610,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               )}
 
         {activeTab === 'artist' && (
-          <div key={`page-artist-${selectedArtistId}`} className="page-transition max-w-7xl mx-auto px-0 md:px-4 pt-0.5 md:pt-2 w-full min-w-0">
+          <div key={`page-artist-${selectedArtistId}`} className="page-transition w-full min-w-0 px-2 sm:px-4 md:px-8 pt-0.5 md:pt-2">
             <ArtistProfileView
               artistId={selectedArtistId || 'arijit-singh'}
               backendUrl={BACKEND_URL}
@@ -7720,7 +7701,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'for-you' && (
-          <div key="page-for-you" className="page-transition max-w-7xl mx-auto px-0 md:px-4 pt-1 md:pt-6 space-y-6 md:space-y-10 w-full min-w-0">
+          <div key="page-for-you" className="page-transition w-full min-w-0 px-2 sm:px-4 md:px-8 pt-1 md:pt-6 space-y-6 md:space-y-10">
             <PersonalizedRecommendationsSection
               backendUrl={BACKEND_URL}
               authToken={authToken}
@@ -7739,7 +7720,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'home' && (
-          <div key={`page-home-${showAllTrending ? 'trending' : showAllArtists ? 'artists' : showAllAlbums ? 'albums' : showAllRadio ? 'radio' : 'main'}`} className="page-transition max-w-7xl mx-auto px-0 md:px-4 pt-0.5 md:pt-2 space-y-4 md:space-y-6 w-full min-w-0">
+          <div key={`page-home-${showAllTrending ? 'trending' : showAllArtists ? 'artists' : showAllAlbums ? 'albums' : showAllRadio ? 'radio' : 'main'}`} className="page-transition w-full min-w-0 px-2 sm:px-4 md:px-8 pt-0.5 md:pt-2 space-y-4 md:space-y-6">
             {/* Promotional Hero Banner if configured in CMS */}
             <CmsHeroBanner 
               banner={cmsConfig?.banner} 
@@ -8164,7 +8145,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'library' && (
-          <div key="page-library" className={`page-transition max-w-4xl mx-auto space-y-5 relative z-10 ${USE_V2_LIBRARY_UI ? 'pb-32 px-3 sm:px-4' : ''}`}>
+          <div key="page-library" className={`page-transition w-full px-2 sm:px-4 md:px-8 space-y-5 relative z-10 ${USE_V2_LIBRARY_UI ? 'pb-32' : ''}`}>
             {USE_V2_LIBRARY_UI ? (
               /* ========================================================================= */
               /* V2 LIKED SONGS & LIBRARY REDESIGN (Dynamic Header, Artwork, Clearance)   */
@@ -8457,7 +8438,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'history' && (
-          <div key="page-history" className="page-transition max-w-4xl mx-auto space-y-6 relative z-10">
+          <div key="page-history" className="page-transition w-full px-2 sm:px-4 md:px-8 space-y-6 relative z-10">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">Listening History</h2>
@@ -8571,7 +8552,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'playlists' && (
-          <div key={`page-playlists-${selectedPlaylistForView?.id || 'list'}`} className={`page-transition max-w-4xl mx-auto space-y-6 relative z-10 ${USE_V2_PLAYLISTS_UI ? 'pb-32 px-3 sm:px-4' : ''}`}>
+          <div key={`page-playlists-${selectedPlaylistForView?.id || 'list'}`} className={`page-transition w-full px-2 sm:px-4 md:px-8 space-y-6 relative z-10 ${USE_V2_PLAYLISTS_UI ? 'pb-32' : ''}`}>
             {!selectedPlaylistForView ? (
               USE_V2_PLAYLISTS_UI ? (
                 /* ========================================================================= */
@@ -8922,7 +8903,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'downloads' && (
-          <div key={`page-downloads-${offlineSubView}`} className="page-transition flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+          <div key={`page-downloads-${offlineSubView}`} className="page-transition flex-1 w-full px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
             {offlineSubView === 'explore' ? (
               <OfflineEligibleExploreView
                 onBack={handleGoBack}
@@ -8952,7 +8933,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'mood' && (
-          <div key="page-mood" className="page-transition flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+          <div key="page-mood" className="page-transition flex-1 w-full px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
             <MoodToMusicSection
               onPlaySong={playSong}
               onAddToQueue={(track) => addToQueue(track)}
@@ -8977,7 +8958,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {(activeTab === 'radio' || activeTab === 'indian-radio') && (
-          <div key="page-radio" className="page-transition flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+          <div key="page-radio" className="page-transition flex-1 w-full px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
             <IndianRadioView
               currentSong={currentSong}
               isPlaying={isPlaying}
@@ -8989,7 +8970,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'timemachine' && (
-          <div key="page-timemachine" className="page-transition flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+          <div key="page-timemachine" className="page-transition flex-1 w-full px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
             <TimeMachineRadio
               cmsConfig={cmsConfig}
               onPlaySong={playSong}
@@ -9004,7 +8985,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'activity' && (
-          <div key="page-activity" className="page-transition flex-1 w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+          <div key="page-activity" className="page-transition flex-1 w-full px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
             <ActivityFeed
               user={user}
               token={authToken}
@@ -9067,7 +9048,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {(activeTab === 'download' || activeTab === 'download-app' || activeTab === 'apk') && (
-          <div key="page-download" className="page-transition max-w-5xl mx-auto space-y-6 relative z-10">
+          <div key="page-download" className="page-transition w-full px-2 sm:px-4 md:px-8 space-y-6 relative z-10">
             <AndroidApkDownloadSection onBack={handleGoBack} />
           </div>
         )}
@@ -9155,7 +9136,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
 
           {/* Desktop Full 3-Section Footer (>= md) */}
-          <div className="hidden md:flex max-w-7xl mx-auto items-center justify-between gap-6">
+          <div className="hidden md:flex w-full items-center justify-between gap-6 px-4 md:px-8">
             {/* Zone 1 (Left): Artwork, Track Info with overflow marquee, and Like Button */}
             <div 
               className="flex items-center gap-3 w-1/4 min-w-0 select-none cursor-pointer"
