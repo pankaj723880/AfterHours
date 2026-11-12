@@ -56,3 +56,4 @@ add_queue.cjs
 fetch_images*.cjs
 scratch_*.cjs
 script.cjs
+backups/

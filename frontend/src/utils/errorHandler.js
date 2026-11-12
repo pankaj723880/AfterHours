@@ -54,7 +54,7 @@ export const safeParseJsonResponse = async (res, defaultErrorMessage = 'Request 
   }
 
   if (!res.ok) {
-    if (res.status === 502 || res.status === 503) {
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
       return { ok: false, status: res.status, data, error: 'Backend server is waking up. Please retry in a few seconds.' };
     }
     if (res.status === 404) {
@@ -69,4 +69,7 @@ export const safeParseJsonResponse = async (res, defaultErrorMessage = 'Request 
   }
 
   return { ok: true, status: res.status, data, error: null };
-};
+};
+
+// Re-export retry-enabled fetch helpers for centralized API error handling
+export { fetchWithRetry, pingServerHealth, subscribeToWakeStatus } from './apiClient';

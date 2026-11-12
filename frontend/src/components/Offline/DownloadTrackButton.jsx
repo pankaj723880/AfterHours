@@ -48,12 +48,7 @@ export default function DownloadTrackButton({
     };
   }, [trackId]);
 
-  // STRICT REQUIREMENT: If the song is NOT verified as eligible, hide the button completely.
-  // Do NOT show a disabled button or "Offline unavailable" label.
-  if (!isEligible) {
-    return null;
-  }
-
+  // Handle caching (supports both licensed downloads and universal /api/stream/cache caching)
   const handleDownload = async (e) => {
     e?.stopPropagation();
     if (!track || !trackId) return;
@@ -63,7 +58,7 @@ export default function DownloadTrackButton({
     }
 
     if (isDownloaded) {
-      if (showToast) showToast('This song is already downloaded in your Offline Library', 'info');
+      if (showToast) showToast('This song is already downloaded to your Offline Library', 'info');
       return;
     }
 
@@ -73,9 +68,15 @@ export default function DownloadTrackButton({
     const license = offlineEligibilityService.getLicense(trackId) || track?.license;
 
     try {
-      await offlineStorageService.downloadAndStoreTrack(track, license, (percent) => {
-        setDownloadProgress(percent);
-      });
+      if (license && license.downloadEndpoint) {
+        await offlineStorageService.downloadAndStoreTrack(track, license, (percent) => {
+          setDownloadProgress(percent);
+        });
+      } else {
+        await offlineStorageService.cacheTrackAudio(track, (percent) => {
+          setDownloadProgress(percent);
+        });
+      }
 
       setIsDownloaded(true);
       setDownloadProgress(null);
@@ -99,13 +100,13 @@ export default function DownloadTrackButton({
     try {
       await offlineStorageService.deleteTrack(trackId);
       setIsDownloaded(false);
-      if (showToast) showToast(`Removed "${track.title}" from Offline Library`, 'info');
+      if (showToast) showToast(`Removed "${track.title}" from Downloads`, 'info');
     } catch (err) {
       if (showToast) showToast('Failed to remove downloaded song', 'error');
     }
   };
 
-  // 1. Menu Item Variant (for 3-dot popup menus)
+  // 1. Menu Item Variant (for 3-dot popup menus & context menu)
   if (variant === 'menu-item') {
     if (downloadProgress !== null) {
       return (
@@ -126,10 +127,10 @@ export default function DownloadTrackButton({
         >
           <span className="flex items-center gap-2">
             <Trash2 className="w-3.5 h-3.5" />
-            Remove Offline Download
+            Remove from Downloads
           </span>
-          <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-mono">
-            Stored
+          <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-mono font-semibold">
+            Downloaded
           </span>
         </button>
       );
@@ -141,7 +142,7 @@ export default function DownloadTrackButton({
         className="w-full text-left px-4 py-2.5 text-xs font-medium text-amber-400 hover:text-amber-300 hover:bg-neutral-800 transition flex items-center gap-2 cursor-pointer"
       >
         <Download className="w-3.5 h-3.5" />
-        <span>Download for Offline Playback</span>
+        <span>Download Song (Offline)</span>
       </button>
     );
   }
@@ -196,7 +197,7 @@ export default function DownloadTrackButton({
     return (
       <button
         onClick={handleDelete}
-        title="Offline Ready (Click to remove download)"
+        title="Downloaded (Click to remove download)"
         className={`p-2 rounded-full bg-emerald-500/10 text-emerald-400 hover:bg-rose-500/10 hover:text-rose-400 transition cursor-pointer border border-emerald-500/30 group ${className}`}
       >
         <CheckCircle className="w-4 h-4 group-hover:hidden" />

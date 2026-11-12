@@ -116,6 +116,7 @@ export const DEFAULT_CMS_CONFIG = {
     { id: 'truck', label: 'Horn Ok Please', enabled: true, order: 8, isCore: false, icon: 'truck', badge: 'Dhaba', group: 'stations', route: '/station/truck' },
     { id: 'pauwa', label: 'Theka Session', enabled: true, order: 9, isCore: false, icon: 'beer', badge: 'Desi', group: 'stations', route: '/station/pauwa' },
     { id: 'library', label: 'Liked Songs Collection', enabled: true, order: 10, isCore: true, icon: 'library', badge: '', group: 'collection', route: '/library' },
+    { id: 'downloads', label: 'Downloaded Songs', enabled: true, order: 10.5, isCore: true, icon: 'download', badge: 'Offline', group: 'collection', route: '/downloads' },
     { id: 'history', label: 'Listening History', enabled: true, order: 11, isCore: true, icon: 'history', badge: '', group: 'collection', route: '/history' },
     { id: 'playlists', label: 'Playlists', enabled: true, order: 12, isCore: true, icon: 'list', badge: '', group: 'collection', route: '/playlists' },
     { id: 'stats', label: 'Recap & Stats', enabled: true, order: 13, isCore: false, icon: 'sparkles', badge: '', group: 'collection', route: '/stats' }
@@ -225,7 +226,7 @@ export const normalizeNavigationList = (rawNav) => {
       let group = existing.group;
       if (['barber', 'truck', 'pauwa'].includes(item.id)) group = 'stations';
       else if (['mood', 'timemachine', 'activity', 'swipe'].includes(item.id)) group = 'discovery';
-      else if (['library', 'history', 'playlists', 'stats'].includes(item.id)) group = 'collection';
+      else if (['library', 'downloads', 'history', 'playlists', 'stats'].includes(item.id)) group = 'collection';
       else if (['home', 'discover', 'radio'].includes(item.id)) group = 'main';
 
       let label = item.label || existing.label;

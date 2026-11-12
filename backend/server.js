@@ -17,6 +17,8 @@ import adminRoutes from './routes/admin.js';
 import cmsRoutes from './routes/cms.js';
 import adminCmsRoutes from './routes/adminCms.js';
 import offlineRoutes from './routes/offline.js';
+import { Ytdl } from '@distube/ytdl-core';
+const ytdlInstance = new Ytdl();
 import { seedDefaultLicensedTracks } from './services/offlineLicenseService.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -375,14 +377,25 @@ app.get(['/api/rooms', '/rooms'], (req, res) => {
   res.json({ success: true, rooms: roomsList });
 });
 
-app.get(['/health', '/api/health'], (req, res) => {
+// Fast, zero-DB-overhead health check endpoint for Render wake-up and uptime monitoring
+app.all(['/health', '/api/health'], (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  if (req.method === 'HEAD') {
+    return res.status(200).end();
+  }
   const ready = isDatabaseReady();
-  res.json({
-    status: 'ok',
+  res.status(200).json({
+    status: 'awake',
+    timestamp: Date.now(),
     uptime: Math.floor(process.uptime()),
     database: ready ? 'connected' : 'disconnected',
-    readyState: mongoose.connection.readyState,
-    timestamp: new Date().toISOString()
+    readyState: mongoose.connection.readyState
   });
 });
 
@@ -1630,6 +1643,56 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
   }
 
   return res.json({ items: [], nextPageToken: null });
+});
+
+// Stream / Audio Proxy endpoint for Browser Caching & Offline Storage
+// Serves binary audio stream for caching directly in IndexedDB / CacheStorage
+app.get([
+  '/api/audio-stream/:videoId',
+  '/api/stream/cache/:videoId',
+  '/api/stream/:videoId/audio',
+  '/stream/cache/:videoId',
+  '/audio-stream/:videoId'
+], async (req, res) => {
+  const { videoId } = req.params;
+  const cleanId = (videoId || '').trim();
+
+  // Explicit permissive CORS headers so offline audio fetching always works cross-origin
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+
+  if (!cleanId) {
+    return res.status(400).json({ error: 'videoId is required' });
+  }
+
+  // Stream actual song audio directly via ytdl audio proxy
+  try {
+    const videoUrl = `https://www.youtube.com/watch?v=${cleanId}`;
+    const audioStream = ytdlInstance.download(videoUrl, {
+      filter: f => f.hasAudio && !f.hasVideo,
+      highWaterMark: 1 << 22 // 4MB buffer for smooth streaming
+    });
+
+    res.setHeader('Content-Type', 'audio/mp4');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'public, max-age=604800'); // 7 days
+    res.setHeader('X-Audio-Source', 'youtube_stream_proxy');
+
+    audioStream.on('error', (streamErr) => {
+      console.warn(`[StreamCache:ytdl] Audio stream error for ${cleanId}:`, streamErr.message);
+      if (!res.headersSent) {
+        res.status(502).json({ error: 'Failed to stream real audio for track', details: streamErr.message });
+      }
+    });
+
+    audioStream.pipe(res);
+  } catch (err) {
+    console.error(`[StreamCache] Unexpected stream proxy error for ${cleanId}:`, err.message);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Stream proxy error', details: err.message });
+    }
+  }
 });
 
 // Stream endpoint - safe placeholder, playback is handled client-side via YouTube IFrame API

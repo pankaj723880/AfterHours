@@ -1,4 +1,4 @@
-import { BACKEND_URL } from '../utils/apiUrl';
+import { BACKEND_URL } from '../utils/apiUrl.js';
 
 let currentAccessState = {
   allowed: true,

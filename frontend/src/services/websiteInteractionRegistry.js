@@ -22,6 +22,8 @@ export const STATIC_INTERACTION_REGISTRY = [
     priority: 100, // Highest priority to eliminate regression
     aliases: [
       'saloon fm', 'saloon', 'salon fm', 'salon', 'lune fm', 'luna fm',
+      'saavn fm', 'saavn', 'saavan fm', 'saavan',
+      'सावन एफएम', 'सावन', 'सैलून एफएम', 'सैलून',
       'saloon kholo', 'salon open karo', 'saloon nostalgia', '90s saloon',
       'barber station', 'barber', 'saloon chalao'
     ],
@@ -37,6 +39,7 @@ export const STATIC_INTERACTION_REGISTRY = [
     priority: 95,
     aliases: [
       'horn ok please', 'horn ok', 'truck melodies', 'highway truck',
+      'हॉर्न ओके प्लीज', 'हॉर्न ओके', 'हॉर्न',
       'dhaba', 'dhaba station', 'highway tunes', 'punjabi truck'
     ],
     description: 'High-Bass Highway Tracks, Rustic Punjabi Folk & Dhabha Anthems'
@@ -51,6 +54,7 @@ export const STATIC_INTERACTION_REGISTRY = [
     priority: 95,
     aliases: [
       'theka session', 'theka', 'theka kholo', 'desi theka', 'pauwa',
+      'ठेका सेशन', 'ठेका', 'पौवा',
       'desi theka session', 'theka open karo', 'mehfil station'
     ],
     description: 'Energetic Desi Party Bangers, Late Night Theka Anthems'
@@ -65,6 +69,7 @@ export const STATIC_INTERACTION_REGISTRY = [
     priority: 90,
     aliases: [
       'time machine radio', 'time machine', 'time machine kholo', 'retro era',
+      'टाइम मशीन', 'टाइम मशीन रेडियो',
       'retro music', 'purana radio', 'time travel radio'
     ],
     description: 'Decade-by-Decade Retro Bollywood & World Classics'
@@ -147,6 +152,7 @@ export const STATIC_INTERACTION_REGISTRY = [
     priority: 85,
     aliases: [
       'mood to music', 'mood to music ai', 'mood music', 'vibe to music',
+      'mood ai', 'मूड टू म्यूजिक', 'मूड टू म्यूजिक एआई', 'मूड एआई',
       'mood station', 'mood kholo', 'kaisa mood hai'
     ],
     description: 'AI Musical Companion matching current emotional vibe'
@@ -161,7 +167,9 @@ export const STATIC_INTERACTION_REGISTRY = [
     priority: 85,
     aliases: [
       'library', 'music library', 'liked songs', 'liked songs collection',
-      'mere gaane', 'pasandida gaane', 'my songs', 'favorites'
+      'liked song collection', 'liked song', 'favorites', 'favourites',
+      'लाइक्ड सॉन्ग्स', 'लाइक्ड सॉन्ग', 'लाइक्ड', 'फेवरेट्स',
+      'mere gaane', 'pasandida gaane', 'my songs'
     ],
     description: 'Personal Liked Songs and Saved Collections'
   },
@@ -175,6 +183,7 @@ export const STATIC_INTERACTION_REGISTRY = [
     priority: 85,
     aliases: [
       'listening history', 'history', 'purane gaane', 'recently played',
+      'हिस्ट्री', 'लिसनिंग हिस्ट्री',
       'sune huye gaane', 'history kholo'
     ],
     description: 'Track of all recently played songs'
@@ -219,6 +228,21 @@ export const STATIC_INTERACTION_REGISTRY = [
       'dj mixing', 'dj studio', 'dj session', 'dj chalao', 'dj lagao', 'dj view', 'dj'
     ],
     description: 'Interactive DJ mixing console, procedural synth, dynamic lighting & beat generators'
+  },
+  {
+    id: 'downloads',
+    name: 'Downloaded Songs',
+    type: 'page',
+    route: '/downloads',
+    parentPage: 'root',
+    selector: '[data-nav-id="downloads"], a[href*="downloads"]',
+    priority: 88,
+    aliases: [
+      'downloaded songs', 'downloaded song', 'downloads', 'download',
+      'offline songs', 'offline music', 'offline',
+      'डाउनलोड्स', 'डाउनलोडेड', 'ऑफलाइन', 'ऑफलाइन गाने', 'डाउनलोड'
+    ],
+    description: 'Downloaded & Encrypted Offline Library Songs'
   },
   {
     id: 'downloads_explore',
@@ -517,6 +541,10 @@ class WebsiteInteractionRegistry {
     if (
       clean.includes('saloon') ||
       clean.includes('salon') ||
+      clean.includes('saavn') ||
+      clean.includes('saavan') ||
+      clean.includes('सावन') ||
+      clean.includes('सैलून') ||
       clean.includes('lune fm') ||
       clean.includes('luna fm') ||
       clean.includes('barber')
@@ -525,18 +553,23 @@ class WebsiteInteractionRegistry {
     }
 
     // 2. Strict Priority: Horn Ok Please check
-    if (clean.includes('horn ok') || clean.includes('truck') || clean.includes('dhaba')) {
+    if (clean.includes('horn ok') || clean.includes('truck') || clean.includes('dhaba') || clean.includes('हॉर्न')) {
       return this.staticRegistry.find(item => item.id === 'truck');
     }
 
     // 3. Strict Priority: Theka Session check
-    if (clean.includes('theka') || clean.includes('pauwa')) {
+    if (clean.includes('theka') || clean.includes('pauwa') || clean.includes('ठेका') || clean.includes('पौवा')) {
       return this.staticRegistry.find(item => item.id === 'pauwa');
     }
 
     // 4. Strict Priority: Time Machine Radio check
-    if (clean.includes('time machine') || clean.includes('retro era')) {
+    if (clean.includes('time machine') || clean.includes('retro era') || clean.includes('टाइम मशीन')) {
       return this.staticRegistry.find(item => item.id === 'timemachine');
+    }
+
+    // 4b. Strict Priority: Mood to Music check
+    if (clean.includes('mood to music') || clean.includes('mood ai') || clean.includes('मूड')) {
+      return this.staticRegistry.find(item => item.id === 'mood');
     }
 
     // 5. Match against all static registered items with alias scoring

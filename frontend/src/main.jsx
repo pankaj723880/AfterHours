@@ -3,6 +3,14 @@ import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import './index.css';
 import { GoogleOAuthProvider } from '@react-oauth/google';
+import { BACKEND_URL } from './utils/apiUrl';
+
+// Immediate non-blocking app-boot wake-up ping for Render cold-starts
+if (typeof window !== 'undefined' && typeof fetch === 'function') {
+  try {
+    fetch(`${BACKEND_URL}/api/health`, { method: 'GET', cache: 'no-store' }).catch(() => {});
+  } catch (_) {}
+}
 
 // Page Visibility & Background Playback Spoof for Brave Browser & Android Chrome:
 // 1. Intercept document.hidden and document.visibilityState to always report visible.

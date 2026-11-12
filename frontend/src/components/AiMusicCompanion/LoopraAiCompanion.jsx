@@ -1036,7 +1036,7 @@ export default function LoopraAiCompanion({
       setHeardText('');
       setVoiceState('listening');
       setIsVoiceListening(true);
-      await voiceSessionService.startSession({ lang: speechLang, initiator: 'ai_companion' });
+      await voiceSessionService.startSession({ lang: speechLang, initiator: 'ai_companion', isAdmin: Boolean(user && (user.isAdmin === true || user.role === 'admin')) });
     } catch (e) {
       console.warn('[LoopraAiCompanion] Voice session activation notice:', e.message);
       setIsVoiceListening(false);

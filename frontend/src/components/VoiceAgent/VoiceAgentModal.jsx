@@ -22,6 +22,13 @@ import { chatBuddyClient } from '../../services/chatBuddyClient';
 import CharacterBuddy from './CharacterBuddy';
 import FloatingAvatarTriggerV2 from './FloatingAvatarTriggerV2';
 import { USE_COMPACT_V2_UI, USE_V2_AVATAR, USE_V2_AVATAR_COMPANION } from '../../constants/featureFlags';
+import {
+  splitCompoundVoiceCommand,
+  runSequentialSteps,
+  matchNamedPlaylist,
+  extractNamedPlaylistTarget,
+  transliterateDevanagariToLatin
+} from '../../utils/multiStepVoiceExecutor';
 
 export default function VoiceAgentModal({
   user,
@@ -75,6 +82,10 @@ export default function VoiceAgentModal({
   onDjAction,
   onGoBack,
   onOpenArtist,
+  userPlaylists = [],
+  selectedPlaylistForView = null,
+  getCurrentVisibleTracks,
+  playFromCurrentContext,
   showToast
 }) {
   // 1. Permission check via dynamic user role & voiceControlService
@@ -310,13 +321,285 @@ export default function VoiceAgentModal({
       return;
     }
 
-    // B. Compound Sentence Check:
+    // B. Multi-Step Compound Voice Command Check:
+    // Decompose compound utterances on sequential connectors ("and", "then", "after that", "aur", "phir", "fir", "uske baad", "me jaakar", "kholo aur", ",")
+    const multiSteps = splitCompoundVoiceCommand(text);
+    if (multiSteps.length > 1) {
+      const execLabel = `Executing ${multiSteps.length} actions...`;
+      voiceSessionService.notifyExecutionStart(execLabel);
+      setActiveActionLabel(execLabel);
+      if (typeof window !== 'undefined') {
+        window.__loopraSetAvatarExecuting?.(true);
+      }
+
+      const seqResult = await runSequentialSteps(multiSteps, {
+        executeSingleStep: async (stepStr) => {
+          // 0. Specific Named Playlist / Folder Matching BEFORE generic section navigation!
+          // (e.g. "Pankaj playlist open kar" or "पंकज प्लेलिस्ट kholo")
+          const matchedPl = matchNamedPlaylist(stepStr, userPlaylists);
+          if (matchedPl) {
+            if (onOpenPlaylistByName) {
+              onOpenPlaylistByName(matchedPl.name);
+            }
+            persistentContextRef.current.activeTab = 'playlists';
+            return {
+              success: true,
+              navigated: true,
+              description: `Opened playlist "${matchedPl.name}"`
+            };
+          }
+
+          // State-Aware Navigation Guard:
+          // If the step requests generic playlists page and we are ALREADY on playlists, skip redundant navigation
+          const isGenericPlaylistsRequest = (
+            /\b(open playlist|open playlists|show playlist|show playlists)\b/i.test(stepStr) ||
+            /प्लेलिस्ट\s*(?:ओपन|खोल|खोलो|दिखाओ)/i.test(stepStr)
+          );
+          if (isGenericPlaylistsRequest && (persistentContextRef.current.activeTab === 'playlists' || activeTab === 'playlists')) {
+            return {
+              success: true,
+              navigated: false,
+              skipped: true,
+              description: 'Already on Playlists'
+            };
+          }
+
+          const directAction = parseCommandToAction(stepStr, persistentContextRef.current);
+          if (directAction) {
+            let navigated = false;
+            let desc = directAction.description || stepStr;
+
+            // 1. Navigation Pages / Stations / Collections
+            if (directAction.intent === INTENT_CATEGORIES.OPEN_PAGE || directAction.action === 'navigate_page') {
+              const target = directAction.target || 'home';
+              const isAlreadyOpen = (activeTab === target || persistentContextRef.current.activeTab === target);
+
+              if (isAlreadyOpen) {
+                return { success: true, navigated: false, skipped: true, description: `${directAction.item?.name || target} already open` };
+              }
+
+              if (onNavigate) {
+                const navRes = onNavigate(target, directAction.extra);
+                if (navRes && navRes.success === false) {
+                  return { success: false, reason: navRes.reason, message: navRes.reason === 'NO_ACCESS' ? 'Sorry, mujhe is page ka access nahi hai' : 'Main yeh page open nahi kar sakti' };
+                }
+                navigated = true;
+                persistentContextRef.current.activeTab = target;
+              }
+              return { success: true, navigated, description: desc };
+            }
+
+            // 2. Open Playlist
+            if (directAction.intent === INTENT_CATEGORIES.OPEN_PLAYLIST || directAction.action === 'open_playlist') {
+              const plName = directAction.target || directAction.name || '';
+              if (onOpenPlaylistByName) {
+                onOpenPlaylistByName(plName);
+                navigated = true;
+                persistentContextRef.current.activeTab = 'playlists';
+              }
+              return { success: true, navigated, description: desc };
+            }
+
+            // 3. Playback Controls
+            if (directAction.intent === INTENT_CATEGORIES.PAUSE_PLAYBACK && onTogglePlayPause && isPlaying) {
+              onTogglePlayPause();
+              return { success: true, description: 'Paused playback' };
+            }
+            if (directAction.intent === INTENT_CATEGORIES.RESUME_PLAYBACK && onTogglePlayPause && !isPlaying) {
+              onTogglePlayPause();
+              return { success: true, description: 'Resumed playback' };
+            }
+            if (directAction.intent === INTENT_CATEGORIES.NEXT_TRACK && onNextTrack) {
+              onNextTrack();
+              return { success: true, description: 'Skipped to next track' };
+            }
+            if (directAction.intent === INTENT_CATEGORIES.PREVIOUS_TRACK && onPrevTrack) {
+              onPrevTrack();
+              return { success: true, description: 'Returned to previous track' };
+            }
+
+            // 4. Modals & Sections
+            if (directAction.intent === INTENT_CATEGORIES.OPEN_INSIGHTS && onOpenInsights) {
+              onOpenInsights();
+              return { success: true, description: 'Opened Recap & Stats' };
+            }
+            if (directAction.intent === INTENT_CATEGORIES.OPEN_QUEUE && onOpenQueue) {
+              onOpenQueue();
+              return { success: true, description: 'Opened Queue' };
+            }
+          }
+
+          // Fallback to task engine for single step clause
+          const parsed = parseMultiStepInstruction(stepStr, persistentContextRef.current);
+          if (parsed && parsed.length > 0) {
+            const res = await executeTaskPipeline(parsed, persistentContextRef.current, {
+              onPlayTrack,
+              onTogglePlayPause,
+              onNextTrack,
+              onPrevTrack,
+              onToggleShuffle,
+              onToggleRepeat,
+              onSetVolume,
+              onToggleLike,
+              onRemoveFromFavorites,
+              onAddToPlaylist,
+              onCreatePlaylist,
+              onOpenPlaylistByName,
+              onPlayPlaylist,
+              onPlayRadioStation,
+              onPlayFromHistory,
+              onRemoveHistoryItem,
+              onClearHistory,
+              onAddToQueue,
+              onNavigate,
+              onOpenInsights,
+              onOpenQueue,
+              onOpenLyrics,
+              onOpenListeningRooms,
+              onOpenSimilarSongs,
+              onOpenPlayerSettings,
+              onOpenSleepTimer,
+              onOpenCanvas,
+              onOpenProfile,
+              onOpenRatingModal,
+              onSetPlaybackSpeed,
+              onDjAction,
+              onGoBack,
+              onOpenArtist,
+              searchCatalog
+            });
+            const isNav = parsed.some(p => p.type === 'navigation' || p.action === 'navigate_page' || p.action === 'open_playlist');
+            return { success: res.success !== false, navigated: isNav, description: res.message || stepStr };
+          }
+
+          return { success: true, navigated: false, description: stepStr };
+        },
+        getCurrentVisibleTracks,
+        playFromCurrentContext,
+        showToast,
+        speak: (msg) => voiceBuddyService.speak(msg)
+      });
+
+      if (typeof window !== 'undefined') {
+        window.__loopraSetAvatarExecuting?.(false);
+      }
+      setTimeout(() => {
+        setActiveActionLabel('');
+      }, 2000);
+
+      if (seqResult && seqResult.success) {
+        const spokenMsg = seqResult.summary || 'All actions completed successfully.';
+        const friendVoiceReply = voiceBuddyService.generateFriendReply(text, spokenMsg);
+        voiceBuddyService.speak(friendVoiceReply);
+        showToast?.(spokenMsg);
+        voiceSessionService.notifyExecutionFinish(spokenMsg);
+      }
+      return;
+    }
+
+    // B2. Legacy Compound Sentence Check:
     // If the instruction contains multiple distinct clauses (e.g. "Open liked songs and remove this song"),
     // pass directly to Multi-Step Pipeline so each independent action is executed sequentially.
     const clauses = splitVoiceInstructionIntoClauses(text);
     const isCompound = clauses.length > 1;
 
     if (!isCompound) {
+      // A1. Universal Done / Confirm / Save Handler
+      const isConfirmUtterance = /\b(done|confirm|save|apply|submit|ho gaya|confirm karo|save karo|apply karo)\b/i.test(cleanLower) ||
+        /^(done|confirm|save|apply|submit)$/i.test(cleanLower) ||
+        /^(हो\s*गया|कन्फर्म|सेव|अप्लाई|डन)$/i.test(text);
+
+      if (isConfirmUtterance && !pendingConfirmationStepRef.current) {
+        if (typeof document !== 'undefined') {
+          // Look for active modal/view's primary confirmation button
+          const confirmBtn = document.querySelector('[data-voice-confirm], button[type="submit"], button.btn-confirm, button[data-action="confirm"], [role="dialog"] button.bg-amber-500, .modal button[type="submit"]');
+          let triggered = false;
+          if (confirmBtn && typeof confirmBtn.click === 'function') {
+            const style = window.getComputedStyle ? window.getComputedStyle(confirmBtn) : {};
+            if (style.display !== 'none' && style.visibility !== 'hidden' && !confirmBtn.disabled) {
+              confirmBtn.click();
+              triggered = true;
+            }
+          }
+          if (!triggered) {
+            // Find visible buttons with matching text labels
+            const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
+            const matchedBtn = buttons.find(b => {
+              const label = (b.innerText || b.getAttribute('aria-label') || '').trim().toLowerCase();
+              return /^(done|confirm|save|create|apply|submit|हो गया|कन्फर्म|सेव)$/i.test(label) &&
+                !b.disabled &&
+                b.offsetParent !== null; // visible on screen
+            });
+            if (matchedBtn && typeof matchedBtn.click === 'function') {
+              matchedBtn.click();
+              triggered = true;
+            }
+          }
+
+          if (triggered) {
+            const reply = 'Ho gaya! Confirm kar diya hai.';
+            voiceBuddyService.speak(reply);
+            showToast?.('Action confirmed', 'success');
+            voiceSessionService.notifyExecutionFinish(reply);
+            return;
+          } else {
+            const reply = 'Iss screen par confirm karne ke liye kuch nahi hai.';
+            voiceBuddyService.speak(reply);
+            showToast?.('Nothing to confirm on this screen', 'info');
+            voiceSessionService.notifyExecutionFinish(reply);
+            return;
+          }
+        }
+      }
+
+      // A2. Universal Back / Cancel / Close Handler
+      const isBackUtterance = /\b(back|go back|piche jao|piche|pichhe|wapas jao|wapas|cancel|band karo|band kar do|close)\b/i.test(cleanLower) ||
+        /^(back|cancel|close)$/i.test(cleanLower) ||
+        /^(पीछे\s*जाओ|वापस\s*जाओ|वापस|कैंसिल|बंद\s*करो|बैक)$/i.test(text);
+
+      if (isBackUtterance) {
+        if (typeof onGoBack === 'function') {
+          try {
+            onGoBack();
+            const reply = 'Piche ja rahi hoon';
+            voiceBuddyService.speak(reply);
+            showToast?.('Navigated back');
+            voiceSessionService.notifyExecutionFinish(reply);
+            return;
+          } catch (err) {
+            console.error('[VoiceAgent] onGoBack failed:', err);
+          }
+        }
+      }
+
+      // 0. Specific Named Playlist Matching BEFORE generic actions!
+      // (e.g. "Pankaj playlist open kar", "पंकज प्लेलिस्ट ओपन कर", "open Pankaj folder")
+      const matchedSinglePl = matchNamedPlaylist(text, userPlaylists);
+      if (matchedSinglePl) {
+        if (typeof window !== 'undefined' && typeof window.__loopraRecordCommandDisplay === 'function') {
+          window.__loopraRecordCommandDisplay(text, 'open_playlist');
+        }
+        if (onOpenPlaylistByName) {
+          try {
+            onOpenPlaylistByName(matchedSinglePl.name);
+            persistentContextRef.current.activeTab = 'playlists';
+            const reply = `Opening playlist "${matchedSinglePl.name}"`;
+            voiceBuddyService.speak(reply);
+            showToast?.(`Opening ${matchedSinglePl.name}`);
+            voiceSessionService.notifyExecutionFinish(reply);
+          } catch (err) {
+            console.error('[VoiceAgent] Open playlist by name failed:', err);
+            voiceBuddyService.speak(`Playlist ${matchedSinglePl.name} open nahi ho payi`);
+            showToast?.(`Could not open ${matchedSinglePl.name}`, 'error');
+            voiceSessionService.notifyExecutionFinish(`Could not open ${matchedSinglePl.name}`);
+          }
+        } else {
+          voiceBuddyService.speak('Playlist open karne ka handler available nahi hai');
+          showToast?.('Playlist handler unavailable', 'warning');
+        }
+        return;
+      }
+
       const directAction = parseCommandToAction(text, persistentContextRef.current);
 
       // A4. Casual Chat & Conversational Inquiries: Route DIRECTLY to Gemini ChatBuddy (/api/chat)
@@ -568,16 +851,37 @@ export default function VoiceAgentModal({
           const targetId = directAction.target;
           const targetName = directAction.item?.name || targetId;
 
-          // Animate 3D physical character walking/running to the element and WAIT until arrival & tap
-          if (typeof window !== 'undefined' && typeof window.__loopraWalkAndTap === 'function') {
-            await window.__loopraWalkAndTap(targetId, targetName);
+          // Check if destination is already open
+          const isAlreadyOpen = (activeTab === targetId || persistentContextRef.current.activeTab === targetId);
+
+          if (!isAlreadyOpen) {
+            // Animate 3D physical character walking/running to the element and WAIT until arrival & tap
+            if (typeof window !== 'undefined' && typeof window.__loopraWalkAndTap === 'function') {
+              await window.__loopraWalkAndTap(targetId, targetName);
+            }
           }
+
           if (onNavigate) {
             try {
-              onNavigate(targetId, directAction.extra);
-              const reply = voiceBuddyService.generateFriendReply('navigate_page', { target: targetId });
+              let navRes = { success: true };
+              if (!isAlreadyOpen) {
+                navRes = onNavigate(targetId, directAction.extra);
+              }
+              if (navRes && navRes.success === false) {
+                const failReply = navRes.reason === 'NO_ACCESS'
+                  ? 'Sorry, mujhe is page ka access nahi hai'
+                  : 'Main yeh page open nahi kar sakti';
+                voiceBuddyService.speak(failReply);
+                showToast?.(failReply, 'warning');
+                voiceSessionService.notifyExecutionFinish(failReply);
+                return;
+              }
+
+              const reply = isAlreadyOpen
+                ? `${targetName} pehle se open hai`
+                : voiceBuddyService.generateFriendReply('navigate_page', { target: targetId });
               voiceBuddyService.speak(reply);
-              showToast?.(`Opening ${targetName}`);
+              showToast?.(isAlreadyOpen ? `${targetName} is already open` : `Opening ${targetName}`);
               voiceSessionService.notifyExecutionFinish(reply);
             } catch (err) {
               console.error('[VoiceAgent] Navigation failed:', err);
@@ -1056,6 +1360,8 @@ export default function VoiceAgentModal({
     onOpenLyrics,
     onGoBack,
     onOpenArtist,
+    getCurrentVisibleTracks,
+    playFromCurrentContext,
     searchCatalog,
     showToast,
     isPlaying,
@@ -1279,7 +1585,7 @@ export default function VoiceAgentModal({
     } else {
       showToast?.('Voice Agent: Listening...');
       // Zero-delay instant mic session activation with bilingual Hindi/Hinglish/English support
-      await voiceSessionService.startSession({ lang: 'hi-IN' });
+      await voiceSessionService.startSession({ lang: 'hi-IN', isAdmin });
     }
   };
 
@@ -1316,6 +1622,10 @@ export default function VoiceAgentModal({
       // Unmount avatar immediately when disabled to free WebGL memory
       setHasMountedAvatar(false);
       setInitialDelayDone(false);
+      // Immediately stop microphone and speech recognition when avatar is closed/toggled off
+      if (voiceSessionService.isSessionActive) {
+        voiceSessionService.stopSession('avatar_toggle_off');
+      }
     }
   }, [showSplashScreen, isAppInitialized, hasAccess, isAvatarVisible, avatarRoamEnabled]);
 

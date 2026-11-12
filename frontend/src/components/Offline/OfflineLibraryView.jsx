@@ -47,13 +47,25 @@ export default function OfflineLibraryView({
     return () => unsub();
   }, []);
 
-  const handleDelete = async (trackId, title) => {
+  const handleDelete = async (trackId, title, e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const cleanId = String(trackId || '');
+    // Immediately update UI state so track vanishes without delay or reload
+    setTracks(prev => prev.filter(item => {
+      const itemId = String(item.id || item.videoId || '');
+      return itemId !== cleanId;
+    }));
     try {
       await offlineStorageService.deleteTrack(trackId);
       if (showToast) showToast(`Deleted "${title}" from offline storage`, 'info');
-      loadData();
+      // Refresh storage quota/usage in background
+      offlineStorageService.getStorageUsage().then(usage => setStorageInfo(usage)).catch(() => {});
     } catch (e) {
       if (showToast) showToast('Failed to delete track', 'error');
+      loadData();
     }
   };
 
@@ -84,15 +96,15 @@ export default function OfflineLibraryView({
       <div className="bg-neutral-900/60 border border-neutral-800 rounded-3xl p-5 sm:p-7 backdrop-blur-xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" />
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50 animate-pulse" />
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 font-mono flex items-center gap-1.5">
               <HardDrive className="w-3.5 h-3.5" />
-              IndexedDB Audio Storage
+              Downloaded Songs & Audio Storage
             </span>
           </div>
-          <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">Offline Library</h1>
+          <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">Downloaded Library (Offline)</h1>
           <p className="text-xs text-neutral-400 mt-1 max-w-xl">
-            Locally stored audio files. These tracks play seamlessly through Loopra without any active network connection.
+            Songs downloaded and saved in browser storage (IndexedDB). These tracks play instantly without internet access or network buffering.
           </p>
 
           <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-400 mt-4">
@@ -259,7 +271,7 @@ export default function OfflineLibraryView({
                       </span>
                       <span>•</span>
                       <span className="font-mono text-[10px] text-amber-500/80 truncate max-w-[180px]">
-                        {track.license?.licenseType || 'Verified License'}
+                        {track.license?.licenseType || (track.cachedAt ? 'Downloaded Audio' : 'Browser Storage')}
                       </span>
                     </div>
                   </div>
@@ -269,10 +281,9 @@ export default function OfflineLibraryView({
                   <button
                     type="button"
                     onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(track.id, track.title);
+                      handleDelete(track.id, track.title, e);
                     }}
-                    title="Delete download"
+                    title="Remove from Downloads"
                     className="p-2 rounded-xl text-neutral-500 hover:text-rose-400 hover:bg-neutral-800 transition cursor-pointer"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -290,10 +301,10 @@ export default function OfflineLibraryView({
           <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 max-w-sm w-full space-y-4 shadow-2xl">
             <div className="flex items-center gap-3 text-rose-400">
               <AlertCircle className="w-6 h-6 shrink-0" />
-              <h3 className="text-base font-bold text-white">Clear All Downloads?</h3>
+              <h3 className="text-base font-bold text-white">Clear All Downloaded Songs?</h3>
             </div>
             <p className="text-xs text-neutral-300 leading-relaxed">
-              This will remove all downloaded audio files from your browser storage. You will need an active connection to download them again.
+              This will remove all downloaded audio files from your browser storage (IndexedDB Downloads Store).
             </p>
             <div className="flex items-center justify-end gap-3 pt-2">
               <button

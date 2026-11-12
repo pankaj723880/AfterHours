@@ -42,6 +42,24 @@ export function devanagariToHinglish(text) {
   if (!/[\u0900-\u097F]/.test(text)) return text;
 
   const dict = {
+    'सावन एफएम': 'salon fm',
+    'सावन': 'salon fm',
+    'सैलून एफएम': 'salon fm',
+    'सैलून': 'salon fm',
+    'टाइम मशीन रेडियो': 'time machine radio',
+    'टाइम मशीन': 'time machine',
+    'मूड टू म्यूजिक एआई': 'mood to music ai',
+    'मूड टू म्यूजिक': 'mood to music',
+    'मूड एआई': 'mood ai',
+    'हॉर्न ओके प्लीज': 'horn ok please',
+    'ठेका सेशन': 'theka session',
+    'ठेका': 'theka',
+    'लाइक्ड सॉन्ग्स': 'liked songs',
+    'लाइक्ड सॉन्ग': 'liked songs',
+    'लाइक्ड': 'liked',
+    'डाउनलोड्स': 'downloads',
+    'डाउनलोडेड': 'downloaded',
+    'ऑफलाइन': 'offline',
     'हिस्ट्री': 'history',
     'प्लेलिस्ट': 'playlist',
     'गाना': 'gaana',
@@ -583,9 +601,7 @@ class VoiceSessionController {
     }
 
     const recognition = new SpeechRecognition();
-    // In Chromium/Brave PWA, speech recognition terminates quickly on silence; single-shot is vastly more reliable
-    const isMobileOrBrave = (typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Brave/i.test(navigator.userAgent)) || Boolean(typeof navigator !== 'undefined' && navigator.brave?.isBrave);
-    recognition.continuous = !isMobileOrBrave;
+    recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = USE_V2_VOICE_ENGINE ? 'hi-IN' : (this.lang || 'hi-IN');
     recognition.maxAlternatives = 1;
@@ -634,6 +650,10 @@ class VoiceSessionController {
 
     recognition.onspeechstart = () => {
       console.log('[VoiceSession:WebSpeech] onspeechstart - speech pattern identified');
+      // Briefly duck (lower volume to 15%) YouTube audio when user starts speaking so mic captures voice cleanly
+      if (typeof window !== 'undefined' && window.loopraPlayer?.setVolume) {
+        window.loopraPlayer.setVolume(15);
+      }
     };
 
     recognition.onspeechend = () => {
@@ -762,9 +782,18 @@ class VoiceSessionController {
       }
 
       if (err === 'no-speech' || err === 'aborted') {
-        // Benign end or silence - restore volume and wait for manual trigger
         if (typeof window !== 'undefined' && window.loopraPlayer?.setVolume) {
           window.loopraPlayer.setVolume(100);
+        }
+        // Continuous Mic Auto-Restart on no-speech if session is active and not manually stopped
+        if (err === 'no-speech' && this.isSessionActive && !this.isManualStopping) {
+          clearTimeout(this.restartTimer);
+          this.restartTimer = setTimeout(() => {
+            if (this.isSessionActive && !this.isManualStopping && !this.isRecognizing) {
+              console.log('[VoiceSession:WebSpeech] Auto-restarting recognition after no-speech...');
+              this.safeStartRecognition();
+            }
+          }, 300);
         }
         return;
       }
@@ -839,8 +868,16 @@ class VoiceSessionController {
         return;
       }
 
-      // Single-shot mode: never auto-restart on onend.
-      // Mic cleanly waits for manual user click to trigger next utterance.
+      // Continuous Mic Auto-Restart on onend if session is still active and not manually stopped
+      if (this.isSessionActive && !this.isManualStopping) {
+        clearTimeout(this.restartTimer);
+        this.restartTimer = setTimeout(() => {
+          if (this.isSessionActive && !this.isManualStopping && !this.isRecognizing) {
+            console.log('[VoiceSession:WebSpeech] Auto-restarting recognition after onend...');
+            this.safeStartRecognition();
+          }
+        }, 300);
+      }
     };
 
     return recognition;
@@ -1037,13 +1074,18 @@ class VoiceSessionController {
    * Manually activates Voice Mode.
    * Can ONLY be invoked via explicit user interaction (e.g. clicking the mic button).
    */
-  async startSession({ lang, initiator = 'global' } = {}) {
+  async startSession({ lang, initiator = 'global', isAdmin = false } = {}) {
     // Enforce Voice Control Rollout Permissions: block background / unauthorized triggers
-    const accessState = voiceControlService.getAccessState();
-    if (accessState && accessState.allowed === false) {
-      console.warn('[voiceSessionService] Voice access denied by rollout permissions.');
-      this.setState(SESSION_STATES.OFF);
-      return;
+    // Admin users bypass rollout restrictions unconditionally
+    if (isAdmin) {
+      console.log('[voiceSessionService] Admin bypass — skipping rollout permission check.');
+    } else {
+      const accessState = voiceControlService.getAccessState();
+      if (accessState && accessState.allowed === false) {
+        console.warn('[voiceSessionService] Voice access denied by rollout permissions.');
+        this.setState(SESSION_STATES.OFF);
+        return;
+      }
     }
 
     if (this.isSessionActive) {

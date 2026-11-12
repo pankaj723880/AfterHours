@@ -409,6 +409,7 @@ export default function RatingPopupModal({
                 {existingReview ? 'Cancel' : 'Maybe Later'}
               </button>
               <button
+                data-voice-confirm="true"
                 type="submit"
                 disabled={rating === 0 || isSubmitting || isAdmin}
                 className={`flex-1 py-3 px-4 rounded-2xl font-extrabold text-xs tracking-wide transition active:scale-95 shadow-lg cursor-pointer ${

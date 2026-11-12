@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import { Reorder, useDragControls } from 'framer-motion';
-import { safeParseJsonResponse } from './utils/errorHandler';
+import { safeParseJsonResponse, fetchWithRetry, pingServerHealth, subscribeToWakeStatus } from './utils/errorHandler';
 import { CURATED_STATION_TRACKS } from './constants/curatedPlaylists';
 import HomeSearchBar from './components/Search/HomeSearchBar';
 
@@ -31,6 +31,7 @@ import CmsCuratedCollectionsRow from './components/Common/CmsCuratedCollectionsR
 import { getCachedCmsConfig, fetchPublicCmsConfig, applyThemeToDom, normalizeCmsConfig } from './services/cmsClient';
 import { offlineEligibilityService } from './services/offlineEligibilityService';
 import { offlineStorageService } from './services/offlineStorageService';
+import { getCachedAudioFromDB, isTrackCachedInDB, cacheSongToDB, extractCleanVideoId } from './utils/offlineAudioCache';
 import DownloadTrackButton from './components/Offline/DownloadTrackButton';
 import UserAvatar from './components/Common/UserAvatar';
 import { getAvatarUrl } from './utils/avatar';
@@ -199,7 +200,7 @@ const fetchFromBackend = async (query, options = {}) => {
     if (pageToken) path += `&pageToken=${encodeURIComponent(pageToken)}`;
 
     try {
-      res = await fetch(getApiUrl(path), {
+      res = await fetchWithRetry(getApiUrl(path), {
         signal: controller.signal,
         headers: {
           'X-Session-ID': getOrCreateSessionId()
@@ -207,7 +208,7 @@ const fetchFromBackend = async (query, options = {}) => {
       });
     } catch (localErr) {
       if (!BACKEND_URL.includes('onrender.com') && !controller.signal.aborted) {
-        res = await fetch(`https://afterhours-zvic.onrender.com${path}`, {
+        res = await fetchWithRetry(`https://afterhours-zvic.onrender.com${path}`, {
           signal: controller.signal,
           headers: {
             'X-Session-ID': getOrCreateSessionId()
@@ -567,8 +568,9 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
               }
             } catch (_) {}
 
-            // Check state: playing (1) or buffering (3) or when player is marked ready
-            if (state === 1 || state === 3 || (state === -1 && player._isReady)) {
+            // For offline / HTML5 audio player or playing/buffering YouTube states:
+            const isOfflinePlayer = Boolean(player.isOffline || player.isRadio);
+            if (isOfflinePlayer || state === 1 || state === 3 || (state === -1 && player._isReady) || state === -1) {
               try {
                 const cur = player.getCurrentTime();
                 if (typeof cur === 'number' && !isNaN(cur)) {
@@ -577,7 +579,7 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
                   if (currentTimeRef) {
                     currentTimeRef.current = cur;
                   }
-                  if (Math.abs(cur - lastSavedTimeRef.current) >= 3) {
+                  if (Math.abs(cur - lastSavedTimeRef.current) >= 2) {
                     lastSavedTimeRef.current = cur;
                     try {
                       localStorage.setItem('afterhours_current_time', cur.toString());
@@ -596,7 +598,8 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
               }
             } catch (_) {}
 
-            if (state === 1 || state === 2 || state === 3 || typeof state !== 'number') {
+            const isOfflinePlayer = Boolean(player.isOffline || player.isRadio);
+            if (isOfflinePlayer || state === 1 || state === 2 || state === 3 || typeof state !== 'number') {
               const dur = player.getDuration();
               if (typeof dur === 'number' && !isNaN(dur) && dur > 0) {
                 totalDur = dur;
@@ -1480,6 +1483,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState(() => initialNav.currentRoute.tab);
   const [navigationStack, setNavigationStack] = useState(() => initialNav.stack);
   const navigationStackRef = useRef(initialNav.stack);
+  const navigationHistoryRef = navigationStackRef;
   useEffect(() => {
     navigationStackRef.current = navigationStack;
   }, [navigationStack]);
@@ -1704,13 +1708,32 @@ export default function App() {
     }
   }, [cmsConfig?.branding, cmsConfig?.theme, activeTab, stationsMap]);
 
+  const [contextMenu, setContextMenu] = useState(null); // { x, y, track }
+
   useEffect(() => {
-    const handleClickOutsideMenu = () => setOpenMenuId(null);
-    document.addEventListener('click', handleClickOutsideMenu);
-    return () => document.removeEventListener('click', handleClickOutsideMenu);
+    const handleClickOutsideMenu = () => {
+      setOpenMenuId(null);
+      setContextMenu(null);
+    };
+    window.addEventListener('click', handleClickOutsideMenu);
+    window.addEventListener('scroll', handleClickOutsideMenu, true);
+    return () => {
+      window.removeEventListener('click', handleClickOutsideMenu);
+      window.removeEventListener('scroll', handleClickOutsideMenu, true);
+    };
   }, []);
 
   const [openMenuId, setOpenMenuId] = useState(null);
+
+  const handleTrackContextMenu = useCallback((e, track) => {
+    if (!track) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 260);
+    setContextMenu({ x, y, track });
+    setOpenMenuId(null);
+  }, []);
 
   const validateAndSanitizeItems = (raw, fallback) => {
     try {
@@ -1909,6 +1932,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     } catch (e) {}
   }, [currentSong]);
   const [isPlaying, setIsPlaying] = useState(false);
+  const isPlayingRef = useRef(false);
+  const userIntentPlayingRef = useRef(false);
   const currentTimeRef = useRef(0);
   const durationRef = useRef(0);
   const playerRef = useRef(null);
@@ -1918,6 +1943,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const trackPlaybackStartTimeRef = useRef(null);
   const currentSongRef = useRef(currentSong);
   const hasLoggedCompletionRef = useRef(false);
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
 
   useEffect(() => {
     currentSongRef.current = currentSong;
@@ -2223,6 +2252,20 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     return false; // Default to false so 3D avatar does NOT auto-mount or render on initial visit
   });
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const currentContextTracksRef = useRef([]);
+  useEffect(() => {
+    if (activeTab === 'playlists' && selectedPlaylistForView?.songs) {
+      currentContextTracksRef.current = selectedPlaylistForView.songs;
+    } else if (activeTab === 'library') {
+      currentContextTracksRef.current = likedSongs;
+    } else if (activeTab === 'history') {
+      currentContextTracksRef.current = history;
+    } else if (['barber', 'truck', 'pauwa', 'romance', 'sad_songs', 'chill'].includes(activeTab)) {
+      currentContextTracksRef.current = songs;
+    } else {
+      currentContextTracksRef.current = songs?.length > 0 ? songs : likedSongs;
+    }
+  }, [activeTab, selectedPlaylistForView, likedSongs, history, songs]);
   const [isMobileScreen, setIsMobileScreen] = useState(() => {
     return typeof window !== 'undefined' ? window.innerWidth < 768 : false;
   });
@@ -2308,6 +2351,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [searchError, setSearchError] = useState("");
   const [toastMessage, setToastMessage] = useState(null);
   const toastTimerRef = useRef(null);
+  const [isServerWakingUp, setIsServerWakingUp] = useState(false);
+
+  // Subscribe to Render server cold-start status badge
+  useEffect(() => {
+    const unsub = subscribeToWakeStatus((waking) => {
+      setIsServerWakingUp(waking);
+    });
+    return unsub;
+  }, []);
 
   const showToast = useCallback((msg, duration = 3200) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -2446,6 +2498,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         if (prev === null) return null;
         if (prev <= 1) {
           clearInterval(interval);
+          userIntentPlayingRef.current = false;
+          isUserPausedRef.current = true;
+          if (silentAudioRef.current) silentAudioRef.current.pause();
           if (playerRef.current && typeof playerRef.current.pauseVideo === 'function') {
             try { playerRef.current.pauseVideo(); } catch (e) {}
           }
@@ -3108,11 +3163,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     };
   }, [likedSongs, history, playlists, queue, user]);
 
-  // Keep-alive ping every 10 minutes to prevent Render cold starts
+  // Active session heartbeat: Call GET /api/health every 14 minutes to eliminate Render free-tier cold starts
   useEffect(() => {
-    const ping = () => fetch(getApiUrl('/health'), { method: 'GET' }).catch(() => {});
-    ping(); // ping once on mount
-    const keepAlive = setInterval(ping, 10 * 60 * 1000); // every 10 min
+    pingServerHealth(); // Immediate ping on component mount
+    const keepAlive = setInterval(() => {
+      pingServerHealth();
+    }, 14 * 60 * 1000); // exactly every 14 min
     return () => clearInterval(keepAlive);
   }, []);
 
@@ -3613,11 +3669,144 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     if (!song) return;
     const targetVideoId = song.id || song.videoId;
 
-    // Inner executor: runs only once track is verified through Layer 4 gate
-    const executeVerifiedPlayback = () => {
+    // STEP 1: Immediate Offline Cache Check
+    // If the song exists in IndexedDB (LoopraOfflineCacheDB), play the exact audio blob with ZERO internet
+    getCachedAudioFromDB(targetVideoId).then(cachedRecord => {
+      if (cachedRecord && cachedRecord.audioBlob && cachedRecord.audioBlob.size > 50000) {
+        isInitialMountRef.current = false;
+        isUserPausedRef.current = false;
+        userIntentPlayingRef.current = true;
+        setVideoModalSong(null);
+
+        // 1. Immediately pause and stop YouTube IFrame player to prevent audio overlap
+        try {
+          if (playerRef.current && typeof playerRef.current.pauseVideo === 'function' && !playerRef.current.isOffline) {
+            playerRef.current.pauseVideo();
+          }
+          if (playerRef.current && typeof playerRef.current.stopVideo === 'function' && !playerRef.current.isOffline) {
+            playerRef.current.stopVideo();
+          }
+        } catch (_) {}
+
+        // 2. Clean up any previous object URLs or radio streams
+        if (activeObjectUrlRef.current) {
+          try { URL.revokeObjectURL(activeObjectUrlRef.current); } catch (_) {}
+          activeObjectUrlRef.current = null;
+        }
+        if (radioAudioRef.current) {
+          try {
+            radioAudioRef.current.pause();
+            radioAudioRef.current.removeAttribute('src');
+            radioAudioRef.current.load();
+          } catch (_) {}
+        }
+        if (hlsRef.current) {
+          try { hlsRef.current.destroy(); } catch (_) {}
+          hlsRef.current = null;
+        }
+
+        // 3. Create fresh blob URL and load into HTML5 audio player
+        const blobUrl = URL.createObjectURL(cachedRecord.audioBlob);
+        activeObjectUrlRef.current = blobUrl;
+
+        if (!offlineAudioRef.current) {
+          offlineAudioRef.current = new Audio();
+        }
+        const audio = offlineAudioRef.current;
+        audio.src = blobUrl;
+        audio.volume = volume / 100;
+
+        // 4. Bind event listeners
+        audio.onplay = () => {
+          setIsPlaying(true);
+          isInitialMountRef.current = false;
+        };
+        audio.onpause = () => setIsPlaying(false);
+        audio.onloadedmetadata = () => {
+          if (audio.duration) {
+            durationRef.current = audio.duration;
+          }
+        };
+        audio.ontimeupdate = () => {
+          currentTimeRef.current = audio.currentTime;
+          if (crossfadeDuration > 0 && audio.duration > 0) {
+            const remaining = audio.duration - audio.currentTime;
+            if (remaining <= crossfadeDuration && remaining > 0) {
+              const fadeRatio = Math.max(0, remaining / crossfadeDuration);
+              audio.volume = (volume / 100) * fadeRatio;
+            } else if (remaining > crossfadeDuration && audio.volume !== volume / 100) {
+              audio.volume = volume / 100;
+            }
+          }
+        };
+        audio.onended = () => {
+          const currentRepeat = isRepeatRef.current;
+          if (currentRepeat === 'one' || currentRepeat === true) {
+            audio.currentTime = 0;
+            audio.play().catch(() => {});
+          } else {
+            handleNextSongRef.current?.();
+          }
+        };
+
+        // 5. Connect playerRef adapter for UI controls, seek bar, and turntable
+        playerRef.current = {
+          isOffline: true,
+          getCurrentTime: () => offlineAudioRef.current ? offlineAudioRef.current.currentTime : 0,
+          getDuration: () => offlineAudioRef.current ? (offlineAudioRef.current.duration || 0) : 0,
+          seekTo: (sec) => { if (offlineAudioRef.current) offlineAudioRef.current.currentTime = sec; },
+          playVideo: () => {
+            if (!offlineAudioRef.current) return Promise.resolve();
+            return offlineAudioRef.current.play().catch(() => {});
+          },
+          pauseVideo: () => {
+            if (offlineAudioRef.current) {
+              try { offlineAudioRef.current.pause(); } catch (_) {}
+            }
+          },
+          stopVideo: () => {
+            if (offlineAudioRef.current) {
+              try {
+                offlineAudioRef.current.pause();
+                offlineAudioRef.current.currentTime = 0;
+              } catch (_) {}
+            }
+          },
+          setVolume: (vol) => {
+            if (offlineAudioRef.current) offlineAudioRef.current.volume = vol / 100;
+          },
+          destroy: () => {
+            if (offlineAudioRef.current) {
+              try {
+                offlineAudioRef.current.pause();
+                offlineAudioRef.current.src = '';
+              } catch (_) {}
+            }
+          }
+        };
+
+        setCurrentSong({ ...song, ...cachedRecord, isOffline: true });
+        loadedVideoIdRef.current = targetVideoId;
+        audio.play().catch(e => console.warn('[OfflinePlay] Audio play error:', e));
+        setIsPlaying(true);
+        return;
+      }
+
+      // If not cached, proceed with normal execution
+      proceedWithPlayback();
+    }).catch(() => {
+      proceedWithPlayback();
+    });
+
+    const proceedWithPlayback = () => {
+      // Inner executor: runs only once track is verified through Layer 4 gate
+      const executeVerifiedPlayback = () => {
       isInitialMountRef.current = false;
+      isUserPausedRef.current = false;
+      userIntentPlayingRef.current = true;
       setVideoModalSong(prev => (prev ? song : null));
       if (silentAudioRef.current) {
+        try { silentAudioRef.current.volume = 0.01; } catch (_) {}
         silentAudioRef.current.play().catch(() => {});
       }
 
@@ -3762,30 +3951,41 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     };
 
     // LAYER 4: PLAYBACK-LEVEL VALIDATION GATE
-    // Only genuine songs may enter Loopra's audio pipeline
-    if (!song?.isRadio && !song?.streamUrl && !song?.isInternalAudio && targetVideoId) {
-      validatePlaybackTrack(song, BACKEND_URL)
-        .then(validation => {
-          if (!validation.eligible) {
-            console.warn('[PlaybackGate] Blocked non-music playback request:', targetVideoId, validation.reason);
-            showToast?.(`Playback blocked: Video is not verified music (${validation.reason})`, 'error');
-            if (options.isAutoAdvance || options.fromQueue) {
-              if (queue && queue.length > 1) {
-                handleNextSongRef.current?.();
+    // Only genuine songs may enter Loopra's audio pipeline (cached songs bypass external network checks)
+    if (!song?.isRadio && !song?.streamUrl && !song?.isInternalAudio && !song?.isOffline && !song?.audioBlob && targetVideoId) {
+      // Check if track already exists in IndexedDB offline cache
+      offlineStorageService.isTrackDownloaded(targetVideoId).then(isCached => {
+        if (isCached) {
+          executeVerifiedPlayback();
+          return;
+        }
+
+        validatePlaybackTrack(song, BACKEND_URL)
+          .then(validation => {
+            if (!validation.eligible) {
+              console.warn('[PlaybackGate] Blocked non-music playback request:', targetVideoId, validation.reason);
+              showToast?.(`Playback blocked: Video is not verified music (${validation.reason})`, 'error');
+              if (options.isAutoAdvance || options.fromQueue) {
+                if (queue && queue.length > 1) {
+                  handleNextSongRef.current?.();
+                }
               }
+              return;
             }
-            return;
-          }
-          executeVerifiedPlayback();
-        })
-        .catch(err => {
-          console.error('[PlaybackGate] Validation network notice, running fallback:', err);
-          executeVerifiedPlayback();
-        });
+            executeVerifiedPlayback();
+          })
+          .catch(err => {
+            console.error('[PlaybackGate] Validation network notice, running fallback:', err);
+            executeVerifiedPlayback();
+          });
+      }).catch(() => {
+        executeVerifiedPlayback();
+      });
     } else {
       executeVerifiedPlayback();
     }
-  }, [activeTab, currentSong, stationsMap, authToken, showToast, BACKEND_URL, user]);
+  };
+}, [activeTab, currentSong, stationsMap, authToken, showToast, BACKEND_URL, user]);
 
   const handleNextSong = useCallback(() => {
     // Log skip or completed listen signal for AI recommendations and listening insights
@@ -4062,6 +4262,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   useEffect(() => {
     if (typeof window !== 'undefined' && 'mediaSession' in navigator && currentSong) {
       try {
+        const { title: cleanTitle, artist: cleanArtist } = sanitizeTrackMetadata(
+          currentSong.title || 'Unknown Track',
+          currentSong.artist || currentSong.channel || cmsConfig?.branding?.siteName || "Loopra Artist"
+        );
         const rawArtwork = currentSong.thumbnail || currentSong.image || '/loopra-logo.png';
         const artworkUrl = typeof rawArtwork === 'string' && rawArtwork.trim() ? rawArtwork.trim() : '/loopra-logo.png';
         const absoluteArtworkUrl = artworkUrl.startsWith('http') || artworkUrl.startsWith('blob:')
@@ -4070,19 +4274,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
         // Set Lockscreen / Notification Bar Metadata
         navigator.mediaSession.metadata = new MediaMetadata({
-          title: currentSong.title || 'Unknown Track',
-          artist: currentSong.artist || currentSong.channel || cmsConfig?.branding?.siteName || "Loopra Artist",
+          title: cleanTitle,
+          artist: cleanArtist,
           album: currentSong.album || "Loopra Music",
           artwork: [
-            {
-              src: absoluteArtworkUrl,
-              sizes: '512x512',
-              type: 'image/jpeg'
-            },
-            { src: absoluteArtworkUrl, sizes: '96x96', type: 'image/png' },
-            { src: absoluteArtworkUrl, sizes: '128x128', type: 'image/png' },
-            { src: absoluteArtworkUrl, sizes: '192x192', type: 'image/png' },
-            { src: absoluteArtworkUrl, sizes: '512x512', type: 'image/png' },
+            { src: absoluteArtworkUrl, sizes: '96x96', type: 'image/jpeg' },
+            { src: absoluteArtworkUrl, sizes: '256x256', type: 'image/jpeg' },
+            { src: absoluteArtworkUrl, sizes: '512x512', type: 'image/jpeg' }
           ]
         });
 
@@ -4095,6 +4293,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         // Bind playback handlers to OS media notification controls
         navigator.mediaSession.setActionHandler('play', () => {
           isUserPausedRef.current = false;
+          userIntentPlayingRef.current = true;
           if (silentAudioRef.current) {
             try { silentAudioRef.current.volume = 0.01; } catch (_) {}
             silentAudioRef.current.play().catch(() => {});
@@ -4109,6 +4308,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
         navigator.mediaSession.setActionHandler('pause', () => {
           isUserPausedRef.current = true;
+          userIntentPlayingRef.current = false;
           if (autoResumeTimerRef.current) {
             clearTimeout(autoResumeTimerRef.current);
             autoResumeTimerRef.current = null;
@@ -4149,17 +4349,42 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
   }, [currentSong, isPlaying, handlePrevSong, handleNextSong, handleSeek]);
 
-  // Page Visibility lifecycle: ensures active silent audio stream keeps audio context alive in background
+  // Page Visibility lifecycle: YouTube IFrame Anti-Suspend & document.hidden Background Resilience
   useEffect(() => {
     if (typeof document === 'undefined') return;
 
     const handlePageVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        // When user switches tabs or locks mobile screen, ensure silent audio remains active if playing
-        if (isPlaying && silentAudioRef.current && silentAudioRef.current.paused) {
-          silentAudioRef.current.play().catch(() => {});
+      if (document.hidden) {
+        // When tab is backgrounded or mobile screen is turned off:
+        // If track is supposed to be playing, reinforce native audio keep-alive and run anti-suspend checks
+        if (isPlayingRef.current || userIntentPlayingRef.current) {
+          if (silentAudioRef.current && silentAudioRef.current.paused) {
+            try { silentAudioRef.current.volume = 0.01; } catch (_) {}
+            silentAudioRef.current.play().catch(() => {});
+          }
+
+          // Rapid recovery checks (100ms, 300ms, 800ms) to counteract OS/browser YouTube iframe suspension
+          [100, 300, 800].forEach((delay) => {
+            setTimeout(() => {
+              if (isPlayingRef.current || userIntentPlayingRef.current) {
+                if (silentAudioRef.current && silentAudioRef.current.paused) {
+                  try { silentAudioRef.current.volume = 0.01; } catch (_) {}
+                  silentAudioRef.current.play().catch(() => {});
+                }
+                if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
+                  try {
+                    const st = playerRef.current.getPlayerState();
+                    // If browser forced YouTube into PAUSED (2) or CUED (5), immediately resume
+                    if (st === 2 || st === 5) {
+                      playerRef.current.playVideo();
+                    }
+                  } catch (_) {}
+                }
+              }
+            }, delay);
+          });
         }
-      } else if (document.visibilityState === 'visible') {
+      } else {
         // When tab becomes visible again, refresh positionState on mediaSession
         if ('mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function' && durationRef.current > 0) {
           try {
@@ -4177,7 +4402,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     return () => {
       document.removeEventListener('visibilitychange', handlePageVisibilityChange);
     };
-  }, [isPlaying]);
+  }, []);
 
   // Periodic mediaSession sync is removed to optimize performance
   // Let the browser infer playback position while playing
@@ -4325,6 +4550,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           if (e.data === 1) { // Playing
             setIsPlaying(true);
             isUserPausedRef.current = false;
+            userIntentPlayingRef.current = true;
             isInitialMountRef.current = false;
             if (autoResumeTimerRef.current) {
               clearTimeout(autoResumeTimerRef.current);
@@ -4338,11 +4564,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               silentAudioRef.current.play().catch(() => {});
             }
           } else if (e.data === 2) { // Paused
-            // Background Auto-Resume Guard: If paused by browser throttling / wake-lock kill while isUserPaused is false, auto-resume
-            if (!isUserPausedRef.current && !isInitialMountRef.current && currentSongRef.current) {
+            // Background Auto-Resume Guard: If paused by browser throttling / wake-lock kill while user intent was to play, immediately recover
+            if (userIntentPlayingRef.current && !isUserPausedRef.current && !isInitialMountRef.current && currentSongRef.current) {
+              try {
+                e.target.playVideo();
+                if (silentAudioRef.current && silentAudioRef.current.paused) {
+                  try { silentAudioRef.current.volume = 0.01; } catch (_) {}
+                  silentAudioRef.current.play().catch(() => {});
+                }
+              } catch (_) {}
+
               if (autoResumeTimerRef.current) clearTimeout(autoResumeTimerRef.current);
               autoResumeTimerRef.current = setTimeout(() => {
-                if (!isUserPausedRef.current && playerRef.current && typeof playerRef.current.playVideo === 'function') {
+                if (userIntentPlayingRef.current && !isUserPausedRef.current && playerRef.current && typeof playerRef.current.playVideo === 'function') {
                   console.info('[Loopra Background Guard] Auto-resuming background playback throttled by browser...');
                   try {
                     playerRef.current.playVideo();
@@ -4662,8 +4896,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       return;
     }
 
-    // Check if track is downloaded in IndexedDB for genuine offline playback
-    offlineStorageService.getTrack(currentSong.id).then((storedRecord) => {
+    // Update listening history on playback (Manual download only; no auto-caching)
+    if (currentSong && (currentSong.id || currentSong.videoId)) {
+      setHistory(prev => [currentSong, ...prev.filter(s => (s.id || s.videoId) !== (currentSong.id || currentSong.videoId))].slice(0, 50));
+    }
+
+    // Check if track is downloaded/cached in IndexedDB for genuine offline playback
+    // or if the browser is currently offline or under weak network conditions
+    const isOfflineMode = (typeof navigator !== 'undefined' && !navigator.onLine);
+    const isWeakNetwork = (typeof navigator !== 'undefined' && navigator.connection && (navigator.connection.saveData || navigator.connection.effectiveType === 'slow-2g' || navigator.connection.effectiveType === '2g'));
+
+    offlineStorageService.getTrack(currentSong.id || currentSong.videoId).then((storedRecord) => {
       if (storedRecord && storedRecord.audioBlob) {
         // Pause YouTube player if active
         try {
@@ -4821,7 +5064,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
 
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        showToast('You are offline. Only songs stored in your Downloads library can play without internet.', 'warning');
+        // If track is not downloaded and device has no internet, notify user
+        showToast('You are offline. Only songs downloaded in your Downloaded Library can play without internet.', 'warning');
         setIsPlaying(false);
         return;
       }
@@ -5056,17 +5300,85 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   };
 
   const handleGoBack = () => {
-    setShowQueuePanel(false);
-
-    // Home is the authoritative final navigation destination:
-    // Completely prevent back navigation when on the Home root page
-    if (isHomePage(activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio })) {
+    // 1. First check if any modal, drawer, or dialog is open - dismiss it first
+    if (showAuthModal) {
+      closeAuthModal(false);
+      return;
+    }
+    if (isPlaylistModalOpen) {
+      setIsPlaylistModalOpen(false);
+      setSelectedSongForPlaylist(null);
+      return;
+    }
+    if (isListeningRoomsOpen) {
+      setIsListeningRoomsOpen(false);
+      return;
+    }
+    if (similarSongsTrack) {
+      setSimilarSongsTrack(null);
+      return;
+    }
+    if (isLyricsOpen) {
+      setIsLyricsOpen(false);
+      return;
+    }
+    if (isSleepTimerOpen) {
+      setIsSleepTimerOpen(false);
+      return;
+    }
+    if (isCanvasOpen) {
+      setIsCanvasOpen(false);
+      return;
+    }
+    if (isPlayerSettingsOpen) {
+      setIsPlayerSettingsOpen(false);
+      return;
+    }
+    if (isStatsOpen) {
+      setIsStatsOpen(false);
+      return;
+    }
+    if (isProfileOpen) {
+      setIsProfileOpen(false);
+      return;
+    }
+    if (isRatingModalOpen) {
+      setIsRatingModalOpen(false);
+      return;
+    }
+    if (isSidebarOpen) {
+      setIsSidebarOpen(false);
+      return;
+    }
+    if (showQueuePanel) {
+      setShowQueuePanel(false);
       return;
     }
 
     // If video modal is open, back closes it
     if (videoModalSong && !isPipActive) {
       handleCloseVideo();
+      return;
+    }
+
+    // 2. Next check if active page has an explicit DOM back button [data-voice-back]
+    if (typeof document !== 'undefined') {
+      try {
+        const domBackBtn = document.querySelector('[data-voice-back]');
+        if (domBackBtn && typeof domBackBtn.click === 'function') {
+          // If the button is visible and not disabled
+          const style = window.getComputedStyle ? window.getComputedStyle(domBackBtn) : {};
+          if (style.display !== 'none' && style.visibility !== 'hidden' && !domBackBtn.disabled) {
+            domBackBtn.click();
+            return;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 3. Home is the authoritative final navigation destination:
+    // If on Home root, prevent infinite popping
+    if (isHomePage(activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio })) {
       return;
     }
 
@@ -5188,6 +5500,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     isInitialMountRef.current = false;
     if (isPlaying) {
       isUserPausedRef.current = true;
+      userIntentPlayingRef.current = false;
       if (autoResumeTimerRef.current) {
         clearTimeout(autoResumeTimerRef.current);
         autoResumeTimerRef.current = null;
@@ -5197,6 +5510,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       setIsPlaying(false);
     } else {
       isUserPausedRef.current = false;
+      userIntentPlayingRef.current = true;
       if (!playerRef.current || typeof playerRef.current.playVideo !== 'function') {
         let savedSeek = 0;
         try {
@@ -6097,7 +6411,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           )}
 
           <aside 
-            className={`${isStatsOpen && isSidebarOpen ? 'fixed' : 'fixed md:relative'} top-14 md:top-0 bottom-0 left-0 h-[calc(100dvh-3.5rem)] md:h-full z-40 ${
+            className={`${isStatsOpen && isSidebarOpen ? 'fixed' : 'fixed md:fixed'} top-14 md:top-16 bottom-0 left-0 h-[calc(100dvh-3.5rem)] md:h-[calc(100vh-4rem)] z-40 ${
               isMobileScreen
                 ? 'bg-[#0c0d12]/95 backdrop-blur-2xl border-r border-amber-500/15 shadow-[0_0_50px_rgba(0,0,0,0.9)]'
                 : 'bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80'
@@ -6462,7 +6776,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           )}
 
           <aside 
-            className={`${isStatsOpen && isSidebarOpen ? 'fixed' : 'fixed md:relative'} top-14 md:top-0 bottom-0 left-0 h-[calc(100dvh-3.5rem)] md:h-full z-40 bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80 p-4 flex flex-col shrink-0 transform transition-all duration-300 ease-in-out overflow-y-auto overflow-x-hidden ${
+            className={`${isStatsOpen && isSidebarOpen ? 'fixed' : 'fixed md:fixed'} top-14 md:top-16 bottom-0 left-0 h-[calc(100dvh-3.5rem)] md:h-[calc(100vh-4rem)] z-40 bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80 p-4 flex flex-col shrink-0 transform transition-all duration-300 ease-in-out overflow-y-auto overflow-x-hidden ${
               activeTab === 'dj-club'
                 ? 'hidden'
                 : isSidebarOpen ? 'translate-x-0 w-72' : `-translate-x-full md:translate-x-0 ${isSidebarCollapsed ? 'w-20' : 'w-72'}`
@@ -6758,7 +7072,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 relative overflow-hidden">
         {/* Unified Top Navbar for both Mobile and Desktop (hidden on DJ Club where full-screen dedicated navbar is active) */}
         <header className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-2.5 sm:px-4 md:px-8 py-2.5 sm:py-3 h-14 md:h-16 flex items-center justify-between shrink-0 w-full box-border'}`}>
-          {/* LEFT: Mobile Menu & Logo | Desktop Clock */}
+          {/* LEFT: Mobile Menu & Logo | Desktop Logo & Brand */}
           <div className="flex items-center gap-2 sm:gap-3">
             <button
               id="loopra-mobile-hamburger-btn"
@@ -6771,12 +7085,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             >
               <Icon name={isSidebarOpen ? "close" : "menu"} className="w-5 h-5 text-amber-400 pointer-events-none" />
             </button>
-            <div className="flex md:hidden items-center gap-1.5 sm:gap-2">
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow-md overflow-hidden">
+            <div className="flex items-center gap-2 sm:gap-2.5">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow-md overflow-hidden shrink-0">
                 <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
               </div>
               {cmsConfig?.branding?.siteName ? (
-                <span className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white">{cmsConfig.branding.siteName}</span>
+                <span className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white whitespace-nowrap">{cmsConfig.branding.siteName}</span>
               ) : null}
             </div>
           </div>
@@ -6820,16 +7134,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         localStorage.setItem('loopra_avatar_roaming', 'false');
                         localStorage.setItem('loopra_avatar_roam', 'false');
                       }
-                      window.dispatchEvent(new Event('storage'));
                     } catch (_) {}
                     return next;
                   });
                   setIsSidebarOpen(false);
-                  try {
-                    if (typeof window !== 'undefined' && window.__loopraVoiceSessionService) {
-                      window.__loopraVoiceSessionService.startSession({ lang: 'hi-IN' }).catch(() => {});
-                    }
-                  } catch (_) {}
+                  // Dispatch storage event asynchronously to avoid setState-during-render
+                  // (CharacterBuddy listens for storage events and calls setIsRoamEnabled)
+                  queueMicrotask(() => {
+                    try { window.dispatchEvent(new Event('storage')); } catch (_) {}
+                  });
                 }}
                 title={isAvatarVisible ? "Toggle AI Companion (Active)" : "Talk to Loopra Avatar"}
                 aria-label={isAvatarVisible ? "Hide Loopra AI Companion" : "Talk to Loopra Avatar"}
@@ -7014,6 +7327,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               {canGoBack(navigationStack, activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio, selectedPlaylistForView, offlineSubView }) && activeTab !== 'artist' && activeTab !== 'dj-club' && !isStationPage && (
                 <div className="relative z-20 mb-6 flex justify-start">
                   <button
+                    data-voice-back="true"
                     onClick={handleGoBack}
                     className="flex items-center gap-2 px-4 py-2 bg-neutral-900/80 hover:bg-neutral-800 backdrop-blur-xl border border-neutral-700/50 rounded-2xl text-neutral-300 hover:text-white transition shadow-lg group cursor-pointer active:scale-95"
                   >
@@ -7639,6 +7953,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         <div
                           key={track.id + i}
                           onClick={() => playSong(track, likedSongs)}
+                          onContextMenu={(e) => handleTrackContextMenu(e, track)}
                           className={`px-3.5 py-2.5 rounded-2xl border grid grid-cols-12 items-center gap-2 cursor-pointer transition-all duration-200 group relative backdrop-blur-md select-none ${
                             isMenuOpen ? 'z-30' : 'z-auto'
                           } ${
@@ -7788,7 +8103,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     likedSongs.map((track, i) => {
                       const isMenuOpen = openMenuId === `${track.id}-${i}`;
                       return (
-                        <div key={track.id + i} onClick={() => playSong(track)} className={`p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition relative ${isMenuOpen ? 'z-30' : 'z-auto'}`}>
+                        <div key={track.id + i} onClick={() => playSong(track)} onContextMenu={(e) => handleTrackContextMenu(e, track)} className={`p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition relative ${isMenuOpen ? 'z-30' : 'z-auto'}`}>
                           <div className="flex items-center gap-3.5 min-w-0">
                             <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => handleImageError(e, track.title, track.id)} />
                             <div className="min-w-0">
@@ -7836,6 +8151,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                                     <span>Similar Songs</span>
                                   </button>
                                   <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                                  <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
                               </div>
                             )}
                           </div>
@@ -7888,7 +8204,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 history.slice(0, historyPageLimit).map((track, i) => {
                   const isMenuOpen = openMenuId === `${track.id}-${i}`;
                   return (
-                    <div key={track.id + i} onClick={() => playSong(track)} className={`p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition relative ${isMenuOpen ? 'z-30' : 'z-auto'}`}>
+                    <div key={track.id + i} onClick={() => playSong(track)} onContextMenu={(e) => handleTrackContextMenu(e, track)} className={`p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition relative ${isMenuOpen ? 'z-30' : 'z-auto'}`}>
                       <div className="flex items-center gap-3.5 min-w-0">
                         <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => handleImageError(e, track.title, track.id)} />
                         <div className="min-w-0">
@@ -8160,6 +8476,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-4">
                     <button 
+                      data-voice-back="true"
                       onClick={handleGoBack}
                       className="p-2 rounded-2xl bg-neutral-800 hover:bg-neutral-700 text-white transition flex items-center justify-center cursor-pointer active:scale-95"
                       title="Back to Playlists"
@@ -8211,6 +8528,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         <div
                           key={track.id + i}
                           onClick={() => playSong(track)}
+                          onContextMenu={(e) => handleTrackContextMenu(e, track)}
                           className={`px-3.5 py-2.5 rounded-2xl border grid grid-cols-12 items-center gap-2 cursor-pointer transition-all duration-200 group relative backdrop-blur-md select-none ${
                             isMenuOpen ? 'z-30' : 'z-auto'
                           } ${
@@ -9388,7 +9706,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   onChange={(e) => setNewPlaylistName(e.target.value)}
                   className="flex-1 bg-neutral-950 border border-neutral-800 rounded-2xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
                 />
-                <button type="submit" disabled={!newPlaylistName.trim()} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white font-medium tracking-wide text-sm rounded-2xl transition disabled:opacity-50 disabled:cursor-not-allowed">
+                <button data-voice-confirm="true" type="submit" disabled={!newPlaylistName.trim()} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white font-medium tracking-wide text-sm rounded-2xl transition disabled:opacity-50 disabled:cursor-not-allowed">
                   Create
                 </button>
               </div>
@@ -9522,6 +9840,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         isLiked={isSongLiked}
         onAddToPlaylist={handleAddToPlaylistClick}
         onNavigate={(page, extra) => {
+          if (page === 'admin' && !isAdmin) {
+            return { success: false, reason: 'NO_ACCESS' };
+          }
+          const validDestinations = [
+            'home', 'discover', 'swipe', 'for-you', 'library', 'history',
+            'playlists', 'activity', 'dj-club', 'downloads', 'downloads_explore',
+            'radio', 'indian-radio', 'mood', 'timemachine', 'barber', 'truck', 'pauwa',
+            'artist', 'admin', 'apk', 'download'
+          ];
+          if (!validDestinations.includes(page) && !SPECIAL_STATIONS[page] && !stationsMap[page]) {
+            return { success: false, reason: 'NOT_FOUND' };
+          }
           if (page === 'home') {
             window.history.pushState(null, '', '/');
             handleStationSelect('home');
@@ -9534,6 +9864,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           } else {
             handleStationSelect(page, extra);
           }
+          return { success: true };
         }}
         onOpenInsights={() => setIsStatsOpen(true)}
         onOpenQueue={() => {
@@ -9695,6 +10026,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           }
         }}
         onNavigate={(page, extra) => {
+          if (page === 'admin' && !isAdmin) {
+            return { success: false, reason: 'NO_ACCESS' };
+          }
+          const validDestinations = [
+            'home', 'discover', 'swipe', 'for-you', 'library', 'history',
+            'playlists', 'activity', 'dj-club', 'downloads', 'downloads_explore',
+            'radio', 'indian-radio', 'mood', 'timemachine', 'barber', 'truck', 'pauwa',
+            'artist', 'admin', 'apk', 'download'
+          ];
+          if (!validDestinations.includes(page) && !SPECIAL_STATIONS[page] && !stationsMap[page]) {
+            return { success: false, reason: 'NOT_FOUND' };
+          }
           if (page === 'home') {
             window.history.pushState(null, '', '/');
             handleStationSelect('home');
@@ -9707,6 +10050,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           } else {
             handleStationSelect(page, extra);
           }
+          return { success: true };
         }}
         onOpenInsights={() => setIsStatsOpen(true)}
         onOpenQueue={() => {
@@ -9741,6 +10085,41 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         }}
         onGoBack={handleGoBack}
         onOpenArtist={(artistName) => handleArtistClick(artistName)}
+        userPlaylists={playlists}
+        selectedPlaylistForView={selectedPlaylistForView}
+        getCurrentVisibleTracks={() => currentContextTracksRef.current}
+        playFromCurrentContext={async ({ mode, songQuery }) => {
+          const tracks = currentContextTracksRef.current || [];
+          if (!tracks || tracks.length === 0) {
+            return { success: false, message: 'Collection is empty or still loading.' };
+          }
+          let trackToPlay = null;
+          if (songQuery) {
+            const q = songQuery.toLowerCase().trim();
+            const matched = tracks.find(t => 
+              (t.title && t.title.toLowerCase().includes(q)) ||
+              (t.artist && t.artist.toLowerCase().includes(q))
+            );
+            if (matched) {
+              trackToPlay = matched;
+            } else {
+              return { success: false, message: `"${songQuery}" is collection mein nahi mila.` };
+            }
+          } else if (mode === 'first') {
+            trackToPlay = tracks[0];
+          } else {
+            // random / shuffle / default
+            const idx = Math.floor(Math.random() * tracks.length);
+            trackToPlay = tracks[idx];
+          }
+
+          if (trackToPlay) {
+            playSong(trackToPlay);
+            showToast?.(`Playing "${trackToPlay.title}"`);
+            return { success: true, track: trackToPlay, description: `Playing "${trackToPlay.title}" from collection` };
+          }
+          return { success: false, message: 'No track found to play.' };
+        }}
         showToast={showToast}
       />
       )}
@@ -9761,6 +10140,96 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         <div className={`fixed ${isBottomPlayerVisible ? 'bottom-36 md:bottom-28' : 'bottom-20 md:bottom-8'} left-1/2 -translate-x-1/2 z-[9999] px-4 py-2.5 rounded-2xl bg-neutral-900/95 text-white text-xs border border-amber-500/40 shadow-2xl backdrop-blur-xl flex items-center gap-2 animate-fadeIn pointer-events-none`}>
           <Icon name="sparkles" className="w-4 h-4 text-amber-400 shrink-0" />
           <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Render Free-Tier Cold-Start Wake-Up Badge */}
+      {isServerWakingUp && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[10001] px-3.5 py-1.5 rounded-full bg-neutral-900/90 text-amber-400 text-[11px] font-medium border border-amber-500/30 shadow-xl backdrop-blur-md flex items-center gap-2 animate-pulse pointer-events-none">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+          <span>Waking up Loopra server...</span>
+        </div>
+      )}
+
+      {/* Global Right-Click Track Context Menu */}
+      {contextMenu && (
+        <div
+          style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
+          className="fixed z-[10000] w-52 bg-neutral-900/95 backdrop-blur-2xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden py-1.5 animate-fadeIn select-none"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-3.5 py-1.5 border-b border-white/5 mb-1">
+            <p className="text-[11px] font-bold text-white truncate">{contextMenu.track.title}</p>
+            <p className="text-[9px] text-neutral-400 truncate">{contextMenu.track.artist || contextMenu.track.channel}</p>
+          </div>
+
+          <button
+            onClick={() => {
+              playSong(contextMenu.track);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3.5 py-2 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800/80 transition flex items-center gap-2.5 cursor-pointer"
+          >
+            <span className="text-amber-400">▶</span>
+            <span>Play Now</span>
+          </button>
+
+          <button
+            onClick={() => {
+              playNext(contextMenu.track);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3.5 py-2 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800/80 transition flex items-center gap-2.5 cursor-pointer"
+          >
+            <span>⏭️</span>
+            <span>Play Next</span>
+          </button>
+
+          <button
+            onClick={() => {
+              if (queue.some(s => (s.id || s.videoId) === (contextMenu.track.id || contextMenu.track.videoId))) {
+                removeFromQueue(contextMenu.track.id || contextMenu.track.videoId);
+              } else {
+                addToQueue(contextMenu.track);
+              }
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3.5 py-2 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800/80 transition flex items-center gap-2.5 cursor-pointer"
+          >
+            <span>➕</span>
+            <span>{queue.some(s => (s.id || s.videoId) === (contextMenu.track.id || contextMenu.track.videoId)) ? 'Remove from Queue' : 'Add to Queue'}</span>
+          </button>
+
+          <button
+            onClick={() => {
+              toggleLike(contextMenu.track);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3.5 py-2 text-xs font-medium text-neutral-200 hover:text-pink-400 hover:bg-neutral-800/80 transition flex items-center gap-2.5 cursor-pointer"
+          >
+            <span className="text-pink-400">♥</span>
+            <span>{likedSongs.some(s => (s.id || s.videoId) === (contextMenu.track.id || contextMenu.track.videoId)) ? 'Remove Favorite' : 'Add to Favorite'}</span>
+          </button>
+
+          <button
+            onClick={() => {
+              handleAddToPlaylistClick(contextMenu.track);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3.5 py-2 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800/80 transition flex items-center gap-2.5 cursor-pointer"
+          >
+            <span>📁</span>
+            <span>Add to Playlist</span>
+          </button>
+
+          <div className="pt-1 border-t border-white/5 mt-1">
+            <DownloadTrackButton
+              track={contextMenu.track}
+              variant="menu-item"
+              showToast={showToast}
+              onDownloaded={() => setContextMenu(null)}
+            />
+          </div>
         </div>
       )}
       </Suspense>

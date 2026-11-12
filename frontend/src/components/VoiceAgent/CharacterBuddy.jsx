@@ -441,7 +441,10 @@ export default function CharacterBuddy({
       try {
         const stored = localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam');
         const nextVal = stored === 'true';
-        setIsRoamEnabled(nextVal);
+        // Wrap in setTimeout to ensure state update is never executed synchronously during any component render
+        setTimeout(() => {
+          setIsRoamEnabled(nextVal);
+        }, 0);
       } catch (_) {}
     };
     window.addEventListener('storage', handleStorageChange);
