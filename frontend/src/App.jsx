@@ -2049,6 +2049,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   useEffect(() => {
     videoModalSongRef.current = videoModalSong;
+    try {
+      window.LoopraAndroid?.setVideoMode?.(Boolean(videoModalSong));
+    } catch (_) {}
   }, [videoModalSong]);
 
   // Keep videoModalSong in sync with currentSong whenever playing in Video Mode
@@ -2065,6 +2068,34 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   useEffect(() => {
     isPipActiveRef.current = isPipActive;
   }, [isPipActive]);
+
+  // Android Picture-in-Picture event and tiny viewport listener
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handlePipChange = (e) => {
+      setIsPipActive(Boolean(e.detail));
+    };
+
+    const checkViewportPip = () => {
+      if (videoModalSongRef.current) {
+        if (window.innerWidth <= 420 && window.innerHeight <= 300) {
+          setIsPipActive(true);
+        }
+      }
+    };
+
+    window.addEventListener('loopra-pip-change', handlePipChange);
+    window.addEventListener('resize', checkViewportPip);
+
+    // Initial check
+    checkViewportPip();
+
+    return () => {
+      window.removeEventListener('loopra-pip-change', handlePipChange);
+      window.removeEventListener('resize', checkViewportPip);
+    };
+  }, []);
 
   const [searchQuery, setSearchQuery] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -2215,10 +2246,48 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   const [showQueuePanel, setShowQueuePanel] = useState(false);
   const showQueuePanelRef = useRef(false);
+  const isCanvasOpenRef = useRef(false);
+  const showAuthModalRef = useRef(false);
+  const isSidebarOpenRef = useRef(false);
+  const isMobileScreenRef = useRef(false);
 
   useEffect(() => {
     showQueuePanelRef.current = showQueuePanel;
   }, [showQueuePanel]);
+  useEffect(() => {
+    isCanvasOpenRef.current = isCanvasOpen;
+  }, [isCanvasOpen]);
+  useEffect(() => {
+    showAuthModalRef.current = showAuthModal;
+  }, [showAuthModal]);
+  useEffect(() => {
+    isSidebarOpenRef.current = isSidebarOpen;
+  }, [isSidebarOpen]);
+  useEffect(() => {
+    isMobileScreenRef.current = isMobileScreen;
+  }, [isMobileScreen]);
+
+  // Push history state when any full-screen overlay opens so phone back gesture dismisses the overlay
+  const overlayActive = Boolean(
+    showQueuePanel ||
+    (videoModalSong && !isPipActive) ||
+    isCanvasOpen ||
+    showAuthModal ||
+    (isSidebarOpen && isMobileScreen)
+  );
+  const overlayPushedRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (overlayActive) {
+      if (!overlayPushedRef.current) {
+        overlayPushedRef.current = true;
+        window.history.pushState({ loopraOverlay: true }, '');
+      }
+    } else {
+      overlayPushedRef.current = false;
+    }
+  }, [overlayActive]);
   const [draggedItemIndex, setDraggedItemIndex] = useState(null);
 
   const handleDragStart = (e, index) => {
@@ -6378,13 +6447,25 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const handlePopState = (e) => {
       if (typeof window === 'undefined') return;
 
-      // 1. Hardware & Browser back button support for Full-Screen Music Player & Video Player
+      // 1. Hardware & gesture back button support for overlays/modals
       if (videoModalSongRef.current && !isPipActiveRef.current) {
         handleCloseVideo();
         return;
       }
       if (showQueuePanelRef.current) {
         setShowQueuePanel(false);
+        return;
+      }
+      if (isCanvasOpenRef.current) {
+        setIsCanvasOpen(false);
+        return;
+      }
+      if (showAuthModalRef.current) {
+        closeAuthModal(false);
+        return;
+      }
+      if (isSidebarOpenRef.current && isMobileScreenRef.current) {
+        setIsSidebarOpen(false);
         return;
       }
 
@@ -6956,7 +7037,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
                   if (configuredItems.length > 0) {
                     configuredItems.forEach(item => {
-                      if (!item || !item.id || item.id === 'profile' || item.id === 'equalizer' || item.id === 'custom-vip-lounge' || item.id === 'vip-lounge' || item.label === 'Ultra VIP Lounge') return;
+                      if (!item || !item.id || item.id === 'downloads' || item.id === 'profile' || item.id === 'equalizer' || item.id === 'custom-vip-lounge' || item.id === 'vip-lounge' || item.label === 'Ultra VIP Lounge') return;
                       if (item.enabled === false || disabledIds.has(item.id)) return;
                       if (item.id === 'admin' && !isAdmin) return;
                       const group = canonicalGroup(item.id, item.group);
@@ -6997,7 +7078,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   const bottomNavIds = new Set(['home', 'discover', 'library', 'liked', 'playlists', 'radio', 'indian-radio']);
                   const allItems = Array.from(navMap.values()).filter(item => {
                     if (!item || item.enabled === false || disabledIds.has(item.id)) return false;
-                    if (item.id === 'chat' || item.id === 'ai-chat') return false;
+                    // Remove Loopra AI Chat and Downloaded Songs (offline) from sidebar
+                    if (item.id === 'chat' || item.id === 'ai-chat' || item.id === 'downloads' || item.id === 'downloads_explore' || item.id === 'offline') return false;
                     if (isMobileScreen && bottomNavIds.has(item.id)) return false;
                     return true;
                   });
@@ -7133,32 +7215,34 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 20px)' }}
                 className="pt-3 pb-20 md:pb-6 border-t border-white/[0.06] mt-4 space-y-2"
               >
-                {/* 1. Avatar Autonomous Free Roam Toggle Button (ON/OFF) */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) === 'true';
-                      const next = !cur;
-                      localStorage.setItem('loopra_avatar_roaming', String(next));
-                      localStorage.setItem('loopra_avatar_roam', String(next));
-                      window.dispatchEvent(new Event('storage'));
-                      showToast?.(`Avatar Free Roam ${next ? 'Enabled' : 'Paused'}`);
-                    } catch (_) {}
-                  }}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 text-neutral-300 font-medium text-xs transition cursor-pointer"
-                  title="Toggle Avatar Autonomous Roaming"
-                >
-                  <div className="flex items-center gap-2">
-                    <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
-                    {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Avatar Free Roam</span>}
-                  </div>
-                  {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
-                    <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
-                      ON/OFF
-                    </span>
-                  )}
-                </button>
+                {/* 1. Avatar Autonomous Free Roam Toggle Button (Strictly Admin Only) */}
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) === 'true';
+                        const next = !cur;
+                        localStorage.setItem('loopra_avatar_roaming', String(next));
+                        localStorage.setItem('loopra_avatar_roam', String(next));
+                        window.dispatchEvent(new Event('storage'));
+                        showToast?.(`Avatar Free Roam ${next ? 'Enabled' : 'Paused'}`);
+                      } catch (_) {}
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 text-neutral-300 font-medium text-xs transition cursor-pointer"
+                    title="Toggle Avatar Autonomous Roaming (Admin Only)"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
+                      {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Avatar Free Roam</span>}
+                    </div>
+                    {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
+                      <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                        ON/OFF
+                      </span>
+                    )}
+                  </button>
+                )}
 
                 {/* 2. Download Android App (.apk) CTA Button (Visible when not already inside native APK window.LoopraAndroid) */}
                 {typeof window !== 'undefined' && !window.LoopraAndroid && (
@@ -7304,7 +7388,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               if (configuredItems.length > 0) {
                 // Admin configuration is present: add configured enabled items
                 configuredItems.forEach(item => {
-                  if (!item || !item.id || item.id === 'profile' || item.id === 'equalizer' || item.id === 'custom-vip-lounge' || item.id === 'vip-lounge' || item.label === 'Ultra VIP Lounge') return;
+                  if (!item || !item.id || item.id === 'downloads' || item.id === 'profile' || item.id === 'equalizer' || item.id === 'custom-vip-lounge' || item.id === 'vip-lounge' || item.label === 'Ultra VIP Lounge') return;
                   if (item.enabled === false || disabledIds.has(item.id)) return;
                   if (item.id === 'admin' && !isAdmin) return;
                   const group = canonicalGroup(item.id, item.group);
@@ -7349,8 +7433,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               const bottomNavIds = new Set(['home', 'discover', 'library', 'liked', 'playlists', 'radio', 'indian-radio']);
               const allItems = Array.from(navMap.values()).filter(item => {
                 if (!item || item.enabled === false || disabledIds.has(item.id)) return false;
-                // Requirement 5: Remove only Loopra AI Chat navigation from the sidebar
-                if (item.id === 'chat' || item.id === 'ai-chat') return false;
+                // Remove Loopra AI Chat and Downloaded Songs (offline) from sidebar
+                if (item.id === 'chat' || item.id === 'ai-chat' || item.id === 'downloads' || item.id === 'downloads_explore' || item.id === 'offline') return false;
                 // Restriction applies ONLY to phone/mobile mode: do not show lower navbar destinations in mobile sidebar
                 if (isMobileScreen && bottomNavIds.has(item.id)) return false;
                 return true;
@@ -7471,32 +7555,34 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 20px)' }}
               className="pt-4 pb-20 md:pb-6 border-t border-neutral-800 mt-4 space-y-2"
             >
-              {/* 1. Avatar Autonomous Free Roam Toggle Button (ON/OFF) */}
-              <button
-                type="button"
-                onClick={() => {
-                  try {
-                    const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) === 'true';
-                    const next = !cur;
-                    localStorage.setItem('loopra_avatar_roaming', String(next));
-                    localStorage.setItem('loopra_avatar_roam', String(next));
-                    window.dispatchEvent(new Event('storage'));
-                    showToast?.(`Avatar Free Roam ${next ? 'Enabled' : 'Paused'}`);
-                  } catch (_) {}
-                }}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 text-neutral-300 font-medium text-xs transition cursor-pointer"
-                title="Toggle Avatar Autonomous Roaming"
-              >
-                <div className="flex items-center gap-2">
-                  <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
-                  {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Avatar Free Roam</span>}
-                </div>
-                {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
-                  <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
-                    ON/OFF
-                  </span>
-                )}
-              </button>
+              {/* 1. Avatar Autonomous Free Roam Toggle Button (Strictly Admin Only) */}
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) === 'true';
+                      const next = !cur;
+                      localStorage.setItem('loopra_avatar_roaming', String(next));
+                      localStorage.setItem('loopra_avatar_roam', String(next));
+                      window.dispatchEvent(new Event('storage'));
+                      showToast?.(`Avatar Free Roam ${next ? 'Enabled' : 'Paused'}`);
+                    } catch (_) {}
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 text-neutral-300 font-medium text-xs transition cursor-pointer"
+                  title="Toggle Avatar Autonomous Roaming (Admin Only)"
+                >
+                  <div className="flex items-center gap-2">
+                    <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
+                    {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Avatar Free Roam</span>}
+                  </div>
+                  {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
+                    <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                      ON/OFF
+                    </span>
+                  )}
+                </button>
+              )}
 
               {/* 2. Download Android App (.apk) CTA Button (Visible when not already inside native APK window.LoopraAndroid) */}
               {typeof window !== 'undefined' && !window.LoopraAndroid && (
@@ -9218,8 +9304,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
             {/* Zone 3 (Right): Volume Slider with Mute Toggle, Queue Toggle, and Avatar Roam Status */}
             <div className="flex items-center justify-end w-1/4 gap-2.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-              {/* Avatar Free Roam Quick Status Pill (Role/Voice Gated) */}
-              {isVoiceActive && (
+              {/* Avatar Free Roam Quick Status Pill (Strictly Admin Only) */}
+              {isAdmin && (
                 <button
                   type="button"
                   onClick={() => {
@@ -9233,7 +9319,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     } catch (_) {}
                   }}
                   className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-900/80 hover:bg-neutral-800 border border-neutral-800 text-[10px] font-mono text-neutral-400 hover:text-amber-300 transition cursor-pointer shadow-sm shrink-0"
-                  title="Toggle Avatar Roam Status"
+                  title="Toggle Avatar Roam Status (Admin Only)"
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
                   <span>ROAM</span>
@@ -9423,7 +9509,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
       {showQueuePanel && (
         <div 
-          style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+          style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 32px)' }}
           className="fixed inset-0 z-[120] bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn pb-[env(safe-area-inset-bottom,0px)]"
         >
           {/* Mobile Tab Header with Segmented Switcher & Close Button */}

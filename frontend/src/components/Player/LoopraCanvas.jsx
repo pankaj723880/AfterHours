@@ -341,7 +341,10 @@ export default function LoopraCanvas({
       </div>
 
       {/* Top Bar with Navigation & Modes */}
-      <header className="relative z-20 flex items-center justify-between px-4 sm:px-8 py-4 backdrop-blur-md bg-neutral-950/60 border-b border-neutral-800/60">
+      <header
+        style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 32px)' }}
+        className="relative z-20 flex items-center justify-between px-4 sm:px-8 py-4 backdrop-blur-md bg-neutral-950/60 border-b border-neutral-800/60"
+      >
         <div className="flex items-center gap-3">
           <button
             onClick={onClose}

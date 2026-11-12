@@ -313,7 +313,7 @@ export default function CinematicVideoPlayer({
         !videoModalSong
           ? "fixed top-0 left-0 w-[1px] h-[1px] opacity-[0.01] pointer-events-none -z-[999] overflow-hidden"
           : isPipActive
-            ? "fixed bottom-24 right-4 z-[9999] w-72 sm:w-84 max-w-[calc(100vw-2rem)] transition-all duration-300 pointer-events-auto"
+            ? "fixed inset-0 w-screen h-screen z-[9999] bg-black m-0 p-0 overflow-hidden pointer-events-auto"
             : "fixed inset-0 z-[9999] bg-neutral-950/90 backdrop-blur-xl flex items-center justify-center p-2 sm:p-4 md:p-6 transition-all duration-300 pointer-events-auto overflow-y-auto"
       }
     >
@@ -323,7 +323,7 @@ export default function CinematicVideoPlayer({
           !videoModalSong
             ? "w-full h-full"
             : isPipActive
-              ? "w-full bg-neutral-900/98 backdrop-blur-2xl border border-amber-500/40 rounded-2xl overflow-hidden shadow-2xl shadow-black/90 flex flex-col"
+              ? "w-full h-full bg-black border-0 rounded-none overflow-hidden flex flex-col p-0 m-0"
               : `w-full bg-neutral-900/95 backdrop-blur-2xl border border-neutral-800 rounded-3xl overflow-hidden shadow-[0_20px_70px_rgba(0,0,0,0.95)] shadow-amber-500/5 flex flex-col transition-all duration-300 relative ${
                   isTheaterMode 
                     ? 'max-w-[98vw] max-h-[96vh]' 
@@ -332,37 +332,13 @@ export default function CinematicVideoPlayer({
         }
       >
         {/* =========================================================================
-            1. HEADER (Only rendered when video is active)
+            1. HEADER (Only rendered when video is active and NOT in PiP)
            ========================================================================= */}
-        {videoModalSong && isPipActive && (
-          <div className="p-2.5 bg-neutral-900/95 border-b border-neutral-800 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
-              <h4 className="text-xs font-semibold text-white truncate">
-                {activeSong?.title || 'Loopra Video'}
-              </h4>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <button
-                onClick={() => setIsPipActive?.(false)}
-                className="p-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition cursor-pointer"
-                title="Expand to Full Player"
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={onClose}
-                className="p-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-red-400 transition cursor-pointer"
-                title="Switch to Music Mode (Audio continues in background)"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        )}
-
         {videoModalSong && !isPipActive && (
-          <header className="px-3 sm:px-6 py-2.5 sm:py-3.5 bg-neutral-900/95 border-b border-neutral-800 flex items-center justify-between gap-3 shrink-0 select-none w-full">
+          <header
+            style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 32px)' }}
+            className="px-3 sm:px-6 py-2.5 sm:py-3.5 bg-neutral-900/95 border-b border-neutral-800 flex items-center justify-between gap-3 shrink-0 select-none w-full"
+          >
             {/* Left section: Loopra Brand & Gold Badge (shrink-0 with fixed boundaries to avoid any overlap) */}
             <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
               <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 p-0.5 flex items-center justify-center shadow-[0_0_15px_rgba(245,158,11,0.3)] shrink-0">
@@ -446,7 +422,9 @@ export default function CinematicVideoPlayer({
           className={
             !videoModalSong
               ? "w-full h-full"
-              : "relative w-full aspect-video bg-black overflow-hidden select-none group flex items-center justify-center"
+              : isPipActive
+                ? "w-full h-full bg-black overflow-hidden flex items-center justify-center p-0 m-0"
+                : "relative w-full aspect-video bg-black overflow-hidden select-none group flex items-center justify-center"
           }
         >
           {/* Persistent YouTube Iframe Mount (NEVER unmounted) */}
@@ -682,27 +660,6 @@ export default function CinematicVideoPlayer({
               <span className="text-[10px] opacity-80 hidden sm:inline">(Audio continues)</span>
             </button>
           </footer>
-        )}
-
-        {/* PiP Mini Controls Footer */}
-        {videoModalSong && isPipActive && (
-          <div className="p-2 bg-neutral-950/95 border-t border-neutral-800 flex items-center justify-between gap-2">
-            <button
-              onClick={onTogglePlayPause}
-              className="p-1.5 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500 hover:text-neutral-950 transition cursor-pointer"
-            >
-              {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-            </button>
-            <span className="text-[11px] text-neutral-400 font-mono">
-              {formatTime(activeCurrentTime)} / {formatTime(activeDuration)}
-            </span>
-            <button
-              onClick={() => setIsPipActive?.(false)}
-              className="text-[11px] font-bold text-amber-400 hover:text-amber-300 transition cursor-pointer"
-            >
-              Expand
-            </button>
-          </div>
         )}
       </div>
     </div>
