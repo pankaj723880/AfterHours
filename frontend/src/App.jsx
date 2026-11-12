@@ -3482,7 +3482,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   const offlineAudioRef = useRef(null);
   const activeObjectUrlRef = useRef(null);
-  const streamAudioRef = useRef(null);
   const playSongRef = useRef(null);
   const [offlineCount, setOfflineCount] = useState(0);
 
@@ -3507,12 +3506,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         try {
           offlineAudioRef.current.pause();
           offlineAudioRef.current.src = '';
-        } catch (e) {}
-      }
-      if (streamAudioRef.current) {
-        try {
-          streamAudioRef.current.pause();
-          streamAudioRef.current.src = '';
         } catch (e) {}
       }
       if (radioAudioRef.current) {
@@ -3672,26 +3665,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const handleCloseVideo = useCallback(() => {
     setVideoModalSong(null);
     setIsPipActive(false);
-
-    // Hand off audio back to HTML5 <audio> stream if currently playing
-    const activeSong = currentSongRef.current;
-    if (activeSong && !activeSong.isOffline && !activeSong.isRadio && (isPlayingRef.current || userIntentPlayingRef.current)) {
-      const currentPos = currentTimeRef.current || 0;
-      // Pause YouTube video player
-      if (playerRef.current && typeof playerRef.current.pauseVideo === 'function' && !playerRef.current.isStreamAudio) {
-        try { playerRef.current.pauseVideo(); } catch (_) {}
-      }
-      // Force reload into HTML5 stream audio
-      loadedVideoIdRef.current = null;
-      if (typeof playSongRef.current === 'function') {
-        playSongRef.current(activeSong);
-      }
-      setTimeout(() => {
-        if (streamAudioRef.current && currentPos > 0) {
-          try { streamAudioRef.current.currentTime = currentPos; } catch (_) {}
-        }
-      }, 50);
-    }
   }, []);
 
   const handleOpenVideo = (song, e) => {
@@ -3708,14 +3681,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
     const songWithId = { ...song, id: vidId, videoId: vidId };
     const isMatchingCurrent = currentSong && (currentSong.id === vidId || currentSong.videoId === vidId);
-
-    // Pause HTML5 audio stream before launching YouTube Video mode
-    if (streamAudioRef.current) {
-      try {
-        streamAudioRef.current.pause();
-        streamAudioRef.current.src = '';
-      } catch (_) {}
-    }
 
     setVideoModalSong(songWithId);
     setIsPipActive(false);
@@ -3912,12 +3877,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         try {
           offlineAudioRef.current.pause();
           offlineAudioRef.current.src = '';
-        } catch (e) {}
-      }
-      if (streamAudioRef.current) {
-        try {
-          streamAudioRef.current.pause();
-          streamAudioRef.current.src = '';
         } catch (e) {}
       }
       if (hlsRef.current) {
@@ -4527,26 +4486,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           }
         }
 
-        // When tab is backgrounded or mobile screen is locked:
-        // Automatically hand off from YouTube Video Mode back to HTML5 <audio> stream to prevent Android/iOS suspension
-        if (videoModalSongRef.current && (isPlayingRef.current || userIntentPlayingRef.current)) {
-          const activeSong = currentSongRef.current;
-          if (activeSong && !activeSong.isOffline && !activeSong.isRadio) {
-            handleCloseVideo();
-          }
-        }
-
         // If track is supposed to be playing, reinforce native audio keep-alive and run anti-suspend checks
         if (isPlayingRef.current || userIntentPlayingRef.current) {
           startPwaAudioWakeLock();
           if (silentAudioRef.current && silentAudioRef.current.paused) {
             try { silentAudioRef.current.volume = 0.01; } catch (_) {}
             silentAudioRef.current.play().catch(() => {});
-          }
-
-          // If stream audio is paused by mobile browser focus glitch, resume immediately
-          if (streamAudioRef.current && streamAudioRef.current.paused) {
-            streamAudioRef.current.play().catch(() => {});
           }
 
           // Rapid recovery checks (100ms, 300ms, 800ms) to counteract OS/browser YouTube iframe suspension
@@ -4697,8 +4642,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
     } catch (e) {}
 
-    if (ytContainerRef.current) {
+    let mountTarget = document.getElementById('yt-player-instance');
+    if (!mountTarget && ytContainerRef.current) {
       ytContainerRef.current.innerHTML = '<div id="yt-player-instance"></div>';
+      mountTarget = document.getElementById('yt-player-instance');
+    }
+    if (!mountTarget) {
+      // Defer initialization until mount target is attached to DOM
+      setTimeout(() => initPlayerInstance(videoId, shouldAutoPlay, startSeconds), 50);
+      return;
     }
 
     const currentOrigin = (typeof window !== 'undefined' && window.location.origin)
@@ -4732,15 +4684,21 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             playerRef.current.isReady = true;
           }
           try {
-            e.target.setVolume(volume);
-            if (startSeconds > 0) {
+            if (typeof e.target.setVolume === 'function') {
+              e.target.setVolume(volume);
+            }
+            if (startSeconds > 0 && typeof e.target.seekTo === 'function') {
               e.target.seekTo(startSeconds, true);
             }
             if (shouldAutoPlay) {
-              e.target.playVideo();
+              if (typeof e.target.playVideo === 'function') {
+                e.target.playVideo();
+              }
               setIsPlaying(true);
             } else {
-              e.target.pauseVideo();
+              if (typeof e.target.pauseVideo === 'function') {
+                e.target.pauseVideo();
+              }
               setIsPlaying(false);
             }
           } catch (err) {}
@@ -4931,12 +4889,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         try {
           offlineAudioRef.current.pause();
           offlineAudioRef.current.src = '';
-        } catch (e) {}
-      }
-      if (streamAudioRef.current) {
-        try {
-          streamAudioRef.current.pause();
-          streamAudioRef.current.src = '';
         } catch (e) {}
       }
       if (activeObjectUrlRef.current) {
@@ -5255,12 +5207,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           offlineAudioRef.current.src = '';
         } catch (e) {}
       }
-      if (streamAudioRef.current) {
-        try {
-          streamAudioRef.current.pause();
-          streamAudioRef.current.src = '';
-        } catch (e) {}
-      }
       if (radioAudioRef.current) {
         try {
           radioAudioRef.current.pause();
@@ -5285,226 +5231,49 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         return;
       }
 
-      // =========================================================================
-      // DUAL-ENGINE ARCHITECTURE:
-      // In Video Mode: Drive playback through the YouTube IFrame player.
-      // In Music Mode: Stream audio through standard HTML5 <audio> to ensure
-      // 100% reliable background playback on Android Chrome / TWA and iOS Safari.
-      // =========================================================================
-      const isVideoActive = Boolean(videoModalSongRef.current);
+      if (playerRef.current && isPlayerReadyRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline) {
+        try {
+          // Detect low-end or mobile device for stream quality optimization
+          const isLowEndDevice = typeof navigator !== 'undefined' && (
+            (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
+            (window.innerWidth < 768)
+          );
+          const quality = isLowEndDevice ? 'small' : 'medium';
 
-      if (isVideoActive) {
-        // Stop background stream audio before switching to YouTube video player
-        if (streamAudioRef.current) {
-          try {
-            streamAudioRef.current.pause();
-            streamAudioRef.current.src = '';
-          } catch (_) {}
-        }
-
-        if (playerRef.current && isPlayerReadyRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline) {
-          try {
-            const isLowEndDevice = typeof navigator !== 'undefined' && (
-              (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
-              (window.innerWidth < 768)
-            );
-            const quality = isLowEndDevice ? 'small' : 'medium';
-
-            if (isFirstMount) {
-              if (typeof playerRef.current.cueVideoById === 'function') {
-                playerRef.current.cueVideoById({
-                  videoId: currentSong.id,
-                  startSeconds: savedSeekTime,
-                  suggestedQuality: quality
-                });
-              } else {
-                playerRef.current.loadVideoById({ videoId: currentSong.id, startSeconds: savedSeekTime, suggestedQuality: quality });
-                playerRef.current.pauseVideo();
-              }
-              setIsPlaying(false);
-            } else {
-              playerRef.current.loadVideoById({
+          if (isFirstMount) {
+            if (typeof playerRef.current.cueVideoById === 'function') {
+              playerRef.current.cueVideoById({
                 videoId: currentSong.id,
+                startSeconds: savedSeekTime,
                 suggestedQuality: quality
               });
-              playerRef.current.playVideo();
-              setIsPlaying(true);
+            } else {
+              playerRef.current.loadVideoById({ videoId: currentSong.id, startSeconds: savedSeekTime, suggestedQuality: quality });
+              playerRef.current.pauseVideo();
             }
-            loadedVideoIdRef.current = currentSong.id;
-          } catch (err) {
-            initPlayerInstance(currentSong.id, !isFirstMount, savedSeekTime);
-            loadedVideoIdRef.current = currentSong.id;
+            setIsPlaying(false);
+          } else {
+            // Direct video switch without destroying or recreating the iframe instance
+            playerRef.current.loadVideoById({
+              videoId: currentSong.id,
+              suggestedQuality: quality
+            });
+            playerRef.current.playVideo();
+            setIsPlaying(true);
           }
-        } else if (window.YT && window.YT.Player) {
+          loadedVideoIdRef.current = currentSong.id;
+        } catch (err) {
           initPlayerInstance(currentSong.id, !isFirstMount, savedSeekTime);
           loadedVideoIdRef.current = currentSong.id;
-        } else {
-          window.onYouTubeIframeAPIReady = () => {
-            initPlayerInstance(currentSong.id, !isFirstMount, savedSeekTime);
-            loadedVideoIdRef.current = currentSong.id;
-          };
         }
-      } else {
-        // MUSIC MODE: Route playback through native HTML5 <audio> element
-        // Stop YouTube video player if currently playing
-        if (playerRef.current && typeof playerRef.current.pauseVideo === 'function' && !playerRef.current.isOffline) {
-          try {
-            playerRef.current.pauseVideo();
-            if (typeof playerRef.current.stopVideo === 'function') playerRef.current.stopVideo();
-          } catch (_) {}
-        }
-
-        if (!streamAudioRef.current) {
-          streamAudioRef.current = new Audio();
-        }
-        const streamAudio = streamAudioRef.current;
-        if (typeof window !== 'undefined') {
-          window.__loopraStreamAudio = streamAudio;
-        }
-
-        const streamUrl = getApiUrl(`/api/audio-stream/${encodeURIComponent(currentSong.id)}`);
-        streamAudio.preload = 'auto';
-        streamAudio.crossOrigin = 'anonymous';
-        streamAudio.volume = isMuted ? 0 : (volume / 100);
-        streamAudio.muted = isMuted;
-
-        streamAudio.onplay = () => {
-          setIsPlaying(true);
-          isInitialMountRef.current = false;
-          isUserPausedRef.current = false;
-          userIntentPlayingRef.current = true;
-          updateMediaSessionImmediate(currentSong, true);
-        };
-        streamAudio.onpause = () => {
-          setIsPlaying(false);
-          updateMediaSessionImmediate(currentSong, false);
-        };
-        streamAudio.onloadedmetadata = () => {
-          if (streamAudio.duration && !isNaN(streamAudio.duration)) {
-            durationRef.current = streamAudio.duration;
-          }
-          if (savedSeekTime > 0 && streamAudio.currentTime < 1) {
-            try { streamAudio.currentTime = savedSeekTime; } catch (_) {}
-          }
-        };
-        streamAudio.ontimeupdate = () => {
-          currentTimeRef.current = streamAudio.currentTime;
-          if (crossfadeDuration > 0 && streamAudio.duration > 0) {
-            const remaining = streamAudio.duration - streamAudio.currentTime;
-            if (remaining <= crossfadeDuration && remaining > 0) {
-              const fadeRatio = Math.max(0, remaining / crossfadeDuration);
-              streamAudio.volume = (volume / 100) * fadeRatio;
-            } else if (remaining > crossfadeDuration && streamAudio.volume !== volume / 100) {
-              streamAudio.volume = volume / 100;
-            }
-          }
-        };
-        streamAudio.onended = () => {
-          const currentRepeat = isRepeatRef.current;
-          if (currentRepeat === 'one' || currentRepeat === true) {
-            streamAudio.currentTime = 0;
-            streamAudio.play().catch(() => {});
-          } else {
-            handleNextSongRef.current?.();
-          }
-        };
-        streamAudio.onerror = (e) => {
-          console.warn('[StreamAudio] Direct HTML5 audio stream error, falling back to YouTube IFrame:', e);
-          // Graceful fallback to YouTube IFrame player if direct audio stream encounters network restriction
-          if (playerRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline) {
-            try {
-              playerRef.current.loadVideoById({ videoId: currentSong.id });
-              playerRef.current.playVideo();
-              setIsPlaying(true);
-            } catch (_) {
-              initPlayerInstance(currentSong.id, true, currentTimeRef.current || 0);
-            }
-          } else {
-            initPlayerInstance(currentSong.id, true, currentTimeRef.current || 0);
-          }
-        };
-
-        // Connect playerRef adapter so controls, sliders, turntable, and speed controls work transparently
-        playerRef.current = {
-          isStreamAudio: true,
-          getCurrentTime: () => streamAudioRef.current ? streamAudioRef.current.currentTime : 0,
-          getDuration: () => streamAudioRef.current ? (streamAudioRef.current.duration || 0) : 0,
-          seekTo: (sec) => {
-            if (streamAudioRef.current) {
-              streamAudioRef.current.currentTime = sec;
-              currentTimeRef.current = sec;
-            }
-          },
-          playVideo: () => {
-            if (!streamAudioRef.current) return Promise.resolve();
-            const p = streamAudioRef.current.play();
-            if (p && typeof p.catch === 'function') {
-              p.catch(err => {
-                if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
-                  console.warn('[StreamAudio] playVideo error:', err);
-                }
-              });
-            }
-            return p;
-          },
-          pauseVideo: () => {
-            if (streamAudioRef.current) {
-              try { streamAudioRef.current.pause(); } catch (_) {}
-            }
-          },
-          stopVideo: () => {
-            if (streamAudioRef.current) {
-              try {
-                streamAudioRef.current.pause();
-                streamAudioRef.current.currentTime = 0;
-              } catch (_) {}
-            }
-          },
-          setVolume: (vol) => {
-            if (streamAudioRef.current) streamAudioRef.current.volume = vol / 100;
-          },
-          mute: () => {
-            if (streamAudioRef.current) streamAudioRef.current.muted = true;
-          },
-          unMute: () => {
-            if (streamAudioRef.current) streamAudioRef.current.muted = false;
-          },
-          setPlaybackRate: (rate) => {
-            if (streamAudioRef.current) streamAudioRef.current.playbackRate = rate;
-          },
-          getPlayerState: () => {
-            if (!streamAudioRef.current) return -1;
-            return streamAudioRef.current.paused ? 2 : 1;
-          },
-          destroy: () => {
-            if (streamAudioRef.current) {
-              try {
-                streamAudioRef.current.pause();
-                streamAudioRef.current.src = '';
-              } catch (_) {}
-            }
-          }
-        };
-
-        streamAudio.src = streamUrl;
-        if (playbackSpeed && playbackSpeed !== 1) {
-          try { streamAudio.playbackRate = playbackSpeed; } catch (_) {}
-        }
-
-        if (!isFirstMount) {
-          const p = streamAudio.play();
-          if (p && typeof p.catch === 'function') {
-            p.catch(err => {
-              if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
-                console.warn('[StreamAudio] Autoplay error:', err);
-              }
-            });
-          }
-          setIsPlaying(true);
-        } else {
-          setIsPlaying(false);
-        }
+      } else if (window.YT && window.YT.Player) {
+        initPlayerInstance(currentSong.id, !isFirstMount, savedSeekTime);
         loadedVideoIdRef.current = currentSong.id;
+      } else {
+        window.onYouTubeIframeAPIReady = () => {
+          initPlayerInstance(currentSong.id, !isFirstMount, savedSeekTime);
+          loadedVideoIdRef.current = currentSong.id;
+        };
       }
     });
 
