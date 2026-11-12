@@ -52,6 +52,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
 
   // 1. Bypass API, WebSocket, audio streams, browser extensions, and Android Digital Asset Links
+  // Ensure background audio keep-alives, Range requests, and media streams are NEVER intercepted or dropped
   if (
     url.pathname.startsWith('/api') ||
     url.pathname.startsWith('/socket.io') ||
@@ -59,7 +60,14 @@ self.addEventListener('fetch', (event) => {
     url.origin.includes('youtube.com') ||
     url.origin.includes('googlevideo.com') ||
     url.origin.includes('ytimg.com') ||
-    url.protocol.startsWith('chrome-extension')
+    url.origin.includes('stream') ||
+    url.protocol.startsWith('chrome-extension') ||
+    request.headers.get('range') ||
+    request.destination === 'audio' ||
+    request.destination === 'video' ||
+    url.pathname.endsWith('.mp3') ||
+    url.pathname.endsWith('.wav') ||
+    url.pathname.endsWith('.m3u8')
   ) {
     return;
   }

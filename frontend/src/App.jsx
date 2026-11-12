@@ -3805,6 +3805,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       isUserPausedRef.current = false;
       userIntentPlayingRef.current = true;
       setVideoModalSong(prev => (prev ? song : null));
+      updateMediaSessionImmediate(song, true);
+      startPwaAudioWakeLock();
       if (silentAudioRef.current) {
         try { silentAudioRef.current.volume = 0.01; } catch (_) {}
         silentAudioRef.current.play().catch(() => {});
@@ -4258,42 +4260,121 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
   };
 
+  // Helper: Synchronous & robust MediaSession updater to ensure immediate notification bar / lock-screen sync
+  const updateMediaSessionImmediate = useCallback((track, playingState) => {
+    if (typeof window === 'undefined' || !('mediaSession' in navigator) || !track) return;
+    try {
+      const { title: cleanTitle, artist: cleanArtist } = sanitizeTrackMetadata(
+        track.title || 'Unknown Track',
+        track.artist || track.channel || cmsConfig?.branding?.siteName || "Loopra Artist"
+      );
+      const rawArtwork = track.thumbnail || track.image || '/loopra-logo.png';
+      const artworkUrl = typeof rawArtwork === 'string' && rawArtwork.trim() ? rawArtwork.trim() : '/loopra-logo.png';
+      const absoluteArtworkUrl = artworkUrl.startsWith('http') || artworkUrl.startsWith('blob:')
+        ? artworkUrl
+        : `${window.location.origin}${artworkUrl.startsWith('/') ? '' : '/'}${artworkUrl}`;
+
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: cleanTitle,
+        artist: cleanArtist,
+        album: track.album || "Loopra Music",
+        artwork: [
+          { src: absoluteArtworkUrl, sizes: '96x96', type: 'image/jpeg' },
+          { src: absoluteArtworkUrl, sizes: '256x256', type: 'image/jpeg' },
+          { src: absoluteArtworkUrl, sizes: '512x512', type: 'image/jpeg' }
+        ]
+      });
+
+      navigator.mediaSession.playbackState = playingState ? 'playing' : 'paused';
+
+      if (typeof navigator.mediaSession.setPositionState === 'function' && durationRef.current > 0) {
+        try {
+          navigator.mediaSession.setPositionState({
+            duration: Math.max(0, durationRef.current || 0),
+            playbackRate: 1.0,
+            position: Math.min(durationRef.current || 0, Math.max(0, currentTimeRef.current || 0))
+          });
+        } catch (_) {}
+      }
+    } catch (err) {
+      console.warn('[MediaSession] Error updating immediate metadata:', err);
+    }
+  }, [cmsConfig]);
+
+  // PWA & Standalone Web Audio Keep-Alive for OS Audio Focus Lock
+  const pwaAudioContextRef = useRef(null);
+  const pwaOscillatorRef = useRef(null);
+  const pwaGainRef = useRef(null);
+
+  const startPwaAudioWakeLock = useCallback(() => {
+    try {
+      const isStandalone = typeof window !== 'undefined' && (
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.navigator.standalone === true ||
+        document.referrer.includes('android-app://')
+      );
+
+      // Only engage Web Audio oscillator node in standalone or mobile browser environments
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+
+      if (!pwaAudioContextRef.current) {
+        pwaAudioContextRef.current = new AudioCtx();
+      }
+
+      const ctx = pwaAudioContextRef.current;
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+
+      if (!pwaGainRef.current) {
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime); // Inaudible gain to hold OS audio hardware awake
+        gain.connect(ctx.destination);
+        pwaGainRef.current = gain;
+      }
+
+      if (!pwaOscillatorRef.current) {
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, ctx.currentTime);
+        osc.connect(pwaGainRef.current);
+        osc.start();
+        pwaOscillatorRef.current = osc;
+      }
+    } catch (e) {
+      console.warn('[PWA Audio Guard] Wake lock audio init notice:', e?.message || e);
+    }
+  }, []);
+
+  const stopPwaAudioWakeLock = useCallback(() => {
+    try {
+      if (pwaOscillatorRef.current) {
+        pwaOscillatorRef.current.stop();
+        pwaOscillatorRef.current.disconnect();
+        pwaOscillatorRef.current = null;
+      }
+      if (pwaGainRef.current) {
+        pwaGainRef.current.disconnect();
+        pwaGainRef.current = null;
+      }
+      if (pwaAudioContextRef.current && pwaAudioContextRef.current.state === 'running') {
+        pwaAudioContextRef.current.suspend().catch(() => {});
+      }
+    } catch (_) {}
+  }, []);
+
   // MediaSession API Integration & Page Visibility lifecycle for background playback (Desktop & Android)
   useEffect(() => {
     if (typeof window !== 'undefined' && 'mediaSession' in navigator && currentSong) {
-      try {
-        const { title: cleanTitle, artist: cleanArtist } = sanitizeTrackMetadata(
-          currentSong.title || 'Unknown Track',
-          currentSong.artist || currentSong.channel || cmsConfig?.branding?.siteName || "Loopra Artist"
-        );
-        const rawArtwork = currentSong.thumbnail || currentSong.image || '/loopra-logo.png';
-        const artworkUrl = typeof rawArtwork === 'string' && rawArtwork.trim() ? rawArtwork.trim() : '/loopra-logo.png';
-        const absoluteArtworkUrl = artworkUrl.startsWith('http') || artworkUrl.startsWith('blob:')
-          ? artworkUrl
-          : `${window.location.origin}${artworkUrl.startsWith('/') ? '' : '/'}${artworkUrl}`;
-
-        // Set Lockscreen / Notification Bar Metadata
-        navigator.mediaSession.metadata = new MediaMetadata({
-          title: cleanTitle,
-          artist: cleanArtist,
-          album: currentSong.album || "Loopra Music",
-          artwork: [
-            { src: absoluteArtworkUrl, sizes: '96x96', type: 'image/jpeg' },
-            { src: absoluteArtworkUrl, sizes: '256x256', type: 'image/jpeg' },
-            { src: absoluteArtworkUrl, sizes: '512x512', type: 'image/jpeg' }
-          ]
-        });
-
-        navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
-      } catch (err) {
-        console.warn('[MediaSession] Error setting metadata:', err);
-      }
+      updateMediaSessionImmediate(currentSong, isPlaying);
 
       try {
         // Bind playback handlers to OS media notification controls
         navigator.mediaSession.setActionHandler('play', () => {
           isUserPausedRef.current = false;
           userIntentPlayingRef.current = true;
+          startPwaAudioWakeLock();
           if (silentAudioRef.current) {
             try { silentAudioRef.current.volume = 0.01; } catch (_) {}
             silentAudioRef.current.play().catch(() => {});
@@ -4309,6 +4390,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         navigator.mediaSession.setActionHandler('pause', () => {
           isUserPausedRef.current = true;
           userIntentPlayingRef.current = false;
+          stopPwaAudioWakeLock();
           if (autoResumeTimerRef.current) {
             clearTimeout(autoResumeTimerRef.current);
             autoResumeTimerRef.current = null;
@@ -4347,7 +4429,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         console.warn('[MediaSession] Error registering handlers:', handlerErr);
       }
     }
-  }, [currentSong, isPlaying, handlePrevSong, handleNextSong, handleSeek]);
+  }, [currentSong, isPlaying, handlePrevSong, handleNextSong, handleSeek, updateMediaSessionImmediate, startPwaAudioWakeLock, stopPwaAudioWakeLock]);
 
   // Page Visibility lifecycle: YouTube IFrame Anti-Suspend & document.hidden Background Resilience
   useEffect(() => {
@@ -4358,6 +4440,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         // When tab is backgrounded or mobile screen is turned off:
         // If track is supposed to be playing, reinforce native audio keep-alive and run anti-suspend checks
         if (isPlayingRef.current || userIntentPlayingRef.current) {
+          startPwaAudioWakeLock();
           if (silentAudioRef.current && silentAudioRef.current.paused) {
             try { silentAudioRef.current.volume = 0.01; } catch (_) {}
             silentAudioRef.current.play().catch(() => {});
@@ -4367,6 +4450,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           [100, 300, 800].forEach((delay) => {
             setTimeout(() => {
               if (isPlayingRef.current || userIntentPlayingRef.current) {
+                startPwaAudioWakeLock();
                 if (silentAudioRef.current && silentAudioRef.current.paused) {
                   try { silentAudioRef.current.volume = 0.01; } catch (_) {}
                   silentAudioRef.current.play().catch(() => {});
@@ -5501,6 +5585,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     if (isPlaying) {
       isUserPausedRef.current = true;
       userIntentPlayingRef.current = false;
+      stopPwaAudioWakeLock();
       if (autoResumeTimerRef.current) {
         clearTimeout(autoResumeTimerRef.current);
         autoResumeTimerRef.current = null;
@@ -5508,9 +5593,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       playerRef.current?.pauseVideo?.();
       if (silentAudioRef.current) silentAudioRef.current.pause();
       setIsPlaying(false);
+      updateMediaSessionImmediate(currentSong, false);
     } else {
       isUserPausedRef.current = false;
       userIntentPlayingRef.current = true;
+      startPwaAudioWakeLock();
+      updateMediaSessionImmediate(currentSong, true);
       if (!playerRef.current || typeof playerRef.current.playVideo !== 'function') {
         let savedSeek = 0;
         try {
