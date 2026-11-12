@@ -6581,7 +6581,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     type="button"
                     onClick={() => {
                       const backendUrl = BACKEND_URL || 'https://afterhours-zvic.onrender.com';
-                      window.open(`${backendUrl}/api/auth/google?platform=android`, '_blank');
+                      setShowAuthModal(true);
                     }}
                     className="w-full max-w-[240px] py-2.5 px-4 rounded-lg bg-neutral-900 border border-neutral-700 hover:border-amber-400 text-white text-xs font-semibold flex items-center justify-center gap-2.5 transition active:scale-95 shadow-md cursor-pointer"
                   >
@@ -6725,7 +6725,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
         {/* Unified Top Navbar for both Mobile and Desktop (hidden on DJ Club where full-screen dedicated navbar is active) */}
         <header
-          style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 28px)' }}
+          style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
           className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-2.5 sm:px-4 md:px-8 pb-2.5 sm:pb-3 h-auto md:h-16 flex items-center justify-between shrink-0 w-full box-border'}`}
         >
           {/* LEFT: Loopra Brand Logo (Clean, no hamburger button) */}
@@ -9999,7 +9999,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   type="button"
                   onClick={() => {
                     const backendUrl = BACKEND_URL || 'https://afterhours-zvic.onrender.com';
-                    window.open(`${backendUrl}/api/auth/google?platform=android`, '_blank');
+                    setShowAuthModal(true);
                   }}
                   className="w-full max-w-[240px] py-2.5 px-4 rounded-lg bg-neutral-900 border border-neutral-700 hover:border-amber-400 text-white text-xs font-semibold flex items-center justify-center gap-2.5 transition active:scale-95 shadow-md cursor-pointer"
                 >
@@ -10649,6 +10649,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     </div>
   );
 }
+
+
 
 
 
