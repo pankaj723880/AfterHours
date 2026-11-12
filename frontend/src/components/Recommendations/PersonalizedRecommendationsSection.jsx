@@ -6,11 +6,37 @@ import { CURATED_STATION_TRACKS } from '../../constants/curatedPlaylists';
 
 // Track-level runtime failed image cache for graceful component fallbacks
 const locallyFailedVideoIds = new Set();
+const SESSION_CACHE_KEY = 'loopra_home_curated_cache';
 const CURATED_CACHE_KEY = 'loopra_curated_cache';
 const CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000; // 6 hours
 
+// In-memory module-level cache for instant tab switches
+let moduleCuratedCache = null;
+
 // Helper to safely load cached curated data if valid
 const loadCuratedCache = () => {
+  // 1. In-memory module cache (fastest, persists across tab switching in current session)
+  if (moduleCuratedCache && (moduleCuratedCache.data?.madeForYou?.length || moduleCuratedCache.data?.dailyMix?.length)) {
+    return moduleCuratedCache;
+  }
+
+  // 2. sessionStorage (persists across tab navigation and refreshes in current window)
+  try {
+    const rawSession = sessionStorage.getItem(SESSION_CACHE_KEY);
+    if (rawSession) {
+      const parsed = JSON.parse(rawSession);
+      const cacheData = parsed?.data || parsed;
+      if (cacheData && (cacheData.madeForYou?.length || cacheData.dailyMix?.length)) {
+        moduleCuratedCache = {
+          data: cacheData,
+          timestamp: parsed.timestamp || Date.now()
+        };
+        return moduleCuratedCache;
+      }
+    }
+  } catch (_) {}
+
+  // 3. localStorage fallback
   try {
     const raw = localStorage.getItem(CURATED_CACHE_KEY);
     if (!raw) return null;
@@ -18,13 +44,43 @@ const loadCuratedCache = () => {
     if (!parsed || typeof parsed !== 'object') return null;
     const cacheData = parsed.data || parsed;
     if (cacheData && (cacheData.madeForYou?.length || cacheData.dailyMix?.length)) {
-      return {
+      moduleCuratedCache = {
         data: cacheData,
         timestamp: parsed.timestamp || 0
       };
+      return moduleCuratedCache;
     }
   } catch (_) {}
   return null;
+};
+
+// Helper to persist curated data to module cache, sessionStorage, and localStorage
+const saveCuratedCache = (formattedData) => {
+  if (!formattedData) return;
+  const cacheEntry = {
+    data: formattedData,
+    timestamp: Date.now()
+  };
+  moduleCuratedCache = cacheEntry;
+  try {
+    sessionStorage.setItem(SESSION_CACHE_KEY, JSON.stringify(cacheEntry));
+  } catch (_) {}
+  try {
+    localStorage.setItem(CURATED_CACHE_KEY, JSON.stringify(cacheEntry));
+    localStorage.setItem('loopra_cached_recs', JSON.stringify(formattedData));
+  } catch (_) {}
+};
+
+// Clear all curated caches on explicit logout / login
+export const clearCuratedCache = () => {
+  moduleCuratedCache = null;
+  try {
+    sessionStorage.removeItem(SESSION_CACHE_KEY);
+  } catch (_) {}
+  try {
+    localStorage.removeItem(CURATED_CACHE_KEY);
+    localStorage.removeItem('loopra_cached_recs');
+  } catch (_) {}
 };
 
 export default function PersonalizedRecommendationsSection({
@@ -127,6 +183,7 @@ export default function PersonalizedRecommendationsSection({
         };
 
         setData(formatted);
+        saveCuratedCache(formatted);
         onTracksRendered?.([...madeForYou, ...dailyMix, ...discover]);
         setError(null);
       } catch (err) {
@@ -191,14 +248,7 @@ export default function PersonalizedRecommendationsSection({
         };
 
         setData(formatted);
-        try {
-          const cacheEntry = {
-            data: formatted,
-            timestamp: Date.now()
-          };
-          localStorage.setItem(CURATED_CACHE_KEY, JSON.stringify(cacheEntry));
-          localStorage.setItem('loopra_cached_recs', JSON.stringify(formatted));
-        } catch (_) {}
+        saveCuratedCache(formatted);
         onTracksRendered?.(allRendered);
 
         if (typeof rawData.recommendationsEnabled === 'boolean') {
@@ -214,15 +264,11 @@ export default function PersonalizedRecommendationsSection({
       
       // 1. Try local storage cache
       try {
-        const cached = localStorage.getItem(CURATED_CACHE_KEY) || localStorage.getItem('loopra_cached_recs');
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          const cacheData = parsed?.data || parsed;
-          if (cacheData && (cacheData.madeForYou?.length || cacheData.dailyMix?.length)) {
-            setData(cacheData);
-            setError(null);
-            return;
-          }
+        const cached = loadCuratedCache();
+        if (cached && cached.data) {
+          setData(cached.data);
+          setError(null);
+          return;
         }
       } catch (_) {}
 
@@ -238,6 +284,7 @@ export default function PersonalizedRecommendationsSection({
             isGuest: true
           };
           setData(formatted);
+          saveCuratedCache(formatted);
           setError(null);
           return;
         }
@@ -253,6 +300,7 @@ export default function PersonalizedRecommendationsSection({
           isGuest: true
         };
         setData(formatted);
+        saveCuratedCache(formatted);
         setError(null);
       }
     } finally {
@@ -261,29 +309,37 @@ export default function PersonalizedRecommendationsSection({
     }
   }, [backendUrl, authToken, onTracksRendered, sanitizeThumbnailTracks, refillBackupPool]);
 
+  // Track previous auth state to trigger refresh only on actual login / logout
+  const prevAuthTokenRef = useRef(authToken);
   useEffect(() => {
-    // SWR Caching Rule: If cached data exists and is younger than 6 hours, do not re-fetch on mount
+    if (prevAuthTokenRef.current !== authToken) {
+      prevAuthTokenRef.current = authToken;
+      clearCuratedCache();
+      setData(null);
+      setLoading(true);
+      fetchRecommendations(false);
+    }
+  }, [authToken, fetchRecommendations]);
+
+  useEffect(() => {
+    // If cached curated feed exists in module cache or sessionStorage, render immediately without re-fetching
     const cachedEntry = loadCuratedCache();
     if (cachedEntry && cachedEntry.data) {
-      const isFresh = (Date.now() - (cachedEntry.timestamp || 0)) < CACHE_MAX_AGE_MS;
-      if (isFresh) {
-        // Cache is fresh (< 6 hours); render immediately with 0ms waiting time
-        setData(cachedEntry.data);
-        setLoading(false);
-        const cachedTracks = [
-          ...(cachedEntry.data.madeForYou || []),
-          ...(cachedEntry.data.becauseYouListenedTo?.recommendations || []),
-          ...(cachedEntry.data.dailyMix || []),
-          ...(cachedEntry.data.favouriteArtists || []),
-          ...(cachedEntry.data.discover || []),
-          ...(cachedEntry.data.moreLikeRecent || [])
-        ];
-        onTracksRendered?.(cachedTracks);
-        return;
-      }
+      setData(cachedEntry.data);
+      setLoading(false);
+      const cachedTracks = [
+        ...(cachedEntry.data.madeForYou || []),
+        ...(cachedEntry.data.becauseYouListenedTo?.recommendations || []),
+        ...(cachedEntry.data.dailyMix || []),
+        ...(cachedEntry.data.favouriteArtists || []),
+        ...(cachedEntry.data.discover || []),
+        ...(cachedEntry.data.moreLikeRecent || [])
+      ];
+      onTracksRendered?.(cachedTracks);
+      return;
     }
 
-    // Otherwise, fetch background updates
+    // Otherwise (cold first load with no cache), fetch recommendations
     fetchRecommendations(false);
   }, [fetchRecommendations, onTracksRendered]);
 
@@ -344,14 +400,7 @@ export default function PersonalizedRecommendationsSection({
         };
 
         setData(formatted);
-        try {
-          const cacheEntry = {
-            data: formatted,
-            timestamp: Date.now()
-          };
-          localStorage.setItem(CURATED_CACHE_KEY, JSON.stringify(cacheEntry));
-          localStorage.setItem('loopra_cached_recs', JSON.stringify(formatted));
-        } catch (_) {}
+        saveCuratedCache(formatted);
         onTracksRendered?.(allRendered);
         refillBackupPool(allRendered);
         showToast?.('Fresh recommendations curated by Gemini AI');

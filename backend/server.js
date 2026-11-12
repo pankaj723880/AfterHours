@@ -1,4 +1,5 @@
 import express from 'express';
+import { Readable } from 'stream';
 import cors from 'cors';
 import compression from 'compression';
 import dotenv from 'dotenv';
@@ -1721,6 +1722,235 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
 
 // Stream / Audio Proxy endpoint for Browser Caching & Offline Storage
 // Serves binary audio stream for caching directly in IndexedDB / CacheStorage
+// Implements resilient multi-provider fallbacks: @distube/ytdl-core direct formats,
+// rotating public Piped instances, rotating public Invidious instances, and native ytdl download stream.
+
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
+
+const PIPED_INSTANCES = [
+  'https://pipedapi.kavin.rocks',
+  'https://api.piped.private.coffee',
+  'https://piped-api.lunar.icu',
+  'https://pipedapi.tokhmi.xyz',
+  'https://pipedapi.moomoo.me',
+  'https://api-piped.mha.fi',
+  'https://pipedapi.smnz.de',
+  'https://pipedapi.adminforge.de',
+  'https://pipedapi.leptons.xyz',
+  'https://pipedapi.r4fo.com'
+];
+
+const INVIDIOUS_INSTANCES = [
+  'https://invidious.nerdvpn.de',
+  'https://inv.nadeko.net',
+  'https://invidious.jing.rocks',
+  'https://invidious.slipfox.xyz',
+  'https://invidious.private.coffee',
+  'https://inv.tux.pizza',
+  'https://invidious.protokolla.fi',
+  'https://vid.puffyan.us',
+  'https://inv.riverside.rocks'
+];
+
+// Helper 1: Stream directly from high-speed CDN audio formats resolved via @distube/ytdl-core
+async function streamViaYtdlDirect(cleanId, res) {
+  try {
+    const videoUrl = `https://www.youtube.com/watch?v=${cleanId}`;
+    const info = await ytdlInstance.getInfo(videoUrl, {
+      requestOptions: {
+        headers: {
+          'User-Agent': BROWSER_UA,
+          'Accept-Language': 'en-US,en;q=0.9'
+        }
+      }
+    });
+
+    const audioFormat = info.formats.find(f => f.hasAudio && !f.hasVideo && f.url && f.container === 'mp4') ||
+                       info.formats.find(f => f.hasAudio && !f.hasVideo && f.url);
+
+    if (!audioFormat || !audioFormat.url) {
+      throw new Error('No direct audio format found in ytdl');
+    }
+
+    const audioRes = await fetch(audioFormat.url, {
+      headers: {
+        'User-Agent': BROWSER_UA,
+        'Accept': '*/*'
+      },
+      signal: AbortSignal.timeout(15000)
+    });
+
+    if (!audioRes.ok || !audioRes.body) {
+      throw new Error(`Ytdl direct format fetch failed with status ${audioRes.status}`);
+    }
+
+    const contentType = audioRes.headers.get('content-type') || (audioFormat.container === 'mp4' ? 'audio/mp4' : 'audio/webm');
+    const contentLength = audioRes.headers.get('content-length');
+
+    res.setHeader('Content-Type', contentType);
+    if (contentLength) {
+      res.setHeader('Content-Length', contentLength);
+    }
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'public, max-age=604800');
+    res.setHeader('X-Audio-Source', 'distube_ytdl_direct');
+
+    const nodeStream = Readable.fromWeb(audioRes.body);
+    nodeStream.pipe(res);
+    return true;
+  } catch (err) {
+    console.warn(`[StreamCache:ytdl_direct] Fallback triggered for ${cleanId}:`, err.message);
+    return false;
+  }
+}
+
+// Helper 2: Stream audio via rotating public Piped API instances
+async function streamViaPiped(cleanId, res) {
+  for (const instance of PIPED_INSTANCES) {
+    try {
+      const apiUrl = `${instance}/streams/${cleanId}`;
+      const apiRes = await fetch(apiUrl, {
+        headers: {
+          'User-Agent': BROWSER_UA,
+          'Accept': 'application/json'
+        },
+        signal: AbortSignal.timeout(3500)
+      });
+      if (!apiRes.ok) continue;
+
+      const data = await apiRes.json();
+      const streams = Array.isArray(data.audioStreams) ? data.audioStreams : [];
+      const best = streams.find(s => s.url && s.mimeType?.includes('audio/mp4')) ||
+                   streams.find(s => s.url && s.mimeType?.includes('audio/')) ||
+                   streams[0];
+
+      if (!best || !best.url) continue;
+
+      const audioRes = await fetch(best.url, {
+        headers: {
+          'User-Agent': BROWSER_UA,
+          'Accept': '*/*'
+        },
+        signal: AbortSignal.timeout(15000)
+      });
+
+      if (!audioRes.ok || !audioRes.body) continue;
+
+      res.setHeader('Content-Type', best.mimeType || 'audio/mp4');
+      const len = audioRes.headers.get('content-length') || best.contentLength;
+      if (len) res.setHeader('Content-Length', String(len));
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Cache-Control', 'public, max-age=604800');
+      res.setHeader('X-Audio-Source', `piped:${instance}`);
+
+      const nodeStream = Readable.fromWeb(audioRes.body);
+      nodeStream.pipe(res);
+      return true;
+    } catch (_) {
+      // Continue to next instance
+    }
+  }
+  return false;
+}
+
+// Helper 3: Stream audio via rotating public Invidious API instances
+async function streamViaInvidious(cleanId, res) {
+  for (const instance of INVIDIOUS_INSTANCES) {
+    try {
+      const apiUrl = `${instance}/api/v1/videos/${cleanId}`;
+      const apiRes = await fetch(apiUrl, {
+        headers: {
+          'User-Agent': BROWSER_UA,
+          'Accept': 'application/json'
+        },
+        signal: AbortSignal.timeout(3500)
+      });
+      if (!apiRes.ok) continue;
+
+      const data = await apiRes.json();
+      const formats = Array.isArray(data.adaptiveFormats) ? data.adaptiveFormats : [];
+      const audioFormat = formats.find(f => f.url && f.type?.startsWith('audio/mp4')) ||
+                          formats.find(f => f.url && f.type?.startsWith('audio/'));
+
+      let audioUrl = audioFormat?.url;
+      let mimeType = audioFormat?.type || 'audio/mp4';
+
+      if (!audioUrl) {
+        audioUrl = `${instance}/latest_version?id=${cleanId}&itag=140`;
+        mimeType = 'audio/mp4';
+      }
+
+      const audioRes = await fetch(audioUrl, {
+        headers: {
+          'User-Agent': BROWSER_UA,
+          'Accept': '*/*'
+        },
+        signal: AbortSignal.timeout(15000)
+      });
+
+      if (!audioRes.ok || !audioRes.body) continue;
+
+      res.setHeader('Content-Type', mimeType.split(';')[0]);
+      const len = audioRes.headers.get('content-length');
+      if (len) res.setHeader('Content-Length', len);
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Cache-Control', 'public, max-age=604800');
+      res.setHeader('X-Audio-Source', `invidious:${instance}`);
+
+      const nodeStream = Readable.fromWeb(audioRes.body);
+      nodeStream.pipe(res);
+      return true;
+    } catch (_) {
+      // Continue to next instance
+    }
+  }
+  return false;
+}
+
+// Helper 4: Fallback to native @distube/ytdl-core download stream
+async function streamViaYtdlDownload(cleanId, res) {
+  return new Promise((resolve) => {
+    try {
+      const videoUrl = `https://www.youtube.com/watch?v=${cleanId}`;
+      const audioStream = ytdlInstance.download(videoUrl, {
+        filter: f => f.hasAudio && !f.hasVideo,
+        highWaterMark: 1 << 22
+      });
+
+      let headersSentLocally = false;
+
+      audioStream.on('data', (chunk) => {
+        if (!headersSentLocally && !res.headersSent) {
+          headersSentLocally = true;
+          res.setHeader('Content-Type', 'audio/mp4');
+          res.setHeader('Accept-Ranges', 'bytes');
+          res.setHeader('Cache-Control', 'public, max-age=604800');
+          res.setHeader('X-Audio-Source', 'distube_ytdl_download');
+        }
+        res.write(chunk);
+      });
+
+      audioStream.on('end', () => {
+        if (!res.writableEnded) res.end();
+        resolve(true);
+      });
+
+      audioStream.on('error', (err) => {
+        console.warn(`[StreamCache:ytdl_download] Stream error for ${cleanId}:`, err.message);
+        if (!headersSentLocally && !res.headersSent) {
+          resolve(false);
+        } else {
+          if (!res.writableEnded) res.end();
+          resolve(true);
+        }
+      });
+    } catch (err) {
+      console.warn(`[StreamCache:ytdl_download] Init error for ${cleanId}:`, err.message);
+      resolve(false);
+    }
+  });
+}
+
 app.get([
   '/api/audio-stream/:videoId',
   '/api/stream/cache/:videoId',
@@ -1740,32 +1970,28 @@ app.get([
     return res.status(400).json({ error: 'videoId is required' });
   }
 
-  // Stream actual song audio directly via ytdl audio proxy
-  try {
-    const videoUrl = `https://www.youtube.com/watch?v=${cleanId}`;
-    const audioStream = ytdlInstance.download(videoUrl, {
-      filter: f => f.hasAudio && !f.hasVideo,
-      highWaterMark: 1 << 22 // 4MB buffer for smooth streaming
+  // 1. Try @distube/ytdl-core direct format extraction with Chrome User-Agent
+  const ytdlDirectSuccess = await streamViaYtdlDirect(cleanId, res);
+  if (ytdlDirectSuccess) return;
+
+  // 2. Try rotating public Piped API instances
+  const pipedSuccess = await streamViaPiped(cleanId, res);
+  if (pipedSuccess) return;
+
+  // 3. Try rotating public Invidious API instances
+  const invidiousSuccess = await streamViaInvidious(cleanId, res);
+  if (invidiousSuccess) return;
+
+  // 4. Try native @distube/ytdl-core download stream
+  const ytdlDownloadSuccess = await streamViaYtdlDownload(cleanId, res);
+  if (ytdlDownloadSuccess) return;
+
+  // Last resort error
+  if (!res.headersSent) {
+    res.status(502).json({
+      error: 'Failed to stream real audio for track across all providers',
+      videoId: cleanId
     });
-
-    res.setHeader('Content-Type', 'audio/mp4');
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.setHeader('Cache-Control', 'public, max-age=604800'); // 7 days
-    res.setHeader('X-Audio-Source', 'youtube_stream_proxy');
-
-    audioStream.on('error', (streamErr) => {
-      console.warn(`[StreamCache:ytdl] Audio stream error for ${cleanId}:`, streamErr.message);
-      if (!res.headersSent) {
-        res.status(502).json({ error: 'Failed to stream real audio for track', details: streamErr.message });
-      }
-    });
-
-    audioStream.pipe(res);
-  } catch (err) {
-    console.error(`[StreamCache] Unexpected stream proxy error for ${cleanId}:`, err.message);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Stream proxy error', details: err.message });
-    }
   }
 });
 

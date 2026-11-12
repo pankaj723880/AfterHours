@@ -5,6 +5,8 @@
  * Key: videoId
  */
 
+import { getApiUrl } from './apiUrl';
+
 const DB_NAME = 'LoopraOfflineCacheDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'cached_tracks';
@@ -179,7 +181,7 @@ export async function cacheSongToDB(track, onProgress = () => {}) {
       try { await navigator.storage.persist(); } catch (_) {}
     }
 
-    const streamUrl = `/api/audio-stream/${encodeURIComponent(videoId)}`;
+    const streamUrl = getApiUrl(`/api/audio-stream/${encodeURIComponent(videoId)}`);
     const res = await fetch(streamUrl);
     if (!res.ok) {
       throw new Error(`Server returned ${res.status} when fetching audio stream`);

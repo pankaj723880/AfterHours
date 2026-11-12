@@ -4,6 +4,8 @@
  * Large audio files are stored in IndexedDB (never in localStorage).
  */
 
+import { getApiUrl } from '../utils/apiUrl';
+
 const DB_NAME = 'LoopraOfflineCacheDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'cached_tracks';
@@ -387,8 +389,8 @@ class OfflineStorageService {
         try { await navigator.storage.persist(); } catch (_) {}
       }
 
-      // Audio endpoint: /api/audio-stream/:videoId
-      const streamUrl = `/api/audio-stream/${encodeURIComponent(videoId)}`;
+      // Audio endpoint: /api/audio-stream/:videoId (resolved via getApiUrl)
+      const streamUrl = getApiUrl(`/api/audio-stream/${encodeURIComponent(videoId)}`);
 
       const res = await fetch(streamUrl);
       if (!res.ok) {
