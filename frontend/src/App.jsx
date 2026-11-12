@@ -2246,48 +2246,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   const [showQueuePanel, setShowQueuePanel] = useState(false);
   const showQueuePanelRef = useRef(false);
-  const isCanvasOpenRef = useRef(false);
-  const showAuthModalRef = useRef(false);
-  const isSidebarOpenRef = useRef(false);
-  const isMobileScreenRef = useRef(false);
 
   useEffect(() => {
     showQueuePanelRef.current = showQueuePanel;
   }, [showQueuePanel]);
-  useEffect(() => {
-    isCanvasOpenRef.current = isCanvasOpen;
-  }, [isCanvasOpen]);
-  useEffect(() => {
-    showAuthModalRef.current = showAuthModal;
-  }, [showAuthModal]);
-  useEffect(() => {
-    isSidebarOpenRef.current = isSidebarOpen;
-  }, [isSidebarOpen]);
-  useEffect(() => {
-    isMobileScreenRef.current = isMobileScreen;
-  }, [isMobileScreen]);
-
-  // Push history state when any full-screen overlay opens so phone back gesture dismisses the overlay
-  const overlayActive = Boolean(
-    showQueuePanel ||
-    (videoModalSong && !isPipActive) ||
-    isCanvasOpen ||
-    showAuthModal ||
-    (isSidebarOpen && isMobileScreen)
-  );
-  const overlayPushedRef = useRef(false);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (overlayActive) {
-      if (!overlayPushedRef.current) {
-        overlayPushedRef.current = true;
-        window.history.pushState({ loopraOverlay: true }, '');
-      }
-    } else {
-      overlayPushedRef.current = false;
-    }
-  }, [overlayActive]);
   const [draggedItemIndex, setDraggedItemIndex] = useState(null);
 
   const handleDragStart = (e, index) => {
@@ -2390,6 +2352,46 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  const isCanvasOpenRef = useRef(false);
+  const showAuthModalRef = useRef(false);
+  const isSidebarOpenRef = useRef(false);
+  const isMobileScreenRef = useRef(false);
+
+  useEffect(() => {
+    isCanvasOpenRef.current = isCanvasOpen;
+  }, [isCanvasOpen]);
+  useEffect(() => {
+    showAuthModalRef.current = showAuthModal;
+  }, [showAuthModal]);
+  useEffect(() => {
+    isSidebarOpenRef.current = isSidebarOpen;
+  }, [isSidebarOpen]);
+  useEffect(() => {
+    isMobileScreenRef.current = isMobileScreen;
+  }, [isMobileScreen]);
+
+  // Push history state when any full-screen overlay opens so phone back gesture dismisses the overlay
+  const overlayActive = Boolean(
+    showQueuePanel ||
+    (videoModalSong && !isPipActive) ||
+    isCanvasOpen ||
+    showAuthModal ||
+    (isSidebarOpen && isMobileScreen)
+  );
+  const overlayPushedRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (overlayActive) {
+      if (!overlayPushedRef.current) {
+        overlayPushedRef.current = true;
+        window.history.pushState({ loopraOverlay: true }, '');
+      }
+    } else {
+      overlayPushedRef.current = false;
+    }
+  }, [overlayActive]);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef(null);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
