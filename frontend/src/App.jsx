@@ -1522,6 +1522,7 @@ export default function App() {
   const [authForm, setAuthForm] = useState({ username: '', password: '' });
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+  const [isAuthSlow, setIsAuthSlow] = useState(false);
 
   const isAdmin = Boolean(user && (user.isAdmin === true || user.role === 'admin'));
 
@@ -3008,12 +3009,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       wasPlayingBeforeAuthRef.current = false;
     }
     setAuthError('');
+    setIsAuthSlow(false);
     setIsSidebarOpen(false);
     setShowAuthModal(true);
+    // Non-blocking background health check to awaken Render free-tier instance ahead of submission
+    pingServerHealth().catch(() => {});
   }, [isPlaying]);
 
   const closeAuthModal = useCallback((resumed = false) => {
     setShowAuthModal(false);
+    setIsAuthSlow(false);
     if (resumed && wasPlayingBeforeAuthRef.current && currentSong) {
       wasPlayingBeforeAuthRef.current = false;
       if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
@@ -3214,14 +3219,21 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   }, []);
 
   const handleGoogleSuccess = async (credentialResponse) => {
+    let slowTimer = null;
     try {
       setAuthLoading(true);
+      setIsAuthSlow(false);
       setAuthError('');
-      const res = await fetch(getApiUrl('/api/auth/google'), {
+      slowTimer = setTimeout(() => {
+        setIsAuthSlow(true);
+      }, 2000);
+      const res = await fetchWithRetry(getApiUrl('/api/auth/google'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: credentialResponse.credential })
-      });
+      }, { maxRetries: 2 });
+      if (slowTimer) clearTimeout(slowTimer);
+      setIsAuthSlow(false);
       const parsed = await safeParseJsonResponse(res, 'Google Auth failed');
       if (!parsed.ok) throw new Error(parsed.error);
       const data = parsed.data;
@@ -3263,9 +3275,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       localStorage.setItem('afterhours_queue', JSON.stringify(sanitizeList(userQueue)));
       
     } catch (err) {
+      if (slowTimer) clearTimeout(slowTimer);
+      setIsAuthSlow(false);
       console.error('Google Auth Error:', err);
       setAuthError(err.message || 'Login failed');
     } finally {
+      if (slowTimer) clearTimeout(slowTimer);
+      setIsAuthSlow(false);
       setAuthLoading(false);
     }
   };
@@ -3355,15 +3371,22 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   const handleAuth = async (e) => {
     e.preventDefault();
+    let slowTimer = null;
     setAuthLoading(true);
+    setIsAuthSlow(false);
     setAuthError('');
+    slowTimer = setTimeout(() => {
+      setIsAuthSlow(true);
+    }, 2000);
     try {
       const endpoint = isLoginMode ? '/api/auth/login' : '/api/auth/register';
-      const res = await fetch(getApiUrl(endpoint), {
+      const res = await fetchWithRetry(getApiUrl(endpoint), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(authForm)
-      });
+      }, { maxRetries: 2 });
+      if (slowTimer) clearTimeout(slowTimer);
+      setIsAuthSlow(false);
       const parsed = await safeParseJsonResponse(res, isLoginMode ? 'Login failed' : 'Registration failed');
       if (!parsed.ok) throw new Error(parsed.error);
       const data = parsed.data;
@@ -3427,9 +3450,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         }
       }
     } catch (err) {
+      if (slowTimer) clearTimeout(slowTimer);
+      setIsAuthSlow(false);
       console.warn('[Auth Request Notice]', { isLoginMode, error: err.message });
       setAuthError(err.message);
     } finally {
+      if (slowTimer) clearTimeout(slowTimer);
+      setIsAuthSlow(false);
       setAuthLoading(false);
     }
   };
@@ -6408,9 +6435,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 <button
                   type="submit"
                   disabled={authLoading}
-                  className="w-full py-3.5 mt-2 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white font-medium tracking-wide text-sm transition shadow-lg flex items-center justify-center disabled:opacity-50 cursor-pointer"
+                  className="w-full py-3.5 mt-2 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white font-medium tracking-wide text-sm transition shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
-                  {authLoading ? <Icon name="sparkles" className="w-5 h-5 animate-spin" /> : "Log In as Admin"}
+                  {authLoading ? (
+                    <>
+                      <Icon name="sparkles" className="w-5 h-5 animate-spin" />
+                      <span>{isAuthSlow ? "Connecting to server..." : "Logging in..."}</span>
+                    </>
+                  ) : "Log In as Admin"}
                 </button>
               </form>
               
@@ -6419,15 +6451,25 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                  <span className="text-xs text-neutral-500 font-medium">OR</span>
                  <div className="h-px bg-neutral-800 flex-1"></div>
               </div>
-              <div className="mt-6 flex justify-center">
+              <div className="mt-6 flex flex-col items-center justify-center gap-2">
                 <GoogleLogin
                   onSuccess={handleGoogleSuccess}
-                  onError={() => setAuthError('Google Sign-In origin not authorized by client ID. Please use username and password login above.')}
+                  onError={() => {
+                    setAuthError('Google Sign-In was cancelled or origin not authorized by client ID. Please use username and password login above.');
+                    showToast?.('Google Sign-In was closed or cancelled', 3500);
+                  }}
+                  ux_mode="popup"
                   theme="filled_black"
                   shape="rectangular"
                   text="continue_with"
                   size="large"
                 />
+                {authLoading && isAuthSlow && (
+                  <p className="text-[11px] text-amber-400/90 font-medium animate-pulse flex items-center gap-1.5 mt-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                    Connecting to server...
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -9788,9 +9830,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               <button
                 type="submit"
                 disabled={authLoading}
-                className="w-full py-3.5 mt-2 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white font-medium tracking-wide text-sm transition shadow-lg flex items-center justify-center disabled:opacity-50"
+                className="w-full py-3.5 mt-2 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white font-medium tracking-wide text-sm transition shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                {authLoading ? <Icon name="sparkles" className="w-5 h-5 animate-spin" /> : (isLoginMode ? "Log In" : "Sign Up")}
+                {authLoading ? (
+                  <>
+                    <Icon name="sparkles" className="w-5 h-5 animate-spin" />
+                    <span>{isAuthSlow ? "Connecting to server..." : (isLoginMode ? "Logging in..." : "Signing up...")}</span>
+                  </>
+                ) : (isLoginMode ? "Log In" : "Sign Up")}
               </button>
             </form>
             
@@ -9799,15 +9846,25 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                <span className="text-xs text-neutral-500 font-medium">OR</span>
                <div className="h-px bg-neutral-800 flex-1"></div>
             </div>
-            <div className="mt-6 flex justify-center">
+            <div className="mt-6 flex flex-col items-center justify-center gap-2">
               <GoogleLogin
                 onSuccess={handleGoogleSuccess}
-                onError={() => setAuthError('Google Sign-In origin not authorized by client ID. Please use username and password login above.')}
+                onError={() => {
+                  setAuthError('Google Sign-In was cancelled or origin not authorized by client ID. Please use username and password login above.');
+                  showToast?.('Google Sign-In was closed or cancelled', 3500);
+                }}
+                ux_mode="popup"
                 theme="filled_black"
                 shape="rectangular"
                 text="continue_with"
                 size="large"
               />
+              {authLoading && isAuthSlow && (
+                <p className="text-[11px] text-amber-400/90 font-medium animate-pulse flex items-center gap-1.5 mt-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                  Connecting to server...
+                </p>
+              )}
             </div>
 
             <div className="mt-6 text-center">
@@ -10092,7 +10149,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         isOpen={activeAssistantPanel === 'ai'}
         onToggleOpen={(open) => setActiveAssistantPanel(open ? 'ai' : null)}
         onClose={() => setActiveAssistantPanel(null)}
-        hideFloatingButton={showSplashScreen || !isAppInitialized || showQueuePanel || Boolean(videoModalSong && !isPipActive)}
+        hideFloatingButton={showSplashScreen || !isAppInitialized || showQueuePanel || showAuthModal || Boolean(videoModalSong && !isPipActive)}
         canAccessVoice={canAccessVoice}
         isAvatarActive={isAvatarVisible}
       />

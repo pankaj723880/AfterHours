@@ -99,6 +99,10 @@
           "value": "same-origin-allow-popups"
         },
         {
+          "key": "Cross-Origin-Embedder-Policy",
+          "value": "unsafe-none"
+        },
+        {
           "key": "X-Content-Type-Options",
           "value": "nosniff"
         },
