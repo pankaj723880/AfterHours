@@ -6579,7 +6579,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   };
 
   return (
-    <div className="h-[100dvh] bg-neutral-950 text-neutral-100 font-sans flex flex-col md:flex-row antialiased selection:bg-amber-500 selection:text-white relative overflow-hidden">
+    <div className="h-[100dvh] bg-neutral-950 text-neutral-100 font-sans flex flex-col antialiased selection:bg-amber-500 selection:text-white relative overflow-hidden">
       <Suspense fallback={null}>
       {/* Premium 3D Infinity Startup Splash Screen */}
       {showSplashScreen && (
@@ -6659,6 +6659,230 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         cmsConfig={cmsConfig}
       />
 
+        {/* Unified Top Navbar for both Mobile and Desktop (hidden on DJ Club where full-screen dedicated navbar is active) */}
+        <header
+          style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 28px)' }}
+          className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-2.5 sm:px-4 md:px-8 pb-2.5 sm:pb-3 h-auto md:h-16 flex items-center justify-between shrink-0 w-full box-border'}`}
+        >
+          {/* LEFT: Mobile Menu & Logo | Desktop Logo & Brand (hidden on desktop if sidebar is open to avoid duplicate logo) */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              id="loopra-mobile-hamburger-btn"
+              data-nav-id="hamburger"
+              type="button"
+              onClick={() => {
+                setIsSidebarOpen(prev => !prev);
+              }}
+              className="flex items-center justify-center p-2 rounded-2xl bg-neutral-800 text-neutral-200 hover:text-white focus:outline-none shrink-0 min-w-[42px] min-h-[42px] active:scale-95 transition cursor-pointer shadow-sm"
+              aria-label="Toggle Menu"
+              title="Toggle Menu"
+            >
+              <Icon name={isSidebarOpen && isMobileScreen ? "close" : "menu"} className="w-5 h-5 text-amber-400 pointer-events-none" />
+            </button>
+            <div className={`flex items-center gap-2 sm:gap-2.5 flex`}>
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow-md overflow-hidden shrink-0">
+                <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
+              </div>
+              {cmsConfig?.branding?.siteName ? (
+                <span className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white whitespace-nowrap">{cmsConfig.branding.siteName}</span>
+              ) : null}
+            </div>
+          </div>
+
+          {/* CENTER (Desktop only): ACTIVE USERS (Subtle, muted presence indicator) */}
+          <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-900/40 border border-neutral-800/50 shadow-sm shrink-0">
+            <span className="relative flex h-2 w-2">
+              <span className={`animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite] absolute inline-flex h-full w-full rounded-full ${
+                isLiveCountStale ? 'bg-amber-400 opacity-40' : 'bg-emerald-400 opacity-60'
+              }`}></span>
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                isLiveCountStale ? 'bg-amber-500' : 'bg-emerald-500'
+              }`}></span>
+            </span>
+            <span className="text-[11px] font-normal text-neutral-400 tracking-wide flex items-center gap-1.5">
+              <span className="text-neutral-300 font-mono font-medium">
+                {activeUsersCount !== null ? activeUsersCount : '--'}
+              </span>
+              <span className="text-neutral-500 text-[10.5px]">online</span>
+              {isLiveCountStale && (
+                <span className="text-[9px] text-neutral-600 font-normal" title="Connection stale, showing last verified count">
+                  (stale)
+                </span>
+              )}
+            </span>
+          </div>
+
+          {/* RIGHT: AUTH/LOGOUT & VOICE AI */}
+          <div className="flex items-center gap-2">
+            {/* 3D Avatar / AI Assistant toggle button (Gated strictly by dynamic role & voice permissions) */}
+            {isVoiceActive && (
+              <button
+                id="loopra-header-ai-icon"
+                type="button"
+                onClick={() => {
+                  setIsAvatarVisible(prev => {
+                    const next = !prev;
+                    try {
+                      localStorage.setItem('loopra_avatar_visible', String(next));
+                      if (next && localStorage.getItem('loopra_avatar_roaming') === null && localStorage.getItem('loopra_avatar_roam') === null) {
+                        localStorage.setItem('loopra_avatar_roaming', 'false');
+                        localStorage.setItem('loopra_avatar_roam', 'false');
+                      }
+                    } catch (_) {}
+                    return next;
+                  });
+                  setIsSidebarOpen(false);
+                  // Dispatch storage event asynchronously to avoid setState-during-render
+                  // (CharacterBuddy listens for storage events and calls setIsRoamEnabled)
+                  queueMicrotask(() => {
+                    try { window.dispatchEvent(new Event('storage')); } catch (_) {}
+                  });
+                }}
+                title={isAvatarVisible ? "Toggle AI Companion (Active)" : "Talk to Loopra Avatar"}
+                aria-label={isAvatarVisible ? "Hide Loopra AI Companion" : "Talk to Loopra Avatar"}
+                className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all duration-300 shadow-md active:scale-95 cursor-pointer shrink-0 ${
+                  isAvatarVisible
+                    ? 'ring-2 ring-amber-500 bg-amber-500/20 text-amber-400 shadow-amber-500/30'
+                    : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10'
+                }`}
+              >
+                <Icon name="sparkles" className={`w-4 h-4 ${isAvatarVisible ? 'text-amber-400 animate-pulse' : 'text-zinc-300'}`} />
+              </button>
+            )}
+            
+            {user ? (
+              <div className="flex items-center gap-2 relative" ref={accountMenuRef}>
+                {/* Compact Profile Avatar Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsAccountMenuOpen(prev => !prev)}
+                  aria-label="User Account Menu"
+                  aria-expanded={isAccountMenuOpen}
+                  title={user.displayName || user.username || "Account"}
+                  className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center relative overflow-hidden transition-all cursor-pointer focus:outline-none ${
+                    isAccountMenuOpen
+                      ? 'ring-2 ring-amber-400 border-transparent shadow-lg shadow-amber-500/20'
+                      : 'border border-amber-500/40 hover:border-amber-400 hover:ring-2 hover:ring-amber-400/40'
+                  }`}
+                >
+                  <UserAvatar
+                    user={user}
+                    className="w-full h-full object-cover"
+                    fallbackClassName="w-full h-full bg-gradient-to-br from-amber-500 to-amber-600 text-neutral-950 font-extrabold text-xs sm:text-sm flex items-center justify-center shadow-inner uppercase select-none"
+                  />
+                </button>
+
+                {/* Account Dropdown Menu */}
+                {isAccountMenuOpen && (
+                  <div
+                    role="menu"
+                    className="absolute right-0 top-full mt-2 w-64 bg-neutral-900/95 backdrop-blur-2xl border border-neutral-700/80 rounded-2xl shadow-2xl p-2 z-50 text-neutral-200 animate-in fade-in zoom-in-95 duration-150 origin-top-right space-y-1"
+                  >
+                    {/* User Info Header */}
+                    <div className="px-3 py-2.5 bg-neutral-950/60 rounded-xl border border-neutral-800/80 mb-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-white truncate">
+                          {user.displayName || user.username || 'User'}
+                        </span>
+                        <span className={`text-[10px] uppercase font-mono font-bold px-2 py-0.5 rounded-full border ${
+                          isAdmin 
+                            ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' 
+                            : 'bg-neutral-800 text-neutral-300 border-neutral-700'
+                        }`}>
+                          {isAdmin ? 'Admin' : 'Member'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 truncate mt-0.5 font-mono">
+                        {user.email || user.username}
+                      </p>
+                    </div>
+
+                    {/* Navigation Links */}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setIsProfileOpen(true);
+                        setIsAccountMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800/80 transition cursor-pointer text-left"
+                    >
+                      <Icon name="user" className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>My Profile</span>
+                    </button>
+
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setActiveTab('admin');
+                          window.history.pushState({ tab: 'admin' }, '', '/admin');
+                          setIsAccountMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-amber-300 hover:bg-amber-500/10 transition cursor-pointer text-left border border-amber-500/20"
+                      >
+                        <Icon name="shield" className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span>Admin Dashboard</span>
+                      </button>
+                    )}
+
+                    {/* Divider */}
+                    <div className="h-px bg-neutral-800 my-1" />
+
+                    {/* Logout Button */}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        logout();
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition cursor-pointer text-left"
+                    >
+                      <svg className="w-4 h-4 text-red-400 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                      </svg>
+                      <span>Log Out</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                {/* Mobile login button opening auth modal */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isPlaying) togglePlayPause();
+                    openAuthModal();
+                  }}
+                  className="md:hidden w-8 h-8 rounded-full bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs flex items-center justify-center border border-amber-400/40 shadow-md active:scale-95 transition cursor-pointer"
+                  title="Sign In / Account"
+                  aria-label="Sign In / Account"
+                >
+                  <Icon name="user" className="w-4 h-4 shrink-0" />
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (isPlaying) {
+                      togglePlayPause();
+                    }
+                    openAuthModal();
+                  }}
+                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0"
+                >
+                  <Icon name="user" className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden sm:inline">Login</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </header>
+
+      {/* Main Body Layout Container (Sidebar + Content side-by-side below Navbar) */}
+      <div className="flex-1 flex flex-row min-h-0 min-w-0 overflow-hidden relative">
       {/* V2 Navigation Drawer / Sidebar Feature Flag (USE_V2_DRAWER) */}
       {USE_V2_DRAWER ? (
         <>
@@ -6676,19 +6900,20 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               paddingTop: isMobileScreen ? 'max(env(safe-area-inset-top, 0px), 16px)' : undefined,
               paddingBottom: isMobileScreen ? 'max(env(safe-area-inset-bottom, 0px), 16px)' : undefined,
             }}
-            className={`h-full flex flex-col shrink-0 transition-[width,padding,opacity] duration-300 ease-in-out overflow-y-auto overflow-x-hidden ${
+            className={`h-full flex flex-col shrink-0 transition-[width,padding,opacity] duration-300 ease-in-out overflow-y-auto overflow-x-hidden md:sticky md:top-0 md:h-full ${
               activeTab === 'dj-club'
                 ? 'hidden'
                 : isSidebarOpen
-                  ? 'fixed md:relative top-0 bottom-0 left-0 z-[100] md:z-30 h-[100dvh] md:h-full w-72 md:w-64 lg:w-72 translate-x-0 p-3.5 sm:p-4 bg-[#0c0d12]/98 md:bg-neutral-900/95 backdrop-blur-2xl md:backdrop-blur-xl border-r border-amber-500/20 md:border-neutral-800/80 shadow-[0_0_60px_rgba(0,0,0,0.95)] md:shadow-none opacity-100'
+                  ? 'fixed md:relative top-0 bottom-0 left-0 z-[100] md:z-30 h-[100dvh] md:h-full w-72 md:w-[290px] translate-x-0 p-3.5 sm:p-4 bg-[#0c0d12]/98 md:bg-neutral-900/95 backdrop-blur-2xl md:backdrop-blur-xl border-r border-amber-500/20 md:border-neutral-800/80 shadow-[0_0_60px_rgba(0,0,0,0.95)] md:shadow-none opacity-100'
                   : 'fixed md:relative top-0 bottom-0 left-0 z-[100] md:z-30 h-[100dvh] md:h-full -translate-x-full md:translate-x-0 w-72 md:w-0 md:p-0 md:border-none md:overflow-hidden md:opacity-0 pointer-events-none'
             }`}
           >
-            {/* Inner Fixed-Width Content Container to prevent layout jumps during width collapse transition */}
-            <div className="w-64 lg:w-72 shrink-0 flex-1 flex flex-col min-h-0">
+            {/* Inner Content Container - full width without horizontal clipping */}
+            <div className="w-full shrink-0 flex-1 flex flex-col min-h-0">
               {/* Header Section */}
-              <div className="flex items-center justify-between px-1.5 py-2 mb-4 border-b border-white/[0.06] pb-3">
-                <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex items-center justify-between px-1.5 py-2 mb-4 border-b border-white/[0.06] pb-3 sticky top-0 z-20 bg-[#0c0d12]/95 md:bg-neutral-900/95 backdrop-blur-md">
+                {/* Mobile-only logo (hidden on desktop because top navbar shows logo) */}
+                <div className="md:hidden flex items-center gap-2.5 min-w-0">
                   <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500/20 to-neutral-900 border border-amber-500/40 p-1 flex items-center justify-center shadow-lg shadow-amber-500/10 shrink-0 overflow-hidden">
                     <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
                   </div>
@@ -6705,7 +6930,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   </div>
                 </div>
 
-                <div className="relative z-50 pointer-events-auto flex items-center gap-1">
+                {/* Desktop label / navigation header */}
+                <div className="hidden md:flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
+                  <Icon name="menu" className="w-4 h-4 text-amber-400" />
+                  <span>Navigation</span>
+                </div>
+
+                <div className="relative z-50 pointer-events-auto flex items-center gap-1 ml-auto">
                   {/* Desktop close / collapse sidebar toggle button */}
                   <button 
                     type="button"
@@ -7048,17 +7279,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               paddingTop: isMobileScreen ? 'max(env(safe-area-inset-top, 0px), 16px)' : undefined,
               paddingBottom: isMobileScreen ? 'max(env(safe-area-inset-bottom, 0px), 16px)' : undefined,
             }}
-            className={`h-full flex flex-col shrink-0 transition-[width,padding,opacity] duration-300 ease-in-out overflow-y-auto overflow-x-hidden ${
+            className={`h-full flex flex-col shrink-0 transition-[width,padding,opacity] duration-300 ease-in-out overflow-y-auto overflow-x-hidden md:sticky md:top-0 md:h-full ${
               activeTab === 'dj-club'
                 ? 'hidden'
                 : isSidebarOpen
-                  ? 'fixed md:relative top-0 bottom-0 left-0 z-[100] md:z-30 h-[100dvh] md:h-full w-72 md:w-64 lg:w-72 translate-x-0 p-4 bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80 opacity-100'
+                  ? 'fixed md:relative top-0 bottom-0 left-0 z-[100] md:z-30 h-[100dvh] md:h-full w-72 md:w-[290px] translate-x-0 p-4 bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80 opacity-100'
                   : 'fixed md:relative top-0 bottom-0 left-0 z-[100] md:z-30 h-[100dvh] md:h-full -translate-x-full md:translate-x-0 w-72 md:w-0 md:p-0 md:border-none md:overflow-hidden md:opacity-0 pointer-events-none'
             }`}
           >
-            <div className="w-64 lg:w-72 shrink-0 flex-1 flex flex-col min-h-0">
-              <div className="flex items-center justify-between px-2 py-3 mb-6">
-                <div className="flex items-center gap-3">
+            <div className="w-full shrink-0 flex-1 flex flex-col min-h-0">
+              <div className="flex items-center justify-between px-2 py-3 mb-6 sticky top-0 z-20 bg-neutral-900/95 backdrop-blur-md">
+                <div className="md:hidden flex items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-neutral-900/80 border border-amber-500/30 p-1 flex items-center justify-center shadow-xl shrink-0 overflow-hidden">
                     <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
                   </div>
@@ -7067,7 +7298,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   ) : null}
                 </div>
 
-                <div className="relative z-50 pointer-events-auto flex items-center gap-1">
+                <div className="hidden md:flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
+                  <Icon name="menu" className="w-4 h-4 text-amber-400" />
+                  <span>Navigation</span>
+                </div>
+
+                <div className="relative z-50 pointer-events-auto flex items-center gap-1 ml-auto">
                   <button 
                     type="button"
                     onClick={() => setIsSidebarOpen(false)} 
@@ -7388,227 +7624,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   )}
 
       <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 relative overflow-hidden">
-        {/* Unified Top Navbar for both Mobile and Desktop (hidden on DJ Club where full-screen dedicated navbar is active) */}
-        <header
-          style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 28px)' }}
-          className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-2.5 sm:px-4 md:px-8 pb-2.5 sm:pb-3 h-auto md:h-16 flex items-center justify-between shrink-0 w-full box-border'}`}
-        >
-          {/* LEFT: Mobile Menu & Logo | Desktop Logo & Brand (hidden on desktop if sidebar is open to avoid duplicate logo) */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            <button
-              id="loopra-mobile-hamburger-btn"
-              data-nav-id="hamburger"
-              type="button"
-              onClick={() => {
-                setIsSidebarOpen(prev => !prev);
-              }}
-              className="flex items-center justify-center p-2 rounded-2xl bg-neutral-800 text-neutral-200 hover:text-white focus:outline-none shrink-0 min-w-[42px] min-h-[42px] active:scale-95 transition cursor-pointer shadow-sm"
-              aria-label="Toggle Menu"
-              title="Toggle Menu"
-            >
-              <Icon name={isSidebarOpen && isMobileScreen ? "close" : "menu"} className="w-5 h-5 text-amber-400 pointer-events-none" />
-            </button>
-            <div className={`flex items-center gap-2 sm:gap-2.5 ${isSidebarOpen ? 'md:hidden' : 'flex'}`}>
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow-md overflow-hidden shrink-0">
-                <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
-              </div>
-              {cmsConfig?.branding?.siteName ? (
-                <span className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white whitespace-nowrap">{cmsConfig.branding.siteName}</span>
-              ) : null}
-            </div>
-          </div>
 
-          {/* CENTER (Desktop only): ACTIVE USERS (Subtle, muted presence indicator) */}
-          <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-900/40 border border-neutral-800/50 shadow-sm shrink-0">
-            <span className="relative flex h-2 w-2">
-              <span className={`animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite] absolute inline-flex h-full w-full rounded-full ${
-                isLiveCountStale ? 'bg-amber-400 opacity-40' : 'bg-emerald-400 opacity-60'
-              }`}></span>
-              <span className={`relative inline-flex rounded-full h-2 w-2 ${
-                isLiveCountStale ? 'bg-amber-500' : 'bg-emerald-500'
-              }`}></span>
-            </span>
-            <span className="text-[11px] font-normal text-neutral-400 tracking-wide flex items-center gap-1.5">
-              <span className="text-neutral-300 font-mono font-medium">
-                {activeUsersCount !== null ? activeUsersCount : '--'}
-              </span>
-              <span className="text-neutral-500 text-[10.5px]">online</span>
-              {isLiveCountStale && (
-                <span className="text-[9px] text-neutral-600 font-normal" title="Connection stale, showing last verified count">
-                  (stale)
-                </span>
-              )}
-            </span>
-          </div>
-
-          {/* RIGHT: AUTH/LOGOUT & VOICE AI */}
-          <div className="flex items-center gap-2">
-            {/* 3D Avatar / AI Assistant toggle button (Gated strictly by dynamic role & voice permissions) */}
-            {isVoiceActive && (
-              <button
-                id="loopra-header-ai-icon"
-                type="button"
-                onClick={() => {
-                  setIsAvatarVisible(prev => {
-                    const next = !prev;
-                    try {
-                      localStorage.setItem('loopra_avatar_visible', String(next));
-                      if (next && localStorage.getItem('loopra_avatar_roaming') === null && localStorage.getItem('loopra_avatar_roam') === null) {
-                        localStorage.setItem('loopra_avatar_roaming', 'false');
-                        localStorage.setItem('loopra_avatar_roam', 'false');
-                      }
-                    } catch (_) {}
-                    return next;
-                  });
-                  setIsSidebarOpen(false);
-                  // Dispatch storage event asynchronously to avoid setState-during-render
-                  // (CharacterBuddy listens for storage events and calls setIsRoamEnabled)
-                  queueMicrotask(() => {
-                    try { window.dispatchEvent(new Event('storage')); } catch (_) {}
-                  });
-                }}
-                title={isAvatarVisible ? "Toggle AI Companion (Active)" : "Talk to Loopra Avatar"}
-                aria-label={isAvatarVisible ? "Hide Loopra AI Companion" : "Talk to Loopra Avatar"}
-                className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all duration-300 shadow-md active:scale-95 cursor-pointer shrink-0 ${
-                  isAvatarVisible
-                    ? 'ring-2 ring-amber-500 bg-amber-500/20 text-amber-400 shadow-amber-500/30'
-                    : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10'
-                }`}
-              >
-                <Icon name="sparkles" className={`w-4 h-4 ${isAvatarVisible ? 'text-amber-400 animate-pulse' : 'text-zinc-300'}`} />
-              </button>
-            )}
-            
-            {user ? (
-              <div className="flex items-center gap-2 relative" ref={accountMenuRef}>
-                {/* Compact Profile Avatar Button */}
-                <button
-                  type="button"
-                  onClick={() => setIsAccountMenuOpen(prev => !prev)}
-                  aria-label="User Account Menu"
-                  aria-expanded={isAccountMenuOpen}
-                  title={user.displayName || user.username || "Account"}
-                  className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center relative overflow-hidden transition-all cursor-pointer focus:outline-none ${
-                    isAccountMenuOpen
-                      ? 'ring-2 ring-amber-400 border-transparent shadow-lg shadow-amber-500/20'
-                      : 'border border-amber-500/40 hover:border-amber-400 hover:ring-2 hover:ring-amber-400/40'
-                  }`}
-                >
-                  <UserAvatar
-                    user={user}
-                    className="w-full h-full object-cover"
-                    fallbackClassName="w-full h-full bg-gradient-to-br from-amber-500 to-amber-600 text-neutral-950 font-extrabold text-xs sm:text-sm flex items-center justify-center shadow-inner uppercase select-none"
-                  />
-                </button>
-
-                {/* Account Dropdown Menu */}
-                {isAccountMenuOpen && (
-                  <div
-                    role="menu"
-                    className="absolute right-0 top-full mt-2 w-64 bg-neutral-900/95 backdrop-blur-2xl border border-neutral-700/80 rounded-2xl shadow-2xl p-2 z-50 text-neutral-200 animate-in fade-in zoom-in-95 duration-150 origin-top-right space-y-1"
-                  >
-                    {/* User Info Header */}
-                    <div className="px-3 py-2.5 bg-neutral-950/60 rounded-xl border border-neutral-800/80 mb-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-bold text-white truncate">
-                          {user.displayName || user.username || 'User'}
-                        </span>
-                        <span className={`text-[10px] uppercase font-mono font-bold px-2 py-0.5 rounded-full border ${
-                          isAdmin 
-                            ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' 
-                            : 'bg-neutral-800 text-neutral-300 border-neutral-700'
-                        }`}>
-                          {isAdmin ? 'Admin' : 'Member'}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-neutral-400 truncate mt-0.5 font-mono">
-                        {user.email || user.username}
-                      </p>
-                    </div>
-
-                    {/* Navigation Links */}
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setIsProfileOpen(true);
-                        setIsAccountMenuOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800/80 transition cursor-pointer text-left"
-                    >
-                      <Icon name="user" className="w-4 h-4 text-amber-400 shrink-0" />
-                      <span>My Profile</span>
-                    </button>
-
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setActiveTab('admin');
-                          window.history.pushState({ tab: 'admin' }, '', '/admin');
-                          setIsAccountMenuOpen(false);
-                        }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-amber-300 hover:bg-amber-500/10 transition cursor-pointer text-left border border-amber-500/20"
-                      >
-                        <Icon name="shield" className="w-4 h-4 text-amber-400 shrink-0" />
-                        <span>Admin Dashboard</span>
-                      </button>
-                    )}
-
-                    {/* Divider */}
-                    <div className="h-px bg-neutral-800 my-1" />
-
-                    {/* Logout Button */}
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setIsAccountMenuOpen(false);
-                        logout();
-                      }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition cursor-pointer text-left"
-                    >
-                      <svg className="w-4 h-4 text-red-400 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                      </svg>
-                      <span>Log Out</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                {/* Mobile login button opening auth modal */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isPlaying) togglePlayPause();
-                    openAuthModal();
-                  }}
-                  className="md:hidden w-8 h-8 rounded-full bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs flex items-center justify-center border border-amber-400/40 shadow-md active:scale-95 transition cursor-pointer"
-                  title="Sign In / Account"
-                  aria-label="Sign In / Account"
-                >
-                  <Icon name="user" className="w-4 h-4 shrink-0" />
-                </button>
-
-                <button
-                  onClick={() => {
-                    if (isPlaying) {
-                      togglePlayPause();
-                    }
-                    openAuthModal();
-                  }}
-                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0"
-                >
-                  <Icon name="user" className="w-3.5 h-3.5 shrink-0" />
-                  <span className="hidden sm:inline">Login</span>
-                </button>
-              </div>
-            )}
-          </div>
-        </header>
 
         {/* Site-wide CMS Announcement Bar */}
         {activeTab !== 'dj-club' && <CmsAnnouncementBar announcement={cmsConfig?.announcement} />}
@@ -9438,6 +9454,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         </footer>
       )}
 
+      </div>
       </div>
 
       {/* Mobile Persistent Bottom Navigation Bar (< md) */}
