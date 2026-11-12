@@ -7616,7 +7616,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               )}
 
               {canGoBack(navigationStack, activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio, selectedPlaylistForView, offlineSubView }) && activeTab !== 'artist' && activeTab !== 'dj-club' && !isStationPage && (
-                <div className="relative z-20 mb-6 flex justify-start">
+                <div className={`relative z-20 mb-6 flex justify-start transition-all duration-300 ${!isSidebarOpen ? 'pl-14 md:pl-16' : 'pl-0 md:pl-0'}`}>
                   <button
                     data-voice-back="true"
                     onClick={handleGoBack}
@@ -8765,7 +8765,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             ) : (
               <>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-4">
+                  <div className={`flex items-center gap-4 transition-all duration-300 ${!isSidebarOpen ? 'pl-14 md:pl-16' : 'pl-0 md:pl-0'}`}>
                     <button 
                       data-voice-back="true"
                       onClick={handleGoBack}
