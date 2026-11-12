@@ -2079,8 +2079,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
     const checkViewportPip = () => {
       if (videoModalSongRef.current) {
-        if (window.innerWidth <= 420 && window.innerHeight <= 300) {
+        if (window.innerHeight < 360 || window.innerWidth < 360) {
           setIsPipActive(true);
+        } else {
+          setIsPipActive(false);
         }
       }
     };
@@ -5471,9 +5473,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       } catch (e) {}
     }
 
-    if (videoModalSong) {
-      setIsPipActive(true);
-    }
+    // Removed in-app corner mini-video popup when navigating views
   };
 
   const handleGoBack = () => {
@@ -6692,8 +6692,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         videoModalSong={videoModalSong}
         currentSong={currentSong}
         isPlaying={isPlaying}
-        currentTime={currentTimeRef.current || 0}
-        duration={durationRef.current || 0}
+        currentTime={currentTime || currentTimeRef.current || 0}
+        duration={duration || durationRef.current || 0}
         volume={volume}
         isMuted={isMuted}
         isPipActive={isPipActive}
@@ -9509,7 +9509,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       />
 
 
-      {showQueuePanel && (
+      {showQueuePanel && !isPipActive && (
         <div 
           style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 32px)' }}
           className="fixed inset-0 z-[120] bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn pb-[env(safe-area-inset-bottom,0px)]"
@@ -10647,6 +10647,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     </div>
   );
 }
+
+
 
 
 
