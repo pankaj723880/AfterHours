@@ -23,6 +23,8 @@ const DiscoverSwipe = lazy(() => import('./components/Discover/DiscoverSwipe'));
 const DjClubPage = lazy(() => import('./components/DjClub/DjClubPage'));
 import NostalgiaStationView from './components/Radio/NostalgiaStationView';
 import CinematicVideoPlayer from './components/Player/CinematicVideoPlayer';
+import FloatingAudioControlPill from './components/Player/FloatingAudioControlPill';
+import { requestVideoPictureInPicture, requestAudioPictureInPicture } from './utils/pictureInPictureManager';
 import AppSplashScreen from './components/Common/AppSplashScreen';
 import CmsAnnouncementBar from './components/Common/CmsAnnouncementBar';
 import CmsHeroBanner from './components/Common/CmsHeroBanner';
@@ -2028,7 +2030,26 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [isPlayerMinimized, setIsPlayerMinimized] = useState(false);
 
   const [videoModalSong, setVideoModalSong] = useState(null);
+  const videoModalSongRef = useRef(null);
   const [isPipActive, setIsPipActive] = useState(false);
+  const isPipActiveRef = useRef(false);
+
+  // Auto Picture-in-Picture on app minimize / backgrounding (configurable by user)
+  const [isAutoPipEnabled, setIsAutoPipEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('loopra_auto_pip_enabled') !== 'false';
+    } catch (_) {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    videoModalSongRef.current = videoModalSong;
+  }, [videoModalSong]);
+
+  useEffect(() => {
+    isPipActiveRef.current = isPipActive;
+  }, [isPipActive]);
 
   const [searchQuery, setSearchQuery] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -2178,6 +2199,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   }, [queue]);
 
   const [showQueuePanel, setShowQueuePanel] = useState(false);
+  const showQueuePanelRef = useRef(false);
+
+  useEffect(() => {
+    showQueuePanelRef.current = showQueuePanel;
+  }, [showQueuePanel]);
   const [draggedItemIndex, setDraggedItemIndex] = useState(null);
 
   const handleDragStart = (e, index) => {
@@ -2235,6 +2261,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const handleOpenExpandedPlayer = (tab = 'player') => {
     setMobileQueueTab(tab);
     setShowQueuePanel(true);
+    if (typeof window !== 'undefined' && window.history && window.history.pushState) {
+      window.history.pushState({ loopraModal: 'expanded_player' }, '', window.location.href);
+    }
   };
 
   // Loopra Platform Upgrade States:
@@ -3653,6 +3682,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
     setVideoModalSong(songWithId);
     setIsPipActive(false);
+    if (typeof window !== 'undefined' && window.history && window.history.pushState) {
+      window.history.pushState({ loopraModal: 'video_player' }, '', window.location.href);
+    }
 
     if (!isMatchingCurrent) {
       playSong(songWithId);
@@ -4431,12 +4463,24 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
   }, [currentSong, isPlaying, handlePrevSong, handleNextSong, handleSeek, updateMediaSessionImmediate, startPwaAudioWakeLock, stopPwaAudioWakeLock]);
 
-  // Page Visibility lifecycle: YouTube IFrame Anti-Suspend & document.hidden Background Resilience
+  // Page Visibility lifecycle: YouTube IFrame Anti-Suspend & Auto Picture-in-Picture on Minimize / Pagehide
   useEffect(() => {
     if (typeof document === 'undefined') return;
 
     const handlePageVisibilityChange = () => {
       if (document.hidden) {
+        // Auto Picture-in-Picture trigger when minimizing the app
+        if (isAutoPipEnabled && (isPlayingRef.current || userIntentPlayingRef.current)) {
+          if (videoModalSongRef.current && !isPipActiveRef.current) {
+            // Video Mode: trigger video element PiP
+            const container = ytContainerRef.current;
+            requestVideoPictureInPicture(container);
+          } else if (currentSongRef.current) {
+            // Audio Mode: trigger PiP canvas stream with mini-controller
+            requestAudioPictureInPicture(currentSongRef.current, isPlayingRef.current);
+          }
+        }
+
         // When tab is backgrounded or mobile screen is turned off:
         // If track is supposed to be playing, reinforce native audio keep-alive and run anti-suspend checks
         if (isPlayingRef.current || userIntentPlayingRef.current) {
@@ -4482,11 +4526,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
     };
 
+    const handlePageHide = () => {
+      if (isAutoPipEnabled && (isPlayingRef.current || userIntentPlayingRef.current)) {
+        if (videoModalSongRef.current && !isPipActiveRef.current) {
+          requestVideoPictureInPicture(ytContainerRef.current);
+        } else if (currentSongRef.current) {
+          requestAudioPictureInPicture(currentSongRef.current, isPlayingRef.current);
+        }
+      }
+    };
+
     document.addEventListener('visibilitychange', handlePageVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
     return () => {
       document.removeEventListener('visibilitychange', handlePageVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
     };
-  }, []);
+  }, [isAutoPipEnabled]);
 
   // Periodic mediaSession sync is removed to optimize performance
   // Let the browser infer playback position while playing
@@ -6270,8 +6326,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   }, []);
 
   useEffect(() => {
-    const handlePopState = () => {
+    const handlePopState = (e) => {
       if (typeof window === 'undefined') return;
+
+      // 1. Hardware & Browser back button support for Full-Screen Music Player & Video Player
+      if (videoModalSongRef.current && !isPipActiveRef.current) {
+        handleCloseVideo();
+        return;
+      }
+      if (showQueuePanelRef.current) {
+        setShowQueuePanel(false);
+        return;
+      }
+
       const { pathname, search } = window.location;
       const { target, stack: newStack } = syncPopState(navigationStackRef.current, pathname, search);
       navigationStackRef.current = newStack;
@@ -6281,7 +6348,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [applyNavRoute]);
+  }, [applyNavRoute, handleCloseVideo]);
 
   const currentStation = stationsMap[activeTab] || SPECIAL_STATIONS[activeTab];
   const currentBgImage = currentStation?.bgImages?.[currentBgIndex] || currentStation?.bgImages?.[0];
@@ -9858,6 +9925,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         sleepTimerRemaining={sleepTimerRemaining}
         isDataSaverEnabled={isDataSaverEnabled}
         onToggleDataSaver={toggleDataSaver}
+        isAutoPipEnabled={isAutoPipEnabled}
+        onToggleAutoPip={() => {
+          setIsAutoPipEnabled(prev => {
+            const next = !prev;
+            try {
+              localStorage.setItem('loopra_auto_pip_enabled', next ? 'true' : 'false');
+            } catch (_) {}
+            showToast(next ? 'Auto Floating Mini-Player enabled' : 'Auto Floating Mini-Player disabled');
+            return next;
+          });
+        }}
         onSetSleepTimer={(mins) => {
           setSleepTimerRemaining(mins * 60);
           showToast(`Sleep timer set for ${mins} minutes`);
@@ -9996,8 +10074,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         isOpen={activeAssistantPanel === 'ai'}
         onToggleOpen={(open) => setActiveAssistantPanel(open ? 'ai' : null)}
         onClose={() => setActiveAssistantPanel(null)}
-        hideFloatingButton={showSplashScreen || !isAppInitialized}
+        hideFloatingButton={showSplashScreen || !isAppInitialized || showQueuePanel || Boolean(videoModalSong && !isPipActive)}
         canAccessVoice={canAccessVoice}
+        isAvatarActive={isAvatarVisible}
       />
 
       {/* Loopra Dedicated Voice Agent & Shared Floating Assistant Action Bar */}
@@ -10214,6 +10293,25 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         }}
         showToast={showToast}
       />
+      )}
+
+      {/* In-App Freely Draggable Floating Audio Control Pill (Rendered when song is active, full player minimized, and no video modal) */}
+      {currentSong && !showQueuePanel && !(videoModalSong && !isPipActive) && !showSplashScreen && (
+        <FloatingAudioControlPill
+          currentSong={currentSong}
+          isPlaying={isPlaying}
+          onTogglePlayPause={togglePlayPause}
+          onPrevTrack={handlePrevSong}
+          onNextTrack={handleNextSong}
+          onTriggerPip={() => {
+            if (videoModalSong) {
+              requestVideoPictureInPicture(ytContainerRef.current);
+            } else {
+              requestAudioPictureInPicture(currentSong, isPlaying);
+            }
+          }}
+          isPipEnabled={isAutoPipEnabled}
+        />
       )}
 
       {/* Automatic 5-Minute Active Usage & Direct Rate/Review Modal */}

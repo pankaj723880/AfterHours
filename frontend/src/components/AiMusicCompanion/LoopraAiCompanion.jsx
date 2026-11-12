@@ -123,7 +123,8 @@ export default function LoopraAiCompanion({
   onToggleOpen,
   onClose,
   hideFloatingButton = false,
-  canAccessVoice = true
+  canAccessVoice = true,
+  isAvatarActive = false
 }) {
   const [uncontrolledIsOpen, setUncontrolledIsOpen] = useState(false);
   const isControlled = controlledIsOpen !== undefined;
@@ -1592,8 +1593,8 @@ export default function LoopraAiCompanion({
             }}
             className="flex flex-col items-center gap-2.5 pointer-events-auto"
           >
-            {/* Upper Row: Avatar Mute / Unmute Button (Only visible if voice features allowed) */}
-            {canAccessVoice && (
+            {/* Upper Row: Avatar Mute / Unmute Button (Only visible if voice features allowed AND avatar is active) */}
+            {canAccessVoice && isAvatarActive && (
               <button
                 type="button"
                 onClick={toggleAvatarMute}

@@ -362,37 +362,37 @@ export default function CinematicVideoPlayer({
         )}
 
         {videoModalSong && !isPipActive && (
-          <header className="px-4 py-3 sm:px-6 sm:py-3.5 bg-neutral-900/95 border-b border-neutral-800 flex items-center justify-between gap-3 shrink-0 select-none">
-            {/* Left section: Loopra Brand & Gold Badge */}
-            <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 p-0.5 flex items-center justify-center shadow-[0_0_15px_rgba(245,158,11,0.3)]">
+          <header className="px-3 sm:px-6 py-2.5 sm:py-3.5 bg-neutral-900/95 border-b border-neutral-800 flex items-center justify-between gap-3 shrink-0 select-none w-full">
+            {/* Left section: Loopra Brand & Gold Badge (shrink-0 with fixed boundaries to avoid any overlap) */}
+            <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 p-0.5 flex items-center justify-center shadow-[0_0_15px_rgba(245,158,11,0.3)] shrink-0">
                 <div className="w-full h-full bg-neutral-950 rounded-[10px] flex items-center justify-center">
-                  <Music className="w-4 h-4 text-amber-400" />
+                  <Music className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" />
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="font-display font-extrabold text-sm sm:text-base tracking-wider text-white">
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                <span className="font-display font-extrabold text-xs sm:text-base tracking-wider text-white">
                   LOOPRA
                 </span>
-                <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-[10px] font-bold tracking-widest text-amber-300 uppercase">
+                <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-[9px] sm:text-[10px] font-bold tracking-widest text-amber-300 uppercase shrink-0">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
                   VIDEO MODE
                 </span>
               </div>
             </div>
 
-            {/* Center section: Song & Artist metadata */}
-            <div className="flex flex-col items-center justify-center text-center min-w-0 flex-1 px-2">
-              <h3 className="font-bold text-xs sm:text-sm text-white truncate max-w-[200px] sm:max-w-xs md:max-w-md">
+            {/* Center section: Song & Artist metadata (flex-1 min-w-0 overflow-hidden with strict single-line truncation) */}
+            <div className="flex flex-col items-center justify-center text-center flex-1 min-w-0 px-2 overflow-hidden">
+              <h3 className="font-bold text-xs sm:text-sm text-white truncate w-full max-w-full">
                 {activeSong?.title || 'Unknown Title'}
               </h3>
-              <p className="text-[11px] text-neutral-400 truncate max-w-[180px] sm:max-w-xs flex items-center justify-center gap-1">
-                <span>{activeSong?.channel || activeSong?.artist || 'Loopra Artist'}</span>
+              <p className="text-[10px] sm:text-[11px] text-neutral-400 truncate w-full max-w-full flex items-center justify-center gap-1">
+                <span className="truncate">{activeSong?.channel || activeSong?.artist || 'Loopra Artist'}</span>
                 <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0 inline" />
               </p>
             </div>
 
-            {/* Right section: Header Action Controls */}
+            {/* Right section: Header Action Controls (shrink-0 to guarantee no collision) */}
             <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
               {/* Favourite / Like */}
               <button

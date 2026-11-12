@@ -23,7 +23,9 @@ export default function PlayerSettingsModal({
   playbackSpeed,
   onSetPlaybackSpeed,
   isDataSaverEnabled = false,
-  onToggleDataSaver = () => {}
+  onToggleDataSaver = () => {},
+  isAutoPipEnabled = true,
+  onToggleAutoPip = () => {}
 }) {
   const [customTimerMinutes, setCustomTimerMinutes] = useState('');
   const [roamState, setRoamState] = useState(() => {
@@ -306,6 +308,37 @@ export default function PlayerSettingsModal({
             </div>
             <div className="p-2.5 rounded-xl bg-neutral-950/60 border border-neutral-800 text-[11px] text-neutral-400">
               <span>{roamState ? '✨ Autonomous Roaming Active: Avatar freely explores and perches on cards after 2s inactivity.' : '🛑 Avatar Parked: Avatar remains docked in the corner without traversing.'}</span>
+            </div>
+          </div>
+
+          <hr className="border-neutral-800/80" />
+
+          {/* Section: Floating Mini-Player / Auto Picture-in-Picture */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-neutral-300 uppercase tracking-wider">Floating Mini-Player & PiP</h4>
+                <p className="text-[11px] text-neutral-500">Auto-float player when minimizing app or switching tabs</p>
+              </div>
+              <button
+                type="button"
+                onClick={onToggleAutoPip}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  isAutoPipEnabled ? 'bg-amber-500' : 'bg-neutral-800'
+                }`}
+                role="switch"
+                aria-checked={isAutoPipEnabled}
+                aria-label="Toggle Auto Picture-in-Picture"
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    isAutoPipEnabled ? 'translate-x-5 bg-neutral-950' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+            <div className="p-2.5 rounded-xl bg-neutral-950/60 border border-neutral-800 text-[11px] text-neutral-400">
+              <span>{isAutoPipEnabled ? '📺 Auto Picture-in-Picture enabled: Floating draggable controls & video pop-out on minimize.' : 'Floating player pop-out disabled.'}</span>
             </div>
           </div>
 
