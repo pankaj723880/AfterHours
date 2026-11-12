@@ -1,13 +1,10 @@
-[
-  {
-    "relation": ["delegate_permission/common.handle_all_urls"],
-    "target": {
-      "namespace": "android_app",
-      "package_name": "app.vercel.loopra1.twa",
-      "sha256_cert_fingerprints": [
-        "EC:06:98:C7:E8:CB:BF:7F:CE:8F:EC:64:45:6E:07:AB:0B:AE:3B:7B:B8:83:14:F5:AA:1B:9F:C0:41:BE:CA:30"
-      ]
-    }
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "app.vercel.loopra1.twa",
+    "sha256_cert_fingerprints": [
+      "B0:4B:4A:F8:EE:2B:06:58:EB:F7:A8:72:DE:FB:FA:68:D1:A0:72:3A:42:E2:66:3E:1A:CA:04:1A:8B:9B:50:2B"
+    ]
   }
-]
-
+}]
