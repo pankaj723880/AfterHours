@@ -99,7 +99,8 @@ import { formatTrackDuration } from './utils/duration';
 import { TrackDeduplicator, getCanonicalSongKey } from './utils/trackIdentity';
 import {
   isThumbnailUrlFormatValid,
-  getCleanThumbnail
+  getCleanThumbnail,
+  invalidateVideoIdClient
 } from './utils/thumbnailValidator';
 
 import { io } from 'socket.io-client';
