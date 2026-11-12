@@ -3481,6 +3481,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const offlineAudioRef = useRef(null);
   const activeObjectUrlRef = useRef(null);
   const streamAudioRef = useRef(null);
+  const playSongRef = useRef(null);
   const [offlineCount, setOfflineCount] = useState(0);
 
   const radioAudioRef = useRef(null);
@@ -3680,14 +3681,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
       // Force reload into HTML5 stream audio
       loadedVideoIdRef.current = null;
-      playSong(activeSong);
+      if (typeof playSongRef.current === 'function') {
+        playSongRef.current(activeSong);
+      }
       setTimeout(() => {
         if (streamAudioRef.current && currentPos > 0) {
           try { streamAudioRef.current.currentTime = currentPos; } catch (_) {}
         }
       }, 50);
     }
-  }, [playSong]);
+  }, []);
 
   const handleOpenVideo = (song, e) => {
     if (e) e.stopPropagation();
@@ -3719,7 +3722,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
 
     if (!isMatchingCurrent) {
-      playSong(songWithId);
+      if (typeof playSongRef.current === 'function') {
+        playSongRef.current(songWithId);
+      }
     } else {
       let savedSeek = currentTimeRef.current || 0;
       try {
@@ -5503,6 +5508,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
     setHistory(prev => [currentSong, ...prev.filter(s => s.id !== currentSong.id)].slice(0, 50));
   }, [currentSong, initPlayerInstance, volume, showToast]);
+
+  useEffect(() => {
+    playSongRef.current = playSong;
+  }, [playSong]);
 
   // Player progress interval is extracted to PlayerProgress component
 
