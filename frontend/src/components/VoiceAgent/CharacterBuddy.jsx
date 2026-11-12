@@ -429,10 +429,10 @@ export default function CharacterBuddy({
     if (typeof window !== 'undefined') {
       try {
         const stored = localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam');
-        return stored !== null ? stored === 'true' : true;
+        return stored === 'true';
       } catch (_) {}
     }
-    return true;
+    return false;
   });
 
   // Listen for storage events (e.g. from Sidebar toggle or PlayerSettingsModal toggle)
@@ -440,7 +440,7 @@ export default function CharacterBuddy({
     const handleStorageChange = () => {
       try {
         const stored = localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam');
-        const nextVal = stored !== null ? stored === 'true' : true;
+        const nextVal = stored === 'true';
         setIsRoamEnabled(nextVal);
       } catch (_) {}
     };

@@ -28,7 +28,7 @@ export default function PlayerSettingsModal({
   const [customTimerMinutes, setCustomTimerMinutes] = useState('');
   const [roamState, setRoamState] = useState(() => {
     try {
-      return typeof window !== 'undefined' ? localStorage.getItem('loopra_avatar_roam') !== 'false' : true;
+      return typeof window !== 'undefined' ? localStorage.getItem('loopra_avatar_roam') === 'true' : false;
     } catch (_) {
       return true;
     }
@@ -281,7 +281,7 @@ export default function PlayerSettingsModal({
                 type="button"
                 onClick={() => {
                   try {
-                    const current = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) !== 'false';
+                    const current = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) === 'true';
                     const next = !current;
                     localStorage.setItem('loopra_avatar_roaming', String(next));
                     localStorage.setItem('loopra_avatar_roam', String(next));

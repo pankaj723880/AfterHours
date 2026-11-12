@@ -6370,48 +6370,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
               {/* Bottom Action Area: User Profile, APK Download & Auth / Logout */}
               <div className="pt-3 pb-6 border-t border-white/[0.06] mt-4 space-y-2">
-                {/* Talk to AI Avatar (Mobile/Sidebar Drawer Action - Gated strictly by role & voice permissions) */}
-                {isVoiceActive && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsAvatarVisible(true);
-                      try {
-                        localStorage.setItem('loopra_avatar_visible', 'true');
-                        localStorage.setItem('loopra_avatar_roaming', 'true');
-                        localStorage.setItem('loopra_avatar_roam', 'true');
-                        window.dispatchEvent(new Event('storage'));
-                      } catch (_) {}
-                      setIsSidebarOpen(false);
-                      showToast?.('Loopra 3D Avatar Active');
-                      try {
-                        if (typeof window !== 'undefined' && window.__loopraVoiceSessionService) {
-                          window.__loopraVoiceSessionService.startSession({ lang: 'hi-IN' }).catch(() => {});
-                        }
-                      } catch (_) {}
-                    }}
-                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-amber-500/5 hover:from-amber-500/25 hover:to-amber-500/15 border border-amber-500/30 text-amber-200 font-semibold text-xs shadow-sm transition active:scale-95 cursor-pointer"
-                    title="Talk to AI Avatar"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-                      {!isSidebarCollapsed && <span>Talk to AI Avatar</span>}
-                    </div>
-                    {!isSidebarCollapsed && (
-                      <span className="text-[10px] font-mono font-bold text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/30">
-                        {isAvatarVisible ? 'ACTIVE' : 'START'}
-                      </span>
-                    )}
-                  </button>
-                )}
-
+                
                 {/* Avatar Autonomous Free Roam Toggle Button (Gated strictly by dynamic role & voice permissions) */}
                 {isVoiceActive && (
                   <button
                     type="button"
                     onClick={() => {
                       try {
-                        const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) !== 'false';
+                        const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) === 'true';
                         const next = !cur;
                         localStorage.setItem('loopra_avatar_roaming', String(next));
                         localStorage.setItem('loopra_avatar_roam', String(next));
@@ -6747,40 +6713,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
             {/* Mobile Auth Button in Sidebar */}
             <div className="md:hidden pt-4 pb-1 border-t border-neutral-800 mt-4 space-y-2">
-              {isVoiceActive && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAvatarVisible(true);
-                    try {
-                      localStorage.setItem('loopra_avatar_visible', 'true');
-                      localStorage.setItem('loopra_avatar_roaming', 'true');
-                      localStorage.setItem('loopra_avatar_roam', 'true');
-                      window.dispatchEvent(new Event('storage'));
-                    } catch (_) {}
-                    setIsSidebarOpen(false);
-                    showToast?.('Loopra 3D Avatar Active');
-                    try {
-                      if (typeof window !== 'undefined' && window.__loopraVoiceSessionService) {
-                        window.__loopraVoiceSessionService.startSession({ lang: 'hi-IN' }).catch(() => {});
-                      }
-                    } catch (_) {}
-                  }}
-                  className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-200 font-semibold text-xs shadow-md transition active:scale-95 cursor-pointer"
-                  title="Talk to AI Avatar"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Icon name="sparkles" className="w-5 h-5 text-amber-400 shrink-0 animate-pulse" />
-                    {!isSidebarCollapsed && <span>Talk to AI Avatar</span>}
-                  </div>
-                  {!isSidebarCollapsed && (
-                    <span className="text-[10px] font-mono font-bold text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/30">
-                      {isAvatarVisible ? 'ACTIVE' : 'START'}
-                    </span>
-                  )}
-                </button>
-              )}
-
+              
               <a
                 href="/Loopra.apk"
                 download="Loopra.apk"
@@ -6883,9 +6816,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     const next = !prev;
                     try {
                       localStorage.setItem('loopra_avatar_visible', String(next));
-                      if (next) {
-                        localStorage.setItem('loopra_avatar_roaming', 'true');
-                        localStorage.setItem('loopra_avatar_roam', 'true');
+                      if (next && localStorage.getItem('loopra_avatar_roaming') === null && localStorage.getItem('loopra_avatar_roam') === null) {
+                        localStorage.setItem('loopra_avatar_roaming', 'false');
+                        localStorage.setItem('loopra_avatar_roam', 'false');
                       }
                       window.dispatchEvent(new Event('storage'));
                     } catch (_) {}
@@ -8703,7 +8636,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   type="button"
                   onClick={() => {
                     try {
-                      const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) !== 'false';
+                      const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) === 'true';
                       const next = !cur;
                       localStorage.setItem('loopra_avatar_roaming', String(next));
                       localStorage.setItem('loopra_avatar_roam', String(next));

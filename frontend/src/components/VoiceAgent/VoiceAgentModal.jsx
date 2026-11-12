@@ -93,17 +93,17 @@ export default function VoiceAgentModal({
     if (typeof window !== 'undefined') {
       try {
         const stored = localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam');
-        return stored !== null ? stored === 'true' : true;
+        return stored === 'true';
       } catch (_) {}
     }
-    return true;
+    return false;
   });
 
   useEffect(() => {
     const handleStorageChange = () => {
       try {
         const stored = localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam');
-        setAvatarRoamEnabled(stored !== null ? stored === 'true' : true);
+        setAvatarRoamEnabled(stored === 'true');
       } catch (_) {}
     };
     window.addEventListener('storage', handleStorageChange);
@@ -1306,13 +1306,13 @@ export default function VoiceAgentModal({
   const prevIsAvatarVisibleRef = useRef(isAvatarVisible);
 
   // Mount avatar ONLY when user explicitly enables it (isAvatarVisible),
-  // splash screen is closed, app is initialized, and hasAccess && avatarRoamEnabled is granted.
+  // splash screen is closed, app is initialized, and hasAccess is granted.
   // Fully unmounts the 3D Canvas / WebGL context when isAvatarVisible or avatarRoamEnabled is false!
   useEffect(() => {
-    if (!showSplashScreen && isAppInitialized && hasAccess && isAvatarVisible && avatarRoamEnabled) {
+    if (!showSplashScreen && isAppInitialized && hasAccess && isAvatarVisible) {
       setHasMountedAvatar(true);
       setInitialDelayDone(true);
-    } else if (!isAvatarVisible || !avatarRoamEnabled) {
+    } else if (!isAvatarVisible) {
       // Unmount avatar immediately when disabled to free WebGL memory
       setHasMountedAvatar(false);
       setInitialDelayDone(false);
@@ -1321,7 +1321,7 @@ export default function VoiceAgentModal({
 
   // Immediate smooth fade-out and unmount when access is revoked or roam is disabled
   useEffect(() => {
-    if (!hasAccess || !avatarRoamEnabled) {
+    if (!hasAccess) {
       setInitialDelayDone(false);
       // Allow 400ms for smooth fade-out animation before fully removing from DOM
       unmountTimerRef.current = setTimeout(() => {
@@ -1337,14 +1337,14 @@ export default function VoiceAgentModal({
   // If user explicitly turns on avatar before 2s delay completes, reveal immediately.
   // If user explicitly turns off avatar, cancel delay timer.
   useEffect(() => {
-    if (!prevIsAvatarVisibleRef.current && isAvatarVisible && !initialDelayDone && !showSplashScreen && isAppInitialized && hasAccess && avatarRoamEnabled) {
+    if (!prevIsAvatarVisibleRef.current && isAvatarVisible && !initialDelayDone && !showSplashScreen && isAppInitialized && hasAccess) {
       if (initialDelayTimerRef.current) {
         clearTimeout(initialDelayTimerRef.current);
         initialDelayTimerRef.current = null;
       }
       setInitialDelayDone(true);
     }
-    if ((!isAvatarVisible || !avatarRoamEnabled) && initialDelayTimerRef.current) {
+    if ((!isAvatarVisible) && initialDelayTimerRef.current) {
       clearTimeout(initialDelayTimerRef.current);
       initialDelayTimerRef.current = null;
     }
