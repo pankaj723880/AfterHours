@@ -56,7 +56,7 @@ export default function CinematicVideoPlayer({
   const playerContainerRef = useRef(null);
   const progressBarRef = useRef(null);
   const controlsTimeoutRef = useRef(null);
-  const activeSong = videoModalSong || currentSong;
+  const activeSong = currentSong || videoModalSong;
 
   // Handle Fullscreen change detection
   useEffect(() => {
