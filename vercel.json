@@ -1,6 +1,53 @@
 {
   "headers": [
     {
+      "source": "/.well-known/assetlinks.json",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/json; charset=utf-8"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        }
+      ]
+    },
+    {
+      "source": "/manifest.json",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/manifest+json; charset=utf-8"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400"
+        }
+      ]
+    },
+    {
+      "source": "/(loopra.apk|Loopra.apk)",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/vnd.android.package-archive"
+        },
+        {
+          "key": "Content-Disposition",
+          "value": "attachment; filename=\"Loopra.apk\""
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, stale-while-revalidate=604800"
+        }
+      ]
+    },
+    {
       "source": "/assets/(.*)",
       "headers": [
         {
@@ -63,6 +110,22 @@
     }
   ],
   "rewrites": [
+    {
+      "source": "/.well-known/assetlinks.json",
+      "destination": "/.well-known/assetlinks.json"
+    },
+    {
+      "source": "/manifest.json",
+      "destination": "/manifest.json"
+    },
+    {
+      "source": "/loopra.apk",
+      "destination": "/Loopra.apk"
+    },
+    {
+      "source": "/Loopra.apk",
+      "destination": "/Loopra.apk"
+    },
     {
       "source": "/api/chat",
       "destination": "/api/chat"

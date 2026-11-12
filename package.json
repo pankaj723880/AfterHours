@@ -5,6 +5,8 @@
   "scripts": {
     "dev:frontend": "npm --prefix frontend run dev",
     "dev:backend": "npm --prefix backend start",
-    "build:frontend": "npm --prefix frontend run build"
+    "build:frontend": "npm --prefix frontend run build",
+    "twa:init": "npm --prefix frontend run twa:init",
+    "twa:build": "npm --prefix frontend run twa:build"
   }
 }
