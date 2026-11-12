@@ -6664,29 +6664,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 28px)' }}
           className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-2.5 sm:px-4 md:px-8 pb-2.5 sm:pb-3 h-auto md:h-16 flex items-center justify-between shrink-0 w-full box-border'}`}
         >
-          {/* LEFT: Mobile Menu & Logo | Desktop Logo & Brand (hidden on desktop if sidebar is open to avoid duplicate logo) */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            <button
-              id="loopra-mobile-hamburger-btn"
-              data-nav-id="hamburger"
-              type="button"
-              onClick={() => {
-                setIsSidebarOpen(prev => !prev);
-              }}
-              className="flex items-center justify-center p-2 rounded-2xl bg-neutral-800 text-neutral-200 hover:text-white focus:outline-none shrink-0 min-w-[42px] min-h-[42px] active:scale-95 transition cursor-pointer shadow-sm"
-              aria-label="Toggle Menu"
-              title="Toggle Menu"
-            >
-              <Icon name={isSidebarOpen && isMobileScreen ? "close" : "menu"} className="w-5 h-5 text-amber-400 pointer-events-none" />
-            </button>
-            <div className={`flex items-center gap-2 sm:gap-2.5 flex`}>
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow-md overflow-hidden shrink-0">
-                <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
-              </div>
-              {cmsConfig?.branding?.siteName ? (
-                <span className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white whitespace-nowrap">{cmsConfig.branding.siteName}</span>
-              ) : null}
+          {/* LEFT: Loopra Brand Logo (Clean, no hamburger button) */}
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow-md overflow-hidden shrink-0">
+              <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
             </div>
+            {cmsConfig?.branding?.siteName ? (
+              <span className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white whitespace-nowrap">{cmsConfig.branding.siteName}</span>
+            ) : null}
           </div>
 
           {/* CENTER (Desktop only): ACTIVE USERS (Subtle, muted presence indicator) */}
@@ -6883,6 +6868,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
       {/* Main Body Layout Container (Sidebar + Content side-by-side below Navbar) */}
       <div className="flex-1 flex flex-row min-h-0 min-w-0 overflow-hidden relative">
+        {/* Persistent Floating/Rail Toggle Button when Sidebar is closed (Hamburger ☰ fixed at top-left below navbar) */}
+        {!isSidebarOpen && activeTab !== 'dj-club' && (
+          <button
+            id="loopra-collapsed-sidebar-btn"
+            type="button"
+            onClick={() => setIsSidebarOpen(true)}
+            className="absolute top-2.5 left-2.5 z-40 p-2 rounded-xl bg-neutral-900/95 hover:bg-neutral-800 border border-amber-500/30 text-neutral-300 hover:text-white shadow-lg active:scale-95 transition-all duration-200 cursor-pointer pointer-events-auto flex items-center justify-center min-w-[38px] min-h-[38px]"
+            aria-label="Open sidebar"
+            title="Open sidebar"
+          >
+            <Icon name="menu" className="w-4 h-4 text-amber-400 pointer-events-none" />
+          </button>
+        )}
       {/* V2 Navigation Drawer / Sidebar Feature Flag (USE_V2_DRAWER) */}
       {USE_V2_DRAWER ? (
         <>
@@ -6910,57 +6908,29 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           >
             {/* Inner Content Container - full width without horizontal clipping */}
             <div className="w-full shrink-0 flex-1 flex flex-col min-h-0">
-              {/* Header Section */}
+              {/* Header Section: Unified Single Morphing Toggle Button (Hamburger ☰ ↔ Cross ✕) */}
               <div className="flex items-center justify-between px-1.5 py-2 mb-4 border-b border-white/[0.06] pb-3 sticky top-0 z-20 bg-[#0c0d12]/95 md:bg-neutral-900/95 backdrop-blur-md">
-                {/* Mobile-only logo (hidden on desktop because top navbar shows logo) */}
-                <div className="md:hidden flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500/20 to-neutral-900 border border-amber-500/40 p-1 flex items-center justify-center shadow-lg shadow-amber-500/10 shrink-0 overflow-hidden">
+                {/* Fixed Top-Left Morphing Toggle Button */}
+                <button
+                  id="loopra-mobile-hamburger-btn"
+                  data-nav-id="hamburger"
+                  type="button"
+                  onClick={() => setIsSidebarOpen(prev => !prev)}
+                  className="flex items-center justify-center p-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-neutral-300 hover:text-white active:scale-95 transition cursor-pointer pointer-events-auto shrink-0 min-w-[38px] min-h-[38px] shadow-sm"
+                  aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
+                  title={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
+                >
+                  <Icon name={isSidebarOpen ? "close" : "menu"} className="w-4 h-4 text-amber-400 pointer-events-none transition-transform duration-200" />
+                </button>
+
+                {/* Mobile-only brand badge (visible only on mobile drawer, hidden on desktop) */}
+                <div className="md:hidden flex items-center gap-2 min-w-0 ml-auto">
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500/20 to-neutral-900 border border-amber-500/40 p-0.5 flex items-center justify-center shadow shrink-0 overflow-hidden">
                     <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
                   </div>
-                  <div className="min-w-0 flex flex-col">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-display font-black tracking-tight text-white truncate">
-                        {cmsConfig?.branding?.siteName || 'Loopra'}
-                      </span>
-                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 font-semibold">
-                        v2.0
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-zinc-500 truncate">Indian Music Streaming</span>
-                  </div>
-                </div>
-
-                {/* Desktop label / navigation header */}
-                <div className="hidden md:flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
-                  <Icon name="menu" className="w-4 h-4 text-amber-400" />
-                  <span>Navigation</span>
-                </div>
-
-                <div className="relative z-50 pointer-events-auto flex items-center gap-1 ml-auto">
-                  {/* Desktop close / collapse sidebar toggle button */}
-                  <button 
-                    type="button"
-                    onClick={() => setIsSidebarOpen(false)} 
-                    className="hidden md:flex p-1.5 rounded-xl text-neutral-400 hover:text-white hover:bg-neutral-800 active:scale-[0.98] transition shrink-0 cursor-pointer pointer-events-auto"
-                    title="Collapse sidebar"
-                    aria-label="Collapse sidebar"
-                  >
-                    <Icon name="close" className="w-4 h-4 pointer-events-none" />
-                  </button>
-
-                  {/* Mobile close sidebar button */}
-                  <button 
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsSidebarOpen(false);
-                    }}
-                    className="md:hidden relative z-50 p-2 rounded-lg bg-white/[0.06] border border-white/[0.12] text-neutral-300 hover:text-white hover:bg-white/[0.12] active:scale-95 transition cursor-pointer pointer-events-auto touch-manipulation min-w-[36px] min-h-[36px] flex items-center justify-center"
-                    aria-label="Close sidebar"
-                    title="Close sidebar"
-                  >
-                    <Icon name="close" className="w-4 h-4 pointer-events-none" />
-                  </button>
+                  <span className="text-xs font-display font-black tracking-tight text-white truncate">
+                    {cmsConfig?.branding?.siteName || 'Loopra'}
+                  </span>
                 </div>
               </div>
 
@@ -7289,42 +7259,24 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           >
             <div className="w-full shrink-0 flex-1 flex flex-col min-h-0">
               <div className="flex items-center justify-between px-2 py-3 mb-6 sticky top-0 z-20 bg-neutral-900/95 backdrop-blur-md">
-                <div className="md:hidden flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-neutral-900/80 border border-amber-500/30 p-1 flex items-center justify-center shadow-xl shrink-0 overflow-hidden">
+                {/* Fixed Top-Left Morphing Toggle Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsSidebarOpen(prev => !prev)}
+                  className="flex items-center justify-center p-2 rounded-xl bg-neutral-800 text-neutral-300 hover:text-white active:scale-95 transition cursor-pointer pointer-events-auto shrink-0 min-w-[38px] min-h-[38px] shadow-sm"
+                  aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
+                  title={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
+                >
+                  <Icon name={isSidebarOpen ? "close" : "menu"} className="w-4 h-4 text-amber-400 pointer-events-none transition-transform duration-200" />
+                </button>
+
+                <div className="md:hidden flex items-center gap-2 min-w-0 ml-auto">
+                  <div className="w-7 h-7 rounded-lg bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow shrink-0 overflow-hidden">
                     <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
                   </div>
                   {cmsConfig?.branding?.siteName ? (
-                    <span className="text-lg font-display font-extrabold tracking-tight tracking-wider text-white whitespace-nowrap">{cmsConfig.branding.siteName}</span>
+                    <span className="text-xs font-display font-extrabold tracking-tight text-white whitespace-nowrap">{cmsConfig.branding.siteName}</span>
                   ) : null}
-                </div>
-
-                <div className="hidden md:flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-neutral-400">
-                  <Icon name="menu" className="w-4 h-4 text-amber-400" />
-                  <span>Navigation</span>
-                </div>
-
-                <div className="relative z-50 pointer-events-auto flex items-center gap-1 ml-auto">
-                  <button 
-                    type="button"
-                    onClick={() => setIsSidebarOpen(false)} 
-                    className="hidden md:flex p-1.5 rounded-xl text-neutral-400 hover:text-white hover:bg-neutral-800 active:scale-[0.98] transition shrink-0 cursor-pointer pointer-events-auto"
-                    title="Collapse sidebar"
-                    aria-label="Collapse sidebar"
-                  >
-                    <Icon name="close" className="w-4 h-4 pointer-events-none" />
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsSidebarOpen(false);
-                    }}
-                    className="md:hidden relative z-50 p-2 rounded-xl bg-neutral-800 text-neutral-300 hover:text-white cursor-pointer pointer-events-auto touch-manipulation min-w-[36px] min-h-[36px] flex items-center justify-center"
-                    aria-label="Close sidebar"
-                    title="Close sidebar"
-                  >
-                    <Icon name="close" className="w-5 h-5 pointer-events-none" />
-                  </button>
                 </div>
               </div>
 
