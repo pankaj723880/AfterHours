@@ -454,18 +454,18 @@ export default function CharacterBuddy({
   const ORIGIN_STYLE = {
     position: 'fixed',
     bottom: isMobileScreen
-      ? (isBottomPlayerVisible ? 'calc(142px + env(safe-area-inset-bottom, 0px))' : 'calc(64px + env(safe-area-inset-bottom, 0px))')
+      ? (isBottomPlayerVisible ? 'calc(148px + env(safe-area-inset-bottom, 0px))' : 'calc(76px + env(safe-area-inset-bottom, 0px))')
       : (isBottomPlayerVisible ? '112px' : '24px'), // Shifted strictly ABOVE bottom player bar so auxiliary actions never collide with timeline
-    right: isMobileScreen ? '14px' : '24px',       // Same right alignment as the mute/volume button
-    zIndex: 60,
+    right: isMobileScreen ? '10px' : '24px',       // Same right alignment as the mute/volume button
+    zIndex: 2147483642,
     pointerEvents: 'auto'
   };
 
   const ORIGIN_POS = useMemo(() => {
     if (typeof window === 'undefined') return { x: 200, y: 500 };
     return {
-      x: Math.max(8, window.innerWidth - characterWidth - (isMobileScreen ? 14 : 24)),
-      y: Math.max(50, window.innerHeight - characterHeight - (isMobileScreen ? (isBottomPlayerVisible ? 142 : 64) : (isBottomPlayerVisible ? 112 : 24)))
+      x: Math.max(8, window.innerWidth - characterWidth - (isMobileScreen ? 10 : 24)),
+      y: Math.max(50, window.innerHeight - characterHeight - (isMobileScreen ? (isBottomPlayerVisible ? 148 : 76) : (isBottomPlayerVisible ? 112 : 24)))
     };
   }, [characterWidth, characterHeight, isMobileScreen, isBottomPlayerVisible]);
 
@@ -2816,7 +2816,7 @@ export default function CharacterBuddy({
             ? (isRoamActive ? 'opacity 400ms cubic-bezier(0.16, 1, 0.3, 1), width 0.22s, height 0.22s' : 'opacity 400ms cubic-bezier(0.16, 1, 0.3, 1), transform 400ms cubic-bezier(0.16, 1, 0.3, 1), width 0.22s cubic-bezier(0.2, 0.8, 0.4, 1), height 0.22s cubic-bezier(0.2, 0.8, 0.4, 1)')
             : 'opacity 350ms cubic-bezier(0.4, 0, 0.2, 1), transform 350ms cubic-bezier(0.4, 0, 0.2, 1), width 0.22s cubic-bezier(0.2, 0.8, 0.4, 1), height 0.22s cubic-bezier(0.2, 0.8, 0.4, 1)'
         }}
-        className="fixed bottom-28 right-6 z-[60] w-60 h-[340px] pointer-events-auto flex items-center justify-center select-none will-change-[transform]"
+        className="fixed bottom-28 right-6 z-[2147483642] w-60 h-[340px] pointer-events-auto flex items-center justify-center select-none will-change-[transform]"
       >
         {/* Subtle Avatar Header Controls (Free Roam Toggle, Reset Size & Position, Hide) */}
         <div className="absolute -top-7 right-0 flex items-center gap-1 opacity-0 hover:opacity-100 focus-within:opacity-100 transition-opacity z-50">
