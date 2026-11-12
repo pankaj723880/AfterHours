@@ -6101,6 +6101,42 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [togglePlayPause, seekRelative, adjustVolume, toggleMute, handleNextSong, handlePrevSong]);
 
+  // Native Android WebView & Floating Overlay Controller Bridge
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    // Report playback state to Android native host
+    try {
+      window.LoopraAndroid?.setPlaybackState?.(Boolean(isPlaying));
+    } catch (_) {}
+
+    // Report video mode state to Android native host
+    try {
+      window.LoopraAndroid?.setVideoMode?.(Boolean(videoModalSong));
+    } catch (_) {}
+  }, [isPlaying, videoModalSong]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleNativeControl = (e) => {
+      const action = e.detail;
+      if (action === 'toggle') {
+        togglePlayPause();
+      } else if (action === 'next') {
+        handleNextSong();
+      } else if (action === 'prev') {
+        handlePrevSong();
+      }
+    };
+
+    window.addEventListener('loopra-native-control', handleNativeControl);
+    return () => {
+      window.removeEventListener('loopra-native-control', handleNativeControl);
+    };
+  }, [togglePlayPause, handleNextSong, handlePrevSong]);
+
+
 
   const isSongLiked = useCallback((song) => {
     if (!song) return false;

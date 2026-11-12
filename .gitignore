@@ -58,8 +58,9 @@ scratch_*.cjs
 script.cjs
 backups/
 
-# Android Bubblewrap TWA build & signing files
+# Android build & signing files
 loopra-apk/
 *.keystore
 *.apk
+!frontend/public/loopra.apk
 !frontend/public/Loopra.apk

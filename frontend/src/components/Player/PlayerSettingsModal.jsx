@@ -337,8 +337,19 @@ export default function PlayerSettingsModal({
                 />
               </button>
             </div>
-            <div className="p-2.5 rounded-xl bg-neutral-950/60 border border-neutral-800 text-[11px] text-neutral-400">
+            <div className="p-2.5 rounded-xl bg-neutral-950/60 border border-neutral-800 text-[11px] text-neutral-400 flex flex-col gap-2">
               <span>{isAutoPipEnabled ? '📺 Auto Picture-in-Picture enabled: Floating draggable controls & video pop-out on minimize.' : 'Floating player pop-out disabled.'}</span>
+              {typeof window !== 'undefined' && window.LoopraAndroid && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    try { window.LoopraAndroid.requestOverlayPermission(); } catch (_) {}
+                  }}
+                  className="self-start px-2.5 py-1 text-[10px] font-semibold rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 active:scale-95 transition cursor-pointer"
+                >
+                  ⚙️ Grant Android Floating Overlay Permission
+                </button>
+              )}
             </div>
           </div>
 
