@@ -4585,7 +4585,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             clearTimeout(autoResumeTimerRef.current);
             autoResumeTimerRef.current = null;
           }
-          playerRef.current?.pauseVideo?.();
+          if (isPlayerReadyRef.current || playerRef.current?.isOffline || playerRef.current?.isRadio) {
+        playerRef.current?.pauseVideo?.();
+      }
           if (silentAudioRef.current) silentAudioRef.current.pause();
           setIsPlaying(false);
           if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
@@ -4728,10 +4730,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const initPlayerInstance = useCallback((videoId, shouldAutoPlay = true, startSeconds = 0) => {
     if (!window.YT || !window.YT.Player) return;
 
+    // Prevent duplicate player instances: destroy existing instance before creating a new one
     isPlayerReadyRef.current = false;
     try {
       if (playerRef.current && typeof playerRef.current.destroy === 'function') {
         playerRef.current.destroy();
+        playerRef.current = null;
       }
     } catch (e) {}
 
@@ -4766,8 +4770,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         enablejsapi: 1,
         playsinline: 1,
         start: startSeconds > 0 ? Math.floor(startSeconds) : 0,
-        origin: currentOrigin,
-        widget_referrer: currentOrigin
+        origin: (typeof window !== 'undefined' && window.location?.origin) ? window.location.origin : currentOrigin,
+        widget_referrer: (typeof window !== 'undefined' && window.location?.href) ? window.location.href : currentOrigin
       },
       events: {
         onReady: (e) => {
@@ -5854,7 +5858,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       userIntentPlayingRef.current = true;
       startPwaAudioWakeLock();
       updateMediaSessionImmediate(currentSong, true);
-      if (!playerRef.current || typeof playerRef.current.playVideo !== 'function') {
+      if (!playerRef.current || !isPlayerReadyRef.current || typeof playerRef.current.playVideo !== 'function') {
         let savedSeek = 0;
         try {
           savedSeek = parseFloat(localStorage.getItem('afterhours_current_time') || '0') || 0;
@@ -5863,21 +5867,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       } else {
         try {
           const savedSeek = parseFloat(localStorage.getItem('afterhours_current_time') || '0') || 0;
-          const curTime = playerRef.current.getCurrentTime ? playerRef.current.getCurrentTime() : 0;
-          if (savedSeek > 0 && curTime < 1) {
+          const curTime = (playerRef.current.getCurrentTime && isPlayerReadyRef.current) ? playerRef.current.getCurrentTime() : 0;
+          if (savedSeek > 0 && curTime < 1 && isPlayerReadyRef.current) {
             playerRef.current.seekTo(savedSeek, true);
           }
         } catch (e) {}
         try {
-          const p = playerRef.current?.playVideo?.();
-          if (p && typeof p.catch === 'function') {
-            p.catch(err => {
-              if (err?.name === 'NotAllowedError') {
-                console.warn('[Loopra Player] Explicit togglePlay blocked by policy:', err);
-                setIsAutoplayBlocked(true);
-                setIsPlaying(false);
-              }
-            });
+          if (isPlayerReadyRef.current) {
+            const p = playerRef.current?.playVideo?.();
+            if (p && typeof p.catch === 'function') {
+              p.catch(err => {
+                if (err?.name === 'NotAllowedError') {
+                  console.warn('[Loopra Player] Explicit togglePlay blocked by policy:', err);
+                  setIsAutoplayBlocked(true);
+                  setIsPlaying(false);
+                }
+              });
+            }
           }
         } catch (e) {}
       }
