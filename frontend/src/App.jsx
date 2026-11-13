@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react';
-import { GoogleLogin } from '@react-oauth/google';
+import { GoogleLogin, useGoogleLogin } from '@react-oauth/google';
 import { Reorder, useDragControls } from 'framer-motion';
 import { safeParseJsonResponse, fetchWithRetry, pingServerHealth, subscribeToWakeStatus } from './utils/errorHandler';
 import { CURATED_STATION_TRACKS } from './constants/curatedPlaylists';
@@ -3302,10 +3302,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       slowTimer = setTimeout(() => {
         setIsAuthSlow(true);
       }, 2000);
+
+      // Support credential from ID token or access_token from useGoogleLogin flow
+      const authPayload = credentialResponse?.access_token
+        ? { accessToken: credentialResponse.access_token }
+        : { token: credentialResponse?.credential || credentialResponse?.token };
+
       const res = await fetchWithRetry(getApiUrl('/api/auth/google'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: credentialResponse.credential })
+        body: JSON.stringify(authPayload)
       }, { maxRetries: 2 });
       if (slowTimer) clearTimeout(slowTimer);
       setIsAuthSlow(false);
@@ -3360,6 +3366,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       setAuthLoading(false);
     }
   };
+
+  // Direct client-side Google OAuth hook (avoids GSI embedded iframe issues in Android WebViews)
+  const triggerGoogleLogin = useGoogleLogin({
+    onSuccess: (tokenResponse) => {
+      handleGoogleSuccess(tokenResponse);
+    },
+    onError: (error) => {
+      console.warn('Google Sign-In Error:', error);
+      setAuthError('Google Sign-In was cancelled or origin not authorized. Please try again or use username and password.');
+      showToast?.('Google Sign-In was closed or cancelled', 3500);
+    }
+  });
 
   const handlePlayTrending = async (queryOrTitle, itemObj, contextList = []) => {
     const candidateId = itemObj?.videoId || itemObj?.id || (typeof queryOrTitle === 'object' ? (queryOrTitle?.videoId || queryOrTitle?.id) : null);
@@ -6575,19 +6593,33 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                  <span className="text-xs text-neutral-500 font-medium">OR</span>
                  <div className="h-px bg-neutral-800 flex-1"></div>
               </div>
-              <div className="mt-6 flex flex-col items-center justify-center gap-2">
-                <GoogleLogin
-                  onSuccess={handleGoogleSuccess}
-                  onError={() => {
-                    setAuthError('Google Sign-In was cancelled or origin not authorized by client ID. Please use username and password login above.');
-                    showToast?.('Google Sign-In was closed or cancelled', 3500);
-                  }}
-                  ux_mode="popup"
-                  theme="filled_black"
-                  shape="rectangular"
-                  text="continue_with"
-                  size="large"
-                />
+              <div className="mt-6 flex flex-col items-center justify-center gap-2 w-full">
+                <button
+                  type="button"
+                  onClick={() => triggerGoogleLogin()}
+                  disabled={authLoading}
+                  className="w-full py-3 px-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 text-white font-medium text-sm border border-neutral-700/80 shadow-md flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                    />
+                  </svg>
+                  <span>Continue with Google</span>
+                </button>
                 {authLoading && isAuthSlow && (
                   <p className="text-[11px] text-amber-400/90 font-medium animate-pulse flex items-center gap-1.5 mt-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
@@ -6707,20 +6739,20 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         {/* Unified Top Navbar for both Mobile and Desktop (hidden on DJ Club where full-screen dedicated navbar is active) */}
         <header
           style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
-          className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-2.5 sm:px-4 md:px-8 py-1.5 h-12 sm:h-14 md:h-16 flex items-center justify-between shrink-0 w-full box-border'}`}
+          className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-3 sm:px-4 md:px-8 h-14 sm:h-16 flex items-center justify-between shrink-0 w-full box-border'}`}
         >
           {/* LEFT: Loopra Brand Logo (Clean, no hamburger button) */}
-          <div className="flex items-center gap-2 sm:gap-2.5">
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow-md overflow-hidden shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 my-auto shrink-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow-md overflow-hidden shrink-0">
               <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
             </div>
             {cmsConfig?.branding?.siteName ? (
-              <span className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white whitespace-nowrap">{cmsConfig.branding.siteName}</span>
+              <span className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white whitespace-nowrap leading-none">{cmsConfig.branding.siteName}</span>
             ) : null}
           </div>
 
           {/* CENTER (Desktop only): ACTIVE USERS (Subtle, muted presence indicator) */}
-          <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-900/40 border border-neutral-800/50 shadow-sm shrink-0">
+          <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-900/40 border border-neutral-800/50 shadow-sm shrink-0 my-auto">
             <span className="relative flex h-2 w-2">
               <span className={`animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite] absolute inline-flex h-full w-full rounded-full ${
                 isLiveCountStale ? 'bg-amber-400 opacity-40' : 'bg-emerald-400 opacity-60'
@@ -6729,7 +6761,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 isLiveCountStale ? 'bg-amber-500' : 'bg-emerald-500'
               }`}></span>
             </span>
-            <span className="text-[11px] font-normal text-neutral-400 tracking-wide flex items-center gap-1.5">
+            <span className="text-[11px] font-normal text-neutral-400 tracking-wide flex items-center gap-1.5 leading-none">
               <span className="text-neutral-300 font-mono font-medium">
                 {activeUsersCount !== null ? activeUsersCount : '--'}
               </span>
@@ -6743,7 +6775,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
 
           {/* RIGHT: AUTH/LOGOUT & VOICE AI */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 my-auto shrink-0">
             {/* 3D Avatar / AI Assistant toggle button (Gated strictly by dynamic role & voice permissions) */}
             {isVoiceActive && (
               <button
@@ -6781,7 +6813,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             )}
             
             {user ? (
-              <div className="flex items-center gap-2 relative" ref={accountMenuRef}>
+              <div className="flex items-center gap-2 relative my-auto" ref={accountMenuRef}>
                 {/* Compact Profile Avatar Button */}
                 <button
                   type="button"
@@ -6789,7 +6821,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   aria-label="User Account Menu"
                   aria-expanded={isAccountMenuOpen}
                   title={user.displayName || user.username || "Account"}
-                  className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center relative overflow-hidden transition-all cursor-pointer focus:outline-none ${
+                  className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center relative overflow-hidden transition-all cursor-pointer focus:outline-none shrink-0 ${
                     isAccountMenuOpen
                       ? 'ring-2 ring-amber-400 border-transparent shadow-lg shadow-amber-500/20'
                       : 'border border-amber-500/40 hover:border-amber-400 hover:ring-2 hover:ring-amber-400/40'
@@ -9974,19 +10006,33 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                <span className="text-xs text-neutral-500 font-medium">OR</span>
                <div className="h-px bg-neutral-800 flex-1"></div>
             </div>
-            <div className="mt-6 flex flex-col items-center justify-center gap-2">
-              <GoogleLogin
-                onSuccess={handleGoogleSuccess}
-                onError={() => {
-                  setAuthError('Google Sign-In was cancelled or origin not authorized by client ID. Please use username and password login above.');
-                  showToast?.('Google Sign-In was closed or cancelled', 3500);
-                }}
-                ux_mode="popup"
-                theme="filled_black"
-                shape="rectangular"
-                text="continue_with"
-                size="large"
-              />
+            <div className="mt-6 flex flex-col items-center justify-center gap-2 w-full">
+              <button
+                type="button"
+                onClick={() => triggerGoogleLogin()}
+                disabled={authLoading}
+                className="w-full py-3 px-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 text-white font-medium text-sm border border-neutral-700/80 shadow-md flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                  />
+                </svg>
+                <span>Continue with Google</span>
+              </button>
               {authLoading && isAuthSlow && (
                 <p className="text-[11px] text-amber-400/90 font-medium animate-pulse flex items-center gap-1.5 mt-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />

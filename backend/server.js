@@ -934,25 +934,46 @@ app.post(['/api/auth/google', '/auth/google'], async (req, res) => {
     return res.status(503).json({ error: 'Database service is temporarily unavailable. Please try again shortly.', retryable: true });
   }
   try {
-    const { token } = req.body;
-    if (!token) {
-      return res.status(400).json({ error: 'Google ID token is required' });
+    const { token, accessToken, access_token } = req.body;
+    const effectiveAccessToken = accessToken || access_token;
+    if (!token && !effectiveAccessToken) {
+      return res.status(400).json({ error: 'Google authentication token is required' });
     }
-    const clientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '335095702236-g3n6b7mgq2d3vbdg9qj9vv53b3nuohs7.apps.googleusercontent.com';
-    const ticket = await oauthClient.verifyIdToken({
-      idToken: token,
-      audience: clientId,
-    });
-    const payload = ticket.getPayload();
-    const email = payload?.email;
+
+    let email = '';
+    let googleName = '';
+    let googlePicture = '';
+
+    if (effectiveAccessToken) {
+      // Direct token verification via Google OAuth2 userinfo endpoint
+      const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${effectiveAccessToken}` }
+      });
+      if (!userInfoRes.ok) {
+        return res.status(401).json({ error: 'Invalid or expired Google access token' });
+      }
+      const userInfo = await userInfoRes.json();
+      email = userInfo.email;
+      googleName = (userInfo.name || '').trim();
+      googlePicture = (userInfo.picture || '').trim();
+    } else {
+      // Standard ID token verification via google-auth-library
+      const clientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '335095702236-g3n6b7mgq2d3vbdg9qj9vv53b3nuohs7.apps.googleusercontent.com';
+      const ticket = await oauthClient.verifyIdToken({
+        idToken: token,
+        audience: clientId,
+      });
+      const payload = ticket.getPayload();
+      email = payload?.email;
+      googleName = (payload?.name || '').trim();
+      googlePicture = (payload?.picture || '').trim();
+    }
 
     if (!email) {
       return res.status(400).json({ error: 'Google account email could not be verified' });
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const googleName = (payload?.name || '').trim();
-    const googlePicture = (payload?.picture || '').trim();
     let user = await User.findOne({ username: cleanEmail }).maxTimeMS(4000);
     const shouldBeAdmin = isEmailBootstrapAdmin(cleanEmail);
 
