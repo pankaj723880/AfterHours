@@ -1,0 +1,21 @@
+name: Backend Server Keep-Alive
+
+on:
+  schedule:
+    # Run every 14 minutes to prevent Render free-tier spinning down (15-min idle timeout)
+    - cron: '*/14 * * * *'
+  workflow_dispatch:
+
+jobs:
+  keep-alive:
+    name: Ping Render Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping /api/health
+        run: |
+          URL="${{ secrets.BACKEND_URL || 'https://afterhours-zvic.onrender.com' }}/api/health"
+          echo "Pinging health endpoint: $URL"
+          RESPONSE=$(curl -fsSL --retry 3 --retry-delay 5 --max-time 30 "$URL")
+          echo "Server response: $RESPONSE"
+
