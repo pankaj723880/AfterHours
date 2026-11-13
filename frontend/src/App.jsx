@@ -870,12 +870,12 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove, c
 });
 
 const TRENDING_SONGS = [
-  { id: "RLzC55ai0eo", videoId: "RLzC55ai0eo", title: "Heeriye (Official Video)", artist: "Jasleen Royal ft Arijit Singh", image: "https://i.ytimg.com/vi/RLzC55ai0eo/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/RLzC55ai0eo/hqdefault.jpg", query: "Heeriye Jasleen Royal Arijit Singh" },
-  { id: "WWIfHemqSEA", videoId: "WWIfHemqSEA", title: "Tujhko - Love Song 2026", artist: "Arijit Singh", image: "https://i.ytimg.com/vi/WWIfHemqSEA/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/WWIfHemqSEA/hqdefault.jpg", query: "Arijit Singh Tujhko Love Song iPop Superhits" },
-  { id: "IJJX39HRvlc", videoId: "IJJX39HRvlc", title: "Mere Humdum | New Songs 2026", artist: "Vatsal Bhoya", image: "https://i.ytimg.com/vi/IJJX39HRvlc/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/IJJX39HRvlc/hqdefault.jpg", query: "New Songs 2026 Mere Humdum Vatsal Bhoya" },
-  { id: "BddP6PYo2gs", videoId: "BddP6PYo2gs", title: "Kesariya (Official Video)", artist: "Arijit Singh, Pritam", image: "https://i.ytimg.com/vi/BddP6PYo2gs/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/BddP6PYo2gs/hqdefault.jpg", query: "Kesariya Arijit Singh Brahmastra" },
+  { id: "RLzC55ai0eo", videoId: "RLzC55ai0eo", title: "Heeriye (Official Video)", artist: "Jasleen Royal ft Arijit Singh", image: "https://i.ytimg.com/vi/RLzC55ai0eo/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/RLzC55ai0eo/hqdefault.jpg", query: "Heeriye Jasleen Royal Arijit Singh Official Video" },
+  { id: "BddP6PYo2gs", videoId: "BddP6PYo2gs", title: "Kesariya (Official Video)", artist: "Arijit Singh, Pritam", image: "https://i.ytimg.com/vi/BddP6PYo2gs/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/BddP6PYo2gs/hqdefault.jpg", query: "Kesariya Arijit Singh Brahmastra Official Video" },
   { id: "cIGd8gm_pYE", videoId: "cIGd8gm_pYE", title: "Lover (Official Music Video)", artist: "Diljit Dosanjh", image: "https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg", query: "Lover Diljit Dosanjh Official Video" },
-  { id: "Umqb9KENgmk", videoId: "Umqb9KENgmk", title: "Tum Hi Ho (Official Video)", artist: "Arijit Singh | Mithoon", image: "https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg", query: "Tum Hi Ho Aashiqui 2 Arijit Singh" }
+  { id: "Umqb9KENgmk", videoId: "Umqb9KENgmk", title: "Tum Hi Ho (Official Video)", artist: "Arijit Singh | Mithoon", image: "https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg", query: "Tum Hi Ho Aashiqui 2 Arijit Singh Official Video" },
+  { id: "jsgPZVMfJQk", videoId: "jsgPZVMfJQk", title: "Pehle Bhi Main (Official Video)", artist: "Vishal Mishra | Animal", image: "https://i.ytimg.com/vi/jsgPZVMfJQk/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/jsgPZVMfJQk/hqdefault.jpg", query: "Pehle Bhi Main Vishal Mishra Animal Official Video" },
+  { id: "O5gwxm3NxFU", videoId: "O5gwxm3NxFU", title: "Channa Mereya (Official Video)", artist: "Arijit Singh | Pritam", image: "https://i.ytimg.com/vi/O5gwxm3NxFU/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/O5gwxm3NxFU/hqdefault.jpg", query: "Channa Mereya Ae Dil Hai Mushkil Arijit Singh Official Video" }
 ];
 
 const POPULAR_ARTISTS = [
@@ -1392,21 +1392,21 @@ const POPULAR_ARTISTS = [
 ];
 
 const POPULAR_ALBUMS = [
-  { id: "Umqb9KENgmk", videoId: "Umqb9KENgmk", title: "Aashiqui 2", artist: "Mithoon, Ankit Tiwari", image: "https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg", query: "Aashiqui 2 full album songs jukebox" },
-  { id: "ZdyaixHYviA", videoId: "ZdyaixHYviA", title: "Yeh Jawaani Hai Deewani", artist: "Pritam", image: "https://i.ytimg.com/vi/ZdyaixHYviA/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/ZdyaixHYviA/hqdefault.jpg", query: "Yeh Jawaani Hai Deewani full songs jukebox" },
-  { id: "SQWDGLnvxF4", videoId: "SQWDGLnvxF4", title: "Sanam Teri Kasam", artist: "Himesh Reshammiya", image: "https://i.ytimg.com/vi/SQWDGLnvxF4/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/SQWDGLnvxF4/hqdefault.jpg", query: "Sanam Teri Kasam full songs jukebox" },
-  { id: "BDlNjOc3wiQ", videoId: "BDlNjOc3wiQ", title: "Kabir Singh", artist: "Sachet-Parampara, Mithoon", image: "https://i.ytimg.com/vi/BDlNjOc3wiQ/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/BDlNjOc3wiQ/hqdefault.jpg", query: "Kabir Singh full album songs jukebox" },
-  { id: "ARtRGkaG_OA", videoId: "ARtRGkaG_OA", title: "Rockstar", artist: "A.R. Rahman", image: "https://i.ytimg.com/vi/ARtRGkaG_OA/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/ARtRGkaG_OA/hqdefault.jpg", query: "Rockstar audio jukebox songs" },
-  { id: "jsgPZVMfJQk", videoId: "jsgPZVMfJQk", title: "Animal", artist: "Pritam, Vishal Mishra", image: "https://i.ytimg.com/vi/jsgPZVMfJQk/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/jsgPZVMfJQk/hqdefault.jpg", query: "Animal movie all songs audio jukebox" },
+  { id: "Umqb9KENgmk", videoId: "Umqb9KENgmk", title: "Tum Hi Ho", artist: "Mithoon, Arijit Singh", image: "https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg", query: "Tum Hi Ho Aashiqui 2 Official Video Arijit Singh" },
+  { id: "ZdyaixHYviA", videoId: "ZdyaixHYviA", title: "Kabira", artist: "Pritam, Tochi Raina, Rekha Bhardwaj", image: "https://i.ytimg.com/vi/ZdyaixHYviA/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/ZdyaixHYviA/hqdefault.jpg", query: "Kabira Yeh Jawaani Hai Deewani Official Video" },
+  { id: "BddP6PYo2gs", videoId: "BddP6PYo2gs", title: "Kesariya", artist: "Pritam, Arijit Singh", image: "https://i.ytimg.com/vi/BddP6PYo2gs/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/BddP6PYo2gs/hqdefault.jpg", query: "Kesariya Brahmastra Official Video Arijit Singh" },
+  { id: "BDlNjOc3wiQ", videoId: "BDlNjOc3wiQ", title: "Bekhayali", artist: "Sachet Tandon, Parampara", image: "https://i.ytimg.com/vi/BDlNjOc3wiQ/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/BDlNjOc3wiQ/hqdefault.jpg", query: "Bekhayali Kabir Singh Official Video Sachet Tandon" },
+  { id: "ARtRGkaG_OA", videoId: "ARtRGkaG_OA", title: "Nadaan Parindey", artist: "A.R. Rahman, Mohit Chauhan", image: "https://i.ytimg.com/vi/ARtRGkaG_OA/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/ARtRGkaG_OA/hqdefault.jpg", query: "Nadaan Parindey Rockstar Official Video Mohit Chauhan" },
+  { id: "jsgPZVMfJQk", videoId: "jsgPZVMfJQk", title: "Pehle Bhi Main", artist: "Pritam, Vishal Mishra", image: "https://i.ytimg.com/vi/jsgPZVMfJQk/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/jsgPZVMfJQk/hqdefault.jpg", query: "Pehle Bhi Main Animal Official Video Vishal Mishra" }
 ];
 
 const POPULAR_RADIO = [
-  { id: "O5gwxm3NxFU", videoId: "O5gwxm3NxFU", title: "Arijit Singh Radio", artist: "With Pritam, A.R. Rahman", image: "https://i.ytimg.com/vi/O5gwxm3NxFU/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/O5gwxm3NxFU/hqdefault.jpg", query: "Arijit Singh Best Songs jukebox" },
-  { id: "r0c1f6XxRQg", videoId: "r0c1f6XxRQg", title: "Evergreen KK Radio", artist: "With Pritam, Roop Kumar", image: "https://i.ytimg.com/vi/r0c1f6XxRQg/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/r0c1f6XxRQg/hqdefault.jpg", query: "KK best songs jukebox" },
-  { id: "dvgZkm1xWPE", videoId: "dvgZkm1xWPE", title: "Shreya Ghoshal Radio", artist: "With Atif Aslam", image: "https://i.ytimg.com/vi/dvgZkm1xWPE/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/dvgZkm1xWPE/hqdefault.jpg", query: "Shreya Ghoshal romantic hits jukebox" },
-  { id: "S6IW8Rj1WqQ", videoId: "S6IW8Rj1WqQ", title: "Alka Yagnik 90s Radio", artist: "With Kumar Sanu, Udit Narayan", image: "https://i.ytimg.com/vi/S6IW8Rj1WqQ/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/S6IW8Rj1WqQ/hqdefault.jpg", query: "Alka Yagnik 90s hits jukebox" },
-  { id: "cIGd8gm_pYE", videoId: "cIGd8gm_pYE", title: "Diljit Dosanjh Radio", artist: "With Harrdy Sandhu, AP Dhillon", image: "https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg", query: "Diljit Dosanjh hit songs jukebox" },
-  { id: "P9YpfmNc_p4", videoId: "P9YpfmNc_p4", title: "A.R. Rahman Live Radio", artist: "With Hariharan, Javed Ali", image: "https://i.ytimg.com/vi/P9YpfmNc_p4/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/P9YpfmNc_p4/hqdefault.jpg", query: "AR Rahman magical hits jukebox" },
+  { id: "O5gwxm3NxFU", videoId: "O5gwxm3NxFU", title: "Channa Mereya", artist: "Arijit Singh, Pritam", image: "https://i.ytimg.com/vi/O5gwxm3NxFU/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/O5gwxm3NxFU/hqdefault.jpg", query: "Channa Mereya Ae Dil Hai Mushkil Official Video Arijit Singh" },
+  { id: "r0c1f6XxRQg", videoId: "r0c1f6XxRQg", title: "Zara Sa", artist: "KK, Pritam", image: "https://i.ytimg.com/vi/r0c1f6XxRQg/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/r0c1f6XxRQg/hqdefault.jpg", query: "Zara Sa Jannat Official Video KK Pritam" },
+  { id: "dvgZkm1xWPE", videoId: "dvgZkm1xWPE", title: "Sunn Raha Hai Na Tu", artist: "Shreya Ghoshal, Ankit Tiwari", image: "https://i.ytimg.com/vi/dvgZkm1xWPE/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/dvgZkm1xWPE/hqdefault.jpg", query: "Sunn Raha Hai Na Tu Aashiqui 2 Shreya Ghoshal Official Video" },
+  { id: "S6IW8Rj1WqQ", videoId: "S6IW8Rj1WqQ", title: "Kuch Kuch Hota Hai", artist: "Alka Yagnik, Udit Narayan", image: "https://i.ytimg.com/vi/S6IW8Rj1WqQ/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/S6IW8Rj1WqQ/hqdefault.jpg", query: "Kuch Kuch Hota Hai Title Track Alka Yagnik Udit Narayan Official" },
+  { id: "cIGd8gm_pYE", videoId: "cIGd8gm_pYE", title: "Lover", artist: "Diljit Dosanjh", image: "https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg", query: "Lover Diljit Dosanjh Official Music Video" },
+  { id: "P9YpfmNc_p4", videoId: "P9YpfmNc_p4", title: "Kun Faya Kun", artist: "A.R. Rahman, Javed Ali, Mohit Chauhan", image: "https://i.ytimg.com/vi/P9YpfmNc_p4/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/P9YpfmNc_p4/hqdefault.jpg", query: "Kun Faya Kun Rockstar Official Video AR Rahman" }
 ];
 
 const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlledShowAll, setShowAll: setControlledShowAll, fallbackItems = [] }) => {
@@ -1845,14 +1845,14 @@ export default function App() {
     };
 
     // Stagger section fetches to eliminate concurrent YouTube scraping / 429 rate limit
-    fetchDynamicSection("latest trending hindi hit songs official video", setTrendingSongs, 'afterhours_trending');
+    fetchDynamicSection("latest trending hindi hit songs official music video -mashup -jukebox", setTrendingSongs, 'afterhours_trending');
 
     const albumsTimer = setTimeout(() => {
-      fetchDynamicSection("latest hit bollywood songs official video", setPopularAlbums, 'afterhours_albums');
+      fetchDynamicSection("latest hit bollywood single songs official video -mashup -jukebox -album", setPopularAlbums, 'afterhours_albums');
     }, 1200);
 
     const radioTimer = setTimeout(() => {
-      fetchDynamicSection("bollywood lofi romantic acoustic official songs", setPopularRadio, 'afterhours_radio');
+      fetchDynamicSection("bollywood acoustic unplugged official single songs -mashup -jukebox", setPopularRadio, 'afterhours_radio');
     }, 2400);
 
     return () => {
@@ -4087,16 +4087,21 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         try { playerRef.current.stopVideo(); } catch (e) {}
       }
 
-      // In Music Mode, playback is driven by HTML5 <audio> streaming to guarantee uninterrupted Android Chrome/TWA background playback.
-      // Direct YouTube iframe invocation is reserved for explicit Video Mode.
-      if (videoModalSongRef.current && playerRef.current && isPlayerReadyRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline && !song?.isRadio && targetVideoId) {
+      // Immediately start playback without waiting for delayed re-renders
+      if (playerRef.current && isPlayerReadyRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline && !song?.isRadio && targetVideoId) {
         try {
-          playerRef.current.loadVideoById({ videoId: targetVideoId });
+          // Detect low-end or mobile device for stream quality optimization
+          const isLowEndDevice = typeof navigator !== 'undefined' && (
+            (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
+            (window.innerWidth < 768)
+          );
+          const quality = isLowEndDevice ? 'small' : 'medium';
+          playerRef.current.loadVideoById({ videoId: targetVideoId, suggestedQuality: quality });
           const p = playerRef.current.playVideo();
           if (p && typeof p.catch === 'function') {
             p.catch(err => {
               if (err?.name === 'NotAllowedError') {
-                console.warn('[Loopra Player] Video mode autoplay blocked:', err);
+                console.warn('[Loopra Player] Autoplay blocked:', err);
                 setIsAutoplayBlocked(true);
                 setIsPlaying(false);
               }
@@ -4196,39 +4201,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
     };
 
-    // LAYER 4: PLAYBACK-LEVEL VALIDATION GATE
-    // Only genuine songs may enter Loopra's audio pipeline (cached songs bypass external network checks)
-    if (!song?.isRadio && !song?.streamUrl && !song?.isInternalAudio && !song?.isOffline && !song?.audioBlob && targetVideoId) {
-      // Check if track already exists in IndexedDB offline cache
-      offlineStorageService.isTrackDownloaded(targetVideoId).then(isCached => {
-        if (isCached) {
-          executeVerifiedPlayback();
-          return;
-        }
+    // Execute playback instantly for immediate UI and audio response without 2-3 second latency
+    executeVerifiedPlayback();
 
-        validatePlaybackTrack(song, BACKEND_URL)
-          .then(validation => {
-            if (!validation.eligible) {
-              console.warn('[PlaybackGate] Blocked non-music playback request:', targetVideoId, validation.reason);
-              showToast?.(`Playback blocked: Video is not verified music (${validation.reason})`, 'error');
-              if (options.isAutoAdvance || options.fromQueue) {
-                if (queue && queue.length > 1) {
-                  handleNextSongRef.current?.();
-                }
+    // Background validation (non-blocking) for unknown external video playback
+    if (!song?.isRadio && !song?.streamUrl && !song?.isInternalAudio && !song?.isOffline && !song?.audioBlob && targetVideoId) {
+      offlineStorageService.isTrackDownloaded(targetVideoId).then(isCached => {
+        if (!isCached) {
+          validatePlaybackTrack(song, BACKEND_URL)
+            .then(validation => {
+              if (!validation.eligible) {
+                console.warn('[PlaybackGate] Non-music track detected post-playback:', targetVideoId, validation.reason);
+                showToast?.(`Playback note: Video may not be official music (${validation.reason})`, 'warning');
               }
-              return;
-            }
-            executeVerifiedPlayback();
-          })
-          .catch(err => {
-            console.error('[PlaybackGate] Validation network notice, running fallback:', err);
-            executeVerifiedPlayback();
-          });
-      }).catch(() => {
-        executeVerifiedPlayback();
-      });
-    } else {
-      executeVerifiedPlayback();
+            })
+            .catch(() => {});
+        }
+      }).catch(() => {});
     }
   };
 }, [activeTab, currentSong, stationsMap, authToken, showToast, BACKEND_URL, user]);
@@ -7484,18 +7473,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 )}
 
                 {/* 2. Download APK Button linking directly to https://loopra-downloads.vercel.app/ */}
-                {typeof window !== 'undefined' && !window.LoopraAndroid && (
-                  <a
-                    href="https://loopra-downloads.vercel.app/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
-                    title="Download APK"
-                  >
-                    <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
-                    {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Download APK</span>}
-                  </a>
-                )}
+                <a
+                  href="https://loopra-downloads.vercel.app/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
+                  title="Download APK"
+                >
+                  <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
+                  {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Download APK</span>}
+                </a>
 
                 {/* 3. Logged-in User Profile Card & 4. Logout / Sign In Button */}
                 {user ? (
@@ -7826,18 +7813,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               )}
 
               {/* 2. Download APK Button linking directly to https://loopra-downloads.vercel.app/ */}
-              {typeof window !== 'undefined' && !window.LoopraAndroid && (
-                <a
-                  href="https://loopra-downloads.vercel.app/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
-                  title="Download APK"
-                >
-                  <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
-                  {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Download APK</span>}
-                </a>
-              )}
+              <a
+                href="https://loopra-downloads.vercel.app/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
+                title="Download APK"
+              >
+                <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
+                {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Download APK</span>}
+              </a>
 
               {/* 3. Logged-in User Profile Card & 4. Logout / Sign In Button */}
               {user ? (
@@ -7925,7 +7910,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               )}
 
               {canGoBack(navigationStack, activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio, selectedPlaylistForView, offlineSubView }) && activeTab !== 'artist' && activeTab !== 'dj-club' && !isStationPage && (
-                <div className={`relative z-20 mb-6 flex justify-start transition-all duration-300 ${!isSidebarOpen ? 'pl-14 md:pl-16' : 'pl-0 md:pl-0'}`}>
+                <div className="relative z-20 mb-6 flex justify-start pl-0">
                   <button
                     data-voice-back="true"
                     onClick={handleGoBack}
@@ -9074,7 +9059,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             ) : (
               <>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className={`flex items-center gap-4 transition-all duration-300 ${!isSidebarOpen ? 'pl-14 md:pl-16' : 'pl-0 md:pl-0'}`}>
+                  <div className="flex items-center gap-4 pl-0">
                     <button 
                       data-voice-back="true"
                       onClick={handleGoBack}

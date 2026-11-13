@@ -3,11 +3,12 @@ import { recommendationsClient } from '../../services/recommendationsClient';
 import { TrackDeduplicator } from '../../utils/trackIdentity';
 import { getCleanThumbnail, isThumbnailUrlFormatValid } from '../../utils/thumbnailValidator';
 import { CURATED_STATION_TRACKS } from '../../constants/curatedPlaylists';
+import { isSingleSong, filterSingleSongs } from '../../services/songFilter';
 
 // Track-level runtime failed image cache for graceful component fallbacks
 const locallyFailedVideoIds = new Set();
-const SESSION_CACHE_KEY = 'loopra_home_curated_cache_v4';
-const CURATED_CACHE_KEY = 'loopra_curated_cache_v4';
+const SESSION_CACHE_KEY = 'loopra_home_curated_cache_v5';
+const CURATED_CACHE_KEY = 'loopra_curated_cache_v5';
 const CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 // In-memory module-level cache for instant tab switches
@@ -203,13 +204,18 @@ export default function PersonalizedRecommendationsSection({
         const rawData = res.data;
         const deduplicator = new TrackDeduplicator();
 
-        const madeForYou = deduplicator.filterUnique(sanitizeThumbnailTracks(rawData.madeForYou || [])).slice(0, 6);
+        const filterValidSingles = (tracks = []) => {
+          const sanitized = sanitizeThumbnailTracks(tracks || []);
+          return sanitized.filter(t => isSingleSong(t));
+        };
+
+        const madeForYou = deduplicator.filterUnique(filterValidSingles(rawData.madeForYou || [])).slice(0, 6);
 
         let becauseYouListenedTo = null;
         if (rawData.becauseYouListenedTo && typeof rawData.becauseYouListenedTo === 'object') {
           const rawBase = rawData.becauseYouListenedTo.baseTrack;
           const cleanBaseThumb = getCleanThumbnail(rawBase);
-          const rawRecs = sanitizeThumbnailTracks(rawData.becauseYouListenedTo.recommendations || []);
+          const rawRecs = filterValidSingles(rawData.becauseYouListenedTo.recommendations || []);
           const becauseRecs = deduplicator.filterUnique(rawRecs).slice(0, 4);
 
           if (becauseRecs.length > 0 && cleanBaseThumb && isThumbnailUrlFormatValid(cleanBaseThumb)) {
@@ -223,10 +229,10 @@ export default function PersonalizedRecommendationsSection({
           }
         }
 
-        const dailyMix = deduplicator.filterUnique(sanitizeThumbnailTracks(rawData.dailyMix || [])).slice(0, 6);
-        const favouriteArtists = deduplicator.filterUnique(sanitizeThumbnailTracks(rawData.favouriteArtists || [])).slice(0, 6);
-        const discover = deduplicator.filterUnique(sanitizeThumbnailTracks(rawData.discover || [])).slice(0, 6);
-        const moreLikeRecent = deduplicator.filterUnique(sanitizeThumbnailTracks(rawData.moreLikeRecent || [])).slice(0, 4);
+        const dailyMix = deduplicator.filterUnique(filterValidSingles(rawData.dailyMix || [])).slice(0, 6);
+        const favouriteArtists = deduplicator.filterUnique(filterValidSingles(rawData.favouriteArtists || [])).slice(0, 6);
+        const discover = deduplicator.filterUnique(filterValidSingles(rawData.discover || [])).slice(0, 6);
+        const moreLikeRecent = deduplicator.filterUnique(filterValidSingles(rawData.moreLikeRecent || [])).slice(0, 4);
 
         const allRendered = [
           ...madeForYou,
@@ -274,8 +280,8 @@ export default function PersonalizedRecommendationsSection({
 
       // 2. Try guest discovery
       try {
-        const discRes = await recommendationsClient.getDiscover(backendUrl, null, { limit: 25 });
-        const items = sanitizeThumbnailTracks(discRes.items || []);
+        const discRes = await recommendationsClient.getDiscover(backendUrl, null, { limit: 30 });
+        const items = sanitizeThumbnailTracks(discRes.items || []).filter(t => isSingleSong(t));
         if (items.length > 0) {
           const formatted = {
             madeForYou: items.slice(0, 6),
@@ -290,8 +296,8 @@ export default function PersonalizedRecommendationsSection({
         }
       } catch (_) {}
 
-      // 3. Fallback to guaranteed curated station tracks
-      const allCurated = Object.values(CURATED_STATION_TRACKS || {}).flat();
+      // 3. Fallback to guaranteed curated station tracks (strictly filtered for single songs)
+      const allCurated = Object.values(CURATED_STATION_TRACKS || {}).flat().filter(t => isSingleSong(t));
       if (allCurated.length > 0) {
         const formatted = {
           madeForYou: allCurated.slice(0, 6),
@@ -691,8 +697,8 @@ export default function PersonalizedRecommendationsSection({
   }
 
   if (!data) {
-    // If data is temporarily empty, populate instant curated fallback
-    const allCurated = Object.values(CURATED_STATION_TRACKS || {}).flat();
+    // If data is temporarily empty, populate instant curated fallback (strictly single songs)
+    const allCurated = Object.values(CURATED_STATION_TRACKS || {}).flat().filter(t => isSingleSong(t));
     if (allCurated.length > 0) {
       const fallbackData = {
         madeForYou: allCurated.slice(0, 6),

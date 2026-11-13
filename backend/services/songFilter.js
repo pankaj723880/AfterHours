@@ -75,9 +75,8 @@ export function isMainstreamArtist(artistOrTitle = '') {
 const MULTI_SONG_TITLE_REGEXES = [
   // Jukeboxes
   /\b(audio\s+jukebox|video\s+jukebox|album\s+jukebox|radio\s+jukebox|jukebox)\b/i,
-  // Mashups & strict non-original derivatives
-  /\b(mega\s+mashup|non[\s-]?stop\s+mashup|mashup|mash\s+up|mash-up)\b/i,
-  /\b(remix|re-mix|remixes)\b/i,
+  // Mashups & strict multi-song mixes
+  /(?:mega\s+mashup|non[\s-]?stop\s+mashup|mashup|mash\s+up|mash-up|\w*mashup)/i,
   /\b(mixtape|mix-tape|mix\s+tape)\b/i,
   // Medleys
   /\b(medley|medly)\b/i,

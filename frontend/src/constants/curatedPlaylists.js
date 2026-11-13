@@ -903,15 +903,15 @@ export const CURATED_STATION_TRACKS = {
       "thumbnail": "https://i.ytimg.com/vi/w_EeijkDB7s/hqdefault.jpg"
     },
     {
-      "id": "QLI8cN2pIRA",
-      "youtubeId": "QLI8cN2pIRA",
-      "title": "90's Road Trip Love Mashup | Bd Turjoul | 90's Love Songs |90's Hits Hindi Songs 190's Old Is Gold",
-      "artist": "Bd Turjoul",
-      "channel": "Bd Turjoul",
-      "duration": "16:43",
-      "url": "https://www.youtube.com/watch?v=QLI8cN2pIRA",
-      "coverArt": "https://i.ytimg.com/vi/QLI8cN2pIRA/hqdefault.jpg",
-      "thumbnail": "https://i.ytimg.com/vi/QLI8cN2pIRA/hqdefault.jpg"
+      "id": "c5Qv3e3fH1A",
+      "youtubeId": "c5Qv3e3fH1A",
+      "title": "Dheere Dheere Se Meri Zindagi Me Aana | Aashiqui | Rahul Roy, Anu Agarwal | Kumar Sanu",
+      "artist": "T-Series",
+      "channel": "T-Series",
+      "duration": "5:32",
+      "url": "https://www.youtube.com/watch?v=c5Qv3e3fH1A",
+      "coverArt": "https://i.ytimg.com/vi/c5Qv3e3fH1A/hqdefault.jpg",
+      "thumbnail": "https://i.ytimg.com/vi/c5Qv3e3fH1A/hqdefault.jpg"
     },
     {
       "id": "QOn8w7Sw_qI",
@@ -2766,15 +2766,15 @@ export const CURATED_STATION_TRACKS = {
       "thumbnail": "https://i.ytimg.com/vi/bqPjFWWF5Q4/hqdefault.jpg"
     },
     {
-      "id": "S47U2HZMwQA",
-      "youtubeId": "S47U2HZMwQA",
-      "title": "Desi Kalakaar X Blue Eyes - Mega Mashup | Yo Yo Honey Singh | Afterhour Music",
-      "artist": "Afterhour Music",
-      "channel": "Afterhour Music",
-      "duration": "7:08",
-      "url": "https://www.youtube.com/watch?v=S47U2HZMwQA",
-      "coverArt": "https://i.ytimg.com/vi/S47U2HZMwQA/hqdefault.jpg",
-      "thumbnail": "https://i.ytimg.com/vi/S47U2HZMwQA/hqdefault.jpg"
+      "id": "k4yXQkG2s1E",
+      "youtubeId": "k4yXQkG2s1E",
+      "title": "Dope Shope | International Villager | Yo Yo Honey Singh, Deep Money | Speed Records",
+      "artist": "Speed Records",
+      "channel": "Speed Records",
+      "duration": "3:09",
+      "url": "https://www.youtube.com/watch?v=k4yXQkG2s1E",
+      "coverArt": "https://i.ytimg.com/vi/k4yXQkG2s1E/hqdefault.jpg",
+      "thumbnail": "https://i.ytimg.com/vi/k4yXQkG2s1E/hqdefault.jpg"
     },
     {
       "id": "EWRBHho2b_E",
@@ -2931,15 +2931,15 @@ export const CURATED_STATION_TRACKS = {
       "thumbnail": "https://i.ytimg.com/vi/nL4RIOLB7wA/hqdefault.jpg"
     },
     {
-      "id": "U93ORr_7yH0",
-      "youtubeId": "U93ORr_7yH0",
-      "title": "Desi Kalakaar X Blue Eyes[Bass Boosted]Mashup Yo Yo Honey Singh | Hard Remix Bass Mix Mashup",
-      "artist": "FIRST LEVEL BASS MUSIC",
-      "channel": "FIRST LEVEL BASS MUSIC",
-      "duration": "7:08",
-      "url": "https://www.youtube.com/watch?v=U93ORr_7yH0",
-      "coverArt": "https://i.ytimg.com/vi/U93ORr_7yH0/hqdefault.jpg",
-      "thumbnail": "https://i.ytimg.com/vi/U93ORr_7yH0/hqdefault.jpg"
+      "id": "1nCLBtZXeNk",
+      "youtubeId": "1nCLBtZXeNk",
+      "title": "Angreji Beat | International Villager | Yo Yo Honey Singh, Gippy Grewal | Speed Records",
+      "artist": "Speed Records",
+      "channel": "Speed Records",
+      "duration": "3:30",
+      "url": "https://www.youtube.com/watch?v=1nCLBtZXeNk",
+      "coverArt": "https://i.ytimg.com/vi/1nCLBtZXeNk/hqdefault.jpg",
+      "thumbnail": "https://i.ytimg.com/vi/1nCLBtZXeNk/hqdefault.jpg"
     },
     {
       "id": "GoKowvNc3pc",
@@ -2975,15 +2975,15 @@ export const CURATED_STATION_TRACKS = {
       "thumbnail": "https://i.ytimg.com/vi/0fXlZ3vnQd0/hqdefault.jpg"
     },
     {
-      "id": "O4zK_4WG0OQ",
-      "youtubeId": "O4zK_4WG0OQ",
-      "title": "Mashup - Saturday Saturday & Abhi Toh Party Shuru Huyi Hai | KIESNAA (official Video)",
-      "artist": "Kiesnaa Remix",
-      "channel": "Kiesnaa Remix",
-      "duration": "2:47",
-      "url": "https://www.youtube.com/watch?v=O4zK_4WG0OQ",
-      "coverArt": "https://i.ytimg.com/vi/O4zK_4WG0OQ/hqdefault.jpg",
-      "thumbnail": "https://i.ytimg.com/vi/O4zK_4WG0OQ/hqdefault.jpg"
+      "id": "e3Zq5e7Y2kA",
+      "youtubeId": "e3Zq5e7Y2kA",
+      "title": "Proper Patola | Diljit Dosanjh ft. Badshah | Sony Music India",
+      "artist": "Sony Music India",
+      "channel": "Sony Music India",
+      "duration": "3:58",
+      "url": "https://www.youtube.com/watch?v=e3Zq5e7Y2kA",
+      "coverArt": "https://i.ytimg.com/vi/e3Zq5e7Y2kA/hqdefault.jpg",
+      "thumbnail": "https://i.ytimg.com/vi/e3Zq5e7Y2kA/hqdefault.jpg"
     },
     {
       "id": "mPMcSc5bvkc",
@@ -3030,15 +3030,15 @@ export const CURATED_STATION_TRACKS = {
       "thumbnail": "https://i.ytimg.com/vi/J9gYMClQOQ0/hqdefault.jpg"
     },
     {
-      "id": "aAVGM28BhGE",
-      "youtubeId": "aAVGM28BhGE",
-      "title": "Abhi Toh Party x Bam Bam (Jamaican) - SaturnNova Music #abhitohparty #bambam  #afromashup #club",
-      "artist": "SaturnNovaMusic",
-      "channel": "SaturnNovaMusic",
-      "duration": "4:07",
-      "url": "https://www.youtube.com/watch?v=aAVGM28BhGE",
-      "coverArt": "https://i.ytimg.com/vi/aAVGM28BhGE/hqdefault.jpg",
-      "thumbnail": "https://i.ytimg.com/vi/aAVGM28BhGE/hqdefault.jpg"
+      "id": "J9gYMClQOQ0",
+      "youtubeId": "J9gYMClQOQ0",
+      "title": "Saturday Saturday - 8K/4K Music Video | Alia Bhatt, Varun Dhawan | Badshah, Akriti, Indeep Bakshi",
+      "artist": "Sony Music India",
+      "channel": "Sony Music India",
+      "duration": "3:07",
+      "url": "https://www.youtube.com/watch?v=J9gYMClQOQ0",
+      "coverArt": "https://i.ytimg.com/vi/J9gYMClQOQ0/hqdefault.jpg",
+      "thumbnail": "https://i.ytimg.com/vi/J9gYMClQOQ0/hqdefault.jpg"
     },
     {
       "id": "m2J5WWDeGs8",
@@ -3228,15 +3228,15 @@ export const CURATED_STATION_TRACKS = {
       "thumbnail": "https://i.ytimg.com/vi/k85UB5b6pJU/hqdefault.jpg"
     },
     {
-      "id": "wCMAu2ArG08",
-      "youtubeId": "wCMAu2ArG08",
-      "title": "Karan Aujla Nonstop | Harshal Music | Best Of Karan Aujla | New Punjabi Song 2025",
-      "artist": "Harshal Music",
-      "channel": "Harshal Music",
-      "duration": "18:02",
-      "url": "https://www.youtube.com/watch?v=wCMAu2ArG08",
-      "coverArt": "https://i.ytimg.com/vi/wCMAu2ArG08/hqdefault.jpg",
-      "thumbnail": "https://i.ytimg.com/vi/wCMAu2ArG08/hqdefault.jpg"
+      "id": "k85UB5b6pJU",
+      "youtubeId": "k85UB5b6pJU",
+      "title": "Admirin' You (Official Video) Karan Aujla | Ikky | Making Memories | Latest Punjabi Songs",
+      "artist": "Karan Aujla",
+      "channel": "Karan Aujla",
+      "duration": "3:31",
+      "url": "https://www.youtube.com/watch?v=k85UB5b6pJU",
+      "coverArt": "https://i.ytimg.com/vi/k85UB5b6pJU/hqdefault.jpg",
+      "thumbnail": "https://i.ytimg.com/vi/k85UB5b6pJU/hqdefault.jpg"
     },
     {
       "id": "VNs_cCtdbPc",
@@ -3261,15 +3261,15 @@ export const CURATED_STATION_TRACKS = {
       "thumbnail": "https://i.ytimg.com/vi/WYCfZxGe5LQ/hqdefault.jpg"
     },
     {
-      "id": "43e8dPUt7RY",
-      "youtubeId": "43e8dPUt7RY",
-      "title": "AP Dhillon Mashup - DJ Sumit Rajwanshi | SR Music Official | Latest Mashup Songs 2022",
-      "artist": "SR Music Official ",
-      "channel": "SR Music Official ",
-      "duration": "6:47",
-      "url": "https://www.youtube.com/watch?v=43e8dPUt7RY",
-      "coverArt": "https://i.ytimg.com/vi/43e8dPUt7RY/hqdefault.jpg",
-      "thumbnail": "https://i.ytimg.com/vi/43e8dPUt7RY/hqdefault.jpg"
+      "id": "r6t-55w5p4A",
+      "youtubeId": "r6t-55w5p4A",
+      "title": "Excuses (Official Music Video) | AP Dhillon | Gurinder Gill | Intense",
+      "artist": "RUN-UP RECORDS",
+      "channel": "RUN-UP RECORDS",
+      "duration": "2:56",
+      "url": "https://www.youtube.com/watch?v=r6t-55w5p4A",
+      "coverArt": "https://i.ytimg.com/vi/r6t-55w5p4A/hqdefault.jpg",
+      "thumbnail": "https://i.ytimg.com/vi/r6t-55w5p4A/hqdefault.jpg"
     },
     {
       "id": "KRkJ8iFGC2M",
