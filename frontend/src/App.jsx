@@ -2428,14 +2428,20 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       selectedPlaylistForView,
       offlineSubView,
       activeTab,
+      showAllTrending: Boolean(showAllTrending),
+      showAllArtists: Boolean(showAllArtists),
+      showAllAlbums: Boolean(showAllAlbums),
+      showAllRadio: Boolean(showAllRadio),
       handleCloseVideo,
       closeExpandedPlayer,
-      handleGoBack
+      handleGoBack,
+      setShowQueue: (val) => setShowQueuePanel(val)
     };
   });
 
-  // Push history state when any overlay or player opens once
-  const overlayActive = Boolean(
+  // Persistent history buffer for TWA / Android back gesture trapping
+  // On mount and whenever any player/overlay/sub-view opens, ensure loopraGuard is pushed
+  const hasSubViewOrOverlayActive = Boolean(
     showQueuePanel ||
     (videoModalSong && !isPipActive) ||
     isCanvasOpen ||
@@ -2449,21 +2455,36 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     isStatsOpen ||
     isProfileOpen ||
     isRatingModalOpen ||
-    (isSidebarOpen && isMobileScreen)
+    (isSidebarOpen && isMobileScreen) ||
+    Boolean(selectedPlaylistForView) ||
+    offlineSubView === 'explore' ||
+    showAllTrending ||
+    showAllArtists ||
+    showAllAlbums ||
+    showAllRadio
   );
-  const overlayPushedRef = useRef(false);
 
+  // Initialize loopraGuard history buffer on mount
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (overlayActive) {
-      if (!overlayPushedRef.current) {
-        overlayPushedRef.current = true;
-        window.history.pushState({ loopraModal: true }, '');
+    if (typeof window === 'undefined' || !window.history?.pushState) return;
+    try {
+      if (!window.history.state || !window.history.state.loopraGuard) {
+        window.history.pushState({ loopraGuard: true }, '');
       }
-    } else {
-      overlayPushedRef.current = false;
+    } catch (_) {}
+  }, []);
+
+  // Ensure loopraGuard entry exists whenever any player/overlay opens
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.history?.pushState) return;
+    if (hasSubViewOrOverlayActive) {
+      try {
+        if (!window.history.state || !window.history.state.loopraGuard) {
+          window.history.pushState({ loopraGuard: true }, '');
+        }
+      } catch (_) {}
     }
-  }, [overlayActive]);
+  }, [hasSubViewOrOverlayActive]);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef(null);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
@@ -3919,7 +3940,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     setVideoModalSong(songWithId);
     setIsPipActive(false);
     if (typeof window !== 'undefined' && window.history && window.history.pushState) {
-      window.history.pushState({ loopraModal: 'video_player' }, '', window.location.href);
+      window.history.pushState({ loopraGuard: true }, '');
     }
 
     if (!isMatchingCurrent) {
@@ -6863,24 +6884,41 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
   }, []);
 
+  // Double back press exit tracking on root Home
+  const lastBackPressTimeRef = useRef(0);
+
   // Unified loop-free hardware, gesture & browser back navigation using navStateRef
+  // Traps system back swipe / button in TWA Chrome and matches in-app Back actions
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const handleGlobalBack = () => {
+    const rePushGuard = () => {
+      try {
+        window.history.pushState({ loopraGuard: true }, '');
+      } catch (_) {}
+    };
+
+    const handleSystemBack = () => {
       const state = navStateRef.current;
-      // 1) Video Player is open -> close video
+
+      // 1) Video Player is open -> close video (same as clicking video back button)
       if (state.isVideoOpen) {
         state.handleCloseVideo?.();
+        rePushGuard();
         return;
       }
-      // 2) Full-Screen Audio Player is open -> close/minimize expanded player
-      if (state.isExpandedPlayer || state.showQueuePanel) {
+
+      // 2) Full-Screen Audio Player is open -> close expanded player (same as clicking player back button)
+      if (state.isExpandedPlayer) {
         state.closeExpandedPlayer?.();
+        rePushGuard();
         return;
       }
-      // 3) Modal, drawer, or sub-view open -> handleGoBack() closes view
+
+      // 3) Queue or any modal / playlist detail / drawer is open -> close it
       if (
+        state.showQueue ||
+        state.showQueuePanel ||
         state.isCanvasOpen ||
         state.showAuthModal ||
         state.isSidebarOpen ||
@@ -6894,44 +6932,48 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         state.isProfileOpen ||
         state.isRatingModalOpen ||
         state.selectedPlaylistForView ||
-        state.offlineSubView === 'explore'
+        state.offlineSubView === 'explore' ||
+        state.showAllTrending ||
+        state.showAllArtists ||
+        state.showAllAlbums ||
+        state.showAllRadio
       ) {
-        state.handleGoBack?.();
+        if (state.showQueue || state.showQueuePanel) {
+          state.setShowQueue?.(false);
+          state.closeExpandedPlayer?.();
+        } else {
+          state.handleGoBack?.();
+        }
+        rePushGuard();
         return;
       }
-      // 4) Not on Home tab -> return to Home tab
+
+      // 4) Not on Home view -> switch to Home view
       if (state.activeTab !== 'home') {
         state.handleGoBack?.();
+        rePushGuard();
         return;
       }
-      // 5) On Home root screen -> cleanly minimize app or fallback
-      try {
-        window.Capacitor?.Plugins?.App?.minimizeApp?.();
-      } catch (_) {}
-    };
 
-    const onPopState = (e) => {
-      handleGlobalBack();
-    };
-
-    window.addEventListener('popstate', onPopState);
-
-    let backButtonHandle = null;
-    try {
-      if (window.Capacitor?.Plugins?.App?.addListener) {
-        backButtonHandle = window.Capacitor.Plugins.App.addListener('backButton', () => {
-          handleGlobalBack();
-        });
+      // 5) Already on the main Home view with NO player/modals open:
+      // Allow exit on double-back press within 2 seconds
+      const now = Date.now();
+      if (now - lastBackPressTimeRef.current < 2000) {
+        // Double back within 2 seconds: do NOT re-push guard, let Android/TWA exit cleanly
+        return;
       }
-    } catch (_) {}
+
+      lastBackPressTimeRef.current = now;
+      showToast?.('Press back again to exit', 2000);
+      rePushGuard();
+    };
+
+    window.addEventListener('popstate', handleSystemBack);
 
     return () => {
-      window.removeEventListener('popstate', onPopState);
-      try {
-        backButtonHandle?.remove?.();
-      } catch (_) {}
+      window.removeEventListener('popstate', handleSystemBack);
     };
-  }, []);
+  }, [showToast]);
 
   const currentStation = stationsMap[activeTab] || SPECIAL_STATIONS[activeTab];
   const currentBgImage = currentStation?.bgImages?.[currentBgIndex] || currentStation?.bgImages?.[0];
@@ -10828,5 +10870,475 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               localStorage.setItem('afterhours_user', JSON.stringify(merged));
             } catch (_) {}
             return merged;
-    
-... [truncated for diff preview]
+          });
+        }} 
+        showToast={showToast} 
+      />
+
+      {/* Loopra AI Floating Music Companion */}
+      <LoopraAiCompanion
+        backendUrl={BACKEND_URL}
+        authToken={authToken}
+        user={user}
+        currentSong={currentSong}
+        isPlaying={isPlaying}
+        playbackPosition={currentTimeRef.current}
+        duration={durationRef.current}
+        onPlayTrack={(track) => {
+          playSong(track);
+        }}
+        onTogglePlayPause={togglePlayPause}
+        onNextTrack={handleNextSong}
+        onPrevTrack={handlePrevSong}
+        onToggleShuffle={toggleShuffle}
+        onToggleRepeat={toggleRepeatMode}
+        onSetVolume={(vol) => {
+          setVolume(vol);
+          try { playerRef.current?.setVolume?.(vol); } catch (_) {}
+        }}
+        onToggleLike={toggleLike}
+        isLiked={isSongLiked}
+        onAddToPlaylist={handleAddToPlaylistClick}
+        onNavigate={(page, extra) => {
+          if (page === 'admin' && !isAdmin) {
+            return { success: false, reason: 'NO_ACCESS' };
+          }
+          const validDestinations = [
+            'home', 'discover', 'swipe', 'for-you', 'library', 'history',
+            'playlists', 'activity', 'dj-club', 'downloads', 'downloads_explore',
+            'radio', 'indian-radio', 'mood', 'timemachine', 'barber', 'truck', 'pauwa',
+            'artist', 'admin', 'apk', 'download'
+          ];
+          if (!validDestinations.includes(page) && !SPECIAL_STATIONS[page] && !stationsMap[page]) {
+            return { success: false, reason: 'NOT_FOUND' };
+          }
+          if (page === 'home') {
+            window.history.pushState(null, '', '/');
+            handleStationSelect('home');
+          } else if (page === 'discover') {
+            if (extra?.query) {
+              handleSearchFromHome(extra.query);
+            } else {
+              handleStationSelect('discover');
+            }
+          } else {
+            handleStationSelect(page, extra);
+          }
+          return { success: true };
+        }}
+        onOpenInsights={() => setIsStatsOpen(true)}
+        onOpenQueue={() => {
+          if (typeof handleOpenExpandedPlayer === 'function') {
+            handleOpenExpandedPlayer('queue');
+          } else {
+            setShowQueuePanel(true);
+          }
+        }}
+        onOpenLyrics={() => setIsLyricsOpen(true)}
+        onOpenListeningRooms={() => setIsListeningRoomsOpen(true)}
+        onOpenSimilarSongs={(track) => setSimilarSongsTrack(track || currentSong)}
+        onOpenPlayerSettings={() => setIsPlayerSettingsOpen(true)}
+        onOpenSleepTimer={() => setIsSleepTimerOpen(true)}
+        onOpenCanvas={() => setIsCanvasOpen(true)}
+        onOpenProfile={() => setIsProfileOpen(true)}
+        onOpenRatingModal={() => setIsRatingModalOpen(true)}
+        onSetPlaybackSpeed={(spd) => {
+          try {
+            if (typeof playerRef.current?.setPlaybackRate === 'function') {
+              playerRef.current.setPlaybackRate(spd);
+            }
+            showToast?.(`Playback speed set to ${spd}x`);
+          } catch (_) {}
+        }}
+        onDjAction={(actionObj) => {
+          try {
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('loopra_dj_action', { detail: actionObj }));
+            }
+          } catch (_) {}
+        }}
+        onGoBack={handleGoBack}
+        onOpenArtist={(artistName) => handleArtistClick(artistName)}
+        showToast={showToast}
+        isBottomPlayerVisible={isBottomPlayerVisible}
+        isOpen={activeAssistantPanel === 'ai'}
+        onToggleOpen={(open) => setActiveAssistantPanel(open ? 'ai' : null)}
+        onClose={() => setActiveAssistantPanel(null)}
+        hideFloatingButton={showSplashScreen || !isAppInitialized || showQueuePanel || showAuthModal || (isSidebarOpen && isMobileScreen) || Boolean(videoModalSong && !isPipActive)}
+        canAccessVoice={canAccessVoice}
+        isAvatarActive={isAvatarVisible}
+      />
+
+      {/* Loopra Dedicated Voice Agent & Shared Floating Assistant Action Bar */}
+      {isVoiceActive && (
+        <VoiceAgentModal
+          user={user}
+          token={authToken}
+          backendUrl={BACKEND_URL}
+          currentSong={currentSong}
+        isPlaying={isPlaying}
+        volume={volume}
+        isSongLiked={isSongLiked}
+        isBottomPlayerVisible={isBottomPlayerVisible}
+        activeTab={activeTab}
+        isAiOpen={activeAssistantPanel === 'ai'}
+        onToggleAi={() => setActiveAssistantPanel(prev => prev === 'ai' ? null : 'ai')}
+        isPanelOpen={activeAssistantPanel === 'voice'}
+        onOpenPanel={() => setActiveAssistantPanel('voice')}
+        onClosePanel={() => setActiveAssistantPanel(null)}
+        isAvatarVisible={isAvatarVisible}
+        showSplashScreen={showSplashScreen}
+        isAppInitialized={isAppInitialized}
+        onToggleAvatar={(vis) => {
+          setIsAvatarVisible((prev) => {
+            const next = typeof vis === 'boolean' ? vis : !prev;
+            try {
+              localStorage.setItem('loopra_avatar_visible', next ? 'true' : 'false');
+            } catch (_) {}
+            return next;
+          });
+        }}
+        onPlayTrack={(track) => playSong(track)}
+        onTogglePlayPause={togglePlayPause}
+        onNextTrack={handleNextSong}
+        onPrevTrack={handlePrevSong}
+        onToggleShuffle={toggleShuffle}
+        onToggleRepeat={toggleRepeatMode}
+        onSetVolume={(vol) => {
+          setVolume(vol);
+          try { playerRef.current?.setVolume?.(vol); } catch (_) {}
+        }}
+        onToggleLike={(track) => toggleLike(track || currentSong)}
+        onRemoveFromFavorites={(trackOrTitle) => {
+          const title = typeof trackOrTitle === 'string' ? trackOrTitle : trackOrTitle?.title;
+          if (title) {
+            setLikedSongs(prev => prev.filter(s => !s.title?.toLowerCase().includes(title.toLowerCase())));
+            showToast?.(`Removed "${title}" from favorites`);
+          } else if (currentSong) {
+            toggleLike(currentSong);
+          }
+        }}
+        onAddToPlaylist={(track) => handleAddToPlaylistClick(track || currentSong)}
+        onCreatePlaylist={(name) => {
+          const trimmed = (name || '').trim() || 'New Playlist';
+          const newPl = {
+            id: `pl_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+            name: trimmed,
+            createdAt: new Date().toISOString(),
+            songs: []
+          };
+          setPlaylists(prev => [newPl, ...prev]);
+          showToast?.(`Created playlist "${trimmed}"`);
+          return newPl;
+        }}
+        onOpenPlaylistByName={(name) => {
+          const pl = playlists.find(p => p.name?.toLowerCase().includes(name.toLowerCase()));
+          if (pl) {
+            setSelectedPlaylistForView(pl);
+            handleStationSelect('playlists');
+          } else {
+            handleStationSelect('playlists');
+          }
+        }}
+        onPlayPlaylist={(name) => {
+          const pl = playlists.find(p => p.name?.toLowerCase().includes(name.toLowerCase()));
+          if (pl && pl.songs?.length > 0) {
+            setQueue(pl.songs);
+            playSong(pl.songs[0]);
+            showToast?.(`Playing playlist "${pl.name}"`);
+          } else {
+            showToast?.('Playlist is empty or not found', 'warning');
+          }
+        }}
+        onPlayRadioStation={(stationName) => {
+          handleStationSelect('radio', { station: stationName, autoplay: true });
+        }}
+        onPlayFromHistory={(queryOrIndex) => {
+          if (history && history.length > 0) {
+            let track = history[0];
+            if (typeof queryOrIndex === 'string') {
+              const matched = history.find(s => s.title?.toLowerCase().includes(queryOrIndex.toLowerCase()));
+              if (matched) track = matched;
+            }
+            playSong(track);
+            showToast?.(`Playing "${track.title}" from history`);
+          } else {
+            showToast?.('No songs found in listening history', 'warning');
+          }
+        }}
+        onRemoveHistoryItem={(queryOrId) => {
+          if (queryOrId) {
+            const queryLower = String(queryOrId).toLowerCase().trim();
+            setHistory(prev => prev.filter(s => {
+              const match = s.id === queryOrId ||
+                s.title?.toLowerCase().includes(queryLower) ||
+                s.artist?.toLowerCase().includes(queryLower);
+              return !match;
+            }));
+            showToast?.('Removed from listening history');
+          }
+        }}
+        onClearHistory={clearHistory}
+        onAddToQueue={(track) => {
+          const songToAdd = track || currentSong;
+          if (songToAdd) {
+            setQueue(prev => [...prev, songToAdd]);
+            showToast?.(`Added "${songToAdd.title}" to queue`);
+          }
+        }}
+        onNavigate={(page, extra) => {
+          if (page === 'admin' && !isAdmin) {
+            return { success: false, reason: 'NO_ACCESS' };
+          }
+          const validDestinations = [
+            'home', 'discover', 'swipe', 'for-you', 'library', 'history',
+            'playlists', 'activity', 'dj-club', 'downloads', 'downloads_explore',
+            'radio', 'indian-radio', 'mood', 'timemachine', 'barber', 'truck', 'pauwa',
+            'artist', 'admin', 'apk', 'download'
+          ];
+          if (!validDestinations.includes(page) && !SPECIAL_STATIONS[page] && !stationsMap[page]) {
+            return { success: false, reason: 'NOT_FOUND' };
+          }
+          if (page === 'home') {
+            window.history.pushState(null, '', '/');
+            handleStationSelect('home');
+          } else if (page === 'discover') {
+            if (extra?.query) {
+              handleSearchFromHome(extra.query);
+            } else {
+              handleStationSelect('discover');
+            }
+          } else {
+            handleStationSelect(page, extra);
+          }
+          return { success: true };
+        }}
+        onOpenInsights={() => setIsStatsOpen(true)}
+        onOpenQueue={() => {
+          if (typeof handleOpenExpandedPlayer === 'function') {
+            handleOpenExpandedPlayer('queue');
+          } else {
+            setShowQueuePanel(true);
+          }
+        }}
+        onOpenLyrics={() => setIsLyricsOpen(true)}
+        onOpenListeningRooms={() => setIsListeningRoomsOpen(true)}
+        onOpenSimilarSongs={(track) => setSimilarSongsTrack(track || currentSong)}
+        onOpenPlayerSettings={() => setIsPlayerSettingsOpen(true)}
+        onOpenSleepTimer={() => setIsSleepTimerOpen(true)}
+        onOpenCanvas={() => setIsCanvasOpen(true)}
+        onOpenProfile={() => setIsProfileOpen(true)}
+        onOpenRatingModal={() => setIsRatingModalOpen(true)}
+        onSetPlaybackSpeed={(spd) => {
+          try {
+            if (typeof playerRef.current?.setPlaybackRate === 'function') {
+              playerRef.current.setPlaybackRate(spd);
+            }
+            showToast?.(`Playback speed set to ${spd}x`);
+          } catch (_) {}
+        }}
+        onDjAction={(actionObj) => {
+          try {
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('loopra_dj_action', { detail: actionObj }));
+            }
+          } catch (_) {}
+        }}
+        onGoBack={handleGoBack}
+        onOpenArtist={(artistName) => handleArtistClick(artistName)}
+        userPlaylists={playlists}
+        selectedPlaylistForView={selectedPlaylistForView}
+        getCurrentVisibleTracks={() => currentContextTracksRef.current}
+        playFromCurrentContext={async ({ mode, songQuery }) => {
+          const tracks = currentContextTracksRef.current || [];
+          if (!tracks || tracks.length === 0) {
+            return { success: false, message: 'Collection is empty or still loading.' };
+          }
+          let trackToPlay = null;
+          if (songQuery) {
+            const q = songQuery.toLowerCase().trim();
+            const matched = tracks.find(t => 
+              (t.title && t.title.toLowerCase().includes(q)) ||
+              (t.artist && t.artist.toLowerCase().includes(q))
+            );
+            if (matched) {
+              trackToPlay = matched;
+            } else {
+              return { success: false, message: `"${songQuery}" is collection mein nahi mila.` };
+            }
+          } else if (mode === 'first') {
+            trackToPlay = tracks[0];
+          } else {
+            // random / shuffle / default
+            const idx = Math.floor(Math.random() * tracks.length);
+            trackToPlay = tracks[idx];
+          }
+
+          if (trackToPlay) {
+            playSong(trackToPlay);
+            showToast?.(`Playing "${trackToPlay.title}"`);
+            return { success: true, track: trackToPlay, description: `Playing "${trackToPlay.title}" from collection` };
+          }
+          return { success: false, message: 'No track found to play.' };
+        }}
+        showToast={showToast}
+      />
+      )}
+
+      {/* Automatic 5-Minute Active Usage & Direct Rate/Review Modal */}
+      <RatingPopupModal
+        user={user}
+        authToken={authToken}
+        isPlaying={isPlaying}
+        showToast={showToast}
+        isOpen={isRatingModalOpen}
+        onClose={() => setIsRatingModalOpen(false)}
+        initialMode={ratingModalMode}
+        onReviewSubmitted={() => setReviewsRefreshKey(k => k + 1)}
+      />
+
+      {toastMessage && (
+        <div className={`fixed ${isBottomPlayerVisible ? 'bottom-36 md:bottom-28' : 'bottom-20 md:bottom-8'} left-1/2 -translate-x-1/2 z-[9999] px-4 py-2.5 rounded-2xl bg-neutral-900/95 text-white text-xs border border-amber-500/40 shadow-2xl backdrop-blur-xl flex items-center gap-2 animate-fadeIn pointer-events-none`}>
+          <Icon name="sparkles" className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Autoplay Policy Block Prompt Banner: Prompts user with interactive play button when browser blocks autoplay */}
+      {isAutoplayBlocked && currentSong && (
+        <div className={`fixed ${isBottomPlayerVisible ? 'bottom-36 md:bottom-28' : 'bottom-20 md:bottom-8'} left-1/2 -translate-x-1/2 z-[10001] px-4 py-2.5 rounded-2xl bg-neutral-900/95 text-white text-xs border border-amber-500 shadow-[0_0_30px_rgba(245,158,11,0.25)] backdrop-blur-2xl flex items-center gap-3 animate-fadeIn`}>
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+            <span className="font-medium">Autoplay blocked by browser. Tap to start playback:</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setIsAutoplayBlocked(false);
+              togglePlayPause();
+            }}
+            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 font-bold text-xs flex items-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer"
+          >
+            <span>▶</span>
+            <span>Tap to Play</span>
+          </button>
+        </div>
+      )}
+
+      {/* Render Free-Tier Cold-Start Wake-Up Badge */}
+      {isServerWakingUp && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[10001] px-3.5 py-1.5 rounded-full bg-neutral-900/90 text-amber-400 text-[11px] font-medium border border-amber-500/30 shadow-xl backdrop-blur-md flex items-center gap-2 animate-pulse pointer-events-none">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+          <span>Waking up Loopra server...</span>
+        </div>
+      )}
+
+      {/* Global Right-Click Track Context Menu */}
+      {contextMenu && (
+        <div
+          style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
+          className="fixed z-[10000] w-52 bg-neutral-900/95 backdrop-blur-2xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden py-1.5 animate-fadeIn select-none"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-3.5 py-1.5 border-b border-white/5 mb-1">
+            <p className="text-[11px] font-bold text-white truncate">{contextMenu.track.title}</p>
+            <p className="text-[9px] text-neutral-400 truncate">{contextMenu.track.artist || contextMenu.track.channel}</p>
+          </div>
+
+          <button
+            onClick={() => {
+              playSong(contextMenu.track);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3.5 py-2 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800/80 transition flex items-center gap-2.5 cursor-pointer"
+          >
+            <span className="text-amber-400">▶</span>
+            <span>Play Now</span>
+          </button>
+
+          <button
+            onClick={() => {
+              playNext(contextMenu.track);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3.5 py-2 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800/80 transition flex items-center gap-2.5 cursor-pointer"
+          >
+            <span>⏭️</span>
+            <span>Play Next</span>
+          </button>
+
+          <button
+            onClick={() => {
+              if (queue.some(s => (s.id || s.videoId) === (contextMenu.track.id || contextMenu.track.videoId))) {
+                removeFromQueue(contextMenu.track.id || contextMenu.track.videoId);
+              } else {
+                addToQueue(contextMenu.track);
+              }
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3.5 py-2 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800/80 transition flex items-center gap-2.5 cursor-pointer"
+          >
+            <span>➕</span>
+            <span>{queue.some(s => (s.id || s.videoId) === (contextMenu.track.id || contextMenu.track.videoId)) ? 'Remove from Queue' : 'Add to Queue'}</span>
+          </button>
+
+          <button
+            onClick={() => {
+              toggleLike(contextMenu.track);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3.5 py-2 text-xs font-medium text-neutral-200 hover:text-pink-400 hover:bg-neutral-800/80 transition flex items-center gap-2.5 cursor-pointer"
+          >
+            <span className="text-pink-400">♥</span>
+            <span>{likedSongs.some(s => (s.id || s.videoId) === (contextMenu.track.id || contextMenu.track.videoId)) ? 'Remove Favorite' : 'Add to Favorite'}</span>
+          </button>
+
+          <button
+            onClick={() => {
+              handleAddToPlaylistClick(contextMenu.track);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3.5 py-2 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800/80 transition flex items-center gap-2.5 cursor-pointer"
+          >
+            <span>📁</span>
+            <span>Add to Playlist</span>
+          </button>
+
+          <div className="pt-1 border-t border-white/5 mt-1">
+            <DownloadTrackButton
+              track={contextMenu.track}
+              variant="menu-item"
+              showToast={showToast}
+              onDownloaded={() => setContextMenu(null)}
+            />
+          </div>
+        </div>
+      )}
+      </Suspense>
+    </div>
+  );
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
