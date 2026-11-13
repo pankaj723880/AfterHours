@@ -6741,18 +6741,32 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
           className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-3 sm:px-4 md:px-8 h-14 sm:h-16 flex items-center justify-between shrink-0 w-full box-border'}`}
         >
-          {/* LEFT: Loopra Brand Logo (Clean, no hamburger button) */}
-          <div className="flex items-center gap-2 sm:gap-2.5 my-auto shrink-0">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow-md overflow-hidden shrink-0">
-              <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
+          {/* LEFT: Menu / Sidebar Toggle + Loopra Brand Logo */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <button
+              id="loopra-mobile-hamburger-btn"
+              data-nav-id="hamburger"
+              type="button"
+              onClick={() => setIsSidebarOpen(prev => !prev)}
+              className="flex items-center justify-center p-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700/60 shadow-sm active:scale-95 transition cursor-pointer shrink-0 min-w-[36px] min-h-[36px] focus:outline-none"
+              aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
+              title={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
+            >
+              <Icon name={isSidebarOpen ? "close" : "menu"} className="w-4 h-4 text-amber-400 pointer-events-none transition-transform duration-200" />
+            </button>
+
+            <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow-md overflow-hidden shrink-0">
+                <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
+              </div>
+              {cmsConfig?.branding?.siteName ? (
+                <span className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white whitespace-nowrap leading-none">{cmsConfig.branding.siteName}</span>
+              ) : null}
             </div>
-            {cmsConfig?.branding?.siteName ? (
-              <span className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white whitespace-nowrap leading-none">{cmsConfig.branding.siteName}</span>
-            ) : null}
           </div>
 
           {/* CENTER (Desktop only): ACTIVE USERS (Subtle, muted presence indicator) */}
-          <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-900/40 border border-neutral-800/50 shadow-sm shrink-0 my-auto">
+          <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-900/40 border border-neutral-800/50 shadow-sm shrink-0">
             <span className="relative flex h-2 w-2">
               <span className={`animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite] absolute inline-flex h-full w-full rounded-full ${
                 isLiveCountStale ? 'bg-amber-400 opacity-40' : 'bg-emerald-400 opacity-60'
@@ -6775,7 +6789,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
 
           {/* RIGHT: AUTH/LOGOUT & VOICE AI */}
-          <div className="flex items-center gap-2 my-auto shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             {/* 3D Avatar / AI Assistant toggle button (Gated strictly by dynamic role & voice permissions) */}
             {isVoiceActive && (
               <button
@@ -6813,7 +6827,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             )}
             
             {user ? (
-              <div className="flex items-center gap-2 relative my-auto" ref={accountMenuRef}>
+              <div className="flex items-center gap-2 relative" ref={accountMenuRef}>
                 {/* Compact Profile Avatar Button */}
                 <button
                   type="button"
@@ -6911,7 +6925,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 )}
               </div>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 {/* Mobile login button opening auth modal */}
                 <button
                   type="button"
@@ -6919,7 +6933,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     if (isPlaying) togglePlayPause();
                     openAuthModal();
                   }}
-                  className="md:hidden w-8 h-8 rounded-full bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs flex items-center justify-center border border-amber-400/40 shadow-md active:scale-95 transition cursor-pointer"
+                  className="md:hidden w-8 h-8 rounded-full bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs flex items-center justify-center border border-amber-400/40 shadow-md active:scale-95 transition cursor-pointer shrink-0"
                   title="Sign In / Account"
                   aria-label="Sign In / Account"
                 >
@@ -6927,13 +6941,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => {
                     if (isPlaying) {
                       togglePlayPause();
                     }
                     openAuthModal();
                   }}
-                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0"
+                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-white font-medium tracking-wide text-xs shadow-lg transition shrink-0 cursor-pointer"
                 >
                   <Icon name="user" className="w-3.5 h-3.5 shrink-0" />
                   <span className="hidden sm:inline">Login</span>
