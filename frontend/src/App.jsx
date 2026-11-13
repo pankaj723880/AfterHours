@@ -6946,8 +6946,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         {/* Unified Top Navbar for both Mobile and Desktop (hidden on DJ Club where full-screen dedicated navbar is active) */}
         <header
           style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
-          className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-2.5 sm:px-4 md:px-8 py-1.5 h-12 sm:h-14 md:h-16 flex items-center justify-between shrink-0 w-full box-border select-none'}`}
+          className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 w-full shrink-0 select-none box-border'}`}
         >
+          <div className="h-12 sm:h-14 md:h-16 px-2.5 sm:px-4 md:px-8 flex items-center justify-between w-full box-border">
           {/* LEFT: Menu / Sidebar Toggle + Loopra Brand Logo */}
           <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
             <button
@@ -7162,6 +7163,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 </button>
               </div>
             )}
+          </div>
           </div>
         </header>
 
