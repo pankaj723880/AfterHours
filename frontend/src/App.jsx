@@ -7782,13 +7782,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   </button>
                 )}
 
-                {/* 2. Download APK Button linking directly to https://loopra-downloads.vercel.app/ */}
+                {/* 2. Download APK Button directly downloading Loopra.apk */}
                 <a
-                  href="https://loopra-downloads.vercel.app/"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href="/Loopra.apk"
+                  download="Loopra.apk"
                   className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
-                  title="Download APK"
+                  title="Download APK (Direct)"
                 >
                   <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
                   {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Download APK</span>}
@@ -8122,13 +8121,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 </button>
               )}
 
-              {/* 2. Download APK Button linking directly to https://loopra-downloads.vercel.app/ */}
+              {/* 2. Download APK Button directly downloading Loopra.apk */}
               <a
-                href="https://loopra-downloads.vercel.app/"
-                target="_blank"
-                rel="noopener noreferrer"
+                href="/Loopra.apk"
+                download="Loopra.apk"
                 className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
-                title="Download APK"
+                title="Download APK (Direct)"
               >
                 <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
                 {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Download APK</span>}
