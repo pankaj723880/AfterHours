@@ -3128,16 +3128,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           const data = parsed.data;
           if (!isMounted) return;
 
-          // Merge without losing local offline edits or remote favourites
-          setLikedSongs(prev => {
-            const remote = sanitizeList(data.likedSongs || []);
-            const map = new Map();
-            remote.forEach(s => map.set(s.id, s));
-            prev.forEach(s => map.set(s.id, s));
-            const merged = Array.from(map.values());
-            try { localStorage.setItem('liked_songs', JSON.stringify(merged)); } catch (e) {}
-            return merged;
-          });
+          // Remote account is authoritative for liked songs: never inject or merge unauthenticated guest/sample tracks
+          const remoteLiked = sanitizeList(data.likedSongs || []);
+          setLikedSongs(remoteLiked);
+          try { localStorage.setItem('liked_songs', JSON.stringify(remoteLiked)); } catch (e) {}
 
           setPlaylists(prev => {
             const remote = sanitizeList(data.playlists || []);
@@ -6181,6 +6175,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           };
           setUser(loggedInUser);
           localStorage.setItem('afterhours_user', JSON.stringify(loggedInUser));
+
+          const userLiked = u.likedSongs || [];
+          setLikedSongs(sanitizeList(userLiked));
+          localStorage.setItem('liked_songs', JSON.stringify(sanitizeList(userLiked)));
+
+          const userHistory = (u.history || []).slice(0, 50);
+          setHistory(sanitizeList(userHistory));
+          localStorage.setItem('history_songs', JSON.stringify(sanitizeList(userHistory)));
+
+          const userPlaylists = u.playlists || [];
+          setPlaylists(sanitizeList(userPlaylists));
+          localStorage.setItem('playlists', JSON.stringify(sanitizeList(userPlaylists)));
+
+          const userQueue = u.queue || [];
+          setQueue(sanitizeList(userQueue));
+          localStorage.setItem('afterhours_queue', JSON.stringify(sanitizeList(userQueue)));
+
           closeAuthModal(true);
           showToast?.(`Welcome back, ${loggedInUser.displayName || loggedInUser.username}!`);
         }
