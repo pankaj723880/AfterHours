@@ -6,8 +6,8 @@ import { CURATED_STATION_TRACKS } from '../../constants/curatedPlaylists';
 
 // Track-level runtime failed image cache for graceful component fallbacks
 const locallyFailedVideoIds = new Set();
-const SESSION_CACHE_KEY = 'loopra_home_curated_cache';
-const CURATED_CACHE_KEY = 'loopra_curated_cache';
+const SESSION_CACHE_KEY = 'loopra_home_curated_cache_v4';
+const CURATED_CACHE_KEY = 'loopra_curated_cache_v4';
 const CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 // In-memory module-level cache for instant tab switches
@@ -542,7 +542,7 @@ export default function PersonalizedRecommendationsSection({
 
     return (
       <div
-        key={`${trackId || idx}-${idx}`}
+        key={`${trackId || idx}`}
         onClick={() => onPlayTrack(playableTrack)}
         className="group relative flex flex-col shrink-0 w-36 sm:w-44 md:w-48 bg-neutral-900/60 hover:bg-neutral-800/80 border border-neutral-800/80 hover:border-amber-500/40 rounded-2xl p-2.5 sm:p-3 transition-all duration-300 hover:shadow-xl hover:shadow-amber-500/10 cursor-pointer select-none"
       >
