@@ -2469,6 +2469,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [toastMessage, setToastMessage] = useState(null);
   const toastTimerRef = useRef(null);
   const [isServerWakingUp, setIsServerWakingUp] = useState(false);
+  const [isAutoplayBlocked, setIsAutoplayBlocked] = useState(false);
 
   // Subscribe to Render server cold-start status badge
   useEffect(() => {
@@ -3802,13 +3803,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   }, []);
   useEffect(() => {
     if (!window.YT) {
-      const tag = document.createElement('script');
-      tag.src = ""; /* Disabled widgetapi to prevent postmessage spam */
-      const firstScriptTag = document.getElementsByTagName('script')[0];
-      if (firstScriptTag && firstScriptTag.parentNode) {
-        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-      } else {
-        document.head.appendChild(tag);
+      // Check if YouTube iframe API script tag is already in DOM
+      const existingScript = document.querySelector('script[src*="youtube.com/iframe_api"]');
+      if (!existingScript) {
+        const tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        const firstScriptTag = document.getElementsByTagName('script')[0];
+        if (firstScriptTag && firstScriptTag.parentNode) {
+          firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+        } else {
+          document.head.appendChild(tag);
+        }
       }
     }
   }, []);
@@ -3907,6 +3912,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         // 4. Bind event listeners
         audio.onplay = () => {
           setIsPlaying(true);
+          setIsAutoplayBlocked(false);
           isInitialMountRef.current = false;
         };
         audio.onpause = () => setIsPlaying(false);
@@ -3990,6 +3996,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       // Inner executor: runs only once track is verified through Layer 4 gate
       const executeVerifiedPlayback = () => {
       isInitialMountRef.current = false;
+      setIsAutoplayBlocked(false);
       isUserPausedRef.current = false;
       userIntentPlayingRef.current = true;
       setVideoModalSong(prev => (prev ? song : null));
@@ -4672,6 +4679,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   const ytContainerRef = useRef(null);
   const fallbackAttemptedRef = useRef({});
+  const autoplayCheckTimerRef = useRef(null);
 
   useEffect(() => {
     return () => {
@@ -4745,9 +4753,38 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             }
             if (shouldAutoPlay) {
               if (typeof e.target.playVideo === 'function') {
-                e.target.playVideo();
+                try {
+                  const p = e.target.playVideo();
+                  if (p && typeof p.catch === 'function') {
+                    p.catch((err) => {
+                      if (err?.name === 'NotAllowedError') {
+                        console.warn('[Loopra Player] Autoplay blocked by browser policy:', err);
+                        setIsAutoplayBlocked(true);
+                        setIsPlaying(false);
+                      }
+                    });
+                  }
+                } catch (err) {
+                  console.warn('[Loopra Player] playVideo error:', err);
+                }
               }
               setIsPlaying(true);
+
+              // Detect if browser blocked autoplay silently (e.g. state remains cued or unstarted)
+              if (autoplayCheckTimerRef.current) clearTimeout(autoplayCheckTimerRef.current);
+              autoplayCheckTimerRef.current = setTimeout(() => {
+                try {
+                  if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
+                    const st = playerRef.current.getPlayerState();
+                    // State -1 (UNSTARTED) or 5 (CUED) after autoplay command indicates autoplay block
+                    if ((st === -1 || st === 5 || st === 2) && !isUserPausedRef.current && !isPlayingRef.current) {
+                      console.info('[Loopra Player] Autoplay state check: user interaction required (state=' + st + ')');
+                      setIsAutoplayBlocked(true);
+                      setIsPlaying(false);
+                    }
+                  }
+                } catch (_) {}
+              }, 1200);
             } else {
               if (typeof e.target.pauseVideo === 'function') {
                 e.target.pauseVideo();
@@ -4759,6 +4796,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         onStateChange: (e) => {
           if (e.data === 1) { // Playing
             setIsPlaying(true);
+            setIsAutoplayBlocked(false);
+            if (autoplayCheckTimerRef.current) {
+              clearTimeout(autoplayCheckTimerRef.current);
+              autoplayCheckTimerRef.current = null;
+            }
             isUserPausedRef.current = false;
             userIntentPlayingRef.current = true;
             isInitialMountRef.current = false;
@@ -4979,6 +5021,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       // Note: Web Audio createMediaElementSource is omitted here to prevent silencing cross-origin live streams.
       radioAudio.onplaying = () => {
         setIsPlaying(true);
+        setIsAutoplayBlocked(false);
         isInitialMountRef.current = false;
       };
       radioAudio.onpause = () => {
@@ -5003,7 +5046,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           const p = radioAudio.play();
           if (p && typeof p.catch === 'function') {
             p.catch(err => {
-              if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
+              if (err.name === 'NotAllowedError') {
+                console.warn('[IndianRadio] Autoplay blocked by browser policy:', err);
+                setIsAutoplayBlocked(true);
+                setIsPlaying(false);
+              } else if (err.name !== 'AbortError') {
                 console.warn('[IndianRadio] Autoplay error:', err);
               }
             });
@@ -5150,6 +5197,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
         audio.onplay = () => {
           setIsPlaying(true);
+          setIsAutoplayBlocked(false);
           isInitialMountRef.current = false;
         };
         audio.onpause = () => setIsPlaying(false);
@@ -5245,7 +5293,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         loadedVideoIdRef.current = currentSong.id;
 
         if (!isFirstMount) {
-          audio.play().catch(e => console.warn('Offline audio play error:', e));
+          const p = audio.play();
+          if (p && typeof p.catch === 'function') {
+            p.catch(e => {
+              if (e.name === 'NotAllowedError') {
+                console.warn('Offline audio autoplay blocked:', e);
+                setIsAutoplayBlocked(true);
+                setIsPlaying(false);
+              } else {
+                console.warn('Offline audio play error:', e);
+              }
+            });
+          }
           setIsPlaying(true);
         } else {
           setIsPlaying(false);
@@ -5311,8 +5370,34 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               videoId: currentSong.id,
               suggestedQuality: quality
             });
-            playerRef.current.playVideo();
+            try {
+              const p = playerRef.current.playVideo();
+              if (p && typeof p.catch === 'function') {
+                p.catch(err => {
+                  if (err?.name === 'NotAllowedError') {
+                    console.warn('[Loopra Player] Autoplay blocked by browser policy:', err);
+                    setIsAutoplayBlocked(true);
+                    setIsPlaying(false);
+                  }
+                });
+              }
+            } catch (_) {}
             setIsPlaying(true);
+
+            // Guard against silent autoplay blockage where state does not change to 1 (playing)
+            if (autoplayCheckTimerRef.current) clearTimeout(autoplayCheckTimerRef.current);
+            autoplayCheckTimerRef.current = setTimeout(() => {
+              try {
+                if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
+                  const st = playerRef.current.getPlayerState();
+                  if ((st === -1 || st === 5 || st === 2) && !isUserPausedRef.current && !isPlayingRef.current) {
+                    console.info('[Loopra Player] Autoplay state check: user interaction required (state=' + st + ')');
+                    setIsAutoplayBlocked(true);
+                    setIsPlaying(false);
+                  }
+                }
+              } catch (_) {}
+            }, 1200);
           }
           loadedVideoIdRef.current = currentSong.id;
         } catch (err) {
@@ -5695,6 +5780,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       return;
     }
     isInitialMountRef.current = false;
+    setIsAutoplayBlocked(false);
     if (isPlaying) {
       isUserPausedRef.current = true;
       userIntentPlayingRef.current = false;
@@ -6779,17 +6865,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         {/* Unified Top Navbar for both Mobile and Desktop (hidden on DJ Club where full-screen dedicated navbar is active) */}
         <header
           style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
-          className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 w-full shrink-0 select-none box-border'}`}
+          className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-2.5 sm:px-4 md:px-8 py-1.5 h-12 sm:h-14 md:h-16 flex items-center justify-between shrink-0 w-full box-border select-none'}`}
         >
-          <div className="h-14 sm:h-16 px-3 sm:px-4 md:px-8 flex items-center justify-between w-full box-border">
           {/* LEFT: Menu / Sidebar Toggle + Loopra Brand Logo */}
-          <div className="flex items-center gap-2.5 sm:gap-3.5 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
             <button
               id="loopra-mobile-hamburger-btn"
               data-nav-id="hamburger"
               type="button"
               onClick={() => setIsSidebarOpen(prev => !prev)}
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700/60 shadow-sm active:scale-95 transition flex items-center justify-center cursor-pointer shrink-0 focus:outline-none"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700/60 shadow-sm active:scale-95 transition flex items-center justify-center cursor-pointer shrink-0 focus:outline-none"
               aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
               title={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
             >
@@ -6797,7 +6882,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             </button>
 
             <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow-md overflow-hidden shrink-0">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow-md overflow-hidden shrink-0">
                 <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
               </div>
               {cmsConfig?.branding?.siteName ? (
@@ -6857,7 +6942,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 }}
                 title={isAvatarVisible ? "Toggle AI Companion (Active)" : "Talk to Loopra Avatar"}
                 aria-label={isAvatarVisible ? "Hide Loopra AI Companion" : "Talk to Loopra Avatar"}
-                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all duration-300 shadow-md active:scale-95 cursor-pointer shrink-0 ${
+                className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all duration-300 shadow-md active:scale-95 cursor-pointer shrink-0 ${
                   isAvatarVisible
                     ? 'ring-2 ring-amber-500 bg-amber-500/20 text-amber-400 shadow-amber-500/30'
                     : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10'
@@ -6876,7 +6961,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   aria-label="User Account Menu"
                   aria-expanded={isAccountMenuOpen}
                   title={user.displayName || user.username || "Account"}
-                  className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center relative overflow-hidden transition-all cursor-pointer focus:outline-none shrink-0 ${
+                  className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center relative overflow-hidden transition-all cursor-pointer focus:outline-none shrink-0 ${
                     isAccountMenuOpen
                       ? 'ring-2 ring-amber-400 border-transparent shadow-lg shadow-amber-500/20'
                       : 'border border-amber-500/40 hover:border-amber-400 hover:ring-2 hover:ring-amber-400/40'
@@ -6996,7 +7081,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 </button>
               </div>
             )}
-          </div>
           </div>
         </header>
 
@@ -8476,7 +8560,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                                 {currentSong?.id !== track.id && (
                                   <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
                                 )}
-                                <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                                <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{isSongLiked(track) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
                                 <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
                                   <span>⏭️</span>
                                   <span>Play Next</span>
@@ -8560,7 +8644,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                                 {currentSong?.id !== track.id && (
                                   <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
                                 )}
-                                <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                                <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{isSongLiked(track) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
                                 <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
                                     <span>⏭️</span>
                                     <span>Play Next</span>
@@ -8653,7 +8737,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                           {isMenuOpen && (
                             <div className="absolute right-0 top-full mt-1.5 w-48 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
                               <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
-                              <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                              <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{isSongLiked(track) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
                               <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
                                 <span>⏭️</span>
                                 <span>Play Next</span>
@@ -9025,7 +9109,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                                 {currentSong?.id !== track.id && (
                                   <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
                                 )}
-                                <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{likedSongs.some(s => s.id === track.id) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                                <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{isSongLiked(track) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
                                 <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
                                 <span>⏭️</span>
                                 <span>Play Next</span>
@@ -9311,10 +9395,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 <button 
                   onClick={(e) => { e.stopPropagation(); toggleLike(currentSong); }} 
                   className="p-1.5 rounded-full hover:bg-white/10 text-neutral-400 hover:text-pink-500 transition cursor-pointer shrink-0" 
-                  title={likedSongs.some(s => s.id === currentSong.id) ? "Unlike" : "Like"}
+                  title={isSongLiked(currentSong) ? "Unlike" : "Like"}
                   aria-label="Toggle Like"
                 >
-                  <Icon name={likedSongs.some(s => s.id === currentSong.id) ? "heart" : "heartOutline"} className={`w-4 h-4 ${likedSongs.some(s => s.id === currentSong.id) ? 'text-pink-500 fill-pink-500' : 'text-neutral-400'}`} />
+                  <Icon name={isSongLiked(currentSong) ? "heart" : "heartOutline"} className={`w-4 h-4 ${isSongLiked(currentSong) ? 'text-pink-500 fill-pink-500' : 'text-neutral-400'}`} />
                 </button>
                 <button onClick={(e) => handleAddToPlaylistClick(currentSong, e)} className="p-1.5 rounded-full hover:bg-white/10 text-neutral-400 hover:text-amber-400 transition cursor-pointer shrink-0" title="Add to Playlist">
                   <Icon name="plus" className="w-3.5 h-3.5" />
@@ -10605,6 +10689,27 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         <div className={`fixed ${isBottomPlayerVisible ? 'bottom-36 md:bottom-28' : 'bottom-20 md:bottom-8'} left-1/2 -translate-x-1/2 z-[9999] px-4 py-2.5 rounded-2xl bg-neutral-900/95 text-white text-xs border border-amber-500/40 shadow-2xl backdrop-blur-xl flex items-center gap-2 animate-fadeIn pointer-events-none`}>
           <Icon name="sparkles" className="w-4 h-4 text-amber-400 shrink-0" />
           <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Autoplay Policy Block Prompt Banner: Prompts user with interactive play button when browser blocks autoplay */}
+      {isAutoplayBlocked && currentSong && (
+        <div className={`fixed ${isBottomPlayerVisible ? 'bottom-36 md:bottom-28' : 'bottom-20 md:bottom-8'} left-1/2 -translate-x-1/2 z-[10001] px-4 py-2.5 rounded-2xl bg-neutral-900/95 text-white text-xs border border-amber-500 shadow-[0_0_30px_rgba(245,158,11,0.25)] backdrop-blur-2xl flex items-center gap-3 animate-fadeIn`}>
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+            <span className="font-medium">Autoplay blocked by browser. Tap to start playback:</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setIsAutoplayBlocked(false);
+              togglePlayPause();
+            }}
+            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 font-bold text-xs flex items-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer"
+          >
+            <span>▶</span>
+            <span>Tap to Play</span>
+          </button>
         </div>
       )}
 
