@@ -394,10 +394,11 @@ app.all(['/health', '/api/health'], (req, res) => {
     return res.status(200).end();
   }
   const ready = isDatabaseReady();
+  const uptime = process.uptime();
   res.status(200).json({
-    status: 'awake',
-    timestamp: Date.now(),
-    uptime: Math.floor(process.uptime()),
+    status: 'alive',
+    uptime,
+    timestamp: new Date().toISOString(),
     database: ready ? 'connected' : 'disconnected',
     readyState: mongoose.connection.readyState
   });

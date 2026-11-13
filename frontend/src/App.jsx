@@ -2312,12 +2312,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   });
   const [isListeningRoomsOpen, setIsListeningRoomsOpen] = useState(false);
   const [similarSongsTrack, setSimilarSongsTrack] = useState(null);
+  const closeExpandedPlayer = useCallback(() => {
+    setShowQueuePanel(false);
+  }, []);
   const handleOpenExpandedPlayer = (tab = 'player') => {
     setMobileQueueTab(tab);
     setShowQueuePanel(true);
-    if (typeof window !== 'undefined' && window.history && window.history.pushState) {
-      window.history.pushState({ loopraModal: 'expanded_player' }, '', window.location.href);
-    }
   };
 
   // Loopra Platform Upgrade States:
@@ -2379,12 +2379,76 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     isMobileScreenRef.current = isMobileScreen;
   }, [isMobileScreen]);
 
-  // Push history state when any full-screen overlay opens so phone back gesture dismisses the overlay
+  // Single navStateRef tracking all active views and handlers
+  const navStateRef = useRef({
+    isVideoOpen: false,
+    isExpandedPlayer: false,
+    showQueue: false,
+    showQueuePanel: false,
+    isCanvasOpen: false,
+    showAuthModal: false,
+    isSidebarOpen: false,
+    isMobileScreen: false,
+    isPlaylistModalOpen: false,
+    isListeningRoomsOpen: false,
+    similarSongsTrack: null,
+    isLyricsOpen: false,
+    isSleepTimerOpen: false,
+    isPlayerSettingsOpen: false,
+    isStatsOpen: false,
+    isProfileOpen: false,
+    isRatingModalOpen: false,
+    selectedPlaylistForView: null,
+    offlineSubView: 'library',
+    activeTab: 'home',
+    handleCloseVideo: null,
+    closeExpandedPlayer: null,
+    handleGoBack: null
+  });
+
+  useEffect(() => {
+    navStateRef.current = {
+      isVideoOpen: Boolean(videoModalSong && !isPipActive),
+      isExpandedPlayer: Boolean(showQueuePanel && mobileQueueTab === 'player'),
+      showQueue: Boolean(showQueuePanel && mobileQueueTab === 'queue'),
+      showQueuePanel: Boolean(showQueuePanel),
+      isCanvasOpen: Boolean(isCanvasOpen),
+      showAuthModal: Boolean(showAuthModal),
+      isSidebarOpen: Boolean(isSidebarOpen && isMobileScreen),
+      isMobileScreen: Boolean(isMobileScreen),
+      isPlaylistModalOpen: Boolean(isPlaylistModalOpen),
+      isListeningRoomsOpen: Boolean(isListeningRoomsOpen),
+      similarSongsTrack,
+      isLyricsOpen: Boolean(isLyricsOpen),
+      isSleepTimerOpen: Boolean(isSleepTimerOpen),
+      isPlayerSettingsOpen: Boolean(isPlayerSettingsOpen),
+      isStatsOpen: Boolean(isStatsOpen),
+      isProfileOpen: Boolean(isProfileOpen),
+      isRatingModalOpen: Boolean(isRatingModalOpen),
+      selectedPlaylistForView,
+      offlineSubView,
+      activeTab,
+      handleCloseVideo,
+      closeExpandedPlayer,
+      handleGoBack
+    };
+  });
+
+  // Push history state when any overlay or player opens once
   const overlayActive = Boolean(
     showQueuePanel ||
     (videoModalSong && !isPipActive) ||
     isCanvasOpen ||
     showAuthModal ||
+    isPlaylistModalOpen ||
+    isListeningRoomsOpen ||
+    Boolean(similarSongsTrack) ||
+    isLyricsOpen ||
+    isSleepTimerOpen ||
+    isPlayerSettingsOpen ||
+    isStatsOpen ||
+    isProfileOpen ||
+    isRatingModalOpen ||
     (isSidebarOpen && isMobileScreen)
   );
   const overlayPushedRef = useRef(false);
@@ -2394,7 +2458,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     if (overlayActive) {
       if (!overlayPushedRef.current) {
         overlayPushedRef.current = true;
-        window.history.pushState({ loopraOverlay: true }, '');
+        window.history.pushState({ loopraModal: true }, '');
       }
     } else {
       overlayPushedRef.current = false;
@@ -6799,42 +6863,75 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
   }, []);
 
+  // Unified loop-free hardware, gesture & browser back navigation using navStateRef
   useEffect(() => {
-    const handlePopState = (e) => {
-      if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined') return;
 
-      // 1. Hardware & gesture back button support for overlays/modals
-      if (videoModalSongRef.current && !isPipActiveRef.current) {
-        handleCloseVideo();
+    const handleGlobalBack = () => {
+      const state = navStateRef.current;
+      // 1) Video Player is open -> close video
+      if (state.isVideoOpen) {
+        state.handleCloseVideo?.();
         return;
       }
-      if (showQueuePanelRef.current) {
-        setShowQueuePanel(false);
+      // 2) Full-Screen Audio Player is open -> close/minimize expanded player
+      if (state.isExpandedPlayer || state.showQueuePanel) {
+        state.closeExpandedPlayer?.();
         return;
       }
-      if (isCanvasOpenRef.current) {
-        setIsCanvasOpen(false);
+      // 3) Modal, drawer, or sub-view open -> handleGoBack() closes view
+      if (
+        state.isCanvasOpen ||
+        state.showAuthModal ||
+        state.isSidebarOpen ||
+        state.isPlaylistModalOpen ||
+        state.isListeningRoomsOpen ||
+        state.similarSongsTrack ||
+        state.isLyricsOpen ||
+        state.isSleepTimerOpen ||
+        state.isPlayerSettingsOpen ||
+        state.isStatsOpen ||
+        state.isProfileOpen ||
+        state.isRatingModalOpen ||
+        state.selectedPlaylistForView ||
+        state.offlineSubView === 'explore'
+      ) {
+        state.handleGoBack?.();
         return;
       }
-      if (showAuthModalRef.current) {
-        closeAuthModal(false);
+      // 4) Not on Home tab -> return to Home tab
+      if (state.activeTab !== 'home') {
+        state.handleGoBack?.();
         return;
       }
-      if (isSidebarOpenRef.current && isMobileScreenRef.current) {
-        setIsSidebarOpen(false);
-        return;
-      }
-
-      const { pathname, search } = window.location;
-      const { target, stack: newStack } = syncPopState(navigationStackRef.current, pathname, search);
-      navigationStackRef.current = newStack;
-      setNavigationStack(newStack);
-
-      applyNavRoute(target);
+      // 5) On Home root screen -> cleanly minimize app or fallback
+      try {
+        window.Capacitor?.Plugins?.App?.minimizeApp?.();
+      } catch (_) {}
     };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [applyNavRoute, handleCloseVideo]);
+
+    const onPopState = (e) => {
+      handleGlobalBack();
+    };
+
+    window.addEventListener('popstate', onPopState);
+
+    let backButtonHandle = null;
+    try {
+      if (window.Capacitor?.Plugins?.App?.addListener) {
+        backButtonHandle = window.Capacitor.Plugins.App.addListener('backButton', () => {
+          handleGlobalBack();
+        });
+      }
+    } catch (_) {}
+
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+      try {
+        backButtonHandle?.remove?.();
+      } catch (_) {}
+    };
+  }, []);
 
   const currentStation = stationsMap[activeTab] || SPECIAL_STATIONS[activeTab];
   const currentBgImage = currentStation?.bgImages?.[currentBgIndex] || currentStation?.bgImages?.[0];
