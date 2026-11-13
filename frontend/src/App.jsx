@@ -2323,6 +2323,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   // Loopra Platform Upgrade States:
   const [isLyricsOpen, setIsLyricsOpen] = useState(false);
   const [isSleepTimerOpen, setIsSleepTimerOpen] = useState(false);
+  const [isPlayerSettingsOpen, setIsPlayerSettingsOpen] = useState(false);
+  const [showAllTrending, setShowAllTrending] = useState(false);
+  const [showAllArtists, setShowAllArtists] = useState(false);
+  const [showAllAlbums, setShowAllAlbums] = useState(false);
+  const [showAllRadio, setShowAllRadio] = useState(false);
   const [isCanvasOpen, setIsCanvasOpen] = useState(false);
   const [sleepTimerRemaining, setSleepTimerRemaining] = useState(null); // seconds
   const [isStatsOpen, setIsStatsOpen] = useState(false);
@@ -2379,112 +2384,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     isMobileScreenRef.current = isMobileScreen;
   }, [isMobileScreen]);
 
-  // Single navStateRef tracking all active views and handlers
-  const navStateRef = useRef({
-    isVideoOpen: false,
-    isExpandedPlayer: false,
-    showQueue: false,
-    showQueuePanel: false,
-    isCanvasOpen: false,
-    showAuthModal: false,
-    isSidebarOpen: false,
-    isMobileScreen: false,
-    isPlaylistModalOpen: false,
-    isListeningRoomsOpen: false,
-    similarSongsTrack: null,
-    isLyricsOpen: false,
-    isSleepTimerOpen: false,
-    isPlayerSettingsOpen: false,
-    isStatsOpen: false,
-    isProfileOpen: false,
-    isRatingModalOpen: false,
-    selectedPlaylistForView: null,
-    offlineSubView: 'library',
-    activeTab: 'home',
-    handleCloseVideo: null,
-    closeExpandedPlayer: null,
-    handleGoBack: null
-  });
-
-  useEffect(() => {
-    navStateRef.current = {
-      isVideoOpen: Boolean(videoModalSong && !isPipActive),
-      isExpandedPlayer: Boolean(showQueuePanel && mobileQueueTab === 'player'),
-      showQueue: Boolean(showQueuePanel && mobileQueueTab === 'queue'),
-      showQueuePanel: Boolean(showQueuePanel),
-      isCanvasOpen: Boolean(isCanvasOpen),
-      showAuthModal: Boolean(showAuthModal),
-      isSidebarOpen: Boolean(isSidebarOpen && isMobileScreen),
-      isMobileScreen: Boolean(isMobileScreen),
-      isPlaylistModalOpen: Boolean(isPlaylistModalOpen),
-      isListeningRoomsOpen: Boolean(isListeningRoomsOpen),
-      similarSongsTrack,
-      isLyricsOpen: Boolean(isLyricsOpen),
-      isSleepTimerOpen: Boolean(isSleepTimerOpen),
-      isPlayerSettingsOpen: Boolean(isPlayerSettingsOpen),
-      isStatsOpen: Boolean(isStatsOpen),
-      isProfileOpen: Boolean(isProfileOpen),
-      isRatingModalOpen: Boolean(isRatingModalOpen),
-      selectedPlaylistForView,
-      offlineSubView,
-      activeTab,
-      showAllTrending: Boolean(showAllTrending),
-      showAllArtists: Boolean(showAllArtists),
-      showAllAlbums: Boolean(showAllAlbums),
-      showAllRadio: Boolean(showAllRadio),
-      handleCloseVideo,
-      closeExpandedPlayer,
-      handleGoBack,
-      setShowQueue: (val) => setShowQueuePanel(val)
-    };
-  });
-
-  // Persistent history buffer for TWA / Android back gesture trapping
-  // On mount and whenever any player/overlay/sub-view opens, ensure loopraGuard is pushed
-  const hasSubViewOrOverlayActive = Boolean(
-    showQueuePanel ||
-    (videoModalSong && !isPipActive) ||
-    isCanvasOpen ||
-    showAuthModal ||
-    isPlaylistModalOpen ||
-    isListeningRoomsOpen ||
-    Boolean(similarSongsTrack) ||
-    isLyricsOpen ||
-    isSleepTimerOpen ||
-    isPlayerSettingsOpen ||
-    isStatsOpen ||
-    isProfileOpen ||
-    isRatingModalOpen ||
-    (isSidebarOpen && isMobileScreen) ||
-    Boolean(selectedPlaylistForView) ||
-    offlineSubView === 'explore' ||
-    showAllTrending ||
-    showAllArtists ||
-    showAllAlbums ||
-    showAllRadio
-  );
-
-  // Initialize loopraGuard history buffer on mount
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.history?.pushState) return;
-    try {
-      if (!window.history.state || !window.history.state.loopraGuard) {
-        window.history.pushState({ loopraGuard: true }, '');
-      }
-    } catch (_) {}
-  }, []);
-
-  // Ensure loopraGuard entry exists whenever any player/overlay opens
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.history?.pushState) return;
-    if (hasSubViewOrOverlayActive) {
-      try {
-        if (!window.history.state || !window.history.state.loopraGuard) {
-          window.history.pushState({ loopraGuard: true }, '');
-        }
-      } catch (_) {}
-    }
-  }, [hasSubViewOrOverlayActive]);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef(null);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
@@ -2496,7 +2395,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const lastStatsRefreshTimeRef = useRef(Date.now());
   const websiteSessionIdRef = useRef(null);
   const lastUserInteractionRef = useRef(Date.now());
-  const [isPlayerSettingsOpen, setIsPlayerSettingsOpen] = useState(false);
   const [crossfadeDuration, setCrossfadeDuration] = useState(() => {
     try {
       return Number(localStorage.getItem(STORAGE_KEYS.CROSSFADE_DURATION)) || 0;
@@ -2773,10 +2671,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallBtn, setShowInstallBtn] = useState(false);
 
-  const [showAllTrending, setShowAllTrending] = useState(false);
-  const [showAllArtists, setShowAllArtists] = useState(false);
-  const [showAllAlbums, setShowAllAlbums] = useState(false);
-  const [showAllRadio, setShowAllRadio] = useState(false);
 
   const lastValidatedTokenRef = useRef(null);
   const lastAttemptedUsernameRef = useRef(null);
@@ -6883,6 +6777,113 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       fetchYouTubeMusic(q);
     }
   }, []);
+
+  // Single navStateRef tracking all active views and handlers
+  const navStateRef = useRef({
+    isVideoOpen: false,
+    isExpandedPlayer: false,
+    showQueue: false,
+    showQueuePanel: false,
+    isCanvasOpen: false,
+    showAuthModal: false,
+    isSidebarOpen: false,
+    isMobileScreen: false,
+    isPlaylistModalOpen: false,
+    isListeningRoomsOpen: false,
+    similarSongsTrack: null,
+    isLyricsOpen: false,
+    isSleepTimerOpen: false,
+    isPlayerSettingsOpen: false,
+    isStatsOpen: false,
+    isProfileOpen: false,
+    isRatingModalOpen: false,
+    selectedPlaylistForView: null,
+    offlineSubView: 'library',
+    activeTab: 'home',
+    handleCloseVideo: null,
+    closeExpandedPlayer: null,
+    handleGoBack: null
+  });
+
+  useEffect(() => {
+    navStateRef.current = {
+      isVideoOpen: Boolean(videoModalSong && !isPipActive),
+      isExpandedPlayer: Boolean(showQueuePanel && mobileQueueTab === 'player'),
+      showQueue: Boolean(showQueuePanel && mobileQueueTab === 'queue'),
+      showQueuePanel: Boolean(showQueuePanel),
+      isCanvasOpen: Boolean(isCanvasOpen),
+      showAuthModal: Boolean(showAuthModal),
+      isSidebarOpen: Boolean(isSidebarOpen && isMobileScreen),
+      isMobileScreen: Boolean(isMobileScreen),
+      isPlaylistModalOpen: Boolean(isPlaylistModalOpen),
+      isListeningRoomsOpen: Boolean(isListeningRoomsOpen),
+      similarSongsTrack,
+      isLyricsOpen: Boolean(isLyricsOpen),
+      isSleepTimerOpen: Boolean(isSleepTimerOpen),
+      isPlayerSettingsOpen: Boolean(isPlayerSettingsOpen),
+      isStatsOpen: Boolean(isStatsOpen),
+      isProfileOpen: Boolean(isProfileOpen),
+      isRatingModalOpen: Boolean(isRatingModalOpen),
+      selectedPlaylistForView,
+      offlineSubView,
+      activeTab,
+      showAllTrending: Boolean(showAllTrending),
+      showAllArtists: Boolean(showAllArtists),
+      showAllAlbums: Boolean(showAllAlbums),
+      showAllRadio: Boolean(showAllRadio),
+      handleCloseVideo,
+      closeExpandedPlayer,
+      handleGoBack,
+      setShowQueue: (val) => setShowQueuePanel(val)
+    };
+  });
+
+  // Persistent history buffer for TWA / Android back gesture trapping
+  // On mount and whenever any player/overlay/sub-view opens, ensure loopraGuard is pushed
+  const hasSubViewOrOverlayActive = Boolean(
+    showQueuePanel ||
+    (videoModalSong && !isPipActive) ||
+    isCanvasOpen ||
+    showAuthModal ||
+    isPlaylistModalOpen ||
+    isListeningRoomsOpen ||
+    Boolean(similarSongsTrack) ||
+    isLyricsOpen ||
+    isSleepTimerOpen ||
+    isPlayerSettingsOpen ||
+    isStatsOpen ||
+    isProfileOpen ||
+    isRatingModalOpen ||
+    (isSidebarOpen && isMobileScreen) ||
+    Boolean(selectedPlaylistForView) ||
+    offlineSubView === 'explore' ||
+    showAllTrending ||
+    showAllArtists ||
+    showAllAlbums ||
+    showAllRadio
+  );
+
+  // Initialize loopraGuard history buffer on mount
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.history?.pushState) return;
+    try {
+      if (!window.history.state || !window.history.state.loopraGuard) {
+        window.history.pushState({ loopraGuard: true }, '');
+      }
+    } catch (_) {}
+  }, []);
+
+  // Ensure loopraGuard entry exists whenever any player/overlay opens
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.history?.pushState) return;
+    if (hasSubViewOrOverlayActive) {
+      try {
+        if (!window.history.state || !window.history.state.loopraGuard) {
+          window.history.pushState({ loopraGuard: true }, '');
+        }
+      } catch (_) {}
+    }
+  }, [hasSubViewOrOverlayActive]);
 
   // Double back press exit tracking on root Home
   const lastBackPressTimeRef = useRef(0);
