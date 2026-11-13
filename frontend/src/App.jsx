@@ -6779,16 +6779,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         {/* Unified Top Navbar for both Mobile and Desktop (hidden on DJ Club where full-screen dedicated navbar is active) */}
         <header
           style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
-          className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-3 sm:px-4 md:px-8 h-14 sm:h-16 flex items-center justify-between shrink-0 w-full box-border'}`}
+          className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-3 sm:px-4 md:px-8 h-14 sm:h-16 flex items-center justify-between shrink-0 w-full box-border select-none'}`}
         >
           {/* LEFT: Menu / Sidebar Toggle + Loopra Brand Logo */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3.5 shrink-0 my-auto">
             <button
               id="loopra-mobile-hamburger-btn"
               data-nav-id="hamburger"
               type="button"
               onClick={() => setIsSidebarOpen(prev => !prev)}
-              className="flex items-center justify-center p-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700/60 shadow-sm active:scale-95 transition cursor-pointer shrink-0 min-w-[36px] min-h-[36px] focus:outline-none"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700/60 shadow-sm active:scale-95 transition flex items-center justify-center cursor-pointer shrink-0 focus:outline-none"
               aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
               title={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
             >
@@ -6800,13 +6800,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
               </div>
               {cmsConfig?.branding?.siteName ? (
-                <span className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white whitespace-nowrap leading-none">{cmsConfig.branding.siteName}</span>
+                <span className="text-sm sm:text-base font-display font-extrabold tracking-tight text-white whitespace-nowrap leading-none select-none">{cmsConfig.branding.siteName}</span>
               ) : null}
             </div>
           </div>
 
           {/* CENTER (Desktop only): ACTIVE USERS (Subtle, muted presence indicator) */}
-          <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-900/40 border border-neutral-800/50 shadow-sm shrink-0">
+          <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-900/40 border border-neutral-800/50 shadow-sm shrink-0 my-auto">
             <span className="relative flex h-2 w-2">
               <span className={`animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite] absolute inline-flex h-full w-full rounded-full ${
                 isLiveCountStale ? 'bg-amber-400 opacity-40' : 'bg-emerald-400 opacity-60'
@@ -6829,7 +6829,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
 
           {/* RIGHT: AUTH/LOGOUT & VOICE AI */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 my-auto">
             {/* 3D Avatar / AI Assistant toggle button (Gated strictly by dynamic role & voice permissions) */}
             {isVoiceActive && (
               <button
@@ -6856,7 +6856,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 }}
                 title={isAvatarVisible ? "Toggle AI Companion (Active)" : "Talk to Loopra Avatar"}
                 aria-label={isAvatarVisible ? "Hide Loopra AI Companion" : "Talk to Loopra Avatar"}
-                className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all duration-300 shadow-md active:scale-95 cursor-pointer shrink-0 ${
+                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all duration-300 shadow-md active:scale-95 cursor-pointer shrink-0 ${
                   isAvatarVisible
                     ? 'ring-2 ring-amber-500 bg-amber-500/20 text-amber-400 shadow-amber-500/30'
                     : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10'
@@ -6867,7 +6867,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             )}
             
             {user ? (
-              <div className="flex items-center gap-2 relative" ref={accountMenuRef}>
+              <div className="flex items-center gap-2 relative my-auto shrink-0" ref={accountMenuRef}>
                 {/* Compact Profile Avatar Button */}
                 <button
                   type="button"
@@ -6875,7 +6875,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   aria-label="User Account Menu"
                   aria-expanded={isAccountMenuOpen}
                   title={user.displayName || user.username || "Account"}
-                  className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center relative overflow-hidden transition-all cursor-pointer focus:outline-none shrink-0 ${
+                  className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center relative overflow-hidden transition-all cursor-pointer focus:outline-none shrink-0 ${
                     isAccountMenuOpen
                       ? 'ring-2 ring-amber-400 border-transparent shadow-lg shadow-amber-500/20'
                       : 'border border-amber-500/40 hover:border-amber-400 hover:ring-2 hover:ring-amber-400/40'
