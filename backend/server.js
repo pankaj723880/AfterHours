@@ -90,6 +90,9 @@ const oauthClient = new OAuth2Client();
 const app = express();
 const server = http.createServer(app);
 
+// Trust proxy for Render reverse proxy so req.protocol accurately reports https
+app.set('trust proxy', 1);
+
 // Helper to parse single or comma-separated origins from environment variables
 const parseOrigins = (val) => {
   if (!val) return [];
@@ -857,9 +860,12 @@ app.get(['/api/user/me', '/user/me', '/api/auth/me', '/auth/me'], authenticateTo
 
 // GET /api/auth/google endpoint for mobile/Android OAuth initiation & redirect
 app.get(['/api/auth/google', '/auth/google'], async (req, res) => {
-  const platform = req.query.platform || '';
+  const platform = req.query.platform || req.query.state || 'web';
   const clientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '335095702236-g3n6b7mgq2d3vbdg9qj9vv53b3nuohs7.apps.googleusercontent.com';
   
+  // Clean exact redirect URI with no query parameters or trailing slashes
+  const redirectUri = process.env.GOOGLE_CALLBACK_URL || 'https://afterhours-zvic.onrender.com/api/auth/google/callback';
+
   // If returning from Google with a code or credential
   const credential = req.query.credential || req.query.token;
   if (credential) {
@@ -895,15 +901,14 @@ app.get(['/api/auth/google', '/auth/google'], async (req, res) => {
     }
   }
 
-  // If initiated from Android WebView, open Google OAuth accounts prompt directly
-  const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/google/callback?platform=${encodeURIComponent(platform)}`;
-  const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token%20id_token&scope=openid%20email%20profile&nonce=${Date.now()}`;
+  // Open Google OAuth with clean redirect_uri and platform passed via state parameter
+  const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token%20id_token&scope=openid%20email%20profile&state=${encodeURIComponent(platform)}&nonce=${Date.now()}`;
   res.redirect(googleAuthUrl);
 });
 
 // Callback for OAuth redirect
 app.get(['/api/auth/google/callback', '/auth/google/callback'], async (req, res) => {
-  const platform = req.query.platform || '';
+  const platform = req.query.state || req.query.platform || 'web';
   // HTML responder to extract fragment (#id_token=...) and complete authentication
   res.send(`
     <!DOCTYPE html>
@@ -916,10 +921,12 @@ app.get(['/api/auth/google/callback', '/auth/google/callback'], async (req, res)
         </div>
         <script>
           const hash = window.location.hash.substring(1);
-          const params = new URLSearchParams(hash);
-          const idToken = params.get('id_token');
+          const hashParams = new URLSearchParams(hash);
+          const searchParams = new URLSearchParams(window.location.search);
+          const idToken = hashParams.get('id_token') || searchParams.get('id_token') || searchParams.get('credential');
+          const platform = ${JSON.stringify(platform)};
           if (idToken) {
-            window.location.href = '/api/auth/google?platform=${encodeURIComponent(platform)}&credential=' + encodeURIComponent(idToken);
+            window.location.href = '/api/auth/google?platform=' + encodeURIComponent(platform) + '&credential=' + encodeURIComponent(idToken);
           } else {
             document.body.innerHTML = '<p style="color:#ef4444;text-align:center;margin-top:20vh;">Authentication cancelled or failed. Please reopen Loopra.</p>';
           }
