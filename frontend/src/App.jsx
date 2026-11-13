@@ -3368,7 +3368,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   };
 
   // Direct client-side Google OAuth hook (avoids GSI embedded iframe issues in Android WebViews)
-  const triggerGoogleLogin = useGoogleLogin({
+  const triggerGoogleOAuth = useGoogleLogin({
     onSuccess: (tokenResponse) => {
       handleGoogleSuccess(tokenResponse);
     },
@@ -3378,6 +3378,27 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       showToast?.('Google Sign-In was closed or cancelled', 3500);
     }
   });
+
+  // Automatically detect standalone/TWA/mobile environments:
+  // In TWA / Standalone / WebView mode, popup OAuth freezes on a white screen.
+  // Instead, route through system redirect flow via backend /api/auth/google?platform=android
+  const triggerGoogleLogin = useCallback(() => {
+    const isStandaloneEnv = typeof window !== 'undefined' && (
+      Boolean(window.LoopraAndroid) ||
+      Boolean(window.navigator?.standalone) ||
+      Boolean(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator?.userAgent || '')
+    );
+
+    if (isStandaloneEnv) {
+      const backendUrl = BACKEND_URL || 'https://afterhours-zvic.onrender.com';
+      const redirectEndpoint = `${backendUrl}/api/auth/google?platform=android`;
+      window.location.href = redirectEndpoint;
+      return;
+    }
+
+    triggerGoogleOAuth();
+  }, [triggerGoogleOAuth]);
 
   const handlePlayTrending = async (queryOrTitle, itemObj, contextList = []) => {
     const candidateId = itemObj?.videoId || itemObj?.id || (typeof queryOrTitle === 'object' ? (queryOrTitle?.videoId || queryOrTitle?.id) : null);
@@ -5926,12 +5947,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     };
   }, [togglePlayPause, handleNextSong, handlePrevSong]);
 
-  // Deep-link authentication listener for Android Custom Tab / External Browser OAuth redirect
+  // Deep-link authentication listener & redirect result handler for Android Custom Tab / TWA OAuth redirect
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const handleAuthToken = async (e) => {
-      const token = e.detail?.token;
+    const processLoginToken = async (token) => {
       if (!token) return;
       try {
         setAuthLoading(true);
@@ -5958,9 +5978,29 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           showToast?.(`Welcome back, ${loggedInUser.displayName || loggedInUser.username}!`);
         }
       } catch (err) {
-        console.warn('[Deep Link Auth Error]:', err.message);
+        console.warn('[OAuth Redirect Result Error]:', err.message);
       } finally {
         setAuthLoading(false);
+      }
+    };
+
+    // 1. Check if returning from redirect with token in query params (?token=... or ?credential=...)
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const urlToken = searchParams.get('token') || searchParams.get('credential');
+      if (urlToken) {
+        // Clean up URL so token is not exposed in address bar history
+        const cleanUrl = window.location.pathname + (window.location.hash || '');
+        window.history.replaceState({}, document.title, cleanUrl);
+        processLoginToken(urlToken);
+      }
+    } catch (_) {}
+
+    // 2. Listen to native Android bridge custom event
+    const handleAuthToken = (e) => {
+      const token = e.detail?.token;
+      if (token) {
+        processLoginToken(token);
       }
     };
 
