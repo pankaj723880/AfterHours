@@ -3402,30 +3402,51 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   }, [triggerGoogleOAuth]);
 
   const handlePlayTrending = async (queryOrTitle, itemObj, contextList = []) => {
-    const candidateId = itemObj?.videoId || itemObj?.id || (typeof queryOrTitle === 'object' ? (queryOrTitle?.videoId || queryOrTitle?.id) : null);
+    // 1. Resolve explicit videoId directly from candidate object
+    const candidateId = (itemObj?.videoId && typeof itemObj.videoId === 'string' && itemObj.videoId.length >= 5 ? itemObj.videoId : null)
+      || (itemObj?.id && typeof itemObj.id === 'string' && itemObj.id.length >= 5 ? itemObj.id : null)
+      || (typeof queryOrTitle === 'object' ? (queryOrTitle?.videoId || queryOrTitle?.id) : null);
 
     const toFormattedSong = (item, fallbackId) => {
-      const id = item?.videoId || item?.id || fallbackId;
+      const rawId = item?.videoId || item?.id || fallbackId;
+      const cleanId = (rawId && typeof rawId === 'object' && rawId.videoId) ? rawId.videoId : (typeof rawId === 'string' ? rawId.trim() : fallbackId);
+      const cleanThumb = getCleanThumbnail(item, cleanId);
+
+      // Clean HTML entities from title
+      const cleanTitle = (item?.title || item?.name || "Unknown Title")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">");
+
+      // Resolve authentic artist/channel
+      let cleanArtist = item?.artist || item?.channelTitle || item?.snippet?.channelTitle || item?.channel;
+      if (!cleanArtist || cleanArtist === 'Unknown Artist' || cleanArtist === 'Unknown') {
+        cleanArtist = item?.channel || 'Loopra Artist';
+      }
+
       return {
-        id,
-        videoId: id,
-        title: item?.title?.replace(/&quot;/g, '"')?.replace(/&#39;/g, "'")?.replace(/&amp;/g, "&") || "Unknown Title",
-        artist: item?.artist || item?.snippet?.channelTitle || "Unknown Artist",
-        thumbnail: getCleanThumbnail(item, id),
+        id: cleanId,
+        videoId: cleanId,
+        title: cleanTitle,
+        artist: cleanArtist,
+        channel: item?.channel || cleanArtist,
+        thumbnail: cleanThumb,
+        image: cleanThumb,
         duration: item?.duration || "Stream"
       };
     };
 
-    // Instant playback path (0ms network delay)
+    // Instant direct playback path (strictly preserves title, artist, and exact video ID)
     if (candidateId) {
-      const formattedSong = toFormattedSong(itemObj, candidateId);
+      const formattedSong = toFormattedSong(itemObj || queryOrTitle, candidateId);
 
       if (Array.isArray(contextList) && contextList.length > 0) {
         const formattedQueue = contextList.map(t => {
-          const tId = t?.videoId || t?.id;
+          const tId = (t?.videoId && typeof t.videoId === 'string' ? t.videoId : null) || (t?.id && typeof t.id === 'string' ? t.id : null);
           return tId ? toFormattedSong(t, tId) : null;
         }).filter(Boolean);
-        // User requested queue to only contain manually added songs, removing auto-population.
       }
 
       playSong(formattedSong);
@@ -3439,7 +3460,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const cachedList = Array.isArray(cachedEntry) ? cachedEntry : cachedEntry?.items;
     if (cachedList && cachedList.length > 0) {
       const cached = cachedList[0];
-      const cachedId = cached?.id || cached?.videoId;
+      const cachedId = (cached?.id?.videoId || cached?.videoId || cached?.id);
       if (cachedId) {
         playSong(toFormattedSong(cached, cachedId));
         return;
@@ -3452,14 +3473,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       const parsed = await safeParseJsonResponse(response, 'Failed to fetch trending song');
       if (parsed.ok && parsed.data && Array.isArray(parsed.data.items) && parsed.data.items.length > 0) {
         const item = parsed.data.items[0];
-        const formattedSong = {
-          id: item.id.videoId || item.id,
-          videoId: item.id.videoId || item.id,
-          title: item.snippet?.title?.replace(/&quot;/g, '"')?.replace(/&#39;/g, "'")?.replace(/&amp;/g, "&") || "Unknown Title",
-          artist: item.snippet?.channelTitle || "Unknown Artist",
-          thumbnail: getCleanThumbnail(item, item.id.videoId || item.id),
-          duration: "Stream"
-        };
+        const vid = item.id?.videoId || item.id || item.videoId;
+        const formattedSong = toFormattedSong(item, vid);
         playSong(formattedSong);
       }
     } catch (error) {
@@ -9734,7 +9749,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
       {showQueuePanel && !isPipActive && (
         <div 
-          style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
           className="fixed inset-0 z-[120] bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn pb-[env(safe-area-inset-bottom,0px)]"
         >
           {/* Mobile Tab Header with Segmented Switcher & Close Button */}

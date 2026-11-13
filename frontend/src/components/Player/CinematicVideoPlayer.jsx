@@ -61,7 +61,16 @@ export default function CinematicVideoPlayer({
 
   useEffect(() => {
     const handleFsChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement));
+      const isFs = Boolean(document.fullscreenElement);
+      setIsFullscreen(isFs);
+      if (!isFs) {
+        // Unlock orientation if returning from fullscreen
+        try {
+          if (screen?.orientation?.unlock) {
+            screen.orientation.unlock().catch(() => {});
+          }
+        } catch (_) {}
+      }
     };
     document.addEventListener('fullscreenchange', handleFsChange);
     return () => document.removeEventListener('fullscreenchange', handleFsChange);
@@ -161,13 +170,38 @@ export default function CinematicVideoPlayer({
     executeDirectSeek(target);
   }, [internalTime, currentTime, activeDuration, executeDirectSeek]);
 
-  const toggleFullscreen = useCallback(() => {
+  const toggleFullscreen = useCallback(async () => {
     if (!playerContainerRef.current) return;
-    if (!document.fullscreenElement) {
-      playerContainerRef.current.requestFullscreen().catch(() => {});
-    } else {
-      document.exitFullscreen().catch(() => {});
-    }
+    try {
+      if (!document.fullscreenElement) {
+        if (playerContainerRef.current.requestFullscreen) {
+          await playerContainerRef.current.requestFullscreen();
+        } else if (playerContainerRef.current.webkitRequestFullscreen) {
+          await playerContainerRef.current.webkitRequestFullscreen();
+        } else if (playerContainerRef.current.msRequestFullscreen) {
+          await playerContainerRef.current.msRequestFullscreen();
+        }
+        // Force / trigger YouTube-style landscape orientation on mobile/tablets
+        try {
+          if (screen?.orientation?.lock) {
+            await screen.orientation.lock('landscape').catch(() => {});
+          }
+        } catch (_) {}
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          await document.webkitExitFullscreen();
+        } else if (document.msExitFullscreen) {
+          await document.msExitFullscreen();
+        }
+        try {
+          if (screen?.orientation?.unlock) {
+            screen.orientation.unlock().catch(() => {});
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
   }, []);
 
   const toggleCaptions = useCallback(() => {
@@ -322,7 +356,7 @@ export default function CinematicVideoPlayer({
           ? "fixed top-0 left-0 w-[1px] h-[1px] opacity-[0.01] pointer-events-none -z-[999] overflow-hidden"
           : isPipActive
             ? "fixed inset-0 w-screen h-screen z-[999999] bg-black m-0 p-0 overflow-hidden pointer-events-auto"
-            : "fixed inset-0 z-[9999] bg-neutral-950/90 backdrop-blur-xl flex items-center justify-center p-2 sm:p-4 md:p-6 transition-all duration-300 pointer-events-auto overflow-y-auto"
+            : "fixed inset-0 z-[9999] bg-neutral-950/90 backdrop-blur-xl flex items-center justify-center p-2 sm:p-5 md:p-8 transition-all duration-300 pointer-events-auto overflow-y-auto"
       }
     >
       <div
@@ -332,81 +366,112 @@ export default function CinematicVideoPlayer({
             ? "w-full h-full"
             : isPipActive
               ? "w-full h-full bg-black border-0 rounded-none overflow-hidden flex flex-col p-0 m-0"
-              : `w-full bg-neutral-900/95 backdrop-blur-2xl border border-neutral-800 rounded-3xl overflow-hidden shadow-[0_20px_70px_rgba(0,0,0,0.95)] shadow-amber-500/5 flex flex-col transition-all duration-300 relative ${
-                  isTheaterMode
-                    ? 'max-w-[98vw] max-h-[96vh]'
-                    : 'max-w-5xl max-h-[94vh]'
-                }`
+              : isFullscreen
+                ? "w-screen h-screen max-w-none max-h-none rounded-none border-0 bg-black flex flex-col justify-between overflow-hidden relative m-0 p-0 shadow-none"
+                : `w-full my-auto bg-neutral-900/95 backdrop-blur-2xl border border-neutral-800/90 rounded-2xl sm:rounded-3xl overflow-hidden shadow-[0_25px_80px_rgba(0,0,0,0.95)] shadow-amber-500/5 flex flex-col transition-all duration-300 relative ${
+                    isTheaterMode
+                      ? 'max-w-[98vw] max-h-[96vh]'
+                      : 'max-w-5xl max-h-[94vh]'
+                  }`
         }
       >
         {videoModalSong && !isPipActive && (
           <header
             style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
-            className="px-3 sm:px-6 py-2.5 sm:py-3.5 bg-neutral-900/95 border-b border-neutral-800 flex items-center justify-between gap-3 shrink-0 select-none w-full"
+            className={`w-full border-b transition-colors select-none z-40 shrink-0 ${
+              isFullscreen
+                ? `absolute top-0 inset-x-0 bg-gradient-to-b from-black/90 via-black/60 to-transparent border-transparent px-4 sm:px-8 py-3.5 sm:py-5 transition-opacity duration-300 pointer-events-auto ${
+                    showControls || !isPlaying ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                  }`
+                : 'px-4 sm:px-7 py-3 sm:py-4 bg-neutral-900/95 border-neutral-800/80 shadow-sm'
+            }`}
           >
-            <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 p-0.5 flex items-center justify-center shadow-[0_0_15px_rgba(245,158,11,0.3)] shrink-0">
-                <div className="w-full h-full bg-neutral-950 rounded-[10px] flex items-center justify-center">
-                  <Music className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" />
+            <div className="w-full flex items-center justify-between gap-3 sm:gap-6">
+              {/* Branding */}
+              <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 p-0.5 flex items-center justify-center shadow-[0_0_15px_rgba(245,158,11,0.35)] shrink-0">
+                  <div className="w-full h-full bg-neutral-950 rounded-[10px] flex items-center justify-center">
+                    <Music className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-amber-400" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="font-display font-black text-sm sm:text-base tracking-wider text-white">
+                    LOOPRA
+                  </span>
+                  <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-[10px] font-bold tracking-widest text-amber-300 uppercase shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                    VIDEO MODE
+                  </span>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                <span className="font-display font-extrabold text-xs sm:text-base tracking-wider text-white">
-                  LOOPRA
-                </span>
-                <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-[9px] sm:text-[10px] font-bold tracking-widest text-amber-300 uppercase shrink-0">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                  VIDEO MODE
-                </span>
+
+              {/* Title & Artist - Clean Centered Readout */}
+              <div className="flex flex-col items-center justify-center text-center flex-1 min-w-0 px-2 sm:px-4 overflow-hidden">
+                <h3 className="font-bold text-xs sm:text-sm md:text-base text-white truncate w-full max-w-full drop-shadow-sm">
+                  {activeSong?.title || 'Unknown Title'}
+                </h3>
+                <p className="text-[11px] sm:text-xs text-neutral-400 truncate w-full max-w-full flex items-center justify-center gap-1.5 mt-0.5">
+                  <span className="truncate">{activeSong?.channel || activeSong?.artist || 'Loopra Artist'}</span>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 inline" />
+                </p>
               </div>
-            </div>
 
-            <div className="flex flex-col items-center justify-center text-center flex-1 min-w-0 px-2 overflow-hidden">
-              <h3 className="font-bold text-xs sm:text-sm text-white truncate w-full max-w-full">
-                {activeSong?.title || 'Unknown Title'}
-              </h3>
-              <p className="text-[10px] sm:text-[11px] text-neutral-400 truncate w-full max-w-full flex items-center justify-center gap-1">
-                <span className="truncate">{activeSong?.channel || activeSong?.artist || 'Loopra Artist'}</span>
-                <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0 inline" />
-              </p>
-            </div>
+              {/* Actions Header Controls */}
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => onToggleLike?.(activeSong)}
+                  className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer active:scale-95 ${
+                    isLiked
+                      ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.3)]'
+                      : isFullscreen
+                        ? 'bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-amber-300 backdrop-blur-md'
+                        : 'bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300 hover:text-amber-300'
+                  }`}
+                  title={isLiked ? 'Remove from Favorites' : 'Add to Favorites'}
+                >
+                  <Heart className={`w-4 h-4 sm:w-4.5 sm:h-4.5 ${isLiked ? 'fill-current text-rose-500' : ''}`} />
+                </button>
 
-            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-              <button
-                onClick={() => onToggleLike?.(activeSong)}
-                className={`p-2 rounded-xl transition cursor-pointer ${
-                  isLiked
-                    ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.3)]'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-amber-300'
-                }`}
-                title={isLiked ? 'Remove from Favorites' : 'Add to Favorites'}
-              >
-                <Heart className={`w-4 h-4 ${isLiked ? 'fill-current text-rose-500' : ''}`} />
-              </button>
+                <button
+                  type="button"
+                  onClick={() => onShare?.(activeSong)}
+                  className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer active:scale-95 ${
+                    isFullscreen
+                      ? 'bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-white backdrop-blur-md'
+                      : 'bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300 hover:text-white'
+                  }`}
+                  title="Share Track"
+                >
+                  <Share2 className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
+                </button>
 
-              <button
-                onClick={() => onShare?.(activeSong)}
-                className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition cursor-pointer"
-                title="Share Track"
-              >
-                <Share2 className="w-4 h-4" />
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setIsPipActive?.(true)}
+                  className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer active:scale-95 hidden sm:flex items-center justify-center ${
+                    isFullscreen
+                      ? 'bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-white backdrop-blur-md'
+                      : 'bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300 hover:text-white'
+                  }`}
+                  title="Minimize to Picture-in-Picture"
+                >
+                  <Minimize2 className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
+                </button>
 
-              <button
-                onClick={() => setIsPipActive?.(true)}
-                className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition cursor-pointer hidden sm:flex items-center justify-center"
-                title="Minimize to Picture-in-Picture"
-              >
-                <Minimize2 className="w-4 h-4" />
-              </button>
-
-              <button
-                onClick={onClose}
-                className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-amber-300 transition cursor-pointer"
-                title="Switch to Music Mode (Audio continues in background)"
-              >
-                <X className="w-4 h-4" />
-              </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer active:scale-95 ${
+                    isFullscreen
+                      ? 'bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-amber-300 backdrop-blur-md'
+                      : 'bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300 hover:text-amber-300'
+                  }`}
+                  title="Switch to Music Mode (Audio continues in background)"
+                >
+                  <X className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
+                </button>
+              </div>
             </div>
           </header>
         )}
@@ -418,11 +483,13 @@ export default function CinematicVideoPlayer({
               ? "w-full h-full"
               : isPipActive
                 ? "w-full h-full bg-black overflow-hidden flex items-center justify-center p-0 m-0"
-                : "relative w-full aspect-video bg-black overflow-hidden select-none group flex items-center justify-center"
+                : isFullscreen
+                  ? "relative w-full h-full flex-1 bg-black overflow-hidden select-none group flex items-center justify-center"
+                  : "relative w-full aspect-video bg-black overflow-hidden select-none group flex items-center justify-center"
           }
         >
-          <div ref={ytContainerRef} className="w-full h-full relative z-0 pointer-events-none">
-            <div id="yt-player-instance"></div>
+          <div ref={ytContainerRef} className="w-full h-full relative z-0 pointer-events-none flex items-center justify-center">
+            <div id="yt-player-instance" className={isFullscreen ? "w-full h-full" : ""}></div>
           </div>
 
           {videoModalSong && !isPipActive && (
@@ -455,187 +522,193 @@ export default function CinematicVideoPlayer({
                 </button>
               </div>
 
-              {/* Custom Playback Controls Overlay */}
+              {/* Custom Playback Controls Overlay - Full-Width Span */}
               <div
                 onClick={(e) => e.stopPropagation()}
                 className={`absolute inset-x-0 bottom-0 z-30 transition-opacity duration-300 flex flex-col justify-end ${
                   showControls || !isPlaying ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
                 }`}
               >
-                <div className="bg-gradient-to-t from-neutral-950/98 via-neutral-950/85 to-transparent pt-12 pb-2 px-3 sm:px-5 flex flex-col gap-2 pointer-events-auto">
-                  {/* Touch & Mouse Interactive Scrub Progress Bar */}
-                  <div
-                    ref={progressBarRef}
-                    onMouseMove={handleProgressBarMouseMove}
-                    onMouseLeave={handleProgressBarMouseLeave}
-                    className="relative w-full h-5 flex items-center cursor-pointer group/scrub touch-none select-none"
-                  >
-                    <div className="w-full h-2 group-hover/scrub:h-2.5 bg-neutral-700/70 rounded-full overflow-visible relative flex items-center">
-                      <div
-                        className="h-full bg-gradient-to-r from-amber-500 via-amber-400 to-amber-300 rounded-full relative"
-                        style={{ width: `${progressPercent}%` }}
-                      >
-                        <span className="absolute -right-2 top-1/2 -translate-y-1/2 w-4 h-4 bg-amber-400 rounded-full shadow-[0_0_12px_rgba(245,158,11,0.95)] ring-2 ring-amber-500" />
-                      </div>
-                    </div>
-
-                    {/* Transparent Full-Width Native Range Input for Smooth Mobile Touch Sliding & Desktop Dragging */}
-                    <input
-                      type="range"
-                      min={0}
-                      max={activeDuration > 0 ? activeDuration : 100}
-                      step={0.1}
-                      value={activeCurrentTime}
-                      onMouseDown={() => {
-                        setIsScrubbing(true);
-                        setScrubTime(activeCurrentTime);
-                      }}
-                      onTouchStart={() => {
-                        setIsScrubbing(true);
-                        setScrubTime(activeCurrentTime);
-                      }}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        setScrubTime(val);
-                        executeDirectSeek(val);
-                      }}
-                      onMouseUp={(e) => {
-                        setIsScrubbing(false);
-                        executeDirectSeek(Number(e.currentTarget.value));
-                      }}
-                      onTouchEnd={(e) => {
-                        setIsScrubbing(false);
-                        executeDirectSeek(Number(e.currentTarget.value));
-                      }}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20 m-0"
-                      aria-label="Seek Video"
-                    />
-
-                    {hoverSeekTime !== null && (
-                      <div
-                        className="absolute -top-7 -translate-x-1/2 px-2 py-0.5 rounded bg-neutral-900 border border-neutral-700 text-[10px] font-mono text-white shadow-lg pointer-events-none"
-                        style={{ left: `${hoverSeekPercent}%` }}
-                      >
-                        {formatTime(hoverSeekTime)}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Controls Row */}
-                  <div className="flex items-center justify-between gap-2 pt-0.5 pb-1">
-                    <div className="flex items-center gap-1.5 sm:gap-2.5">
-                      <button
-                        type="button"
-                        onClick={handleDirectTogglePlayPause}
-                        className="p-2 rounded-xl text-white hover:text-amber-400 hover:bg-neutral-800 active:scale-95 transition cursor-pointer"
-                        title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
-                      >
-                        {isPlaying ? (
-                          <Pause className="w-5 h-5 fill-current" />
-                        ) : (
-                          <Play className="w-5 h-5 fill-current" />
-                        )}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          executeDirectRelativeSeek(-10);
-                        }}
-                        className="p-2 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800 active:scale-95 transition cursor-pointer relative group/btn"
-                        title="Rewind 10s (Left Arrow)"
-                      >
-                        <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
-                        <span className="absolute text-[8px] font-bold font-mono top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                          10
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          executeDirectRelativeSeek(10);
-                        }}
-                        className="p-2 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800 active:scale-95 transition cursor-pointer relative group/btn"
-                        title="Forward 10s (Right Arrow)"
-                      >
-                        <RotateCw className="w-4 h-4 sm:w-5 sm:h-5" />
-                        <span className="absolute text-[8px] font-bold font-mono top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                          10
-                        </span>
-                      </button>
-
-                      <div className="flex items-center gap-1 group/vol">
-                        <button
-                          type="button"
-                          onClick={onToggleMute}
-                          className="p-2 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
-                          title={isMuted ? 'Unmute (M)' : 'Mute (M)'}
+                <div className={`bg-gradient-to-t from-neutral-950/98 via-neutral-950/85 to-transparent flex flex-col gap-2.5 pointer-events-auto w-full ${
+                  isFullscreen
+                    ? 'pt-16 pb-6 px-4 sm:px-8'
+                    : 'pt-12 pb-3 px-3 sm:px-6'
+                }`}>
+                  <div className="w-full max-w-full mx-auto flex flex-col gap-2">
+                    {/* Touch & Mouse Interactive Scrub Progress Bar */}
+                    <div
+                      ref={progressBarRef}
+                      onMouseMove={handleProgressBarMouseMove}
+                      onMouseLeave={handleProgressBarMouseLeave}
+                      className="relative w-full h-5 flex items-center cursor-pointer group/scrub touch-none select-none"
+                    >
+                      <div className="w-full h-2 group-hover/scrub:h-2.5 bg-neutral-700/70 rounded-full overflow-visible relative flex items-center">
+                        <div
+                          className="h-full bg-gradient-to-r from-amber-500 via-amber-400 to-amber-300 rounded-full relative"
+                          style={{ width: `${progressPercent}%` }}
                         >
-                          {isMuted || volume === 0 ? (
-                            <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-red-400" />
-                          ) : volume < 50 ? (
-                            <Volume1 className="w-4 h-4 sm:w-5 sm:h-5" />
-                          ) : (
-                            <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />
-                          )}
-                        </button>
-                        <div className="w-0 group-hover/vol:w-16 sm:group-hover/vol:w-20 transition-all duration-300 overflow-hidden flex items-center">
-                          <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            value={isMuted ? 0 : volume}
-                            onChange={(e) => onVolumeChange?.(Number(e.target.value))}
-                            className="w-16 sm:w-20 h-1 accent-amber-500 bg-neutral-700 rounded-full cursor-pointer"
-                          />
+                          <span className="absolute -right-2 top-1/2 -translate-y-1/2 w-4 h-4 bg-amber-400 rounded-full shadow-[0_0_12px_rgba(245,158,11,0.95)] ring-2 ring-amber-500" />
                         </div>
                       </div>
 
-                      <div className="text-[11px] sm:text-xs font-mono font-medium text-neutral-300 ml-1">
-                        <span className="text-white font-semibold">{formatTime(activeCurrentTime)}</span>
-                        <span className="text-neutral-500 mx-1">/</span>
-                        <span className="text-neutral-400">{formatTime(activeDuration)}</span>
-                      </div>
+                      {/* Transparent Full-Width Native Range Input for Smooth Mobile Touch Sliding & Desktop Dragging */}
+                      <input
+                        type="range"
+                        min={0}
+                        max={activeDuration > 0 ? activeDuration : 100}
+                        step={0.1}
+                        value={activeCurrentTime}
+                        onMouseDown={() => {
+                          setIsScrubbing(true);
+                          setScrubTime(activeCurrentTime);
+                        }}
+                        onTouchStart={() => {
+                          setIsScrubbing(true);
+                          setScrubTime(activeCurrentTime);
+                        }}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setScrubTime(val);
+                          executeDirectSeek(val);
+                        }}
+                        onMouseUp={(e) => {
+                          setIsScrubbing(false);
+                          executeDirectSeek(Number(e.currentTarget.value));
+                        }}
+                        onTouchEnd={(e) => {
+                          setIsScrubbing(false);
+                          executeDirectSeek(Number(e.currentTarget.value));
+                        }}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20 m-0"
+                        aria-label="Seek Video"
+                      />
+
+                      {hoverSeekTime !== null && (
+                        <div
+                          className="absolute -top-7 -translate-x-1/2 px-2 py-0.5 rounded bg-neutral-900 border border-neutral-700 text-[10px] font-mono text-white shadow-lg pointer-events-none"
+                          style={{ left: `${hoverSeekPercent}%` }}
+                        >
+                          {formatTime(hoverSeekTime)}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="flex items-center gap-1 sm:gap-2 relative">
-                      <button
-                        type="button"
-                        onClick={toggleCaptions}
-                        className={`p-2 rounded-xl transition cursor-pointer ${
-                          captionsEnabled
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.25)]'
-                            : 'text-neutral-300 hover:text-white hover:bg-neutral-800'
-                        }`}
-                        title="Subtitles / Captions (C)"
-                      >
-                        <Subtitles className="w-4 h-4 sm:w-5 sm:h-5" />
-                      </button>
+                    {/* Controls Row */}
+                    <div className="flex items-center justify-between gap-2 pt-0.5 pb-1 w-full">
+                      <div className="flex items-center gap-1 sm:gap-2.5">
+                        <button
+                          type="button"
+                          onClick={handleDirectTogglePlayPause}
+                          className="p-2 sm:p-2.5 rounded-xl text-white hover:text-amber-400 hover:bg-neutral-800/80 active:scale-95 transition cursor-pointer"
+                          title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+                        >
+                          {isPlaying ? (
+                            <Pause className="w-5 h-5 sm:w-5.5 sm:h-5.5 fill-current" />
+                          ) : (
+                            <Play className="w-5 h-5 sm:w-5.5 sm:h-5.5 fill-current" />
+                          )}
+                        </button>
 
-                      <button
-                        type="button"
-                        onClick={() => setIsTheaterMode(!isTheaterMode)}
-                        className="p-2 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800 transition cursor-pointer hidden md:flex items-center justify-center"
-                        title={isTheaterMode ? 'Exit Theater Mode (T)' : 'Theater Mode (T)'}
-                      >
-                        <Tv className="w-4 h-4 sm:w-5 sm:h-5" />
-                      </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            executeDirectRelativeSeek(-10);
+                          }}
+                          className="p-2 sm:p-2.5 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800/80 active:scale-95 transition cursor-pointer relative group/btn"
+                          title="Rewind 10s (Left Arrow)"
+                        >
+                          <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
+                          <span className="absolute text-[8px] font-bold font-mono top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                            10
+                          </span>
+                        </button>
 
-                      <button
-                        type="button"
-                        onClick={toggleFullscreen}
-                        className="p-2 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
-                        title={isFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen (F)'}
-                      >
-                        {isFullscreen ? (
-                          <Minimize2 className="w-4 h-4 sm:w-5 sm:h-5" />
-                        ) : (
-                          <Maximize2 className="w-4 h-4 sm:w-5 sm:h-5" />
-                        )}
-                      </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            executeDirectRelativeSeek(10);
+                          }}
+                          className="p-2 sm:p-2.5 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800/80 active:scale-95 transition cursor-pointer relative group/btn"
+                          title="Forward 10s (Right Arrow)"
+                        >
+                          <RotateCw className="w-4 h-4 sm:w-5 sm:h-5" />
+                          <span className="absolute text-[8px] font-bold font-mono top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                            10
+                          </span>
+                        </button>
+
+                        <div className="flex items-center gap-1 group/vol">
+                          <button
+                            type="button"
+                            onClick={onToggleMute}
+                            className="p-2 sm:p-2.5 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800/80 transition cursor-pointer"
+                            title={isMuted ? 'Unmute (M)' : 'Mute (M)'}
+                          >
+                            {isMuted || volume === 0 ? (
+                              <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-red-400" />
+                            ) : volume < 50 ? (
+                              <Volume1 className="w-4 h-4 sm:w-5 sm:h-5" />
+                            ) : (
+                              <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                            )}
+                          </button>
+                          <div className="w-0 group-hover/vol:w-16 sm:group-hover/vol:w-20 transition-all duration-300 overflow-hidden flex items-center">
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              value={isMuted ? 0 : volume}
+                              onChange={(e) => onVolumeChange?.(Number(e.target.value))}
+                              className="w-16 sm:w-20 h-1 accent-amber-500 bg-neutral-700 rounded-full cursor-pointer"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="text-[11px] sm:text-xs font-mono font-medium text-neutral-300 ml-1">
+                          <span className="text-white font-semibold">{formatTime(activeCurrentTime)}</span>
+                          <span className="text-neutral-500 mx-1">/</span>
+                          <span className="text-neutral-400">{formatTime(activeDuration)}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 sm:gap-2 relative">
+                        <button
+                          type="button"
+                          onClick={toggleCaptions}
+                          className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer ${
+                            captionsEnabled
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.25)]'
+                              : 'text-neutral-300 hover:text-white hover:bg-neutral-800/80'
+                          }`}
+                          title="Subtitles / Captions (C)"
+                        >
+                          <Subtitles className="w-4 h-4 sm:w-5 sm:h-5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setIsTheaterMode(!isTheaterMode)}
+                          className="p-2 sm:p-2.5 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800/80 transition cursor-pointer hidden md:flex items-center justify-center"
+                          title={isTheaterMode ? 'Exit Theater Mode (T)' : 'Theater Mode (T)'}
+                        >
+                          <Tv className="w-4 h-4 sm:w-5 sm:h-5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={toggleFullscreen}
+                          className="p-2 sm:p-2.5 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800/80 transition cursor-pointer active:scale-95"
+                          title={isFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen (F)'}
+                        >
+                          {isFullscreen ? (
+                            <Minimize2 className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
+                          ) : (
+                            <Maximize2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -644,7 +717,7 @@ export default function CinematicVideoPlayer({
           )}
         </div>
 
-        {videoModalSong && !isPipActive && (
+        {videoModalSong && !isPipActive && !isFullscreen && (
           <footer className="px-4 py-3 sm:px-6 sm:py-3.5 bg-neutral-900/95 border-t border-neutral-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
             <div className="flex items-center gap-3 min-w-0 flex-1">
               <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full overflow-hidden bg-neutral-800 ring-2 ring-amber-500/30 shrink-0 shadow-md">
