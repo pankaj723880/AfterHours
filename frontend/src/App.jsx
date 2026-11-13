@@ -5660,6 +5660,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       closeAuthModal(false);
       return;
     }
+    if (renameModalPlaylist) {
+      setRenameModalPlaylist(null);
+      setRenameModalName('');
+      return;
+    }
+    if (deleteModalPlaylist) {
+      setDeleteModalPlaylist(null);
+      return;
+    }
+    if (activeAssistantPanel) {
+      setActiveAssistantPanel(null);
+      return;
+    }
     if (isPlaylistModalOpen) {
       setIsPlaylistModalOpen(false);
       setSelectedSongForPlaylist(null);
@@ -6083,6 +6096,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         (videoModalSong && !isPipActive) ||
         isCanvasOpen ||
         showAuthModal ||
+        renameModalPlaylist ||
+        deleteModalPlaylist ||
+        activeAssistantPanel ||
         (isSidebarOpen && isMobileScreen) ||
         isPlaylistModalOpen ||
         isListeningRoomsOpen ||
@@ -6105,6 +6121,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     isPipActive,
     isCanvasOpen,
     showAuthModal,
+    renameModalPlaylist,
+    deleteModalPlaylist,
+    activeAssistantPanel,
     isSidebarOpen,
     isMobileScreen,
     isPlaylistModalOpen,
@@ -6832,6 +6851,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       showAuthModal: Boolean(showAuthModal),
       isSidebarOpen: Boolean(isSidebarOpen && isMobileScreen),
       isMobileScreen: Boolean(isMobileScreen),
+      renameModalPlaylist,
+      deleteModalPlaylist,
+      activeAssistantPanel,
       isPlaylistModalOpen: Boolean(isPlaylistModalOpen),
       isListeningRoomsOpen: Boolean(isListeningRoomsOpen),
       similarSongsTrack,
@@ -6862,6 +6884,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     (videoModalSong && !isPipActive) ||
     isCanvasOpen ||
     showAuthModal ||
+    renameModalPlaylist ||
+    deleteModalPlaylist ||
+    activeAssistantPanel ||
     isPlaylistModalOpen ||
     isListeningRoomsOpen ||
     Boolean(similarSongsTrack) ||
@@ -6939,6 +6964,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         state.showQueuePanel ||
         state.isCanvasOpen ||
         state.showAuthModal ||
+        state.renameModalPlaylist ||
+        state.deleteModalPlaylist ||
+        state.activeAssistantPanel ||
         state.isSidebarOpen ||
         state.isPlaylistModalOpen ||
         state.isListeningRoomsOpen ||
