@@ -6877,8 +6877,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     };
   });
 
-  // Persistent history buffer for TWA / Android back gesture trapping
-  // On mount and whenever any player/overlay/sub-view opens, ensure loopraGuard is pushed
+  // Persistent history buffer for TWA / Android back gesture trapping ("History Padding Trick")
+  // Keeps the WebView history stack active so Android never minimizes the app when modals/overlays are open
   const hasSubViewOrOverlayActive = Boolean(
     showQueuePanel ||
     (videoModalSong && !isPipActive) ||
@@ -6905,23 +6905,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     showAllRadio
   );
 
-  // Initialize loopraGuard history buffer on mount
+  // 1. On app initialization, immediately push a base state to keep WebView history stack active
   useEffect(() => {
     if (typeof window === 'undefined' || !window.history?.pushState) return;
     try {
-      if (!window.history.state || !window.history.state.loopraGuard) {
-        window.history.pushState({ loopraGuard: true }, '');
+      if (!window.history.state || (!window.history.state.loopraGuard && window.history.state.scope !== 'home')) {
+        window.history.pushState({ scope: 'home', loopraGuard: true }, '', window.location.href);
       }
     } catch (_) {}
   }, []);
 
-  // Ensure loopraGuard entry exists whenever any player/overlay opens
+  // 2. Replenish history state whenever any modal or overlay opens programmatically
   useEffect(() => {
     if (typeof window === 'undefined' || !window.history?.pushState) return;
     if (hasSubViewOrOverlayActive) {
       try {
-        if (!window.history.state || !window.history.state.loopraGuard) {
-          window.history.pushState({ loopraGuard: true }, '');
+        if (!window.history.state || window.history.state.scope !== 'modal') {
+          window.history.pushState({ scope: 'modal', loopraGuard: true }, '', window.location.href);
         }
       } catch (_) {}
     }
@@ -6930,14 +6930,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   // Double back press exit tracking on root Home
   const lastBackPressTimeRef = useRef(0);
 
-  // Unified loop-free hardware, gesture & browser back navigation using navStateRef
-  // Traps system back swipe / button in TWA Chrome and matches in-app Back actions
+  // 3. Global popstate event listener (hardware / gesture back button pressed)
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const rePushGuard = () => {
+    const replenishHomeState = () => {
       try {
-        window.history.pushState({ loopraGuard: true }, '');
+        window.history.pushState({ scope: 'home', loopraGuard: true }, '', window.location.href);
       } catch (_) {}
     };
 
@@ -6947,18 +6946,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       // 1) Video Player is open -> close video (same as clicking video back button)
       if (state.isVideoOpen) {
         state.handleCloseVideo?.();
-        rePushGuard();
+        replenishHomeState();
         return;
       }
 
       // 2) Full-Screen Audio Player is open -> close expanded player (same as clicking player back button)
       if (state.isExpandedPlayer) {
         state.closeExpandedPlayer?.();
-        rePushGuard();
+        replenishHomeState();
         return;
       }
 
-      // 3) Queue or any modal / playlist detail / drawer is open -> close it
+      // 3) Queue or any modal / playlist detail / drawer is open -> close it and replenish history padding
       if (
         state.showQueue ||
         state.showQueuePanel ||
@@ -6990,14 +6989,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         } else {
           state.handleGoBack?.();
         }
-        rePushGuard();
+        replenishHomeState();
         return;
       }
 
-      // 4) Not on Home view -> switch to Home view
+      // 4) Not on Home view -> switch to Home view and replenish history padding
       if (state.activeTab !== 'home') {
         state.handleGoBack?.();
-        rePushGuard();
+        replenishHomeState();
         return;
       }
 
@@ -7005,13 +7004,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       // Allow exit on double-back press within 2 seconds
       const now = Date.now();
       if (now - lastBackPressTimeRef.current < 2000) {
-        // Double back within 2 seconds: do NOT re-push guard, let Android/TWA exit cleanly
+        // Double back within 2 seconds: do NOT re-push state, allowing Android/TWA to minimize/exit cleanly
         return;
       }
 
       lastBackPressTimeRef.current = now;
       showToast?.('Press back again to exit', 2000);
-      rePushGuard();
+      replenishHomeState();
     };
 
     window.addEventListener('popstate', handleSystemBack);
