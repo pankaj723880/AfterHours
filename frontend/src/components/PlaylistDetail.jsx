@@ -1,10 +1,10 @@
 import React from 'react';
-import { Play, Plus, Trash2, ArrowLeft, Music2 } from 'lucide-react';
+import { Play, Plus, Trash2, Edit2, ArrowLeft, Music2 } from 'lucide-react';
 import { usePlaylists } from '../context/PlaylistContext';
 import { usePlayer } from '../context/PlayerContext';
 
 export default function PlaylistDetail({ playlistId, onBack }) {
-  const { playlists, removeFromPlaylist, deletePlaylist } = usePlaylists();
+  const { playlists, removeFromPlaylist, deletePlaylist, renamePlaylist } = usePlaylists();
   const { playPlaylistTrack, playPlaylist, addToQueue, currentTrack } = usePlayer();
 
   const playlist = playlists.find((p) => p.id === playlistId);
@@ -28,6 +28,20 @@ export default function PlaylistDetail({ playlistId, onBack }) {
   const handleAddPlaylistToQueue = () => {
     if (!playlist.songs.length) return;
     playlist.songs.forEach((song) => addToQueue(song));
+  };
+
+  const handleRename = () => {
+    const newName = window.prompt('Enter new playlist name:', playlist.name);
+    if (newName && newName.trim() && newName.trim() !== playlist.name) {
+      renamePlaylist(playlist.id, newName.trim());
+    }
+  };
+
+  const handleDelete = () => {
+    if (window.confirm(`Are you sure you want to delete the playlist "${playlist.name}"?`)) {
+      deletePlaylist(playlist.id);
+      onBack();
+    }
   };
 
   return (
@@ -68,10 +82,14 @@ export default function PlaylistDetail({ playlistId, onBack }) {
               <span>Add to Queue</span>
             </button>
             <button
-              onClick={() => {
-                deletePlaylist(playlist.id);
-                onBack();
-              }}
+              onClick={handleRename}
+              className="p-2.5 text-neutral-400 hover:text-amber-400 bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 rounded-full transition-colors"
+              title="Rename Playlist"
+            >
+              <Edit2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleDelete}
               className="p-2.5 text-neutral-400 hover:text-red-400 bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 rounded-full transition-colors"
               title="Delete Playlist"
             >

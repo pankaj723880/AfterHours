@@ -280,6 +280,7 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
     home: <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" fill="currentColor" />,
     video: <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" fill="currentColor" />,
     trash: <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor" />,
+    edit: <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor" />,
     moreVertical: <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" fill="currentColor" />,
     user: <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="currentColor" />,
     grip: <path d="M9 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6-16a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" fill="currentColor" />,
@@ -6096,7 +6097,56 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     try {
       window.LoopraAndroid?.setVideoMode?.(Boolean(videoModalSong));
     } catch (_) {}
-  }, [isPlaying, currentSong, videoModalSong]);
+
+    // Report back-navigation ability to Android native host
+    try {
+      const hasBackAction = Boolean(
+        showQueuePanel ||
+        (videoModalSong && !isPipActive) ||
+        isCanvasOpen ||
+        showAuthModal ||
+        (isSidebarOpen && isMobileScreen) ||
+        isPlaylistModalOpen ||
+        isListeningRoomsOpen ||
+        Boolean(similarSongsTrack) ||
+        isLyricsOpen ||
+        isSleepTimerOpen ||
+        isPlayerSettingsOpen ||
+        isStatsOpen ||
+        isProfileOpen ||
+        isRatingModalOpen ||
+        canGoBack(navigationStack, activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio, selectedPlaylistForView, offlineSubView })
+      );
+      window.LoopraAndroid?.setCanGoBack?.(hasBackAction);
+    } catch (_) {}
+  }, [
+    isPlaying,
+    currentSong,
+    videoModalSong,
+    showQueuePanel,
+    isPipActive,
+    isCanvasOpen,
+    showAuthModal,
+    isSidebarOpen,
+    isMobileScreen,
+    isPlaylistModalOpen,
+    isListeningRoomsOpen,
+    similarSongsTrack,
+    isLyricsOpen,
+    isSleepTimerOpen,
+    isPlayerSettingsOpen,
+    isStatsOpen,
+    isProfileOpen,
+    isRatingModalOpen,
+    navigationStack,
+    activeTab,
+    showAllTrending,
+    showAllArtists,
+    showAllAlbums,
+    showAllRadio,
+    selectedPlaylistForView,
+    offlineSubView
+  ]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -6109,6 +6159,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         handleNextSong();
       } else if (action === 'prev') {
         handlePrevSong();
+      } else if (action === 'back') {
+        handleGoBack();
       }
     };
 
@@ -6116,7 +6168,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     return () => {
       window.removeEventListener('loopra-native-control', handleNativeControl);
     };
-  }, [togglePlayPause, handleNextSong, handlePrevSong]);
+  }, [togglePlayPause, handleNextSong, handlePrevSong, handleGoBack]);
 
   // Deep-link authentication listener & redirect result handler for Android Custom Tab / TWA OAuth redirect
   useEffect(() => {
@@ -6391,6 +6443,53 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       } catch (e) {}
       showToast(`Removed from "${targetName}"`);
     }
+  };
+
+  const handleDeletePlaylist = (playlistId) => {
+    if (!playlistId) return;
+    const targetPl = playlists.find(p => p.id === playlistId);
+    const targetName = targetPl?.name || 'Playlist';
+    const confirmed = window.confirm(`Are you sure you want to delete the playlist "${targetName}"?`);
+    if (!confirmed) return;
+
+    const updatedPlaylists = playlists.filter(p => p.id !== playlistId);
+    setPlaylists(updatedPlaylists);
+    if (selectedPlaylistForView && selectedPlaylistForView.id === playlistId) {
+      setSelectedPlaylistForView(null);
+    }
+    try {
+      if (user) {
+        localStorage.setItem('playlists', JSON.stringify(updatedPlaylists));
+      } else {
+        localStorage.setItem('guest_playlists', JSON.stringify(updatedPlaylists));
+      }
+    } catch (e) {}
+    showToast(`Deleted playlist "${targetName}"`);
+  };
+
+  const handleRenamePlaylist = (playlistId) => {
+    if (!playlistId) return;
+    const targetPl = playlists.find(p => p.id === playlistId);
+    if (!targetPl) return;
+    const currentName = targetPl.name || '';
+    const newName = window.prompt('Enter new playlist name:', currentName);
+    if (!newName || !newName.trim()) return;
+    const trimmed = newName.trim();
+    if (trimmed === currentName) return;
+
+    const updatedPlaylists = playlists.map(p => p.id === playlistId ? { ...p, name: trimmed } : p);
+    setPlaylists(updatedPlaylists);
+    if (selectedPlaylistForView && selectedPlaylistForView.id === playlistId) {
+      setSelectedPlaylistForView(prev => prev ? { ...prev, name: trimmed } : null);
+    }
+    try {
+      if (user) {
+        localStorage.setItem('playlists', JSON.stringify(updatedPlaylists));
+      } else {
+        localStorage.setItem('guest_playlists', JSON.stringify(updatedPlaylists));
+      }
+    } catch (e) {}
+    showToast(`Renamed playlist to "${trimmed}"`);
   };
 
   const clearHistory = () => {
@@ -8966,12 +9065,37 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                           {/* Ambient glow on hover */}
                           <div className="absolute inset-0 bg-amber-500/0 group-hover:bg-amber-500/5 transition-colors pointer-events-none" />
 
-                          {/* Top row: Track Count Micro-Pill */}
-                          <div className="flex items-center justify-between w-full relative z-10">
+                          {/* Top row: Track Count Micro-Pill & Quick Actions */}
+                          <div className="flex items-center justify-between w-full relative z-10" onClick={(e) => e.stopPropagation()}>
                             <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-neutral-800/90 text-amber-400 border border-neutral-700/60 font-semibold">
                               {pl.songs.length === 1 ? '1 Track' : pl.songs.length === 0 ? 'Empty' : `${pl.songs.length} Tracks`}
                             </span>
-                            <span className="w-2 h-2 rounded-full bg-amber-400/60 opacity-0 group-hover:opacity-100 transition" />
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRenamePlaylist(pl.id);
+                                }}
+                                className="p-1 rounded-lg bg-neutral-800/90 hover:bg-amber-500/20 text-neutral-400 hover:text-amber-400 border border-neutral-700/60 transition"
+                                title="Rename Playlist"
+                                aria-label="Rename Playlist"
+                              >
+                                <Icon name="edit" className="w-3 h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeletePlaylist(pl.id);
+                                }}
+                                className="p-1 rounded-lg bg-neutral-800/90 hover:bg-red-500/20 text-neutral-400 hover:text-red-400 border border-neutral-700/60 transition"
+                                title="Delete Playlist"
+                                aria-label="Delete Playlist"
+                              >
+                                <Icon name="trash" className="w-3 h-3" />
+                              </button>
+                            </div>
                           </div>
 
                           {/* Center Collage / Cassette Vinyl Placeholder */}
@@ -9042,8 +9166,34 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                           setSelectedPlaylistForView(pl);
                           handleStationSelect('playlists', { id: pl.id });
                         }}
-                        className="p-4 rounded-2xl border bg-neutral-900/50 hover:bg-neutral-800 active:scale-[0.98] border-neutral-800 cursor-pointer flex flex-col items-center justify-center gap-3 transition group text-center aspect-square"
+                        className="relative p-4 rounded-2xl border bg-neutral-900/50 hover:bg-neutral-800 active:scale-[0.98] border-neutral-800 cursor-pointer flex flex-col items-center justify-center gap-3 transition group text-center aspect-square"
                       >
+                        <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRenamePlaylist(pl.id);
+                            }}
+                            className="p-1 rounded-lg bg-neutral-800/90 hover:bg-amber-500/20 text-neutral-400 hover:text-amber-400 border border-neutral-700/60 transition"
+                            title="Rename Playlist"
+                            aria-label="Rename Playlist"
+                          >
+                            <Icon name="edit" className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeletePlaylist(pl.id);
+                            }}
+                            className="p-1 rounded-lg bg-neutral-800/90 hover:bg-red-500/20 text-neutral-400 hover:text-red-400 border border-neutral-700/60 transition"
+                            title="Delete Playlist"
+                            aria-label="Delete Playlist"
+                          >
+                            <Icon name="trash" className="w-3 h-3" />
+                          </button>
+                        </div>
                         <div className="w-16 h-16 rounded-2xl bg-neutral-800 group-hover:bg-amber-500/20 text-neutral-500 group-hover:text-amber-500 flex items-center justify-center transition">
                           <Icon name="list" className="w-8 h-8" />
                         </div>
@@ -9075,32 +9225,57 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     </div>
                   </div>
 
-                  {/* Share Playlist Button */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const shareUrl = `${window.location.origin}?playlist=${encodeURIComponent(selectedPlaylistForView.id || selectedPlaylistForView.name)}`;
-                      const shareTitle = `${selectedPlaylistForView.name} - Loopra Playlist`;
-                      const shareText = `Check out the "${selectedPlaylistForView.name}" playlist on Loopra with ${selectedPlaylistForView.songs.length} tracks!`;
+                  {/* Action Buttons: Rename, Delete, Share */}
+                  <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleRenamePlaylist(selectedPlaylistForView.id)}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/60 text-xs font-semibold transition active:scale-95 cursor-pointer"
+                      title="Rename Playlist"
+                      aria-label="Rename Playlist"
+                    >
+                      <Icon name="edit" className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>Rename</span>
+                    </button>
 
-                      if (navigator.share) {
-                        navigator.share({
-                          title: shareTitle,
-                          text: shareText,
-                          url: shareUrl
-                        }).catch(() => {});
-                      } else {
-                        navigator.clipboard?.writeText(shareUrl);
-                        showToast("Playlist link copied to clipboard!");
-                      }
-                    }}
-                    className="self-start sm:self-auto inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition shadow-sm cursor-pointer active:scale-95"
-                    title="Share Playlist"
-                    aria-label="Share Playlist"
-                  >
-                    <Icon name="share" className="w-4 h-4 text-amber-400 shrink-0" />
-                    <span>Share Playlist</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeletePlaylist(selectedPlaylistForView.id)}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800/80 hover:bg-red-500/20 text-neutral-200 hover:text-red-300 border border-neutral-700/60 hover:border-red-500/40 text-xs font-semibold transition active:scale-95 cursor-pointer"
+                      title="Delete Playlist"
+                      aria-label="Delete Playlist"
+                    >
+                      <Icon name="trash" className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                      <span>Delete</span>
+                    </button>
+
+                    {/* Share Playlist Button */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const shareUrl = `${window.location.origin}?playlist=${encodeURIComponent(selectedPlaylistForView.id || selectedPlaylistForView.name)}`;
+                        const shareTitle = `${selectedPlaylistForView.name} - Loopra Playlist`;
+                        const shareText = `Check out the "${selectedPlaylistForView.name}" playlist on Loopra with ${selectedPlaylistForView.songs.length} tracks!`;
+
+                        if (navigator.share) {
+                          navigator.share({
+                            title: shareTitle,
+                            text: shareText,
+                            url: shareUrl
+                          }).catch(() => {});
+                        } else {
+                          navigator.clipboard?.writeText(shareUrl);
+                          showToast("Playlist link copied to clipboard!");
+                        }
+                      }}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition shadow-sm cursor-pointer active:scale-95"
+                      title="Share Playlist"
+                      aria-label="Share Playlist"
+                    >
+                      <Icon name="share" className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>Share Playlist</span>
+                    </button>
+                  </div>
                 </div>
                 
                 <div className="grid grid-cols-1 gap-2 mt-4">

@@ -44,6 +44,15 @@ export function PlaylistProvider({ children }) {
     setPlaylists((prev) => prev.filter((pl) => pl.id !== playlistId));
   };
 
+  const renamePlaylist = (playlistId, newName) => {
+    const trimmed = (newName || '').trim();
+    if (!trimmed) return false;
+    setPlaylists((prev) =>
+      prev.map((pl) => (pl.id === playlistId ? { ...pl, name: trimmed } : pl))
+    );
+    return true;
+  };
+
   const addToPlaylist = (playlistId, song) => {
     let added = false;
     setPlaylists((prev) =>
@@ -82,6 +91,7 @@ export function PlaylistProvider({ children }) {
         playlists,
         createPlaylist,
         deletePlaylist,
+        renamePlaylist,
         addToPlaylist,
         removeFromPlaylist
       }}

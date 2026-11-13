@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Plus, ListMusic, Trash2, Play } from 'lucide-react';
+import { Plus, ListMusic, Trash2, Edit2, Play } from 'lucide-react';
 import { usePlaylists } from '../context/PlaylistContext';
 import { usePlayer } from '../context/PlayerContext';
 
 export default function Playlists({ onOpenPlaylist }) {
-  const { playlists, createPlaylist, deletePlaylist } = usePlaylists();
+  const { playlists, createPlaylist, deletePlaylist, renamePlaylist } = usePlaylists();
   const { playPlaylist } = usePlayer();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
@@ -21,6 +21,21 @@ export default function Playlists({ onOpenPlaylist }) {
     e.stopPropagation();
     if (!playlist?.songs?.length) return;
     playPlaylist(playlist);
+  };
+
+  const handleRename = (e, pl) => {
+    e.stopPropagation();
+    const newName = window.prompt('Enter new playlist name:', pl.name);
+    if (newName && newName.trim() && newName.trim() !== pl.name) {
+      renamePlaylist(pl.id, newName.trim());
+    }
+  };
+
+  const handleDelete = (e, pl) => {
+    e.stopPropagation();
+    if (window.confirm(`Are you sure you want to delete the playlist "${pl.name}"?`)) {
+      deletePlaylist(pl.id);
+    }
   };
 
   return (
@@ -82,16 +97,24 @@ export default function Playlists({ onOpenPlaylist }) {
                 <p className="text-xs text-neutral-400 mt-0.5">{pl.songs.length} tracks</p>
               </div>
 
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deletePlaylist(pl.id);
-                }}
-                className="absolute top-2 right-2 p-1.5 text-neutral-400 hover:text-red-400 bg-black/40 hover:bg-black/60 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
-                title="Delete Playlist"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+              <div className="absolute top-2 right-2 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  type="button"
+                  onClick={(e) => handleRename(e, pl)}
+                  className="p-1.5 text-neutral-400 hover:text-amber-400 bg-black/60 hover:bg-black/80 rounded-md transition-colors"
+                  title="Rename Playlist"
+                >
+                  <Edit2 className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleDelete(e, pl)}
+                  className="p-1.5 text-neutral-400 hover:text-red-400 bg-black/60 hover:bg-black/80 rounded-md transition-colors"
+                  title="Delete Playlist"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           ))}
         </div>
