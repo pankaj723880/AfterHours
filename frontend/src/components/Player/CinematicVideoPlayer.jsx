@@ -97,7 +97,12 @@ export default function CinematicVideoPlayer({
         if (isPlaying && typeof playerRef.current.pauseVideo === 'function') {
           playerRef.current.pauseVideo();
         } else if (!isPlaying && typeof playerRef.current.playVideo === 'function') {
-          playerRef.current.playVideo();
+          const p = playerRef.current.playVideo();
+          if (p && typeof p.catch === 'function') {
+            p.catch(err => {
+              console.warn('[CinematicVideoPlayer] playVideo catch:', err);
+            });
+          }
         }
       }
     } catch (_) {}

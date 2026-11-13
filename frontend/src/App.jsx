@@ -3916,6 +3916,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           isInitialMountRef.current = false;
         };
         audio.onpause = () => setIsPlaying(false);
+        audio.onerror = (e) => {
+          console.warn('[OfflinePlay] Audio element error:', e);
+          setIsPlaying(false);
+          setIsAutoplayBlocked(true);
+          showToast('Audio playback interrupted by device policy. Tap to resume.');
+        };
         audio.onloadedmetadata = () => {
           if (audio.duration) {
             durationRef.current = audio.duration;
@@ -3981,7 +3987,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
         setCurrentSong({ ...song, ...cachedRecord, isOffline: true });
         loadedVideoIdRef.current = targetVideoId;
-        audio.play().catch(e => console.warn('[OfflinePlay] Audio play error:', e));
+        const playPromise = audio.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+          playPromise.catch(e => {
+            if (e?.name === 'NotAllowedError') {
+              console.warn('[OfflinePlay] Autoplay blocked by WebView policy:', e);
+              setIsAutoplayBlocked(true);
+              setIsPlaying(false);
+            } else if (e?.name !== 'AbortError') {
+              console.warn('[OfflinePlay] Audio play error:', e);
+            }
+          });
+        }
         setIsPlaying(true);
         return;
       }
@@ -4011,7 +4028,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
           try {
             const p = playerRef.current.playVideo();
-            if (p && typeof p.catch === 'function') p.catch(() => {});
+            if (p && typeof p.catch === 'function') {
+              p.catch(err => {
+                if (err?.name === 'NotAllowedError') {
+                  console.warn('[Loopra Player] Re-play blocked by browser policy:', err);
+                  setIsAutoplayBlocked(true);
+                  setIsPlaying(false);
+                }
+              });
+            }
           } catch (e) {}
         }
         if (!song?.isRadio) {
@@ -4053,7 +4078,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         try {
           playerRef.current.loadVideoById({ videoId: targetVideoId });
           const p = playerRef.current.playVideo();
-          if (p && typeof p.catch === 'function') p.catch(() => {});
+          if (p && typeof p.catch === 'function') {
+            p.catch(err => {
+              if (err?.name === 'NotAllowedError') {
+                console.warn('[Loopra Player] Video mode autoplay blocked:', err);
+                setIsAutoplayBlocked(true);
+                setIsPlaying(false);
+              }
+            });
+          }
           loadedVideoIdRef.current = targetVideoId;
         } catch (err) {}
       }
@@ -4262,7 +4295,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       if (!isPlaying) {
         try {
           const p = playerRef.current?.playVideo?.();
-          if (p && typeof p.catch === 'function') p.catch(() => {});
+          if (p && typeof p.catch === 'function') {
+            p.catch(err => {
+              if (err?.name === 'NotAllowedError') {
+                console.warn('[Loopra Player] Explicit togglePlay blocked by policy:', err);
+                setIsAutoplayBlocked(true);
+                setIsPlaying(false);
+              }
+            });
+          }
         } catch (e) {}
         setIsPlaying(true);
       }
@@ -4373,7 +4414,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       if (!isPlaying) {
         try {
           const p = playerRef.current?.playVideo?.();
-          if (p && typeof p.catch === 'function') p.catch(() => {});
+          if (p && typeof p.catch === 'function') {
+            p.catch(err => {
+              if (err?.name === 'NotAllowedError') {
+                console.warn('[Loopra Player] Explicit togglePlay blocked by policy:', err);
+                setIsAutoplayBlocked(true);
+                setIsPlaying(false);
+              }
+            });
+          }
         } catch (e) {}
         setIsPlaying(true);
       }
@@ -4820,7 +4869,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             const isPlayingIntent = isPlayingRef.current || userIntentPlayingRef.current;
             if (isPlayingIntent && !isUserPausedRef.current && !isInitialMountRef.current && currentSongRef.current) {
               try {
-                e.target.playVideo();
+                const p = e.target.playVideo();
+                if (p && typeof p.catch === 'function') {
+                  p.catch(err => {
+                    if (err?.name === 'NotAllowedError') {
+                      console.warn('[Loopra Player] Background auto-resume blocked by browser policy:', err);
+                      setIsAutoplayBlocked(true);
+                      setIsPlaying(false);
+                    }
+                  });
+                }
                 startPwaAudioWakeLock();
                 if (silentAudioRef.current && silentAudioRef.current.paused) {
                   try { silentAudioRef.current.volume = 0.01; } catch (_) {}
@@ -4834,7 +4892,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 if (stillPlayingIntent && !isUserPausedRef.current && playerRef.current && typeof playerRef.current.playVideo === 'function') {
                   console.info('[Loopra Background Guard] Auto-resuming background playback throttled by browser...');
                   try {
-                    playerRef.current.playVideo();
+                    const p2 = playerRef.current.playVideo();
+                    if (p2 && typeof p2.catch === 'function') {
+                      p2.catch(err => {
+                        if (err?.name === 'NotAllowedError') {
+                          console.warn('[Loopra Player] Deferred auto-resume blocked by browser policy:', err);
+                          setIsAutoplayBlocked(true);
+                          setIsPlaying(false);
+                        }
+                      });
+                    }
                     startPwaAudioWakeLock();
                     if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
                   } catch (_) {}
@@ -5201,6 +5268,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           isInitialMountRef.current = false;
         };
         audio.onpause = () => setIsPlaying(false);
+        audio.onerror = (e) => {
+          console.warn('[OfflinePlay] Audio element playback error:', e);
+          setIsPlaying(false);
+          setIsAutoplayBlocked(true);
+          showToast('Offline audio playback blocked or file corrupted. Tap to retry.');
+        };
         audio.ontimeupdate = () => {
           if (crossfadeDuration > 0 && audio.duration > 0) {
             const remaining = audio.duration - audio.currentTime;
@@ -5814,7 +5887,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         } catch (e) {}
         try {
           const p = playerRef.current?.playVideo?.();
-          if (p && typeof p.catch === 'function') p.catch(() => {});
+          if (p && typeof p.catch === 'function') {
+            p.catch(err => {
+              if (err?.name === 'NotAllowedError') {
+                console.warn('[Loopra Player] Explicit togglePlay blocked by policy:', err);
+                setIsAutoplayBlocked(true);
+                setIsPlaying(false);
+              }
+            });
+          }
         } catch (e) {}
       }
       if (silentAudioRef.current) {
