@@ -342,8 +342,8 @@ export default function LoopraCanvas({
 
       {/* Top Bar with Navigation & Modes */}
       <header
-        style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 32px)' }}
-        className="relative z-20 flex items-center justify-between px-4 sm:px-8 py-4 backdrop-blur-md bg-neutral-950/60 border-b border-neutral-800/60"
+        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+        className="relative z-20 flex items-center justify-between px-4 sm:px-8 py-3 backdrop-blur-md bg-neutral-950/60 border-b border-neutral-800/60"
       >
         <div className="flex items-center gap-3">
           <button

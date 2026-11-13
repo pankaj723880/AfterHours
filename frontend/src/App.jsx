@@ -6779,10 +6779,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         {/* Unified Top Navbar for both Mobile and Desktop (hidden on DJ Club where full-screen dedicated navbar is active) */}
         <header
           style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
-          className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-3 sm:px-4 md:px-8 h-14 sm:h-16 flex items-center justify-between shrink-0 w-full box-border select-none'}`}
+          className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 w-full shrink-0 select-none box-border'}`}
         >
+          <div className="h-14 sm:h-16 px-3 sm:px-4 md:px-8 flex items-center justify-between w-full box-border">
           {/* LEFT: Menu / Sidebar Toggle + Loopra Brand Logo */}
-          <div className="flex items-center gap-2.5 sm:gap-3.5 shrink-0 my-auto">
+          <div className="flex items-center gap-2.5 sm:gap-3.5 shrink-0">
             <button
               id="loopra-mobile-hamburger-btn"
               data-nav-id="hamburger"
@@ -6806,7 +6807,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
 
           {/* CENTER (Desktop only): ACTIVE USERS (Subtle, muted presence indicator) */}
-          <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-900/40 border border-neutral-800/50 shadow-sm shrink-0 my-auto">
+          <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-900/40 border border-neutral-800/50 shadow-sm shrink-0">
             <span className="relative flex h-2 w-2">
               <span className={`animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite] absolute inline-flex h-full w-full rounded-full ${
                 isLiveCountStale ? 'bg-amber-400 opacity-40' : 'bg-emerald-400 opacity-60'
@@ -6829,7 +6830,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
 
           {/* RIGHT: AUTH/LOGOUT & VOICE AI */}
-          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 my-auto">
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
             {/* 3D Avatar / AI Assistant toggle button (Gated strictly by dynamic role & voice permissions) */}
             {isVoiceActive && (
               <button
@@ -6867,7 +6868,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             )}
             
             {user ? (
-              <div className="flex items-center gap-2 relative my-auto shrink-0" ref={accountMenuRef}>
+              <div className="flex items-center gap-2 relative shrink-0" ref={accountMenuRef}>
                 {/* Compact Profile Avatar Button */}
                 <button
                   type="button"
@@ -6995,6 +6996,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 </button>
               </div>
             )}
+          </div>
           </div>
         </header>
 
@@ -9568,7 +9570,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
       {showQueuePanel && !isPipActive && (
         <div 
-          style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 32px)' }}
+          style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
           className="fixed inset-0 z-[120] bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn pb-[env(safe-area-inset-bottom,0px)]"
         >
           {/* Mobile Tab Header with Segmented Switcher & Close Button */}

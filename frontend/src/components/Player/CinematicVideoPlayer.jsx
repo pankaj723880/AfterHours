@@ -336,7 +336,7 @@ export default function CinematicVideoPlayer({
       >
         {videoModalSong && !isPipActive && (
           <header
-            style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 16px)' }}
+            style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
             className="px-3 sm:px-6 py-2.5 sm:py-3.5 bg-neutral-900/95 border-b border-neutral-800 flex items-center justify-between gap-3 shrink-0 select-none w-full"
           >
             <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
