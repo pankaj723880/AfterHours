@@ -6960,19 +6960,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
       {/* Main Body Layout Container (Sidebar + Content side-by-side below Navbar) */}
       <div className="flex-1 flex flex-row min-h-0 min-w-0 overflow-hidden relative">
-        {/* Persistent Floating/Rail Toggle Button when Sidebar is closed (Hamburger ☰ fixed at top-left below navbar) */}
-        {!isSidebarOpen && activeTab !== 'dj-club' && (
-          <button
-            id="loopra-collapsed-sidebar-btn"
-            type="button"
-            onClick={() => setIsSidebarOpen(true)}
-            className="absolute top-2.5 left-2.5 z-40 p-2 rounded-xl bg-neutral-900/95 hover:bg-neutral-800 border border-amber-500/30 text-neutral-300 hover:text-white shadow-lg active:scale-95 transition-all duration-200 cursor-pointer pointer-events-auto flex items-center justify-center min-w-[38px] min-h-[38px]"
-            aria-label="Open sidebar"
-            title="Open sidebar"
-          >
-            <Icon name="menu" className="w-4 h-4 text-amber-400 pointer-events-none" />
-          </button>
-        )}
       {/* V2 Navigation Drawer / Sidebar Feature Flag (USE_V2_DRAWER) */}
       {USE_V2_DRAWER ? (
         <>
