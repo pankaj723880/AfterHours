@@ -736,7 +736,12 @@ app.post(['/api/auth/register', '/auth/register'], authLimiter, async (req, res)
         displayName: user.displayName || user.username,
         avatarUrl: user.avatarUrl || '',
         role: user.role,
-        status: user.status
+        status: user.status,
+        likedSongs: Array.isArray(user.likedSongs) ? user.likedSongs : [],
+        history: Array.isArray(user.history) ? user.history : [],
+        searchHistory: Array.isArray(user.searchHistory) ? user.searchHistory : [],
+        playlists: Array.isArray(user.playlists) ? user.playlists : [],
+        queue: Array.isArray(user.queue) ? user.queue : []
       }
     });
   } catch (err) {
@@ -821,11 +826,11 @@ app.post(['/api/auth/login', '/auth/login'], authLimiter, async (req, res) => {
         avatarUrl: user.avatarUrl || '',
         role: user.role,
         status: user.status,
-        likedSongs: user.likedSongs,
-        history: user.history,
-        searchHistory: user.searchHistory || [],
-        playlists: user.playlists,
-        queue: user.queue
+        likedSongs: Array.isArray(user.likedSongs) ? user.likedSongs : [],
+        history: Array.isArray(user.history) ? user.history : [],
+        searchHistory: Array.isArray(user.searchHistory) ? user.searchHistory : [],
+        playlists: Array.isArray(user.playlists) ? user.playlists : [],
+        queue: Array.isArray(user.queue) ? user.queue : []
       }
     });
   } catch (err) {
@@ -847,11 +852,11 @@ app.get(['/api/user/me', '/user/me', '/api/auth/me', '/auth/me'], authenticateTo
         avatarUrl: user.avatarUrl || '',
         role: user.role || 'user',
         status: user.status || 'active',
-        likedSongs: user.likedSongs || [],
-        history: user.history || [],
-        searchHistory: user.searchHistory || [],
-        playlists: user.playlists || [],
-        queue: user.queue || []
+        likedSongs: Array.isArray(user.likedSongs) ? user.likedSongs : [],
+        history: Array.isArray(user.history) ? user.history : [],
+        searchHistory: Array.isArray(user.searchHistory) ? user.searchHistory : [],
+        playlists: Array.isArray(user.playlists) ? user.playlists : [],
+        queue: Array.isArray(user.queue) ? user.queue : []
       }
     });
   } catch (err) {
@@ -1052,11 +1057,11 @@ app.post(['/api/auth/google', '/auth/google'], async (req, res) => {
         avatarUrl: user.avatarUrl || '',
         role: user.role,
         status: user.status,
-        likedSongs: user.likedSongs,
-        history: user.history,
-        searchHistory: user.searchHistory || [],
-        playlists: user.playlists,
-        queue: user.queue
+        likedSongs: Array.isArray(user.likedSongs) ? user.likedSongs : [],
+        history: Array.isArray(user.history) ? user.history : [],
+        searchHistory: Array.isArray(user.searchHistory) ? user.searchHistory : [],
+        playlists: Array.isArray(user.playlists) ? user.playlists : [],
+        queue: Array.isArray(user.queue) ? user.queue : []
       },
       username: user.username,
       role: user.role
@@ -1079,12 +1084,12 @@ app.get(['/api/user/:id', '/user/:id'], async (req, res) => {
     const user = await User.findById(req.params.id).maxTimeMS(4000);
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json({
-      likedSongs: user.likedSongs || [],
-      history: user.history || [],
-      searchHistory: user.searchHistory || [],
-      playlists: user.playlists || [],
-      queue: user.queue || [],
-      followedArtists: user.followedArtists || []
+      likedSongs: Array.isArray(user.likedSongs) ? user.likedSongs : [],
+      history: Array.isArray(user.history) ? user.history : [],
+      searchHistory: Array.isArray(user.searchHistory) ? user.searchHistory : [],
+      playlists: Array.isArray(user.playlists) ? user.playlists : [],
+      queue: Array.isArray(user.queue) ? user.queue : [],
+      followedArtists: Array.isArray(user.followedArtists) ? user.followedArtists : []
     });
   } catch (err) {
     console.error('[User GET Error]:', err.message);
