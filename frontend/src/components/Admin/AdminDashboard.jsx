@@ -411,13 +411,14 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
   // Primary V2 Category Pill Tabs for sleek mobile horizontal strip
   const mobilePillTabs = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'api_keys', label: 'API Keys', icon: Key },
+    { id: 'live_patcher', label: 'Patcher', icon: Zap },
     { id: 'cms_pages', label: 'Pages', icon: Layout },
     { id: 'cms_sections', label: 'Sections', icon: Layers },
     { id: 'cms_features', label: 'Features', icon: Sliders },
     { id: 'cms_settings', label: 'CMS', icon: Globe },
-    { id: 'live_patcher', label: 'Live Patcher', icon: Zap },
-    { id: 'traffic', label: 'Live Traffic', icon: Activity },
-    { id: 'ai_learning', label: 'AI Engine', icon: Brain },
+    { id: 'traffic', label: 'Traffic', icon: Activity },
+    { id: 'users', label: 'Users', icon: Users },
     { id: 'health', label: 'Diagnostics', icon: Server },
     { id: 'audit', label: 'Audit', icon: ShieldCheck }
   ];
@@ -571,7 +572,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
       </header>
 
       {/* Main Layout Container */}
-      <div className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 flex flex-col md:flex-row gap-4 sm:gap-6 min-w-0">
+      <div className="flex-1 max-w-7xl w-full mx-auto p-2 sm:p-4 md:p-6 flex flex-col md:flex-row gap-3 sm:gap-5 min-w-0 overflow-x-hidden">
         {/* Mobile Drawer Backdrop */}
         {isMobileSidebarOpen && (
           <div

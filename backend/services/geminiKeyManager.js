@@ -14,6 +14,7 @@ import { GoogleGenAI } from '@google/genai';
 import mongoose from 'mongoose';
 import ApiKey from '../models/ApiKeyConfig.js';
 import { decryptApiKey, maskApiKey } from '../utils/keyEncryption.js';
+import { getEligibleKeys, recordKeySuccess, recordKeyFailure, sanitizeApiKey, parseKeyList } from './keyResolverService.js';
 
 export const geminiDiagnostics = {
   totalCalls: 0,
@@ -35,20 +36,6 @@ export function sanitizeLogMessage(msg = '') {
   return text.replace(/AIza[0-9A-Za-z-_]{35}/g, '[REDACTED_API_KEY]');
 }
 
-const sanitizeApiKey = (key) => {
-  if (typeof key !== 'string') return '';
-  let clean = key.trim().replace(/^['"]|['"]$/g, '');
-  return clean;
-};
-
-const parseKeyList = (raw) => {
-  if (!raw || typeof raw !== 'string') return [];
-  return raw
-    .split(/[,\r\n\s]+/)
-    .map(sanitizeApiKey)
-    .filter(k => k && k.length > 5);
-};
-
 // In-memory cache for DB Gemini API keys with 10s TTL
 let cachedDbGeminiKeys = [];
 let lastDbGeminiKeysFetch = 0;
@@ -62,37 +49,13 @@ export const invalidateGeminiKeyCache = () => {
 };
 
 /**
- * Fetch active Gemini keys directly from MongoDB pool.
- * Matches service 'gemini' (case-insensitive), isExhausted !== true, status === 'Active'.
+ * Fetch active Gemini keys directly from MongoDB pool using centralized KeyResolverService logic.
  */
 export const getActiveDbGeminiKeys = async () => {
   try {
     if (mongoose.connection && mongoose.connection.readyState === 1) {
-      const now = new Date();
-      const dbKeys = await ApiKey.find({
-        service: { $regex: /^gemini$/i },
-        isEnabled: { $ne: false },
-        $or: [
-          { isExhausted: { $ne: true }, status: { $regex: /^active$/i } },
-          { cooldownUntil: { $lte: now } }
-        ]
-      })
-      .sort({ failureCount: 1, lastUsedAt: 1 })
-      .lean();
-
-      return dbKeys
-        .map(d => {
-          const raw = decryptApiKey(d);
-          return {
-            key: sanitizeApiKey(raw),
-            _id: d._id,
-            label: d.label || '',
-            maskedKey: d.maskedKey || maskApiKey(raw),
-            source: 'mongodb',
-            isDbKey: true
-          };
-        })
-        .filter(item => item.key && item.key.length > 5);
+      const eligible = await getEligibleKeys('gemini');
+      return eligible.filter(k => k.isDbKey);
     }
   } catch (e) {
     // Fail silently, use fallback
@@ -109,6 +72,31 @@ export const refreshDbGeminiKeys = async () => {
     // Fail silently, use in-memory / env fallback
   }
 };
+
+/**
+ * Asynchronously returns all eligible keys with full metadata, strictly prioritizing MongoDB database keys.
+ */
+export async function getEligibleGeminiKeysAsync() {
+  try {
+    const eligible = await getEligibleKeys('gemini');
+    if (eligible && eligible.length > 0) {
+      return eligible.map((k, index) => ({
+        index,
+        label: k.label || (index === 0 ? 'primary' : (index === 1 ? 'secondary' : `key_${index + 1}`)),
+        key: k.key,
+        maskedKey: k.maskedKey || maskApiKey(k.key),
+        _id: k._id || null,
+        isDbKey: Boolean(k.isDbKey),
+        source: k.source || (k.isDbKey ? 'database' : 'environment')
+      }));
+    }
+  } catch (err) {
+    console.warn('[GeminiKeyManager] Error resolving async eligible keys:', err.message);
+  }
+
+  // Fallback to synchronous env resolution
+  return getGeminiKeys();
+}
 
 /**
  * Returns available keys securely prioritizing the MongoDB API Keys pool.
@@ -151,6 +139,7 @@ export function getGeminiKeys() {
     index,
     label: index === 0 ? 'primary' : (index === 1 ? 'secondary' : `key_${index + 1}`),
     key,
+    maskedKey: maskApiKey(key),
     isFromDb: cachedDbGeminiKeys.includes(key)
   }));
 }
@@ -272,14 +261,15 @@ export async function executeGeminiOperation(operationFn, options = {}) {
   const timeoutMs = options.timeoutMs || 12000;
   const opName = options.operationName || 'GeminiOp';
 
-  const keys = getGeminiKeys();
+  // Asynchronously resolve eligible keys (prioritizes DB keys from KeyResolverService!)
+  const keys = await getEligibleGeminiKeysAsync();
   if (keys.length === 0) {
     geminiDiagnostics.failedCalls += 1;
     geminiDiagnostics.lastError = 'No Gemini API keys configured';
     return {
       success: false,
       error: 'NO_KEYS_CONFIGURED',
-      message: 'Gemini API key is not configured in GEMINI_API_KEY, GEMINI_API_KEY_2, or VITE_GEMINI_API_KEYS.'
+      message: 'Gemini API key is not configured in MongoDB pool or Render environment variables.'
     };
   }
 
@@ -332,14 +322,22 @@ export async function executeGeminiOperation(operationFn, options = {}) {
         geminiDiagnostics.secondarySuccess += 1;
       }
       geminiDiagnostics.lastLatencyMs = Date.now() - startTime;
+      
+      // Telemetry: record success in keyResolverService
+      await recordKeySuccess(keyInfo);
+
       if (i > 0) {
-        console.info(`[GeminiKeyManager] Request succeeded for ${opName} using ${keyInfo.label}.`);
+        console.info(`[GeminiKeyManager] Request succeeded for ${opName} using ${keyInfo.label} (${keyInfo.maskedKey}).`);
       }
       return {
         success: true,
         data: result,
         keyLabel: keyInfo.label,
         keyIndex: keyInfo.index,
+        selectedKeyMasked: keyInfo.maskedKey,
+        selectedKeyId: keyInfo._id,
+        isDbKey: Boolean(keyInfo.isDbKey),
+        source: keyInfo.source || 'database',
         failedOver: i > 0
       };
     } catch (err) {
@@ -351,6 +349,13 @@ export async function executeGeminiOperation(operationFn, options = {}) {
       const safeErrorMsg = sanitizeLogMessage(err.message || 'Unknown error');
       geminiDiagnostics.lastError = safeErrorMsg;
 
+      // Telemetry: record failure in keyResolverService with proper classification
+      await recordKeyFailure(keyInfo, {
+        status: err.status || err.statusCode || (isQuota ? 429 : 500),
+        reason: isQuota ? 'quotaExceeded' : (err.status === 400 ? 'keyInvalid' : 'error'),
+        message: safeErrorMsg
+      });
+
       // If non-retryable (e.g. client parameter error), abort immediately
       if (!isRetryable) {
         geminiDiagnostics.failedCalls += 1;
@@ -358,33 +363,16 @@ export async function executeGeminiOperation(operationFn, options = {}) {
         return {
           success: false,
           error: 'CLIENT_OR_INPUT_ERROR',
-          message: safeErrorMsg
+          message: safeErrorMsg,
+          selectedKeyMasked: keyInfo.maskedKey
         };
-      }
-
-      // Check if there is another key to try
-      if (isQuota) {
-        try {
-          await ApiKey.updateOne(
-            { service: { $regex: /^gemini$/i }, key: keyInfo.key },
-            { $set: { isExhausted: true, status: 'Exhausted', lastUsedAt: new Date() }, $inc: { failureCount: 1 } }
-          );
-          invalidateGeminiKeyCache();
-        } catch (_) {}
-      } else {
-        try {
-          await ApiKey.updateOne(
-            { service: { $regex: /^gemini$/i }, key: keyInfo.key },
-            { $set: { lastUsedAt: new Date() }, $inc: { failureCount: 1 } }
-          );
-        } catch (_) {}
       }
 
       if (i < keys.length - 1) {
         geminiDiagnostics.totalFailovers += 1;
         geminiDiagnostics.lastFailoverReason = safeErrorMsg;
         const nextKey = keys[i + 1];
-        console.warn(`[GeminiKeyManager] Key ${keyInfo.label} failed for ${opName} (${safeErrorMsg}). Automatically failing over to ${nextKey.label}...`);
+        console.warn(`[GeminiKeyManager] Key ${keyInfo.label} (${keyInfo.maskedKey}) failed for ${opName} (${safeErrorMsg}). Automatically failing over to ${nextKey.label} (${nextKey.maskedKey})...`);
         // Jittered backoff between key attempts
         await new Promise(res => setTimeout(res, 80 + Math.floor(Math.random() * 70)));
         continue;

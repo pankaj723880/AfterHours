@@ -164,6 +164,14 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
   const [isMergingPr, setIsMergingPr] = useState(null); // prNumber
   const [logs, setLogs] = useState([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  // Persistent Command History states (MongoDB backed)
+  const [commandHistory, setCommandHistory] = useState([]);
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyStatusFilter, setHistoryStatusFilter] = useState('all');
+  const [historySortOrder, setHistorySortOrder] = useState('desc');
+  const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historyTab, setHistoryTab] = useState('commands'); // 'commands' | 'snapshots'
 
   // Review & Confirmation Modal states
   const [stagedPatch, setStagedPatch] = useState(null); // { patchId, detectedFile, targetFile, originalCode, stagedCode, linesBefore, linesAfter, diff }
@@ -249,8 +257,35 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
     } catch (_) {}
   }, [cleanBackendUrl, token]);
 
+  const fetchHistory = useCallback(async () => {
+    if (!token) return;
+    setIsLoadingHistory(true);
+    try {
+      const params = new URLSearchParams();
+      if (historyStatusFilter !== 'all') params.set('status', historyStatusFilter);
+      if (historySearch.trim()) params.set('search', historySearch.trim());
+      params.set('limit', '50');
+
+      const res = await fetch(`${cleanBackendUrl}/api/admin/patch-history?${params.toString()}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setCommandHistory(data.history || []);
+      }
+    } catch (err) {
+      console.warn('Failed to load command history:', err.message);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  }, [cleanBackendUrl, token, historyStatusFilter, historySearch]);
+
   useEffect(() => {
-    fetchLogs();
+    fetchHistory();
+  }, [fetchHistory]);
+
+  useEffect(() => {
+    fetchLogs(); fetchHistory();
     fetchGithubStatus();
   }, [fetchLogs, fetchGithubStatus]);
 
@@ -434,7 +469,7 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
         setStagedPatch(null);
         setInstructionPrompt('');
         handleSetError(null);
-        fetchLogs();
+        fetchLogs(); fetchHistory();
         setTimeout(() => setPatchStatusMessage(''), 4500);
       } else {
         const err = data.error || 'Failed to commit patch';
@@ -753,6 +788,415 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
       </form>
 
       {/* =========================================================================
+          Embedded Live App Sandbox Preview (Vite HMR Reactivity)
+         ========================================================================= */}
+      <div className="bg-neutral-950/70 border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col">
+        {/* Preview Control Header */}
+        <div className="p-3 bg-neutral-900/90 border-b border-neutral-800 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+            <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+              <Globe className="w-3.5 h-3.5 text-amber-400" />
+              Live App Sandbox Preview
+            </span>
+            <span className="hidden sm:inline-flex px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-mono font-semibold">
+              Vite HMR Active
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Route Switcher Dropdown */}
+            <select
+              value={previewRoute}
+              onChange={(e) => setPreviewRoute(e.target.value)}
+              className="bg-neutral-800 border border-neutral-700 rounded-lg px-2.5 py-1 text-xs text-neutral-200 font-mono focus:outline-none focus:border-amber-400 cursor-pointer"
+            >
+              {PREVIEW_ROUTES.map((route) => (
+                <option key={route.path} value={route.path}>
+                  {route.label} ({route.path})
+                </option>
+              ))}
+            </select>
+
+            {/* Device Dimension Toggle */}
+            <div className="flex items-center bg-neutral-800 border border-neutral-700 rounded-lg p-0.5">
+              <button
+                type="button"
+                onClick={() => setPreviewDeviceMode('responsive')}
+                className={`p-1 rounded-md text-xs transition cursor-pointer ${
+                  previewDeviceMode === 'responsive'
+                    ? 'bg-amber-500 text-neutral-950 font-bold'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+                title="Full Responsive View"
+              >
+                <Monitor className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewDeviceMode('mobile')}
+                className={`p-1 rounded-md text-xs transition cursor-pointer ${
+                  previewDeviceMode === 'mobile'
+                    ? 'bg-amber-500 text-neutral-950 font-bold'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+                title="Mobile Viewport (390px)"
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Hard Reload Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsIframeLoading(true);
+                setIframeKey((prev) => prev + 1);
+              }}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs font-semibold border border-neutral-700 transition cursor-pointer"
+              title="Force reload iframe sandbox"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isIframeLoading ? 'animate-spin text-amber-400' : ''}`} />
+              <span className="hidden sm:inline">Hard Reload</span>
+            </button>
+
+            {/* Open in new tab link */}
+            <a
+              href={previewRoute}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-amber-400 transition"
+              title="Open route in new tab"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
+        </div>
+
+        {/* Embedded Iframe Container */}
+        <div className={`w-full bg-neutral-950 flex justify-center items-center overflow-hidden transition-all duration-300 ${
+          previewDeviceMode === 'mobile' ? 'py-4' : ''
+        }`}>
+          <div className={`relative transition-all duration-300 ${
+            previewDeviceMode === 'mobile'
+              ? 'w-[390px] h-[680px] rounded-2xl border-2 border-neutral-700 shadow-2xl overflow-hidden'
+              : 'w-full h-[580px]'
+          }`}>
+            <iframe
+              ref={iframeRef}
+              key={iframeKey}
+              src={previewRoute}
+              onLoad={() => setIsIframeLoading(false)}
+              className="w-full h-full border-0 bg-neutral-950"
+              title="Live App Sandbox Preview"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Persistent Command History & Git Snapshots */}
+      <div className="space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2">
+            <h5 className="text-xs font-bold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
+              <History className="w-3.5 h-3.5 text-amber-400" />
+              Live Code Patcher History
+            </h5>
+            <div className="flex items-center bg-neutral-900 border border-neutral-800 rounded-lg p-0.5 text-[11px]">
+              <button
+                type="button"
+                onClick={() => setHistoryTab('commands')}
+                className={`px-2.5 py-0.5 rounded-md font-semibold transition cursor-pointer ${
+                  historyTab === 'commands'
+                    ? 'bg-amber-500 text-neutral-950 shadow-sm'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                All Commands ({commandHistory.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setHistoryTab('snapshots')}
+                className={`px-2.5 py-0.5 rounded-md font-semibold transition cursor-pointer ${
+                  historyTab === 'snapshots'
+                    ? 'bg-amber-500 text-neutral-950 shadow-sm'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                Git Commits ({logs.length})
+              </button>
+            </div>
+          </div>
+
+          {/* Search & Filter Bar */}
+          {historyTab === 'commands' && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="relative">
+                <Search className="w-3 h-3 text-neutral-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={historySearch}
+                  onChange={(e) => setHistorySearch(e.target.value)}
+                  placeholder="Search commands, files..."
+                  className="bg-neutral-900/90 border border-neutral-800 rounded-lg pl-7 pr-2.5 py-1 text-[11px] text-white placeholder-neutral-500 focus:outline-none focus:border-amber-400/80 w-44"
+                />
+              </div>
+
+              <select
+                value={historyStatusFilter}
+                onChange={(e) => setHistoryStatusFilter(e.target.value)}
+                className="bg-neutral-900 border border-neutral-800 rounded-lg px-2 py-1 text-[11px] text-neutral-300 focus:outline-none cursor-pointer"
+              >
+                <option value="all">All Statuses</option>
+                <option value="Completed">Completed</option>
+                <option value="Failed">Failed</option>
+                <option value="Awaiting Approval">Awaiting Approval</option>
+                <option value="Generating Patch">Generating Patch</option>
+                <option value="Submitted">Submitted</option>
+              </select>
+
+              <button
+                type="button"
+                onClick={fetchHistory}
+                disabled={isLoadingHistory}
+                className="p-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 transition cursor-pointer"
+                title="Refresh command history"
+              >
+                <RefreshCw className={`w-3 h-3 ${isLoadingHistory ? 'animate-spin text-amber-400' : ''}`} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Tab 1: Persistent MongoDB Commands History */}
+        {historyTab === 'commands' && (
+          <div className="space-y-2">
+            {commandHistory.length === 0 ? (
+              <div className="p-8 text-center text-xs text-neutral-500 bg-neutral-950/40 border border-neutral-800/80 rounded-xl space-y-1.5">
+                <Clock className="w-6 h-6 mx-auto text-neutral-600 opacity-60" />
+                <div>No recorded patch commands found.</div>
+                <div className="text-[11px] text-neutral-600">
+                  Every submitted command (successful or failed) is stored permanently in MongoDB.
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                {commandHistory.map((cmd) => {
+                  const isCompleted = cmd.status === 'Completed';
+                  const isFailed = cmd.status === 'Failed';
+                  const isAwaiting = cmd.status === 'Awaiting Approval';
+
+                  const badgeClass = isCompleted 
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                    : isFailed 
+                      ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                      : isAwaiting
+                        ? 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                        : 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20';
+
+                  return (
+                    <div
+                      key={cmd._id || cmd.executionId}
+                      className="p-3 rounded-xl border border-neutral-800/80 bg-neutral-950/60 hover:border-neutral-700 transition flex flex-col gap-2"
+                    >
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-xs font-bold text-amber-400 truncate max-w-[200px]">
+                            {cmd.targetFile || 'auto'}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-sans font-bold uppercase border ${badgeClass}`}>
+                            {cmd.status}
+                          </span>
+                          {cmd.selectedKeyMasked && (
+                            <span className="px-2 py-0.2 rounded-full text-[9px] font-mono bg-neutral-800 text-neutral-300 border border-neutral-700">
+                              Key: {cmd.selectedKeyMasked}
+                            </span>
+                          )}
+                        </div>
+
+                        <span className="text-[10px] text-neutral-500 font-mono flex items-center gap-1">
+                          <Clock className="w-2.5 h-2.5" />
+                          {formatAdminTimestamp(cmd.submittedAt || cmd.createdAt)}
+                          {cmd.executionDurationMs > 0 && ` (${cmd.executionDurationMs}ms)`}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-neutral-200 font-sans line-clamp-2 italic">
+                        "{cmd.instructionPrompt}"
+                      </p>
+
+                      {/* Error Banner if failed */}
+                      {isFailed && cmd.errorDetails?.message && (
+                        <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-[11px] text-rose-300 font-mono">
+                          <span className="font-bold">Error:</span> {cmd.errorDetails.message}
+                        </div>
+                      )}
+
+                      {/* Action buttons strip */}
+                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-neutral-800/60 text-[11px]">
+                        <div className="text-[10px] text-neutral-500 font-mono truncate">
+                          ID: {cmd.executionId} • By: {cmd.adminUsername || 'admin'}
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {cmd.prUrl && (
+                            <a
+                              href={cmd.prUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              <span>PR #{cmd.prNumber}</span>
+                            </a>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedTarget(cmd.targetFile === 'auto' ? 'auto' : 'custom');
+                              if (cmd.targetFile !== 'auto') setCustomPath(cmd.targetFile);
+                              setInstructionPrompt(cmd.instructionPrompt);
+                              notify('Command restored into prompt box!', 'info');
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                            className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition cursor-pointer"
+                            title="Retry or re-apply this command"
+                          >
+                            <RotateCcw className="w-2.5 h-2.5 text-amber-400" />
+                            <span>Reuse Prompt</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 2: Git Commits & Snapshots with 1-Click Rollback */}
+        {historyTab === 'snapshots' && (
+          <div className="space-y-2">
+            {logs.length === 0 ? (
+              <div className="p-8 text-center text-xs text-neutral-500 bg-neutral-950/40 border border-neutral-800/80 rounded-xl space-y-1.5">
+                <Clock className="w-6 h-6 mx-auto text-neutral-600 opacity-60" />
+                <div>No Git patch snapshots found.</div>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                {logs.map((log) => {
+                  const isCurrentRollingBack = isRollingBack === log.id;
+                  const isRolledBack = log.status === 'ROLLED_BACK';
+
+                  return (
+                    <div
+                      key={log.id}
+                      className={`p-3.5 rounded-xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        isRolledBack
+                          ? 'bg-neutral-950/30 border-neutral-800/50 opacity-60'
+                          : 'bg-neutral-950/60 border-neutral-800/80 hover:border-neutral-700'
+                      }`}
+                    >
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-xs font-bold text-amber-400 truncate">
+                            {log.targetFile}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-sans font-bold uppercase ${
+                            isRolledBack
+                              ? 'bg-neutral-800 text-neutral-400 border border-neutral-700'
+                              : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                          }`}>
+                            {isRolledBack ? 'Rolled Back' : 'Applied'}
+                          </span>
+                          <span className="text-[10px] text-neutral-500 flex items-center gap-1 font-mono">
+                            <Clock className="w-2.5 h-2.5" />
+                            {formatAdminTimestamp(log.timestamp)}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-neutral-300 font-sans line-clamp-2 italic">
+                          "{log.instructionPrompt}"
+                        </p>
+
+                        <div className="text-[10px] text-neutral-500 font-mono flex items-center gap-3">
+                          {log.backupFile && <span>Backup: {log.backupFile}</span>}
+                          {log.linesBefore && log.linesAfter && (
+                            <span>Lines: {log.linesBefore} → {log.linesAfter}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 flex items-center gap-2">
+                        {log.prUrl && (
+                          <a
+                            href={log.prUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 transition cursor-pointer"
+                            title="View Pull Request on GitHub"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>PR #{log.prNumber}</span>
+                          </a>
+                        )}
+
+                        {log.prNumber && log.status === 'PR_OPENED' && (
+                          <button
+                            type="button"
+                            onClick={() => handleMergePr(log.prNumber, log.id)}
+                            disabled={isMergingPr === log.prNumber}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition cursor-pointer"
+                            title="Approve and Merge PR into main"
+                          >
+                            {isMergingPr === log.prNumber ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Check className="w-3.5 h-3.5" />
+                            )}
+                            <span>Merge PR</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleRollback(log.id, log.targetFile, log.branch, log.prNumber)}
+                          disabled={isCurrentRollingBack || isRolledBack}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                            isRolledBack
+                              ? 'bg-neutral-900 text-neutral-500 border-neutral-800 cursor-not-allowed'
+                              : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border-rose-500/30'
+                          }`}
+                          title={isRolledBack ? 'Already rolled back' : 'Restore pre-patch snapshot or close branch'}
+                        >
+                          {isCurrentRollingBack ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Restoring...</span>
+                            </>
+                          ) : (
+                            <>
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Rollback</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+{/* =========================================================================
           Embedded Live App Sandbox Preview (Vite HMR Reactivity)
          ========================================================================= */}
       <div className="bg-neutral-950/70 border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col">

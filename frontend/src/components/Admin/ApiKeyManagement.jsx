@@ -12,7 +12,9 @@ import {
   Layers, 
   RotateCcw,
   Clock,
-  ShieldCheck
+  ShieldCheck,
+  Copy,
+  Check
 } from 'lucide-react';
 
 export default function ApiKeyManagement({ backendUrl = '', token = '', showToast }) {
@@ -21,6 +23,8 @@ export default function ApiKeyManagement({ backendUrl = '', token = '', showToas
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [testingKeyId, setTestingKeyId] = useState(null);
+  const [copyingKeyId, setCopyingKeyId] = useState(null);
+  const [copiedKeyId, setCopiedKeyId] = useState(null);
   const [envFallbacks, setEnvFallbacks] = useState({ youtube: 0, gemini: 0 });
   
   // Form State
@@ -159,6 +163,39 @@ export default function ApiKeyManagement({ backendUrl = '', token = '', showToas
       notify('Network error during key test: ' + err.message, 'error');
     } finally {
       setTestingKeyId(null);
+    }
+  };
+
+  const handleCopyKey = async (id, maskedDisplay) => {
+    setCopyingKeyId(id);
+    try {
+      const res = await fetch(`${cleanBackendUrl}/api/admin/keys/${id}/reveal`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.apiKey) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(data.apiKey);
+        } else {
+          // Fallback textarea copy for older Android WebViews
+          const el = document.createElement('textarea');
+          el.value = data.apiKey;
+          document.body.appendChild(el);
+          el.select();
+          document.execCommand('copy');
+          document.body.removeChild(el);
+        }
+        setCopiedKeyId(id);
+        notify(`API Key copied to clipboard! (${data.maskedKey || maskedDisplay})`, 'success');
+        setTimeout(() => setCopiedKeyId(null), 2500);
+      } else {
+        notify(data.error || 'Failed to reveal key for copying', 'error');
+      }
+    } catch (err) {
+      notify('Network error copying key: ' + err.message, 'error');
+    } finally {
+      setCopyingKeyId(null);
     }
   };
 
@@ -301,7 +338,7 @@ export default function ApiKeyManagement({ backendUrl = '', token = '', showToas
       </div>
 
       {/* Input Form: Add Keys */}
-      <form onSubmit={handleAddKeys} className="bg-neutral-950/60 border border-neutral-800/80 rounded-xl p-4 space-y-4">
+      <form onSubmit={handleAddKeys} className="bg-neutral-950/60 border border-neutral-800/80 rounded-xl p-3 sm:p-4 space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <span className="text-xs font-bold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
             <Plus className="w-3.5 h-3.5 text-amber-400" /> Add Keys to MongoDB Pool
@@ -414,8 +451,8 @@ export default function ApiKeyManagement({ backendUrl = '', token = '', showToas
             </div>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-neutral-800/80 bg-neutral-950/40">
-            <table className="w-full text-left text-xs">
+          <div className="overflow-x-auto rounded-xl border border-neutral-800/80 bg-neutral-950/40 -mx-1 sm:mx-0">
+            <table className="w-full text-left text-xs min-w-[620px] sm:min-w-full">
               <thead>
                 <tr className="border-b border-neutral-800 text-neutral-400 font-medium bg-neutral-900/50">
                   <th className="py-2.5 px-3">Service</th>
@@ -472,6 +509,32 @@ export default function ApiKeyManagement({ backendUrl = '', token = '', showToas
                     </td>
 
                     <td className="py-2.5 px-3 text-right space-x-1.5 font-sans whitespace-nowrap">
+                      {/* Copy Key securely */}
+                      <button
+                        type="button"
+                        onClick={() => handleCopyKey(k._id, k.maskedKey)}
+                        disabled={copyingKeyId === k._id}
+                        className="px-2 py-1 rounded-lg text-[10px] font-bold bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700 transition disabled:opacity-50 cursor-pointer inline-flex items-center gap-1"
+                        title="Copy decrypted API key to clipboard"
+                      >
+                        {copiedKeyId === k._id ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            <span className="text-emerald-400">Copied</span>
+                          </>
+                        ) : copyingKeyId === k._id ? (
+                          <>
+                            <RefreshCw className="w-3 h-3 animate-spin text-amber-400" />
+                            <span>Copying...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copy</span>
+                          </>
+                        )}
+                      </button>
+
                       {/* Test key validity */}
                       <button
                         type="button"

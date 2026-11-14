@@ -7,6 +7,7 @@ import User from '../models/User.js';
 import AuditLog from '../models/AuditLog.js';
 import Activity from '../models/Activity.js';
 import ApiKey from '../models/ApiKeyConfig.js';
+import CodePatcherHistory from '../models/CodePatcherHistory.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { metricsService } from '../services/metrics.js';
 import { liveUsersService } from '../services/liveUsersService.js';
@@ -1090,6 +1091,40 @@ router.post('/keys', authenticateToken, requireAdmin, async (req, res) => {
 });
 
 // POST /api/admin/keys/:id/test - Run live dry-run health validation test for a specific key
+
+// POST /api/admin/keys/:id/reveal - Reveal decrypted API key for authorized copy action (admin only, audited)
+router.post('/keys/:id/reveal', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const keyDoc = await ApiKey.findById(req.params.id);
+    if (!keyDoc) {
+      return res.status(404).json({ error: 'API key not found' });
+    }
+
+    const plainKey = decryptApiKey(keyDoc);
+    if (!plainKey) {
+      return res.status(400).json({ error: 'Unable to decrypt API key' });
+    }
+
+    await AuditLog.create({
+      adminId: (req.user._id || req.user.id || req.user.userId)?.toString(),
+      adminUsername: req.user.username,
+      action: 'REVEAL_API_KEY_COPY',
+      details: { keyId: keyDoc._id, service: keyDoc.service, maskedKey: keyDoc.maskedKey },
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.json({
+      success: true,
+      service: keyDoc.service,
+      maskedKey: keyDoc.maskedKey,
+      apiKey: plainKey
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to reveal key for copy: ' + err.message });
+  }
+});
+
 router.post('/keys/:id/test', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const keyDoc = await ApiKey.findById(req.params.id);
@@ -1445,6 +1480,66 @@ router.get('/git/tree', authenticateToken, requireAdmin, async (req, res) => {
 });
 
 // GET /api/admin/ai-patch-logs & /api/admin/patch-logs - Fetch chronological patch history
+
+// GET /api/admin/patch-history - Query persistent MongoDB patch commands history with search & filters
+router.get('/patch-history', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { status, search, limit = 50, page = 1 } = req.query;
+    const filter = {};
+
+    if (status && status !== 'all') {
+      filter.status = status;
+    }
+
+    if (search && search.trim()) {
+      const q = search.trim();
+      filter.$or = [
+        { instructionPrompt: { $regex: q, $options: 'i' } },
+        { targetFile: { $regex: q, $options: 'i' } },
+        { detectedFile: { $regex: q, $options: 'i' } },
+        { executionId: { $regex: q, $options: 'i' } }
+      ];
+    }
+
+    const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
+    const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+    const skip = (parsedPage - 1) * parsedLimit;
+
+    const [items, total] = await Promise.all([
+      CodePatcherHistory.find(filter)
+        .sort({ submittedAt: -1 })
+        .skip(skip)
+        .limit(parsedLimit)
+        .lean(),
+      CodePatcherHistory.countDocuments(filter)
+    ]);
+
+    res.json({
+      success: true,
+      history: items,
+      total,
+      page: parsedPage,
+      limit: parsedLimit,
+      totalPages: Math.ceil(total / parsedLimit) || 1
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve patch history: ' + err.message });
+  }
+});
+
+// GET /api/admin/patch-history/:executionId - Get detailed execution report
+router.get('/patch-history/:executionId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const item = await CodePatcherHistory.findOne({ executionId: req.params.executionId }).lean();
+    if (!item) {
+      return res.status(404).json({ error: 'Command history record not found' });
+    }
+    res.json({ success: true, item });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve record: ' + err.message });
+  }
+});
+
 router.get(['/ai-patch-logs', '/patch-logs'], authenticateToken, requireAdmin, async (req, res) => {
   try {
     const logs = await readPatchLogs();
@@ -1471,11 +1566,42 @@ setInterval(() => {
 
 // POST /api/admin/ai-stage-patch - Multi-step AI Code Planning & Staging
 router.post('/ai-stage-patch', authenticateToken, requireAdmin, async (req, res) => {
+  const startTime = Date.now();
+  const executionId = `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  let historyDoc = null;
+
   try {
     let { targetFile, instructionPrompt } = req.body;
 
     if (!instructionPrompt || !instructionPrompt.trim()) {
       return res.status(400).json({ error: 'Instruction prompt is required' });
+    }
+
+    // 1. Immediately create persistent history document with 'Submitted' status
+    try {
+      historyDoc = await CodePatcherHistory.create({
+        executionId,
+        instructionPrompt: instructionPrompt.trim(),
+        targetFile: targetFile || 'auto',
+        status: 'Submitted',
+        adminUsername: req.user?.username || 'admin',
+        adminId: (req.user?._id || req.user?.id || req.user?.userId)?.toString(),
+        submittedAt: new Date(),
+        executionLogs: [{ level: 'step', message: 'Command received and recorded.' }]
+      });
+    } catch (dbErr) {
+      console.warn('[CodePatcherHistory] Error creating initial history record:', dbErr.message);
+    }
+
+    // 2. Transition to 'Analyzing'
+    if (historyDoc) {
+      await CodePatcherHistory.updateOne(
+        { executionId },
+        { 
+          $set: { status: 'Analyzing' },
+          $push: { executionLogs: { level: 'step', message: 'Analyzing repository structure and target file.' } }
+        }
+      );
     }
 
     let resolvedFiles = [];
@@ -1529,10 +1655,42 @@ Return ONLY a comma-separated list of relative file paths (e.g. "frontend/src/Ap
       try {
         originalCode = await fs.promises.readFile(absoluteTarget, 'utf-8');
       } catch (readErr) {
+        if (historyDoc) {
+          await CodePatcherHistory.updateOne(
+            { executionId },
+            { 
+              $set: { 
+                status: 'Failed', 
+                'errorDetails.message': `Target file not found: ${relativeTarget}`,
+                completedAt: new Date(),
+                executionDurationMs: Date.now() - startTime
+              },
+              $push: { executionLogs: { level: 'error', message: `Target file not found: ${relativeTarget}` } }
+            }
+          );
+        }
         return res.status(404).json({
-          error: `Target file not found in repository: ${relativeTarget}`
+          error: `Target file not found in repository: ${relativeTarget}`,
+          executionId
         });
       }
+    }
+
+    // 3. Transition to 'Generating Patch'
+    if (historyDoc) {
+      await CodePatcherHistory.updateOne(
+        { executionId },
+        { 
+          $set: { 
+            status: 'Generating Patch',
+            isAutoDetected,
+            detectedFile: isAutoDetected ? relativeTarget : null,
+            targetFile: relativeTarget,
+            filesInspected: resolvedFiles
+          },
+          $push: { executionLogs: { level: 'step', message: `Targeting ${relativeTarget} (lines: ${originalCode.split('\n').length}). Generating AI patch.` } }
+        }
+      );
     }
 
     const systemInstruction = `You are an expert full-stack AI live code patcher for Loopra (Vite + React + Tailwind + Node/Express backend).
@@ -1571,8 +1729,29 @@ OUTPUT:`;
     }, { operationName: `LiveCodeStage:${relativeTarget}`, timeoutMs: 12000 });
 
     if (!patchResult.success || !patchResult.data) {
+      const errMsg = patchResult.message || 'AI code patcher failed to generate patch.';
+      const isQuota = Boolean(patchResult.allKeysExhausted || patchResult.error === 'QUOTA_EXHAUSTED');
+      if (historyDoc) {
+        await CodePatcherHistory.updateOne(
+          { executionId },
+          { 
+            $set: { 
+              status: 'Failed',
+              selectedKeyMasked: patchResult.selectedKeyMasked || null,
+              'errorDetails.message': errMsg,
+              'errorDetails.isQuota': isQuota,
+              'errorDetails.code': patchResult.code || (isQuota ? '429' : '500'),
+              completedAt: new Date(),
+              executionDurationMs: Date.now() - startTime
+            },
+            $push: { executionLogs: { level: 'error', message: `Generation failed: ${errMsg}` } }
+          }
+        );
+      }
       return res.status(500).json({
-        error: patchResult.message || 'AI code patcher failed to generate patch.'
+        error: errMsg,
+        executionId,
+        selectedKeyMasked: patchResult.selectedKeyMasked
       });
     }
 
@@ -1580,7 +1759,21 @@ OUTPUT:`;
     const cleanedCode = applySearchReplaceBlocks(originalCode, cleanedOutput);
 
     if (!cleanedCode || cleanedCode.length < 20) {
-      return res.status(500).json({ error: 'AI generated empty or truncated code patch.' });
+      if (historyDoc) {
+        await CodePatcherHistory.updateOne(
+          { executionId },
+          { 
+            $set: { 
+              status: 'Failed',
+              'errorDetails.message': 'AI generated empty or truncated code patch.',
+              completedAt: new Date(),
+              executionDurationMs: Date.now() - startTime
+            },
+            $push: { executionLogs: { level: 'error', message: 'Generated code was empty or truncated.' } }
+          }
+        );
+      }
+      return res.status(500).json({ error: 'AI generated empty or truncated code patch.', executionId });
     }
 
     const patchId = `stage_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -1588,6 +1781,7 @@ OUTPUT:`;
 
     const stagedData = {
       patchId,
+      executionId,
       stagedAt: Date.now(),
       targetFile: relativeTarget,
       detectedFile: isAutoDetected ? relativeTarget : null,
@@ -1598,14 +1792,39 @@ OUTPUT:`;
       diff,
       linesBefore: originalCode.split('\n').length,
       linesAfter: cleanedCode.split('\n').length,
-      stagedBy: req.user?.username || 'admin'
+      stagedBy: req.user?.username || 'admin',
+      selectedKeyMasked: patchResult.selectedKeyMasked || null,
+      selectedKeyId: patchResult.selectedKeyId || null
     };
 
     stagedPatches.set(patchId, stagedData);
 
+    // 4. Update history to 'Awaiting Approval'
+    if (historyDoc) {
+      await CodePatcherHistory.updateOne(
+        { executionId },
+        { 
+          $set: { 
+            status: 'Awaiting Approval',
+            selectedKeyMasked: patchResult.selectedKeyMasked || null,
+            selectedKeyId: patchResult.selectedKeyId || null,
+            filesModified: [relativeTarget],
+            'patchInfo.linesBefore': stagedData.linesBefore,
+            'patchInfo.linesAfter': stagedData.linesAfter,
+            'patchInfo.diffSummary': `${diff.length} lines affected`,
+            'patchInfo.diff': diff.slice(0, 50),
+            executionDurationMs: Date.now() - startTime
+          },
+          $push: { executionLogs: { level: 'step', message: `Diff generated with ${diff.length} changed lines. Ready for confirmation.` } }
+        }
+      );
+    }
+
     res.json({
       success: true,
       patchId,
+      executionId,
+      selectedKeyMasked: patchResult.selectedKeyMasked || null,
       detectedFile: isAutoDetected ? relativeTarget : null,
       targetFile: relativeTarget,
       linesBefore: stagedData.linesBefore,
@@ -1616,7 +1835,21 @@ OUTPUT:`;
       githubConnected: isGitHubConfigured()
     });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to stage code patch: ' + err.message });
+    if (historyDoc) {
+      await CodePatcherHistory.updateOne(
+        { executionId },
+        { 
+          $set: { 
+            status: 'Failed',
+            'errorDetails.message': err.message,
+            completedAt: new Date(),
+            executionDurationMs: Date.now() - startTime
+          },
+          $push: { executionLogs: { level: 'error', message: 'Fatal error: ' + err.message } }
+        }
+      );
+    }
+    res.status(500).json({ error: 'Failed to stage code patch: ' + err.message, executionId });
   }
 });
 
@@ -1679,6 +1912,35 @@ router.post('/ai-commit-patch', authenticateToken, requireAdmin, async (req, res
     }
 
     stagedPatches.delete(patchId);
+
+    // Update persistent MongoDB CodePatcherHistory document
+    if (staged.executionId) {
+      try {
+        await CodePatcherHistory.updateOne(
+          { executionId: staged.executionId },
+          {
+            $set: {
+              status: 'Completed',
+              gitBranch: branchName,
+              commitSha: gitCommitResult?.commitSha,
+              prNumber: prResult?.prNumber || null,
+              prUrl: prResult?.prUrl || null,
+              completedAt: new Date()
+            },
+            $push: {
+              executionLogs: {
+                level: 'step',
+                message: prResult 
+                  ? `Branch ${branchName} created & PR #${prResult.prNumber} opened on GitHub.`
+                  : `Changes applied directly to ${relativeTarget}.`
+              }
+            }
+          }
+        );
+      } catch (histErr) {
+        console.warn('[CodePatcherHistory] Error updating completion state:', histErr.message);
+      }
+    }
 
     // Save persistent log record
     const committedPatchId = `patch_${timestamp}_${Math.random().toString(36).slice(2, 7)}`;

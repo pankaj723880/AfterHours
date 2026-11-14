@@ -64,3 +64,6 @@ loopra-apk/
 *.apk
 !frontend/public/loopra.apk
 !frontend/public/Loopra.apk
+\
+
+.snapshots/
