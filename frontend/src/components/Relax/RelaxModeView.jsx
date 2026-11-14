@@ -1,313 +1,241 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Play,
-  Pause,
+  ArrowLeft,
+  Sliders,
+  Sparkles,
   Volume2,
   VolumeX,
-  Square,
-  Sliders,
-  Search,
+  Play,
+  Pause,
+  SkipBack,
+  SkipForward,
   Headphones,
-  Sparkles,
-  RefreshCw,
   Compass,
+  Trees,
   Feather,
   Droplet,
-  Activity,
-  Trees,
-  Check
+  Flame,
+  CloudRain,
+  Wind,
+  Music2
 } from 'lucide-react';
 import { relaxAudioEngine } from '../../services/relaxAudioEngine';
 import { RELAX_CATEGORIES, RELAX_SOUNDS } from '../../constants/relaxSounds';
 import RelaxVisualizer from './RelaxVisualizer';
+import SpatialStudioModal from './SpatialStudioModal';
 
-export default function RelaxModeView() {
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
+export default function RelaxModeView({
+  onBack,
+  currentSong,
+  isPlaying,
+  onTogglePlay,
+  onNextSong,
+  onPrevSong,
+  volume = 1,
+  onVolumeChange,
+  getCleanThumbnail,
+  onOpenExpandedPlayer
+}) {
   const [engineState, setEngineState] = useState(() => relaxAudioEngine.getState());
-  const [isMixerDrawerOpen, setIsMixerDrawerOpen] = useState(false);
+  const [isStudioOpen, setIsStudioOpen] = useState(false);
 
   useEffect(() => {
     const unsubscribe = relaxAudioEngine.subscribe((state) => {
       setEngineState({ ...state });
     });
+
+    // Preload top likely sounds in background for instantaneous startup (<100ms)
+    relaxAudioEngine.preloadSounds(RELAX_SOUNDS);
+
     return () => unsubscribe();
   }, []);
 
-  const filteredSounds = RELAX_SOUNDS.filter((sound) => {
-    const matchesCat = selectedCategory === 'all' || sound.category === selectedCategory;
-    const matchesSearch = !searchQuery.trim() ||
-      sound.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      sound.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      sound.tags?.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchesCat && matchesSearch;
-  });
-
-  const getCategoryIcon = (catId) => {
+  const getCategoryIcon = (catId, className = "w-4 h-4") => {
     switch (catId) {
-      case 'forest': return <Trees className="w-4 h-4" />;
-      case 'birds': return <Feather className="w-4 h-4" />;
-      case 'water': return <Droplet className="w-4 h-4" />;
-      case 'binaural': return <Activity className="w-4 h-4" />;
-      default: return <Sparkles className="w-4 h-4" />;
+      case 'forest': return <Trees className={className} />;
+      case 'birds': return <Feather className={className} />;
+      case 'water': return <Droplet className={className} />;
+      case 'rain': return <CloudRain className={className} />;
+      case 'wind': return <Wind className={className} />;
+      case 'fire': return <Flame className={className} />;
+      case 'nature': return <Sparkles className={className} />;
+      default: return <Sparkles className={className} />;
     }
   };
 
   return (
-    <div className="relative min-h-[85vh] w-full rounded-3xl overflow-hidden border border-white/10 bg-neutral-950/80 backdrop-blur-2xl text-white flex flex-col select-none shadow-2xl">
-      {/* Dynamic Layered Visual Background */}
+    <div className="fixed inset-0 z-50 w-screen h-screen bg-neutral-950 text-white flex flex-col justify-between overflow-hidden select-none">
+      {/* 1. Full-screen dynamic nature environment animations (Birds, Waterfalls, Flowing River, Rain, Forest, Wind) */}
       <RelaxVisualizer activeCategories={engineState.activeCategories} />
 
-      {/* Foreground Content */}
-      <div className="relative z-10 flex flex-col flex-1 p-4 sm:p-6 md:p-8 space-y-6">
-        {/* Header Section */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-5">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
-                <Sparkles className="w-3 h-3" /> Nature & Sound Lounge
-              </span>
-              {engineState.activeCount > 0 && (
-                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  {engineState.activeCount} Active {engineState.activeCount === 1 ? 'Layer' : 'Layers'} Playing
-                </span>
-              )}
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight mt-1.5 text-white flex items-center gap-2">
-              Loopra Relax Mode
-            </h1>
-            <p className="text-xs sm:text-sm text-neutral-400 mt-0.5 max-w-xl">
-              Multi-sound ambient mixer. Select Forest, Water, Birds, and true stereo Binaural Beats to play simultaneously in harmony.
-            </p>
-          </div>
+      {/* Atmospheric Soft Vignette */}
+      <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-black/60 via-transparent to-black/80 z-[1]" />
 
-          {/* Master Controls Toolbar */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0 self-start md:self-auto bg-neutral-900/80 border border-white/10 rounded-2xl p-2 sm:px-3 sm:py-2 backdrop-blur-md">
-            {/* Master Volume Slider */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => relaxAudioEngine.toggleMute()}
-                className="p-1.5 rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white transition cursor-pointer"
-                title={engineState.isMuted ? 'Unmute' : 'Mute'}
-              >
-                {engineState.isMuted || engineState.masterVolume === 0 ? (
-                  <VolumeX className="w-4 h-4 text-red-400" />
-                ) : (
-                  <Volume2 className="w-4 h-4 text-emerald-400" />
-                )}
-              </button>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={engineState.isMuted ? 0 : engineState.masterVolume}
-                onChange={(e) => relaxAudioEngine.setMasterVolume(parseFloat(e.target.value))}
-                className="w-20 sm:w-28 accent-emerald-400 cursor-pointer h-1.5 bg-neutral-800 rounded-lg"
-                title="Master Relax Volume"
-              />
-            </div>
-
-            {/* Stop All Button */}
-            {engineState.activeCount > 0 && (
-              <button
-                onClick={() => relaxAudioEngine.stopAll()}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 text-xs font-semibold transition active:scale-95 cursor-pointer"
-              >
-                <Square className="w-3.5 h-3.5 fill-current" />
-                <span>Stop All</span>
-              </button>
-            )}
-
-            {/* Mixer Drawer Toggle */}
-            <button
-              onClick={() => setIsMixerDrawerOpen(prev => !prev)}
-              className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${isMixerDrawerOpen || engineState.activeCount > 0
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                  : 'bg-white/5 hover:bg-white/10 text-neutral-400 border-white/10'
-                }`}
-            >
-              <Sliders className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Mixer</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Headphones Advisory Banner for Binaural Beats */}
-        <div className="flex items-center gap-3 p-3 rounded-2xl bg-sky-500/10 border border-sky-500/20 text-sky-200 text-xs">
-          <Headphones className="w-4 h-4 shrink-0 text-sky-400" />
-          <span>
-            <strong>Audio Tip:</strong> Headphones are recommended for Binaural Beats to perceive the stereo left & right channel frequency differential. Designed purely for relaxation.
-          </span>
-        </div>
-
-        {/* Categories Bar & Search Filter */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          {/* Category Tabs */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 hide-scrollbar">
-            <button
-              onClick={() => setSelectedCategory('all')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 cursor-pointer ${selectedCategory === 'all'
-                  ? 'bg-emerald-500 text-neutral-950 shadow-md shadow-emerald-500/20'
-                  : 'bg-white/5 hover:bg-white/10 text-neutral-300 border border-white/10'
-                }`}
-            >
-              All 40 Sounds
-            </button>
-            {RELAX_CATEGORIES.map(cat => {
-              const isSelected = selectedCategory === cat.id;
-              const activeInCat = engineState.details.filter(d => d.category === cat.id).length;
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shrink-0 cursor-pointer ${isSelected
-                      ? 'bg-emerald-500 text-neutral-950 shadow-md shadow-emerald-500/20'
-                      : 'bg-white/5 hover:bg-white/10 text-neutral-300 border border-white/10'
-                    }`}
-                >
-                  {getCategoryIcon(cat.id)}
-                  <span>{cat.name}</span>
-                  {activeInCat > 0 && (
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Search Box */}
-          <div className="relative w-full sm:w-64 shrink-0">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
-            <input
-              type="text"
-              placeholder="Search sounds or tags..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-neutral-900/80 border border-white/10 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-500/50"
-            />
-          </div>
-        </div>
-
-        {/* Multi-Sound Playing Mixer Drawer (Collapsible) */}
-        {isMixerDrawerOpen && engineState.activeCount > 0 && (
-          <div className="p-4 rounded-2xl bg-neutral-900/90 border border-amber-500/30 backdrop-blur-xl space-y-3 animate-fadeIn">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-2">
-                <Sliders className="w-3.5 h-3.5" />
-                Active Multi-Sound Mixer ({engineState.activeCount})
-              </h3>
-              <span className="text-[11px] text-neutral-400">Adjust individual balance</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-              {engineState.details.map(item => (
-                <div key={item.id} className="p-2.5 rounded-xl bg-black/40 border border-white/10 flex flex-col gap-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold truncate text-white">{item.title}</span>
-                    <button
-                      onClick={() => relaxAudioEngine.stopSound(item.id)}
-                      className="text-neutral-400 hover:text-red-400 transition"
-                      title="Stop this layer"
-                    >
-                      <Square className="w-3 h-3 fill-current" />
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.01"
-                      value={item.volume}
-                      onChange={(e) => relaxAudioEngine.setSoundVolume(item.id, parseFloat(e.target.value))}
-                      className="w-full accent-amber-400 cursor-pointer h-1.5 bg-neutral-800 rounded-lg"
-                    />
-                    <span className="text-[10px] font-mono text-neutral-400 w-8 text-right">
-                      {Math.round(item.volume * 100)}%
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* Minimal Top Bar: Return to Loopra & Master Relax Mute/Vol */}
+      <header className="relative z-10 w-full px-4 sm:px-6 md:px-8 py-3 sm:py-4 flex items-center justify-between pointer-events-auto">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="flex items-center gap-2 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-2xl bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-white/10 text-xs sm:text-sm font-semibold transition cursor-pointer backdrop-blur-xl shadow-lg active:scale-95"
+            aria-label="Back to Loopra"
+            title="Back to previous page"
+          >
+            <ArrowLeft className="w-4 h-4 text-emerald-400" />
+            <span className="hidden xs:inline">Back</span>
+          </button>
         )}
 
-        {/* 40 Sounds Interactive Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 overflow-y-auto max-h-[60vh] pr-1">
-          {filteredSounds.map((sound) => {
-            const isPlaying = engineState.playingIds.includes(sound.id);
-            const volume = engineState.volumes[sound.id] ?? sound.defaultVolume ?? 0.75;
-
-            return (
-              <div
-                key={sound.id}
-                className={`p-4 rounded-2xl border transition-all duration-200 flex flex-col justify-between ${isPlaying
-                    ? 'bg-emerald-950/40 border-emerald-500/50 shadow-lg shadow-emerald-500/10'
-                    : 'bg-neutral-900/60 border-white/10 hover:border-white/20'
-                  }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-emerald-400">
-                      {getCategoryIcon(sound.category)}
-                    </span>
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-neutral-500">
-                      {sound.category}
-                    </span>
-                  </div>
-                  <h4 className="text-sm font-bold text-white truncate">{sound.title}</h4>
-                  <p className="text-[11px] text-neutral-400 line-clamp-2 mt-1 leading-relaxed">
-                    {sound.description}
-                  </p>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-white/5 flex flex-col gap-2.5">
-                  {/* Volume Slider if Playing */}
-                  {isPlaying && (
-                    <div className="flex items-center gap-2">
-                      <Volume2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.01"
-                        value={volume}
-                        onChange={(e) => relaxAudioEngine.setSoundVolume(sound.id, parseFloat(e.target.value))}
-                        className="w-full accent-emerald-400 cursor-pointer h-1.5 bg-neutral-800 rounded-lg"
-                      />
-                      <span className="text-[10px] font-mono text-neutral-400 w-7 text-right">
-                        {Math.round(volume * 100)}%
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Play / Toggle Button */}
-                  <button
-                    onClick={() => relaxAudioEngine.toggleSound(sound)}
-                    className={`w-full py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer ${isPlaying
-                        ? 'bg-emerald-500 text-neutral-950 shadow-md shadow-emerald-500/25'
-                        : 'bg-white/10 hover:bg-white/15 text-white border border-white/10'
-                      }`}
-                  >
-                    {isPlaying ? (
-                      <>
-                        <Square className="w-3 h-3 fill-current" />
-                        <span>Playing in Mix (Stop)</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-3 h-3 fill-current" />
-                        <span>Add to Mix</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+        {/* Ambient Master Volume Indicator */}
+        <div className="flex items-center gap-2 bg-neutral-900/80 border border-white/10 rounded-2xl px-3 py-1.5 backdrop-blur-xl shadow-lg">
+          <button
+            onClick={() => relaxAudioEngine.toggleMute()}
+            className="p-1 rounded text-neutral-400 hover:text-white transition cursor-pointer"
+            title={engineState.isMuted ? 'Unmute Ambient' : 'Mute Ambient'}
+          >
+            {engineState.isMuted || engineState.masterVolume === 0 ? (
+              <VolumeX className="w-4 h-4 text-red-400" />
+            ) : (
+              <Volume2 className="w-4 h-4 text-emerald-400" />
+            )}
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={engineState.isMuted ? 0 : engineState.masterVolume}
+            onChange={(e) => relaxAudioEngine.setMasterVolume(parseFloat(e.target.value))}
+            className="w-16 sm:w-20 accent-emerald-400 cursor-pointer h-1.5 bg-neutral-800 rounded-lg"
+            title="Master Relax Ambient Volume"
+          />
         </div>
+      </header>
+
+      {/* 2. Unobstructed Nature Visual Center: Strictly empty to showcase environment */}
+      <main className="relative z-0 flex-1 flex flex-col items-center justify-center p-4 pointer-events-none" />
+
+      {/* 3. Floating Single "Sound Studio" Button */}
+      <div className="relative z-20 flex justify-center pb-3 pointer-events-auto">
+        <button
+          onClick={() => setIsStudioOpen(true)}
+          className="group flex items-center gap-2.5 px-6 py-3 rounded-full bg-neutral-900/90 hover:bg-neutral-850 text-white font-extrabold text-sm border border-emerald-500/40 hover:border-emerald-400/80 shadow-[0_0_35px_rgba(16,185,129,0.35)] backdrop-blur-2xl transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer"
+          title="Open Complete Sound Studio"
+        >
+          <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-400 text-neutral-950 flex items-center justify-center shadow-md group-hover:rotate-12 transition-transform">
+            <Sparkles className="w-4 h-4 fill-current" />
+          </div>
+          <span className="tracking-wide">Sound Studio</span>
+          {engineState.activeCount > 0 && (
+            <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-mono">
+              {engineState.activeCount}
+            </span>
+          )}
+        </button>
       </div>
+
+      {/* 4. Bottom Music Player: Fixed at bottom for simultaneous Loopra music */}
+      <footer className="relative z-20 w-full px-4 sm:px-6 md:px-8 py-3 bg-neutral-900/95 border-t border-white/10 backdrop-blur-2xl shrink-0 flex items-center justify-between gap-3 sm:gap-6 shadow-[0_-10px_35px_rgba(0,0,0,0.8)] pointer-events-auto">
+        {/* Track Artwork & Info */}
+        <div
+          onClick={() => onOpenExpandedPlayer && onOpenExpandedPlayer('player')}
+          className="flex items-center gap-3 min-w-0 max-w-[40%] sm:max-w-sm cursor-pointer group"
+        >
+          {currentSong ? (
+            <>
+              <div className="relative w-11 h-11 sm:w-12 sm:h-12 rounded-xl overflow-hidden bg-neutral-800 shrink-0 border border-white/10 shadow-md">
+                <img
+                  src={getCleanThumbnail ? getCleanThumbnail(currentSong) : (currentSong.thumbnail || currentSong.image || '/logo.png')}
+                  alt={currentSong.title || 'Track thumbnail'}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                />
+              </div>
+              <div className="min-w-0 flex flex-col justify-center">
+                <p className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-emerald-400 transition">
+                  {currentSong.title || 'Untitled Track'}
+                </p>
+                <p className="text-[10px] sm:text-xs text-neutral-400 truncate">
+                  {currentSong.artist || currentSong.channelTitle || 'Loopra Music'}
+                </p>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center gap-2.5 text-neutral-400">
+              <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center">
+                <Music2 className="w-5 h-5 text-neutral-500" />
+              </div>
+              <div className="hidden xs:block">
+                <p className="text-xs font-semibold text-neutral-300">No Song Playing</p>
+                <p className="text-[10px] text-neutral-500">Play from Loopra library anytime</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Global Song Player Controls */}
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+          <button
+            onClick={onPrevSong}
+            disabled={!currentSong}
+            className="p-1.5 sm:p-2 rounded-full text-neutral-400 hover:text-white disabled:opacity-40 transition active:scale-95 cursor-pointer disabled:cursor-not-allowed"
+            title="Previous track"
+            aria-label="Previous track"
+          >
+            <SkipBack className="w-4 h-4 sm:w-5 sm:h-5 fill-current" />
+          </button>
+
+          <button
+            onClick={onTogglePlay}
+            disabled={!currentSong}
+            className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-white hover:bg-neutral-200 text-neutral-950 flex items-center justify-center transition shadow-lg active:scale-95 disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+            title={isPlaying ? 'Pause music' : 'Play music'}
+            aria-label={isPlaying ? 'Pause music' : 'Play music'}
+          >
+            {isPlaying ? (
+              <Pause className="w-4 h-4 sm:w-5 sm:h-5 fill-current" />
+            ) : (
+              <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-current ml-0.5" />
+            )}
+          </button>
+
+          <button
+            onClick={onNextSong}
+            disabled={!currentSong}
+            className="p-1.5 sm:p-2 rounded-full text-neutral-400 hover:text-white disabled:opacity-40 transition active:scale-95 cursor-pointer disabled:cursor-not-allowed"
+            title="Next track"
+            aria-label="Next track"
+          >
+            <SkipForward className="w-4 h-4 sm:w-5 sm:h-5 fill-current" />
+          </button>
+        </div>
+
+        {/* Music Volume Control */}
+        <div className="hidden md:flex items-center gap-2 w-36 justify-end">
+          <Volume2 className="w-4 h-4 text-neutral-400 shrink-0" />
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={volume}
+            onChange={(e) => onVolumeChange && onVolumeChange(parseFloat(e.target.value))}
+            className="w-24 accent-emerald-400 cursor-pointer h-1.5 bg-neutral-800 rounded-lg"
+            title="Music Player Volume"
+          />
+        </div>
+      </footer>
+
+      {/* 5. Single Unified Sound Studio Full Overlay Modal */}
+      <SpatialStudioModal
+        isOpen={isStudioOpen}
+        onClose={() => setIsStudioOpen(false)}
+        dspState={engineState.dsp}
+        audioEngine={relaxAudioEngine}
+        activeTracks={engineState.details}
+        playingIds={engineState.playingIds}
+        volumes={engineState.volumes}
+        loadingIds={engineState.loadingIds}
+        getCategoryIcon={getCategoryIcon}
+      />
     </div>
   );
 }
-

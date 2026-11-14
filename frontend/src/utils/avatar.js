@@ -1,11 +1,11 @@
-import { BACKEND_URL } from './apiUrl';
+import { BACKEND_URL } from './apiUrl.js';
 
 /**
  * Normalizes and resolves avatar URLs for consistent rendering:
  * 1. Accepts either a user object or a raw URL string.
  * 2. Resolves relative backend paths (/uploads/...) with BACKEND_URL.
  * 3. Supports Google OAuth, external CDNs, blob, and base64 data URLs.
- * 4. Strips malformed or empty URLs to prevent broken image renders.
+ * 4. Strips malformed or placeholder URLs to prevent broken image renders.
  */
 export const getAvatarUrl = (userOrUrl) => {
   if (!userOrUrl) return null;
@@ -41,14 +41,17 @@ export const getAvatarUrl = (userOrUrl) => {
     return rawUrl;
   }
 
-  // Purge /uploads/ custom avatar paths to prevent 404 network errors
+  // Properly resolve backend uploaded avatar paths (/uploads/avatar-...)
   if (rawUrl.startsWith('/uploads/') || rawUrl.startsWith('uploads/')) {
-    return null;
+    const cleanPath = rawUrl.startsWith('/') ? rawUrl : `/${rawUrl}`;
+    const cleanBase = (BACKEND_URL || '').replace(/\/$/, '');
+    return `${cleanBase}${cleanPath}`;
   }
 
-  // Any relative path
+  // Any other relative path
   if (rawUrl.startsWith('/') && !rawUrl.startsWith('//')) {
-    return `${BACKEND_URL}${rawUrl}`;
+    const cleanBase = (BACKEND_URL || '').replace(/\/$/, '');
+    return `${cleanBase}${rawUrl}`;
   }
 
   // Protocol-relative URLs
@@ -90,4 +93,3 @@ export const getUserInitials = (userOrName, defaultInitial = 'U') => {
   const match = clean.match(/[a-zA-Z0-9]/);
   return match ? match[0].toUpperCase() : (clean.charAt(0).toUpperCase() || defaultInitial);
 };
-

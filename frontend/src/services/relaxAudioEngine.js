@@ -1,18 +1,28 @@
-// Centralized Web Audio API Sound Mixing & Binaural Beats Engine for Loopra Relax Mode
+// Centralized Pure High-Performance Web Audio API Sound Mixing & Preloading Engine for Loopra Relax Mode
+// Uses 100% authentic, verified natural field recordings
+// Connected through SpatialStudioDsp with real-time loudness compensation
+
+import { SpatialStudioDsp } from './spatialStudioDsp.js';
 
 class RelaxAudioEngine {
   constructor() {
     this.audioContext = null;
     this.masterGain = null;
+    this.dsp = null;
     this.masterVolume = 0.8;
     this.isMuted = false;
-    this.activeTracks = new Map(); // id -> { audio, sourceNode, gainNode, analyserNode, type, ... }
-    this.binauralOscillators = new Map(); // id -> { oscL, oscR, mergerNode, gainNode, ... }
+
+    // Pure Playback state maps (HTML5 Audio connected to WebAudio Gain & Analyser for visualizer)
+    this.activeTracks = new Map(); // id -> { audio, sourceNode, gainNode, analyserNode, type: 'audio', ... }
+
+    // Preloaded Audio Elements for instantaneous playback (<100ms)
+    this.audioPool = new Map(); // id -> HTMLAudioElement (pre-created, preload="auto")
+    this.loadingIds = new Set(); // tracks currently buffering
     this.listeners = new Set();
-    this.hasUserInteracted = false;
+    this.preloaded = false;
   }
 
-  // Safely initialize or resume AudioContext after user gesture
+  // Safely initialize or resume AudioContext synchronously upon user gesture
   getAudioContext() {
     if (typeof window === 'undefined') return null;
     if (!this.audioContext) {
@@ -24,7 +34,13 @@ class RelaxAudioEngine {
       this.audioContext = new AudioCtx();
       this.masterGain = this.audioContext.createGain();
       this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.masterVolume, this.audioContext.currentTime);
-      this.masterGain.connect(this.audioContext.destination);
+
+      // Instantiate DSP Spatial Processor
+      this.dsp = new SpatialStudioDsp(this.audioContext);
+
+      // Clean routing: Ambient Tracks -> MasterGain -> DSP -> Destination
+      this.masterGain.connect(this.dsp.inputNode);
+      this.dsp.outputNode.connect(this.audioContext.destination);
     }
 
     if (this.audioContext.state === 'suspended') {
@@ -66,21 +82,7 @@ class RelaxAudioEngine {
         category: val.category,
         title: val.title,
         volume: val.volume,
-        type: val.type
-      });
-    });
-
-    this.binauralOscillators.forEach((val, id) => {
-      playingIds.push(id);
-      volumes[id] = val.volume;
-      details.push({
-        id,
-        category: 'binaural',
-        title: val.title,
-        volume: val.volume,
-        type: 'binaural',
-        carrier: val.carrier,
-        beat: val.beat
+        type: 'audio'
       });
     });
 
@@ -91,7 +93,17 @@ class RelaxAudioEngine {
       playingIds,
       volumes,
       details,
-      activeCategories: Array.from(new Set(details.map(d => d.category)))
+      loadingIds: Array.from(this.loadingIds),
+      activeCategories: Array.from(new Set(details.map(d => d.category))),
+      dsp: this.dsp ? this.dsp.getState() : {
+        isEnabled: false,
+        isBypassed: false,
+        mode: 'natural',
+        activePosition: 'center',
+        eqGains: {},
+        wetDry: 0.5,
+        compensationGain: 1.0
+      }
     };
   }
 
@@ -115,221 +127,239 @@ class RelaxAudioEngine {
     this.notifyListeners();
   }
 
-  // Play ambient audio track (Forest, Birds, Water) with automatic fallback resilience
-  async playAmbientTrack(sound) {
+  // DSP Control Passthrough Helpers
+  setDspMode(modeId) {
+    this.getAudioContext();
+    if (this.dsp) {
+      this.dsp.setMode(modeId);
+      this.notifyListeners();
+    }
+  }
+
+  setDsp3DPosition(posId) {
+    this.getAudioContext();
+    if (this.dsp) {
+      this.dsp.set3DPosition(posId);
+      this.notifyListeners();
+    }
+  }
+
+  setDspParam(paramKey, val) {
+    this.getAudioContext();
+    if (this.dsp) {
+      this.dsp.setParam(paramKey, val);
+      this.notifyListeners();
+    }
+  }
+
+  setDspEqPreset(presetName) {
+    this.getAudioContext();
+    if (this.dsp) {
+      this.dsp.setEqPreset(presetName);
+      this.notifyListeners();
+    }
+  }
+
+  setDspBandGain(freq, gain) {
+    this.getAudioContext();
+    if (this.dsp) {
+      this.dsp.setBandGain(freq, gain);
+      this.notifyListeners();
+    }
+  }
+
+  toggleDspEnabled(forceState) {
+    this.getAudioContext();
+    if (this.dsp) {
+      this.dsp.toggleEnabled(forceState);
+      this.notifyListeners();
+    }
+  }
+
+  toggleDspBypass(forceState) {
+    this.getAudioContext();
+    if (this.dsp) {
+      this.dsp.toggleBypass(forceState);
+      this.notifyListeners();
+    }
+  }
+
+  resetDspToOriginal() {
+    this.getAudioContext();
+    if (this.dsp) {
+      this.dsp.resetToOriginal();
+      this.notifyListeners();
+    }
+  }
+
+  getLoudnessMeasurement() {
+    if (this.dsp) {
+      return this.dsp.getLoudnessMeasurement();
+    }
+    return { originalDb: -60, processedDb: -60, diffDb: 0 };
+  }
+
+  // Background Preloader: pre-instantiate and warm authentic nature recordings into pool
+  preloadSounds(soundsList = []) {
+    if (typeof window === 'undefined') return;
+    
+    // Warm top sounds in idle slices to ensure instantaneous click responsiveness
+    const candidates = soundsList.slice(0, 16);
+    candidates.forEach((sound) => {
+      if (sound.audioUrl && !this.audioPool.has(sound.id)) {
+        try {
+          const audio = new Audio();
+          audio.preload = 'auto';
+          audio.crossOrigin = 'anonymous';
+          audio.loop = true;
+          audio.src = sound.audioUrl;
+          this.audioPool.set(sound.id, audio);
+        } catch (_) {}
+      }
+    });
+  }
+
+  // Get or create pooled audio instance
+  getOrCreateAudio(sound) {
+    if (this.audioPool.has(sound.id)) {
+      return this.audioPool.get(sound.id);
+    }
+    const audio = new Audio();
+    audio.preload = 'auto';
+    audio.crossOrigin = 'anonymous';
+    audio.loop = true;
+    audio.src = sound.audioUrl;
+    this.audioPool.set(sound.id, audio);
+    return audio;
+  }
+
+  // Instant Playback for Authentic Ambient Audio Tracks (<100ms)
+  playAmbientTrack(sound) {
     const ctx = this.getAudioContext();
     if (!ctx) return;
 
     if (this.activeTracks.has(sound.id)) {
-      // Already playing; do not duplicate
       return;
     }
 
-    try {
-      const audio = new Audio();
-      audio.crossOrigin = 'anonymous';
-      audio.loop = true;
-      audio.preload = 'auto';
+    const audio = this.getOrCreateAudio(sound);
 
-      // Automatic fallback if primary remote audio fails (e.g. offline, CORS, or dead CDN)
-      audio.onerror = () => {
-        if (sound.fallbackUrl && audio.src !== sound.fallbackUrl) {
-          console.warn(`[RelaxAudioEngine] Primary stream failed for ${sound.title}. Retrying with local fallback:`, sound.fallbackUrl);
-          audio.src = sound.fallbackUrl;
-          audio.play().catch(e => console.error('[RelaxAudioEngine] Fallback play error:', e));
-        }
-      };
+    // If audio element is already connected to WebAudio nodes in a previous session, reuse
+    let sourceNode, gainNode, analyserNode;
+    const initialVolume = typeof sound.defaultVolume === 'number' ? sound.defaultVolume : 0.75;
 
-      audio.src = sound.audioUrl;
-
-      const sourceNode = ctx.createMediaElementSource(audio);
-      const gainNode = ctx.createGain();
-      const analyserNode = ctx.createAnalyser();
+    if (audio._sourceNode && audio._gainNode && audio._analyserNode) {
+      sourceNode = audio._sourceNode;
+      gainNode = audio._gainNode;
+      analyserNode = audio._analyserNode;
+    } else {
+      sourceNode = ctx.createMediaElementSource(audio);
+      gainNode = ctx.createGain();
+      analyserNode = ctx.createAnalyser();
       analyserNode.fftSize = 64;
 
-      const initialVolume = typeof sound.defaultVolume === 'number' ? sound.defaultVolume : 0.75;
-      gainNode.gain.setValueAtTime(0, ctx.currentTime);
-      gainNode.gain.linearRampToValueAtTime(initialVolume, ctx.currentTime + 0.6); // smooth fade-in
-
+      // Pure clean routing: source -> gainNode -> analyserNode -> masterGain (which feeds DSP)
       sourceNode.connect(gainNode);
       gainNode.connect(analyserNode);
       analyserNode.connect(this.masterGain);
 
-      this.activeTracks.set(sound.id, {
-        id: sound.id,
-        category: sound.category,
-        title: sound.title,
-        audio,
-        sourceNode,
-        gainNode,
-        analyserNode,
-        volume: initialVolume,
-        type: 'audio'
-      });
+      audio._sourceNode = sourceNode;
+      audio._gainNode = gainNode;
+      audio._analyserNode = analyserNode;
+    }
 
-      try {
-        await audio.play();
-      } catch (playErr) {
-        if (sound.fallbackUrl) {
-          console.warn(`[RelaxAudioEngine] Initial play rejected for ${sound.title}. Attempting fallback:`, sound.fallbackUrl);
-          audio.src = sound.fallbackUrl;
-          await audio.play();
-        } else {
-          throw playErr;
-        }
+    // Set immediate gain with minimal micro-ramp (0.05s) to eliminate pops while starting instantly
+    const now = ctx.currentTime;
+    gainNode.gain.cancelScheduledValues(now);
+    gainNode.gain.setValueAtTime(0.01, now);
+    gainNode.gain.linearRampToValueAtTime(initialVolume, now + 0.05);
+
+    // Audio fallback handler
+    audio.onerror = () => {
+      if (sound.fallbackUrl && audio.src !== sound.fallbackUrl) {
+        console.warn(`[RelaxAudioEngine] Stream failed for ${sound.title}. Retrying with fallback:`, sound.fallbackUrl);
+        audio.src = sound.fallbackUrl;
+        audio.play().catch(e => console.error('[RelaxAudioEngine] Fallback play error:', e));
       }
+    };
 
-      this.notifyListeners();
-    } catch (err) {
-      console.error('[RelaxAudioEngine] Failed to play track:', sound.id, err);
-      this.stopSound(sound.id);
-    }
-  }
-
-  // Play True Stereo Binaural Beat via Web Audio API ChannelMergerNode
-  playBinauralBeat(sound) {
-    const ctx = this.getAudioContext();
-    if (!ctx) return;
-
-    if (this.binauralOscillators.has(sound.id)) {
-      return;
-    }
-
-    const carrier = sound.carrier || 200;
-    const beat = sound.beat || 10;
-    const initialVolume = typeof sound.defaultVolume === 'number' ? sound.defaultVolume : 0.6;
-
-    // True stereo channel splitting: Left = carrier, Right = carrier + beat
-    const fLeft = carrier;
-    const fRight = carrier + beat;
-
-    const oscL = ctx.createOscillator();
-    const oscR = ctx.createOscillator();
-    oscL.type = 'sine';
-    oscR.type = 'sine';
-    oscL.frequency.setValueAtTime(fLeft, ctx.currentTime);
-    oscR.frequency.setValueAtTime(fRight, ctx.currentTime);
-
-    // Warm subharmonic to provide organic body
-    const subOsc = ctx.createOscillator();
-    subOsc.type = 'sine';
-    subOsc.frequency.setValueAtTime(carrier * 0.5, ctx.currentTime);
-    const subGain = ctx.createGain();
-    subGain.gain.setValueAtTime(0.12, ctx.currentTime);
-    subOsc.connect(subGain);
-
-    const mergerNode = ctx.createChannelMerger(2);
-    oscL.connect(mergerNode, 0, 0); // left channel
-    oscR.connect(mergerNode, 0, 1); // right channel
-    subGain.connect(mergerNode, 0, 0);
-    subGain.connect(mergerNode, 0, 1);
-
-    const gainNode = ctx.createGain();
-    const analyserNode = ctx.createAnalyser();
-    analyserNode.fftSize = 64;
-
-    gainNode.gain.setValueAtTime(0.001, ctx.currentTime);
-    gainNode.gain.linearRampToValueAtTime(initialVolume, ctx.currentTime + 1.2); // gentle binaural fade-in
-
-    mergerNode.connect(gainNode);
-    gainNode.connect(analyserNode);
-    analyserNode.connect(this.masterGain);
-
-    oscL.start();
-    oscR.start();
-    subOsc.start();
-
-    this.binauralOscillators.set(sound.id, {
+    this.activeTracks.set(sound.id, {
       id: sound.id,
-      category: 'binaural',
+      category: sound.category,
       title: sound.title,
-      carrier,
-      beat,
-      oscL,
-      oscR,
-      subOsc,
+      audio,
+      sourceNode,
       gainNode,
       analyserNode,
       volume: initialVolume,
-      type: 'binaural'
+      type: 'audio'
     });
 
-    this.notifyListeners();
+    // Check if network fetch is needed; if audio readyState < 2, indicate loading
+    if (audio.readyState < 2) {
+      this.loadingIds.add(sound.id);
+      this.notifyListeners();
+      
+      const onCanPlay = () => {
+        this.loadingIds.delete(sound.id);
+        this.notifyListeners();
+        audio.removeEventListener('canplay', onCanPlay);
+        audio.removeEventListener('playing', onCanPlay);
+      };
+      audio.addEventListener('canplay', onCanPlay, { once: true });
+      audio.addEventListener('playing', onCanPlay, { once: true });
+    } else {
+      this.notifyListeners();
+    }
+
+    // Call play() synchronously in same user-interaction task tick
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch((err) => {
+        console.warn(`[RelaxAudioEngine] Play failed for ${sound.title}:`, err.message);
+        if (sound.fallbackUrl && audio.src !== sound.fallbackUrl) {
+          audio.src = sound.fallbackUrl;
+          audio.play().catch(e => console.error('[RelaxAudioEngine] Fallback play error:', e));
+        }
+      });
+    }
   }
 
+  // Adjust volume for an individual sound layer in real time
   setSoundVolume(id, volume) {
     const vol = Math.max(0, Math.min(1, volume));
+
     if (this.activeTracks.has(id)) {
       const item = this.activeTracks.get(id);
       item.volume = vol;
       if (this.audioContext && item.gainNode) {
         const now = this.audioContext.currentTime;
         item.gainNode.gain.cancelScheduledValues(now);
-        item.gainNode.gain.linearRampToValueAtTime(vol, now + 0.05);
-      }
-      this.notifyListeners();
-      return;
-    }
-
-    if (this.binauralOscillators.has(id)) {
-      const item = this.binauralOscillators.get(id);
-      item.volume = vol;
-      if (this.audioContext && item.gainNode) {
-        const now = this.audioContext.currentTime;
-        item.gainNode.gain.cancelScheduledValues(now);
-        item.gainNode.gain.linearRampToValueAtTime(vol, now + 0.05);
+        item.gainNode.gain.linearRampToValueAtTime(vol, now + 0.03);
       }
       this.notifyListeners();
     }
   }
 
   stopSound(id) {
+    this.loadingIds.delete(id);
+
     if (this.activeTracks.has(id)) {
       const item = this.activeTracks.get(id);
       if (this.audioContext && item.gainNode) {
         const now = this.audioContext.currentTime;
         item.gainNode.gain.cancelScheduledValues(now);
-        item.gainNode.gain.linearRampToValueAtTime(0.001, now + 0.3); // smooth fade-out
+        item.gainNode.gain.linearRampToValueAtTime(0.001, now + 0.1);
         setTimeout(() => {
           try {
             item.audio.pause();
-            item.audio.src = '';
-            item.sourceNode.disconnect();
-            item.gainNode.disconnect();
+            item.audio.currentTime = 0;
           } catch (_) { }
-        }, 320);
+        }, 120);
       } else {
         try { item.audio.pause(); } catch (_) { }
       }
       this.activeTracks.delete(id);
-      this.notifyListeners();
-      return;
-    }
-
-    if (this.binauralOscillators.has(id)) {
-      const item = this.binauralOscillators.get(id);
-      if (this.audioContext && item.gainNode) {
-        const now = this.audioContext.currentTime;
-        item.gainNode.gain.cancelScheduledValues(now);
-        item.gainNode.gain.linearRampToValueAtTime(0.001, now + 0.5);
-        setTimeout(() => {
-          try {
-            item.oscL.stop();
-            item.oscR.stop();
-            item.subOsc.stop();
-            item.oscL.disconnect();
-            item.oscR.disconnect();
-            item.subOsc.disconnect();
-            item.gainNode.disconnect();
-          } catch (_) { }
-        }, 520);
-      } else {
-        try {
-          item.oscL.stop();
-          item.oscR.stop();
-        } catch (_) { }
-      }
-      this.binauralOscillators.delete(id);
       this.notifyListeners();
     }
   }
@@ -338,50 +368,56 @@ class RelaxAudioEngine {
     if (this.isSoundPlaying(sound.id)) {
       this.stopSound(sound.id);
     } else {
-      if (sound.category === 'binaural' || sound.carrier) {
-        this.playBinauralBeat(sound);
-      } else {
-        this.playAmbientTrack(sound);
-      }
+      this.playAmbientTrack(sound);
     }
   }
 
   isSoundPlaying(id) {
-    return this.activeTracks.has(id) || this.binauralOscillators.has(id);
+    return this.activeTracks.has(id);
+  }
+
+  isSoundLoading(id) {
+    return this.loadingIds.has(id);
   }
 
   stopAll() {
+    this.loadingIds.clear();
     const trackIds = Array.from(this.activeTracks.keys());
-    const binauralIds = Array.from(this.binauralOscillators.keys());
-
     trackIds.forEach(id => this.stopSound(id));
-    binauralIds.forEach(id => this.stopSound(id));
     this.notifyListeners();
   }
 
   // Get combined frequency spectrum amplitude for visual reactions
   getAverageFrequencies() {
-    if (!this.audioContext) return { overall: 0, forest: 0, birds: 0, water: 0, binaural: 0 };
+    if (!this.audioContext) {
+      return {
+        overall: 0, forest: 0, birds: 0, water: 0,
+        rain: 0, wind: 0, fire: 0, nature: 0
+      };
+    }
     const tempArr = new Uint8Array(32);
-    const sums = { overall: 0, forest: 0, birds: 0, water: 0, binaural: 0 };
+    const sums = {
+      overall: 0, forest: 0, birds: 0, water: 0,
+      rain: 0, wind: 0, fire: 0, nature: 0
+    };
     let count = 0;
 
     const readAnalyser = (analyser, cat) => {
-      analyser.getByteFrequencyData(tempArr);
-      let localSum = 0;
-      for (let i = 0; i < tempArr.length; i++) localSum += tempArr[i];
-      const avg = localSum / tempArr.length / 255;
-      sums[cat] = Math.max(sums[cat] || 0, avg);
-      sums.overall += avg;
-      count++;
+      try {
+        analyser.getByteFrequencyData(tempArr);
+        let s = 0;
+        for (let i = 0; i < 16; i++) s += tempArr[i];
+        const val = s / (16 * 255);
+        if (cat && sums[cat] !== undefined) {
+          sums[cat] = Math.max(sums[cat], val);
+        }
+        sums.overall += val;
+        count++;
+      } catch (_) {}
     };
 
     this.activeTracks.forEach(t => {
       if (t.analyserNode) readAnalyser(t.analyserNode, t.category);
-    });
-
-    this.binauralOscillators.forEach(b => {
-      if (b.analyserNode) readAnalyser(b.analyserNode, 'binaural');
     });
 
     if (count > 0) sums.overall = sums.overall / count;
@@ -390,4 +426,3 @@ class RelaxAudioEngine {
 }
 
 export const relaxAudioEngine = new RelaxAudioEngine();
-

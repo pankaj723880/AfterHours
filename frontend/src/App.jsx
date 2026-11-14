@@ -2308,6 +2308,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     currentSong &&
     (USE_COMPACT_V2_UI || activeTab !== 'home' || isHomeScrolled) &&
     activeTab !== 'dj-club' &&
+    activeTab !== 'relax' &&
     !(USE_V2_SWIPE_UI && activeTab === 'swipe')
   );
   const [stopAfterCurrentTrack, setStopAfterCurrentTrack] = useState(false);
@@ -7268,9 +7269,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         cmsConfig={cmsConfig}
       />
 
-        {/* Unified Top Navbar for both Mobile and Desktop (hidden on DJ Club where full-screen dedicated navbar is active) */}
+        {/* Unified Top Navbar for both Mobile and Desktop (hidden on DJ Club & Relax Mode where full-screen dedicated navbar is active) */}
         <header
-          className={`${activeTab === 'dj-club' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-2.5 sm:px-4 md:px-8 h-12 sm:h-14 md:h-16 flex items-center justify-between shrink-0 w-full box-border select-none'}`}
+          className={`${activeTab === 'dj-club' || activeTab === 'relax' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-2.5 sm:px-4 md:px-8 h-12 sm:h-14 md:h-16 flex items-center justify-between shrink-0 w-full box-border select-none'}`}
         >
           {/* LEFT: Menu / Sidebar Toggle + Loopra Brand Logo */}
           <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
@@ -7510,7 +7511,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               paddingBottom: isMobileScreen ? 'max(env(safe-area-inset-bottom, 0px), 16px)' : undefined,
             }}
             className={`h-full flex flex-col shrink-0 transition-transform duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform overflow-y-auto overflow-x-hidden md:sticky md:top-0 md:h-full ${
-              activeTab === 'dj-club'
+              activeTab === 'dj-club' || activeTab === 'relax'
                 ? 'hidden'
                 : isSidebarOpen
                   ? 'fixed md:relative top-0 bottom-0 left-0 z-[100] md:z-30 h-[100dvh] md:h-full w-72 md:w-[290px] translate-x-0 p-3.5 sm:p-4 bg-[#0c0d12]/98 md:bg-neutral-900/95 backdrop-blur-2xl md:backdrop-blur-xl border-r border-amber-500/20 md:border-neutral-800/80 shadow-[0_0_60px_rgba(0,0,0,0.95)] md:shadow-none opacity-100'
@@ -7849,7 +7850,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               paddingBottom: isMobileScreen ? 'max(env(safe-area-inset-bottom, 0px), 16px)' : undefined,
             }}
             className={`h-full flex flex-col shrink-0 transition-transform duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform overflow-y-auto overflow-x-hidden md:sticky md:top-0 md:h-full ${
-              activeTab === 'dj-club'
+              activeTab === 'dj-club' || activeTab === 'relax'
                 ? 'hidden'
                 : isSidebarOpen
                   ? 'fixed md:relative top-0 bottom-0 left-0 z-[100] md:z-30 h-[100dvh] md:h-full w-72 md:w-[290px] translate-x-0 p-4 bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80 opacity-100'
@@ -8167,7 +8168,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
 
         {/* Site-wide CMS Announcement Bar */}
-        {activeTab !== 'dj-club' && <CmsAnnouncementBar announcement={cmsConfig?.announcement} />}
+        {activeTab !== 'dj-club' && activeTab !== 'relax' && <CmsAnnouncementBar announcement={cmsConfig?.announcement} />}
 
         {(() => {
           const isStationPage = Boolean(
@@ -8181,11 +8182,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 if (activeTab === 'home') setIsHomeScrolled(e.currentTarget.scrollTop > 320);
               }}
               className={`flex-1 h-full min-h-0 ${
-                activeTab === 'dj-club' || isStationPage
+                activeTab === 'dj-club' || activeTab === 'relax' || isStationPage
                   ? 'overflow-hidden p-0'
                   : (USE_V2_SWIPE_UI && activeTab === 'swipe' ? 'overflow-hidden p-0' : 'overflow-y-auto px-2.5 py-3 sm:px-4 sm:py-4 md:p-8')
               } bg-neutral-950 box-border relative w-full transition-all duration-300 ${
-                activeTab === 'dj-club' || isStationPage
+                activeTab === 'dj-club' || activeTab === 'relax' || isStationPage
                   ? 'pb-0'
                   : (USE_V2_SWIPE_UI && activeTab === 'swipe' ? 'pb-0' : (isBottomPlayerVisible ? 'pb-44 md:pb-28' : 'pb-24 md:pb-8'))
               }`}
@@ -8308,8 +8309,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'relax' && (
-          <div key="page-relax" className="page-transition relative z-10 w-full max-w-7xl mx-auto space-y-6 py-2 sm:py-4">
-            <RelaxModeView />
+          <div key="page-relax" className="fixed inset-0 z-50 w-screen h-screen overflow-hidden">
+            <RelaxModeView
+              onBack={handleGoBack}
+              currentSong={currentSong}
+              isPlaying={isPlaying}
+              onTogglePlay={togglePlayPause}
+              onNextSong={handleNextSong}
+              onPrevSong={handlePrevSong}
+              volume={volume}
+              onVolumeChange={handleVolumeChange}
+              getCleanThumbnail={getCleanThumbnail}
+              onOpenExpandedPlayer={handleOpenExpandedPlayer}
+            />
           </div>
         )}
 
@@ -10106,7 +10118,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           setIsSidebarOpen(false);
         }}
         user={user}
-        isVisible={!showQueuePanel && activeTab !== 'dj-club'}
+        isVisible={!showQueuePanel && activeTab !== 'dj-club' && activeTab !== 'relax'}
       />
 
 

@@ -39,6 +39,7 @@ export function sanitizeLogMessage(msg = '') {
 // In-memory cache for DB Gemini API keys with 10s TTL
 let cachedDbGeminiKeys = [];
 let lastDbGeminiKeysFetch = 0;
+let geminiGlobalQuotaCooldownUntil = 0;
 
 /**
  * Invalidate the in-memory Gemini key cache so dashboard changes take effect immediately
@@ -46,6 +47,7 @@ let lastDbGeminiKeysFetch = 0;
 export const invalidateGeminiKeyCache = () => {
   cachedDbGeminiKeys = [];
   lastDbGeminiKeysFetch = 0;
+  geminiGlobalQuotaCooldownUntil = 0;
 };
 
 /**
@@ -261,6 +263,17 @@ export async function executeGeminiOperation(operationFn, options = {}) {
   const timeoutMs = options.timeoutMs || 12000;
   const opName = options.operationName || 'GeminiOp';
 
+  // Quick bail out if all keys recently hit global quota exhaustion (protects against 10-15s stalls per request)
+  if (Date.now() < geminiGlobalQuotaCooldownUntil) {
+    return {
+      success: false,
+      error: 'QUOTA_EXHAUSTED',
+      message: 'Gemini API keys are currently in quota cooldown',
+      allKeysExhausted: true,
+      code: 429
+    };
+  }
+
   // Asynchronously resolve eligible keys (prioritizes DB keys from KeyResolverService!)
   const keys = await getEligibleGeminiKeysAsync();
   if (keys.length === 0) {
@@ -384,6 +397,9 @@ export async function executeGeminiOperation(operationFn, options = {}) {
   geminiDiagnostics.failedCalls += 1;
   const safeFinalMsg = sanitizeLogMessage(lastError?.message || 'All keys failed');
   const isFinalQuota = allQuota || isQuotaError(lastError);
+  if (isFinalQuota) {
+    geminiGlobalQuotaCooldownUntil = Date.now() + (5 * 60 * 1000); // 5 min fast-fail cooldown
+  }
   console.error(`[GeminiKeyManager] All configured Gemini keys (${keys.length}) failed for ${opName}. Last error: ${safeFinalMsg}`);
 
   return {

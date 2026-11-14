@@ -1506,7 +1506,7 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
   }
 
   // 1. Try YouTube Data API v3 with centralized key resolver (DB prioritized, then env fallback)
-  const eligibleKeyRecords = await getEligibleKeys('youtube');
+  const eligibleKeyRecords = (await getEligibleKeys('youtube')).filter(k => !isKeyDead(k.key));
 
   if (eligibleKeyRecords.length > 0) {
     const maxKeyTries = Math.min(eligibleKeyRecords.length, 5);

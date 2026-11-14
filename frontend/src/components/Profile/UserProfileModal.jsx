@@ -98,9 +98,10 @@ export default function UserProfileModal({
 
     setUploadError('');
 
-    // Supported MIME types
-    const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    if (!validTypes.includes(file.type)) {
+    // Supported MIME types (including JPG, JPEG, PNG, and WebP)
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+    const isExtensionValid = /\.(jpe?g|png|webp)$/i.test(file.name);
+    if (!validTypes.includes(file.type) && !isExtensionValid) {
       setUploadError('Unsupported format. Please select a JPEG, PNG, or WebP image.');
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
@@ -331,11 +332,11 @@ export default function UserProfileModal({
                   <Camera className="w-4 h-4" />
                 </button>
 
-                {/* Hidden File Input */}
+                {/* Hidden File Input with camera and gallery compatibility */}
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/png,image/jpeg,image/webp"
+                  accept="image/png,image/jpeg,image/jpg,image/webp"
                   onChange={handleFileChange}
                   className="hidden"
                 />
@@ -576,11 +577,11 @@ export default function UserProfileModal({
                 />
               </div>
 
-              {/* Hidden file input */}
+              {/* Hidden file input with camera and gallery compatibility */}
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/png,image/jpeg,image/webp"
+                accept="image/png,image/jpeg,image/jpg,image/webp"
                 onChange={handleFileChange}
                 className="hidden"
               />
