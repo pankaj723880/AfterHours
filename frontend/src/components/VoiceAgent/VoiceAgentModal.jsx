@@ -91,12 +91,12 @@ export default function VoiceAgentModal({
   // 1. Permission check via dynamic user role & voiceControlService
   const isAdmin = Boolean(user && (user.isAdmin === true || user.role === 'admin'));
   const [hasAccess, setHasAccess] = useState(() => {
-    if (isAdmin) return true;
     const initial = voiceControlService.getAccessState();
+    if (!initial.enabled) return false;
     if (user) {
       return voiceControlService.evaluateLocalAccess(initial, user);
     }
-    return Boolean(initial.allowed);
+    return Boolean(isAdmin ? initial.adminAccess : initial.allowed);
   });
 
   // Track avatar roam preference from localStorage
@@ -181,12 +181,8 @@ export default function VoiceAgentModal({
 
   // Permission subscription
   useEffect(() => {
-    if (isAdmin) {
-      setHasAccess(true);
-      return;
-    }
     const unsub = voiceControlService.subscribe((state) => {
-      const allowed = user ? voiceControlService.evaluateLocalAccess(state, user) : Boolean(state.allowed);
+      const allowed = user ? voiceControlService.evaluateLocalAccess(state, user) : Boolean(isAdmin ? (state.enabled && state.adminAccess) : state.allowed);
       setHasAccess(allowed);
       if (!allowed && voiceSessionService.isSessionActive) {
         voiceSessionService.stopSession('permission_revoked');

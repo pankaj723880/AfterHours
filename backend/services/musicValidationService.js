@@ -11,7 +11,7 @@
  */
 
 import { GoogleGenAI } from '@google/genai';
-import { isValidYouTubeId } from './songFilter.js';
+import { isValidYouTubeId, verifySingleSong } from './songFilter.js';
 import { executeGeminiOperation, isGeminiConfigured } from './geminiKeyManager.js';
 
 // In-memory LRU/TTL cache for validation decisions (keyed by YouTube videoId)
@@ -71,6 +71,34 @@ const NON_MUSIC_PATTERNS = {
   ],
   background_music_only: [
     /\b(with background music|relaxing background music for study|study with me background|ambient background for gaming|gameplay with phonk|tiktok edit with music|satisfying video with music)\b/i
+  ],
+  compilation_or_collection: [
+    /\b(audio\s+jukebox|video\s+jukebox|album\s+jukebox|radio\s+jukebox|jukebox)\b/i,
+    /(?:mega\s+mashup|non[\s-]?stop\s+mashup|mashup|mash\s+up|mash-up|\w*mashup)/i,
+    /\b(mixtape|mix-tape|mix\s+tape)\b/i,
+    /\b(medley|medly)\b/i,
+    /\b(non[\s-]?stop|nonstop)\b/i,
+    /\b(compilation|song\s+compilation|remix\s+compilation|video\s+compilation|hits\s+compilation|remixes\s+compilation)\b/i,
+    /\b(songs?\s+collections?|beats?\s+collections?|music\s+collections?|hits\s+collections?|tracks?\s+collections?|best\s+collection)\b/i,
+    /\b(full\s+album|complete\s+album|all\s+album\s+songs|album\s+songs)\b/i,
+    /\b(all\s+songs|all\s+song|all\s+video\s+songs|songs\s+collection|song\s+collection|music\s+collection|hits\s+collection)\b/i,
+    /\b(multiple\s+songs?|songs?\s+combined|all\s+songs?\s+in\s+one\s+video|multiple\s+tracks?)\b/i,
+    /\b(top\s*\d{1,4}\b)/i,
+    /\b(best\s*\d{1,4}\b)/i,
+    /\b(top\s+songs|best\s+songs|superhit\s+songs|greatest\s+hits)\b/i,
+    /\b(greatest\s+hits\s+jukebox|golden\s+hits\s+collection|evergreen\s+hits\s+jukebox)\b/i,
+    /\b(best\s+of\s+(?:19\d\d|20\d\d|90s|80s|70s|60s|2000s|2010s|2020s|[a-z0-9\s]{2,}))/i,
+    /\b(complete\s+discography|discography)\b/i,
+    /\b([a-z0-9\s]+songs\s*\|\s*top\s+[a-z0-9\s]+songs?)\b/i,
+    /\b(lofi\s+mix|lo-fi\s+mix|chill\s+(?:beats\s+)?mix|study\s+mix|relaxing\s+mix|sleep\s+mix)\b/i,
+    /\b(party\s+mix|dj\s+mix|dj\s+(nonstop|party)|megamix|mega\s+mix)\b/i,
+    /\b(continuous\s+(music|mix|playback|stream))\b/i,
+    /\b(back\s*to\s*back|back\s*2\s*back|\bb2b\b)\b/i,
+    /\b(full\s+playlist|youtube\s+playlist|songs\s+playlist|video\s+playlist)\b/i,
+    /\b(concert\s+compilation|live\s+concert\s+all\s+songs|full\s+concert\s+songs)\b/i,
+    /\b(\d+\s*hours?|\d+\s*hrs?|\d+hr)\b/i,
+    /\b(karaoke\s+collection|multiple\s+songs?\s+karaoke)\b/i,
+    /\b1\.\s+.*\b2\.\s+.*\b3\.\s+/i
   ],
   ai_and_junk_content: [
     /\b(ai\s+generated|ai\s+cover|ai\s+song|ai\s+music|ai\s+version|suno(?:\.ai)?|udio(?:\.ai)?|voicify|ai\s+voice|covers\s+ai|generated\s+by\s+ai|artificial\s+intelligence\s+music|deepfake\s+music)\b/i,
@@ -292,6 +320,18 @@ class MusicValidationService {
       score += 0.35;
     }
 
+    // 6b. Single Song Verification (Detect compilations, multi-track collections, tracklists)
+    const singleSongVerification = verifySingleSong({
+      title,
+      channel,
+      description,
+      duration: meta.duration
+    });
+    if (!singleSongVerification.isValid) {
+      negativeSignals.push(`Disqualifier (compilation_or_collection): ${singleSongVerification.reason}`);
+      score -= 0.65;
+    }
+
     // 7. Check for Non-Music Disqualifiers (Negative Signals)
     for (const [category, regexList] of Object.entries(NON_MUSIC_PATTERNS)) {
       for (const regex of regexList) {
@@ -338,7 +378,8 @@ class MusicValidationService {
 
     // TIER 1: HIGH-CONFIDENCE OBVIOUS CASES (0ms Latency Fast-Path)
     // A. Obvious Disqualification: clear non-music markers without official distributor proof
-    if (hasDisqualifiers && !isTopicOrLabel) {
+    const isCompilation = layer2Result.negativeSignals.some(s => s.includes("compilation") || s.includes("collection"));
+    if (hasDisqualifiers && (!isTopicOrLabel || isCompilation)) {
       const topDisqualifier = layer2Result.negativeSignals[0];
       let blockedCat = 'other_non_music';
       if (topDisqualifier.includes('gaming')) blockedCat = 'gaming';
@@ -349,6 +390,7 @@ class MusicValidationService {
       else if (topDisqualifier.includes('movie_tv')) blockedCat = 'movie_tv';
       else if (topDisqualifier.includes('reaction')) blockedCat = 'reaction';
       else if (topDisqualifier.includes('background_music')) blockedCat = 'background_music_only';
+      else if (topDisqualifier.includes('compilation') || topDisqualifier.includes('collection')) blockedCat = 'multi_song_compilation';
 
       return {
         passed: false,

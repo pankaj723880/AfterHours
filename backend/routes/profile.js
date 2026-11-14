@@ -113,6 +113,23 @@ router.put('/profile', authenticateToken, async (req, res) => {
       { returnDocument: 'after' }
     ).select('-password');
 
+    // If avatarUrl or displayName updated, broadcast to user room
+    if (updates.avatarUrl !== undefined || updates.displayName !== undefined) {
+      try {
+        const io = req.app.get('io');
+        if (io) {
+          io.to(`user_${user._id.toString()}`).emit('user_profile_updated', {
+            userId: user._id.toString(),
+            avatarUrl: user.avatarUrl,
+            displayName: user.displayName || user.username,
+            updatedAt: Date.now()
+          });
+        }
+      } catch (socketErr) {
+        console.warn('[Profile Update Socket Notice]:', socketErr.message);
+      }
+    }
+
     res.json({
       message: 'Profile updated successfully',
       user: {
@@ -225,6 +242,21 @@ router.post('/profile/avatar', authenticateToken, async (req, res) => {
     existingUser.avatarUrl = finalAvatarUrl;
     await existingUser.save();
 
+    // Broadcast avatar update to all active devices of this user via Socket.IO
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user_${existingUser._id.toString()}`).emit('user_profile_updated', {
+          userId: existingUser._id.toString(),
+          avatarUrl: finalAvatarUrl,
+          displayName: existingUser.displayName || existingUser.username,
+          updatedAt: Date.now()
+        });
+      }
+    } catch (socketErr) {
+      console.warn('[Avatar Socket Broadcast Notice]:', socketErr.message);
+    }
+
     res.json({
       success: true,
       message: 'Profile photo updated successfully',
@@ -266,6 +298,21 @@ router.delete('/profile/avatar', authenticateToken, async (req, res) => {
 
     existingUser.avatarUrl = '';
     await existingUser.save();
+
+    // Broadcast avatar removal to all active devices of this user via Socket.IO
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user_${existingUser._id.toString()}`).emit('user_profile_updated', {
+          userId: existingUser._id.toString(),
+          avatarUrl: '',
+          displayName: existingUser.displayName || existingUser.username,
+          updatedAt: Date.now()
+        });
+      }
+    } catch (socketErr) {
+      console.warn('[Avatar Socket Broadcast Notice]:', socketErr.message);
+    }
 
     res.json({
       success: true,

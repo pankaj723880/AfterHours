@@ -71,10 +71,11 @@ export default function UserProfileModal({
       return;
     }
 
-    // Load fresh profile details from server
+    // Always fetch canonical profile details from server on modal open
     const token = localStorage.getItem('afterhours_token');
     fetch(getApiUrl(`/api/user/profile/${currentUser.username}`), {
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      cache: 'no-store'
     })
       .then(res => res.json())
       .then(data => {
@@ -84,10 +85,13 @@ export default function UserProfileModal({
           setAvatarUrl(data.avatarUrl || '');
           setFavoriteGenres(data.favoriteGenres || []);
           setIsPublic(data.isPublic !== false);
+          if (data.avatarUrl !== undefined && data.avatarUrl !== currentUser.avatarUrl) {
+            onUserUpdated?.({ ...currentUser, avatarUrl: data.avatarUrl });
+          }
         }
       })
       .catch(() => {});
-  }, [isOpen, currentUser]);
+  }, [isOpen, currentUser, onUserUpdated]);
 
   if (!isOpen || !currentUser) return null;
 

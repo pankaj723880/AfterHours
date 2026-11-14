@@ -34,17 +34,21 @@ export function useVoiceRollout(user) {
       : accessState.globalRollout
   );
 
-  const canAccessVoice = masterEnabled && (publicRollout || isAdmin);
+  const adminAccess = typeof accessState.adminAccess === 'boolean' ? accessState.adminAccess : true;
+
+  const canAccessVoice = masterEnabled && (isAdmin ? adminAccess : publicRollout);
 
   return {
     canAccessVoice,
     isVoiceAllowed: canAccessVoice,
     masterEnabled,
     publicRollout,
+    adminAccess,
     isAdmin,
     voiceConfig: {
       masterEnabled,
       publicRollout,
+      adminAccess,
       voiceControlEnabled: masterEnabled,
       enableVoiceControlForAllUsers: publicRollout
     }

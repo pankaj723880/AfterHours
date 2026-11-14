@@ -218,7 +218,7 @@ export const catalogService = {
       const trimmed = query.trim();
       return Promise.race([
         ytSearch({ query: trimmed, page: 1 }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 1200))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 4500))
       ]).then(res => ({ query: trimmed, res })).catch(err => ({ query: trimmed, err }));
     });
 

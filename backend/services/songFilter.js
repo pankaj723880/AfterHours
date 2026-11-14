@@ -80,21 +80,25 @@ const MULTI_SONG_TITLE_REGEXES = [
   /\b(mixtape|mix-tape|mix\s+tape)\b/i,
   // Medleys
   /\b(medley|medly)\b/i,
-  // Non-stop collections
+  // Non-stop collections & continuous playlists
   /\b(non[\s-]?stop|nonstop)\b/i,
-  // Compilations
+  // Compilations & collections
   /\b(compilation|song\s+compilation|remix\s+compilation|video\s+compilation|hits\s+compilation|remixes\s+compilation)\b/i,
+  /\b(songs?\s+collections?|beats?\s+collections?|music\s+collections?|hits\s+collections?|tracks?\s+collections?|best\s+collection)\b/i,
   // Albums and complete collections
   /\b(full\s+album|complete\s+album|all\s+album\s+songs|album\s+songs)\b/i,
   /\b(all\s+songs|all\s+song|all\s+video\s+songs|songs\s+collection|song\s+collection|music\s+collection|hits\s+collection)\b/i,
-  /\b(multiple\s+songs?|songs?\s+combined|all\s+songs?\s+in\s+one\s+video)\b/i,
-  // Top / Best-of collections
+  /\b(multiple\s+songs?|songs?\s+combined|all\s+songs?\s+in\s+one\s+video|multiple\s+tracks?)\b/i,
+  // Top / Best-of artist collections and playlists (e.g. "Best of KK", "Best of Arijit Singh", "Top Songs of Artist")
   /\b(top\s*\d{1,4}\b)/i,
   /\b(best\s*\d{1,4}\b)/i,
-  /\b(top\s+songs|best\s+songs)\b/i,
+  /\b(top\s+songs|best\s+songs|superhit\s+songs|greatest\s+hits)\b/i,
   /\b(greatest\s+hits\s+jukebox|golden\s+hits\s+collection|evergreen\s+hits\s+jukebox)\b/i,
-  /\b(best\s+of\s+(?:19\d\d|20\d\d|90s|80s|70s|60s|2000s|2010s|2020s))\b/i,
-  /\b(best\s+of\s+[a-z\s]+(jukebox|collection|songs|hits))\b/i,
+  /\b(best\s+of\s+(?:19\d\d|20\d\d|90s|80s|70s|60s|2000s|2010s|2020s|[a-z0-9\s]{2,}))/i,
+  /\b(complete\s+discography|discography)\b/i,
+  /\b([a-z0-9\s]+songs\s*\|\s*top\s+[a-z0-9\s]+songs?)\b/i,
+  // Multi-song Lofi and Chill compilations (e.g. "Lofi Mix", "Chill Beats Mix", "Study Mix")
+  /\b(lofi\s+mix|lo-fi\s+mix|chill\s+(?:beats\s+)?mix|study\s+mix|relaxing\s+mix|sleep\s+mix)\b/i,
   // Continuous & DJ multi-song mixes
   /\b(party\s+mix|dj\s+mix|dj\s+(nonstop|party)|megamix|mega\s+mix)\b/i,
   /\b(continuous\s+(music|mix|playback|stream))\b/i,

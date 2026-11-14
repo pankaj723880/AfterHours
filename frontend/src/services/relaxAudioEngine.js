@@ -383,7 +383,31 @@ class RelaxAudioEngine {
   stopAll() {
     this.loadingIds.clear();
     const trackIds = Array.from(this.activeTracks.keys());
-    trackIds.forEach(id => this.stopSound(id));
+    const now = this.audioContext?.currentTime || 0;
+
+    // Smooth clickless fade-out over 0.08s across all active ambient layers simultaneously
+    trackIds.forEach(id => {
+      if (this.activeTracks.has(id)) {
+        const item = this.activeTracks.get(id);
+        if (this.audioContext && item.gainNode) {
+          try {
+            item.gainNode.gain.cancelScheduledValues(now);
+            item.gainNode.gain.setValueAtTime(item.gainNode.gain.value || item.volume || 0.75, now);
+            item.gainNode.gain.linearRampToValueAtTime(0.0001, now + 0.08);
+          } catch (_) {}
+          setTimeout(() => {
+            try {
+              item.audio.pause();
+              item.audio.currentTime = 0;
+            } catch (_) {}
+          }, 90);
+        } else {
+          try { item.audio.pause(); } catch (_) {}
+        }
+        this.activeTracks.delete(id);
+      }
+    });
+
     this.notifyListeners();
   }
 

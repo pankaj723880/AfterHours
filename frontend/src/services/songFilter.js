@@ -27,29 +27,34 @@
 const MULTI_SONG_TITLE_REGEXES = [
   /\b(audio\s+jukebox|video\s+jukebox|jukebox)\b/i,
   /\b(full\s+album|complete\s+album|all\s+album\s+songs|album\s+jukebox)\b/i,
-  /\b(all\s+songs|all\s+song|all\s+video\s+songs|songs\s+collection|song\s+collection|music\s+collection)\b/i,
-  // Strict mashup exclusions (case-insensitive): "mashup", "mash-up", "mash up", "mega mashup", "non-stop mashup", "mixtape", "afromashup", etc.
+  /\b(all\s+songs|all\s+song|all\s+video\s+songs|songs\s+collection|song\s+collection|music\s+collection|hits\s+collection)\b/i,
+  /\b(songs?\s+collections?|beats?\s+collections?|music\s+collections?|tracks?\s+collections?|best\s+collection)\b/i,
+  // Strict mashup exclusions (case-insensitive): "mashup", "mash-up", "mash up", "mega mashup", "non-stop mashup", "mixtape", etc.
   /(?:mega\s+mashup|non[\s-]?stop\s+mashup|mashup|mash\s+up|mash-up|\w*mashup)/i,
   /\b(mixtape|mix-tape|mix\s+tape)\b/i,
   /\b(medley|medly)\b/i,
   /\b(non[\s-]?stop|nonstop)\b/i,
-  /\b(compilation|song\s+compilation)\b/i,
+  /\b(compilation|song\s+compilation|remix\s+compilation|video\s+compilation|hits\s+compilation)\b/i,
   /\b(top\s*\d{1,4}\s*(songs?|tracks?|hits?|romantic|bollywood|punjabi|retro|classics?)?)\b/i,
   /\b(best\s*\d{1,4}\s*(songs?|tracks?|hits?|romantic|bollywood|punjabi|retro|classics?)?)\b/i,
+  /\b(top\s+songs|best\s+songs|superhit\s+songs|greatest\s+hits)\b/i,
   /\b(greatest\s+hits\s+jukebox|golden\s+hits\s+collection|evergreen\s+hits\s+jukebox)\b/i,
-  /\b(best\s+of\s+(?:19\d\d|20\d\d|90s|80s|70s|60s|2000s|2010s|2020s))\b/i,
-  /\b(best\s+of\s+[a-z\s]+(jukebox|collection|songs|hits))\b/i,
+  /\b(best\s+of\s+(?:19\d\d|20\d\d|90s|80s|70s|60s|2000s|2010s|2020s|[a-z0-9\s]{2,}))/i,
+  /\b(complete\s+discography|discography)\b/i,
+  /\b([a-z0-9\s]+songs\s*\|\s*top\s+[a-z0-9\s]+songs?)\b/i,
+  // Multi-song Lofi and Chill compilations (e.g. "Lofi Mix", "Chill Beats Mix", "Study Mix")
+  /\b(lofi\s+mix|lo-fi\s+mix|chill\s+(?:beats\s+)?mix|study\s+mix|relaxing\s+mix|sleep\s+mix)\b/i,
   /\b(\d+\s*hours?|\d+\s*hrs?|\d+hr)\b/i,
   /\b(back\s*to\s*back|back\s*2\s*back|\bb2b\b)\b/i,
   /\b(party\s+mix|dj\s+mix|club\s+mix|megamix|mega\s+mix|remix\s+compilation)\b/i,
-  /\b(continuous\s+music)\b/i,
+  /\b(continuous\s+(music|mix|playback|stream))\b/i,
   /\b(karaoke\s+collection|multiple\s+songs?\s+karaoke)\b/i,
-  /\b(slowed(\s+and|\s*[\+&]\s*)?\s*reverb|slowed\s+reverb|bass\s+boosted)\b/i,
   /\b(mega\s*mix|megamix)\b/i,
   /\b(1\.\s+.*\b2\.\s+.*\b3\.\s+)/i // numbered multi-song track listing
 ];
 
 /**
+ * Validates whether a track ID is a genuine, embeddable YouTube video ID/**
  * Validates whether a track ID is a genuine, embeddable YouTube video ID
  */
 export function isValidYouTubeId(id) {

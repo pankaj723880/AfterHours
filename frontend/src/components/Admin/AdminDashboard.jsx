@@ -399,7 +399,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'live_patcher', label: 'Live Code Patcher', icon: Zap, badge: 'Vite HMR' },
     { id: 'api_keys', label: 'API Keys Pool', icon: Key, badge: 'Multi-Key' },
-    { id: 'voice_control', label: 'Voice Control', icon: Mic, badge: 'Rollout' },
+    { id: 'voice_control', label: 'Lipra AI / Voice', icon: Mic, badge: 'Rollout' },
     { id: 'reviews', label: 'Ratings & Reviews', icon: Star, badge: 'Community' },
     { id: 'ai_learning', label: 'AI Learning Engine', icon: Brain, badge: 'Intelligence' },
     { id: 'traffic', label: 'Live Traffic', icon: Activity, badge: isSocketConnected ? 'LIVE' : null },

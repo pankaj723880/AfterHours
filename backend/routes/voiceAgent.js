@@ -39,12 +39,52 @@ const resolveCallingUser = async (req) => {
 };
 
 /**
+ * Common middleware helper to verify voice control / Lipra AI feature access
+ */
+const checkVoiceAccessOrReject = async (req, res, next) => {
+  try {
+    const user = await resolveCallingUser(req);
+    const config = await featureFlagService.getFeatureConfig('voice_control');
+    const allowed = featureFlagService.evaluateAccess(config, user);
+
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        error: 'Lipra AI and Voice Control are currently disabled by the administrator.',
+        allowed: false
+      });
+    }
+
+    req.callingUser = user;
+    if (typeof next === 'function') next();
+    return true;
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to verify Lipra AI permissions: ' + err.message
+    });
+  }
+};
+
+/**
  * POST /api/transcribe & POST /api/voice-agent/transcribe
  * Express audio transcription endpoint using Gemini (gemini-2.5-flash / SPEECH_TO_TEXT)
  * Accepts audio data (multipart/form-data or raw/base64 JSON) and returns { transcript: "..." }
  */
 export const handleTranscribeEndpoint = async (req, res) => {
   try {
+    const user = await resolveCallingUser(req);
+    const config = await featureFlagService.getFeatureConfig('voice_control');
+    const allowed = featureFlagService.evaluateAccess(config, user);
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        transcript: '',
+        error: 'Lipra AI and Voice Control are currently disabled by the administrator.',
+        allowed: false
+      });
+    }
+
     let audioBuffer = null;
     let mimeType = 'audio/webm';
 
@@ -413,6 +453,16 @@ async function tryVexylTts({ text, lang, speaker, style = 'warm' }) {
  * Strictly NO British voices or unnatural accents.
  */
 const handleTtsRequest = async (req, res) => {
+  const user = await resolveCallingUser(req);
+  const config = await featureFlagService.getFeatureConfig('voice_control');
+  const allowed = featureFlagService.evaluateAccess(config, user);
+  if (!allowed) {
+    return res.status(403).json({
+      error: 'Lipra AI and Voice Control are currently disabled by the administrator.',
+      allowed: false
+    });
+  }
+
   const rawText = (req.method === 'POST' ? req.body?.text : req.query.text) || '';
   const cleanText = (typeof rawText === 'string' ? rawText : '').trim();
   const customVoice = req.method === 'POST' ? req.body?.voice : req.query.voice;
@@ -627,6 +677,18 @@ export async function generateAvatarGreeting(options = {}) {
  */
 export const handleGreetingEndpoint = async (req, res) => {
   try {
+    const user = await resolveCallingUser(req);
+    const config = await featureFlagService.getFeatureConfig('voice_control');
+    const allowed = featureFlagService.evaluateAccess(config, user);
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        greeting: '',
+        error: 'Lipra AI and Voice Control are currently disabled by the administrator.',
+        allowed: false
+      });
+    }
+
     const greeting = await generateAvatarGreeting(req.body || req.query || {});
     return res.json({ success: true, greeting });
   } catch (err) {
@@ -647,6 +709,17 @@ router.post('/tts', handleTtsRequest);
  */
 router.post('/translate', async (req, res) => {
   try {
+    const user = await resolveCallingUser(req);
+    const config = await featureFlagService.getFeatureConfig('voice_control');
+    const allowed = featureFlagService.evaluateAccess(config, user);
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        error: 'Lipra AI and Voice Control are currently disabled by the administrator.',
+        allowed: false
+      });
+    }
+
     const { text, targetLang, sourceLang } = req.body;
     if (!text || typeof text !== 'string') {
       return res.status(400).json({ success: false, error: 'Text string is required for translation.' });

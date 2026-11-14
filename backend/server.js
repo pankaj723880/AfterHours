@@ -161,7 +161,12 @@ app.post(['/api/transcribe', '/transcribe'], handleTranscribeEndpoint);
 // Generous payload limit so sync never throws 413 or truncates
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use('/uploads', express.static(uploadsDir));
+app.use('/uploads', express.static(uploadsDir, {
+  maxAge: '1h',
+  setHeaders: (res, filePath) => {
+    res.set('Cache-Control', 'public, max-age=3600, must-revalidate');
+  }
+}));
 app.use('/audio', express.static(publicAudioDir));
 
 // Normalize redundant slashes in URL pathname to prevent 404s from client URL misconfigurations (e.g. //health, //api/...)
@@ -1289,24 +1294,24 @@ const FALLBACK_TRENDING = [
   { id: { videoId: 'WWIfHemqSEA' }, snippet: { title: 'Tujhko - Love Song - Arijit Singh', channelTitle: 'iPop Superhits', thumbnails: { high: { url: 'https://i.ytimg.com/vi/WWIfHemqSEA/hqdefault.jpg' } } } },
   { id: { videoId: 'IJJX39HRvlc' }, snippet: { title: 'Mere Humdum | New Songs 2026', channelTitle: 'Vatsal Bhoya', thumbnails: { high: { url: 'https://i.ytimg.com/vi/IJJX39HRvlc/hqdefault.jpg' } } } },
   { id: { videoId: 'BddP6PYo2gs' }, snippet: { title: 'Kesariya (Official Video) - Brahmāstra | Arijit Singh', channelTitle: 'Sony Music India', thumbnails: { high: { url: 'https://i.ytimg.com/vi/BddP6PYo2gs/hqdefault.jpg' } } } },
-  { id: { videoId: 'cIGd8gm_pYE' }, snippet: { title: 'Lover (Official Music Video) - Diljit Dosanjh', channelTitle: 'Speed Records', thumbnails: { high: { url: 'https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg' } } } },
+  { id: { videoId: 'mH_LFkWxpI0' }, snippet: { title: 'Lover (Official Music Video) - Diljit Dosanjh', channelTitle: 'Diljit Dosanjh', thumbnails: { high: { url: 'https://i.ytimg.com/vi/mH_LFkWxpI0/hqdefault.jpg' } } } },
   { id: { videoId: 'Umqb9KENgmk' }, snippet: { title: 'Tum Hi Ho (Official Video) - Aashiqui 2 | Arijit Singh', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg' } } } }
 ];
 
 const FALLBACK_ALBUMS = [
   { id: { videoId: 'Umqb9KENgmk' }, snippet: { title: 'Tum Hi Ho (Official Video) - Aashiqui 2 | Arijit Singh', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg' } } } },
-  { id: { videoId: 'pElvXl3YvY0' }, snippet: { title: 'Ilahi (Full Video Song) - Yeh Jawaani Hai Deewani | Arijit Singh', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/pElvXl3YvY0/hqdefault.jpg' } } } },
-  { id: { videoId: '7ccHMhuE6pA' }, snippet: { title: 'Bekhayali (Official Video) - Kabir Singh | Sachet Tandon', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/7ccHMhuE6pA/hqdefault.jpg' } } } },
-  { id: { videoId: 'f6vYp2r6d5o' }, snippet: { title: 'Satranga (Full Video Song) - ANIMAL | Arijit Singh', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/f6vYp2r6d5o/hqdefault.jpg' } } } },
-  { id: { videoId: 'P9YpfmNc_p4' }, snippet: { title: 'Kun Faya Kun - Rockstar | A.R. Rahman', channelTitle: 'SonyMusicIndiaVEVO', thumbnails: { high: { url: 'https://i.ytimg.com/vi/P9YpfmNc_p4/hqdefault.jpg' } } } },
-  { id: { videoId: 'x_elT6zkqN0' }, snippet: { title: 'Zara Sa (Full Song) - Jannat | KK', channelTitle: 'Sony Music India', thumbnails: { high: { url: 'https://i.ytimg.com/vi/x_elT6zkqN0/hqdefault.jpg' } } } }
+  { id: { videoId: 'jHNNMj5bNQw' }, snippet: { title: 'Kabira (Full Song) - Yeh Jawaani Hai Deewani | Tochi Raina, Rekha Bhardwaj', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/jHNNMj5bNQw/hqdefault.jpg' } } } },
+  { id: { videoId: 'VOLKJJvfAbg' }, snippet: { title: 'Bekhayali (Official Video) - Kabir Singh | Sachet Tandon', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/VOLKJJvfAbg/hqdefault.jpg' } } } },
+  { id: { videoId: 'iAIBF2ngbWY' }, snippet: { title: 'Pehle Bhi Main (Full Video) - ANIMAL | Vishal Mishra', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/iAIBF2ngbWY/hqdefault.jpg' } } } },
+  { id: { videoId: 'T94PHkuydcw' }, snippet: { title: 'Kun Faya Kun - Rockstar | A.R. Rahman', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/T94PHkuydcw/hqdefault.jpg' } } } },
+  { id: { videoId: 'ZsAOnmByy38' }, snippet: { title: 'Zara Sa (Official Video) - Jannat | KK, Pritam', channelTitle: 'Sony Music India', thumbnails: { high: { url: 'https://i.ytimg.com/vi/ZsAOnmByy38/hqdefault.jpg' } } } }
 ];
 
 const FALLBACK_RADIO = [
-  { id: { videoId: 'dvgZkm1xWPE' }, snippet: { title: 'Sunn Raha Hai Na Tu (Female) - Aashiqui 2 | Shreya Ghoshal', channelTitle: 'SonyMusicIndiaVEVO', thumbnails: { high: { url: 'https://i.ytimg.com/vi/dvgZkm1xWPE/hqdefault.jpg' } } } },
-  { id: { videoId: 'S6IW8Rj1WqQ' }, snippet: { title: 'Tip Tip Barsa Paani - Mohra | Alka Yagnik, Udit Narayan', channelTitle: 'Tips Official', thumbnails: { high: { url: 'https://i.ytimg.com/vi/S6IW8Rj1WqQ/hqdefault.jpg' } } } },
-  { id: { videoId: 'cIGd8gm_pYE' }, snippet: { title: 'Lover - Diljit Dosanjh', channelTitle: 'Speed Records', thumbnails: { high: { url: 'https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg' } } } },
-  { id: { videoId: 'P9YpfmNc_p4' }, snippet: { title: 'Kun Faya Kun - A.R. Rahman', channelTitle: 'SonyMusicIndiaVEVO', thumbnails: { high: { url: 'https://i.ytimg.com/vi/P9YpfmNc_p4/hqdefault.jpg' } } } },
+  { id: { videoId: 'inEu2qQuGZ8' }, snippet: { title: 'Sunn Raha Hai Na Tu (Female) - Aashiqui 2 | Shreya Ghoshal', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/inEu2qQuGZ8/hqdefault.jpg' } } } },
+  { id: { videoId: 'bKZTnnFU9HA' }, snippet: { title: 'Kuch Kuch Hota Hai (Title Track) | Alka Yagnik, Udit Narayan', channelTitle: 'Sony Music India', thumbnails: { high: { url: 'https://i.ytimg.com/vi/bKZTnnFU9HA/hqdefault.jpg' } } } },
+  { id: { videoId: 'mH_LFkWxpI0' }, snippet: { title: 'Lover - Diljit Dosanjh', channelTitle: 'Diljit Dosanjh', thumbnails: { high: { url: 'https://i.ytimg.com/vi/mH_LFkWxpI0/hqdefault.jpg' } } } },
+  { id: { videoId: 'T94PHkuydcw' }, snippet: { title: 'Kun Faya Kun - A.R. Rahman', channelTitle: 'T-Series', thumbnails: { high: { url: 'https://i.ytimg.com/vi/T94PHkuydcw/hqdefault.jpg' } } } },
   { id: { videoId: 'RLzC55ai0eo' }, snippet: { title: 'Heeriye - Jasleen Royal ft Arijit Singh', channelTitle: 'Jasleen Royal', thumbnails: { high: { url: 'https://i.ytimg.com/vi/RLzC55ai0eo/hqdefault.jpg' } } } },
   { id: { videoId: 'WWIfHemqSEA' }, snippet: { title: 'Tujhko - Arijit Singh', channelTitle: 'iPop Superhits', thumbnails: { high: { url: 'https://i.ytimg.com/vi/WWIfHemqSEA/hqdefault.jpg' } } } }
 ];

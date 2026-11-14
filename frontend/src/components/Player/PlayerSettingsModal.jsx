@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ThemeSelector from '../Theme/ThemeSelector';
+import { useVoiceRollout } from '../../hooks/useVoiceRollout';
 
 const TIMER_PRESETS = [15, 30, 45, 60];
 const CROSSFADE_OPTIONS = [
@@ -29,6 +30,7 @@ export default function PlayerSettingsModal({
   onToggleAutoPip = () => {},
   isAdmin = false
 }) {
+  const { canAccessVoice } = useVoiceRollout(isAdmin ? { isAdmin: true, role: 'admin' } : null);
   const [customTimerMinutes, setCustomTimerMinutes] = useState('');
   const [roamState, setRoamState] = useState(() => {
     try {
@@ -274,8 +276,8 @@ export default function PlayerSettingsModal({
             </div>
           </div>
 
-          {/* Section: 3D Avatar Autonomous Roaming Mode (Admin Only) */}
-          {isAdmin && (
+          {/* Section: 3D Avatar Autonomous Roaming Mode (Admin Only and when Voice/Avatar is active) */}
+          {isAdmin && canAccessVoice && (
             <>
               <div className="space-y-3">
                 <div className="flex items-center justify-between">

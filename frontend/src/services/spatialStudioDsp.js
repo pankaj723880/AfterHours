@@ -32,11 +32,11 @@ export const SPATIAL_POSITIONS = [
 
 export const EQ_BANDS = [
   { freq: 60, label: 'Sub-bass', type: 'lowshelf' },
-  { freq: 150, label: 'Bass', type: 'peaking', q: 1.2 },
-  { freq: 400, label: 'Low-mid', type: 'peaking', q: 1.2 },
-  { freq: 1000, label: 'Mid', type: 'peaking', q: 1.4 },
-  { freq: 3000, label: 'High-mid', type: 'peaking', q: 1.4 },
-  { freq: 8000, label: 'Treble', type: 'peaking', q: 1.2 },
+  { freq: 150, label: 'Bass', type: 'peaking', q: 0.7 },
+  { freq: 400, label: 'Low-mid', type: 'peaking', q: 0.7 },
+  { freq: 1000, label: 'Mid', type: 'peaking', q: 0.7 },
+  { freq: 3000, label: 'High-mid', type: 'peaking', q: 0.7 },
+  { freq: 8000, label: 'Treble', type: 'peaking', q: 0.7 },
   { freq: 12000, label: 'Air', type: 'highshelf' }
 ];
 
@@ -44,12 +44,12 @@ export const EQ_FREQUENCIES_7 = EQ_BANDS.map(b => b.freq);
 
 export const EQ_PRESETS = {
   natural: { 60: 0, 150: 0, 400: 0, 1000: 0, 3000: 0, 8000: 0, 12000: 0 },
-  warm: { 60: 3, 150: 2, 400: 1, 1000: 0, 3000: -1, 8000: -1.5, 12000: -2 },
-  deep: { 60: 4.5, 150: 3.5, 400: 1.5, 1000: 0, 3000: 1, 8000: 1.5, 12000: 2 },
-  clear: { 60: -1.5, 150: -0.5, 400: 0.5, 1000: 1.5, 3000: 2.5, 8000: 3, 12000: 2.5 },
-  relax: { 60: 2, 150: 1.5, 400: 0, 1000: -0.5, 3000: 0.5, 8000: -0.5, 12000: -1.5 },
-  cinematic: { 60: 3.5, 150: 2.5, 400: 0, 1000: 1, 3000: 2, 8000: 2.5, 12000: 3 },
-  wide: { 60: 1, 150: 0.5, 400: 0, 1000: 0, 3000: 1.5, 8000: 2, 12000: 2.5 }
+  warm: { 60: 2, 150: 1.5, 400: 0.5, 1000: 0, 3000: -0.5, 8000: -1, 12000: -1 },
+  deep: { 60: 3, 150: 2, 400: 1, 1000: 0, 3000: 0.5, 8000: 1, 12000: 1.5 },
+  clear: { 60: -1, 150: -0.5, 400: 0, 1000: 1, 3000: 1.5, 8000: 2, 12000: 1.5 },
+  relax: { 60: 1.5, 150: 1, 400: 0, 1000: -0.5, 3000: 0, 8000: -0.5, 12000: -1 },
+  cinematic: { 60: 2.5, 150: 1.5, 400: 0, 1000: 0.5, 3000: 1.5, 8000: 1.5, 12000: 2 },
+  wide: { 60: 0.5, 150: 0.5, 400: 0, 1000: 0, 3000: 1, 8000: 1.5, 12000: 1.5 }
 };
 
 export class SpatialStudioDsp {
@@ -244,11 +244,11 @@ export class SpatialStudioDsp {
 
     // 7. Safety Dynamics Limiter (To prevent any clipping, distortion or bass overload)
     this.limiterNode = this.ctx.createDynamicsCompressor();
-    this.limiterNode.threshold.setValueAtTime(-1.0, this.ctx.currentTime);
-    this.limiterNode.knee.setValueAtTime(3.0, this.ctx.currentTime);
-    this.limiterNode.ratio.setValueAtTime(16.0, this.ctx.currentTime);
-    this.limiterNode.attack.setValueAtTime(0.003, this.ctx.currentTime);
-    this.limiterNode.release.setValueAtTime(0.1, this.ctx.currentTime);
+    this.limiterNode.threshold.setValueAtTime(-0.5, this.ctx.currentTime);
+    this.limiterNode.knee.setValueAtTime(6.0, this.ctx.currentTime);
+    this.limiterNode.ratio.setValueAtTime(10.0, this.ctx.currentTime);
+    this.limiterNode.attack.setValueAtTime(0.005, this.ctx.currentTime);
+    this.limiterNode.release.setValueAtTime(0.08, this.ctx.currentTime);
 
     this.loudnessCompNode.connect(this.limiterNode);
 
@@ -368,177 +368,177 @@ export class SpatialStudioDsp {
   applyStereo() {
     this.setEqPreset('natural');
     this.spatialWidth = 1.15;
-    this.spatialDistance = 1.1;
+    this.spatialDistance = 1.0;
     this.echoAmount = 0.0;
-    this.reverbAmount = 0.08;
-    this.roomSize = 0.35;
-    this.decayTime = 1.2;
-    this.generateSyntheticImpulse(0.35, 1.2);
+    this.reverbAmount = 0.05;
+    this.roomSize = 0.3;
+    this.decayTime = 1.0;
+    this.generateSyntheticImpulse(0.3, 1.0);
     this.setPosition(0, 0, -1);
     this.activePosition = 'center';
-    this.compensationGain = 1.05;
+    this.compensationGain = 1.02;
   }
 
   applyWideStereo() {
     this.setEqPreset('wide');
-    this.spatialWidth = 1.8;
-    this.spatialDistance = 1.2;
-    this.echoAmount = 0.08;
-    this.delayTime = 0.026;
-    this.feedback = 0.15;
-    this.reverbAmount = 0.16;
-    this.roomSize = 0.55;
-    this.decayTime = 1.8;
-    this.generateSyntheticImpulse(0.55, 1.8);
-    this.setPosition(0, 0.2, -1.1);
+    this.spatialWidth = 1.6;
+    this.spatialDistance = 1.1;
+    this.echoAmount = 0.06;
+    this.delayTime = 0.024;
+    this.feedback = 0.12;
+    this.reverbAmount = 0.12;
+    this.roomSize = 0.45;
+    this.decayTime = 1.4;
+    this.generateSyntheticImpulse(0.45, 1.4);
+    this.setPosition(0, 0.1, -1.1);
     this.activePosition = 'front';
-    this.compensationGain = 1.28;
+    this.compensationGain = 1.12;
   }
 
   applySpatial3D() {
-    this.setEqPreset('cinematic');
-    this.spatialWidth = 1.7;
-    this.spatialDistance = 1.3;
-    this.echoAmount = 0.12;
-    this.delayTime = 0.16;
-    this.feedback = 0.22;
-    this.reverbAmount = 0.22;
-    this.roomSize = 0.65;
-    this.decayTime = 2.2;
-    this.generateSyntheticImpulse(0.65, 2.2);
-    this.setPosition(-1.1, 0.2, -1.2);
+    this.setEqPreset('natural');
+    this.spatialWidth = 1.5;
+    this.spatialDistance = 1.2;
+    this.echoAmount = 0.08;
+    this.delayTime = 0.12;
+    this.feedback = 0.15;
+    this.reverbAmount = 0.15;
+    this.roomSize = 0.55;
+    this.decayTime = 1.8;
+    this.generateSyntheticImpulse(0.55, 1.8);
+    this.setPosition(-0.9, 0.15, -1.1);
     this.activePosition = 'front-left';
-    this.compensationGain = 1.55;
+    this.compensationGain = 1.25;
   }
 
   applySurround() {
     this.setEqPreset('wide');
-    this.spatialWidth = 1.9;
-    this.spatialDistance = 1.4;
-    this.echoAmount = 0.14;
-    this.delayTime = 0.19;
-    this.feedback = 0.25;
-    this.reverbAmount = 0.28;
-    this.roomSize = 0.75;
-    this.decayTime = 2.5;
-    this.generateSyntheticImpulse(0.75, 2.5);
-    this.setPosition(0, 0.4, -1.4);
+    this.spatialWidth = 1.7;
+    this.spatialDistance = 1.25;
+    this.echoAmount = 0.1;
+    this.delayTime = 0.15;
+    this.feedback = 0.18;
+    this.reverbAmount = 0.2;
+    this.roomSize = 0.65;
+    this.decayTime = 2.0;
+    this.generateSyntheticImpulse(0.65, 2.0);
+    this.setPosition(0, 0.25, -1.25);
     this.activePosition = 'front';
-    this.compensationGain = 1.6;
+    this.compensationGain = 1.28;
   }
 
   applyEcho() {
     this.setEqPreset('natural');
-    this.echoAmount = 0.42;
-    this.delayTime = 0.3;
-    this.feedback = 0.4;
-    this.reverbAmount = 0.1;
-    this.roomSize = 0.5;
-    this.decayTime = 2.0;
-    this.generateSyntheticImpulse(0.5, 2.0);
-    this.compensationGain = 1.1;
+    this.echoAmount = 0.32;
+    this.delayTime = 0.26;
+    this.feedback = 0.3;
+    this.reverbAmount = 0.06;
+    this.roomSize = 0.4;
+    this.decayTime = 1.6;
+    this.generateSyntheticImpulse(0.4, 1.6);
+    this.compensationGain = 1.05;
   }
 
   applyReverb() {
     this.setEqPreset('relax');
-    this.echoAmount = 0.08;
-    this.reverbAmount = 0.45;
-    this.roomSize = 0.7;
-    this.decayTime = 2.8;
-    this.generateSyntheticImpulse(0.7, 2.8);
-    this.compensationGain = 1.18;
+    this.echoAmount = 0.05;
+    this.reverbAmount = 0.32;
+    this.roomSize = 0.6;
+    this.decayTime = 2.2;
+    this.generateSyntheticImpulse(0.6, 2.2);
+    this.compensationGain = 1.1;
   }
 
   applyHall() {
     this.setEqPreset('warm');
-    this.spatialWidth = 1.5;
-    this.spatialDistance = 1.5;
-    this.echoAmount = 0.16;
-    this.delayTime = 0.32;
-    this.feedback = 0.32;
-    this.reverbAmount = 0.5;
-    this.roomSize = 0.85;
-    this.decayTime = 3.2;
-    this.generateSyntheticImpulse(0.85, 3.2);
-    this.compensationGain = 1.45;
+    this.spatialWidth = 1.4;
+    this.spatialDistance = 1.3;
+    this.echoAmount = 0.12;
+    this.delayTime = 0.28;
+    this.feedback = 0.24;
+    this.reverbAmount = 0.38;
+    this.roomSize = 0.75;
+    this.decayTime = 2.6;
+    this.generateSyntheticImpulse(0.75, 2.6);
+    this.compensationGain = 1.22;
   }
 
   applyCave() {
     this.setEqPreset('deep');
-    this.spatialWidth = 1.7;
-    this.spatialDistance = 1.6;
-    this.echoAmount = 0.45;
-    this.delayTime = 0.38;
-    this.feedback = 0.48;
-    this.reverbAmount = 0.55;
-    this.roomSize = 0.9;
-    this.decayTime = 3.8;
-    this.generateSyntheticImpulse(0.9, 3.8);
-    this.compensationGain = 1.5;
+    this.spatialWidth = 1.5;
+    this.spatialDistance = 1.4;
+    this.echoAmount = 0.32;
+    this.delayTime = 0.32;
+    this.feedback = 0.35;
+    this.reverbAmount = 0.4;
+    this.roomSize = 0.8;
+    this.decayTime = 2.8;
+    this.generateSyntheticImpulse(0.8, 2.8);
+    this.compensationGain = 1.25;
   }
 
   applyRoom() {
     this.setEqPreset('warm');
     this.spatialWidth = 1.1;
     this.spatialDistance = 1.0;
-    this.echoAmount = 0.04;
-    this.delayTime = 0.08;
-    this.feedback = 0.12;
-    this.reverbAmount = 0.2;
+    this.echoAmount = 0.03;
+    this.delayTime = 0.06;
+    this.feedback = 0.1;
+    this.reverbAmount = 0.15;
     this.roomSize = 0.3;
-    this.decayTime = 1.0;
-    this.generateSyntheticImpulse(0.3, 1.0);
-    this.compensationGain = 1.1;
+    this.decayTime = 0.9;
+    this.generateSyntheticImpulse(0.3, 0.9);
+    this.compensationGain = 1.05;
   }
 
   applyBinauralSpatial() {
-    this.setEqPreset('cinematic');
-    this.spatialWidth = 2.0;
-    this.spatialDistance = 1.3;
-    this.echoAmount = 0.12;
-    this.delayTime = 0.14;
-    this.feedback = 0.2;
-    this.reverbAmount = 0.25;
-    this.roomSize = 0.65;
-    this.decayTime = 2.2;
-    this.generateSyntheticImpulse(0.65, 2.2);
-    this.compensationGain = 1.55;
+    this.setEqPreset('natural');
+    this.spatialWidth = 1.8;
+    this.spatialDistance = 1.2;
+    this.echoAmount = 0.08;
+    this.delayTime = 0.12;
+    this.feedback = 0.16;
+    this.reverbAmount = 0.18;
+    this.roomSize = 0.55;
+    this.decayTime = 1.8;
+    this.generateSyntheticImpulse(0.55, 1.8);
+    this.compensationGain = 1.24;
   }
 
   applyDeepBass() {
     this.setEqPreset('deep');
-    this.spatialWidth = 1.15;
-    this.echoAmount = 0.05;
-    this.reverbAmount = 0.12;
-    this.roomSize = 0.45;
-    this.decayTime = 1.6;
-    this.generateSyntheticImpulse(0.45, 1.6);
+    this.spatialWidth = 1.1;
+    this.echoAmount = 0.04;
+    this.reverbAmount = 0.08;
+    this.roomSize = 0.35;
+    this.decayTime = 1.2;
+    this.generateSyntheticImpulse(0.35, 1.2);
     this.compensationGain = 1.02;
   }
 
   applyClearNature() {
     this.setEqPreset('clear');
-    this.spatialWidth = 1.3;
-    this.echoAmount = 0.04;
-    this.reverbAmount = 0.12;
-    this.roomSize = 0.4;
-    this.decayTime = 1.4;
-    this.generateSyntheticImpulse(0.4, 1.4);
-    this.compensationGain = 1.05;
+    this.spatialWidth = 1.2;
+    this.echoAmount = 0.03;
+    this.reverbAmount = 0.08;
+    this.roomSize = 0.35;
+    this.decayTime = 1.2;
+    this.generateSyntheticImpulse(0.35, 1.2);
+    this.compensationGain = 1.03;
   }
 
   applyCinematic() {
     this.setEqPreset('cinematic');
-    this.spatialWidth = 1.8;
-    this.spatialDistance = 1.5;
-    this.echoAmount = 0.18;
-    this.delayTime = 0.24;
-    this.feedback = 0.3;
-    this.reverbAmount = 0.38;
-    this.roomSize = 0.8;
-    this.decayTime = 2.8;
-    this.generateSyntheticImpulse(0.8, 2.8);
-    this.compensationGain = 1.42;
+    this.spatialWidth = 1.6;
+    this.spatialDistance = 1.3;
+    this.echoAmount = 0.14;
+    this.delayTime = 0.2;
+    this.feedback = 0.22;
+    this.reverbAmount = 0.28;
+    this.roomSize = 0.7;
+    this.decayTime = 2.4;
+    this.generateSyntheticImpulse(0.7, 2.4);
+    this.compensationGain = 1.22;
   }
 
   // Update wet/dry and crossfades with loudness compensation

@@ -353,6 +353,23 @@ router.patch('/users/:id/profile', authenticateToken, requireAdmin, async (req, 
       return res.status(404).json({ error: 'User could not be found to apply profile update' });
     }
 
+    // Broadcast update to user active devices if profile/avatar changed
+    if (updates.avatarUrl !== undefined || updates.displayName !== undefined) {
+      try {
+        const io = req.app.get('io');
+        if (io) {
+          io.to(`user_${updatedUser._id.toString()}`).emit('user_profile_updated', {
+            userId: updatedUser._id.toString(),
+            avatarUrl: updatedUser.avatarUrl,
+            displayName: updatedUser.displayName || updatedUser.username,
+            updatedAt: Date.now()
+          });
+        }
+      } catch (socketErr) {
+        console.warn('[Admin User Update Socket Notice]:', socketErr.message);
+      }
+    }
+
     // Cascade privacy updates to Activity collection if privacy flags changed
     if (updates.isPublic !== undefined || updates.shareListeningActivity !== undefined) {
       const makePublic = (updatedUser.isPublic && updatedUser.shareListeningActivity);

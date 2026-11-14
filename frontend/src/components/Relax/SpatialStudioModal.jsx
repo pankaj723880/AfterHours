@@ -305,6 +305,41 @@ export default function SpatialStudioModal({
                 </div>
               </div>
 
+              {/* Status & Stop All Action Bar */}
+              <div className="flex items-center justify-between p-2.5 sm:p-3 rounded-2xl bg-neutral-950/70 border border-white/10">
+                <div className="flex items-center gap-2">
+                  {playingIds.length > 0 ? (
+                    <>
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.8)]" />
+                      <span className="text-xs font-semibold text-emerald-300">
+                        Playing {playingIds.length} ambient {playingIds.length === 1 ? 'sound' : 'sounds'} in mix
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="w-2.5 h-2.5 rounded-full bg-neutral-600" />
+                      <span className="text-xs font-medium text-neutral-400">
+                        All ambient sounds stopped • Tap any card below to play
+                      </span>
+                    </>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => audioEngine?.stopAll()}
+                  disabled={playingIds.length === 0}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer ${
+                    playingIds.length > 0
+                      ? 'bg-red-500/20 hover:bg-red-500/30 text-red-300 hover:text-red-200 border border-red-500/40 active:scale-95'
+                      : 'bg-white/5 text-neutral-600 border border-white/5 opacity-50 cursor-not-allowed'
+                  }`}
+                  title="Stop all currently playing ambient sounds"
+                >
+                  <Square className="w-3.5 h-3.5 fill-current" />
+                  <span>Stop All</span>
+                </button>
+              </div>
+
               {/* Sound Cards Grid (3 Columns) */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
                 {filteredSounds.map((sound) => {

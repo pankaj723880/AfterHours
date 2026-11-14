@@ -145,7 +145,7 @@ export default function VoiceControlManagement({ token, backendUrl, showToast })
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg sm:text-xl font-black text-white tracking-tight">Voice Control Management</h2>
+              <h2 className="text-lg sm:text-xl font-black text-white tracking-tight">Lipra AI & Voice Control Management</h2>
               <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border ${
                 enabled
                   ? globalRollout
@@ -157,7 +157,7 @@ export default function VoiceControlManagement({ token, backendUrl, showToast })
               </span>
             </div>
             <p className="text-xs text-neutral-400 mt-0.5">
-              Admin-controlled voice recognition, language parsing, and gradual rollout mechanism
+              Admin-controlled Lipra AI avatar visibility, voice recognition, language parsing, and gradual rollout mechanism
             </p>
           </div>
         </div>
@@ -225,13 +225,13 @@ export default function VoiceControlManagement({ token, backendUrl, showToast })
           <div className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="max-w-xl">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-white">Enable Voice Control for All Users</span>
+                <span className="text-sm font-bold text-white">Lipra AI & Voice Control — Enable for All Users</span>
                 <span className="text-[10px] uppercase font-semibold text-cyan-400/90 bg-cyan-400/10 px-1.5 py-0.5 rounded border border-cyan-400/20">
-                  Public Rollout
+                  Global Setting
                 </span>
               </div>
               <p className="text-xs text-neutral-400 mt-1">
-                When OFF, only authorized administrators can access Voice Control. When ON, all authenticated users receive access (subject to the master toggle).
+                When OFF, all Lipra AI avatar, avatar room entry, voice control buttons, and microphone controls are completely hidden and inaccessible to all normal users globally. When ON, features become visible and accessible.
               </p>
             </div>
 

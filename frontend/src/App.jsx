@@ -17,6 +17,7 @@ const SimilarSongsModal = lazy(() => import('./components/Recommendations/Simila
 const LyricsModal = lazy(() => import('./components/Player/LyricsModal'));
 const SleepTimerModal = lazy(() => import('./components/Player/SleepTimerModal'));
 const PlayerSettingsModal = lazy(() => import('./components/Player/PlayerSettingsModal'));
+import SuggestedForYouSection from './components/Player/SuggestedForYouSection';
 const ListeningStatsModal = lazy(() => import('./components/Stats/ListeningStatsModal'));
 const UserProfileModal = lazy(() => import('./components/Profile/UserProfileModal'));
 const DiscoverSwipe = lazy(() => import('./components/Discover/DiscoverSwipe'));
@@ -1396,20 +1397,20 @@ const POPULAR_ARTISTS = [
 
 const POPULAR_ALBUMS = [
   { id: "Umqb9KENgmk", videoId: "Umqb9KENgmk", title: "Tum Hi Ho", artist: "Mithoon, Arijit Singh", image: "https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/Umqb9KENgmk/hqdefault.jpg", query: "Tum Hi Ho Aashiqui 2 Official Video Arijit Singh" },
-  { id: "ZdyaixHYviA", videoId: "ZdyaixHYviA", title: "Kabira", artist: "Pritam, Tochi Raina, Rekha Bhardwaj", image: "https://i.ytimg.com/vi/ZdyaixHYviA/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/ZdyaixHYviA/hqdefault.jpg", query: "Kabira Yeh Jawaani Hai Deewani Official Video" },
+  { id: "jHNNMj5bNQw", videoId: "jHNNMj5bNQw", title: "Kabira", artist: "Pritam, Tochi Raina, Rekha Bhardwaj", image: "https://i.ytimg.com/vi/jHNNMj5bNQw/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/jHNNMj5bNQw/hqdefault.jpg", query: "Kabira Yeh Jawaani Hai Deewani Official Video" },
   { id: "BddP6PYo2gs", videoId: "BddP6PYo2gs", title: "Kesariya", artist: "Pritam, Arijit Singh", image: "https://i.ytimg.com/vi/BddP6PYo2gs/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/BddP6PYo2gs/hqdefault.jpg", query: "Kesariya Brahmastra Official Video Arijit Singh" },
-  { id: "BDlNjOc3wiQ", videoId: "BDlNjOc3wiQ", title: "Bekhayali", artist: "Sachet Tandon, Parampara", image: "https://i.ytimg.com/vi/BDlNjOc3wiQ/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/BDlNjOc3wiQ/hqdefault.jpg", query: "Bekhayali Kabir Singh Official Video Sachet Tandon" },
-  { id: "ARtRGkaG_OA", videoId: "ARtRGkaG_OA", title: "Nadaan Parindey", artist: "A.R. Rahman, Mohit Chauhan", image: "https://i.ytimg.com/vi/ARtRGkaG_OA/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/ARtRGkaG_OA/hqdefault.jpg", query: "Nadaan Parindey Rockstar Official Video Mohit Chauhan" },
-  { id: "jsgPZVMfJQk", videoId: "jsgPZVMfJQk", title: "Pehle Bhi Main", artist: "Pritam, Vishal Mishra", image: "https://i.ytimg.com/vi/jsgPZVMfJQk/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/jsgPZVMfJQk/hqdefault.jpg", query: "Pehle Bhi Main Animal Official Video Vishal Mishra" }
+  { id: "VOLKJJvfAbg", videoId: "VOLKJJvfAbg", title: "Bekhayali", artist: "Sachet Tandon, Parampara", image: "https://i.ytimg.com/vi/VOLKJJvfAbg/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/VOLKJJvfAbg/hqdefault.jpg", query: "Bekhayali Kabir Singh Official Video Sachet Tandon" },
+  { id: "ttIKsnxPrMY", videoId: "ttIKsnxPrMY", title: "Nadaan Parindey", artist: "A.R. Rahman, Mohit Chauhan", image: "https://i.ytimg.com/vi/ttIKsnxPrMY/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/ttIKsnxPrMY/hqdefault.jpg", query: "Nadaan Parindey Rockstar Official Video Mohit Chauhan" },
+  { id: "iAIBF2ngbWY", videoId: "iAIBF2ngbWY", title: "Pehle Bhi Main", artist: "Pritam, Vishal Mishra", image: "https://i.ytimg.com/vi/iAIBF2ngbWY/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/iAIBF2ngbWY/hqdefault.jpg", query: "Pehle Bhi Main Animal Official Video Vishal Mishra" }
 ];
 
 const POPULAR_RADIO = [
-  { id: "O5gwxm3NxFU", videoId: "O5gwxm3NxFU", title: "Channa Mereya", artist: "Arijit Singh, Pritam", image: "https://i.ytimg.com/vi/O5gwxm3NxFU/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/O5gwxm3NxFU/hqdefault.jpg", query: "Channa Mereya Ae Dil Hai Mushkil Official Video Arijit Singh" },
-  { id: "r0c1f6XxRQg", videoId: "r0c1f6XxRQg", title: "Zara Sa", artist: "KK, Pritam", image: "https://i.ytimg.com/vi/r0c1f6XxRQg/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/r0c1f6XxRQg/hqdefault.jpg", query: "Zara Sa Jannat Official Video KK Pritam" },
-  { id: "dvgZkm1xWPE", videoId: "dvgZkm1xWPE", title: "Sunn Raha Hai Na Tu", artist: "Shreya Ghoshal, Ankit Tiwari", image: "https://i.ytimg.com/vi/dvgZkm1xWPE/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/dvgZkm1xWPE/hqdefault.jpg", query: "Sunn Raha Hai Na Tu Aashiqui 2 Shreya Ghoshal Official Video" },
-  { id: "S6IW8Rj1WqQ", videoId: "S6IW8Rj1WqQ", title: "Kuch Kuch Hota Hai", artist: "Alka Yagnik, Udit Narayan", image: "https://i.ytimg.com/vi/S6IW8Rj1WqQ/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/S6IW8Rj1WqQ/hqdefault.jpg", query: "Kuch Kuch Hota Hai Title Track Alka Yagnik Udit Narayan Official" },
-  { id: "cIGd8gm_pYE", videoId: "cIGd8gm_pYE", title: "Lover", artist: "Diljit Dosanjh", image: "https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/cIGd8gm_pYE/hqdefault.jpg", query: "Lover Diljit Dosanjh Official Music Video" },
-  { id: "P9YpfmNc_p4", videoId: "P9YpfmNc_p4", title: "Kun Faya Kun", artist: "A.R. Rahman, Javed Ali, Mohit Chauhan", image: "https://i.ytimg.com/vi/P9YpfmNc_p4/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/P9YpfmNc_p4/hqdefault.jpg", query: "Kun Faya Kun Rockstar Official Video AR Rahman" }
+  { id: "284Ov7ysmfA", videoId: "284Ov7ysmfA", title: "Channa Mereya", artist: "Arijit Singh, Pritam", image: "https://i.ytimg.com/vi/284Ov7ysmfA/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/284Ov7ysmfA/hqdefault.jpg", query: "Channa Mereya Ae Dil Hai Mushkil Official Video Arijit Singh" },
+  { id: "ZsAOnmByy38", videoId: "ZsAOnmByy38", title: "Zara Sa", artist: "KK, Pritam", image: "https://i.ytimg.com/vi/ZsAOnmByy38/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/ZsAOnmByy38/hqdefault.jpg", query: "Zara Sa Jannat Official Video KK Pritam" },
+  { id: "inEu2qQuGZ8", videoId: "inEu2qQuGZ8", title: "Sunn Raha Hai Na Tu", artist: "Shreya Ghoshal, Ankit Tiwari", image: "https://i.ytimg.com/vi/inEu2qQuGZ8/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/inEu2qQuGZ8/hqdefault.jpg", query: "Sunn Raha Hai Na Tu Aashiqui 2 Shreya Ghoshal Official Video" },
+  { id: "bKZTnnFU9HA", videoId: "bKZTnnFU9HA", title: "Kuch Kuch Hota Hai", artist: "Alka Yagnik, Udit Narayan", image: "https://i.ytimg.com/vi/bKZTnnFU9HA/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/bKZTnnFU9HA/hqdefault.jpg", query: "Kuch Kuch Hota Hai Title Track Alka Yagnik Udit Narayan Official" },
+  { id: "mH_LFkWxpI0", videoId: "mH_LFkWxpI0", title: "Lover", artist: "Diljit Dosanjh", image: "https://i.ytimg.com/vi/mH_LFkWxpI0/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/mH_LFkWxpI0/hqdefault.jpg", query: "Lover Diljit Dosanjh Official Music Video" },
+  { id: "T94PHkuydcw", videoId: "T94PHkuydcw", title: "Kun Faya Kun", artist: "A.R. Rahman, Javed Ali, Mohit Chauhan", image: "https://i.ytimg.com/vi/T94PHkuydcw/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/T94PHkuydcw/hqdefault.jpg", query: "Kun Faya Kun Rockstar Official Video AR Rahman" }
 ];
 
 const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlledShowAll, setShowAll: setControlledShowAll, fallbackItems = [] }) => {
@@ -1545,7 +1546,8 @@ export default function App() {
   });
 
   // Dynamic role-based & CMS-driven voice access
-  const isVoiceActive = isAdmin || Boolean(cmsConfig?.voiceControlEnabled || isVoiceControlAllowed || canAccessVoice);
+  // Gated strictly by canAccessVoice (which evaluates master toggle, global rollout & admin access)
+  const isVoiceActive = Boolean(canAccessVoice && (isAdmin || isVoiceControlAllowed));
 
   useEffect(() => {
     setIsVoiceControlAllowed(Boolean(canAccessVoice));
@@ -2325,6 +2327,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   });
   const [isListeningRoomsOpen, setIsListeningRoomsOpen] = useState(false);
   const [similarSongsTrack, setSimilarSongsTrack] = useState(null);
+  const currentSuggestionsRef = useRef([]);
   const closeExpandedPlayer = useCallback(() => {
     setShowQueuePanel(false);
   }, []);
@@ -2533,7 +2536,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               const isUnchanged = prev._id === data.user._id &&
                 prev.role === data.user.role &&
                 prev.status === data.user.status &&
-                prev.username === data.user.username;
+                prev.username === data.user.username &&
+                prev.avatarUrl === data.user.avatarUrl &&
+                prev.displayName === data.user.displayName;
               if (isUnchanged) return prev;
 
               const merged = { ...prev, ...data.user };
@@ -2592,8 +2597,29 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       showToast(data?.message || 'Your administrator privileges have been revoked.', 'warning');
     };
 
+    const handleUserProfileUpdated = (data) => {
+      const currentUser = userRef.current;
+      if (!data || !currentUser) return;
+      const currentUid = (currentUser.id || currentUser._id || currentUser.userId || '').toString();
+      if (currentUid && data.userId && currentUid === data.userId.toString()) {
+        setUser(prev => {
+          if (!prev) return prev;
+          const updated = {
+            ...prev,
+            avatarUrl: data.avatarUrl !== undefined ? data.avatarUrl : prev.avatarUrl,
+            displayName: data.displayName || prev.displayName
+          };
+          try {
+            localStorage.setItem('afterhours_user', JSON.stringify(updated));
+          } catch (_) {}
+          return updated;
+        });
+      }
+    };
+
     socket.on('user_role_changed', handleRoleChanged);
     socket.on('admin_access_revoked', handleAdminRevoked);
+    socket.on('user_profile_updated', handleUserProfileUpdated);
     const handleFeatureFlagUpdate = (data) => {
       if (data?.featureKey === 'voice_control') {
         voiceControlService.handleSocketFlagUpdate(data, userRef.current);
@@ -2605,6 +2631,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     return () => {
       socket.off('user_role_changed', handleRoleChanged);
       socket.off('admin_access_revoked', handleAdminRevoked);
+      socket.off('user_profile_updated', handleUserProfileUpdated);
       socket.off('feature_flag_updated', handleFeatureFlagUpdate);
       socket.off('connect', syncCurrentUserState);
     };
@@ -2711,6 +2738,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 prev.role === data.user.role &&
                 prev.status === data.user.status &&
                 prev.username === data.user.username &&
+                prev.avatarUrl === data.user.avatarUrl &&
+                prev.displayName === data.user.displayName &&
                 prev.isVip === data.user.isVip
               ) {
                 return prev;
@@ -4318,13 +4347,24 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       return;
     }
 
-    // Auto-play continuation when playlist/queue reaches the end
+    // Auto-play continuation priority:
+    // 1. If queue has items, play next queued item
+    // 2. If queue is empty or exhausted, autoplay a relevant suggested song
+    // 3. Fallback to trending pool so music never abruptly halts
     const nextIdx = (currentIndex + 1);
     if (nextIdx < effectiveQueue.length) {
       playSong(effectiveQueue[nextIdx]);
     } else {
-      // Loop seamlessly or fallback to trending pool to ensure music never halts
-      if (trendingSongs && trendingSongs.length > 0) {
+      // Queue is exhausted: check suggested songs list
+      const suggestedCandidates = currentSuggestionsRef.current || [];
+      const unplayedSuggested = suggestedCandidates.find(s => {
+        const sid = s.id || s.videoId;
+        return sid && sid !== currentId && !queue.some(q => (q.id || q.videoId) === sid);
+      });
+
+      if (unplayedSuggested) {
+        playSong(unplayedSuggested);
+      } else if (trendingSongs && trendingSongs.length > 0) {
         const nextFallback = trendingSongs.find(s => (s.id || s.videoId) !== currentId) || trendingSongs[0];
         playSong(nextFallback);
       } else {
@@ -4977,16 +5017,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 const results = Array.isArray(data) ? data : (data.results || data.videos || []);
                 const alternative = results.find(r => {
                   const rId = r.id || r.videoId;
-                  return rId && rId !== failedId;
+                  if (!rId || rId === failedId) return false;
+                  // Verify candidate has matching title keywords to prevent playing completely unrelated song
+                  const altTitle = (r.title || '').toLowerCase();
+                  const targetWords = songToRecover.title.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !['official', 'video', 'song', 'audio'].includes(w));
+                  const hasMatchingWord = targetWords.length === 0 || targetWords.some(w => altTitle.includes(w));
+                  return hasMatchingWord;
                 });
                 if (alternative && (alternative.id || alternative.videoId)) {
                   const altId = alternative.id || alternative.videoId;
-                  console.info(`[Player] Loaded alternative embeddable ID ${altId} for "${songToRecover.title}"`);
+                  console.info(`[Player] Loaded verified alternative embeddable ID ${altId} for "${songToRecover.title}"`);
+                  const cleanThumb = getCleanThumbnail(alternative, altId) || `https://i.ytimg.com/vi/${altId}/hqdefault.jpg`;
                   const updatedSong = {
                     ...songToRecover,
                     id: altId,
                     videoId: altId,
-                    thumbnail: alternative.thumbnail || songToRecover.thumbnail
+                    thumbnail: cleanThumb,
+                    image: cleanThumb
                   };
                   setCurrentSong(updatedSong);
                   initPlayerInstance(altId, true, 0);
@@ -7751,8 +7798,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 20px)' }}
                 className="pt-3 pb-20 md:pb-6 border-t border-white/[0.06] mt-4 space-y-2"
               >
-                {/* 1. Avatar Autonomous Free Roam Toggle Button (Strictly Admin Only) */}
-                {isAdmin && (
+                {/* 1. Avatar Autonomous Free Roam Toggle Button (Strictly Admin Only and when Voice/Avatar is active) */}
+                {isAdmin && isVoiceActive && (
                   <button
                     type="button"
                     onClick={() => {
@@ -7796,11 +7843,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   <div className="space-y-2">
                     {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
                       <div className="px-2.5 py-1.5 rounded-xl bg-white/[0.02] border border-white/[0.04] flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-[10px] font-bold text-amber-300 shrink-0">
-                          {user.username ? user.username.charAt(0).toUpperCase() : 'U'}
+                        <div className="w-7 h-7 rounded-full overflow-hidden shrink-0">
+                          <UserAvatar
+                            user={user}
+                            className="w-full h-full object-cover"
+                            fallbackClassName="w-full h-full bg-gradient-to-br from-amber-500 to-amber-600 text-neutral-950 font-bold text-[10px] flex items-center justify-center shadow-inner uppercase select-none"
+                          />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-xs font-semibold text-white truncate">{user.username || 'User'}</p>
+                          <p className="text-xs font-semibold text-white truncate">{user.displayName || user.username || 'User'}</p>
                           <p className="text-[9px] text-zinc-500 truncate">{user.email || 'Online'}</p>
                         </div>
                       </div>
@@ -8079,8 +8130,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 20px)' }}
               className="pt-4 pb-20 md:pb-6 border-t border-neutral-800 mt-4 space-y-2"
             >
-              {/* 1. Avatar Autonomous Free Roam Toggle Button (Strictly Admin Only) */}
-              {isAdmin && (
+              {/* 1. Avatar Autonomous Free Roam Toggle Button (Strictly Admin Only and when Voice/Avatar is active) */}
+              {isAdmin && isVoiceActive && (
                 <button
                   type="button"
                   onClick={() => {
@@ -8124,11 +8175,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 <div className="space-y-2">
                   {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
                     <div className="px-2.5 py-1.5 rounded-xl bg-white/[0.02] border border-white/[0.04] flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-[10px] font-bold text-amber-300 shrink-0">
-                        {user.username ? user.username.charAt(0).toUpperCase() : 'U'}
+                      <div className="w-7 h-7 rounded-full overflow-hidden shrink-0">
+                        <UserAvatar
+                          user={user}
+                          className="w-full h-full object-cover"
+                          fallbackClassName="w-full h-full bg-gradient-to-br from-amber-500 to-amber-600 text-neutral-950 font-bold text-[10px] flex items-center justify-center shadow-inner uppercase select-none"
+                        />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs font-semibold text-white truncate">{user.username || 'User'}</p>
+                        <p className="text-xs font-semibold text-white truncate">{user.displayName || user.username || 'User'}</p>
                         <p className="text-[9px] text-zinc-500 truncate">{user.email || 'Online'}</p>
                       </div>
                     </div>
@@ -9919,8 +9974,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
             {/* Zone 3 (Right): Volume Slider with Mute Toggle, Queue Toggle, and Avatar Roam Status */}
             <div className="flex items-center justify-end w-1/4 gap-2.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-              {/* Avatar Free Roam Quick Status Pill (Strictly Admin Only) */}
-              {isAdmin && (
+              {/* Avatar Free Roam Quick Status Pill (Strictly Admin Only and when Voice/Avatar is active) */}
+              {isAdmin && isVoiceActive && (
                 <button
                   type="button"
                   onClick={() => {
@@ -10165,9 +10220,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </button>
 
           {/* Player Column (Full on Mobile when 'player' tab is active; 50% on Desktop) */}
-          <div className={`${mobileQueueTab === 'player' ? 'flex' : 'hidden'} md:flex w-full md:w-1/2 p-2 sm:p-4 md:p-6 flex-col justify-between items-center bg-gradient-to-br from-neutral-900 to-neutral-950 border-r border-neutral-800/50 overflow-y-auto overflow-x-hidden flex-1 md:flex-initial h-full max-h-full`}>
+          <div className={`${mobileQueueTab === 'player' ? 'flex' : 'hidden'} md:flex w-full md:w-1/2 p-2 sm:p-4 md:p-6 flex-col items-center bg-gradient-to-br from-neutral-900 to-neutral-950 border-r border-neutral-800/50 overflow-y-auto overflow-x-hidden flex-1 md:flex-initial h-full max-h-full`}>
             {currentSong ? (
-              <div className="w-full max-w-sm flex-1 flex flex-col items-center justify-between py-1 sm:py-2 min-h-0">
+              <div className="w-full max-w-sm flex flex-col items-center">
+                {/* Initial Viewport: Main music player controls */}
+                <div className="w-full flex flex-col items-center justify-between py-1 sm:py-2 min-h-[calc(100vh-4rem)] md:min-h-[calc(100vh-2rem)] shrink-0">
                 {/* 1. 3D Illuminated Virtual Turntable Section */}
                 <div className="w-full flex items-center justify-center shrink min-h-0 pt-1 pb-1">
                   <Turntable3D 
@@ -10424,6 +10481,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   />
                   <span className="text-[9px] font-mono text-neutral-400 w-6 text-right">{volume}%</span>
                 </div>
+
+                </div>
+
+                {/* Suggested for You Section: Positioned below main player in normal vertical flow (accessible on scroll) */}
+                <SuggestedForYouSection
+                  currentSong={currentSong}
+                  onPlaySong={playSong}
+                  onAddToQueue={addToQueue}
+                  queue={queue}
+                  onSuggestionsLoaded={(items) => {
+                    currentSuggestionsRef.current = items;
+                  }}
+                />
               </div>
             ) : (
               <div className="text-neutral-500 text-lg flex flex-col items-center gap-3 py-16">

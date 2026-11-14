@@ -315,8 +315,8 @@ async function runTests() {
   // REGRESSION 9: Recommendations play the exact selected song
   console.log('\n--- REGRESSION 9: Recommendations Play The Exact Selected Song ---');
   const targetTrack = {
-    id: 'cmMiyZaSELo',
-    videoId: 'cmMiyZaSELo',
+    id: 'ZsAOnmByy38',
+    videoId: 'ZsAOnmByy38',
     title: 'Zara Sa (Official Video) - Jannat',
     artist: 'KK, Pritam'
   };
@@ -326,9 +326,29 @@ async function runTests() {
     [targetTrack]
   );
   assert(playbackTurn, 'Playback request must be detected');
-  assert.strictEqual(playbackTurn.id, targetTrack.id, 'Must play exact track ID (cmMiyZaSELo)');
+  assert.strictEqual(playbackTurn.id, targetTrack.id, 'Must play exact track ID (ZsAOnmByy38)');
   assert.strictEqual(playbackTurn.title, targetTrack.title, 'Must preserve exact track title');
   console.log(`[PASS] Exact selected song preserved during playback resolution: "${playbackTurn.title}" (${playbackTurn.id})`);
+  passed++;
+
+  // REGRESSION 10: Khuda Jaane preserves its distinct canonical track identity (cmMiyZaSELo)
+  console.log('\n--- REGRESSION 10: Khuda Jaane Preserves Distinct Canonical ID ---');
+  const khudaJaaneTrack = {
+    id: 'cmMiyZaSELo',
+    videoId: 'cmMiyZaSELo',
+    title: 'Khuda Jaane | Full Song | Bachna Ae Haseeno',
+    artist: 'KK, Shilpa Rao, Vishal-Shekhar'
+  };
+  const khudaJaanePlayback = aiMusicCompanionService.detectPlaybackRequest(
+    'Play Khuda Jaane',
+    [],
+    [khudaJaaneTrack]
+  );
+  assert(khudaJaanePlayback, 'Playback request for Khuda Jaane must be detected');
+  assert.strictEqual(khudaJaanePlayback.id, khudaJaaneTrack.id, 'Must play exact track ID (cmMiyZaSELo)');
+  assert.strictEqual(khudaJaanePlayback.title, khudaJaaneTrack.title, 'Must preserve exact track title');
+  assert.notStrictEqual(khudaJaanePlayback.id, targetTrack.id, 'Khuda Jaane must never conflict with Zara Sa track ID');
+  console.log(`[PASS] Distinct identity preserved for "${khudaJaanePlayback.title}" (${khudaJaanePlayback.id})`);
   passed++;
 
   console.log(`\n=== ALL ${passed} AI MUSIC COMPANION TESTS PASSED SUCCESSFULLY! ===`);

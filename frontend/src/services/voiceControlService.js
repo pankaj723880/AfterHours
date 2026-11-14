@@ -48,7 +48,13 @@ export const voiceControlService = {
       ? config.enableVoiceControlForAllUsers
       : (typeof config.globalRollout === 'boolean' ? config.globalRollout : true);
 
-    return Boolean(publicRollout || isAdmin);
+    const adminAccess = typeof config.adminAccess === 'boolean' ? config.adminAccess : true;
+
+    if (isAdmin) {
+      return Boolean(adminAccess);
+    }
+
+    return Boolean(publicRollout);
   },
 
   /**
@@ -77,7 +83,7 @@ export const voiceControlService = {
         const globalRollout = Boolean(data.globalRollout ?? data.enableVoiceControlForAllUsers ?? true);
         const adminAccess = Boolean(data.adminAccess ?? true);
         const isAdmin = Boolean(user && (user.isAdmin === true || user.role === 'admin'));
-        const allowed = enabled && (globalRollout || isAdmin);
+        const allowed = enabled && (isAdmin ? adminAccess : globalRollout);
 
         currentAccessState = {
           allowed,
