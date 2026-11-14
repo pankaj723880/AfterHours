@@ -139,6 +139,42 @@ const siteConfigSchema = new mongoose.Schema({
     }]
   },
 
+  pages: [{
+    route: { type: String, required: true },
+    title: { type: String, required: true },
+    subtitle: { type: String, default: '' },
+    seoTitle: { type: String, default: '' },
+    seoDescription: { type: String, default: '' },
+    enabled: { type: Boolean, default: true },
+    bannerImage: { type: String, default: '' },
+    badge: { type: String, default: '' }
+  }],
+
+  homeSections: [{
+    id: { type: String, required: true },
+    title: { type: String, required: true },
+    subtitle: { type: String, default: '' },
+    badge: { type: String, default: '' },
+    enabled: { type: Boolean, default: true },
+    order: { type: Number, default: 0 },
+    displayLimit: { type: Number, default: 12 }
+  }],
+
+  featureControls: {
+    djClubEnabled: { type: Boolean, default: true },
+    moodAiEnabled: { type: Boolean, default: true },
+    timeMachineEnabled: { type: Boolean, default: true },
+    activityFeedEnabled: { type: Boolean, default: true },
+    discoverSwipeEnabled: { type: Boolean, default: true },
+    voiceAgentEnabled: { type: Boolean, default: true },
+    aiChatEnabled: { type: Boolean, default: true },
+    offlineDownloadsEnabled: { type: Boolean, default: true },
+    ratingsPopupEnabled: { type: Boolean, default: true },
+    lyricsEnabled: { type: Boolean, default: true },
+    sleepTimerEnabled: { type: Boolean, default: true },
+    listeningRoomsEnabled: { type: Boolean, default: true }
+  },
+
   lastModifiedBy: { type: String, default: 'system' },
   publishedAt: { type: Date }
 }, { timestamps: true });

@@ -21,7 +21,12 @@ import {
   X,
   Code2,
   Key,
-  ChevronDown
+  ChevronDown,
+  GitBranch,
+  GitPullRequest,
+  GitCommit,
+  Check,
+  Play
 } from 'lucide-react';
 import { formatAdminTimestamp } from '../../utils/adminDateUtils';
 
@@ -150,10 +155,13 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
   // Status states
   const [isPatching, setIsPatching] = useState(false);
   const [patchStatusMessage, setPatchStatusMessage] = useState('');
+  const [patchStep, setPatchStep] = useState(0); // 1: Analyzing, 2: Retrieving files, 3: Generating patch, 4: Staging & validating
+  const [githubStatus, setGithubStatus] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [parsedError, setParsedError] = useState(null);
   const [autoApply, setAutoApply] = useState(false);
   const [isRollingBack, setIsRollingBack] = useState(null); // patchId
+  const [isMergingPr, setIsMergingPr] = useState(null); // prNumber
   const [logs, setLogs] = useState([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
 
@@ -228,9 +236,23 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
     }
   }, [cleanBackendUrl, token]);
 
+  const fetchGithubStatus = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${cleanBackendUrl}/api/admin/git/status`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setGithubStatus(data);
+      }
+    } catch (_) {}
+  }, [cleanBackendUrl, token]);
+
   useEffect(() => {
     fetchLogs();
-  }, [fetchLogs]);
+    fetchGithubStatus();
+  }, [fetchLogs, fetchGithubStatus]);
 
   // Stage patch without modifying disk, then trigger Review & Confirmation Modal (or auto-apply if enabled)
   const handleStagePatch = async (e) => {
@@ -402,13 +424,12 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
       }
 
       if (res.ok && data.success) {
-        const detectedInfo = data.detectedFile ? ` [Auto-detected: ${data.detectedFile}]` : '';
-        if (data.isReadOnly || data.notice) {
-          notify(data.notice || 'Changes generated successfully. In production mode, apply via CMS or push to Git.', 'info');
-          setPatchStatusMessage(`ℹ️ ${data.message || 'In production mode: apply changes via CMS or Git.'}`);
+        if (data.prUrl) {
+          notify(`🎉 Pull Request #${data.prNumber} opened on GitHub!`, 'success');
+          setPatchStatusMessage(`🌿 Created branch ${data.branch} and opened PR #${data.prNumber}`);
         } else {
-          notify(`Patch Applied Successfully via Vite HMR${detectedInfo}`, 'success');
-          setPatchStatusMessage(`⚡ Committed ${data.targetFile || stagedPatch.targetFile} & updated live via Vite HMR!`);
+          notify(`Patch Applied Successfully!`, 'success');
+          setPatchStatusMessage(`⚡ Committed ${data.targetFile || stagedPatch.targetFile}!`);
         }
         setStagedPatch(null);
         setInstructionPrompt('');
@@ -434,8 +455,37 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
     notify('Staged patch discarded. No changes written to disk.', 'info');
   };
 
-  const handleRollback = async (patchId, targetFile) => {
-    if (!window.confirm(`Are you sure you want to rollback ${targetFile}? The pre-patch backup code will be restored immediately.`)) {
+  const handleMergePr = async (prNumber, patchId) => {
+    if (!window.confirm(`Are you sure you want to merge Pull Request #${prNumber} into the main branch? This will deploy changes to production via Vercel.`)) {
+      return;
+    }
+
+    setIsMergingPr(prNumber);
+    try {
+      const res = await fetch(`${cleanBackendUrl}/api/admin/ai-merge-pr`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ prNumber, patchId })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        notify(data.message || `PR #${prNumber} merged! Deployment in progress.`, 'success');
+        fetchLogs();
+      } else {
+        notify(data.error || 'Failed to merge PR', 'error');
+      }
+    } catch (err) {
+      notify('Network error during merge: ' + err.message, 'error');
+    } finally {
+      setIsMergingPr(null);
+    }
+  };
+
+  const handleRollback = async (patchId, targetFile, branchName, prNumber) => {
+    if (!window.confirm(`Are you sure you want to rollback ${targetFile}? The patch branch will be closed and pre-patch version restored.`)) {
       return;
     }
 
@@ -447,7 +497,7 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ patchId })
+        body: JSON.stringify({ patchId, branchName, prNumber })
       });
 
       const contentType = res.headers.get('content-type') || '';
@@ -479,15 +529,27 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
         <div>
           <h4 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
             <Zap className="w-4 h-4 text-amber-400" />
-            ⚡ AI In-App Live Code Patcher & Rollback
+            ⚡ AI Live Code Patcher & GitHub Repository Pipeline
           </h4>
           <p className="text-xs text-neutral-400 mt-1">
-            Prompt modifications in natural language; changes compile and hot-reload instantly via Vite HMR with 1-click snapshot rollback.
+            Prompt modifications across frontend and backend; changes are staged on dedicated Git branches, syntax verified, and deployed via GitHub PRs & Vercel.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-semibold">
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          {githubStatus?.githubConfigured ? (
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-semibold" title={`Connected to ${githubStatus.repo || 'GitHub'}`}>
+              <GitBranch className="w-3.5 h-3.5" />
+              <span>GitHub Connected ({githubStatus.defaultBranch || 'main'})</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] font-semibold" title="Local filesystem mode active">
+              <FolderCode className="w-3.5 h-3.5" />
+              <span>Local Dev Mode</span>
+            </span>
+          )}
+
+          <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-800/80 border border-neutral-700/60 text-neutral-300 text-[11px] font-semibold">
             <ShieldCheck className="w-3.5 h-3.5" />
             Auto-Snapshot Guard Active
           </span>
@@ -866,16 +928,49 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
                   </div>
 
                   <div className="shrink-0 flex items-center gap-2">
+                    {/* GitHub PR link if available */}
+                    {log.prUrl && (
+                      <a
+                        href={log.prUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 transition cursor-pointer"
+                        title="View Pull Request on GitHub"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>PR #{log.prNumber}</span>
+                      </a>
+                    )}
+
+                    {/* Merge PR button if PR is open */}
+                    {log.prNumber && log.status === 'PR_OPENED' && (
+                      <button
+                        type="button"
+                        onClick={() => handleMergePr(log.prNumber, log.id)}
+                        disabled={isMergingPr === log.prNumber}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition cursor-pointer"
+                        title="Approve and Merge PR into main"
+                      >
+                        {isMergingPr === log.prNumber ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Check className="w-3.5 h-3.5" />
+                        )}
+                        <span>Merge PR</span>
+                      </button>
+                    )}
+
+                    {/* Rollback button */}
                     <button
                       type="button"
-                      onClick={() => handleRollback(log.id, log.targetFile)}
+                      onClick={() => handleRollback(log.id, log.targetFile, log.branch, log.prNumber)}
                       disabled={isCurrentRollingBack || isRolledBack}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
                         isRolledBack
                           ? 'bg-neutral-900 text-neutral-500 border-neutral-800 cursor-not-allowed'
                           : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border-rose-500/30'
                       }`}
-                      title={isRolledBack ? 'Already rolled back' : 'Restore pre-patch snapshot'}
+                      title={isRolledBack ? 'Already rolled back' : 'Restore pre-patch snapshot or close branch'}
                     >
                       {isCurrentRollingBack ? (
                         <>
@@ -1067,12 +1162,12 @@ export default function AiLiveCodePatcher({ backendUrl = '', token = '', showToa
                   {isConfirmingCommit ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Writing & Triggering HMR...</span>
+                      <span>{githubStatus?.githubConfigured ? 'Committing Branch & Opening PR...' : 'Writing & Triggering HMR...'}</span>
                     </>
                   ) : (
                     <>
-                      <Zap className="w-4 h-4 fill-current" />
-                      <span>Confirm & Apply Patch</span>
+                      <GitPullRequest className="w-4 h-4" />
+                      <span>{githubStatus?.githubConfigured ? 'Commit Branch & Create GitHub PR' : 'Confirm & Apply Patch'}</span>
                     </>
                   )}
                 </button>

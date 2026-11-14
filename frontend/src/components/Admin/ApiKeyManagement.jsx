@@ -20,6 +20,8 @@ export default function ApiKeyManagement({ backendUrl = '', token = '', showToas
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [testingKeyId, setTestingKeyId] = useState(null);
+  const [envFallbacks, setEnvFallbacks] = useState({ youtube: 0, gemini: 0 });
   
   // Form State
   const [service, setService] = useState('youtube');
@@ -47,6 +49,9 @@ export default function ApiKeyManagement({ backendUrl = '', token = '', showToas
       const data = await res.json();
       if (res.ok && data.success) {
         setKeys(data.keys || []);
+        if (data.envFallbacks) {
+          setEnvFallbacks(data.envFallbacks);
+        }
       } else {
         notify(data.error || 'Failed to fetch API keys', 'error');
       }
@@ -114,6 +119,46 @@ export default function ApiKeyManagement({ backendUrl = '', token = '', showToas
       }
     } catch (err) {
       notify('Network error: ' + err.message, 'error');
+    }
+  };
+
+  const handleToggleEnable = async (id, currentEnabled) => {
+    try {
+      const res = await fetch(`${cleanBackendUrl}/api/admin/keys/${id}/enable`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        notify(data.message, 'success');
+        setKeys(prev => prev.map(k => k._id === id ? { ...k, isEnabled: !currentEnabled, status: !currentEnabled ? 'Active' : 'Disabled' } : k));
+      } else {
+        notify(data.error || 'Failed to toggle enabled state', 'error');
+      }
+    } catch (err) {
+      notify('Network error: ' + err.message, 'error');
+    }
+  };
+
+  const handleTestKey = async (id) => {
+    setTestingKeyId(id);
+    try {
+      const res = await fetch(`${cleanBackendUrl}/api/admin/keys/${id}/test`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        notify(`Key Verified Healthy! Latency: ${data.testResult?.latencyMs || 0}ms`, 'success');
+        fetchKeys();
+      } else {
+        notify(`Key Test Failed: ${data.testResult?.message || data.error || 'Check quota or validity'}`, 'error');
+        fetchKeys();
+      }
+    } catch (err) {
+      notify('Network error during key test: ' + err.message, 'error');
+    } finally {
+      setTestingKeyId(null);
     }
   };
 
@@ -426,7 +471,34 @@ export default function ApiKeyManagement({ backendUrl = '', token = '', showToas
                       {k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleDateString() : 'Never'}
                     </td>
 
-                    <td className="py-2.5 px-3 text-right space-x-1.5 font-sans">
+                    <td className="py-2.5 px-3 text-right space-x-1.5 font-sans whitespace-nowrap">
+                      {/* Test key validity */}
+                      <button
+                        type="button"
+                        onClick={() => handleTestKey(k._id)}
+                        disabled={testingKeyId === k._id}
+                        className="px-2 py-1 rounded-lg text-[10px] font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 transition disabled:opacity-50 cursor-pointer inline-flex items-center gap-1"
+                        title="Test key handshake and verify live quota"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${testingKeyId === k._id ? 'animate-spin' : ''}`} />
+                        <span>Test</span>
+                      </button>
+
+                      {/* Enable / Disable key */}
+                      <button
+                        type="button"
+                        onClick={() => handleToggleEnable(k._id, k.isEnabled !== false)}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                          k.isEnabled === false
+                            ? 'bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-700'
+                            : 'bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 hover:bg-indigo-500/20'
+                        }`}
+                        title={k.isEnabled === false ? "Enable Key in runtime rotation" : "Disable Key from runtime rotation"}
+                      >
+                        {k.isEnabled === false ? 'Disabled' : 'Enabled'}
+                      </button>
+
+                      {/* Active / Exhaust toggle */}
                       <button
                         type="button"
                         onClick={() => handleToggleStatus(k._id, k.isExhausted)}
@@ -440,6 +512,7 @@ export default function ApiKeyManagement({ backendUrl = '', token = '', showToas
                         {k.isExhausted ? 'Re-activate' : 'Exhaust'}
                       </button>
 
+                      {/* Delete */}
                       <button
                         type="button"
                         onClick={() => handleDeleteKey(k._id)}

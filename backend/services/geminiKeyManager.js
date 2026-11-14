@@ -13,6 +13,7 @@
 import { GoogleGenAI } from '@google/genai';
 import mongoose from 'mongoose';
 import ApiKey from '../models/ApiKeyConfig.js';
+import { decryptApiKey, maskApiKey } from '../utils/keyEncryption.js';
 
 export const geminiDiagnostics = {
   totalCalls: 0,
@@ -67,21 +68,30 @@ export const invalidateGeminiKeyCache = () => {
 export const getActiveDbGeminiKeys = async () => {
   try {
     if (mongoose.connection && mongoose.connection.readyState === 1) {
+      const now = new Date();
       const dbKeys = await ApiKey.find({
         service: { $regex: /^gemini$/i },
-        isExhausted: { $ne: true },
-        status: { $regex: /^active$/i }
+        isEnabled: { $ne: false },
+        $or: [
+          { isExhausted: { $ne: true }, status: { $regex: /^active$/i } },
+          { cooldownUntil: { $lte: now } }
+        ]
       })
       .sort({ failureCount: 1, lastUsedAt: 1 })
       .lean();
 
       return dbKeys
-        .map(d => ({
-          key: sanitizeApiKey(d.key),
-          _id: d._id,
-          label: d.label || '',
-          source: 'mongodb'
-        }))
+        .map(d => {
+          const raw = decryptApiKey(d);
+          return {
+            key: sanitizeApiKey(raw),
+            _id: d._id,
+            label: d.label || '',
+            maskedKey: d.maskedKey || maskApiKey(raw),
+            source: 'mongodb',
+            isDbKey: true
+          };
+        })
         .filter(item => item.key && item.key.length > 5);
     }
   } catch (e) {
@@ -289,13 +299,13 @@ export async function executeGeminiOperation(operationFn, options = {}) {
     try {
       return await executeWithModel(requestedModel);
     } catch (modelErr) {
-      // If configured model 404s or 429 quota exhausts, cascade to fallback models (e.g. gemini-3.1-flash-lite, gemini-3.8-flash)
+      // If configured model 404s (not found), cascade to fallback models (gemini-3.1-flash-lite, gemini-3.8-flash)
+      // Note: If 429 quota exhaustion, throw immediately so key failover rotates to next API key!
       const is404 = modelErr.status === 404 || String(modelErr.message || '').includes('not found') || String(modelErr.message || '').includes('no longer available');
-      const is429 = isQuotaError(modelErr);
 
-      if ((is404 || is429) && requestedModel !== 'gemini-3.1-flash-lite') {
+      if (is404 && requestedModel !== 'gemini-3.1-flash-lite') {
         try {
-          console.warn(`[GeminiKeyManager] Model ${requestedModel} encountered ${is429 ? 'quota limit (429)' : 'not found (404)'} for ${opName}. Auto-cascading to gemini-3.1-flash-lite...`);
+          console.warn(`[GeminiKeyManager] Model ${requestedModel} encountered not found (404) for ${opName}. Auto-cascading to gemini-3.1-flash-lite...`);
           return await executeWithModel('gemini-3.1-flash-lite');
         } catch (cascadeErr) {
           if (requestedModel !== 'gemini-3.8-flash' && !isQuotaError(cascadeErr)) {

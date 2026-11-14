@@ -12,7 +12,7 @@ import User from '../models/User.js';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import { multiModelOrchestrator } from '../services/multiModelOrchestrator.js';
 import { GEMINI_CONFIG, isGeminiAvailable } from '../config/geminiConfig.js';
-import { sanitizeLogMessage } from '../services/geminiKeyManager.js';
+import { executeGeminiOperation, sanitizeLogMessage } from '../services/geminiKeyManager.js';
 
 const router = express.Router();
 
@@ -589,24 +589,24 @@ export async function generateAvatarGreeting(options = {}) {
   const prompt = `Current time of day: ${timeContext}. Generate one witty, cheeky Hinglish greeting (under 15 words) welcoming the user back.`;
 
   try {
-    const client = new GoogleGenAI({ apiKey: GEMINI_CONFIG.apiKey });
-    // Race Gemini against a 2500ms timeout for zero perceived lag
-    const geminiPromise = client.models.generateContent({
-      model: GEMINI_CONFIG.chatModel || 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        systemInstruction,
-        temperature: 0.85,
-        maxOutputTokens: 60
-      }
+    const opResult = await executeGeminiOperation(async ({ client, modelName }) => {
+      const res = await client.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: {
+          systemInstruction,
+          temperature: 0.85,
+          maxOutputTokens: 60
+        }
+      });
+      return res?.text || '';
+    }, {
+      requestedModel: GEMINI_CONFIG.chatModel || 'gemini-2.5-flash',
+      operationName: 'VoiceAgent:Greeting',
+      timeoutMs: 2500
     });
 
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('GEMINI_GREETING_TIMEOUT')), 2500);
-    });
-
-    const res = await Promise.race([geminiPromise, timeoutPromise]);
-    let text = res?.text || '';
+    let text = opResult.success ? (opResult.data || '') : '';
     // Clean quotes, emojis, markdown and extra whitespaces
     text = text.replace(/^["'`“”]+|["'`“”]+$/g, '').trim();
     text = text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();

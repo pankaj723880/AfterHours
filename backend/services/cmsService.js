@@ -253,6 +253,160 @@ export const getDefaultSiteConfig = () => ({
         content: 'All audio streams are rendered client-side through YouTube IFrame API compliant with all platform developer policies.'
       }
     ]
+  },
+  pages: [
+    {
+      route: 'home',
+      title: 'High-Fidelity Retro & Modern Lounge',
+      subtitle: 'Drop the needle on curated trending hits, nostalgia stations, or search any track.',
+      seoTitle: 'Loopra | Retro & Modern Music Streaming Sanctuary',
+      seoDescription: 'Stream evergreen Bollywood hits, 90s nostalgia radio, and curated trending tracks.',
+      enabled: true,
+      bannerImage: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=1600&auto=format&fit=crop',
+      badge: 'Main Stage'
+    },
+    {
+      route: 'discover',
+      title: 'Explore Global Music Catalog',
+      subtitle: 'Instant playback from millions of YouTube tracks, albums, and live sessions',
+      seoTitle: 'Discover Songs & Playlists | Loopra',
+      seoDescription: 'Search and explore millions of songs, retro melodies, and trending tracks.',
+      enabled: true,
+      badge: 'Catalog'
+    },
+    {
+      route: 'radio',
+      title: 'Indian Live Radio Stations',
+      subtitle: 'Tune into live uninterrupted FM broadcasts across India',
+      seoTitle: 'Indian Live Radio | Loopra',
+      seoDescription: 'Live streaming Indian FM stations including Radio Mirchi, Vividh Bharati, and City FM.',
+      enabled: true,
+      badge: 'Live FM'
+    },
+    {
+      route: 'dj-club',
+      title: 'Loopra 3D DJ Club Stage',
+      subtitle: 'Live dual-deck mixing, real-time audio filters, 3D lighting, and visualizer',
+      seoTitle: 'Loopra 3D DJ Club | Interactive Turntable Experience',
+      seoDescription: 'Interactive dual-deck audio mixing, beat matching, and 3D club atmosphere.',
+      enabled: true,
+      badge: '3D Club'
+    },
+    {
+      route: 'mood',
+      title: 'Mood-to-Music AI',
+      subtitle: 'Tell Loopra how you feel and get an instant personalized mix tailored to your vibe',
+      seoTitle: 'Mood to Music AI | Loopra',
+      seoDescription: 'Generate custom music mixes matching your emotion, mood, and current energy.',
+      enabled: true,
+      badge: 'AI Powered'
+    },
+    {
+      route: 'timemachine',
+      title: 'Time Machine Radio',
+      subtitle: 'Select a golden decade of music to travel back in time through vintage audio',
+      seoTitle: 'Time Machine Retro Radio | Loopra',
+      seoDescription: 'Travel through 70s vinyl, 80s ghazals, 90s romance, and 2000s Bollywood hits.',
+      enabled: true,
+      badge: 'Retro'
+    },
+    {
+      route: 'activity',
+      title: 'Live Listening Pulse',
+      subtitle: 'Real-time feed of what Loopra users are listening to and loving across the network',
+      seoTitle: 'Live Listening Activity | Loopra',
+      seoDescription: 'See real-time song plays, favorites, and listening trends across the globe.',
+      enabled: true,
+      badge: 'Social Pulse'
+    },
+    {
+      route: 'swipe',
+      title: 'Discover Swipe Deck',
+      subtitle: 'Swipe right to add to your favourites, swipe left to skip to the next preview',
+      seoTitle: 'Discover Swipe | Loopra',
+      seoDescription: 'Fast, swipe-based music exploration and playlist discovery.',
+      enabled: true,
+      badge: 'Interactive'
+    },
+    {
+      route: 'download',
+      title: 'Download Loopra for Android',
+      subtitle: 'Immersive 3D audio streaming, offline playback, background playback & live radio in a lightweight APK',
+      seoTitle: 'Download Loopra Android APK (v1.0.0)',
+      seoDescription: 'Download the official Loopra Android APK for background audio, PiP video, and offline playback.',
+      enabled: true,
+      badge: 'Official App'
+    }
+  ],
+  homeSections: [
+    {
+      id: 'hero',
+      title: 'Featured Spotlight',
+      subtitle: 'Today top recommendations and atmospheric lounge',
+      badge: 'Featured',
+      enabled: true,
+      order: 1,
+      displayLimit: 1
+    },
+    {
+      id: 'curated_row',
+      title: 'Curated Just For You',
+      subtitle: 'Tailored selections based on your listening taste and favorites',
+      badge: 'For You',
+      enabled: true,
+      order: 2,
+      displayLimit: 12
+    },
+    {
+      id: 'stations_row',
+      title: 'Nostalgia Radio Stations',
+      subtitle: '90s Saloon FM, Highway Truck Melodies, and Late-Night Theka Sessions',
+      badge: 'Nostalgia',
+      enabled: true,
+      order: 3,
+      displayLimit: 6
+    },
+    {
+      id: 'trending_row',
+      title: 'Trending Hindi Hits',
+      subtitle: 'The hottest chartbusters and most replayed tracks right now',
+      badge: 'Hot',
+      enabled: true,
+      order: 4,
+      displayLimit: 12
+    },
+    {
+      id: 'artists_row',
+      title: 'Popular Artists & Legends',
+      subtitle: 'Evergreen voices from Kishore Kumar to Arijit Singh',
+      badge: 'Artists',
+      enabled: true,
+      order: 5,
+      displayLimit: 18
+    },
+    {
+      id: 'albums_row',
+      title: 'Iconic Albums & Soundtracks',
+      subtitle: 'Complete soundtracks from timeless cinematic masterpieces',
+      badge: 'Soundtracks',
+      enabled: true,
+      order: 6,
+      displayLimit: 12
+    }
+  ],
+  featureControls: {
+    djClubEnabled: true,
+    moodAiEnabled: true,
+    timeMachineEnabled: true,
+    activityFeedEnabled: true,
+    discoverSwipeEnabled: true,
+    voiceAgentEnabled: true,
+    aiChatEnabled: true,
+    offlineDownloadsEnabled: true,
+    ratingsPopupEnabled: true,
+    lyricsEnabled: true,
+    sleepTimerEnabled: true,
+    listeningRoomsEnabled: true
   }
 });
 
@@ -537,6 +691,9 @@ export const cmsService = {
         playerDefaults: { ...defaults.playerDefaults, ...(config.playerDefaults || {}) },
         searchPage: { ...defaults.searchPage, ...(config.searchPage || {}) },
         footer: { ...defaults.footer, ...(config.footer || {}) },
+        pages: (config.pages || defaults.pages || []).filter(p => p && p.enabled !== false),
+        homeSections: (config.homeSections || defaults.homeSections || []).filter(s => s && s.enabled !== false).sort((a, b) => (a.order || 0) - (b.order || 0)),
+        featureControls: { ...defaults.featureControls, ...(config.featureControls || {}) },
         featuredCollections: (featuredCollections || []).map(c => ({
           id: c._id.toString(),
           name: c.name,
@@ -669,6 +826,9 @@ export const cmsService = {
       stations: Array.isArray(draft.stations) && draft.stations.length > 0 ? draft.stations : defaults.stations,
       timeMachineEras: Array.isArray(draft.timeMachineEras) && draft.timeMachineEras.length > 0 ? draft.timeMachineEras : defaults.timeMachineEras,
       navigation: normalizeNavigationList(Array.isArray(draft.navigation) && draft.navigation.length > 0 ? draft.navigation : defaults.navigation),
+      pages: Array.isArray(draft.pages) && draft.pages.length > 0 ? draft.pages : defaults.pages,
+      homeSections: Array.isArray(draft.homeSections) && draft.homeSections.length > 0 ? draft.homeSections : defaults.homeSections,
+      featureControls: { ...defaults.featureControls, ...(draft.featureControls || {}) },
       playerDefaults: { ...defaults.playerDefaults, ...(draft.playerDefaults || {}) }
     };
   },
@@ -726,6 +886,9 @@ export const cmsService = {
       stations: Array.isArray(safeData.stations) ? safeData.stations : (existingDraft.stations || defaults.stations),
       timeMachineEras: Array.isArray(safeData.timeMachineEras) ? safeData.timeMachineEras : (existingDraft.timeMachineEras || defaults.timeMachineEras),
       navigation: normalizeNavigationList(Array.isArray(safeData.navigation) ? safeData.navigation : (existingDraft.navigation || defaults.navigation)),
+      pages: Array.isArray(safeData.pages) ? safeData.pages : (existingDraft.pages || defaults.pages),
+      homeSections: Array.isArray(safeData.homeSections) ? safeData.homeSections : (existingDraft.homeSections || defaults.homeSections),
+      featureControls: { ...defaults.featureControls, ...(existingDraft.featureControls || {}), ...(safeData.featureControls || {}) },
       playerDefaults: { ...defaults.playerDefaults, ...(existingDraft.playerDefaults || {}), ...(safeData.playerDefaults || {}) },
       searchPage: { ...defaults.searchPage, ...(existingDraft.searchPage || {}), ...(safeData.searchPage || {}) },
       footer: { ...defaults.footer, ...(existingDraft.footer || {}), ...(safeData.footer || {}) },

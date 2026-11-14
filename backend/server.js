@@ -12,6 +12,7 @@ import { OAuth2Client } from 'google-auth-library';
 import User from './models/User.js';
 import AuditLog from './models/AuditLog.js';
 import ApiKey from './models/ApiKeyConfig.js';
+import { getEligibleKeys, recordKeySuccess, recordKeyFailure } from './services/keyResolverService.js';
 import { generateToken, verifyToken, authenticateToken, requireAdmin } from './middleware/auth.js';
 import { metricsService } from './services/metrics.js';
 import adminRoutes from './routes/admin.js';
@@ -1499,15 +1500,14 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
     return res.json(cached);
   }
 
-  // 1. Try YouTube Data API v3 with active, non-dead rotating keys
-  const allKeys = getYoutubeApiKeys();
-  const activeKeys = allKeys.filter(k => !isKeyDead(k));
+  // 1. Try YouTube Data API v3 with centralized key resolver (DB prioritized, then env fallback)
+  const eligibleKeyRecords = await getEligibleKeys('youtube');
 
-  if (activeKeys.length > 0) {
-    const maxKeyTries = Math.min(activeKeys.length, 5);
+  if (eligibleKeyRecords.length > 0) {
+    const maxKeyTries = Math.min(eligibleKeyRecords.length, 5);
     for (let i = 0; i < maxKeyTries; i++) {
-      const apiKeyIndex = (currentApiKeyIndex + i) % activeKeys.length;
-      const apiKey = activeKeys[apiKeyIndex];
+      const keyInfo = eligibleKeyRecords[i];
+      const apiKey = keyInfo.key;
       try {
         const upstreamLimit = Math.min(Math.max(limit * 2, 25), 50);
         const params = {
@@ -1523,11 +1523,13 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
 
         const response = await axios.get('https://www.googleapis.com/youtube/v3/search', {
           params,
-          timeout: 2500
+          timeout: 3000
         });
 
         if (response.data && Array.isArray(response.data.items)) {
-          currentApiKeyIndex = apiKeyIndex;
+          // Record key success telemetry
+          await recordKeySuccess(keyInfo);
+
           const rawMapped = response.data.items.map(item => {
             const videoId = item.id?.videoId || item.id;
             return {
@@ -1578,18 +1580,22 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
         const errReason = errData?.errors?.[0]?.reason || '';
         console.warn(`[YouTube API Upstream] Key attempt failed (${status}):`, errMsg);
 
+        // Record key failure in centralized telemetry with quota tracking
+        await recordKeyFailure(keyInfo, {
+          status,
+          reason: errReason,
+          message: errMsg
+        });
+
         if (status === 400 || (errMsg && errMsg.includes('API key not valid')) || errReason === 'keyInvalid') {
           deadApiKeys.set(apiKey, { reason: 'invalid', time: Date.now() });
           metricsService.recordYouTube('invalid_key');
-          ApiKey.updateOne({ service: 'youtube', key: apiKey }, { $set: { isExhausted: true }, $inc: { failureCount: 1 } }).catch(() => {});
         } else if (status === 403 || errReason === 'quotaExceeded' || errReason === 'dailyLimitExceeded' || (errMsg && errMsg.includes('quota'))) {
           deadApiKeys.set(apiKey, { reason: 'quota', time: Date.now() });
           metricsService.recordYouTube('quota');
-          ApiKey.updateOne({ service: 'youtube', key: apiKey }, { $set: { isExhausted: true }, $inc: { failureCount: 1 } }).catch(() => {});
         } else if (status === 429 || errReason === 'rateLimitExceeded' || errReason === 'userRateLimitExceeded') {
           deadApiKeys.set(apiKey, { reason: 'rate_limit', time: Date.now() });
           metricsService.recordYouTube('rate_limit');
-          ApiKey.updateOne({ service: 'youtube', key: apiKey }, { $inc: { failureCount: 1 } }).catch(() => {});
         } else if (status >= 500) {
           deadApiKeys.set(apiKey, { reason: 'server_error', time: Date.now() });
           metricsService.recordYouTube('server_error');

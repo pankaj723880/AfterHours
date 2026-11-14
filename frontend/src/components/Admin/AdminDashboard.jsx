@@ -13,6 +13,7 @@ import {
   Radio,
   Globe,
   Layout,
+  Layers,
   ListMusic,
   Image as ImageIcon,
   History,
@@ -46,6 +47,9 @@ import CmsLayoutEditor from './CmsLayoutEditor';
 import CmsMusicManager from './CmsMusicManager';
 import CmsMediaLibrary from './CmsMediaLibrary';
 import CmsPublishingHistory from './CmsPublishingHistory';
+import CmsPageManager from './CmsPageManager';
+import CmsSectionManager from './CmsSectionManager';
+import CmsFeatureManager from './CmsFeatureManager';
 import AiLearningIntelligence from './AiLearningIntelligence';
 import VoiceControlManagement from './VoiceControlManagement';
 import AiLiveCodePatcher from './AiLiveCodePatcher';
@@ -379,7 +383,10 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
   // Navigation Items Grouped by Category
   const cmsNavItems = [
     { id: 'cms_settings', label: 'Global Branding', icon: Globe },
-    { id: 'cms_layout', label: 'Layout & Navigation', icon: Layout },
+    { id: 'cms_pages', label: 'Page & Route Manager', icon: Layout },
+    { id: 'cms_sections', label: 'Home Section Manager', icon: Layers },
+    { id: 'cms_features', label: 'Feature Controls', icon: Sliders },
+    { id: 'cms_layout', label: 'Sidebar & Nav Drawer', icon: Layout },
     { id: 'cms_music', label: 'Curated Music & Stations', icon: ListMusic },
     { id: 'cms_media', label: 'Media Library', icon: ImageIcon },
     { id: 'cms_publish', label: 'Publishing & History', icon: History, badge: cmsPublishedMeta ? `Rev #${cmsPublishedMeta.version}` : null }
@@ -404,9 +411,12 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
   // Primary V2 Category Pill Tabs for sleek mobile horizontal strip
   const mobilePillTabs = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'cms_pages', label: 'Pages', icon: Layout },
+    { id: 'cms_sections', label: 'Sections', icon: Layers },
+    { id: 'cms_features', label: 'Features', icon: Sliders },
+    { id: 'cms_settings', label: 'CMS', icon: Globe },
     { id: 'live_patcher', label: 'Live Patcher', icon: Zap },
     { id: 'traffic', label: 'Live Traffic', icon: Activity },
-    { id: 'cms_settings', label: 'CMS', icon: Globe },
     { id: 'ai_learning', label: 'AI Engine', icon: Brain },
     { id: 'health', label: 'Diagnostics', icon: Server },
     { id: 'audit', label: 'Audit', icon: ShieldCheck }
@@ -722,6 +732,30 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               onPublishLive={() => handlePublishLive('Published from Global Settings')}
               isSavingDraft={isSavingDraft}
               isPublishingLive={isPublishingLive}
+            />
+          )}
+
+          {activeSubTab === 'cms_pages' && (
+            <CmsPageManager
+              draft={cmsDraft}
+              onUpdateDraft={handleUpdateDraft}
+              showToast={showToast}
+            />
+          )}
+
+          {activeSubTab === 'cms_sections' && (
+            <CmsSectionManager
+              draft={cmsDraft}
+              onUpdateDraft={handleUpdateDraft}
+              showToast={showToast}
+            />
+          )}
+
+          {activeSubTab === 'cms_features' && (
+            <CmsFeatureManager
+              draft={cmsDraft}
+              onUpdateDraft={handleUpdateDraft}
+              showToast={showToast}
             />
           )}
 

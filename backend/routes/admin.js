@@ -12,6 +12,19 @@ import { metricsService } from '../services/metrics.js';
 import { liveUsersService } from '../services/liveUsersService.js';
 import { ADMIN_MANAGED_ENTITIES, EXCLUDED_INTERNAL_ENTITIES } from '../config/adminEntityRegistry.js';
 import { executeGeminiOperation, sanitizeLogMessage, invalidateGeminiKeyCache } from '../services/geminiKeyManager.js';
+import { encryptApiKey, decryptApiKey, maskApiKey } from '../utils/keyEncryption.js';
+import { testKeyHealth, invalidateKeyPoolCache, getEnvironmentFallbackKeys } from '../services/keyResolverService.js';
+import { 
+  isGitHubConfigured, 
+  verifyGitHubConnection, 
+  getRepositoryTree, 
+  getFileContent, 
+  createPatchBranch, 
+  commitFilesToBranch, 
+  createPullRequest, 
+  mergePullRequest, 
+  rollbackPatchBranch 
+} from '../services/githubService.js';
 
 const router = express.Router();
 
@@ -931,25 +944,57 @@ const maskKey = (key = '') => {
 };
 
 // ==========================================
-// 13. Dynamic Multi-Key Pool Management
+// 13. Dynamic Multi-Key Pool Management (AES-256 Encrypted Storage & Telemetry)
 // ==========================================
 
-// GET /api/admin/keys - List all keys (masked for security)
+// GET /api/admin/keys - List all keys (strictly masked for security, with full health telemetry)
 router.get('/keys', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const keys = await ApiKey.find().sort({ createdAt: -1 }).lean();
-    const formatted = keys.map(k => ({
-      ...k,
-      maskedKey: maskKey(k.key),
-      rawKeyLength: k.key?.length || 0
-    }));
-    res.json({ success: true, keys: formatted });
+    const keys = await ApiKey.find().sort({ createdAt: -1 });
+    const formatted = keys.map(k => {
+      let masked = k.maskedKey;
+      if (!masked) {
+        const rawKey = decryptApiKey(k);
+        masked = maskApiKey(rawKey);
+      }
+      return {
+        _id: k._id,
+        service: k.service,
+        maskedKey: masked,
+        label: k.label || '',
+        status: k.status || 'Active',
+        isEnabled: k.isEnabled !== false,
+        isExhausted: Boolean(k.isExhausted),
+        failureCount: k.failureCount || 0,
+        successCount: k.successCount || 0,
+        lastUsedAt: k.lastUsedAt,
+        lastSuccessAt: k.lastSuccessAt,
+        lastErrorAt: k.lastErrorAt,
+        lastErrorMessage: k.lastErrorMessage || '',
+        lastErrorReason: k.lastErrorReason || '',
+        cooldownUntil: k.cooldownUntil,
+        createdAt: k.createdAt
+      };
+    });
+
+    // Also get counts of environment fallback keys
+    const ytEnvCount = getEnvironmentFallbackKeys('youtube').length;
+    const geminiEnvCount = getEnvironmentFallbackKeys('gemini').length;
+
+    res.json({ 
+      success: true, 
+      keys: formatted,
+      envFallbacks: {
+        youtube: ytEnvCount,
+        gemini: geminiEnvCount
+      }
+    });
   } catch (err) {
     res.status(500).json({ error: 'Failed to retrieve API keys: ' + err.message });
   }
 });
 
-// POST /api/admin/keys - Add single or bulk keys
+// POST /api/admin/keys - Add single or bulk keys with AES-256 encryption at rest
 router.post('/keys', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { service, rawKeys, key, label } = req.body;
@@ -974,35 +1019,51 @@ router.post('/keys', authenticateToken, requireAdmin, async (req, res) => {
     let duplicateCount = 0;
     const addedKeys = [];
 
+    // Pre-fetch existing keys for fast duplicate detection
+    const existingDocs = await ApiKey.find({ service: targetService }).lean();
+    const existingMasks = new Set(existingDocs.map(d => d.maskedKey || maskApiKey(decryptApiKey(d))));
+
     for (const singleKey of parsedKeys) {
-      const exists = await ApiKey.findOne({ service: targetService, key: singleKey });
-      if (exists) {
+      const masked = maskApiKey(singleKey);
+      if (existingMasks.has(masked)) {
         duplicateCount++;
         continue;
       }
 
+      // Encrypt API key with AES-256-GCM
+      const { encryptedKey, iv, authTag } = encryptApiKey(singleKey);
+
       const newKey = await ApiKey.create({
         service: targetService,
-        key: singleKey,
+        encryptedKey,
+        iv,
+        authTag,
+        key: '', // Strictly zero plaintext storage
+        maskedKey: masked,
         label: label ? label.trim() : '',
         status: 'Active',
+        isEnabled: true,
         isExhausted: false,
         failureCount: 0,
+        successCount: 0,
         createdAt: new Date(),
         lastUsedAt: new Date()
       });
 
+      existingMasks.add(masked);
       addedKeys.push({
         _id: newKey._id,
         service: newKey.service,
-        maskedKey: maskKey(newKey.key),
+        maskedKey: newKey.maskedKey,
         label: newKey.label,
         status: newKey.status,
-        isExhausted: newKey.isExhausted
+        isEnabled: true,
+        isExhausted: false
       });
       addedCount++;
     }
 
+    invalidateKeyPoolCache(targetService);
     if (targetService === 'gemini') {
       invalidateGeminiKeyCache();
     }
@@ -1028,6 +1089,57 @@ router.post('/keys', authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
+// POST /api/admin/keys/:id/test - Run live dry-run health validation test for a specific key
+router.post('/keys/:id/test', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const keyDoc = await ApiKey.findById(req.params.id);
+    if (!keyDoc) {
+      return res.status(404).json({ error: 'API key not found' });
+    }
+
+    const plainKey = decryptApiKey(keyDoc);
+    if (!plainKey) {
+      return res.status(400).json({ error: 'Unable to decrypt API key for validation' });
+    }
+
+    const testResult = await testKeyHealth(keyDoc.service, plainKey);
+
+    // Update key doc telemetry from test result
+    if (testResult.success) {
+      keyDoc.status = 'Active';
+      keyDoc.isExhausted = false;
+      keyDoc.cooldownUntil = null;
+      keyDoc.lastSuccessAt = new Date();
+      keyDoc.lastUsedAt = new Date();
+    } else {
+      keyDoc.lastErrorAt = new Date();
+      keyDoc.lastErrorMessage = testResult.message;
+      if (testResult.isQuota) {
+        keyDoc.status = 'Exhausted';
+        keyDoc.isExhausted = true;
+        keyDoc.cooldownUntil = new Date(Date.now() + 6 * 60 * 60 * 1000);
+      }
+    }
+    await keyDoc.save();
+    invalidateKeyPoolCache(keyDoc.service);
+
+    res.json({
+      success: testResult.success,
+      testResult,
+      key: {
+        _id: keyDoc._id,
+        service: keyDoc.service,
+        maskedKey: keyDoc.maskedKey,
+        status: keyDoc.status,
+        isExhausted: keyDoc.isExhausted,
+        latencyMs: testResult.latencyMs
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Key health test failed: ' + err.message });
+  }
+});
+
 // PATCH /api/admin/keys/:id/toggle - Toggle exhausted / active status
 router.patch('/keys/:id/toggle', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -1040,9 +1152,11 @@ router.patch('/keys/:id/toggle', authenticateToken, requireAdmin, async (req, re
     keyDoc.status = keyDoc.isExhausted ? 'Exhausted' : 'Active';
     if (!keyDoc.isExhausted) {
       keyDoc.failureCount = 0;
+      keyDoc.cooldownUntil = null;
     }
     await keyDoc.save();
 
+    invalidateKeyPoolCache(keyDoc.service);
     if (keyDoc.service && keyDoc.service.toLowerCase() === 'gemini') {
       invalidateGeminiKeyCache();
     }
@@ -1053,7 +1167,7 @@ router.patch('/keys/:id/toggle', authenticateToken, requireAdmin, async (req, re
       key: {
         _id: keyDoc._id,
         service: keyDoc.service,
-        maskedKey: maskKey(keyDoc.key),
+        maskedKey: keyDoc.maskedKey || maskApiKey(decryptApiKey(keyDoc)),
         status: keyDoc.status,
         isExhausted: keyDoc.isExhausted,
         failureCount: keyDoc.failureCount
@@ -1064,14 +1178,59 @@ router.patch('/keys/:id/toggle', authenticateToken, requireAdmin, async (req, re
   }
 });
 
+// PATCH /api/admin/keys/:id/enable - Enable or disable key from runtime rotation
+router.patch('/keys/:id/enable', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const keyDoc = await ApiKey.findById(req.params.id);
+    if (!keyDoc) {
+      return res.status(404).json({ error: 'API key not found' });
+    }
+
+    keyDoc.isEnabled = !keyDoc.isEnabled;
+    if (!keyDoc.isEnabled) {
+      keyDoc.status = 'Disabled';
+    } else {
+      keyDoc.status = keyDoc.isExhausted ? 'Exhausted' : 'Active';
+    }
+    await keyDoc.save();
+
+    invalidateKeyPoolCache(keyDoc.service);
+    if (keyDoc.service && keyDoc.service.toLowerCase() === 'gemini') {
+      invalidateGeminiKeyCache();
+    }
+
+    res.json({
+      success: true,
+      message: `Key ${keyDoc.isEnabled ? 'Enabled' : 'Disabled'}`,
+      key: {
+        _id: keyDoc._id,
+        service: keyDoc.service,
+        maskedKey: keyDoc.maskedKey || maskApiKey(decryptApiKey(keyDoc)),
+        isEnabled: keyDoc.isEnabled,
+        status: keyDoc.status
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to toggle key enabled state: ' + err.message });
+  }
+});
+
 // POST /api/admin/keys/reset-all - Reset all exhausted keys back to active
 router.post('/keys/reset-all', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const result = await ApiKey.updateMany(
       { $or: [{ isExhausted: true }, { status: 'Exhausted' }] },
-      { $set: { isExhausted: false, status: 'Active', failureCount: 0 } }
+      { 
+        $set: { 
+          isExhausted: false, 
+          status: 'Active', 
+          failureCount: 0,
+          cooldownUntil: null
+        } 
+      }
     );
 
+    invalidateKeyPoolCache();
     invalidateGeminiKeyCache();
 
     await AuditLog.create({
@@ -1103,6 +1262,7 @@ router.delete('/keys/:id', authenticateToken, requireAdmin, async (req, res) => 
 
     await ApiKey.findByIdAndDelete(req.params.id);
 
+    invalidateKeyPoolCache(keyDoc.service);
     if (keyDoc.service && keyDoc.service.toLowerCase() === 'gemini') {
       invalidateGeminiKeyCache();
     }
@@ -1128,7 +1288,7 @@ router.delete('/keys/:id', authenticateToken, requireAdmin, async (req, res) => 
 });
 
 // ==========================================
-// 14. AI In-App Live Code Patcher & Rollback
+// 14. AI Live Code Patcher & GitHub Repository Pipeline
 // ==========================================
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1164,33 +1324,35 @@ const savePatchLogs = async (logs) => {
 };
 
 /**
- * Validates and resolves the target file path to an absolute disk path under frontend/src/.
- * Removes strict whitelisting and accepts relative paths like:
- *   - src/App.jsx
- *   - frontend/src/App.jsx
- *   - components/Admin/AdminDashboard.jsx
- *   - /components/Navigation/LoopraFooter.jsx
+ * Validates and resolves the target file path safely.
+ * Allows repository-wide safe modifications (frontend, backend, shared config).
+ * Strictly forbids directory traversal, .env files, private keys, or credentials.
  */
 const resolveSafeTargetFilePath = (targetPath = '') => {
   if (!targetPath || typeof targetPath !== 'string') {
     throw new Error('Target file path is required');
   }
 
-  // Normalize path separators and strip leading slashes and prefixes
-  let normalizedInput = targetPath.trim().replace(/\\/g, '/');
-  normalizedInput = normalizedInput.replace(/^(?:\/+|frontend\/src\/+|src\/+)/i, '');
+  let normalized = targetPath.trim().replace(/\\/g, '/').replace(/^\/+/g, '');
+  
+  // Security Boundary: Block secrets and system paths
+  const blockedPatterns = [/\.env(?:\..*)?$/i, /key.*\.pem$/i, /id_rsa/i, /credentials/i, /secrets/i];
+  for (const pattern of blockedPatterns) {
+    if (pattern.test(normalized)) {
+      throw new Error(`Security Block: Access to sensitive file "${normalized}" is strictly prohibited.`);
+    }
+  }
 
-  const absoluteTarget = path.resolve(FRONTEND_SRC, normalizedInput);
+  const absoluteTarget = path.resolve(PROJECT_ROOT, normalized);
+  const relativeToRoot = path.relative(PROJECT_ROOT, absoluteTarget).replace(/\\/g, '/');
 
-  // Path boundary check to prevent directory traversal outside frontend/src/
-  const relativeToSrc = path.relative(FRONTEND_SRC, absoluteTarget);
-  if (relativeToSrc.startsWith('..') || path.isAbsolute(relativeToSrc)) {
-    throw new Error('Access denied: Operations are restricted strictly within frontend/src/');
+  if (relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
+    throw new Error('Access denied: Operations are restricted strictly within project workspace');
   }
 
   return {
     absoluteTarget,
-    relativeTarget: `src/${relativeToSrc.replace(/\\/g, '/')}`
+    relativeTarget: relativeToRoot
   };
 };
 
@@ -1200,12 +1362,8 @@ const resolveSafeTargetFilePath = (targetPath = '') => {
 const stripMarkdownBackticks = (raw = '') => {
   if (!raw || typeof raw !== 'string') return '';
   let cleaned = raw.trim();
-
-  // Strip leading code fences e.g. ```javascript, ```jsx, ```
-  cleaned = cleaned.replace(/^```(?:[a-zA-Z0-9_\-+]*\s*\n)?/i, '');
-  // Strip trailing code fence
-  cleaned = cleaned.replace(/\n?```\s*$/i, '');
-
+  cleaned = cleaned.replace(/^\`\`(?:[a-zA-Z0-9_\-+]*\s*\n)?/i, '');
+  cleaned = cleaned.replace(/\n?\\`\`\s*$/i, '');
   return cleaned.trim();
 };
 
@@ -1219,7 +1377,7 @@ const generateStructuredDiff = (original = '', modified = '') => {
   const maxLines = Math.max(origLines.length, modLines.length);
   let changeCount = 0;
 
-  for (let i = 0; i < maxLines && changeCount < 200; i++) {
+  for (let i = 0; i < maxLines && changeCount < 300; i++) {
     const o = origLines[i];
     const m = modLines[i];
     if (o !== m) {
@@ -1259,120 +1417,32 @@ const applySearchReplaceBlocks = (originalCode, patchOutput) => {
   return patchOutput;
 };
 
-/**
- * Recursively scans frontend/src to gather all source file paths (.jsx, .js, .css, .json).
- */
-const scanFrontendSourceFiles = async (dir = FRONTEND_SRC) => {
-  const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-  const files = await Promise.all(
-    entries.map(async (entry) => {
-      const fullPath = path.resolve(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name.startsWith('.') || entry.name === 'node_modules') return [];
-        return await scanFrontendSourceFiles(fullPath);
-      }
-      const ext = path.extname(entry.name).toLowerCase();
-      if (['.jsx', '.js', '.css', '.json', '.html'].includes(ext)) {
-        const relativeToSrc = path.relative(FRONTEND_SRC, fullPath).replace(/\\/g, '/');
-        return [`src/${relativeToSrc}`];
-      }
-      return [];
-    })
-  );
-  return files.flat();
-};
-
-/**
- * Checks whether the environment is running in a hosted serverless / read-only production environment (e.g. Vercel, AWS Lambda, Render read-only disk).
- */
-const isReadOnlyFilesystem = () => {
-  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.RENDER || process.env.READ_ONLY_FS === 'true') {
-    return true;
-  }
+// GET /api/admin/git/status - Check GitHub connectivity and repo config
+router.get('/git/status', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const testFile = path.resolve(FRONTEND_SRC, '.write_test_tmp');
-    fs.writeFileSync(testFile, 'test', 'utf-8');
-    fs.unlinkSync(testFile);
-    return false;
+    const status = await verifyGitHubConnection();
+    res.json({
+      success: true,
+      githubConfigured: isGitHubConfigured(),
+      ...status
+    });
   } catch (err) {
-    return true;
+    res.status(500).json({ error: 'Failed to verify GitHub connection: ' + err.message });
   }
-};
+});
 
-/**
- * Smart Target Resolver:
- * Instantly resolves keyword/regex patterns without scanning files or calling Gemini with repository data.
- * If target is 'auto', words like 'loopra', 'brand', 'navbar', etc. immediately map to 'src/App.jsx'.
- */
-const resolveSmartTargetFile = (instructionPrompt = '') => {
-  const promptLower = (instructionPrompt || '').toLowerCase();
-
-  // 1. Core regex match for Loopra, brand, navbar, title, header -> src/App.jsx
-  if (/\b(loopra|brand|navbar|logo|header|dock|title\s*bar|brand\s*name)\b/i.test(promptLower)) {
-    return 'src/App.jsx';
+// GET /api/admin/git/tree - Retrieve repository tree for file explorer / target selection
+router.get('/git/tree', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const tree = await getRepositoryTree();
+    res.json({
+      success: true,
+      tree: Array.isArray(tree) ? tree.slice(0, 500) : []
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve repository tree: ' + err.message });
   }
-
-  // 2. High-confidence heuristic keyword mapping (0ms instant resolution)
-  const keywordMap = [
-    { regex: /\b(footer|copyright|disclaimer|policy\s*link)\b/i, file: 'src/components/Navigation/LoopraFooter.jsx' },
-    { regex: /\b(bottomnav|mobile\s*nav|bottom\s*bar|mobile\s*tab)\b/i, file: 'src/components/Navigation/MobileBottomNav.jsx' },
-    { regex: /\b(sidebar|left\s*nav|navigation\s*menu)\b/i, file: 'src/components/Sidebar.jsx' },
-    { regex: /\b(3d\s*character|humanoid|avatar\s*mesh|threejs|three\.js|shader)\b/i, file: 'src/components/VoiceAgent/ThreeDCharacter.jsx' },
-    { regex: /\b(character|buddy|avatar\s*widget|roam|floating|speech\s*bubble)\b/i, file: 'src/components/VoiceAgent/CharacterBuddy.jsx' },
-    { regex: /\b(voice\s*agent|voice\s*modal|stt|speech|mic\s*modal|talk\s*to\s*loopra)\b/i, file: 'src/components/VoiceAgent/VoiceAgentModal.jsx' },
-    { regex: /\b(turntable|vinyl|record\s*player)\b/i, file: 'src/components/Player/Turntable3D.jsx' },
-    { regex: /\b(dj\s*club|dj\s*page|lighting|crowd|laser)\b/i, file: 'src/components/DjClub/DjClubPage.jsx' },
-    { regex: /\b(indian\s*radio|radio\s*station|station|mirchi|vividh)\b/i, file: 'src/components/Radio/IndianRadioView.jsx' },
-    { regex: /\b(time\s*machine|retro|vintage|cassette|radio\s*dial)\b/i, file: 'src/components/Radio/TimeMachineRadio.jsx' },
-    { regex: /\b(lyrics|karaoke|sync\s*lyrics)\b/i, file: 'src/components/Player/LyricsModal.jsx' },
-    { regex: /\b(offline|download\s*track|cached\s*song)\b/i, file: 'src/components/Offline/OfflineLibraryView.jsx' },
-    { regex: /\b(swipe|discover\s*swipe|card\s*deck)\b/i, file: 'src/components/Discover/DiscoverSwipe.jsx' },
-    { regex: /\b(discover|explore\s*view)\b/i, file: 'src/components/Discover/DiscoverView.jsx' },
-    { regex: /\b(player|audio\s*player|bottom\s*player|seek\s*bar|play\s*button)\b/i, file: 'src/components/AudioPlayer.jsx' },
-    { regex: /\b(admin|dashboard|live\s*patch|cms\s*admin)\b/i, file: 'src/components/Admin/AdminDashboard.jsx' },
-    { regex: /\b(search\s*bar|query|search\s*input)\b/i, file: 'src/components/Search/HomeSearchBar.jsx' },
-    { regex: /\b(recommendation|curated|lounge|personalized)\b/i, file: 'src/components/Recommendations/PersonalizedRecommendationsSection.jsx' },
-    { regex: /\b(stats|listening\s*stats|listening\s*history)\b/i, file: 'src/components/Stats/ListeningStatsModal.jsx' }
-  ];
-
-  for (const item of keywordMap) {
-    if (item.regex.test(promptLower)) {
-      return item.file;
-    }
-  }
-
-  // 3. Direct filename or basename check against top known components
-  const commonComponents = [
-    'src/App.jsx',
-    'src/components/AudioPlayer.jsx',
-    'src/components/Sidebar.jsx',
-    'src/components/Navigation/LoopraFooter.jsx',
-    'src/components/Navigation/MobileBottomNav.jsx',
-    'src/components/VoiceAgent/CharacterBuddy.jsx',
-    'src/components/VoiceAgent/ThreeDCharacter.jsx',
-    'src/components/VoiceAgent/VoiceAgentModal.jsx',
-    'src/components/Discover/DiscoverView.jsx',
-    'src/components/Discover/DiscoverSwipe.jsx',
-    'src/components/Radio/IndianRadioView.jsx',
-    'src/components/Radio/TimeMachineRadio.jsx',
-    'src/components/DjClub/DjClubPage.jsx',
-    'src/components/Player/Turntable3D.jsx',
-    'src/components/Player/LyricsModal.jsx',
-    'src/components/Admin/AdminDashboard.jsx',
-    'src/components/Search/HomeSearchBar.jsx',
-    'src/components/Stats/ListeningStatsModal.jsx'
-  ];
-
-  for (const f of commonComponents) {
-    const base = path.basename(f, path.extname(f)).toLowerCase();
-    if (base.length > 2 && promptLower.includes(base)) {
-      return f;
-    }
-  }
-
-  // Default fallback if no keyword matches — instantly return App.jsx without calling Gemini
-  return 'src/App.jsx';
-};
+});
 
 // GET /api/admin/ai-patch-logs & /api/admin/patch-logs - Fetch chronological patch history
 router.get(['/ai-patch-logs', '/patch-logs'], authenticateToken, requireAdmin, async (req, res) => {
@@ -1387,20 +1457,19 @@ router.get(['/ai-patch-logs', '/patch-logs'], authenticateToken, requireAdmin, a
   }
 });
 
-// In-memory staged patch registry (expires after 15 minutes)
+// In-memory staged patch registry (expires after 30 minutes)
 const stagedPatches = new Map();
 
-// Housekeeping: clean up staged patches older than 15 minutes
 setInterval(() => {
   const now = Date.now();
   for (const [id, patch] of stagedPatches.entries()) {
-    if (now - patch.stagedAt > 15 * 60 * 1000) {
+    if (now - patch.stagedAt > 30 * 60 * 1000) {
       stagedPatches.delete(id);
     }
   }
 }, 5 * 60 * 1000);
 
-// POST /api/admin/ai-stage-patch - Analyzes the targeted file, generates code, and returns staged patch
+// POST /api/admin/ai-stage-patch - Multi-step AI Code Planning & Staging
 router.post('/ai-stage-patch', authenticateToken, requireAdmin, async (req, res) => {
   try {
     let { targetFile, instructionPrompt } = req.body;
@@ -1409,78 +1478,109 @@ router.post('/ai-stage-patch', authenticateToken, requireAdmin, async (req, res)
       return res.status(400).json({ error: 'Instruction prompt is required' });
     }
 
+    let resolvedFiles = [];
     let isAutoDetected = false;
-    let detectedFile = null;
 
+    // If auto-detect requested, inspect repository tree with Gemini to determine exact file(s)
     if (!targetFile || targetFile === 'auto' || targetFile.trim() === '') {
+      isAutoDetected = true;
+      const tree = await getRepositoryTree();
+      
+      const fileDiscoveryPrompt = `Given this project tree:
+${tree.slice(0, 150).join('\n')}
+
+Which file(s) should be modified for this request?
+Request: "${instructionPrompt.trim()}"
+
+Return ONLY a comma-separated list of relative file paths (e.g. "frontend/src/App.jsx"). Do not include any explanations.`;
+
+      const discoveryRes = await executeGeminiOperation(async ({ client, modelName }) => {
+        const response = await client.models.generateContent({
+          model: modelName,
+          contents: [{ role: 'user', parts: [{ text: fileDiscoveryPrompt }] }],
+          config: { temperature: 0.1, maxOutputTokens: 100 }
+        });
+        return response.text;
+      }, { operationName: 'LivePatcher:FileDiscovery', timeoutMs: 7000 });
+
+      if (discoveryRes.success && discoveryRes.data) {
+        resolvedFiles = discoveryRes.data
+          .split(/[,\n]+/)
+          .map(f => f.trim().replace(/^['"`]|['"`]$/g, ''))
+          .filter(f => f && tree.includes(f));
+      }
+
+      if (resolvedFiles.length === 0) {
+        resolvedFiles = ['frontend/src/App.jsx'];
+      }
+    } else {
+      resolvedFiles = [targetFile.trim().replace(/^frontend\//, 'frontend/').replace(/^src\//, 'frontend/src/')];
+    }
+
+    const primaryTarget = resolvedFiles[0];
+    const { absoluteTarget, relativeTarget } = resolveSafeTargetFilePath(primaryTarget);
+
+    // Read original file content: prioritize GitHub remote (or fallback to local disk)
+    let originalCode = '';
+    const remoteFile = await getFileContent(relativeTarget);
+    if (remoteFile && remoteFile.content) {
+      originalCode = remoteFile.content;
+    } else {
       try {
-        detectedFile = await resolveSmartTargetFile(instructionPrompt);
-        targetFile = detectedFile;
-        isAutoDetected = true;
-      } catch (autoErr) {
-        return res.status(400).json({
-          error: `Auto file detection failed: ${autoErr.message}. Please select a target file manually.`
+        originalCode = await fs.promises.readFile(absoluteTarget, 'utf-8');
+      } catch (readErr) {
+        return res.status(404).json({
+          error: `Target file not found in repository: ${relativeTarget}`
         });
       }
     }
 
-    const { absoluteTarget, relativeTarget } = resolveSafeTargetFilePath(targetFile);
-
-    // Read original file content safely
-    let originalCode = '';
-    try {
-      originalCode = await fs.promises.readFile(absoluteTarget, 'utf-8');
-    } catch (readErr) {
-      return res.status(404).json({
-        error: `Target file not found: ${relativeTarget} (${readErr.message})`
-      });
-    }
-
-    const systemInstruction = `You are an expert AI live code patcher for Loopra (a Vite + React + Tailwind + Three.js application).
-You are modifying the file: "${relativeTarget}".
+    const systemInstruction = `You are an expert full-stack AI live code patcher for Loopra (Vite + React + Tailwind + Node/Express backend).
+Target file: "${relativeTarget}".
 
 CRITICAL INSTRUCTIONS:
-1. For files under 500 lines, return the complete updated file content.
-2. For large files, you may return the full modified file OR targeted search-and-replace blocks using:
+1. For files under 600 lines, return the complete updated file content.
+2. For large files, you may return the full code OR precise search-and-replace blocks:
 <<<<<<< SEARCH
-[exact original code to replace]
+[exact original code]
 =======
 [replacement code]
 >>>>>>>
-3. Absolutely DO NOT wrap output in markdown code blocks (\`\`\` or \`\`\`jsx). Return raw executable code only.
-4. Preserve all necessary imports, state, and exports.`;
+3. DO NOT wrap output in markdown code fences or backticks. Return raw executable code only.
+4. Maintain all valid imports, hooks, exports, and syntax. Ensure zero syntax errors.`;
 
-    const userPrompt = `ORIGINAL FILE (${relativeTarget}):\n${originalCode}\n\nINSTRUCTION / FIX:\n${instructionPrompt.trim()}\n\nOUTPUT:`;
+    const userPrompt = `ORIGINAL FILE (${relativeTarget}):
+${originalCode}
 
-    const geminiResult = await executeGeminiOperation(async ({ client, modelName }) => {
+INSTRUCTION:
+${instructionPrompt.trim()}
+
+OUTPUT:`;
+
+    const patchResult = await executeGeminiOperation(async ({ client, modelName }) => {
       const response = await client.models.generateContent({
         model: modelName,
         contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
         config: {
           systemInstruction,
           temperature: 0.15,
-          maxOutputTokens: 1024
+          maxOutputTokens: 2048
         }
       });
       return response.text;
-    }, {
-      operationName: `LiveCodeStage:${relativeTarget}`,
-      timeoutMs: 8000
-    });
+    }, { operationName: `LiveCodeStage:${relativeTarget}`, timeoutMs: 12000 });
 
-    if (!geminiResult.success || !geminiResult.data) {
+    if (!patchResult.success || !patchResult.data) {
       return res.status(500).json({
-        error: geminiResult.message || 'Gemini API failed to generate valid code patch.'
+        error: patchResult.message || 'AI code patcher failed to generate patch.'
       });
     }
 
-    const cleanedOutput = stripMarkdownBackticks(geminiResult.data);
+    const cleanedOutput = stripMarkdownBackticks(patchResult.data);
     const cleanedCode = applySearchReplaceBlocks(originalCode, cleanedOutput);
 
     if (!cleanedCode || cleanedCode.length < 20) {
-      return res.status(500).json({
-        error: 'AI generated empty or truncated code. Target file was not modified.'
-      });
+      return res.status(500).json({ error: 'AI generated empty or truncated code patch.' });
     }
 
     const patchId = `stage_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -1503,7 +1603,7 @@ CRITICAL INSTRUCTIONS:
 
     stagedPatches.set(patchId, stagedData);
 
-    return res.json({
+    res.json({
       success: true,
       patchId,
       detectedFile: isAutoDetected ? relativeTarget : null,
@@ -1512,63 +1612,75 @@ CRITICAL INSTRUCTIONS:
       linesAfter: stagedData.linesAfter,
       originalCode,
       stagedCode: cleanedCode,
-      diff
+      diff,
+      githubConnected: isGitHubConfigured()
     });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to stage patch: ' + err.message });
+    res.status(500).json({ error: 'Failed to stage code patch: ' + err.message });
   }
 });
 
-// POST /api/admin/ai-commit-patch - Commits staged patch to disk with .bak backup in .snapshots/ and triggers Vite HMR
+// POST /api/admin/ai-commit-patch - Commits to dedicated Git Branch and Creates Pull Request
 router.post('/ai-commit-patch', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { patchId } = req.body;
+    const { patchId, createPr = true } = req.body;
     if (!patchId) {
       return res.status(400).json({ error: 'patchId is required to commit patch' });
     }
 
     const staged = stagedPatches.get(patchId);
     if (!staged) {
-      return res.status(404).json({ error: 'Staged patch expired or not found. Please regenerate patch.' });
+      return res.status(404).json({ error: 'Staged patch expired or not found. Please regenerate.' });
     }
 
     const { targetFile, originalCode, stagedCode, instructionPrompt, isAutoDetected, detectedFile, diff } = staged;
     const { absoluteTarget, relativeTarget } = resolveSafeTargetFilePath(targetFile);
 
-    // Check if running on hosted/read-only environment (e.g. Vercel, AWS Lambda, Render)
-    if (isReadOnlyFilesystem()) {
-      stagedPatches.delete(patchId);
-      return res.json({
-        success: true,
-        isReadOnly: true,
-        patchId,
-        filePath: relativeTarget,
-        targetFile: relativeTarget,
-        diff: diff || generateStructuredDiff(originalCode, stagedCode),
-        stagedCode,
-        message: 'Changes generated successfully. In production mode, apply via CMS or push to Git.',
-        notice: 'Changes generated successfully. In production mode, apply via CMS or push to Git.',
-        detectedFile: isAutoDetected ? relativeTarget : null
+    const timestamp = Date.now();
+    const branchName = `patch/admin-${timestamp}-${Math.random().toString(36).slice(2, 6)}`;
+    const commitMessage = `fix(patcher): ${instructionPrompt.slice(0, 72)}`;
+
+    let gitCommitResult = null;
+    let prResult = null;
+
+    if (isGitHubConfigured()) {
+      // 1. Create dedicated Git branch on GitHub
+      await createPatchBranch(branchName);
+
+      // 2. Commit file modification to that branch
+      gitCommitResult = await commitFilesToBranch({
+        branch: branchName,
+        files: [{ path: relativeTarget, content: stagedCode, action: 'modify' }],
+        commitMessage
       });
+
+      // 3. Open Pull Request on GitHub
+      if (createPr) {
+        prResult = await createPullRequest({
+          title: `[AI Patcher] ${instructionPrompt.slice(0, 80)}`,
+          body: `### Loopra Live Code Patcher Submission\n\n**Prompt:**\n> ${instructionPrompt}\n\n**Modified File:** \`${relativeTarget}\`\n**Diff Summary:** ${diff.length} lines affected.\n\nAutomated PR generated from Loopra Admin Dashboard.`,
+          headBranch: branchName
+        });
+      }
+    } else {
+      // Local fallback mode: write to local working directory
+      await ensureBackupEnvironment();
+      const sanitizedFileName = path.basename(relativeTarget).replace(/[^a-zA-Z0-9._-]/g, '_');
+      const backupFileName = `${timestamp}_${sanitizedFileName}.bak`;
+      const backupPath = path.resolve(BACKUPS_DIR, backupFileName);
+      await fs.promises.writeFile(backupPath, originalCode, 'utf-8');
+      fs.writeFileSync(absoluteTarget, stagedCode, 'utf-8');
+      
+      gitCommitResult = {
+        mode: 'local',
+        branch: 'local',
+        commitSha: 'local_' + timestamp
+      };
     }
 
-    // Prepare backup snapshot directory (.snapshots)
-    await ensureBackupEnvironment();
-    const timestamp = Date.now();
-    const sanitizedFileName = path.basename(relativeTarget).replace(/[^a-zA-Z0-9._-]/g, '_');
-    const backupFileName = `${timestamp}_${sanitizedFileName}.bak`;
-    const backupPath = path.resolve(BACKUPS_DIR, backupFileName);
-
-    // Save pre-patch backup snapshot
-    await fs.promises.writeFile(backupPath, originalCode, 'utf-8');
-
-    // Synchronously write modified code to disk using fs.writeFileSync (triggers Vite HMR in browser)
-    fs.writeFileSync(absoluteTarget, stagedCode, 'utf-8');
-
-    // Clean from staged memory
     stagedPatches.delete(patchId);
 
-    // Record in persistent patch history log
+    // Save persistent log record
     const committedPatchId = `patch_${timestamp}_${Math.random().toString(36).slice(2, 7)}`;
     const patchRecord = {
       id: committedPatchId,
@@ -1578,12 +1690,14 @@ router.post('/ai-commit-patch', authenticateToken, requireAdmin, async (req, res
       isAutoDetected: Boolean(isAutoDetected),
       detectedFile: detectedFile || null,
       instructionPrompt,
-      backupFile: backupFileName,
-      backupPath,
+      branch: branchName,
+      commitSha: gitCommitResult?.commitSha,
+      prNumber: prResult?.prNumber || null,
+      prUrl: prResult?.prUrl || null,
       linesBefore: originalCode.split('\n').length,
       linesAfter: stagedCode.split('\n').length,
       patchedBy: req.user?.username || 'admin',
-      status: 'APPLIED'
+      status: prResult ? 'PR_OPENED' : 'COMMITTED'
     };
 
     const existingLogs = await readPatchLogs();
@@ -1597,7 +1711,8 @@ router.post('/ai-commit-patch', authenticateToken, requireAdmin, async (req, res
       details: {
         patchId: committedPatchId,
         targetFile: relativeTarget,
-        isAutoDetected: Boolean(isAutoDetected),
+        branch: branchName,
+        prNumber: prResult?.prNumber,
         prompt: instructionPrompt
       },
       ip: getClientIp(req),
@@ -1607,11 +1722,14 @@ router.post('/ai-commit-patch', authenticateToken, requireAdmin, async (req, res
     res.json({
       success: true,
       patchId: committedPatchId,
-      filePath: relativeTarget,
+      branch: branchName,
       targetFile: relativeTarget,
-      diff: diff || generateStructuredDiff(originalCode, stagedCode),
-      message: `Successfully live patched ${relativeTarget}! Vite HMR updated.`,
-      detectedFile: isAutoDetected ? relativeTarget : null,
+      commitSha: gitCommitResult?.commitSha,
+      prNumber: prResult?.prNumber || null,
+      prUrl: prResult?.prUrl || null,
+      message: prResult 
+        ? `Branch ${branchName} created & PR #${prResult.prNumber} opened on GitHub!`
+        : `Committed changes to ${relativeTarget}`,
       patch: patchRecord
     });
   } catch (err) {
@@ -1619,237 +1737,88 @@ router.post('/ai-commit-patch', authenticateToken, requireAdmin, async (req, res
   }
 });
 
-// POST /api/admin/live-patch & /api/admin/ai-patch - Unified Direct Endpoint (stages, snapshots in .snapshots, and writes to disk)
-router.post(['/live-patch', '/ai-patch'], authenticateToken, requireAdmin, async (req, res) => {
+// POST /api/admin/ai-merge-pr - Admin Approval to Merge Pull Request
+router.post('/ai-merge-pr', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    let { targetFile, filePath, instructionPrompt, prompt } = req.body;
-    targetFile = targetFile || filePath;
-    instructionPrompt = instructionPrompt || prompt;
-
-    if (!instructionPrompt || !instructionPrompt.trim()) {
-      return res.status(400).json({ error: 'Instruction prompt is required' });
+    const { prNumber, patchId } = req.body;
+    if (!prNumber) {
+      return res.status(400).json({ error: 'prNumber is required for merge' });
     }
 
-    let isAutoDetected = false;
-    let detectedFile = null;
+    const mergeRes = await mergePullRequest(prNumber);
 
-    if (!targetFile || targetFile === 'auto' || targetFile.trim() === '') {
-      try {
-        detectedFile = await resolveSmartTargetFile(instructionPrompt);
-        targetFile = detectedFile;
-        isAutoDetected = true;
-      } catch (autoErr) {
-        return res.status(400).json({
-          error: `Auto file detection failed: ${autoErr.message}. Please select a target file manually.`
-        });
+    if (patchId) {
+      const logs = await readPatchLogs();
+      const patch = logs.find(p => p.id === patchId || p.prNumber === prNumber);
+      if (patch) {
+        patch.status = 'MERGED';
+        patch.mergedAt = new Date().toISOString();
+        await savePatchLogs(logs);
       }
     }
-
-    const { absoluteTarget, relativeTarget } = resolveSafeTargetFilePath(targetFile);
-
-    // Read original file content
-    let originalCode = '';
-    try {
-      originalCode = await fs.promises.readFile(absoluteTarget, 'utf-8');
-    } catch (readErr) {
-      return res.status(404).json({
-        error: `Target file not found: ${relativeTarget} (${readErr.message})`
-      });
-    }
-
-    const systemInstruction = `You are an expert AI live code patcher for Loopra (a Vite + React + Tailwind + Three.js application).
-You are modifying the file: "${relativeTarget}".
-
-CRITICAL INSTRUCTIONS:
-1. Return the complete updated source code OR targeted search-and-replace blocks:
-<<<<<<< SEARCH
-[exact original code]
-=======
-[replacement code]
->>>>>>>
-2. Absolutely DO NOT wrap your output in markdown code fences (\`\`\` or \`\`\`jsx).
-3. Do NOT include explanations, preamble, or comments.
-4. Preserve all existing necessary imports, functions, and state.`;
-
-    const userPrompt = `ORIGINAL FILE (${relativeTarget}):\n${originalCode}\n\nINSTRUCTION / FIX:\n${instructionPrompt.trim()}\n\nOUTPUT:`;
-
-    const geminiResult = await executeGeminiOperation(async ({ client, modelName }) => {
-      const response = await client.models.generateContent({
-        model: modelName,
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-        config: {
-          systemInstruction,
-          temperature: 0.15,
-          maxOutputTokens: 1024
-        }
-      });
-      return response.text;
-    }, {
-      operationName: `LiveCodePatch:${relativeTarget}`,
-      timeoutMs: 8000
-    });
-
-    if (!geminiResult.success || !geminiResult.data) {
-      return res.status(500).json({
-        error: geminiResult.message || 'Gemini API failed to generate valid code patch.'
-      });
-    }
-
-    const cleanedOutput = stripMarkdownBackticks(geminiResult.data);
-    const cleanedCode = applySearchReplaceBlocks(originalCode, cleanedOutput);
-
-    if (!cleanedCode || cleanedCode.length < 20) {
-      return res.status(500).json({
-        error: 'AI generated empty or truncated code. Original file was preserved.'
-      });
-    }
-
-    // Check if running on hosted/read-only environment (e.g. Vercel, AWS Lambda, Render)
-    if (isReadOnlyFilesystem()) {
-      const diff = generateStructuredDiff(originalCode, cleanedCode);
-      return res.json({
-        success: true,
-        isReadOnly: true,
-        filePath: relativeTarget,
-        targetFile: relativeTarget,
-        diff,
-        stagedCode: cleanedCode,
-        message: 'Changes generated successfully. In production mode, apply via CMS or push to Git.',
-        notice: 'Changes generated successfully. In production mode, apply via CMS or push to Git.',
-        detectedFile: isAutoDetected ? relativeTarget : null
-      });
-    }
-
-    // Save pre-patch backup snapshot in .snapshots
-    await ensureBackupEnvironment();
-    const timestamp = Date.now();
-    const sanitizedFileName = path.basename(relativeTarget).replace(/[^a-zA-Z0-9._-]/g, '_');
-    const backupFileName = `${timestamp}_${sanitizedFileName}.bak`;
-    const backupPath = path.resolve(BACKUPS_DIR, backupFileName);
-
-    await fs.promises.writeFile(backupPath, originalCode, 'utf-8');
-
-    // Write modified code to disk using fs.writeFileSync
-    fs.writeFileSync(absoluteTarget, cleanedCode, 'utf-8');
-
-    // Record in patch history log
-    const patchId = `patch_${timestamp}_${Math.random().toString(36).slice(2, 7)}`;
-    const diff = generateStructuredDiff(originalCode, cleanedCode);
-
-    const patchRecord = {
-      id: patchId,
-      timestamp,
-      date: new Date(timestamp).toISOString(),
-      targetFile: relativeTarget,
-      isAutoDetected,
-      detectedFile,
-      instructionPrompt: instructionPrompt.trim(),
-      backupFile: backupFileName,
-      backupPath,
-      linesBefore: originalCode.split('\n').length,
-      linesAfter: cleanedCode.split('\n').length,
-      patchedBy: req.user?.username || 'admin',
-      status: 'APPLIED'
-    };
-
-    const existingLogs = await readPatchLogs();
-    existingLogs.push(patchRecord);
-    await savePatchLogs(existingLogs);
 
     await AuditLog.create({
       adminId: (req.user._id || req.user.id || req.user.userId)?.toString(),
       adminUsername: req.user?.username || 'admin',
-      action: 'AI_LIVE_CODE_PATCH',
-      details: {
-        patchId,
-        targetFile: relativeTarget,
-        isAutoDetected,
-        prompt: instructionPrompt.trim()
-      },
+      action: 'AI_PR_MERGE',
+      details: { prNumber, mergeSha: mergeRes?.sha },
       ip: getClientIp(req),
       status: 'SUCCESS'
     });
 
     res.json({
       success: true,
-      patchId,
-      filePath: relativeTarget,
-      targetFile: relativeTarget,
-      diff,
-      message: `Successfully live patched ${relativeTarget}! Vite HMR updated.`,
-      detectedFile: isAutoDetected ? relativeTarget : null,
-      patch: patchRecord
+      message: `PR #${prNumber} merged successfully into main! Vercel deployment triggered.`,
+      mergeResult: mergeRes
     });
   } catch (err) {
-    res.status(500).json({ error: 'Live patch failed: ' + err.message });
+    res.status(500).json({ error: 'Failed to merge PR: ' + err.message });
   }
 });
 
-// POST /api/admin/ai-rollback - Restore snapshot file to targetFile
+// POST /api/admin/ai-rollback - Rollback branch or revert pre-patch code
 router.post('/ai-rollback', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { patchId } = req.body;
-    if (!patchId) {
-      return res.status(400).json({ error: 'patchId is required' });
+    const { patchId, branchName, prNumber } = req.body;
+    if (!patchId && !branchName) {
+      return res.status(400).json({ error: 'patchId or branchName is required' });
     }
 
     const logs = await readPatchLogs();
     const patchIndex = logs.findIndex(p => p.id === patchId);
-    if (patchIndex === -1) {
-      return res.status(404).json({ error: 'Patch record not found' });
+    const patchRecord = patchIndex !== -1 ? logs[patchIndex] : null;
+
+    const targetBranch = branchName || patchRecord?.branch;
+    const targetPr = prNumber || patchRecord?.prNumber;
+
+    if (isGitHubConfigured() && targetBranch) {
+      await rollbackPatchBranch(targetBranch, targetPr);
     }
 
-    const patchRecord = logs[patchIndex];
-    const { absoluteTarget, relativeTarget } = resolveSafeTargetFilePath(patchRecord.targetFile);
-    const backupFilePath = path.resolve(BACKUPS_DIR, patchRecord.backupFile);
-
-    let backupContent = '';
-    try {
-      backupContent = await fs.promises.readFile(backupFilePath, 'utf-8');
-    } catch (e) {
-      return res.status(404).json({
-        error: `Backup snapshot file missing: ${patchRecord.backupFile}`
-      });
+    if (patchRecord) {
+      patchRecord.status = 'ROLLED_BACK';
+      patchRecord.rolledBackAt = new Date().toISOString();
+      logs[patchIndex] = patchRecord;
+      await savePatchLogs(logs);
     }
-
-    if (isReadOnlyFilesystem()) {
-      return res.json({
-        success: true,
-        isReadOnly: true,
-        message: 'Snapshot rollback acknowledged. On hosted read-only environments, revert code via Git.',
-        notice: 'On hosted read-only environments, revert code via Git.'
-      });
-    }
-
-    // Restore backup snapshot back to original file
-    fs.writeFileSync(absoluteTarget, backupContent, 'utf-8');
-
-    // Update patch record status
-    patchRecord.status = 'ROLLED_BACK';
-    patchRecord.rolledBackAt = new Date().toISOString();
-    logs[patchIndex] = patchRecord;
-    await savePatchLogs(logs);
 
     await AuditLog.create({
       adminId: (req.user._id || req.user.id || req.user.userId)?.toString(),
       adminUsername: req.user?.username || 'admin',
       action: 'AI_CODE_ROLLBACK',
-      details: {
-        patchId,
-        targetFile: relativeTarget
-      },
+      details: { patchId, branch: targetBranch, prNumber: targetPr },
       ip: getClientIp(req),
       status: 'SUCCESS'
     });
 
     res.json({
       success: true,
-      message: `Successfully rolled back ${relativeTarget} to pre-patch version!`,
-      targetFile: relativeTarget,
+      message: `Successfully rolled back patch and closed branch ${targetBranch || 'local'}`,
       patchId
     });
   } catch (err) {
     res.status(500).json({ error: 'Rollback failed: ' + err.message });
   }
 });
+
 export default router;

@@ -250,20 +250,27 @@ export async function generateDynamicStartupGreeting({ lang = 'hi-IN', currentMu
   }
 
   try {
-    const client = new GoogleGenAI({ apiKey: GEMINI_CONFIG.apiKey });
-    const res = await client.models.generateContent({
-      model: GEMINI_CONFIG.chatModel,
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        temperature: 0.8
-      }
+    const opResult = await executeGeminiOperation(async ({ client, modelName }) => {
+      const res = await client.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          temperature: 0.8
+        }
+      });
+      return res.text || '';
+    }, {
+      requestedModel: GEMINI_CONFIG.chatModel || 'gemini-2.5-flash',
+      operationName: 'ChatBuddy:DynamicGreeting',
+      timeoutMs: 3000
     });
 
-    const text = res.text || '';
-    const parsed = JSON.parse(text);
-    if (parsed && parsed.greeting) {
-      return parsed.greeting.trim();
+    if (opResult.success && opResult.data) {
+      const parsed = JSON.parse(opResult.data);
+      if (parsed && parsed.greeting) {
+        return parsed.greeting.trim();
+      }
     }
   } catch (err) {
     console.warn('[ChatBuddyLLM] Dynamic greeting notice:', sanitizeLogMessage(err.message));

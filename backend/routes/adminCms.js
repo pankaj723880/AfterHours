@@ -1300,4 +1300,139 @@ router.post('/navigation/reset', async (req, res) => {
   }
 });
 
+// ==========================================
+// PAGES MANAGEMENT (CRUD)
+// ==========================================
+
+// GET /api/admin/cms/pages
+router.get('/pages', async (req, res) => {
+  try {
+    const draft = await cmsService.getDraftConfig();
+    res.json({ pages: draft.pages || [] });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch pages: ' + err.message });
+  }
+});
+
+// PUT /api/admin/cms/pages/:route
+router.put('/pages/:route', async (req, res) => {
+  try {
+    const routeKey = req.params.route;
+    const { title, subtitle, seoTitle, seoDescription, enabled, bannerImage, badge } = req.body;
+    const draft = await cmsService.getDraftConfig();
+    const pages = [...(draft.pages || [])];
+
+    const idx = pages.findIndex(p => p.route === routeKey);
+    const updatedPage = {
+      route: routeKey,
+      title: title !== undefined ? String(title).trim() : (idx >= 0 ? pages[idx].title : routeKey),
+      subtitle: subtitle !== undefined ? String(subtitle).trim() : (idx >= 0 ? pages[idx].subtitle : ''),
+      seoTitle: seoTitle !== undefined ? String(seoTitle).trim() : (idx >= 0 ? pages[idx].seoTitle : ''),
+      seoDescription: seoDescription !== undefined ? String(seoDescription).trim() : (idx >= 0 ? pages[idx].seoDescription : ''),
+      enabled: enabled !== undefined ? Boolean(enabled) : (idx >= 0 ? pages[idx].enabled : true),
+      bannerImage: bannerImage !== undefined ? String(bannerImage).trim() : (idx >= 0 ? pages[idx].bannerImage : ''),
+      badge: badge !== undefined ? String(badge).trim() : (idx >= 0 ? pages[idx].badge : '')
+    };
+
+    if (idx >= 0) {
+      pages[idx] = updatedPage;
+    } else {
+      pages.push(updatedPage);
+    }
+
+    await cmsService.saveDraft({ pages }, req.user);
+
+    await AuditLog.create({
+      adminId: req.user._id.toString(),
+      adminUsername: req.user.username,
+      action: 'CMS_PAGE_UPDATE',
+      details: { route: routeKey, updatedPage },
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.json({ message: 'Page updated in draft', page: updatedPage, pages });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update page: ' + err.message });
+  }
+});
+
+// ==========================================
+// HOME SECTIONS MANAGEMENT (CRUD)
+// ==========================================
+
+// GET /api/admin/cms/home-sections
+router.get('/home-sections', async (req, res) => {
+  try {
+    const draft = await cmsService.getDraftConfig();
+    res.json({ homeSections: draft.homeSections || [] });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch home sections: ' + err.message });
+  }
+});
+
+// PUT /api/admin/cms/home-sections
+router.put('/home-sections', async (req, res) => {
+  try {
+    const { homeSections } = req.body;
+    if (!Array.isArray(homeSections)) {
+      return res.status(400).json({ error: 'homeSections array is required' });
+    }
+
+    await cmsService.saveDraft({ homeSections }, req.user);
+
+    await AuditLog.create({
+      adminId: req.user._id.toString(),
+      adminUsername: req.user.username,
+      action: 'CMS_HOME_SECTIONS_UPDATE',
+      details: { count: homeSections.length },
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.json({ message: 'Home sections updated in draft', homeSections });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update home sections: ' + err.message });
+  }
+});
+
+// ==========================================
+// FEATURE CONTROLS MANAGEMENT
+// ==========================================
+
+// GET /api/admin/cms/features
+router.get('/features', async (req, res) => {
+  try {
+    const draft = await cmsService.getDraftConfig();
+    res.json({ featureControls: draft.featureControls || {} });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch feature controls: ' + err.message });
+  }
+});
+
+// PUT /api/admin/cms/features
+router.put('/features', async (req, res) => {
+  try {
+    const { featureControls } = req.body;
+    if (!featureControls || typeof featureControls !== 'object') {
+      return res.status(400).json({ error: 'featureControls object is required' });
+    }
+
+    await cmsService.saveDraft({ featureControls }, req.user);
+
+    await AuditLog.create({
+      adminId: req.user._id.toString(),
+      adminUsername: req.user.username,
+      action: 'CMS_FEATURES_UPDATE',
+      details: { featureControls },
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.json({ message: 'Feature controls updated in draft', featureControls });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update feature controls: ' + err.message });
+  }
+});
+
 export default router;
