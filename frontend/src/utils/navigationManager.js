@@ -108,7 +108,7 @@ export function parseRoute(pathname = '/', search = '') {
   if (cleanPath === '/truck') {
     return { tab: 'truck', path: '/truck', params: {} };
   }
-  const knownTabs = ['barber', 'truck', 'pauwa', 'saloon', 'theka', 'mood', 'timemachine', 'activity', 'library', 'history', 'swipe', 'dj-club'];
+  const knownTabs = ['barber', 'truck', 'pauwa', 'saloon', 'theka', 'mood', 'timemachine', 'activity', 'library', 'history', 'swipe', 'relax', 'dj-club'];
   const stripped = cleanPath.replace(/^\//, '');
   if (knownTabs.includes(stripped)) {
     return { tab: stripped, path: `/${stripped}`, params: {} };

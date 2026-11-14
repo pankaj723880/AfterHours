@@ -22,6 +22,7 @@ const userSchema = new mongoose.Schema({
   followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   followedArtists: { type: [String], default: [] },
+  preferredTheme: { type: String, default: 'midnight-purple-hues' },
 
   // Rating & Review popup status
   ratingPopupStatus: {

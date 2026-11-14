@@ -160,7 +160,10 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
         applyThemeToDom(normalized.theme, false);
       }
       if (onPreviewConfig) {
-        onPreviewConfig(normalized);
+        // Defer parent state notification out of the immediate render phase
+        setTimeout(() => {
+          onPreviewConfig(normalized);
+        }, 0);
       }
       return normalized;
     });

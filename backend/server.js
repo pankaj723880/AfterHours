@@ -59,6 +59,10 @@ const uploadsDir = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
+const publicAudioDir = path.join(__dirname, 'public', 'audio');
+if (!fs.existsSync(publicAudioDir)) {
+  fs.mkdirSync(publicAudioDir, { recursive: true });
+}
 
 // Prevent unhandled rejections and exceptions from crashing the server
 process.on('uncaughtException', (err) => {
@@ -158,6 +162,7 @@ app.post(['/api/transcribe', '/transcribe'], handleTranscribeEndpoint);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static(uploadsDir));
+app.use('/audio', express.static(publicAudioDir));
 
 // Normalize redundant slashes in URL pathname to prevent 404s from client URL misconfigurations (e.g. //health, //api/...)
 app.use((req, res, next) => {

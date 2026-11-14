@@ -96,6 +96,11 @@
       (function() {
         try {
           var raw = localStorage.getItem('afterhours_applied_theme') || localStorage.getItem('afterhours_cms_public_config');
+          var appMode = localStorage.getItem('loopra_appearance_mode') || 'dark';
+          var resolvedMode = appMode === 'system' 
+            ? (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+            : appMode;
+
           if (raw) {
             var data = JSON.parse(raw);
             var theme = data.theme || data;
@@ -111,13 +116,27 @@
                 document.documentElement.style.setProperty('--accent-rgb', r + ', ' + g + ', ' + b);
               }
             }
-            if (theme && theme.themeMode) {
-              document.documentElement.setAttribute('data-theme', theme.themeMode);
+            if (theme && theme.colors) {
+              var cols = theme.colors;
+              var root = document.documentElement;
+              if (cols.bgPrimary) root.style.setProperty('--bg-primary', cols.bgPrimary);
+              if (cols.bgSecondary) root.style.setProperty('--bg-secondary', cols.bgSecondary);
+              if (cols.bgSurface) root.style.setProperty('--bg-surface', cols.bgSurface);
+              if (cols.bgCard) root.style.setProperty('--bg-card', cols.bgCard);
+              if (cols.primaryText) root.style.setProperty('--text-primary', cols.primaryText);
+              if (cols.secondaryText) root.style.setProperty('--text-secondary', cols.secondaryText);
+              if (cols.buttonBg) root.style.setProperty('--btn-bg', cols.buttonBg);
+              if (cols.borderColor) root.style.setProperty('--border-color', cols.borderColor);
             }
+            document.documentElement.setAttribute('data-theme', resolvedMode);
+            document.documentElement.setAttribute('data-appearance-mode', appMode);
             if (theme && theme.glassmorphism === false) {
               document.documentElement.classList.add('no-glass');
               document.documentElement.style.setProperty('--glass-blur', '0px');
             }
+          } else {
+            document.documentElement.setAttribute('data-theme', resolvedMode);
+            document.documentElement.setAttribute('data-appearance-mode', appMode);
           }
         } catch (e) {}
       })();

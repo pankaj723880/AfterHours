@@ -122,6 +122,37 @@ body {
   --accent-color-light: #fcd34d;
   --accent-color-dark: #d97706;
   --glass-blur: 24px;
+
+  /* Global Aesthetic Theme System Tokens */
+  --bg-primary: #09090b;
+  --bg-secondary: #121215;
+  --bg-surface: #18181c;
+  --bg-card: #202026;
+  --elevated-foreground: #272730;
+  --text-primary: #f4f4f5;
+  --text-secondary: #d4d4d8;
+  --text-muted: #a1a1aa;
+  --primary-accent: var(--accent-color, #f59e0b);
+  --secondary-accent: var(--accent-color-hover, #fbbf24);
+  --btn-bg: var(--accent-color, #f59e0b);
+  --btn-text: #09090b;
+  --border-color: rgba(255, 255, 255, 0.1);
+  --input-bg: #141418;
+  --input-text: #f4f4f5;
+  --hover-color: var(--accent-color-hover, #fbbf24);
+  --active-state-color: var(--accent-color-light, #fcd34d);
+  --sidebar-bg: #09090b;
+  --nav-bg: rgba(9, 9, 11, 0.95);
+  --modal-bg: #121216;
+  --player-bg: #0c0c0e;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+}
+
+html, body {
+  background-color: var(--bg-primary, #09090b) !important;
+  color: var(--text-primary, #f4f4f5) !important;
 }
 
 /* Custom scrollbars */
@@ -144,12 +175,64 @@ body {
 }
 
 /* 3D Music Lounge & Glassmorphism helpers */
+/* Light & Dark Adaptive Glass & Surface Helpers */
 .glass-panel {
-  background: rgba(18, 18, 22, 0.75);
+  background: var(--bg-surface, rgba(18, 18, 22, 0.75));
   backdrop-filter: blur(var(--glass-blur, 24px));
   -webkit-backdrop-filter: blur(var(--glass-blur, 24px));
-  border: 1px solid rgba(var(--accent-rgb, 245, 158, 11), 0.14);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--border-color, rgba(var(--accent-rgb, 245, 158, 11), 0.14));
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] .glass-panel {
+  box-shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-accent, #7e22ce);
+}
+
+/* Adaptive Theme Surface Overrides */
+[data-theme="light"] .bg-neutral-900,
+[data-theme="light"] .bg-neutral-900\/95,
+[data-theme="light"] .bg-neutral-900\/90,
+[data-theme="light"] .bg-neutral-900\/80,
+[data-theme="light"] .bg-neutral-950,
+[data-theme="light"] .bg-neutral-950\/80,
+[data-theme="light"] .bg-neutral-950\/90,
+[data-theme="light"] .bg-black\/40 {
+  background-color: var(--bg-card, #ffffff) !important;
+  color: var(--text-primary, #1e293b) !important;
+}
+
+[data-theme="light"] .border-neutral-800,
+[data-theme="light"] .border-neutral-800\/80,
+[data-theme="light"] .border-white\/10,
+[data-theme="light"] .border-white\/5 {
+  border-color: var(--border-color, rgba(0, 0, 0, 0.08)) !important;
+}
+
+[data-theme="light"] .text-white {
+  color: var(--text-primary, #1e293b) !important;
+}
+
+[data-theme="light"] .text-neutral-400,
+[data-theme="light"] .text-zinc-400 {
+  color: var(--text-secondary, #475569) !important;
+}
+
+[data-theme="light"] .text-neutral-500,
+[data-theme="light"] .text-zinc-500 {
+  color: var(--text-muted, #64748b) !important;
+}
+
+[data-theme="light"] .bg-white\/5,
+[data-theme="light"] .bg-white\/10 {
+  background-color: var(--bg-secondary, #f1f5f9) !important;
 }
 
 .no-glass .glass-panel,

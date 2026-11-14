@@ -95,12 +95,13 @@ router.get('/profile/:username', async (req, res) => {
 // 2. Update Self Profile
 router.put('/profile', authenticateToken, async (req, res) => {
   try {
-    const { displayName, avatarUrl, bio, favoriteGenres, isPublic } = req.body || {};
+    const { displayName, avatarUrl, bio, favoriteGenres, isPublic, preferredTheme } = req.body || {};
     const updates = {};
 
     if (typeof displayName === 'string') updates.displayName = displayName.trim().slice(0, 60);
     if (typeof avatarUrl === 'string') updates.avatarUrl = avatarUrl.trim();
     if (typeof bio === 'string') updates.bio = bio.trim().slice(0, 300);
+    if (typeof preferredTheme === 'string') updates.preferredTheme = preferredTheme.trim().slice(0, 50);
     if (Array.isArray(favoriteGenres)) {
       updates.favoriteGenres = favoriteGenres.map(g => String(g).trim().slice(0, 30)).slice(0, 10);
     }
@@ -121,7 +122,8 @@ router.put('/profile', authenticateToken, async (req, res) => {
         avatarUrl: user.avatarUrl,
         bio: user.bio,
         favoriteGenres: user.favoriteGenres,
-        isPublic: user.isPublic
+        isPublic: user.isPublic,
+        preferredTheme: user.preferredTheme
       }
     });
   } catch (err) {

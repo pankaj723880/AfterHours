@@ -2083,4 +2083,33 @@ router.post('/ai-rollback', authenticateToken, requireAdmin, async (req, res) =>
   }
 });
 
+import { openverseAudioService } from '../services/openverseAudioService.js';
+
+router.get('/relax/search-openverse', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (!q) {
+      return res.status(400).json({ error: 'Search query "q" is required' });
+    }
+    const results = await openverseAudioService.searchAudio(q, {
+      pageSize: parseInt(req.query.pageSize || '12', 10),
+      licenseType: req.query.licenseType || 'all-cc'
+    });
+    res.json({ success: true, count: results.length, results });
+  } catch (err) {
+    res.status(500).json({ error: 'Openverse search failed: ' + err.message });
+  }
+});
+
+router.post('/relax/verify-audio', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { audioUrl } = req.body || {};
+    if (!audioUrl) return res.status(400).json({ error: 'audioUrl is required' });
+    const verification = await openverseAudioService.verifyAudioUrl(audioUrl);
+    res.json({ success: true, verification });
+  } catch (err) {
+    res.status(500).json({ error: 'Audio verification failed: ' + err.message });
+  }
+});
+
 export default router;

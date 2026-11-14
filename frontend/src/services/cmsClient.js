@@ -112,7 +112,8 @@ export const DEFAULT_CMS_CONFIG = {
     { id: 'timemachine', label: 'Time Machine Radio', enabled: true, order: 4, isCore: false, icon: 'radio', badge: 'Retro', group: 'discovery', route: '/timemachine' },
     { id: 'activity', label: 'Listening Activity', enabled: true, order: 5, isCore: false, icon: 'flame', badge: '', group: 'discovery', route: '/activity' },
     { id: 'swipe', label: 'Discover Swipe', enabled: true, order: 6, isCore: false, icon: 'swipe', badge: '', group: 'discovery', route: '/swipe' },
-    { id: 'barber', label: 'Saloon FM', enabled: true, order: 7, isCore: false, icon: 'scissors', badge: '90s', group: 'stations', route: '/station/barber' },
+    { id: 'relax', label: 'Relax Mode', enabled: true, order: 7, isCore: false, icon: 'sparkles', badge: 'Ambient', group: 'discovery', route: '/relax' },
+    { id: 'barber', label: 'Saloon FM', enabled: true, order: 8, isCore: false, icon: 'scissors', badge: '90s', group: 'stations', route: '/station/barber' },
     { id: 'truck', label: 'Horn Ok Please', enabled: true, order: 8, isCore: false, icon: 'truck', badge: 'Dhaba', group: 'stations', route: '/station/truck' },
     { id: 'pauwa', label: 'Theka Session', enabled: true, order: 9, isCore: false, icon: 'beer', badge: 'Desi', group: 'stations', route: '/station/pauwa' },
     { id: 'library', label: 'Liked Songs Collection', enabled: true, order: 10, isCore: true, icon: 'library', badge: '', group: 'collection', route: '/library' },
@@ -402,17 +403,54 @@ export const adjustBrightness = (hex, percent) => {
   return `#${((1 << 24) + (nr << 16) + (ng << 8) + nb).toString(16).slice(1)}`;
 };
 
+import { NAMED_THEMES, DEFAULT_THEME_ID, DEFAULT_APPEARANCE_MODE } from '../constants/themePresets';
+
+// Resolve whether device is in dark mode when 'system' is chosen
+export const getSystemPreference = () => {
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  return 'dark';
+};
+
 export const applyThemeToDom = (theme, persistToStorage = false) => {
   if (typeof document === 'undefined') return;
   const defaultTheme = DEFAULT_CMS_CONFIG.theme;
   const incomingTheme = (theme && typeof theme === 'object') ? theme : {};
+  
+  // 1. Determine named theme ID
+  let namedThemeId = incomingTheme.namedThemeId || incomingTheme.activeThemeId;
+  if (!namedThemeId && typeof localStorage !== 'undefined') {
+    try {
+      namedThemeId = localStorage.getItem('loopra_selected_theme_id') || incomingTheme.themeId;
+    } catch (_) {}
+  }
+  const matchedNamedTheme = NAMED_THEMES.find(t => t.id === namedThemeId) || NAMED_THEMES[0];
+
+  // 2. Determine appearance mode: 'light' | 'dark' | 'system'
+  let appearanceMode = incomingTheme.appearanceMode;
+  if (!appearanceMode && typeof localStorage !== 'undefined') {
+    try {
+      appearanceMode = localStorage.getItem('loopra_appearance_mode') || incomingTheme.themeMode || DEFAULT_APPEARANCE_MODE;
+    } catch (_) {}
+  }
+  if (!['light', 'dark', 'system'].includes(appearanceMode)) {
+    appearanceMode = DEFAULT_APPEARANCE_MODE;
+  }
+
+  // Resolved effective mode ('light' or 'dark')
+  const resolvedMode = appearanceMode === 'system' ? getSystemPreference() : appearanceMode;
+
+  // 3. Select corresponding token set (light vs dark)
+  const baseTokens = matchedNamedTheme[resolvedMode] || matchedNamedTheme.dark || matchedNamedTheme.colors || {};
+  const themeColors = { ...baseTokens, ...(incomingTheme.colors || {}) };
+
   const safeTheme = {
-    accentColor: (typeof incomingTheme.accentColor === 'string' && incomingTheme.accentColor.trim())
-      ? incomingTheme.accentColor.trim()
-      : defaultTheme.accentColor,
-    themeMode: ['dark', 'midnight', 'neon'].includes(incomingTheme.themeMode)
-      ? incomingTheme.themeMode
-      : defaultTheme.themeMode,
+    namedThemeId: matchedNamedTheme.id,
+    appearanceMode,
+    resolvedMode,
+    accentColor: incomingTheme.accentColor || themeColors.primaryAccent || defaultTheme.accentColor,
+    themeMode: resolvedMode,
     glassmorphism: typeof incomingTheme.glassmorphism === 'boolean'
       ? incomingTheme.glassmorphism
       : defaultTheme.glassmorphism,
@@ -421,28 +459,63 @@ export const applyThemeToDom = (theme, persistToStorage = false) => {
       : defaultTheme.meshGradient,
     particles: typeof incomingTheme.particles === 'boolean'
       ? incomingTheme.particles
-      : defaultTheme.particles
+      : defaultTheme.particles,
+    colors: themeColors
   };
 
-  const accentColor = safeTheme.accentColor || '#f59e0b';
+  const accentColor = safeTheme.accentColor || themeColors.primaryAccent || '#f59e0b';
   const rgb = hexToRgb(accentColor);
-  const hoverColor = adjustBrightness(accentColor, 15);
+  const hoverColor = adjustBrightness(accentColor, resolvedMode === 'light' ? -12 : 15);
   const lightColor = adjustBrightness(accentColor, 35);
   const darkColor = adjustBrightness(accentColor, -20);
 
   const root = document.documentElement;
 
-  // 1. Accent color CSS variables
+  // 1. Core Accent CSS Variables
   root.style.setProperty('--accent-color', accentColor);
   root.style.setProperty('--accent-rgb', `${rgb.r}, ${rgb.g}, ${rgb.b}`);
   root.style.setProperty('--accent-color-hover', hoverColor);
   root.style.setProperty('--accent-color-light', lightColor);
   root.style.setProperty('--accent-color-dark', darkColor);
 
-  // 2. Theme Mode
-  root.setAttribute('data-theme', safeTheme.themeMode || 'dark');
+  // 2. Global Semantic Theme Design Tokens
+  root.style.setProperty('--bg-primary', themeColors.bgPrimary);
+  root.style.setProperty('--bg-secondary', themeColors.bgSecondary);
+  root.style.setProperty('--bg-surface', themeColors.bgSurface);
+  root.style.setProperty('--bg-card', themeColors.bgCard);
+  root.style.setProperty('--elevated-foreground', themeColors.elevatedForeground);
 
-  // 3. Glassmorphism toggle
+  root.style.setProperty('--text-primary', themeColors.primaryText);
+  root.style.setProperty('--text-secondary', themeColors.secondaryText);
+  root.style.setProperty('--text-muted', themeColors.mutedText);
+
+  root.style.setProperty('--primary-accent', themeColors.primaryAccent);
+  root.style.setProperty('--secondary-accent', themeColors.secondaryAccent);
+
+  root.style.setProperty('--btn-bg', themeColors.buttonBg);
+  root.style.setProperty('--btn-text', themeColors.buttonText);
+  root.style.setProperty('--border-color', themeColors.borderColor);
+
+  root.style.setProperty('--input-bg', themeColors.inputBg);
+  root.style.setProperty('--input-text', themeColors.inputText);
+  root.style.setProperty('--hover-color', themeColors.hoverColor);
+  root.style.setProperty('--active-state-color', themeColors.activeStateColor);
+
+  root.style.setProperty('--sidebar-bg', themeColors.sidebarBg);
+  root.style.setProperty('--nav-bg', themeColors.navigationBg);
+  root.style.setProperty('--modal-bg', themeColors.modalBg);
+  root.style.setProperty('--player-bg', themeColors.playerBg);
+
+  root.style.setProperty('--color-success', themeColors.successColor);
+  root.style.setProperty('--color-warning', themeColors.warningColor);
+  root.style.setProperty('--color-error', themeColors.errorColor);
+
+  // 3. Attributes for mode, named theme, and appearance mode
+  root.setAttribute('data-theme', resolvedMode);
+  root.setAttribute('data-appearance-mode', appearanceMode);
+  root.setAttribute('data-named-theme', matchedNamedTheme.id);
+
+  // 4. Glassmorphism toggle
   if (safeTheme.glassmorphism === false) {
     root.classList.add('no-glass');
     root.style.setProperty('--glass-blur', '0px');
@@ -451,10 +524,12 @@ export const applyThemeToDom = (theme, persistToStorage = false) => {
     root.style.setProperty('--glass-blur', '24px');
   }
 
-  // 4. Optionally cache in localStorage for published theme
+  // 5. Cache in localStorage for persistence
   if (persistToStorage) {
     try {
       localStorage.setItem('afterhours_applied_theme', JSON.stringify(safeTheme));
+      localStorage.setItem('loopra_selected_theme_id', matchedNamedTheme.id);
+      localStorage.setItem('loopra_appearance_mode', appearanceMode);
     } catch (e) {}
   }
 };

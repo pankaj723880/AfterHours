@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import { normalizeCmsConfig, hexToRgb } from '../../services/cmsClient';
 import { USE_V2_CMS_PAGES } from '../../constants/featureFlags';
+import ThemeSelector from '../Theme/ThemeSelector';
+import CmsRelaxManager from './CmsRelaxManager';
 
 function ThemeLivePreview({ theme, branding }) {
   const canvasRef = useRef(null);
@@ -342,6 +344,7 @@ export default function CmsGlobalSettings({
   const tabs = [
     { id: 'branding', label: 'Branding & Identity', icon: Globe },
     { id: 'theme', label: 'Theme & Appearance', icon: Palette },
+    { id: 'relax', label: 'Relax Mode Sounds', icon: Sparkles },
     { id: 'announcement', label: 'Announcements', icon: Bell },
     { id: 'banner', label: 'Promo Banner', icon: ImageIcon },
     { id: 'maintenance', label: 'Maintenance Mode', icon: AlertTriangle },
@@ -538,6 +541,22 @@ export default function CmsGlobalSettings({
           </div>
 
           <div className="space-y-4 sm:space-y-5">
+            {/* 6 Named Aesthetic Themes System */}
+            <div className="p-4 rounded-2xl bg-black/40 border border-white/10">
+              <ThemeSelector
+                currentThemeId={theme.namedThemeId}
+                onThemeSelect={(t) => {
+                  if (!t) return;
+                  const activeTokens = t.dark || t.light || t.colors || {};
+                  const primaryAccent = activeTokens.primaryAccent || t.colors?.primaryAccent || t.sourcePalette?.[0] || '#f59e0b';
+                  handleFieldChange('theme', 'namedThemeId', t.id);
+                  handleFieldChange('theme', 'accentColor', primaryAccent);
+                  handleFieldChange('theme', 'colors', activeTokens);
+                }}
+                isAdmin={true}
+              />
+            </div>
+
             {/* V2 Theme Preset Cards */}
             <div>
               <label className="block text-[11px] font-semibold tracking-wider uppercase text-zinc-400 mb-2">Preset Theme Styles</label>
@@ -680,6 +699,11 @@ export default function CmsGlobalSettings({
             <ThemeLivePreview theme={theme} branding={branding} />
           </div>
         </div>
+      )}
+
+      {/* 2b. RELAX MODE SOUNDS MANAGEMENT */}
+      {activeTab === 'relax' && (
+        <CmsRelaxManager />
       )}
 
       {/* 3. SITE-WIDE ANNOUNCEMENT */}

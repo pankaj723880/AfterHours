@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ThemeSelector from '../Theme/ThemeSelector';
 
 const TIMER_PRESETS = [15, 30, 45, 60];
 const CROSSFADE_OPTIONS = [
@@ -356,6 +357,13 @@ export default function PlayerSettingsModal({
                 </button>
               )}
             </div>
+          </div>
+
+          <hr className="border-neutral-800/80" />
+
+          {/* Section: Global Aesthetic Themes */}
+          <div className="space-y-3">
+            <ThemeSelector />
           </div>
 
           <hr className="border-neutral-800/80" />

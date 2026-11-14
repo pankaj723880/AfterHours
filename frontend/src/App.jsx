@@ -21,6 +21,7 @@ const ListeningStatsModal = lazy(() => import('./components/Stats/ListeningStats
 const UserProfileModal = lazy(() => import('./components/Profile/UserProfileModal'));
 const DiscoverSwipe = lazy(() => import('./components/Discover/DiscoverSwipe'));
 const DjClubPage = lazy(() => import('./components/DjClub/DjClubPage'));
+const RelaxModeView = lazy(() => import('./components/Relax/RelaxModeView'));
 import NostalgiaStationView from './components/Radio/NostalgiaStationView';
 import CinematicVideoPlayer from './components/Player/CinematicVideoPlayer';
 import { requestVideoPictureInPicture, requestAudioPictureInPicture } from './utils/pictureInPictureManager';
@@ -1712,6 +1713,17 @@ export default function App() {
       applyThemeToDom(cmsConfig.theme);
     }
   }, [cmsConfig?.branding, cmsConfig?.theme, activeTab, stationsMap]);
+
+  // Synchronize Theme & Appearance changes across browser tabs and system preference changes
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'loopra_selected_theme_id' || e.key === 'loopra_appearance_mode' || e.key === 'afterhours_applied_theme') {
+        applyThemeToDom(cmsConfig?.theme || {});
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [cmsConfig?.theme]);
 
   const [contextMenu, setContextMenu] = useState(null); // { x, y, track }
 
@@ -8292,6 +8304,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               fetchTracks={handleFetchDiscoveryTracks}
               onNavigate={handleStationSelect}
             />
+          </div>
+        )}
+
+        {activeTab === 'relax' && (
+          <div key="page-relax" className="page-transition relative z-10 w-full max-w-7xl mx-auto space-y-6 py-2 sm:py-4">
+            <RelaxModeView />
           </div>
         )}
 
