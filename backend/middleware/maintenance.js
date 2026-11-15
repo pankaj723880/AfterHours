@@ -12,9 +12,11 @@ export const maintenanceMiddleware = async (req, res, next) => {
     const rawPath = (req.originalUrl || req.url || '').split('?')[0];
     const path = rawPath.replace(/\/+/g, '/').toLowerCase();
 
-    // 1. Minimum necessary exemptions: Health checks, static branding assets, public maintenance status
+    // 1. Minimum necessary exemptions: Health checks, ping endpoints, static branding assets, public maintenance status
     if (
       path === '/' ||
+      path === '/ping' ||
+      path === '/api/ping' ||
       path === '/health' ||
       path === '/api/health' ||
       path.startsWith('/uploads/') ||

@@ -392,8 +392,8 @@ app.get(['/api/rooms', '/rooms'], (req, res) => {
   res.json({ success: true, rooms: roomsList });
 });
 
-// Fast, zero-DB-overhead health check endpoint for Render wake-up and uptime monitoring
-app.all(['/health', '/api/health'], (req, res) => {
+// Fast, zero-DB-overhead health check and ping endpoint for Render wake-up and uptime monitoring
+app.all(['/ping', '/api/ping', '/health', '/api/health'], (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', '*');
@@ -408,6 +408,7 @@ app.all(['/health', '/api/health'], (req, res) => {
   const uptime = process.uptime();
   res.status(200).json({
     status: 'alive',
+    message: 'Server is alive!',
     uptime,
     timestamp: new Date().toISOString(),
     database: ready ? 'connected' : 'disconnected',
@@ -1440,14 +1441,15 @@ export const normalizeMusicSearchQuery = (rawQuery = '') => {
   const clean = rawQuery.trim();
   const lower = clean.toLowerCase();
 
-  const hasLanguage = /\b(english|punjabi|tamil|telugu|bengali|marathi|kannada|malayalam|bhojpuri|gujarati|kpop|spanish|french|urdu)\b/i.test(lower);
+  const hasLanguage = /\b(english|punjabi|tamil|telugu|bengali|marathi|kannada|malayalam|bhojpuri|haryanvi|gujarati|rajasthani|odia|kpop|spanish|french|urdu)\b/i.test(lower);
+  const isRegionalArtist = /\b(pawan singh|khesari|silpi raj|ritesh pandey|manoj tiwari|nirahua|neelkamal|arvind akela|kallu|pramod premi|sharda sinha|sapna choudhary|renuka panwar|gulzaar|sidhu moose|diljit|karan aujla|shubh|ammy virk|anirudh|sid sriram)\b/i.test(lower);
   const isGenericOrMood = (
     /^(songs?|music|gaana|gaane|track|tracks|top songs?|popular songs?|trending songs?|latest songs?|hit songs?)$/i.test(lower) ||
     /^(romantic|sad|relaxing|chill|party|dance|energetic|gym|workout|heartbreak|love|soothing|focus|happy|monsoon|rainy|drive|road trip)\s*(?:songs?|music|tracks?|gaana|vibes?)?$/i.test(lower) ||
     /\b(koi\s+(?:achha\s+)?(?:gaana|song)|kuch\s+(?:achha\s+)?(?:sunao|bajao|chalao))\b/i.test(lower)
   );
 
-  if (!hasLanguage && isGenericOrMood) {
+  if (!hasLanguage && !isRegionalArtist && isGenericOrMood) {
     if (/\b(romantic|love|dil|pyaar)\b/i.test(lower)) {
       return 'Arijit Singh Shreya Ghoshal romantic bollywood hindi songs official audio';
     }

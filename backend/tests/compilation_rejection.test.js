@@ -1,11 +1,58 @@
 import assert from 'assert';
 import musicValidationService from '../services/musicValidationService.js';
-import { isSingleSong, verifySingleSong } from '../services/songFilter.js';
+import { isSingleSong, verifySingleSong, STRICT_BLACKLIST_WORDS } from '../services/songFilter.js';
 
 console.log('=== RUNNING COMPILATION & ARTIST COLLECTION REJECTION TEST SUITE ===\n');
 
 async function runTests() {
-  // 1. Compilation and Collection Candidates that MUST BE REJECTED
+  // 1. Mandatory User-Specified Blacklist Words:
+  // ['jukebox', 'mashup', 'best of', 'collection', 'non-stop', 'unplugged', 'hits of', 'top 50', 'latest hits', '2020', '2021', '2022', '2023', 'audio jukebox', 'full album']
+  console.log('--- Testing Explicit Blacklist Terms ---');
+  const blacklistWordCases = [
+    { title: 'Arijit Singh Audio Jukebox', term: 'audio jukebox' },
+    { title: 'Bollywood Romantic Jukebox', term: 'jukebox' },
+    { title: 'Mega Mashup 2024', term: 'mashup' },
+    { title: 'Best of Arijit Singh', term: 'best of' },
+    { title: 'Romantic Songs Collection', term: 'collection' },
+    { title: 'Non-stop Party Hits', term: 'non-stop' },
+    { title: 'Pawan Singh Unplugged', term: 'unplugged' },
+    { title: 'Hits of Kishore Kumar', term: 'hits of' },
+    { title: 'Top 50 Hindi Songs', term: 'top 50' },
+    { title: 'Latest Hits 2025', term: 'latest hits' },
+    { title: 'Best Bollywood Songs 2020', term: '2020' },
+    { title: 'Superhit Hindi Songs 2021', term: '2021' },
+    { title: 'Punjabi Hits 2022', term: '2022' },
+    { title: 'Bhojpuri Hit Songs 2023', term: '2023' },
+    { title: 'Aashiqui 2 Full Album Songs', term: 'full album' },
+    // Description matching test
+    { title: 'Romantic Melody Video', description: 'Listen to this non-stop collection audio jukebox', term: 'desc match' }
+  ];
+
+  for (const item of blacklistWordCases) {
+    const sfResult = verifySingleSong(item);
+    assert.strictEqual(
+      sfResult.isValid,
+      false,
+      `songFilter must reject blacklisted phrase "${item.term}" in "${item.title}"`
+    );
+
+    const valResult = await musicValidationService.validateTrack({
+      id: 'dQw4w9WgXcQ',
+      title: item.title,
+      description: item.description || '',
+      channel: 'Music Channel'
+    }, { bypassCache: true });
+
+    assert.strictEqual(
+      valResult.eligible,
+      false,
+      `musicValidationService must reject blacklisted item "${item.title}". Got eligible: true`
+    );
+    console.log(`[PASS] Correctly Rejected Blacklisted Term "${item.term}": "${item.title}"`);
+  }
+
+  // 2. Compilation and Collection Candidates that MUST BE REJECTED
+  console.log('\n--- Testing General Compilation Cases ---');
   const compilationCases = [
     { title: 'Best of KK', duration: '52:10' },
     { title: 'Best of Arijit Singh', duration: '1:12:00' },
@@ -25,7 +72,7 @@ async function runTests() {
   ];
 
   for (const item of compilationCases) {
-    // 1a. Song Filter check
+    // 2a. Song Filter check
     const sfResult = verifySingleSong(item);
     assert.strictEqual(
       sfResult.isValid,
@@ -33,7 +80,7 @@ async function runTests() {
       `songFilter must reject compilation "${item.title}"`
     );
 
-    // 1b. Central musicValidationService check
+    // 2b. Central musicValidationService check
     const valResult = await musicValidationService.validateTrack({
       id: 'dQw4w9WgXcQ',
       title: item.title,
@@ -50,7 +97,8 @@ async function runTests() {
     console.log(`[PASS] Correctly Rejected Compilation: "${item.title}"`);
   }
 
-  // 2. Genuine Individual Tracks that MUST BE ALLOWED
+  // 3. Genuine Individual Tracks that MUST BE ALLOWED
+  console.log('\n--- Testing Genuine Individual Single Tracks ---');
   const genuineCases = [
     { title: 'KK - Zara Sa | Jannat | Official Video', channel: 'SonyMusicIndiaVEVO', duration: '4:30' },
     { title: 'Zara Sa - KK (Lofi Flip)', channel: 'Chill Nation', duration: '3:15' },
@@ -58,11 +106,13 @@ async function runTests() {
     { title: 'Arijit Singh - O Maahi (Official Audio)', channel: 'Zee Music Company', duration: '3:50' },
     { title: 'Tum Hi Ho | Aashiqui 2 | Arijit Singh', channel: 'T-Series', duration: '4:22' },
     { title: 'Lover - Diljit Dosanjh (Official Music Video)', channel: 'Diljit Dosanjh', duration: '3:12' },
-    { title: 'Baarishein (Official Video) - Anuv Jain', channel: 'Anuv Jain', duration: '3:27' }
+    { title: 'Baarishein (Official Video) - Anuv Jain', channel: 'Anuv Jain', duration: '3:27' },
+    { title: 'Pawan Singh - Lollypop Lagelu (Official Song)', channel: 'Wave Music', duration: '4:15' },
+    { title: 'Khesari Lal Yadav - Saj Ke Sawar Ke (Official Video)', channel: 'Yashi Films', duration: '3:40' }
   ];
 
   for (const item of genuineCases) {
-    // 2a. Song Filter check
+    // 3a. Song Filter check
     const sfResult = verifySingleSong(item);
     assert.strictEqual(
       sfResult.isValid,
@@ -70,7 +120,7 @@ async function runTests() {
       `songFilter must allow genuine single song "${item.title}"`
     );
 
-    // 2b. Central musicValidationService check
+    // 3b. Central musicValidationService check
     const valResult = await musicValidationService.validateTrack({
       id: 'kJQP7kiw5Fk',
       title: item.title,

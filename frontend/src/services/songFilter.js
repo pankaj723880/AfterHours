@@ -24,22 +24,27 @@
  */
 
 // Regex for multi-song titles, mashups, and non-original compilations
+// Strictly excludes: ['jukebox', 'mashup', 'best of', 'collection', 'non-stop', 'unplugged', 'hits of', 'top 50', 'latest hits', '2020', '2021', '2022', '2023', 'audio jukebox', 'full album']
 const MULTI_SONG_TITLE_REGEXES = [
-  /\b(audio\s+jukebox|video\s+jukebox|jukebox)\b/i,
-  /\b(full\s+album|complete\s+album|all\s+album\s+songs|album\s+jukebox)\b/i,
-  /\b(all\s+songs|all\s+song|all\s+video\s+songs|songs\s+collection|song\s+collection|music\s+collection|hits\s+collection)\b/i,
-  /\b(songs?\s+collections?|beats?\s+collections?|music\s+collections?|tracks?\s+collections?|best\s+collection)\b/i,
-  // Strict mashup exclusions (case-insensitive): "mashup", "mash-up", "mash up", "mega mashup", "non-stop mashup", "mixtape", etc.
+  /\b(audio\s+jukebox|video\s+jukebox|album\s+jukebox|radio\s+jukebox|jukebox)\b/i,
   /(?:mega\s+mashup|non[\s-]?stop\s+mashup|mashup|mash\s+up|mash-up|\w*mashup)/i,
+  /\b(best\s+of)\b/i,
+  /\b(collections?|songs?\s+collections?|beats?\s+collections?|music\s+collections?|hits\s+collections?|tracks?\s+collections?|best\s+collection)\b/i,
+  /\b(non[\s-]?stop|nonstop)\b/i,
+  /\b(unplugged)\b/i,
+  /\b(hits\s+of)\b/i,
+  /\b(top\s*50\b|top\s*\d{1,4}\b)/i,
+  /\b(latest\s+hits)\b/i,
+  /\b(2020|2021|2022|2023)\b/i,
+  /\b(full\s+album|complete\s+album|all\s+album\s+songs|album\s+songs|album\s+jukebox)\b/i,
+  /\b(all\s+songs|all\s+song|all\s+video\s+songs|songs\s+collection|song\s+collection|music\s+collection|hits\s+collection)\b/i,
+  /\b(multiple\s+songs?|songs?\s+combined|all\s+songs?\s+in\s+one\s+video|multiple\s+tracks?)\b/i,
   /\b(mixtape|mix-tape|mix\s+tape)\b/i,
   /\b(medley|medly)\b/i,
-  /\b(non[\s-]?stop|nonstop)\b/i,
   /\b(compilation|song\s+compilation|remix\s+compilation|video\s+compilation|hits\s+compilation)\b/i,
-  /\b(top\s*\d{1,4}\s*(songs?|tracks?|hits?|romantic|bollywood|punjabi|retro|classics?)?)\b/i,
-  /\b(best\s*\d{1,4}\s*(songs?|tracks?|hits?|romantic|bollywood|punjabi|retro|classics?)?)\b/i,
+  /\b(best\s*\d{1,4}\b)/i,
   /\b(top\s+songs|best\s+songs|superhit\s+songs|greatest\s+hits)\b/i,
   /\b(greatest\s+hits\s+jukebox|golden\s+hits\s+collection|evergreen\s+hits\s+jukebox)\b/i,
-  /\b(best\s+of\s+(?:19\d\d|20\d\d|90s|80s|70s|60s|2000s|2010s|2020s|[a-z0-9\s]{2,}))/i,
   /\b(complete\s+discography|discography)\b/i,
   /\b([a-z0-9\s]+songs\s*\|\s*top\s+[a-z0-9\s]+songs?)\b/i,
   // Multi-song Lofi and Chill compilations (e.g. "Lofi Mix", "Chill Beats Mix", "Study Mix")
@@ -53,8 +58,32 @@ const MULTI_SONG_TITLE_REGEXES = [
   /\b(1\.\s+.*\b2\.\s+.*\b3\.\s+)/i // numbered multi-song track listing
 ];
 
+// Explicit blacklist words that disqualify a video when found in title or description
+export const STRICT_BLACKLIST_WORDS = [
+  'jukebox', 'mashup', 'best of', 'collection', 'non-stop', 'unplugged',
+  'hits of', 'top 50', 'latest hits', '2020', '2021', '2022', '2023',
+  'audio jukebox', 'full album'
+];
+
+export const STRICT_BLACKLIST_REGEXES = STRICT_BLACKLIST_WORDS.map(word => {
+  const escaped = word.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&').replace(/\s+/g, '\\s+');
+  return new RegExp(`\\b${escaped}\\b`, 'i');
+});
+
 /**
- * Validates whether a track ID is a genuine, embeddable YouTube video ID/**
+ * Validates whether a track ID is a genuine, embeddable YouTube video ID// Explicit blacklist words that disqualify a video when found in title or description
+export const STRICT_BLACKLIST_WORDS = [
+  'jukebox', 'mashup', 'best of', 'collection', 'non-stop', 'unplugged',
+  'hits of', 'top 50', 'latest hits', '2020', '2021', '2022', '2023',
+  'audio jukebox', 'full album'
+];
+
+export const STRICT_BLACKLIST_REGEXES = STRICT_BLACKLIST_WORDS.map(word => {
+  const escaped = word.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&').replace(/\s+/g, '\\s+');
+  return new RegExp(`\\b${escaped}\\b`, 'i');
+});
+
+/**
  * Validates whether a track ID is a genuine, embeddable YouTube video ID
  */
 export function isValidYouTubeId(id) {
@@ -103,6 +132,12 @@ export function isSingleSong(track) {
     if (regex.test(lowerTitle)) {
       return false;
     }
+  }
+
+  // 2a. Strict Blacklist words filter on title & description
+  for (const regex of STRICT_BLACKLIST_REGEXES) {
+    if (regex.test(lowerTitle)) return false;
+    if (lowerDesc && regex.test(lowerDesc)) return false;
   }
 
   // 3. Multi-track listing checks in title

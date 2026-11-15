@@ -313,7 +313,7 @@ export class MetricsService {
     const duration = typeof durationMs === 'number' ? Math.round(durationMs * 10) / 10 : 0;
 
     // Categorize Request Types
-    const isHealthCheck = path === '/health' || path === '/' || path === '/api/health';
+    const isHealthCheck = path === '/health' || path === '/' || path === '/api/health' || path === '/ping' || path === '/api/ping';
     const isSocketPoll = path.startsWith('/socket.io/');
     const isAdminApi = path.startsWith('/api/admin/');
     const isUserApi = !isHealthCheck && !isSocketPoll && !isAdminApi;

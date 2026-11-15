@@ -7,6 +7,7 @@ import UserMusicPreference from '../models/UserMusicPreference.js';
 import { catalogService } from '../services/catalogService.js';
 import { TrackDeduplicator, getCanonicalSongKey, cleanSongTitle } from '../services/recommendationHistoryService.js';
 import { getCleanTrackThumbnail, isValidThumbnailUrlFormat, filterTracksWithValidThumbnailsSync } from '../services/thumbnailValidationService.js';
+import { isSingleSong, verifySingleSong } from '../services/songFilter.js';
 
 const router = express.Router();
 
@@ -309,6 +310,23 @@ const RELATED_ARTISTS_MAP = {
   'sidhu moose wala': ['Karan Aujla', 'Amrit Maan', 'Diljit Dosanjh', 'Shubh'],
   'ap dhillon': ['Gurinder Gill', 'Shubh', 'Diljit Dosanjh', 'Karan Aujla'],
   'shubh': ['AP Dhillon', 'Karan Aujla', 'Diljit Dosanjh'],
+  'pawan singh': ['Khesari Lal Yadav', 'Silpi Raj', 'Ritesh Pandey', 'Manoj Tiwari', 'Neelkamal Singh', 'Arvind Akela Kallu', 'Pramod Premi Yadav', 'Akshara Singh'],
+  'khesari lal yadav': ['Pawan Singh', 'Silpi Raj', 'Ritesh Pandey', 'Arvind Akela Kallu', 'Neelkamal Singh', 'Pramod Premi Yadav', 'Dinesh Lal Yadav Nirahua'],
+  'silpi raj': ['Pawan Singh', 'Khesari Lal Yadav', 'Ritesh Pandey', 'Neelkamal Singh', 'Arvind Akela Kallu', 'Ankush Raja'],
+  'ritesh pandey': ['Pawan Singh', 'Khesari Lal Yadav', 'Silpi Raj', 'Arvind Akela Kallu', 'Neelkamal Singh'],
+  'manoj tiwari': ['Pawan Singh', 'Khesari Lal Yadav', 'Kalpana Patowary', 'Sharda Sinha'],
+  'neelkamal singh': ['Pawan Singh', 'Khesari Lal Yadav', 'Silpi Raj', 'Arvind Akela Kallu'],
+  'arvind akela kallu': ['Pawan Singh', 'Khesari Lal Yadav', 'Silpi Raj', 'Ritesh Pandey'],
+  'pramod premi yadav': ['Khesari Lal Yadav', 'Pawan Singh', 'Silpi Raj', 'Ritesh Pandey'],
+  'dinesh lal yadav': ['Pawan Singh', 'Khesari Lal Yadav', 'Kalpana Patowary', 'Amrapali Dubey'],
+  'nirahua': ['Pawan Singh', 'Khesari Lal Yadav', 'Dinesh Lal Yadav', 'Silpi Raj'],
+  'kalpana patowary': ['Manoj Tiwari', 'Pawan Singh', 'Sharda Sinha', 'Khesari Lal Yadav'],
+  'sharda sinha': ['Kalpana Patowary', 'Manoj Tiwari', 'Pawan Singh', 'Anuradha Paudwal'],
+  'anirudh': ['Sid Sriram', 'A.R. Rahman', 'Yuvan Shankar Raja', 'Harris Jayaraj', 'Santhosh Narayanan'],
+  'sid sriram': ['Anirudh', 'A.R. Rahman', 'Pradeep Kumar', 'Chinmayi'],
+  'ar rahman': ['Harris Jayaraj', 'Yuvan Shankar Raja', 'Anirudh', 'Shreya Ghoshal'],
+  'thaman s': ['Devi Sri Prasad', 'Anirudh', 'Sid Sriram', 'Armaan Malik'],
+  'devi sri prasad': ['Thaman S', 'Anirudh', 'Sid Sriram', 'M. M. Keeravani'],
   'taylor swift': ['Ed Sheeran', 'Olivia Rodrigo', 'Sabrina Carpenter', 'Billie Eilish', 'Dua Lipa'],
   'ed sheeran': ['Taylor Swift', 'Shawn Mendes', 'Charlie Puth', 'James Arthur'],
   'ariana grande': ['Dua Lipa', 'Selena Gomez', 'Camila Cabello', 'Billie Eilish'],
@@ -345,20 +363,37 @@ router.get('/similar', async (req, res) => {
     
     let detectedLang = language.toLowerCase();
     if (!detectedLang) {
-      if (/punjabi|sidhu|diljit|ap dhillon|karan aujla|shubh|amrit|bhangra|dhol|jatt/i.test(combinedText)) {
+      if (/bhojpuri|pawan singh|khesari|silpi raj|ritesh pandey|manoj tiwari|nirahua|neelkamal|arvind akela|kallu|pramod premi|sharda sinha|chaita|purvi/i.test(combinedText)) {
+        detectedLang = 'bhojpuri';
+      } else if (/punjabi|sidhu|diljit|ap dhillon|karan aujla|shubh|amrit|bhangra|dhol|jatt/i.test(combinedText)) {
         detectedLang = 'punjabi';
+      } else if (/haryanvi|sapna choudhary|renuka panwar|gulzaar|masoom sharma|diler|sumit goswami/i.test(combinedText)) {
+        detectedLang = 'haryanvi';
+      } else if (/bengali|bangla|rabindra|arijit bengali|shreya bengali|anupam roy|somlata/i.test(combinedText)) {
+        detectedLang = 'bengali';
+      } else if (/marathi|lavani|ajay atul|swapnil|avdhoot|shreya marathi/i.test(combinedText)) {
+        detectedLang = 'marathi';
       } else if (/bhajan|aarti|chalisa|krishna|shiva|ram|hanuman|devotional|mantra/i.test(combinedText)) {
         detectedLang = 'devotional';
-      } else if (/tamil|anirudh|ar rahman tamil|kollywood|sid sriram/i.test(combinedText)) {
+      } else if (/tamil|anirudh|ar rahman tamil|kollywood|sid sriram|yuvan/i.test(combinedText)) {
         detectedLang = 'tamil';
-      } else if (/telugu|dsp|thaman|tollywood/i.test(combinedText)) {
+      } else if (/telugu|dsp|thaman|tollywood|sid sriram telugu/i.test(combinedText)) {
         detectedLang = 'telugu';
+      } else if (/malayalam|mollywood|sushin shyam|shaan rahman/i.test(combinedText)) {
+        detectedLang = 'malayalam';
+      } else if (/kannada|sandalwood|vijay prakash|sanjith hegde/i.test(combinedText)) {
+        detectedLang = 'kannada';
+      } else if (/gujarati|garba|kinjal dave|geeta rabari|kirtidan/i.test(combinedText)) {
+        detectedLang = 'gujarati';
       } else if (/english|pop|taylor|ed sheeran|billie|dualipa|weekend|drake|coldplay/i.test(combinedText)) {
         detectedLang = 'english';
       } else {
         detectedLang = 'hindi';
       }
     }
+
+    // Check if the current song is in a non-Hindi regional/specific language
+    const isRegionalLanguage = ['bhojpuri', 'punjabi', 'haryanvi', 'bengali', 'marathi', 'tamil', 'telugu', 'malayalam', 'kannada', 'gujarati', 'devotional'].includes(detectedLang);
 
     // 2. Identify related artists for rich, varied suggestions
     const artistKey = cleanArtist.toLowerCase();
@@ -369,7 +404,16 @@ router.get('/similar', async (req, res) => {
     const primaryQueries = [];
     const secondaryQueries = [];
 
-    if (detectedLang === 'devotional') {
+    if (detectedLang === 'bhojpuri') {
+      if (cleanArtist && cleanArtist.toLowerCase() !== 'unknown') {
+        primaryQueries.push(`${cleanArtist} hit bhojpuri video songs official`);
+        primaryQueries.push(`${cleanArtist} latest bhojpuri songs`);
+      }
+      relatedArtists.slice(0, 3).forEach(rel => primaryQueries.push(`${rel} hit bhojpuri songs official`));
+      primaryQueries.push(`latest bhojpuri hit video songs official`);
+      secondaryQueries.push(`superhit bhojpuri lokgeet gaana official`);
+      secondaryQueries.push(`top bhojpuri romantic songs official`);
+    } else if (detectedLang === 'devotional') {
       if (cleanArtist) primaryQueries.push(`${cleanArtist} popular bhajan devotional songs`);
       relatedArtists.slice(0, 2).forEach(rel => primaryQueries.push(`${rel} hit bhajan aarti songs`));
       primaryQueries.push(`peaceful devotional krishna ram hanuman bhajan`);
@@ -383,6 +427,34 @@ router.get('/similar', async (req, res) => {
       primaryQueries.push(`latest punjabi hit songs official`);
       secondaryQueries.push(`top punjabi pop songs`);
       secondaryQueries.push(`punjabi romantic hits official`);
+    } else if (detectedLang === 'haryanvi') {
+      if (cleanArtist && cleanArtist.toLowerCase() !== 'unknown') {
+        primaryQueries.push(`${cleanArtist} top haryanvi hit songs`);
+      }
+      relatedArtists.slice(0, 2).forEach(rel => primaryQueries.push(`${rel} haryanvi hit songs`));
+      primaryQueries.push(`latest haryanvi hit songs official`);
+      secondaryQueries.push(`superhit haryanvi gaana official`);
+    } else if (detectedLang === 'bengali') {
+      if (cleanArtist && cleanArtist.toLowerCase() !== 'unknown') {
+        primaryQueries.push(`${cleanArtist} top bengali hit songs`);
+      }
+      relatedArtists.slice(0, 2).forEach(rel => primaryQueries.push(`${rel} bengali hit songs`));
+      primaryQueries.push(`latest bengali hit songs official`);
+      secondaryQueries.push(`popular bangla gaan official`);
+    } else if (detectedLang === 'tamil') {
+      if (cleanArtist && cleanArtist.toLowerCase() !== 'unknown') {
+        primaryQueries.push(`${cleanArtist} top tamil hit songs`);
+      }
+      relatedArtists.slice(0, 2).forEach(rel => primaryQueries.push(`${rel} tamil hit songs`));
+      primaryQueries.push(`latest tamil hit video songs official`);
+      secondaryQueries.push(`superhit kollywood songs official`);
+    } else if (detectedLang === 'telugu') {
+      if (cleanArtist && cleanArtist.toLowerCase() !== 'unknown') {
+        primaryQueries.push(`${cleanArtist} top telugu hit songs`);
+      }
+      relatedArtists.slice(0, 2).forEach(rel => primaryQueries.push(`${rel} telugu hit songs`));
+      primaryQueries.push(`latest telugu hit video songs official`);
+      secondaryQueries.push(`superhit tollywood songs official`);
     } else if (detectedLang === 'english') {
       if (cleanArtist && cleanArtist.toLowerCase() !== 'unknown') {
         primaryQueries.push(`${cleanArtist} greatest hit songs`);
@@ -430,6 +502,9 @@ router.get('/similar', async (req, res) => {
       const candidateTitle = (track.title || '').toLowerCase();
       const currentTitleLower = (cleanTitle || title).toLowerCase();
 
+      // Ensure track passes single song verification (permanently bans compilations, mashups, jukeboxes, full albums)
+      if (!isSingleSong(track)) return false;
+
       // Title exact or normalized match
       if (candidateTitle === currentTitleLower) return false;
 
@@ -476,13 +551,17 @@ router.get('/similar', async (req, res) => {
       if (results.length >= 15) break;
     }
 
-    // Tier B: Curated catalog fallback
+    // Tier B: Curated catalog fallback (ONLY if not a regional/specific language or if curated track explicitly matches)
     if (results.length < 5) {
       const curated = await catalogService.getCuratedTracks();
       const matchingCurated = curated.filter(t => {
         const matchArtist = cleanArtist && (t.artist || '').toLowerCase().includes(cleanArtist.toLowerCase());
         const matchGenre = genre && (t.genre || '').toLowerCase().includes(genre.toLowerCase());
         const matchLang = detectedLang && (t.language || '').toLowerCase().includes(detectedLang);
+        // If regional language (e.g. bhojpuri), ONLY accept if artist or language strictly matches
+        if (isRegionalLanguage) {
+          return matchLang || (cleanArtist && matchArtist);
+        }
         return matchArtist || matchGenre || matchLang;
       });
       for (const track of matchingCurated) {
@@ -497,6 +576,21 @@ router.get('/similar', async (req, res) => {
       for (const track of secondaryCandidates) {
         addTrack(track);
         if (results.length >= 15) break;
+      }
+    }
+
+    // Tier D: Regional safety net - if regional and still under 5, do NOT fallback to Bollywood/English.
+    // Query YouTube dynamically with broad regional queries until we have at least 5 matching songs.
+    if (results.length < 5 && isRegionalLanguage) {
+      const regionalFallbackQueries = [
+        `${detectedLang} superhit songs official video`,
+        `top ${detectedLang} hit gaana`,
+        `popular ${detectedLang} music hits`
+      ];
+      const regionalCandidates = await catalogService.fetchDynamicCandidates(regionalFallbackQueries, 10);
+      for (const track of regionalCandidates) {
+        addTrack(track, `Top ${detectedLang} selection`);
+        if (results.length >= 5) break;
       }
     }
 

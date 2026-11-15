@@ -32,7 +32,17 @@ import { isValidThumbnailUrlFormat } from './thumbnailValidationService.js';
  * - Individual acoustic, unplugged or live versions of a single song
  */
 
-// Known official artist and record label channel indicators
+// Explicit blacklist words that disqualify a video when found in title or description
+export const STRICT_BLACKLIST_WORDS = [
+  'jukebox', 'mashup', 'best of', 'collection', 'non-stop', 'unplugged',
+  'hits of', 'top 50', 'latest hits', '2020', '2021', '2022', '2023',
+  'audio jukebox', 'full album'
+];
+
+export const STRICT_BLACKLIST_REGEXES = STRICT_BLACKLIST_WORDS.map(word => {
+  const escaped = word.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&').replace(/\s+/g, '\\s+');
+  return new RegExp(`\\b${escaped}\\b`, 'i');
+});
 const OFFICIAL_CHANNELS = [
   't-series', 'tseries', 'sony music', 'sonymusic', 'zee music', 'zeemusic',
   'yrf', 'yash raj films', 'tips official', 'tips music', 'saregama', 'saregamamusic',
@@ -72,29 +82,31 @@ export function isMainstreamArtist(artistOrTitle = '') {
 }
 
 // Multi-song title patterns that MUST ALWAYS be rejected
+// Strictly bans generic compilation playlists, mashups, and multi-song albums per user specification:
+// ['jukebox', 'mashup', 'best of', 'collection', 'non-stop', 'unplugged', 'hits of', 'top 50', 'latest hits', '2020', '2021', '2022', '2023', 'audio jukebox', 'full album']
 const MULTI_SONG_TITLE_REGEXES = [
-  // Jukeboxes
+  // User Mandatory Blacklist Terms
   /\b(audio\s+jukebox|video\s+jukebox|album\s+jukebox|radio\s+jukebox|jukebox)\b/i,
-  // Mashups & strict multi-song mixes
   /(?:mega\s+mashup|non[\s-]?stop\s+mashup|mashup|mash\s+up|mash-up|\w*mashup)/i,
-  /\b(mixtape|mix-tape|mix\s+tape)\b/i,
-  // Medleys
-  /\b(medley|medly)\b/i,
-  // Non-stop collections & continuous playlists
+  /\b(best\s+of)\b/i,
+  /\b(collections?|songs?\s+collections?|beats?\s+collections?|music\s+collections?|hits\s+collections?|tracks?\s+collections?|best\s+collection)\b/i,
   /\b(non[\s-]?stop|nonstop)\b/i,
-  // Compilations & collections
-  /\b(compilation|song\s+compilation|remix\s+compilation|video\s+compilation|hits\s+compilation|remixes\s+compilation)\b/i,
-  /\b(songs?\s+collections?|beats?\s+collections?|music\s+collections?|hits\s+collections?|tracks?\s+collections?|best\s+collection)\b/i,
-  // Albums and complete collections
+  /\b(unplugged)\b/i,
+  /\b(hits\s+of)\b/i,
+  /\b(top\s*50\b|top\s*\d{1,4}\b)/i,
+  /\b(latest\s+hits)\b/i,
+  /\b(2020|2021|2022|2023)\b/i,
   /\b(full\s+album|complete\s+album|all\s+album\s+songs|album\s+songs)\b/i,
+
+  // Additional Compilation & Multi-song patterns
+  /\b(mixtape|mix-tape|mix\s+tape)\b/i,
+  /\b(medley|medly)\b/i,
+  /\b(compilation|song\s+compilation|remix\s+compilation|video\s+compilation|hits\s+compilation|remixes\s+compilation)\b/i,
   /\b(all\s+songs|all\s+song|all\s+video\s+songs|songs\s+collection|song\s+collection|music\s+collection|hits\s+collection)\b/i,
   /\b(multiple\s+songs?|songs?\s+combined|all\s+songs?\s+in\s+one\s+video|multiple\s+tracks?)\b/i,
-  // Top / Best-of artist collections and playlists (e.g. "Best of KK", "Best of Arijit Singh", "Top Songs of Artist")
-  /\b(top\s*\d{1,4}\b)/i,
   /\b(best\s*\d{1,4}\b)/i,
   /\b(top\s+songs|best\s+songs|superhit\s+songs|greatest\s+hits)\b/i,
   /\b(greatest\s+hits\s+jukebox|golden\s+hits\s+collection|evergreen\s+hits\s+jukebox)\b/i,
-  /\b(best\s+of\s+(?:19\d\d|20\d\d|90s|80s|70s|60s|2000s|2010s|2020s|[a-z0-9\s]{2,}))/i,
   /\b(complete\s+discography|discography)\b/i,
   /\b([a-z0-9\s]+songs\s*\|\s*top\s+[a-z0-9\s]+songs?)\b/i,
   // Multi-song Lofi and Chill compilations (e.g. "Lofi Mix", "Chill Beats Mix", "Study Mix")
@@ -136,9 +148,9 @@ export function classifySongType(title = '', channel = '') {
     return 'single_song_remix';
   }
 
-  // 2. Single-song acoustic / unplugged / live versions
-  if (/\b(acoustic\s+(version|video)?|unplugged|live\s+performance|live\s+at|live\s+in|live\s+version|orchestral)\b/i.test(lower) &&
-      !/\b(compilation|nonstop|full\s+concert)\b/i.test(lower)) {
+  // 2. Single-song acoustic / live versions
+  if (/\b(acoustic\s+(version|video)?|live\s+performance|live\s+at|live\s+in|live\s+version|orchestral)\b/i.test(lower) &&
+      !/\b(compilation|nonstop|full\s+concert|unplugged|jukebox)\b/i.test(lower)) {
     return 'acoustic_unplugged';
   }
 
@@ -259,6 +271,27 @@ export function verifySingleSong(track) {
         isValid: false,
         reason: `Title matches multi-song exclusion pattern: ${regex}`,
         songType: 'multi_song_compilation',
+        verificationStatus: 'rejected_multi_song'
+      };
+    }
+  }
+
+  // 2a. User-mandated Strict Blacklist words filter on title & description:
+  // ['jukebox', 'mashup', 'best of', 'collection', 'non-stop', 'unplugged', 'hits of', 'top 50', 'latest hits', '2020', '2021', '2022', '2023', 'audio jukebox', 'full album']
+  for (const regex of STRICT_BLACKLIST_REGEXES) {
+    if (regex.test(lowerTitle)) {
+      return {
+        isValid: false,
+        reason: `Title contains blacklisted term (${regex})`,
+        songType: 'blacklisted_compilation',
+        verificationStatus: 'rejected_multi_song'
+      };
+    }
+    if (lowerDesc && regex.test(lowerDesc)) {
+      return {
+        isValid: false,
+        reason: `Description contains blacklisted term (${regex})`,
+        songType: 'blacklisted_compilation',
         verificationStatus: 'rejected_multi_song'
       };
     }

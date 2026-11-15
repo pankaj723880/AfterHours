@@ -1,27 +1,26 @@
-name: Render 24/7 Keep-Alive
+name: Render Keep-Alive Ping
 
 on:
   schedule:
-    # Trigger every 10 minutes continuously, 24/7 including weekends
-    # Note: GitHub Actions cron runs with variable jitter (typically 3-12 min during peak load)
+    # Trigger every 10 minutes continuously to prevent Render free-tier spinning down (15-min idle timeout)
     - cron: '*/10 * * * *'
   workflow_dispatch:
 
-# Prevent overlapping workflow runs if a network request hangs or delays
+# Prevent overlapping workflow runs if a network request delays
 concurrency:
   group: render-keepalive
   cancel-in-progress: true
 
 jobs:
   ping-render:
-    name: Keep Render Backend Awake
+    name: Ping Render Backend
     runs-on: ubuntu-latest
     timeout-minutes: 3
 
     steps:
-      - name: Ping Render /health Endpoint
+      - name: Ping /ping Endpoint
         run: |
-          TARGET_URL="${{ secrets.BACKEND_URL || 'https://afterhours-zvic.onrender.com' }}/health"
+          TARGET_URL="${{ secrets.BACKEND_URL || 'https://afterhours-zvic.onrender.com' }}/ping"
           echo "=================================================="
           echo "Initiating keep-alive ping to Render backend"
           echo "Target URL: $TARGET_URL"
@@ -30,11 +29,11 @@ jobs:
 
           # Perform HTTP GET ping with:
           # --silent --show-error: quiet output unless error occurs
-          # --max-time 20: 20-second hard timeout to avoid hung connections
+          # --max-time 25: 25-second hard timeout to avoid hanging connections
           # --retry 2 --retry-delay 5: retry transient edge network glitches
-          # -w: extract HTTP status code, total response time, and connect time
-          HTTP_RESPONSE=$(curl -sS -o /tmp/health_response.json -w "%{http_code}:%{time_total}:%{time_connect}" \
-            --max-time 20 \
+          # -w: output HTTP status code, total response time, and connect time
+          HTTP_RESPONSE=$(curl -sS -o /tmp/ping_response.json -w "%{http_code}:%{time_total}:%{time_connect}" \
+            --max-time 25 \
             --retry 2 \
             --retry-delay 5 \
             -H "User-Agent: Loopra-KeepAlive/2.0 (GitHubActions; +https://github.com/pankaj723880/AfterHours)" \
@@ -54,7 +53,7 @@ jobs:
           echo "Connect Time     : ${CONNECT_TIME}s"
           echo "Total Time       : ${TOTAL_TIME}s"
           echo "Response Body    :"
-          cat /tmp/health_response.json 2>/dev/null || echo "[No Response Body]"
+          cat /tmp/ping_response.json 2>/dev/null || echo "[No Response Body]"
           echo ""
 
           if [ "$HTTP_STATUS" -eq 200 ]; then
@@ -64,4 +63,3 @@ jobs:
             echo "::error::Render backend returned unexpected HTTP status $HTTP_STATUS"
             exit 1
           fi
-

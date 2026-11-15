@@ -39,7 +39,7 @@ const REGIONAL_AND_CLASSICAL_MUSIC_TERMS = [
   'raga', 'raag', 'ragini', 'bandish', 'tarana', 'thumri', 'khayal', 'dhrupad',
   'sitar', 'sarod', 'tabla', 'shehnai', 'bansuri', 'flute', 'santoor',
   'veena', 'mridangam', 'symphony', 'sonata', 'concerto', 'nocturne', 'prelude',
-  'acoustic version', 'unplugged', 'live performance', 'coke studio'
+  'acoustic version', 'live performance', 'coke studio'
 ];
 
 // Non-music anti-patterns (Disqualifiers that strictly indicate non-music content)
@@ -73,21 +73,28 @@ const NON_MUSIC_PATTERNS = {
     /\b(with background music|relaxing background music for study|study with me background|ambient background for gaming|gameplay with phonk|tiktok edit with music|satisfying video with music)\b/i
   ],
   compilation_or_collection: [
+    // User Mandatory Blacklist Terms
     /\b(audio\s+jukebox|video\s+jukebox|album\s+jukebox|radio\s+jukebox|jukebox)\b/i,
     /(?:mega\s+mashup|non[\s-]?stop\s+mashup|mashup|mash\s+up|mash-up|\w*mashup)/i,
+    /\b(best\s+of)\b/i,
+    /\b(collections?|songs?\s+collections?|beats?\s+collections?|music\s+collections?|hits\s+collections?|tracks?\s+collections?|best\s+collection)\b/i,
+    /\b(non[\s-]?stop|nonstop)\b/i,
+    /\b(unplugged)\b/i,
+    /\b(hits\s+of)\b/i,
+    /\b(top\s*50\b|top\s*\d{1,4}\b)/i,
+    /\b(latest\s+hits)\b/i,
+    /\b(2020|2021|2022|2023)\b/i,
+    /\b(full\s+album|complete\s+album|all\s+album\s+songs|album\s+songs)\b/i,
+
+    // Additional Compilation Patterns
     /\b(mixtape|mix-tape|mix\s+tape)\b/i,
     /\b(medley|medly)\b/i,
-    /\b(non[\s-]?stop|nonstop)\b/i,
     /\b(compilation|song\s+compilation|remix\s+compilation|video\s+compilation|hits\s+compilation|remixes\s+compilation)\b/i,
-    /\b(songs?\s+collections?|beats?\s+collections?|music\s+collections?|hits\s+collections?|tracks?\s+collections?|best\s+collection)\b/i,
-    /\b(full\s+album|complete\s+album|all\s+album\s+songs|album\s+songs)\b/i,
     /\b(all\s+songs|all\s+song|all\s+video\s+songs|songs\s+collection|song\s+collection|music\s+collection|hits\s+collection)\b/i,
     /\b(multiple\s+songs?|songs?\s+combined|all\s+songs?\s+in\s+one\s+video|multiple\s+tracks?)\b/i,
-    /\b(top\s*\d{1,4}\b)/i,
     /\b(best\s*\d{1,4}\b)/i,
     /\b(top\s+songs|best\s+songs|superhit\s+songs|greatest\s+hits)\b/i,
     /\b(greatest\s+hits\s+jukebox|golden\s+hits\s+collection|evergreen\s+hits\s+jukebox)\b/i,
-    /\b(best\s+of\s+(?:19\d\d|20\d\d|90s|80s|70s|60s|2000s|2010s|2020s|[a-z0-9\s]{2,}))/i,
     /\b(complete\s+discography|discography)\b/i,
     /\b([a-z0-9\s]+songs\s*\|\s*top\s+[a-z0-9\s]+songs?)\b/i,
     /\b(lofi\s+mix|lo-fi\s+mix|chill\s+(?:beats\s+)?mix|study\s+mix|relaxing\s+mix|sleep\s+mix)\b/i,
