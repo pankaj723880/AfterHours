@@ -17,16 +17,21 @@ const SimilarSongsModal = lazy(() => import('./components/Recommendations/Simila
 const LyricsModal = lazy(() => import('./components/Player/LyricsModal'));
 const SleepTimerModal = lazy(() => import('./components/Player/SleepTimerModal'));
 const PlayerSettingsModal = lazy(() => import('./components/Player/PlayerSettingsModal'));
-import SuggestedForYouSection from './components/Player/SuggestedForYouSection';
+const SuggestedForYouSection = lazy(() => import('./components/Player/SuggestedForYouSection'));
+const MoodToMusicSection = lazy(() => import('./components/Mood/MoodToMusicSection'));
+const PersonalizedRecommendationsSection = lazy(() => import('./components/Recommendations/PersonalizedRecommendationsSection'));
+const LoopraAiCompanion = lazy(() => import('./components/AiMusicCompanion/LoopraAiCompanion'));
+const VoiceAgentModal = lazy(() => import('./components/VoiceAgent/VoiceAgentModal'));
+const LoopraCanvas = lazy(() => import('./components/Player/LoopraCanvas'));
+const NostalgiaStationView = lazy(() => import('./components/Radio/NostalgiaStationView'));
 const ListeningStatsModal = lazy(() => import('./components/Stats/ListeningStatsModal'));
 const UserProfileModal = lazy(() => import('./components/Profile/UserProfileModal'));
 const DiscoverSwipe = lazy(() => import('./components/Discover/DiscoverSwipe'));
 const DjClubPage = lazy(() => import('./components/DjClub/DjClubPage'));
 const RelaxModeView = lazy(() => import('./components/Relax/RelaxModeView'));
-import NostalgiaStationView from './components/Radio/NostalgiaStationView';
 import CinematicVideoPlayer from './components/Player/CinematicVideoPlayer';
 import { requestVideoPictureInPicture, requestAudioPictureInPicture } from './utils/pictureInPictureManager';
-import AppSplashScreen from './components/Common/AppSplashScreen';
+const AppSplashScreen = lazy(() => import('./components/Common/AppSplashScreen'));
 import CmsAnnouncementBar from './components/Common/CmsAnnouncementBar';
 import CmsHeroBanner from './components/Common/CmsHeroBanner';
 import CmsMaintenanceOverlay from './components/Common/CmsMaintenanceOverlay';
@@ -70,20 +75,25 @@ import CompactHeroV2 from './components/Home/CompactHeroV2';
 import CompactFeatureDeckV2 from './components/Home/CompactFeatureDeckV2';
 import { USE_COMPACT_V2_UI, USE_V2_DRAWER, USE_V2_PLAYLISTS_UI, USE_V2_LIBRARY_UI, USE_V2_SWIPE_UI } from './constants/featureFlags';
 import { listeningStatsService } from './services/listeningStatsService';
-import MoodToMusicSection from './components/Mood/MoodToMusicSection';
-import PersonalizedRecommendationsSection from './components/Recommendations/PersonalizedRecommendationsSection';
-import LoopraAiCompanion from './components/AiMusicCompanion/LoopraAiCompanion';
-import VoiceAgentModal from './components/VoiceAgent/VoiceAgentModal';
 import { recommendationsClient } from './services/recommendationsClient';
 import { learningIntelligenceClient } from './services/learningIntelligenceClient';
 import { validatePlaybackTrack } from './services/musicValidationClient';
-import LoopraCanvas from './components/Player/LoopraCanvas';
 const TimeMachineRadio = lazy(() => import('./components/Radio/TimeMachineRadio'));
 const IndianRadioView = lazy(() => import('./components/Radio/IndianRadioView'));
-import Hls from 'hls.js';
-if (typeof window !== 'undefined') {
-  window.Hls = Hls;
-}
+
+// Lazy load HLS library only when an HLS radio stream is played
+let hlsModulePromise = null;
+const loadHls = async () => {
+  if (typeof window !== 'undefined' && window.Hls) return window.Hls;
+  if (!hlsModulePromise) {
+    hlsModulePromise = import('hls.js').then((mod) => {
+      const HlsLib = mod.default || mod;
+      if (typeof window !== 'undefined') window.Hls = HlsLib;
+      return HlsLib;
+    });
+  }
+  return hlsModulePromise;
+};
 const ActivityFeed = lazy(() => import('./components/Activity/ActivityFeed'));
 import MobileBottomNav from './components/Navigation/MobileBottomNav';
 import LoopraFooter from './components/Navigation/LoopraFooter';
@@ -136,12 +146,28 @@ const socket = io(BACKEND_URL || (typeof window !== 'undefined' ? window.locatio
   transports: ['websocket', 'polling'],
   withCredentials: true,
   reconnection: true,
-  reconnectionAttempts: Infinity,
+  reconnectionAttempts: 5,
   reconnectionDelay: 2000,
   reconnectionDelayMax: 10000,
-  timeout: 30000,
-  autoConnect: true,
+  timeout: 10000,
+  autoConnect: false,
 });
+
+// Non-blocking asynchronous connect after main thread initial UI render
+if (typeof window !== 'undefined') {
+  const scheduleSocketConnect = () => {
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(() => socket.connect(), { timeout: 2500 });
+    } else {
+      setTimeout(() => socket.connect(), 600);
+    }
+  };
+  if (document.readyState === 'complete') {
+    scheduleSocketConnect();
+  } else {
+    window.addEventListener('load', scheduleSocketConnect, { once: true });
+  }
+}
 
 let hasLoggedSocketWarn = false;
 let socketReconnectAttempts = 0;
@@ -3850,45 +3876,43 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   }, []);
   const ytReadyCallbacksRef = useRef([]);
 
-  useEffect(() => {
-    // Setup single, persistent onYouTubeIframeAPIReady handler
-    if (typeof window !== 'undefined') {
-      const runReadyCallbacks = () => {
-        while (ytReadyCallbacksRef.current.length > 0) {
-          const cb = ytReadyCallbacksRef.current.shift();
-          try {
-            if (typeof cb === 'function') cb();
-          } catch (e) {
-            console.warn('[Loopra YT API] Callback execution error:', e);
-          }
-        }
-      };
+  // On-demand YouTube IFrame API script loader (never blocks initial render)
+  const ensureYouTubeIframeApi = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    if (window.YT && window.YT.Player) return;
 
-      if (!window.onYouTubeIframeAPIReady) {
-        window.onYouTubeIframeAPIReady = () => {
-          runReadyCallbacks();
-        };
-      } else {
-        const existingReady = window.onYouTubeIframeAPIReady;
-        window.onYouTubeIframeAPIReady = () => {
-          try { existingReady(); } catch (_) {}
-          runReadyCallbacks();
-        };
+    const runReadyCallbacks = () => {
+      while (ytReadyCallbacksRef.current.length > 0) {
+        const cb = ytReadyCallbacksRef.current.shift();
+        try {
+          if (typeof cb === 'function') cb();
+        } catch (e) {
+          console.warn('[Loopra YT API] Callback execution error:', e);
+        }
       }
+    };
+
+    if (!window.onYouTubeIframeAPIReady) {
+      window.onYouTubeIframeAPIReady = () => {
+        runReadyCallbacks();
+      };
+    } else {
+      const existingReady = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => {
+        try { existingReady(); } catch (_) {}
+        runReadyCallbacks();
+      };
     }
 
-    if (!window.YT) {
-      // Check if YouTube iframe API script tag is already in DOM
-      const existingScript = document.querySelector('script[src*="youtube.com/iframe_api"]');
-      if (!existingScript) {
-        const tag = document.createElement('script');
-        tag.src = "https://www.youtube.com/iframe_api";
-        const firstScriptTag = document.getElementsByTagName('script')[0];
-        if (firstScriptTag && firstScriptTag.parentNode) {
-          firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-        } else {
-          document.head.appendChild(tag);
-        }
+    const existingScript = document.querySelector('script[src*="youtube.com/iframe_api"]');
+    if (!existingScript) {
+      const tag = document.createElement('script');
+      tag.src = "https://www.youtube.com/iframe_api";
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      if (firstScriptTag && firstScriptTag.parentNode) {
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+      } else {
+        document.head.appendChild(tag);
       }
     }
   }, []);
@@ -4820,7 +4844,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   }, []);
 
   const initPlayerInstance = useCallback((videoId, shouldAutoPlay = true, startSeconds = 0) => {
-    if (!window.YT || !window.YT.Player) return;
+    if (!window.YT || !window.YT.Player) {
+      ensureYouTubeIframeApi();
+      ytReadyCallbacksRef.current.push(() => {
+        initPlayerInstance(videoId, shouldAutoPlay, startSeconds);
+      });
+      return;
+    }
 
     // Prevent duplicate player instances: destroy existing instance before creating a new one
     isPlayerReadyRef.current = false;
@@ -5210,35 +5240,45 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         }
       };
 
-      if (currentSong.streamFormat === 'hls' && Hls.isSupported()) {
-        const hls = new Hls({
-          enableWorker: false,
-          lowLatencyMode: true,
-          backBufferLength: 30
-        });
-        hlsRef.current = hls;
-        hls.loadSource(resolvedStreamUrl);
-        hls.attachMedia(radioAudio);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          triggerPlay();
-        });
-        hls.on(Hls.Events.ERROR, (event, data) => {
-          if (data.fatal) {
-            console.warn('[IndianRadio] HLS Fatal Error:', data.type, data.details);
-            switch (data.type) {
-              case Hls.ErrorTypes.NETWORK_ERROR:
-                hls.startLoad();
-                break;
-              case Hls.ErrorTypes.MEDIA_ERROR:
-                hls.recoverMediaError();
-                break;
-              default:
-                hls.destroy();
-                hlsRef.current = null;
-                setIsPlaying(false);
-                break;
-            }
+      if (currentSong.streamFormat === 'hls') {
+        loadHls().then((HlsLib) => {
+          if (HlsLib && HlsLib.isSupported()) {
+            const hls = new HlsLib({
+              enableWorker: false,
+              lowLatencyMode: true,
+              backBufferLength: 30
+            });
+            hlsRef.current = hls;
+            hls.loadSource(resolvedStreamUrl);
+            hls.attachMedia(radioAudio);
+            hls.on(HlsLib.Events.MANIFEST_PARSED, () => {
+              triggerPlay();
+            });
+            hls.on(HlsLib.Events.ERROR, (event, data) => {
+              if (data.fatal) {
+                console.warn('[IndianRadio] HLS Fatal Error:', data.type, data.details);
+                switch (data.type) {
+                  case HlsLib.ErrorTypes.NETWORK_ERROR:
+                    hls.startLoad();
+                    break;
+                  case HlsLib.ErrorTypes.MEDIA_ERROR:
+                    hls.recoverMediaError();
+                    break;
+                  default:
+                    hls.destroy();
+                    hlsRef.current = null;
+                    setIsPlaying(false);
+                    break;
+                }
+              }
+            });
+          } else {
+            radioAudio.src = resolvedStreamUrl;
+            triggerPlay();
           }
+        }).catch(() => {
+          radioAudio.src = resolvedStreamUrl;
+          triggerPlay();
         });
       } else {
         radioAudio.src = resolvedStreamUrl;
@@ -5566,6 +5606,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         initPlayerInstance(currentSong.id, !isFirstMount, savedSeekTime);
         loadedVideoIdRef.current = currentSong.id;
       } else {
+        ensureYouTubeIframeApi();
         ytReadyCallbacksRef.current.push(() => {
           initPlayerInstance(currentSong.id, !isFirstMount, savedSeekTime);
           loadedVideoIdRef.current = currentSong.id;
@@ -5620,7 +5661,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
     }
 
-    const curatedKey = stationKey === 'barber' ? 'saloon' : (stationKey === 'truck' ? 'horn' : (stationKey === 'pauwa' ? 'theka' : null));
+    // Instant display for home & special stations: seed immediately with curated catalog without network roundtrip
+    const curatedKey = stationKey === 'barber' ? 'saloon' : (stationKey === 'truck' ? 'horn' : (stationKey === 'pauwa' ? 'theka' : (stationKey === 'home' ? 'saloon' : null)));
     if (curatedKey && CURATED_STATION_TRACKS && CURATED_STATION_TRACKS[curatedKey]) {
       const curatedList = CURATED_STATION_TRACKS[curatedKey];
       setSongs(curatedList);

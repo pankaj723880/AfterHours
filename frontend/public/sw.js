@@ -1,4 +1,4 @@
-const CACHE_NAME = 'loopra-v8-shell';
+const CACHE_NAME = 'loopra-v9-shell';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -77,27 +77,46 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. HTML page navigations: Network First, falling back to cached shell
+  // 3. HTML page navigations: Stale-While-Revalidate with fast fallback
+  // Ensures instant app startup on mobile/Android TWA without network stalls,
+  // while silently updating the shell in the background for subsequent visits.
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            const clone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', clone));
-          }
-          return networkResponse;
-        })
-        .catch(async () => {
-          const cached =
-            (await caches.match('/index.html', { ignoreSearch: true })) ||
-            (await caches.match('/', { ignoreSearch: true }));
-          if (cached) return cached;
-          return new Response('Offline - Loopra is temporarily unavailable', {
-            status: 503,
-            headers: { 'Content-Type': 'text/html' }
-          });
-        })
+      (async () => {
+        const cached =
+          (await caches.match('/index.html', { ignoreSearch: true })) ||
+          (await caches.match('/', { ignoreSearch: true }));
+
+        // Background update promise
+        const networkPromise = fetch(request)
+          .then((networkResponse) => {
+            if (networkResponse && networkResponse.status === 200) {
+              const clone = networkResponse.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', clone));
+            }
+            return networkResponse;
+          })
+          .catch(() => null);
+
+        // If cached shell is available, return immediately for instant startup!
+        if (cached) {
+          event.waitUntil(networkPromise);
+          return cached;
+        }
+
+        // If cold start without cache, wait for network with safety timeout
+        const fresh = await Promise.race([
+          networkPromise,
+          new Promise((resolve) => setTimeout(() => resolve(null), 3500))
+        ]);
+
+        if (fresh) return fresh;
+
+        return new Response('Offline - Loopra is temporarily unavailable', {
+          status: 503,
+          headers: { 'Content-Type': 'text/html' }
+        });
+      })()
     );
     return;
   }
