@@ -3848,7 +3848,35 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       socket.off('disconnect');
     };
   }, []);
+  const ytReadyCallbacksRef = useRef([]);
+
   useEffect(() => {
+    // Setup single, persistent onYouTubeIframeAPIReady handler
+    if (typeof window !== 'undefined') {
+      const runReadyCallbacks = () => {
+        while (ytReadyCallbacksRef.current.length > 0) {
+          const cb = ytReadyCallbacksRef.current.shift();
+          try {
+            if (typeof cb === 'function') cb();
+          } catch (e) {
+            console.warn('[Loopra YT API] Callback execution error:', e);
+          }
+        }
+      };
+
+      if (!window.onYouTubeIframeAPIReady) {
+        window.onYouTubeIframeAPIReady = () => {
+          runReadyCallbacks();
+        };
+      } else {
+        const existingReady = window.onYouTubeIframeAPIReady;
+        window.onYouTubeIframeAPIReady = () => {
+          try { existingReady(); } catch (_) {}
+          runReadyCallbacks();
+        };
+      }
+    }
+
     if (!window.YT) {
       // Check if YouTube iframe API script tag is already in DOM
       const existingScript = document.querySelector('script[src*="youtube.com/iframe_api"]');
@@ -4814,15 +4842,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       return;
     }
 
-    const currentOrigin = (typeof window !== 'undefined' && window.location.origin)
+    const rawOrigin = (typeof window !== 'undefined' && window.location.origin)
       ? window.location.origin
       : (typeof window !== 'undefined' ? (window.location.protocol + '//' + window.location.host) : '');
+    const cleanOrigin = rawOrigin ? rawOrigin.replace(/\/+$/, '') : '';
 
     playerRef.current = new window.YT.Player('yt-player-instance', {
       height: '100%',
       width: '100%',
       videoId: videoId,
-      host: 'https://www.youtube.com',
       playerVars: { 
         autoplay: shouldAutoPlay ? 1 : 0, 
         controls: 0, 
@@ -4834,8 +4862,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         enablejsapi: 1,
         playsinline: 1,
         start: startSeconds > 0 ? Math.floor(startSeconds) : 0,
-        origin: (typeof window !== 'undefined' && window.location?.origin) ? window.location.origin : currentOrigin,
-        widget_referrer: (typeof window !== 'undefined' && window.location?.href) ? window.location.href : currentOrigin
+        ...(cleanOrigin ? { origin: cleanOrigin, widget_referrer: cleanOrigin } : {})
       },
       events: {
         onReady: (e) => {
@@ -5539,10 +5566,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         initPlayerInstance(currentSong.id, !isFirstMount, savedSeekTime);
         loadedVideoIdRef.current = currentSong.id;
       } else {
-        window.onYouTubeIframeAPIReady = () => {
+        ytReadyCallbacksRef.current.push(() => {
           initPlayerInstance(currentSong.id, !isFirstMount, savedSeekTime);
           loadedVideoIdRef.current = currentSong.id;
-        };
+        });
       }
     });
 
