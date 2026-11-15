@@ -1,0 +1,67 @@
+name: Render 24/7 Keep-Alive
+
+on:
+  schedule:
+    # Trigger every 10 minutes continuously, 24/7 including weekends
+    # Note: GitHub Actions cron runs with variable jitter (typically 3-12 min during peak load)
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+# Prevent overlapping workflow runs if a network request hangs or delays
+concurrency:
+  group: render-keepalive
+  cancel-in-progress: true
+
+jobs:
+  ping-render:
+    name: Keep Render Backend Awake
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Ping Render /health Endpoint
+        run: |
+          TARGET_URL="${{ secrets.BACKEND_URL || 'https://afterhours-zvic.onrender.com' }}/health"
+          echo "=================================================="
+          echo "Initiating keep-alive ping to Render backend"
+          echo "Target URL: $TARGET_URL"
+          echo "Timestamp:  $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          echo "=================================================="
+
+          # Perform HTTP GET ping with:
+          # --silent --show-error: quiet output unless error occurs
+          # --max-time 20: 20-second hard timeout to avoid hung connections
+          # --retry 2 --retry-delay 5: retry transient edge network glitches
+          # -w: extract HTTP status code, total response time, and connect time
+          HTTP_RESPONSE=$(curl -sS -o /tmp/health_response.json -w "%{http_code}:%{time_total}:%{time_connect}" \
+            --max-time 20 \
+            --retry 2 \
+            --retry-delay 5 \
+            -H "User-Agent: Loopra-KeepAlive/2.0 (GitHubActions; +https://github.com/pankaj723880/AfterHours)" \
+            -H "Accept: application/json" \
+            "$TARGET_URL" || echo "FAILED")
+
+          if [ "$HTTP_RESPONSE" = "FAILED" ]; then
+            echo "::error::Network error: curl command completely failed to reach $TARGET_URL"
+            exit 1
+          fi
+
+          HTTP_STATUS=$(echo "$HTTP_RESPONSE" | cut -d: -f1)
+          TOTAL_TIME=$(echo "$HTTP_RESPONSE" | cut -d: -f2)
+          CONNECT_TIME=$(echo "$HTTP_RESPONSE" | cut -d: -f3)
+
+          echo "HTTP Status Code : $HTTP_STATUS"
+          echo "Connect Time     : ${CONNECT_TIME}s"
+          echo "Total Time       : ${TOTAL_TIME}s"
+          echo "Response Body    :"
+          cat /tmp/health_response.json 2>/dev/null || echo "[No Response Body]"
+          echo ""
+
+          if [ "$HTTP_STATUS" -eq 200 ]; then
+            echo "::notice::Render keep-alive ping succeeded with HTTP 200 OK (${TOTAL_TIME}s)"
+            exit 0
+          else
+            echo "::error::Render backend returned unexpected HTTP status $HTTP_STATUS"
+            exit 1
+          fi
+
