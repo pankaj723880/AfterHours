@@ -3734,8 +3734,25 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       } 
     } catch (e) {}
   }, [playlists, user]);
-  useEffect(() => localStorage.setItem('youtube_search_cache', JSON.stringify(searchCache)), [searchCache]);
-  useEffect(() => localStorage.setItem('youtube_station_cache', JSON.stringify(stationCache)), [stationCache]);
+  // Limit searchCache to last 20 entries in localStorage to prevent storage bloat
+  useEffect(() => {
+    try {
+      const keys = Object.keys(searchCache || {});
+      const trimmed = {};
+      keys.slice(-20).forEach(k => { trimmed[k] = searchCache[k]; });
+      localStorage.setItem('youtube_search_cache', JSON.stringify(trimmed));
+    } catch (_) {}
+  }, [searchCache]);
+
+  // Limit stationCache to last 20 entries in localStorage
+  useEffect(() => {
+    try {
+      const keys = Object.keys(stationCache || {});
+      const trimmed = {};
+      keys.slice(-20).forEach(k => { trimmed[k] = stationCache[k]; });
+      localStorage.setItem('youtube_station_cache', JSON.stringify(trimmed));
+    } catch (_) {}
+  }, [stationCache]);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e) => {
@@ -11343,13 +11360,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         </div>
       )}
 
-      {/* Render Free-Tier Cold-Start Wake-Up Badge */}
-      {isServerWakingUp && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[10001] px-3.5 py-1.5 rounded-full bg-neutral-900/90 text-amber-400 text-[11px] font-medium border border-amber-500/30 shadow-xl backdrop-blur-md flex items-center gap-2 animate-pulse pointer-events-none">
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-          <span>Waking up Loopra server...</span>
-        </div>
-      )}
+      {/* Render Free-Tier Cold-Start Wake-Up Badge Removed */}
 
       {/* Global Right-Click Track Context Menu */}
       {contextMenu && (

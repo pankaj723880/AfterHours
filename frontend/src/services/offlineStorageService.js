@@ -10,6 +10,9 @@ const DB_NAME = 'LoopraOfflineCacheDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'cached_tracks';
 
+// Safe Cache Hygiene & Storage Limits
+const MAX_CACHED_TRACKS = 25; // Keep at most 25 recent tracks to avoid storage bloat
+
 class OfflineStorageService {
   constructor() {
     this.db = null;
@@ -156,8 +159,12 @@ class OfflineStorageService {
         const store = tx.objectStore(STORE_NAME);
         const req = store.put(record);
 
-        req.onsuccess = () => {
+        req.onsuccess = async () => {
           this.notifyListeners();
+          // Safe LRU Eviction: Prune oldest tracks if cache exceeds limit
+          try {
+            await this.pruneExcessTracks(MAX_CACHED_TRACKS);
+          } catch (_) {}
           resolve(record);
         };
 
@@ -172,6 +179,23 @@ class OfflineStorageService {
         reject(err);
       }
     });
+  }
+
+  /**
+   * Safely prunes older cached audio entries to respect MAX_CACHED_TRACKS.
+   */
+  async pruneExcessTracks(limit = MAX_CACHED_TRACKS) {
+    try {
+      const all = await this.getAllTracks();
+      if (all.length > limit) {
+        // Sort ascending by cachedAt (oldest first)
+        all.sort((a, b) => (a.cachedAt || 0) - (b.cachedAt || 0));
+        const excess = all.slice(0, all.length - limit);
+        for (const item of excess) {
+          await this.deleteTrack(item.videoId);
+        }
+      }
+    } catch (_) {}
   }
 
   async deleteTrack(trackOrId) {

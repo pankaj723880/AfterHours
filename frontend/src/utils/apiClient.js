@@ -3,7 +3,11 @@ import { BACKEND_URL, getApiUrl } from './apiUrl.js';
 const BACKOFF_DELAYS = [2000, 4000, 6000]; // 2s, 4s, 6s backoff delays
 const COLD_START_STATUS_CODES = new Set([502, 503, 504]);
 
-// Internal state tracking
+/**
+ * Internal state tracking
+ * Note: Blocking user-facing wake-up badge has been removed per requirement:
+ * No user-facing 'Waiting for Loopra Server' or 'Waking Up Loopra Server' blocking overlays.
+ */
 let isWakingUp = false;
 let activeRetriesCount = 0;
 let healthCheckPromise = null;
@@ -12,15 +16,8 @@ let healthCheckPromise = null;
  * Updates the wake-up badge visibility across the application.
  */
 function updateWakeUpState(waking) {
-  if (isWakingUp === waking) return;
-  isWakingUp = waking;
-  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-    try {
-      window.dispatchEvent(new CustomEvent('loopra:server-wake-status', {
-        detail: { isWakingUp: waking }
-      }));
-    } catch (_) {}
-  }
+  // Silent state update: Never dispatch blocking UI overlays
+  isWakingUp = false;
 }
 
 /**
