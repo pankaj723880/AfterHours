@@ -60,6 +60,34 @@ export default function CinematicVideoPlayer({
   const [currentQuality, setCurrentQuality] = useState('small');
   const qualityMenuRef = useRef(null);
 
+  // Check if device is mobile or running inside Android TWA / PWA
+  const [isMobileOrApp, setIsMobileOrApp] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const isMobileWidth = window.innerWidth < 768;
+    const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator?.userAgent || '');
+    const isTwaOrStandalone = Boolean(
+      window.LoopraAndroid ||
+      window.navigator?.standalone ||
+      (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+    );
+    return isMobileWidth || isMobileUA || isTwaOrStandalone;
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      const isMobileWidth = window.innerWidth < 768;
+      const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator?.userAgent || '');
+      const isTwaOrStandalone = Boolean(
+        window.LoopraAndroid ||
+        window.navigator?.standalone ||
+        (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      );
+      setIsMobileOrApp(isMobileWidth || isMobileUA || isTwaOrStandalone);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const playerContainerRef = useRef(null);
   const progressBarRef = useRef(null);
   const controlsTimeoutRef = useRef(null);
@@ -446,10 +474,13 @@ export default function CinematicVideoPlayer({
               ? "w-full h-full bg-black border-0 rounded-none overflow-hidden flex flex-col p-0 m-0"
               : isFullscreen
                 ? "w-screen h-screen max-w-none max-h-none rounded-none border-0 bg-black flex flex-col justify-between overflow-hidden relative m-0 p-0 shadow-none"
-                : `w-full h-full sm:h-auto sm:max-h-[96vh] sm:w-[min(100%,calc(96vh*9/16))] bg-neutral-900/98 sm:border sm:border-neutral-800/90 sm:rounded-3xl overflow-hidden shadow-[0_25px_80px_rgba(0,0,0,0.95)] shadow-amber-500/5 flex flex-col transition-all duration-300 relative aspect-[9/16] ${isTheaterMode
-                  ? 'sm:w-[min(100%,calc(98vh*9/16))] sm:max-h-[98vh]'
-                  : ''
-                }`
+                : isMobileOrApp
+                  ? `w-full h-full max-h-[100dvh] bg-neutral-900/98 overflow-hidden shadow-[0_25px_80px_rgba(0,0,0,0.95)] shadow-amber-500/5 flex flex-col transition-all duration-300 relative aspect-[9/16]`
+                  : `w-full my-auto bg-neutral-900/95 backdrop-blur-2xl border border-neutral-800/90 rounded-2xl sm:rounded-3xl overflow-hidden shadow-[0_25px_80px_rgba(0,0,0,0.95)] shadow-amber-500/5 flex flex-col transition-all duration-300 relative ${
+                      isTheaterMode
+                        ? 'max-w-[98vw] max-h-[96vh]'
+                        : 'max-w-5xl max-h-[94vh]'
+                    }`
         }
       >
         {videoModalSong && !isPipActive && (
@@ -556,11 +587,13 @@ export default function CinematicVideoPlayer({
                 ? "w-full h-full bg-black overflow-hidden flex items-center justify-center p-0 m-0"
                 : isFullscreen
                   ? "relative w-full h-full flex-1 bg-black overflow-hidden select-none group flex items-center justify-center"
-                  : "relative w-full h-full flex-1 bg-black overflow-hidden select-none group flex items-center justify-center"
+                  : isMobileOrApp
+                    ? "relative w-full h-full flex-1 bg-black overflow-hidden select-none group flex items-center justify-center"
+                    : "relative w-full aspect-video bg-black overflow-hidden select-none group flex items-center justify-center"
           }
         >
-          <div ref={ytContainerRef} className="w-full h-full relative z-0 pointer-events-none flex items-center justify-center overflow-hidden">
-            <div id="yt-player-instance" className="w-full h-full object-cover"></div>
+          <div ref={ytContainerRef} className={`w-full h-full relative z-0 pointer-events-none flex items-center justify-center ${isMobileOrApp ? 'overflow-hidden' : ''}`}>
+            <div id="yt-player-instance" className={`w-full h-full ${isMobileOrApp ? 'object-cover' : ''}`}></div>
           </div>
 
           {videoModalSong && !isPipActive && (
