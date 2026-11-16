@@ -15,14 +15,14 @@ async function runTests() {
     { title: 'Best of Arijit Singh', term: 'best of' },
     { title: 'Romantic Songs Collection', term: 'collection' },
     { title: 'Non-stop Party Hits', term: 'non-stop' },
-    { title: 'Pawan Singh Unplugged', term: 'unplugged' },
+    { title: 'Pawan Singh Unplugged Mashup Jukebox', term: 'unplugged compilation' },
     { title: 'Hits of Kishore Kumar', term: 'hits of' },
     { title: 'Top 50 Hindi Songs', term: 'top 50' },
     { title: 'Latest Hits 2025', term: 'latest hits' },
-    { title: 'Best Bollywood Songs 2020', term: '2020' },
-    { title: 'Superhit Hindi Songs 2021', term: '2021' },
-    { title: 'Punjabi Hits 2022', term: '2022' },
-    { title: 'Bhojpuri Hit Songs 2023', term: '2023' },
+    { title: 'Best Bollywood Songs 2020 Jukebox', term: '2020 compilation' },
+    { title: 'Superhit Hindi Songs 2021 Non-stop', term: '2021 compilation' },
+    { title: 'Punjabi Hits 2022 Collection', term: '2022 compilation' },
+    { title: 'Bhojpuri Hit Songs 2023 Jukebox', term: '2023 compilation' },
     { title: 'Aashiqui 2 Full Album Songs', term: 'full album' },
     // Description matching test
     { title: 'Romantic Melody Video', description: 'Listen to this non-stop collection audio jukebox', term: 'desc match' }
@@ -108,7 +108,8 @@ async function runTests() {
     { title: 'Lover - Diljit Dosanjh (Official Music Video)', channel: 'Diljit Dosanjh', duration: '3:12' },
     { title: 'Baarishein (Official Video) - Anuv Jain', channel: 'Anuv Jain', duration: '3:27' },
     { title: 'Pawan Singh - Lollypop Lagelu (Official Song)', channel: 'Wave Music', duration: '4:15' },
-    { title: 'Khesari Lal Yadav - Saj Ke Sawar Ke (Official Video)', channel: 'Yashi Films', duration: '3:40' }
+    { title: 'Khesari Lal Yadav - Saj Ke Sawar Ke (Official Video)', channel: 'Yashi Films', duration: '3:40' },
+    { title: 'Jeene Laga Hoon (Unplugged Version) - Atif Aslam', channel: 'Tips Official', duration: '4:10' }
   ];
 
   for (const item of genuineCases) {

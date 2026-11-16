@@ -33,9 +33,11 @@ import { isValidThumbnailUrlFormat } from './thumbnailValidationService.js';
  */
 
 // Explicit blacklist words that disqualify a video when found in title or description
+// Note: Per user specification, 'unplugged' individual songs are legitimate singles,
+// while multi-song unplugged compilations, jukeboxes, or mashups remain strictly rejected.
 export const STRICT_BLACKLIST_WORDS = [
-  'jukebox', 'mashup', 'best of', 'collection', 'non-stop', 'unplugged',
-  'hits of', 'top 50', 'latest hits', '2020', '2021', '2022', '2023',
+  'jukebox', 'mashup', 'best of', 'collection', 'non-stop',
+  'hits of', 'top 50', 'latest hits',
   'audio jukebox', 'full album'
 ];
 
@@ -83,7 +85,8 @@ export function isMainstreamArtist(artistOrTitle = '') {
 
 // Multi-song title patterns that MUST ALWAYS be rejected
 // Strictly bans generic compilation playlists, mashups, and multi-song albums per user specification:
-// ['jukebox', 'mashup', 'best of', 'collection', 'non-stop', 'unplugged', 'hits of', 'top 50', 'latest hits', '2020', '2021', '2022', '2023', 'audio jukebox', 'full album']
+// ['jukebox', 'mashup', 'best of', 'collection', 'non-stop', 'hits of', 'top 50', 'latest hits', 'audio jukebox', 'full album']
+// Legit individual unplugged versions are preserved, while multi-song unplugged/year compilations are blocked.
 const MULTI_SONG_TITLE_REGEXES = [
   // User Mandatory Blacklist Terms
   /\b(audio\s+jukebox|video\s+jukebox|album\s+jukebox|radio\s+jukebox|jukebox)\b/i,
@@ -91,12 +94,15 @@ const MULTI_SONG_TITLE_REGEXES = [
   /\b(best\s+of)\b/i,
   /\b(collections?|songs?\s+collections?|beats?\s+collections?|music\s+collections?|hits\s+collections?|tracks?\s+collections?|best\s+collection)\b/i,
   /\b(non[\s-]?stop|nonstop)\b/i,
-  /\b(unplugged)\b/i,
   /\b(hits\s+of)\b/i,
   /\b(top\s*50\b|top\s*\d{1,4}\b)/i,
   /\b(latest\s+hits)\b/i,
-  /\b(2020|2021|2022|2023)\b/i,
   /\b(full\s+album|complete\s+album|all\s+album\s+songs|album\s+songs)\b/i,
+
+  // Multi-song Unplugged & Year Compilations (e.g. "Unplugged Jukebox", "Unplugged Non-Stop", "2020 Hits Jukebox", "Top 50 2022")
+  /\b(unplugged\s+(?:jukebox|mashup|collection|non[\s-]?stop|songs|hits)|(?:collection|jukebox|mashup|non[\s-]?stop|top|best)\s+.*unplugged)\b/i,
+  /\b(?:2020|2021|2022|2023)\s+(?:jukebox|mashup|collection|non[\s-]?stop|hits|songs|compilation|playlist|full\s+album)\b/i,
+  /\b(?:jukebox|mashup|collection|non[\s-]?stop|top\s*\d+|best\s+of|latest\s+hits|all\s+songs|compilation|full\s+album)\s+.*(?:2020|2021|2022|2023)\b/i,
 
   // Additional Compilation & Multi-song patterns
   /\b(mixtape|mix-tape|mix\s+tape)\b/i,
@@ -148,9 +154,9 @@ export function classifySongType(title = '', channel = '') {
     return 'single_song_remix';
   }
 
-  // 2. Single-song acoustic / live versions
-  if (/\b(acoustic\s+(version|video)?|live\s+performance|live\s+at|live\s+in|live\s+version|orchestral)\b/i.test(lower) &&
-      !/\b(compilation|nonstop|full\s+concert|unplugged|jukebox)\b/i.test(lower)) {
+  // 2. Single-song acoustic / unplugged / live versions
+  if (/\b(acoustic\s+(version|video)?|unplugged|live\s+performance|live\s+at|live\s+in|live\s+version|orchestral)\b/i.test(lower) &&
+      !/\b(compilation|nonstop|full\s+concert|jukebox|mashup)\b/i.test(lower)) {
     return 'acoustic_unplugged';
   }
 

@@ -544,8 +544,29 @@ router.get('/similar', async (req, res) => {
       return true;
     };
 
-    // Tier A: Query primary queries
-    const primaryCandidates = await catalogService.fetchDynamicCandidates(primaryQueries, 10);
+    // Discovery query buckets spanning multiple genres and cultures
+    const DISCOVERY_QUERY_POOLS = [
+      ['global pop billboard hits 2025 official music video', 'trending indie pop acoustic songs'],
+      ['latest punjabi banger hits official music video', 'latin pop reggaeton hits official'],
+      ['popular bollywood acoustic melodious songs', 'top lo-fi chill hop study beats'],
+      ['soothing sufiyana qawwali coke studio official', 'classic 90s rock ballads official music video']
+    ];
+
+    // Pick 2 random buckets to query for fresh variety on every request/refresh
+    const shuffledPoolIndices = [0, 1, 2, 3].sort(() => 0.5 - Math.random());
+    const selectedDiscoveryQueries = [
+      ...DISCOVERY_QUERY_POOLS[shuffledPoolIndices[0]],
+      ...DISCOVERY_QUERY_POOLS[shuffledPoolIndices[1]]
+    ];
+
+    // Fetch primary queries and discovery queries in parallel for ultra-fast response
+    const [primaryCandidates, dynamicDiscovery, curated] = await Promise.all([
+      catalogService.fetchDynamicCandidates(primaryQueries, 10).catch(() => []),
+      catalogService.fetchDynamicCandidates(selectedDiscoveryQueries, 6).catch(() => []),
+      catalogService.getCuratedTracks().catch(() => [])
+    ]);
+
+    // Tier A: Add primary candidates
     for (const track of primaryCandidates) {
       addTrack(track);
       if (results.length >= 15) break;
@@ -553,7 +574,6 @@ router.get('/similar', async (req, res) => {
 
     // Tier B: Curated catalog fallback (ONLY if not a regional/specific language or if curated track explicitly matches)
     if (results.length < 5) {
-      const curated = await catalogService.getCuratedTracks();
       const matchingCurated = curated.filter(t => {
         const matchArtist = cleanArtist && (t.artist || '').toLowerCase().includes(cleanArtist.toLowerCase());
         const matchGenre = genre && (t.genre || '').toLowerCase().includes(genre.toLowerCase());
@@ -602,30 +622,12 @@ router.get('/similar', async (req, res) => {
     const discoverResults = [];
     const discoverCandidatePool = [];
 
-    // Discovery query buckets spanning multiple genres and cultures
-    const DISCOVERY_QUERY_POOLS = [
-      ['global pop billboard hits 2025 official music video', 'trending indie pop acoustic songs'],
-      ['latest punjabi banger hits official music video', 'latin pop reggaeton hits official'],
-      ['popular bollywood unplugged acoustic melodious songs', 'top lo-fi chill hop study beats'],
-      ['soothing sufiyana qawwali coke studio official', 'classic 90s rock ballads official music video']
-    ];
-
-    // Pick 2 random buckets to query for fresh variety on every request/refresh
-    const shuffledPoolIndices = [0, 1, 2, 3].sort(() => 0.5 - Math.random());
-    const selectedDiscoveryQueries = [
-      ...DISCOVERY_QUERY_POOLS[shuffledPoolIndices[0]],
-      ...DISCOVERY_QUERY_POOLS[shuffledPoolIndices[1]]
-    ];
-
-    const dynamicDiscovery = await catalogService.fetchDynamicCandidates(selectedDiscoveryQueries, 6);
     for (const t of dynamicDiscovery) {
       discoverCandidatePool.push(t);
     }
 
     // Also pull from curated catalog to guarantee varied genres and languages
-    const curatedDiscovery = await catalogService.getCuratedTracks();
-    // Shuffle curated tracks to avoid repeatedly serving the same order
-    const shuffledCurated = [...curatedDiscovery].sort(() => 0.5 - Math.random());
+    const shuffledCurated = [...curated].sort(() => 0.5 - Math.random());
     for (const t of shuffledCurated) {
       discoverCandidatePool.push(t);
     }

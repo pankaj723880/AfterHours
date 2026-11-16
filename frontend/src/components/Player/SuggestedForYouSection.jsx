@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Play, Plus, Check } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Play, Plus, Check, RefreshCw, AlertCircle } from 'lucide-react';
 import { getCleanThumbnail, isThumbnailUrlFormatValid } from '../../utils/thumbnailValidator';
+import { getApiUrl } from '../../utils/apiUrl';
 
 // Client-side in-memory cache keyed by track ID to avoid duplicate network fetches
 const suggestionsCache = new Map();
@@ -14,31 +15,43 @@ export default function SuggestedForYouSection({
 }) {
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const abortControllerRef = useRef(null);
 
   const trackId = currentSong?.id || currentSong?.videoId || '';
   const trackTitle = currentSong?.title || '';
   const trackArtist = currentSong?.artist || currentSong?.channel || '';
   const trackGenre = currentSong?.genre || '';
 
-  useEffect(() => {
+  const fetchSuggestions = useCallback((forceRefresh = false) => {
     if (!trackId && !trackTitle) {
       setSuggestions([]);
+      setLoading(false);
+      setError(null);
       return;
     }
 
-    // 1. Check in-memory cache for instant zero-latency loading
     const cacheKey = `${trackId}_${trackTitle}_${trackArtist}`;
-    if (suggestionsCache.has(cacheKey)) {
+    if (!forceRefresh && suggestionsCache.has(cacheKey)) {
       const cachedList = suggestionsCache.get(cacheKey) || [];
       setSuggestions(cachedList);
+      setLoading(false);
+      setError(null);
       if (typeof onSuggestionsLoaded === 'function') {
         onSuggestionsLoaded(cachedList);
       }
       return;
     }
 
-    let isMounted = true;
+    // Cancel any in-flight request when track changes or retries
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     setLoading(true);
+    setError(null);
 
     const params = new URLSearchParams({
       trackId,
@@ -47,10 +60,16 @@ export default function SuggestedForYouSection({
       genre: trackGenre
     });
 
-    fetch(`/api/recommendations/similar?${params.toString()}`)
-      .then((res) => res.json())
+    const endpointUrl = getApiUrl(`/api/recommendations/similar?${params.toString()}`);
+
+    fetch(endpointUrl, { signal: abortController.signal })
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        return res.json();
+      })
       .then((data) => {
-        if (!isMounted) return;
         if (data && (Array.isArray(data.related) || Array.isArray(data.items))) {
           // Normalize current playing track properties for strict exclusion
           const currentId = String(trackId).toLowerCase().trim();
@@ -88,43 +107,49 @@ export default function SuggestedForYouSection({
             return cleaned;
           };
 
-          // Group 1: 5 songs related to currently playing song
+          // Group 1: Up to 5 songs related to currently playing song
           const rawRelated = data.related || (data.items || []).slice(0, 5);
           const validRelated = sanitizeGroup(rawRelated).slice(0, 5);
 
-          // Group 2: 5 diverse Discover Mix songs (deduplicated against Group 1 and current track)
+          // Group 2: Up to 5 diverse Discover Mix songs (deduplicated against Group 1 and current track)
           const rawDiscover = data.discover || (data.items || []).slice(5);
           const validDiscover = sanitizeGroup(rawDiscover).slice(0, 5);
 
-          // All 10 unique suggestions in one sequence: first 5 related, next 5 discover
-          const combined10 = [...validRelated, ...validDiscover];
+          // Progressive rendering: immediately publish whatever suggestions are validated
+          const combined = [...validRelated, ...validDiscover];
 
-          suggestionsCache.set(cacheKey, combined10);
-          setSuggestions(combined10);
+          suggestionsCache.set(cacheKey, combined);
+          setSuggestions(combined);
+          setError(null);
 
           if (typeof onSuggestionsLoaded === 'function') {
-            onSuggestionsLoaded(combined10);
+            onSuggestionsLoaded(combined);
           }
         } else {
           setSuggestions([]);
         }
       })
       .catch((err) => {
+        if (err.name === 'AbortError') return;
         console.warn('[SuggestedForYou] Failed to fetch suggestions:', err.message);
-        if (isMounted) {
-          setSuggestions([]);
-        }
+        setError('Failed to load suggestions');
       })
       .finally(() => {
-        if (isMounted) setLoading(false);
+        setLoading(false);
       });
+  }, [trackId, trackTitle, trackArtist, trackGenre, onSuggestionsLoaded]);
+
+  useEffect(() => {
+    fetchSuggestions(false);
 
     return () => {
-      isMounted = false;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
     };
-  }, [trackId, trackTitle, trackArtist, trackGenre]);
+  }, [fetchSuggestions]);
 
-  if (!currentSong || (!loading && suggestions.length === 0)) {
+  if (!currentSong) {
     return null;
   }
 
@@ -134,20 +159,37 @@ export default function SuggestedForYouSection({
       className="w-full mt-6 pt-5 border-t border-white/10 shrink-0 select-none pb-12 sm:pb-8"
     >
       <div className="flex items-center justify-between px-1 mb-3">
-        <h3 className="text-xs sm:text-sm font-bold text-white tracking-wide">
-          Suggested Songs
-        </h3>
-        {suggestions.length > 0 && (
-          <span className="text-[10px] text-neutral-400 font-medium">
-            {suggestions.length} tracks
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          <h3 className="text-xs sm:text-sm font-bold text-white tracking-wide">
+            Suggested Songs
+          </h3>
+          {loading && (
+            <span className="inline-block w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {suggestions.length > 0 && !loading && (
+            <span className="text-[10px] text-neutral-400 font-medium">
+              {suggestions.length} tracks
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => fetchSuggestions(true)}
+            disabled={loading}
+            className="p-1 rounded-md text-neutral-400 hover:text-white hover:bg-white/5 transition disabled:opacity-50"
+            title="Refresh suggestions"
+            aria-label="Refresh suggestions"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-amber-400' : ''}`} />
+          </button>
+        </div>
       </div>
 
-      {/* Single vertical list - all 10 suggestions, one below another */}
+      {/* Single vertical list - suggestions, one below another */}
       <div className="flex flex-col gap-2 w-full">
         {loading && suggestions.length === 0 ? (
-          Array.from({ length: 10 }).map((_, i) => (
+          Array.from({ length: 5 }).map((_, i) => (
             <div
               key={i}
               className="w-full p-2 rounded-xl bg-neutral-900/60 border border-white/5 animate-pulse flex items-center gap-3"
@@ -160,6 +202,20 @@ export default function SuggestedForYouSection({
               <div className="w-8 h-8 rounded-lg bg-neutral-800 shrink-0" />
             </div>
           ))
+        ) : !loading && suggestions.length === 0 ? (
+          <div className="w-full p-4 rounded-xl bg-neutral-900/40 border border-white/5 flex flex-col items-center justify-center text-center gap-2 my-1">
+            <AlertCircle className="w-5 h-5 text-neutral-500" />
+            <p className="text-xs text-neutral-400">
+              {error ? 'Unable to load song suggestions' : 'No relevant suggestions available'}
+            </p>
+            <button
+              type="button"
+              onClick={() => fetchSuggestions(true)}
+              className="mt-1 px-3 py-1 text-[11px] font-medium text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-lg transition"
+            >
+              Try Again
+            </button>
+          </div>
         ) : (
           suggestions.map((song) => {
             const songId = song.id || song.videoId;

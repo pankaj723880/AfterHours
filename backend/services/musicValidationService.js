@@ -79,12 +79,13 @@ const NON_MUSIC_PATTERNS = {
     /\b(best\s+of)\b/i,
     /\b(collections?|songs?\s+collections?|beats?\s+collections?|music\s+collections?|hits\s+collections?|tracks?\s+collections?|best\s+collection)\b/i,
     /\b(non[\s-]?stop|nonstop)\b/i,
-    /\b(unplugged)\b/i,
     /\b(hits\s+of)\b/i,
     /\b(top\s*50\b|top\s*\d{1,4}\b)/i,
     /\b(latest\s+hits)\b/i,
-    /\b(2020|2021|2022|2023)\b/i,
     /\b(full\s+album|complete\s+album|all\s+album\s+songs|album\s+songs)\b/i,
+    /\b(unplugged\s+(?:jukebox|mashup|collection|non[\s-]?stop|songs|hits)|(?:collection|jukebox|mashup|non[\s-]?stop|top|best)\s+.*unplugged)\b/i,
+    /\b(?:2020|2021|2022|2023)\s+(?:jukebox|mashup|collection|non[\s-]?stop|hits|songs|compilation|playlist|full\s+album)\b/i,
+    /\b(?:jukebox|mashup|collection|non[\s-]?stop|top\s*\d+|best\s+of|latest\s+hits|all\s+songs|compilation|full\s+album)\s+.*(?:2020|2021|2022|2023)\b/i,
 
     // Additional Compilation Patterns
     /\b(mixtape|mix-tape|mix\s+tape)\b/i,

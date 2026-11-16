@@ -24,19 +24,21 @@
  */
 
 // Regex for multi-song titles, mashups, and non-original compilations
-// Strictly excludes: ['jukebox', 'mashup', 'best of', 'collection', 'non-stop', 'unplugged', 'hits of', 'top 50', 'latest hits', '2020', '2021', '2022', '2023', 'audio jukebox', 'full album']
+// Strictly excludes: ['jukebox', 'mashup', 'best of', 'collection', 'non-stop', 'hits of', 'top 50', 'latest hits', 'audio jukebox', 'full album']
+// Preserves legitimate individual unplugged versions
 const MULTI_SONG_TITLE_REGEXES = [
   /\b(audio\s+jukebox|video\s+jukebox|album\s+jukebox|radio\s+jukebox|jukebox)\b/i,
   /(?:mega\s+mashup|non[\s-]?stop\s+mashup|mashup|mash\s+up|mash-up|\w*mashup)/i,
   /\b(best\s+of)\b/i,
   /\b(collections?|songs?\s+collections?|beats?\s+collections?|music\s+collections?|hits\s+collections?|tracks?\s+collections?|best\s+collection)\b/i,
   /\b(non[\s-]?stop|nonstop)\b/i,
-  /\b(unplugged)\b/i,
   /\b(hits\s+of)\b/i,
   /\b(top\s*50\b|top\s*\d{1,4}\b)/i,
   /\b(latest\s+hits)\b/i,
-  /\b(2020|2021|2022|2023)\b/i,
   /\b(full\s+album|complete\s+album|all\s+album\s+songs|album\s+songs|album\s+jukebox)\b/i,
+  /\b(unplugged\s+(?:jukebox|mashup|collection|non[\s-]?stop|songs|hits)|(?:collection|jukebox|mashup|non[\s-]?stop|top|best)\s+.*unplugged)\b/i,
+  /\b(?:2020|2021|2022|2023)\s+(?:jukebox|mashup|collection|non[\s-]?stop|hits|songs|compilation|playlist|full\s+album)\b/i,
+  /\b(?:jukebox|mashup|collection|non[\s-]?stop|top\s*\d+|best\s+of|latest\s+hits|all\s+songs|compilation|full\s+album)\s+.*(?:2020|2021|2022|2023)\b/i,
   /\b(all\s+songs|all\s+song|all\s+video\s+songs|songs\s+collection|song\s+collection|music\s+collection|hits\s+collection)\b/i,
   /\b(multiple\s+songs?|songs?\s+combined|all\s+songs?\s+in\s+one\s+video|multiple\s+tracks?)\b/i,
   /\b(mixtape|mix-tape|mix\s+tape)\b/i,
@@ -60,8 +62,8 @@ const MULTI_SONG_TITLE_REGEXES = [
 
 // Explicit blacklist words that disqualify a video when found in title or description
 export const STRICT_BLACKLIST_WORDS = [
-  'jukebox', 'mashup', 'best of', 'collection', 'non-stop', 'unplugged',
-  'hits of', 'top 50', 'latest hits', '2020', '2021', '2022', '2023',
+  'jukebox', 'mashup', 'best of', 'collection', 'non-stop',
+  'hits of', 'top 50', 'latest hits',
   'audio jukebox', 'full album'
 ];
 
@@ -73,8 +75,8 @@ export const STRICT_BLACKLIST_REGEXES = STRICT_BLACKLIST_WORDS.map(word => {
 /**
  * Validates whether a track ID is a genuine, embeddable YouTube video ID// Explicit blacklist words that disqualify a video when found in title or description
 export const STRICT_BLACKLIST_WORDS = [
-  'jukebox', 'mashup', 'best of', 'collection', 'non-stop', 'unplugged',
-  'hits of', 'top 50', 'latest hits', '2020', '2021', '2022', '2023',
+  'jukebox', 'mashup', 'best of', 'collection', 'non-stop',
+  'hits of', 'top 50', 'latest hits',
   'audio jukebox', 'full album'
 ];
 
