@@ -58,21 +58,17 @@ describe('LOOPRA VIDEO PLAYER SINGLE ENGINE & ORIGINAL THEME VERIFICATION', () =
     );
   });
 
-  it('3. Clean removal of Video Quality and Playback Speed features', () => {
-    // Quality options must NOT be present in CinematicVideoPlayer
-    assert.strictEqual(playerCode.includes('hd1080'), false, 'Must NOT contain hd1080 quality option');
-    assert.strictEqual(playerCode.includes('hd720'), false, 'Must NOT contain hd720 quality option');
-    assert.strictEqual(playerCode.includes('1080p Full HD'), false, 'Must NOT contain 1080p Full HD string');
-    assert.strictEqual(playerCode.includes('720p HD'), false, 'Must NOT contain 720p HD string');
-    assert.strictEqual(playerCode.includes('getAvailableQualityLevels'), false, 'Must NOT call getAvailableQualityLevels');
-    assert.strictEqual(playerCode.includes('setPlaybackQuality'), false, 'Must NOT force setPlaybackQuality');
+  it('3. Resolution quality switcher and data saver support', () => {
+    // Quality selection capabilities via YouTube API
+    assert.ok(playerCode.includes('getAvailableQualityLevels'), 'Must retrieve getAvailableQualityLevels');
+    assert.ok(playerCode.includes('setPlaybackQuality'), 'Must support setPlaybackQuality');
+    assert.ok(playerCode.includes('240p (Data Saver)'), 'Must offer 240p Data Saver');
 
     // Playback speed options must NOT be present in CinematicVideoPlayer
     assert.strictEqual(playerCode.includes('SPEED_OPTIONS'), false, 'Must NOT contain SPEED_OPTIONS');
     assert.strictEqual(playerCode.includes('handleSpeedSelect'), false, 'Must NOT contain handleSpeedSelect');
 
-    // No quality badges or dropdown settings
-    assert.strictEqual(playerCode.includes('Auto (Adaptive)'), false, 'Must NOT contain Auto (Adaptive) badge');
+    // Clean custom resolution switcher
     assert.strictEqual(playerCode.includes('<Settings'), false, 'Must NOT render Settings dropdown');
   });
 

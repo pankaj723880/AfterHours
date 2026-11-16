@@ -4,6 +4,7 @@ import { TrackDeduplicator } from '../../utils/trackIdentity';
 import { getCleanThumbnail, isThumbnailUrlFormatValid } from '../../utils/thumbnailValidator';
 import { CURATED_STATION_TRACKS } from '../../constants/curatedPlaylists';
 import { isSingleSong, filterSingleSongs } from '../../services/songFilter';
+import DownloadTrackButton from '../Offline/DownloadTrackButton';
 
 // Track-level runtime failed image cache for graceful component fallbacks
 const locallyFailedVideoIds = new Set();
@@ -608,35 +609,41 @@ export default function PersonalizedRecommendationsSection({
 
         {/* Action icons bar on card */}
         <div className="mt-2 pt-2 border-t border-neutral-800/60 flex items-center justify-between opacity-80 group-hover:opacity-100">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleLike?.(playableTrack);
-            }}
-            className={`p-1 rounded-lg transition ${
-              trackLiked ? 'text-amber-400 hover:text-amber-300' : 'text-neutral-500 hover:text-white'
-            }`}
-            title={trackLiked ? 'Remove from favourites' : 'Add to favourites'}
-          >
-            <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-            </svg>
-          </button>
-
-          {onAddToPlaylist && (
+          <div className="flex items-center gap-1">
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onAddToPlaylist(playableTrack, e);
+                onToggleLike?.(playableTrack);
               }}
-              className="p-1 rounded-lg text-neutral-500 hover:text-white transition"
-              title="Add to playlist"
+              className={`p-1 rounded-lg transition ${
+                trackLiked ? 'text-amber-400 hover:text-amber-300' : 'text-neutral-500 hover:text-white'
+              }`}
+              title={trackLiked ? 'Remove from favourites' : 'Add to favourites'}
             >
               <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
               </svg>
             </button>
-          )}
+
+            {onAddToPlaylist && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddToPlaylist(playableTrack, e);
+                }}
+                className="p-1 rounded-lg text-neutral-500 hover:text-white transition"
+                title="Add to playlist"
+              >
+                <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                  <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          <div onClick={(e) => e.stopPropagation()}>
+            <DownloadTrackButton track={playableTrack} variant="badge" />
+          </div>
         </div>
       </div>
     );

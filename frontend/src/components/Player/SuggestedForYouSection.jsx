@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Play, Plus, Check, RefreshCw, AlertCircle } from 'lucide-react';
 import { getCleanThumbnail, isThumbnailUrlFormatValid } from '../../utils/thumbnailValidator';
 import { getApiUrl } from '../../utils/apiUrl';
+import DownloadTrackButton from '../Offline/DownloadTrackButton';
 
 // Client-side in-memory cache keyed by track ID to avoid duplicate network fetches
 const suggestionsCache = new Map();
@@ -243,9 +244,14 @@ export default function SuggestedForYouSection({
 
                 {/* Song Title & Artist Name */}
                 <div className="min-w-0 flex-1 pr-1">
-                  <h4 className="text-xs sm:text-sm font-semibold text-white truncate group-hover:text-amber-400 transition">
-                    {song.title}
-                  </h4>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <h4 className="text-xs sm:text-sm font-semibold text-white truncate group-hover:text-amber-400 transition">
+                      {song.title}
+                    </h4>
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <DownloadTrackButton track={song} variant="badge" />
+                    </div>
+                  </div>
                   <p className="text-[11px] sm:text-xs text-neutral-400 truncate mt-0.5">
                     {song.artist || song.channel || 'Artist'}
                   </p>

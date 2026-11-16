@@ -205,7 +205,7 @@ const fetchFromBackend = async (query, options = {}) => {
   const callerSignal = options.signal;
 
   const onCallerAbort = () => {
-    try { controller.abort(); } catch (_) {}
+    try { controller.abort(); } catch (_) { }
   };
 
   if (callerSignal) {
@@ -562,7 +562,7 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
       if (savedSong) {
         return parseFloat(localStorage.getItem('afterhours_current_time') || '0') || 0;
       }
-    } catch (e) {}
+    } catch (e) { }
     return 0;
   });
   const [duration, setDuration] = useState(() => {
@@ -571,7 +571,7 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
       if (savedSong) {
         return parseFloat(localStorage.getItem('afterhours_duration') || '0') || 0;
       }
-    } catch (e) {}
+    } catch (e) { }
     return 0;
   });
   const [isSeeking, setIsSeeking] = useState(false);
@@ -598,7 +598,7 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
               if (typeof player.getPlayerState === 'function') {
                 state = player.getPlayerState();
               }
-            } catch (_) {}
+            } catch (_) { }
 
             // For offline / HTML5 audio player or playing/buffering YouTube states:
             const isOfflinePlayer = Boolean(player.isOffline || player.isRadio);
@@ -615,10 +615,10 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
                     lastSavedTimeRef.current = cur;
                     try {
                       localStorage.setItem('afterhours_current_time', cur.toString());
-                    } catch (e) {}
+                    } catch (e) { }
                   }
                 }
-              } catch (_) {}
+              } catch (_) { }
             }
           }
 
@@ -628,7 +628,7 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
               if (typeof player.getPlayerState === 'function') {
                 state = player.getPlayerState();
               }
-            } catch (_) {}
+            } catch (_) { }
 
             const isOfflinePlayer = Boolean(player.isOffline || player.isRadio);
             if (isOfflinePlayer || state === 1 || state === 2 || state === 3 || typeof state !== 'number') {
@@ -640,7 +640,7 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
                 }
                 setDuration(prev => {
                   if (prev !== dur) {
-                    try { localStorage.setItem('afterhours_duration', dur.toString()); } catch (e) {}
+                    try { localStorage.setItem('afterhours_duration', dur.toString()); } catch (e) { }
                     return dur;
                   }
                   return prev;
@@ -656,9 +656,9 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
               window.dispatchEvent(new CustomEvent('loopra:preload-next-track', {
                 detail: { currentSongId, curTime, totalDur }
               }));
-            } catch (_) {}
+            } catch (_) { }
           }
-        } catch (e) {}
+        } catch (e) { }
       };
 
       // Call once immediately upon entering playing state
@@ -680,7 +680,7 @@ const PlayerProgress = React.memo(({ playerRef, isPlaying, onSeek, currentSongId
     setCurrentTime(seekTime);
     try {
       localStorage.setItem('afterhours_current_time', seekTime.toString());
-    } catch (e) {}
+    } catch (e) { }
     if (onSeek) onSeek(seekTime);
   };
 
@@ -741,7 +741,7 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove, c
       didDragRef.current = true;
       try {
         if (navigator.vibrate) navigator.vibrate(35);
-      } catch (err) {}
+      } catch (err) { }
       dragControls.start(e);
     }, 180);
   };
@@ -792,13 +792,12 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove, c
         borderColor: "rgba(var(--accent-rgb,245,158,11),0.7)",
         cursor: "grabbing"
       }}
-      className={`group flex items-center gap-3.5 p-3.5 rounded-2xl cursor-pointer select-none relative transition-all duration-300 border backdrop-blur-xl ${
-        isHolding
+      className={`group flex items-center gap-3.5 p-3.5 rounded-2xl cursor-pointer select-none relative transition-all duration-300 border backdrop-blur-xl ${isHolding
           ? 'bg-amber-500/20 border-amber-500/60 shadow-[0_0_25px_rgba(var(--accent-rgb,245,158,11),0.3)] scale-[1.02]'
           : isCurrent
-          ? 'bg-gradient-to-r from-amber-500/20 via-orange-500/10 to-neutral-900/60 border-amber-500/60 shadow-[0_0_25px_rgba(var(--accent-rgb,245,158,11),0.2)]'
-          : 'bg-neutral-900/40 hover:bg-neutral-800/60 border-neutral-800/80 hover:border-amber-500/40 hover:shadow-[0_8px_30px_rgba(0,0,0,0.6)] hover:-translate-y-0.5'
-      }`}
+            ? 'bg-gradient-to-r from-amber-500/20 via-orange-500/10 to-neutral-900/60 border-amber-500/60 shadow-[0_0_25px_rgba(var(--accent-rgb,245,158,11),0.2)]'
+            : 'bg-neutral-900/40 hover:bg-neutral-800/60 border-neutral-800/80 hover:border-amber-500/40 hover:shadow-[0_8px_30px_rgba(0,0,0,0.6)] hover:-translate-y-0.5'
+        }`}
       onClick={handleClick}
     >
       <div
@@ -821,9 +820,8 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove, c
           onError={(e) => handleImageError(e, track.title, track.id)}
         />
         <div
-          className={`absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 ${
-            isCurrent ? 'opacity-100 bg-amber-950/40' : ''
-          } pointer-events-none`}
+          className={`absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 ${isCurrent ? 'opacity-100 bg-amber-950/40' : ''
+            } pointer-events-none`}
         >
           <Icon name={isCurrent && isPlaying ? "pause" : "play"} className="w-5 h-5 text-amber-400 drop-shadow" />
         </div>
@@ -1467,7 +1465,7 @@ const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlled
           {title && <h2 className="text-base sm:text-lg md:text-2xl font-display font-extrabold text-white tracking-tight truncate">{title}</h2>}
           {subtitle && <p className="text-neutral-400 mt-0.5 md:mt-1 text-xs md:text-sm font-medium line-clamp-1">{subtitle}</p>}
         </div>
-        <button 
+        <button
           onClick={() => setShowAll(!showAll)}
           className="text-xs font-semibold text-neutral-400 hover:text-white transition-colors shrink-0 flex items-center gap-0.5 cursor-pointer"
         >
@@ -1659,7 +1657,7 @@ export default function App() {
         setCmsConfig(normalized);
         try {
           localStorage.setItem('afterhours_cms_public_config', JSON.stringify(normalized));
-        } catch (e) {}
+        } catch (e) { }
         applyThemeToDom(normalized.theme, true);
       } else {
         fetchPublicCmsConfig(BACKEND_URL).then(cfg => {
@@ -1865,7 +1863,7 @@ export default function App() {
           // Only replace state if we have a rich, valid list of at least 3 tracks
           if (qualifiedList.length >= 3) {
             setState(qualifiedList);
-            try { localStorage.setItem(storageKey, JSON.stringify(qualifiedList)); } catch (e) {}
+            try { localStorage.setItem(storageKey, JSON.stringify(qualifiedList)); } catch (e) { }
           }
         }
       } catch (e) {
@@ -1879,7 +1877,7 @@ export default function App() {
               return;
             }
           }
-        } catch (_) {}
+        } catch (_) { }
         if (e?.name !== 'AbortError') {
           console.warn(`[Dynamic Content] Notice fetching ${storageKey}:`, e.message);
         }
@@ -1903,34 +1901,34 @@ export default function App() {
     };
   }, []);
 
-const sanitizeCache = (cache) => {
-  try {
-    if (!cache) return {};
-    const newCache = { ...cache };
-    Object.keys(newCache).forEach(k => {
-      newCache[k] = newCache[k].map(track => {
+  const sanitizeCache = (cache) => {
+    try {
+      if (!cache) return {};
+      const newCache = { ...cache };
+      Object.keys(newCache).forEach(k => {
+        newCache[k] = newCache[k].map(track => {
+          const vid = track.videoId || track.id;
+          track.thumbnail = getCleanThumbnail(track, vid);
+          if (track.image) track.image = track.thumbnail;
+          return track;
+        });
+      });
+      return newCache;
+    } catch (e) { return {}; }
+  };
+  const sanitizeList = (list) => {
+    try {
+      if (!Array.isArray(list)) return [];
+      return list.map(track => {
         const vid = track.videoId || track.id;
         track.thumbnail = getCleanThumbnail(track, vid);
         if (track.image) track.image = track.thumbnail;
         return track;
       });
-    });
-    return newCache;
-  } catch(e) { return {}; }
-};
-const sanitizeList = (list) => {
-  try {
-    if (!Array.isArray(list)) return [];
-    return list.map(track => {
-      const vid = track.videoId || track.id;
-      track.thumbnail = getCleanThumbnail(track, vid);
-      if (track.image) track.image = track.thumbnail;
-      return track;
-    });
-  } catch(e) { return []; }
-};
+    } catch (e) { return []; }
+  };
 
-const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+  const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
 
 
   const [likedSongs, setLikedSongs] = useState(() => {
@@ -1978,7 +1976,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       } else {
         localStorage.removeItem('afterhours_current_song');
       }
-    } catch (e) {}
+    } catch (e) { }
   }, [currentSong]);
   const [isPlaying, setIsPlaying] = useState(false);
   const isPlayingRef = useRef(false);
@@ -2011,7 +2009,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   useEffect(() => {
     try {
       localStorage.setItem('afterhours_shuffle', JSON.stringify(isShuffle));
-    } catch (e) {}
+    } catch (e) { }
   }, [isShuffle]);
 
   const [isRepeat, setIsRepeat] = useState(() => {
@@ -2026,7 +2024,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   useEffect(() => {
     try {
       localStorage.setItem('afterhours_repeat', typeof isRepeat === 'string' ? isRepeat : JSON.stringify(isRepeat));
-    } catch (e) {}
+    } catch (e) { }
   }, [isRepeat]);
 
   const [volume, setVolume] = useState(() => {
@@ -2040,7 +2038,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   useEffect(() => {
     try {
       localStorage.setItem('afterhours_volume', volume.toString());
-    } catch (e) {}
+    } catch (e) { }
   }, [volume]);
 
   // Expose global player controls including setVolume for audio ducking
@@ -2050,7 +2048,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         ...(window.loopraPlayer || {}),
         setVolume: (vol) => {
           setVolume(vol);
-          try { playerRef.current?.setVolume?.(vol); } catch (_) {}
+          try { playerRef.current?.setVolume?.(vol); } catch (_) { }
         },
         getVolume: () => volume,
         isPlaying: () => isPlaying
@@ -2068,7 +2066,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   const [partyTracks, setPartyTracks] = useState([]);
   const [heartbreakTracks, setHeartbreakTracks] = useState([]);
-  
+
   const [stationLoading, setStationLoading] = useState(false);
   const [currentBgIndex, setCurrentBgIndex] = useState(0);
 
@@ -2097,7 +2095,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     videoModalSongRef.current = videoModalSong;
     try {
       window.LoopraAndroid?.setVideoMode?.(Boolean(videoModalSong));
-    } catch (_) {}
+    } catch (_) { }
   }, [videoModalSong]);
 
   // Keep videoModalSong in sync with currentSong whenever playing in Video Mode
@@ -2289,7 +2287,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   useEffect(() => {
     try {
       localStorage.setItem('afterhours_queue', JSON.stringify(queue));
-    } catch (e) {}
+    } catch (e) { }
   }, [queue]);
 
   const [showQueuePanel, setShowQueuePanel] = useState(false);
@@ -2317,7 +2315,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const draggedItem = newQueue[draggedItemIndex];
     newQueue.splice(draggedItemIndex, 1);
     newQueue.splice(dropIndex, 0, draggedItem);
-    
+
     setQueue(newQueue);
     setDraggedItemIndex(null);
   };
@@ -2456,7 +2454,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     setCrossfadeDuration(duration);
     try {
       localStorage.setItem(STORAGE_KEYS.CROSSFADE_DURATION, duration.toString());
-    } catch (_) {}
+    } catch (_) { }
     showToast(duration > 0 ? `Crossfade set to ${duration}s` : 'Crossfade disabled');
   };
 
@@ -2465,7 +2463,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       const next = !prev;
       try {
         localStorage.setItem(STORAGE_KEYS.GAPLESS_ENABLED, next.toString());
-      } catch (_) {}
+      } catch (_) { }
       showToast(next ? 'Gapless playback enabled' : 'Gapless playback disabled');
       return next;
     });
@@ -2637,7 +2635,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           };
           try {
             localStorage.setItem('afterhours_user', JSON.stringify(updated));
-          } catch (_) {}
+          } catch (_) { }
           return updated;
         });
       }
@@ -2675,7 +2673,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           isUserPausedRef.current = true;
           if (silentAudioRef.current) silentAudioRef.current.pause();
           if (playerRef.current && typeof playerRef.current.pauseVideo === 'function') {
-            try { playerRef.current.pauseVideo(); } catch (e) {}
+            try { playerRef.current.pauseVideo(); } catch (e) { }
           }
           setIsPlaying(false);
           showToast('Sleep timer reached. Music paused.');
@@ -2696,7 +2694,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       if (playerRef.current?.setPlaybackRate) {
         playerRef.current.setPlaybackRate(nextSpeed);
       }
-    } catch (e) {}
+    } catch (e) { }
     showToast(`Playback speed: ${nextSpeed}x`);
   };
 
@@ -2709,7 +2707,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         } else {
           playerRef.current?.unMute?.();
         }
-      } catch (e) {}
+      } catch (e) { }
       return next;
     });
   };
@@ -2720,7 +2718,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const shareTitle = `${track.title} - Loopra`;
     const shareText = `Listen to "${track.title}" by ${track.channel || track.artist || 'Loopra'} on Loopra!`;
     if (navigator.share) {
-      navigator.share({ title: shareTitle, text: shareText, url: shareUrl }).catch(() => {});
+      navigator.share({ title: shareTitle, text: shareText, url: shareUrl }).catch(() => { });
     } else {
       navigator.clipboard?.writeText(shareUrl);
       showToast('Track link copied to clipboard!');
@@ -2775,7 +2773,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             localStorage.setItem('afterhours_user', JSON.stringify(data.user));
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     } else if (user?.username) {
       const u = user.username.toLowerCase();
       if (lastAttemptedUsernameRef.current === u) return;
@@ -2817,7 +2815,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               }
             }
           })
-          .catch(() => {});
+          .catch(() => { });
       }
     }
   }, [authToken, user?.username]);
@@ -2957,7 +2955,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               }),
               signal: controller.signal
             }).then(() => clearTimeout(timeoutId)).catch(() => clearTimeout(timeoutId));
-          } catch (e) {}
+          } catch (e) { }
         }
       } else if (activeListeningDurationRef.current % 15 === 0 && activeListeningDurationRef.current > 0) {
         // Periodic sync every 15s of active playback
@@ -3006,7 +3004,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           forceRefresh: true
         }).then(() => {
           lastStatsRefreshTimeRef.current = Date.now();
-        }).catch(() => {});
+        }).catch(() => { });
       }
     }, 10 * 60 * 1000); // 10 minutes
 
@@ -3021,7 +3019,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             forceRefresh: true
           }).then(() => {
             lastStatsRefreshTimeRef.current = Date.now();
-          }).catch(() => {});
+          }).catch(() => { });
         }
       }
     };
@@ -3131,7 +3129,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     if (isPlaying) {
       wasPlayingBeforeAuthRef.current = true;
       if (playerRef.current && typeof playerRef.current.pauseVideo === 'function') {
-        try { playerRef.current.pauseVideo(); } catch (e) {}
+        try { playerRef.current.pauseVideo(); } catch (e) { }
       }
       setIsPlaying(false);
     } else {
@@ -3142,7 +3140,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     setIsSidebarOpen(false);
     setShowAuthModal(true);
     // Non-blocking background health check to awaken Render free-tier instance ahead of submission
-    pingServerHealth().catch(() => {});
+    pingServerHealth().catch(() => { });
   }, [isPlaying]);
 
   const closeAuthModal = useCallback((resumed = false) => {
@@ -3151,7 +3149,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     if (resumed && wasPlayingBeforeAuthRef.current && currentSong) {
       wasPlayingBeforeAuthRef.current = false;
       if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
-        try { playerRef.current.playVideo(); } catch (e) {}
+        try { playerRef.current.playVideo(); } catch (e) { }
       }
       setIsPlaying(true);
     }
@@ -3199,7 +3197,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           // Remote account is authoritative for liked songs: never inject or merge unauthenticated guest/sample tracks
           const remoteLiked = sanitizeList(data.likedSongs || []);
           setLikedSongs(remoteLiked);
-          try { localStorage.setItem('liked_songs', JSON.stringify(remoteLiked)); } catch (e) {}
+          try { localStorage.setItem('liked_songs', JSON.stringify(remoteLiked)); } catch (e) { }
 
           setPlaylists(prev => {
             const remote = sanitizeList(data.playlists || []);
@@ -3207,7 +3205,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             remote.forEach(p => map.set(p.id, p));
             prev.forEach(p => map.set(p.id, p));
             const merged = Array.from(map.values());
-            try { localStorage.setItem('playlists', JSON.stringify(merged)); } catch (e) {}
+            try { localStorage.setItem('playlists', JSON.stringify(merged)); } catch (e) { }
             return merged;
           });
 
@@ -3215,7 +3213,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             setHistory(prev => {
               if (prev.length === 0) {
                 const h = sanitizeList(data.history).slice(0, 50);
-                try { localStorage.setItem('history_songs', JSON.stringify(h)); } catch (e) {}
+                try { localStorage.setItem('history_songs', JSON.stringify(h)); } catch (e) { }
                 return h;
               }
               return prev;
@@ -3226,7 +3224,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             setQueue(prev => {
               if (prev.length === 0) {
                 const q = sanitizeList(data.queue);
-                try { localStorage.setItem('afterhours_queue', JSON.stringify(q)); } catch (e) {}
+                try { localStorage.setItem('afterhours_queue', JSON.stringify(q)); } catch (e) { }
                 return q;
               }
               return prev;
@@ -3363,7 +3361,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       if (!data || !data.user) {
         throw new Error('Invalid user profile received from Google Authentication.');
       }
-      
+
       const loggedInUser = {
         username: data.user.username,
         userId: data.user.userId || data.user._id,
@@ -3396,7 +3394,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       const userQueue = data.user.queue || [];
       setQueue(sanitizeList(userQueue));
       localStorage.setItem('afterhours_queue', JSON.stringify(sanitizeList(userQueue)));
-      
+
     } catch (err) {
       if (slowTimer) clearTimeout(slowTimer);
       setIsAuthSlow(false);
@@ -3562,7 +3560,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       if (!parsed.ok) throw new Error(parsed.error);
       const data = parsed.data;
       if (!data) throw new Error('Invalid authentication response from server.');
-      
+
       const loggedInUser = {
         username: authForm.username,
         userId: data.userId || (data.user && data.user._id),
@@ -3617,7 +3615,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         localStorage.removeItem('afterhours_duration');
         setIsPlaying(false);
         if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
-          try { playerRef.current.stopVideo(); } catch (e) {}
+          try { playerRef.current.stopVideo(); } catch (e) { }
         }
       }
     } catch (err) {
@@ -3636,7 +3634,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     try {
       socket.emit('user_logout', { sessionId: getOrCreateSessionId() });
       socket.auth = { sessionId: getOrCreateSessionId(), token: '' };
-    } catch (e) {}
+    } catch (e) { }
 
     if (websiteSessionIdRef.current && authToken) {
       listeningStatsService.closeWebsiteSession?.({
@@ -3667,7 +3665,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       sessionStorage.removeItem('loopra_home_curated_cache');
       localStorage.removeItem('loopra_curated_cache');
       localStorage.removeItem('loopra_cached_recs');
-    } catch (_) {}
+    } catch (_) { }
     setLikedSongs([]);
     setHistory([]);
     setPlaylists([]);
@@ -3675,7 +3673,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     setCurrentSong(null);
     setIsPlaying(false);
     if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
-      try { playerRef.current.stopVideo(); } catch (e) {}
+      try { playerRef.current.stopVideo(); } catch (e) { }
     }
   };
 
@@ -3697,7 +3695,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   useEffect(() => {
     const refreshOfflineCount = () => {
-      offlineStorageService.getAllTracks().then(t => setOfflineCount(t.length)).catch(() => {});
+      offlineStorageService.getAllTracks().then(t => setOfflineCount(t.length)).catch(() => { });
     };
     refreshOfflineCount();
     const unsub = offlineStorageService.subscribe(refreshOfflineCount);
@@ -3707,25 +3705,25 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   useEffect(() => {
     return () => {
       if (activeObjectUrlRef.current) {
-        try { URL.revokeObjectURL(activeObjectUrlRef.current); } catch (e) {}
+        try { URL.revokeObjectURL(activeObjectUrlRef.current); } catch (e) { }
       }
       if (offlineAudioRef.current) {
         try {
           offlineAudioRef.current.pause();
           offlineAudioRef.current.src = '';
-        } catch (e) {}
+        } catch (e) { }
       }
       if (radioAudioRef.current) {
         try {
           radioAudioRef.current.pause();
           radioAudioRef.current.src = '';
-        } catch (e) {}
+        } catch (e) { }
       }
       if (hlsRef.current) {
         try {
           hlsRef.current.destroy();
           hlsRef.current = null;
-        } catch (e) {}
+        } catch (e) { }
       }
     };
   }, []);
@@ -3751,14 +3749,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   useEffect(() => { if (user) { localStorage.setItem('liked_songs', JSON.stringify(likedSongs)); } else { localStorage.removeItem('liked_songs'); } }, [likedSongs, user]);
   useEffect(() => { if (user) { localStorage.setItem('history_songs', JSON.stringify(history)); } else { localStorage.removeItem('history_songs'); } }, [history, user]);
-  useEffect(() => { 
+  useEffect(() => {
     try {
-      if (user) { 
-        localStorage.setItem('playlists', JSON.stringify(playlists)); 
-      } else { 
-        localStorage.setItem('guest_playlists', JSON.stringify(playlists)); 
-      } 
-    } catch (e) {}
+      if (user) {
+        localStorage.setItem('playlists', JSON.stringify(playlists));
+      } else {
+        localStorage.setItem('guest_playlists', JSON.stringify(playlists));
+      }
+    } catch (e) { }
   }, [playlists, user]);
   // Limit searchCache to last 20 entries in localStorage to prevent storage bloat
   useEffect(() => {
@@ -3767,7 +3765,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       const trimmed = {};
       keys.slice(-20).forEach(k => { trimmed[k] = searchCache[k]; });
       localStorage.setItem('youtube_search_cache', JSON.stringify(trimmed));
-    } catch (_) {}
+    } catch (_) { }
   }, [searchCache]);
 
   // Limit stationCache to last 20 entries in localStorage
@@ -3777,7 +3775,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       const trimmed = {};
       keys.slice(-20).forEach(k => { trimmed[k] = stationCache[k]; });
       localStorage.setItem('youtube_station_cache', JSON.stringify(trimmed));
-    } catch (_) {}
+    } catch (_) { }
   }, [stationCache]);
 
   useEffect(() => {
@@ -3803,7 +3801,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       if (outcome === 'accepted') {
         console.log('User installed the PWA');
       }
-    } catch (e) {}
+    } catch (e) { }
     setDeferredPrompt(null);
     setShowInstallBtn(false);
   };
@@ -3899,7 +3897,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     } else {
       const existingReady = window.onYouTubeIframeAPIReady;
       window.onYouTubeIframeAPIReady = () => {
-        try { existingReady(); } catch (_) {}
+        try { existingReady(); } catch (_) { }
         runReadyCallbacks();
       };
     }
@@ -3953,7 +3951,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         if (playerRef.current && typeof playerRef.current.playVideo === 'function' && isPlaying) {
           playerRef.current.playVideo();
         }
-      } catch (_) {}
+      } catch (_) { }
     }
   };
 
@@ -3978,11 +3976,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           if (playerRef.current && typeof playerRef.current.stopVideo === 'function' && !playerRef.current.isOffline) {
             playerRef.current.stopVideo();
           }
-        } catch (_) {}
+        } catch (_) { }
 
         // 2. Clean up any previous object URLs or radio streams
         if (activeObjectUrlRef.current) {
-          try { URL.revokeObjectURL(activeObjectUrlRef.current); } catch (_) {}
+          try { URL.revokeObjectURL(activeObjectUrlRef.current); } catch (_) { }
           activeObjectUrlRef.current = null;
         }
         if (radioAudioRef.current) {
@@ -3990,10 +3988,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             radioAudioRef.current.pause();
             radioAudioRef.current.removeAttribute('src');
             radioAudioRef.current.load();
-          } catch (_) {}
+          } catch (_) { }
         }
         if (hlsRef.current) {
-          try { hlsRef.current.destroy(); } catch (_) {}
+          try { hlsRef.current.destroy(); } catch (_) { }
           hlsRef.current = null;
         }
 
@@ -4042,7 +4040,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           const currentRepeat = isRepeatRef.current;
           if (currentRepeat === 'one' || currentRepeat === true) {
             audio.currentTime = 0;
-            audio.play().catch(() => {});
+            audio.play().catch(() => { });
           } else {
             handleNextSongRef.current?.();
           }
@@ -4056,11 +4054,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           seekTo: (sec) => { if (offlineAudioRef.current) offlineAudioRef.current.currentTime = sec; },
           playVideo: () => {
             if (!offlineAudioRef.current) return Promise.resolve();
-            return offlineAudioRef.current.play().catch(() => {});
+            return offlineAudioRef.current.play().catch(() => { });
           },
           pauseVideo: () => {
             if (offlineAudioRef.current) {
-              try { offlineAudioRef.current.pause(); } catch (_) {}
+              try { offlineAudioRef.current.pause(); } catch (_) { }
             }
           },
           stopVideo: () => {
@@ -4068,7 +4066,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               try {
                 offlineAudioRef.current.pause();
                 offlineAudioRef.current.currentTime = 0;
-              } catch (_) {}
+              } catch (_) { }
             }
           },
           setVolume: (vol) => {
@@ -4079,7 +4077,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               try {
                 offlineAudioRef.current.pause();
                 offlineAudioRef.current.src = '';
-              } catch (_) {}
+              } catch (_) { }
             }
           }
         };
@@ -4111,200 +4109,196 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const proceedWithPlayback = () => {
       // Inner executor: runs only once track is verified through Layer 4 gate
       const executeVerifiedPlayback = () => {
-      isInitialMountRef.current = false;
-      setIsAutoplayBlocked(false);
-      isUserPausedRef.current = false;
-      userIntentPlayingRef.current = true;
-      setVideoModalSong(prev => (prev ? song : null));
-      updateMediaSessionImmediate(song, true);
-      startPwaAudioWakeLock();
-      if (silentAudioRef.current) {
-        try { silentAudioRef.current.volume = 0.01; } catch (_) {}
-        silentAudioRef.current.play().catch(() => {});
-      }
+        isInitialMountRef.current = false;
+        setIsAutoplayBlocked(false);
+        isUserPausedRef.current = false;
+        userIntentPlayingRef.current = true;
+        setVideoModalSong(prev => (prev ? song : null));
+        updateMediaSessionImmediate(song, true);
+        startPwaAudioWakeLock();
+        if (silentAudioRef.current) {
+          try { silentAudioRef.current.volume = 0.01; } catch (_) { }
+          silentAudioRef.current.play().catch(() => { });
+        }
 
-      if (currentSong?.id === song.id) {
-        if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
+        if (currentSong?.id === song.id) {
+          if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
+            try {
+              const p = playerRef.current.playVideo();
+              if (p && typeof p.catch === 'function') {
+                p.catch(err => {
+                  if (err?.name === 'NotAllowedError') {
+                    console.warn('[Loopra Player] Re-play blocked by browser policy:', err);
+                    setIsAutoplayBlocked(true);
+                    setIsPlaying(false);
+                  }
+                });
+              }
+            } catch (e) { }
+          }
+          if (!song?.isRadio) {
+            setIsPlaying(true);
+          }
+          return;
+        }
+
+        try {
+          localStorage.setItem('afterhours_current_time', '0');
+        } catch (e) { }
+
+        // Explicitly pause and clean up previous radio or offline audio to avoid audio overlap
+        if (radioAudioRef.current) {
           try {
+            radioAudioRef.current.pause();
+            radioAudioRef.current.removeAttribute('src');
+            radioAudioRef.current.load();
+          } catch (e) { }
+        }
+        if (offlineAudioRef.current) {
+          try {
+            offlineAudioRef.current.pause();
+            offlineAudioRef.current.src = '';
+          } catch (e) { }
+        }
+        if (hlsRef.current) {
+          try { hlsRef.current.destroy(); } catch (e) { }
+          hlsRef.current = null;
+        }
+
+        if (playerRef.current && isPlayerReadyRef.current && typeof playerRef.current.stopVideo === 'function') {
+          try { playerRef.current.stopVideo(); } catch (e) { }
+        }
+
+        // Immediately start playback without waiting for delayed re-renders
+        if (playerRef.current && isPlayerReadyRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline && !song?.isRadio && targetVideoId) {
+          try {
+            // Default to 240p ('small') quality to aggressively save mobile data usage
+            const quality = 'small';
+            playerRef.current.loadVideoById({ videoId: targetVideoId, suggestedQuality: quality });
             const p = playerRef.current.playVideo();
             if (p && typeof p.catch === 'function') {
               p.catch(err => {
                 if (err?.name === 'NotAllowedError') {
-                  console.warn('[Loopra Player] Re-play blocked by browser policy:', err);
+                  console.warn('[Loopra Player] Autoplay blocked:', err);
                   setIsAutoplayBlocked(true);
                   setIsPlaying(false);
                 }
               });
             }
-          } catch (e) {}
+            loadedVideoIdRef.current = targetVideoId;
+          } catch (err) { }
         }
+
+        // Flush outgoing track listening duration before switching sessions to preserve every listened second
+        if (currentSongRef.current && activeListeningDurationRef.current > 0 && playSessionIdRef.current && authToken) {
+          const outgoingSong = currentSongRef.current;
+          const outgoingListened = activeListeningDurationRef.current;
+          const outgoingTotalDur = durationRef.current || 200;
+          const outgoingPct = Math.min(100, Math.round((outgoingListened / outgoingTotalDur) * 100));
+
+          recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+            trackId: outgoingSong.id || outgoingSong.videoId,
+            title: outgoingSong.title,
+            artist: outgoingSong.artist || outgoingSong.channel || 'Unknown Artist',
+            channel: outgoingSong.channel || '',
+            thumbnail: outgoingSong.thumbnail || outgoingSong.image || '',
+            eventType: 'track_change',
+            duration: outgoingTotalDur,
+            listenedDuration: outgoingListened,
+            completionPercent: outgoingPct,
+            playSessionId: playSessionIdRef.current,
+            source: activeTab || 'player'
+          });
+
+          listeningStatsService.recordEvent?.({
+            backendUrl: BACKEND_URL,
+            token: authToken,
+            user,
+            track: outgoingSong,
+            eventType: 'track_change',
+            duration: outgoingTotalDur,
+            listenedDuration: outgoingListened,
+            playSessionId: playSessionIdRef.current,
+            completed: false
+          });
+        }
+
+        playSessionIdRef.current = `ps_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+        activeListeningDurationRef.current = 0;
+        lastSyncedDurationRef.current = 0;
+        hasLoggedListenForCurrentSongRef.current = false;
+        setCurrentSong(song);
+        trackPlaybackStartTimeRef.current = Date.now();
+        hasLoggedCompletionRef.current = false;
+
+        if (authToken && song) {
+          recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+            trackId: song.id || song.videoId,
+            title: song.title,
+            artist: song.artist || song.channel || 'Unknown Artist',
+            channel: song.channel || '',
+            thumbnail: song.thumbnail || song.image || '',
+            eventType: 'play_start',
+            duration: 0,
+            listenedDuration: 0,
+            completionPercent: 0,
+            playSessionId: playSessionIdRef.current,
+            source: activeTab || 'player'
+          });
+          listeningStatsService.recordEvent?.({
+            backendUrl: BACKEND_URL,
+            token: authToken,
+            user,
+            track: song,
+            eventType: 'play_start',
+            duration: 0,
+            listenedDuration: 0,
+            playbackPosition: 0,
+            playSessionId: playSessionIdRef.current,
+            completed: false
+          });
+        }
+
         if (!song?.isRadio) {
           setIsPlaying(true);
         }
-        return;
-      }
 
-      try {
-        localStorage.setItem('afterhours_current_time', '0');
-      } catch (e) {}
-
-      // Explicitly pause and clean up previous radio or offline audio to avoid audio overlap
-      if (radioAudioRef.current) {
         try {
-          radioAudioRef.current.pause();
-          radioAudioRef.current.removeAttribute('src');
-          radioAudioRef.current.load();
-        } catch (e) {}
-      }
-      if (offlineAudioRef.current) {
-        try {
-          offlineAudioRef.current.pause();
-          offlineAudioRef.current.src = '';
-        } catch (e) {}
-      }
-      if (hlsRef.current) {
-        try { hlsRef.current.destroy(); } catch (e) {}
-        hlsRef.current = null;
-      }
+          fetch(getApiUrl('/api/admin/telemetry/event'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'play_start', trackId: song?.id, title: song?.title })
+          }).catch(() => { });
+        } catch (e) { }
 
-      if (playerRef.current && isPlayerReadyRef.current && typeof playerRef.current.stopVideo === 'function') {
-        try { playerRef.current.stopVideo(); } catch (e) {}
-      }
-
-      // Immediately start playback without waiting for delayed re-renders
-      if (playerRef.current && isPlayerReadyRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline && !song?.isRadio && targetVideoId) {
-        try {
-          // Detect low-end or mobile device for stream quality optimization
-          const isLowEndDevice = typeof navigator !== 'undefined' && (
-            (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
-            (window.innerWidth < 768)
-          );
-          const quality = isLowEndDevice ? 'small' : 'medium';
-          playerRef.current.loadVideoById({ videoId: targetVideoId, suggestedQuality: quality });
-          const p = playerRef.current.playVideo();
-          if (p && typeof p.catch === 'function') {
-            p.catch(err => {
-              if (err?.name === 'NotAllowedError') {
-                console.warn('[Loopra Player] Autoplay blocked:', err);
-                setIsAutoplayBlocked(true);
-                setIsPlaying(false);
-              }
-            });
+        if (['home', 'barber', 'truck', 'pauwa'].includes(activeTab)) {
+          const station = stationsMap[activeTab] || SPECIAL_STATIONS[activeTab];
+          if (station && station.bgImages && station.bgImages.length > 0) {
+            setCurrentBgIndex(prev => (prev + 1) % station.bgImages.length);
           }
-          loadedVideoIdRef.current = targetVideoId;
-        } catch (err) {}
-      }
-
-      // Flush outgoing track listening duration before switching sessions to preserve every listened second
-      if (currentSongRef.current && activeListeningDurationRef.current > 0 && playSessionIdRef.current && authToken) {
-        const outgoingSong = currentSongRef.current;
-        const outgoingListened = activeListeningDurationRef.current;
-        const outgoingTotalDur = durationRef.current || 200;
-        const outgoingPct = Math.min(100, Math.round((outgoingListened / outgoingTotalDur) * 100));
-
-        recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
-          trackId: outgoingSong.id || outgoingSong.videoId,
-          title: outgoingSong.title,
-          artist: outgoingSong.artist || outgoingSong.channel || 'Unknown Artist',
-          channel: outgoingSong.channel || '',
-          thumbnail: outgoingSong.thumbnail || outgoingSong.image || '',
-          eventType: 'track_change',
-          duration: outgoingTotalDur,
-          listenedDuration: outgoingListened,
-          completionPercent: outgoingPct,
-          playSessionId: playSessionIdRef.current,
-          source: activeTab || 'player'
-        });
-
-        listeningStatsService.recordEvent?.({
-          backendUrl: BACKEND_URL,
-          token: authToken,
-          user,
-          track: outgoingSong,
-          eventType: 'track_change',
-          duration: outgoingTotalDur,
-          listenedDuration: outgoingListened,
-          playSessionId: playSessionIdRef.current,
-          completed: false
-        });
-      }
-
-      playSessionIdRef.current = `ps_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-      activeListeningDurationRef.current = 0;
-      lastSyncedDurationRef.current = 0;
-      hasLoggedListenForCurrentSongRef.current = false;
-      setCurrentSong(song);
-      trackPlaybackStartTimeRef.current = Date.now();
-      hasLoggedCompletionRef.current = false;
-
-      if (authToken && song) {
-        recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
-          trackId: song.id || song.videoId,
-          title: song.title,
-          artist: song.artist || song.channel || 'Unknown Artist',
-          channel: song.channel || '',
-          thumbnail: song.thumbnail || song.image || '',
-          eventType: 'play_start',
-          duration: 0,
-          listenedDuration: 0,
-          completionPercent: 0,
-          playSessionId: playSessionIdRef.current,
-          source: activeTab || 'player'
-        });
-        listeningStatsService.recordEvent?.({
-          backendUrl: BACKEND_URL,
-          token: authToken,
-          user,
-          track: song,
-          eventType: 'play_start',
-          duration: 0,
-          listenedDuration: 0,
-          playbackPosition: 0,
-          playSessionId: playSessionIdRef.current,
-          completed: false
-        });
-      }
-
-      if (!song?.isRadio) {
-        setIsPlaying(true);
-      }
-
-      try {
-        fetch(getApiUrl('/api/admin/telemetry/event'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'play_start', trackId: song?.id, title: song?.title })
-        }).catch(() => {});
-      } catch (e) {}
-
-      if (['home', 'barber', 'truck', 'pauwa'].includes(activeTab)) {
-        const station = stationsMap[activeTab] || SPECIAL_STATIONS[activeTab];
-        if (station && station.bgImages && station.bgImages.length > 0) {
-          setCurrentBgIndex(prev => (prev + 1) % station.bgImages.length);
         }
+      };
+
+      // Execute playback instantly for immediate UI and audio response without 2-3 second latency
+      executeVerifiedPlayback();
+
+      // Background validation (non-blocking) for unknown external video playback
+      if (!song?.isRadio && !song?.streamUrl && !song?.isInternalAudio && !song?.isOffline && !song?.audioBlob && targetVideoId) {
+        offlineStorageService.isTrackDownloaded(targetVideoId).then(isCached => {
+          if (!isCached) {
+            validatePlaybackTrack(song, BACKEND_URL)
+              .then(validation => {
+                if (!validation.eligible) {
+                  console.warn('[PlaybackGate] Non-music track detected post-playback:', targetVideoId, validation.reason);
+                  showToast?.(`Playback note: Video may not be official music (${validation.reason})`, 'warning');
+                }
+              })
+              .catch(() => { });
+          }
+        }).catch(() => { });
       }
     };
-
-    // Execute playback instantly for immediate UI and audio response without 2-3 second latency
-    executeVerifiedPlayback();
-
-    // Background validation (non-blocking) for unknown external video playback
-    if (!song?.isRadio && !song?.streamUrl && !song?.isInternalAudio && !song?.isOffline && !song?.audioBlob && targetVideoId) {
-      offlineStorageService.isTrackDownloaded(targetVideoId).then(isCached => {
-        if (!isCached) {
-          validatePlaybackTrack(song, BACKEND_URL)
-            .then(validation => {
-              if (!validation.eligible) {
-                console.warn('[PlaybackGate] Non-music track detected post-playback:', targetVideoId, validation.reason);
-                showToast?.(`Playback note: Video may not be official music (${validation.reason})`, 'warning');
-              }
-            })
-            .catch(() => {});
-        }
-      }).catch(() => {});
-    }
-  };
-}, [activeTab, currentSong, stationsMap, authToken, showToast, BACKEND_URL, user]);
+  }, [activeTab, currentSong, stationsMap, authToken, showToast, BACKEND_URL, user]);
 
   const handleNextSong = useCallback(() => {
     // Log skip or completed listen signal for AI recommendations and listening insights
@@ -4392,7 +4386,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               }
             });
           }
-        } catch (e) {}
+        } catch (e) { }
         setIsPlaying(true);
       }
       return;
@@ -4502,7 +4496,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         if (typeof livePos === 'number' && !isNaN(livePos)) {
           currentPos = livePos;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (currentPos > 3) {
@@ -4522,7 +4516,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               }
             });
           }
-        } catch (e) {}
+        } catch (e) { }
         setIsPlaying(true);
       }
       return;
@@ -4557,14 +4551,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         const seedPool = [...(queue || []), ...(trendingSongs || []), ...(TRENDING_SONGS || [])];
         shuffleService.initShufflePool(seedPool).then(() => {
           shuffleService.reshufflePool(currentSong?.id);
-        }).catch(() => {});
+        }).catch(() => { });
       }
       return next;
     });
   }, [queue, trendingSongs, currentSong]);
 
   useEffect(() => {
-    shuffleService.initShufflePool([...(trendingSongs || []), ...(TRENDING_SONGS || [])]).catch(() => {});
+    shuffleService.initShufflePool([...(trendingSongs || []), ...(TRENDING_SONGS || [])]).catch(() => { });
   }, [trendingSongs]);
 
   const handleFetchDiscoveryTracks = useCallback(async () => {
@@ -4590,7 +4584,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     currentTimeRef.current = seekTime;
     try {
       localStorage.setItem('afterhours_current_time', seekTime.toString());
-    } catch (e) {}
+    } catch (e) { }
     playerRef.current?.seekTo?.(seekTime, true);
   }, []);
 
@@ -4638,7 +4632,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             playbackRate: 1.0,
             position: Math.min(durationRef.current || 0, Math.max(0, currentTimeRef.current || 0))
           });
-        } catch (_) {}
+        } catch (_) { }
       }
     } catch (err) {
       console.warn('[MediaSession] Error updating immediate metadata:', err);
@@ -4650,9 +4644,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     try {
       if (silentAudioRef.current && silentAudioRef.current.paused) {
         silentAudioRef.current.volume = 0.001;
-        silentAudioRef.current.play().catch(() => {});
+        silentAudioRef.current.play().catch(() => { });
       }
-    } catch (_) {}
+    } catch (_) { }
   }, []);
 
   const stopPwaAudioWakeLock = useCallback(() => {
@@ -4660,7 +4654,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       if (silentAudioRef.current) {
         silentAudioRef.current.pause();
       }
-    } catch (_) {}
+    } catch (_) { }
   }, []);
 
   // Sync global playback flag to window for background visibility event interceptor
@@ -4682,13 +4676,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           userIntentPlayingRef.current = true;
           startPwaAudioWakeLock();
           if (silentAudioRef.current) {
-            try { silentAudioRef.current.volume = 0.01; } catch (_) {}
-            silentAudioRef.current.play().catch(() => {});
+            try { silentAudioRef.current.volume = 0.01; } catch (_) { }
+            silentAudioRef.current.play().catch(() => { });
           }
           try {
             const p = playerRef.current?.playVideo?.();
-            if (p && typeof p.catch === 'function') p.catch(() => {});
-          } catch (e) {}
+            if (p && typeof p.catch === 'function') p.catch(() => { });
+          } catch (e) { }
           setIsPlaying(true);
           if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
         });
@@ -4702,8 +4696,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             autoResumeTimerRef.current = null;
           }
           if (isPlayerReadyRef.current || playerRef.current?.isOffline || playerRef.current?.isRadio) {
-        playerRef.current?.pauseVideo?.();
-      }
+            playerRef.current?.pauseVideo?.();
+          }
           if (silentAudioRef.current) silentAudioRef.current.pause();
           setIsPlaying(false);
           if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
@@ -4731,7 +4725,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               playbackRate: 1.0,
               position: Math.min(durationRef.current || 0, Math.max(0, currentTimeRef.current || 0))
             });
-          } catch (_) {}
+          } catch (_) { }
         }
       } catch (handlerErr) {
         console.warn('[MediaSession] Error registering handlers:', handlerErr);
@@ -4761,8 +4755,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         if (isPlayingRef.current || userIntentPlayingRef.current) {
           startPwaAudioWakeLock();
           if (silentAudioRef.current && silentAudioRef.current.paused) {
-            try { silentAudioRef.current.volume = 0.01; } catch (_) {}
-            silentAudioRef.current.play().catch(() => {});
+            try { silentAudioRef.current.volume = 0.01; } catch (_) { }
+            silentAudioRef.current.play().catch(() => { });
           }
 
           // Rapid recovery checks (100ms, 300ms, 800ms) to counteract OS/browser YouTube iframe suspension
@@ -4771,8 +4765,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               if (isPlayingRef.current || userIntentPlayingRef.current) {
                 startPwaAudioWakeLock();
                 if (silentAudioRef.current && silentAudioRef.current.paused) {
-                  try { silentAudioRef.current.volume = 0.01; } catch (_) {}
-                  silentAudioRef.current.play().catch(() => {});
+                  try { silentAudioRef.current.volume = 0.01; } catch (_) { }
+                  silentAudioRef.current.play().catch(() => { });
                 }
                 if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
                   try {
@@ -4781,7 +4775,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     if (st === 2 || st === 5) {
                       playerRef.current.playVideo();
                     }
-                  } catch (_) {}
+                  } catch (_) { }
                 }
               }
             }, delay);
@@ -4796,7 +4790,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               playbackRate: 1.0,
               position: Math.min(durationRef.current || 0, Math.max(0, currentTimeRef.current || 0))
             });
-          } catch (_) {}
+          } catch (_) { }
         }
       }
     };
@@ -4839,7 +4833,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           playerRef.current.destroy();
           playerRef.current = null;
         }
-      } catch (e) {}
+      } catch (e) { }
     };
   }, []);
 
@@ -4859,7 +4853,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         playerRef.current.destroy();
         playerRef.current = null;
       }
-    } catch (e) {}
+    } catch (e) { }
 
     let mountTarget = document.getElementById('yt-player-instance');
     if (!mountTarget && ytContainerRef.current) {
@@ -4881,13 +4875,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       height: '100%',
       width: '100%',
       videoId: videoId,
-      playerVars: { 
-        autoplay: shouldAutoPlay ? 1 : 0, 
-        controls: 0, 
+      playerVars: {
+        autoplay: shouldAutoPlay ? 1 : 0,
+        controls: 0,
         rel: 0,
         iv_load_policy: 3,
         fs: 0,
-        disablekb: 1, 
+        disablekb: 1,
         modestbranding: 1,
         enablejsapi: 1,
         playsinline: 1,
@@ -4902,6 +4896,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             playerRef.current.isReady = true;
           }
           try {
+            if (typeof e.target.setPlaybackQuality === 'function') {
+              try { e.target.setPlaybackQuality('small'); } catch (_) { }
+            }
             if (typeof e.target.setVolume === 'function') {
               e.target.setVolume(volume);
             }
@@ -4940,7 +4937,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       setIsPlaying(false);
                     }
                   }
-                } catch (_) {}
+                } catch (_) { }
               }, 1200);
             } else {
               if (typeof e.target.pauseVideo === 'function') {
@@ -4948,7 +4945,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               }
               setIsPlaying(false);
             }
-          } catch (err) {}
+          } catch (err) { }
         },
         onStateChange: (e) => {
           if (e.data === 1) { // Playing
@@ -4969,8 +4966,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               trackPlaybackStartTimeRef.current = Date.now();
             }
             if (silentAudioRef.current) {
-              try { silentAudioRef.current.volume = 0.01; } catch (_) {}
-              silentAudioRef.current.play().catch(() => {});
+              try { silentAudioRef.current.volume = 0.01; } catch (_) { }
+              silentAudioRef.current.play().catch(() => { });
             }
           } else if (e.data === 2) { // Paused
             // Background Auto-Resume Guard: If paused while user intent or React isPlaying is true (i.e. not an explicit user pause), immediately auto-resume
@@ -4989,10 +4986,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 }
                 startPwaAudioWakeLock();
                 if (silentAudioRef.current && silentAudioRef.current.paused) {
-                  try { silentAudioRef.current.volume = 0.01; } catch (_) {}
-                  silentAudioRef.current.play().catch(() => {});
+                  try { silentAudioRef.current.volume = 0.01; } catch (_) { }
+                  silentAudioRef.current.play().catch(() => { });
                 }
-              } catch (_) {}
+              } catch (_) { }
 
               if (autoResumeTimerRef.current) clearTimeout(autoResumeTimerRef.current);
               autoResumeTimerRef.current = setTimeout(() => {
@@ -5011,8 +5008,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       });
                     }
                     startPwaAudioWakeLock();
-                    if (silentAudioRef.current) silentAudioRef.current.play().catch(() => {});
-                  } catch (_) {}
+                    if (silentAudioRef.current) silentAudioRef.current.play().catch(() => { });
+                  } catch (_) { }
                 }
               }, 50);
             } else {
@@ -5056,14 +5053,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             if (stopAfterCurrentTrackRef.current) {
               setStopAfterCurrentTrack(false);
               setIsPlaying(false);
-              try { playerRef.current?.pauseVideo?.(); } catch (e) {}
+              try { playerRef.current?.pauseVideo?.(); } catch (e) { }
               showToast('Playback stopped (Track finished)');
             } else if (currentRepeat === 'one' || currentRepeat === true) {
               playerRef.current?.seekTo?.(0, true);
               try {
                 const p = playerRef.current?.playVideo?.();
-                if (p && typeof p.catch === 'function') p.catch(() => {});
-              } catch (e) {}
+                if (p && typeof p.catch === 'function') p.catch(() => { });
+              } catch (e) { }
             } else {
               handleNextSongRef.current?.();
             }
@@ -5114,13 +5111,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   showToast(`Now playing playable version of "${songToRecover.title}"`, 3000);
                   return;
                 }
-                const msg = isRestricted 
+                const msg = isRestricted
                   ? "Playback restricted by video owner (Error 150). Please select another song or radio station."
                   : "Playback error encountered. Please tap to retry.";
                 showToast(msg, 4000);
               })
               .catch(() => {
-                const msg = isRestricted 
+                const msg = isRestricted
                   ? "Playback restricted by video owner (Error 150). Please select another song or radio station."
                   : "Playback error encountered. Please tap to retry.";
                 showToast(msg, 4000);
@@ -5132,7 +5129,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             return;
           }
 
-          const msg = isRestricted 
+          const msg = isRestricted
             ? "Playback restricted by video owner. Please tap to retry or select another song."
             : "Playback error encountered. Please tap to retry.";
           showToast(msg, 4000);
@@ -5157,7 +5154,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     if (isFirstMount) {
       try {
         savedSeekTime = parseFloat(localStorage.getItem('afterhours_current_time') || '0') || 0;
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // Live Indian Radio Stream Playback
@@ -5166,19 +5163,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         try {
           offlineAudioRef.current.pause();
           offlineAudioRef.current.src = '';
-        } catch (e) {}
+        } catch (e) { }
       }
       if (activeObjectUrlRef.current) {
-        try { URL.revokeObjectURL(activeObjectUrlRef.current); } catch (e) {}
+        try { URL.revokeObjectURL(activeObjectUrlRef.current); } catch (e) { }
         activeObjectUrlRef.current = null;
       }
       if (playerRef.current && typeof playerRef.current.pauseVideo === 'function' && !playerRef.current.isRadio) {
-        try { playerRef.current.pauseVideo(); } catch (e) {}
+        try { playerRef.current.pauseVideo(); } catch (e) { }
       }
 
       // Stop previous radio stream before loading a new station
       if (hlsRef.current) {
-        try { hlsRef.current.destroy(); } catch (e) {}
+        try { hlsRef.current.destroy(); } catch (e) { }
         hlsRef.current = null;
       }
       if (radioAudioRef.current) {
@@ -5186,7 +5183,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           radioAudioRef.current.pause();
           radioAudioRef.current.removeAttribute('src');
           radioAudioRef.current.load();
-        } catch (e) {}
+        } catch (e) { }
       } else {
         radioAudioRef.current = new Audio();
       }
@@ -5289,7 +5286,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         isRadio: true,
         getCurrentTime: () => radioAudioRef.current ? radioAudioRef.current.currentTime : 0,
         getDuration: () => 0,
-        seekTo: () => {},
+        seekTo: () => { },
         playVideo: () => {
           if (!radioAudioRef.current) return Promise.resolve();
           const p = radioAudioRef.current.play();
@@ -5304,19 +5301,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         },
         pauseVideo: () => {
           if (radioAudioRef.current) {
-            try { radioAudioRef.current.pause(); } catch (e) {}
+            try { radioAudioRef.current.pause(); } catch (e) { }
           }
         },
         stopVideo: () => {
           if (radioAudioRef.current) {
-            try { radioAudioRef.current.pause(); } catch (e) {}
+            try { radioAudioRef.current.pause(); } catch (e) { }
             try {
               radioAudioRef.current.removeAttribute('src');
               radioAudioRef.current.load();
-            } catch (e) {}
+            } catch (e) { }
           }
           if (hlsRef.current) {
-            try { hlsRef.current.destroy(); } catch (e) {}
+            try { hlsRef.current.destroy(); } catch (e) { }
             hlsRef.current = null;
           }
         },
@@ -5331,14 +5328,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         },
         destroy: () => {
           if (radioAudioRef.current) {
-            try { radioAudioRef.current.pause(); } catch (e) {}
+            try { radioAudioRef.current.pause(); } catch (e) { }
             try {
               radioAudioRef.current.removeAttribute('src');
               radioAudioRef.current.load();
-            } catch (e) {}
+            } catch (e) { }
           }
           if (hlsRef.current) {
-            try { hlsRef.current.destroy(); } catch (e) {}
+            try { hlsRef.current.destroy(); } catch (e) { }
             hlsRef.current = null;
           }
         }
@@ -5366,10 +5363,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           if (playerRef.current && typeof playerRef.current.pauseVideo === 'function' && !playerRef.current.isOffline) {
             playerRef.current.pauseVideo();
           }
-        } catch (e) {}
+        } catch (e) { }
 
         if (activeObjectUrlRef.current) {
-          try { URL.revokeObjectURL(activeObjectUrlRef.current); } catch (e) {}
+          try { URL.revokeObjectURL(activeObjectUrlRef.current); } catch (e) { }
           activeObjectUrlRef.current = null;
         }
 
@@ -5444,7 +5441,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           const currentRepeat = isRepeatRef.current;
           if (currentRepeat === 'one' || currentRepeat === true) {
             audio.currentTime = 0;
-            audio.play().catch(() => {});
+            audio.play().catch(() => { });
           } else {
             handleNextSongRef.current?.();
           }
@@ -5470,7 +5467,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           },
           pauseVideo: () => {
             if (offlineAudioRef.current) {
-              try { offlineAudioRef.current.pause(); } catch (e) {}
+              try { offlineAudioRef.current.pause(); } catch (e) { }
             }
           },
           stopVideo: () => {
@@ -5515,22 +5512,22 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         try {
           offlineAudioRef.current.pause();
           offlineAudioRef.current.src = '';
-        } catch (e) {}
+        } catch (e) { }
       }
       if (radioAudioRef.current) {
         try {
           radioAudioRef.current.pause();
           radioAudioRef.current.src = '';
-        } catch (e) {}
+        } catch (e) { }
       }
       if (hlsRef.current) {
         try {
           hlsRef.current.destroy();
           hlsRef.current = null;
-        } catch (e) {}
+        } catch (e) { }
       }
       if (activeObjectUrlRef.current) {
-        try { URL.revokeObjectURL(activeObjectUrlRef.current); } catch (e) {}
+        try { URL.revokeObjectURL(activeObjectUrlRef.current); } catch (e) { }
         activeObjectUrlRef.current = null;
       }
 
@@ -5543,12 +5540,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
       if (playerRef.current && isPlayerReadyRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline) {
         try {
-          // Detect low-end or mobile device for stream quality optimization
-          const isLowEndDevice = typeof navigator !== 'undefined' && (
-            (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
-            (window.innerWidth < 768)
-          );
-          const quality = isLowEndDevice ? 'small' : 'medium';
+          // Default to 240p ('small') quality to aggressively save mobile data usage
+          const quality = 'small';
 
           if (isFirstMount) {
             if (typeof playerRef.current.cueVideoById === 'function') {
@@ -5579,7 +5572,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   }
                 });
               }
-            } catch (_) {}
+            } catch (_) { }
             setIsPlaying(true);
 
             // Guard against silent autoplay blockage where state does not change to 1 (playing)
@@ -5594,7 +5587,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     setIsPlaying(false);
                   }
                 }
-              } catch (_) {}
+              } catch (_) { }
             }, 1200);
           }
           loadedVideoIdRef.current = currentSong.id;
@@ -5694,9 +5687,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
         setSongs(fetchedTracks);
 
-        setStationCache(prev => ({ 
-          ...prev, 
-          [stationKey]: { tracks: fetchedTracks } 
+        setStationCache(prev => ({
+          ...prev,
+          [stationKey]: { tracks: fetchedTracks }
         }));
 
         if (autoPlayIfEmpty && fetchedTracks.length > 0 && !currentSong) {
@@ -5711,7 +5704,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
   }, [currentSong, playSong, stationCache]);
 
-    const mainScrollRef = useRef(null);
+  const mainScrollRef = useRef(null);
   const scrollPositions = useRef({});
 
   const applyNavRoute = useCallback((target) => {
@@ -5794,7 +5787,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           '',
           entry.path
         );
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // Removed in-app corner mini-video popup when navigating views
@@ -5937,7 +5930,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           '',
           target.path || '/'
         );
-      } catch (e) {}
+      } catch (e) { }
     }
   };
 
@@ -6015,7 +6008,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         let savedSeek = 0;
         try {
           savedSeek = parseFloat(localStorage.getItem('afterhours_current_time') || '0') || 0;
-        } catch (e) {}
+        } catch (e) { }
         initPlayerInstance(currentSong.id, true, savedSeek);
       } else {
         try {
@@ -6024,7 +6017,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           if (savedSeek > 0 && curTime < 1 && isPlayerReadyRef.current) {
             playerRef.current.seekTo(savedSeek, true);
           }
-        } catch (e) {}
+        } catch (e) { }
         try {
           if (isPlayerReadyRef.current) {
             const p = playerRef.current?.playVideo?.();
@@ -6038,11 +6031,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               });
             }
           }
-        } catch (e) {}
+        } catch (e) { }
       }
       if (silentAudioRef.current) {
-        try { silentAudioRef.current.volume = 0.01; } catch (_) {}
-        silentAudioRef.current.play().catch(() => {});
+        try { silentAudioRef.current.volume = 0.01; } catch (_) { }
+        silentAudioRef.current.play().catch(() => { });
       }
       if (!currentSong?.isRadio) {
         setIsPlaying(true);
@@ -6057,7 +6050,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     setVolume(newVol);
     try {
       playerRef.current?.setVolume?.(newVol);
-    } catch (err) {}
+    } catch (err) { }
   };
 
   const addToQueue = (song, e) => {
@@ -6122,7 +6115,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         } else {
           playerRef.current?.unMute?.();
         }
-      } catch (e) {}
+      } catch (e) { }
       showToast(next ? 'Muted' : 'Unmuted');
       return next;
     });
@@ -6135,7 +6128,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       const target = Math.max(0, Math.min(cur + deltaSec, dur || 999999));
       handleSeek(target);
       showToast(`${deltaSec > 0 ? '+' : ''}${deltaSec}s`);
-    } catch (e) {}
+    } catch (e) { }
   }, [handleSeek, showToast]);
 
   const adjustVolume = useCallback((deltaPercent) => {
@@ -6143,7 +6136,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       const next = Math.max(0, Math.min(100, Math.round(prev + deltaPercent * 100)));
       try {
         playerRef.current?.setVolume?.(next);
-      } catch (e) {}
+      } catch (e) { }
       showToast(`Volume: ${next}%`);
       return next;
     });
@@ -6154,7 +6147,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       const next = !prev;
       try {
         localStorage.setItem('loopra_datasaver', String(next));
-      } catch (e) {}
+      } catch (e) { }
       showToast(next ? 'Data Saver enabled' : 'Data Saver disabled');
       return next;
     });
@@ -6219,7 +6212,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     // Report playback state to Android native host
     try {
       window.LoopraAndroid?.setPlaybackState?.(Boolean(isPlaying));
-    } catch (_) {}
+    } catch (_) { }
 
     // Report track info to Android notification player
     try {
@@ -6228,12 +6221,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         currentSong?.artist || 'Playing music',
         Boolean(isPlaying)
       );
-    } catch (_) {}
+    } catch (_) { }
 
     // Report video mode state to Android native host
     try {
       window.LoopraAndroid?.setVideoMode?.(Boolean(videoModalSong));
-    } catch (_) {}
+    } catch (_) { }
 
     // Report back-navigation ability to Android native host
     try {
@@ -6258,7 +6251,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         canGoBack(navigationStack, activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio, selectedPlaylistForView, offlineSubView })
       );
       window.LoopraAndroid?.setCanGoBack?.(hasBackAction);
-    } catch (_) {}
+    } catch (_) { }
   }, [
     isPlaying,
     currentSong,
@@ -6377,7 +6370,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         window.history.replaceState({}, document.title, cleanUrl);
         processLoginToken(urlToken);
       }
-    } catch (_) {}
+    } catch (_) { }
 
     // 2. Listen to native Android bridge custom event
     const handleAuthToken = (e) => {
@@ -6441,7 +6434,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             }),
             signal: controller.signal
           }).then(() => clearTimeout(timeoutId)).catch(() => clearTimeout(timeoutId));
-        } catch (e) {}
+        } catch (e) { }
       } else if (isAlreadyLiked && authToken) {
         learningIntelligenceClient.recordEvent(BACKEND_URL, authToken, {
           category: 'music',
@@ -6455,8 +6448,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         });
       }
 
-      return isAlreadyLiked 
-        ? prev.filter(s => s.id !== songId && (!s.videoId || s.videoId !== songId) && (!song.videoId || s.id !== song.videoId)) 
+      return isAlreadyLiked
+        ? prev.filter(s => s.id !== songId && (!s.videoId || s.videoId !== songId) && (!song.videoId || s.id !== song.videoId))
         : [normalizedSong, ...prev];
     });
   };
@@ -6488,7 +6481,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       } else {
         localStorage.setItem('guest_playlists', JSON.stringify(updatedPlaylists));
       }
-    } catch (e) {}
+    } catch (e) { }
 
     if (authToken) {
       try {
@@ -6509,7 +6502,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           }),
           signal: controller.signal
         }).then(() => clearTimeout(timeoutId)).catch(() => clearTimeout(timeoutId));
-      } catch (e) {}
+      } catch (e) { }
     }
     showToast(`Created playlist "${newPlaylistName.trim()}"`);
     setNewPlaylistName('');
@@ -6548,7 +6541,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         } else {
           localStorage.setItem('guest_playlists', JSON.stringify(updatedPlaylists));
         }
-      } catch (e) {}
+      } catch (e) { }
 
       if (authToken) {
         learningIntelligenceClient.recordEvent(BACKEND_URL, authToken, {
@@ -6600,7 +6593,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         } else {
           localStorage.setItem('guest_playlists', JSON.stringify(updatedPlaylists));
         }
-      } catch (e) {}
+      } catch (e) { }
       showToast(`Removed from "${targetName}"`);
     }
   };
@@ -6630,7 +6623,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       } else {
         localStorage.setItem('guest_playlists', JSON.stringify(updatedPlaylists));
       }
-    } catch (err) {}
+    } catch (err) { }
     showToast(`Renamed playlist to "${trimmed}"`);
     setRenameModalPlaylist(null);
     setRenameModalName('');
@@ -6658,7 +6651,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       } else {
         localStorage.setItem('guest_playlists', JSON.stringify(updatedPlaylists));
       }
-    } catch (err) {}
+    } catch (err) { }
     showToast(`Deleted playlist "${targetName}"`);
     setDeleteModalPlaylist(null);
   };
@@ -6692,7 +6685,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     if (activeSearchAbortControllerRef.current) {
       try {
         activeSearchAbortControllerRef.current.abort();
-      } catch (_) {}
+      } catch (_) { }
     }
     const searchController = new AbortController();
     activeSearchAbortControllerRef.current = searchController;
@@ -6724,7 +6717,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             searchCacheMapRef.current.set(trimmedQuery, parsed);
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     }
     const cachedEntry = mapEntry || searchCache[trimmedQuery];
     if (cachedEntry && !Array.isArray(cachedEntry) && Array.isArray(cachedEntry.items) && cachedEntry.items.length > 0) {
@@ -6790,7 +6783,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             if (typeof window !== 'undefined' && window.sessionStorage) {
               sessionStorage.setItem(`loopra_search_cache_${trimmedQuery}`, JSON.stringify(newCacheEntry));
             }
-          } catch (_) {}
+          } catch (_) { }
           setSearchCache(prev => ({
             ...prev,
             [trimmedQuery]: newCacheEntry
@@ -7058,7 +7051,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       if (!window.history.state || (!window.history.state.loopraGuard && window.history.state.scope !== 'home')) {
         window.history.pushState({ scope: 'home', loopraGuard: true }, '', window.location.href);
       }
-    } catch (_) {}
+    } catch (_) { }
   }, []);
 
   // 2. Replenish history state whenever any modal or overlay opens programmatically
@@ -7069,7 +7062,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         if (!window.history.state || window.history.state.scope !== 'modal') {
           window.history.pushState({ scope: 'modal', loopraGuard: true }, '', window.location.href);
         }
-      } catch (_) {}
+      } catch (_) { }
     }
   }, [hasSubViewOrOverlayActive]);
 
@@ -7083,7 +7076,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const replenishHomeState = () => {
       try {
         window.history.pushState({ scope: 'home', loopraGuard: true }, '', window.location.href);
-      } catch (_) {}
+      } catch (_) { }
     };
 
     const handleSystemBack = () => {
@@ -7194,7 +7187,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         />
 
         {showAuthModal && (
-          <div 
+          <div
             className="fixed inset-0 z-[110] bg-neutral-950/85 backdrop-blur-md flex items-center justify-center p-4"
             onClick={(e) => { if (e.target === e.currentTarget) closeAuthModal(false); }}
           >
@@ -7208,13 +7201,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               <p className="text-xs text-neutral-400 mb-6 text-center">
                 Sign in with authorized administrator credentials to manage the platform and bypass maintenance mode.
               </p>
-              
+
               {authError && (
                 <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-2xl text-center">
                   {authError}
                 </div>
               )}
-              
+
               <form onSubmit={handleAuth} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-neutral-400 mb-1.5">Admin Username</label>
@@ -7223,7 +7216,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     required
                     autoComplete="username"
                     value={authForm.username}
-                    onChange={(e) => setAuthForm({...authForm, username: e.target.value})}
+                    onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })}
                     className="w-full px-4 py-3 rounded-2xl bg-neutral-900/50 backdrop-blur-lg border border-neutral-800 text-white text-sm focus:outline-none focus:border-amber-500 transition"
                     placeholder="Enter admin username"
                   />
@@ -7235,7 +7228,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     required
                     autoComplete="current-password"
                     value={authForm.password}
-                    onChange={(e) => setAuthForm({...authForm, password: e.target.value})}
+                    onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
                     className="w-full px-4 py-3 rounded-2xl bg-neutral-900/50 backdrop-blur-lg border border-neutral-800 text-white text-sm focus:outline-none focus:border-amber-500 transition"
                     placeholder="Enter admin password"
                   />
@@ -7253,11 +7246,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   ) : "Log In as Admin"}
                 </button>
               </form>
-              
+
               <div className="mt-6 flex items-center justify-center gap-4">
-                 <div className="h-px bg-neutral-800 flex-1"></div>
-                 <span className="text-xs text-neutral-500 font-medium">OR</span>
-                 <div className="h-px bg-neutral-800 flex-1"></div>
+                <div className="h-px bg-neutral-800 flex-1"></div>
+                <span className="text-xs text-neutral-500 font-medium">OR</span>
+                <div className="h-px bg-neutral-800 flex-1"></div>
               </div>
               <div className="mt-6 flex flex-col items-center justify-center gap-2 w-full">
                 <button
@@ -7324,83 +7317,83 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   return (
     <div className="h-[100dvh] bg-neutral-950 text-neutral-100 font-sans flex flex-col antialiased selection:bg-amber-500 selection:text-white relative overflow-hidden">
       <Suspense fallback={null}>
-      {/* Premium 3D Infinity Startup Splash Screen */}
-      {showSplashScreen && (
-        <AppSplashScreen
-          isAppReady={isAppInitialized}
-          onFinished={handleSplashFinished}
-          branding={cmsConfig?.branding}
-        />
-      )}
+        {/* Premium 3D Infinity Startup Splash Screen */}
+        {showSplashScreen && (
+          <AppSplashScreen
+            isAppReady={isAppInitialized}
+            onFinished={handleSplashFinished}
+            branding={cmsConfig?.branding}
+          />
+        )}
 
-      {/* Admin Maintenance Bypass Banner */}
-      {isMaintenanceActive && isAdmin && (
-        <div className="fixed top-0 left-0 right-0 z-[90] bg-amber-500/20 backdrop-blur-md border-b border-amber-500/40 px-4 py-2 flex items-center justify-between text-xs text-amber-200 font-medium shadow-lg">
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-            </span>
-            <span><strong>Maintenance Mode Active</strong> — Public access is blocked. You have administrator bypass privileges.</span>
+        {/* Admin Maintenance Bypass Banner */}
+        {isMaintenanceActive && isAdmin && (
+          <div className="fixed top-0 left-0 right-0 z-[90] bg-amber-500/20 backdrop-blur-md border-b border-amber-500/40 px-4 py-2 flex items-center justify-between text-xs text-amber-200 font-medium shadow-lg">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+              </span>
+              <span><strong>Maintenance Mode Active</strong> — Public access is blocked. You have administrator bypass privileges.</span>
+            </div>
+            <button
+              onClick={() => {
+                setActiveTab('admin');
+                window.history.pushState(null, '', '/admin');
+              }}
+              className="text-[11px] uppercase tracking-wider bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold px-2.5 py-1 rounded-lg transition shrink-0 cursor-pointer"
+            >
+              Manage in CMS
+            </button>
           </div>
-          <button
-            onClick={() => {
-              setActiveTab('admin');
-              window.history.pushState(null, '', '/admin');
-            }}
-            className="text-[11px] uppercase tracking-wider bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold px-2.5 py-1 rounded-lg transition shrink-0 cursor-pointer"
-          >
-            Manage in CMS
-          </button>
-        </div>
-      )}
+        )}
 
-      <StudioLoungeAtmosphere isPlaying={isPlaying} theme={cmsConfig?.theme} />
-      
-      <link rel="preconnect" href="https://i.ytimg.com" />
-      <link rel="preconnect" href="https://www.youtube.com" />
+        <StudioLoungeAtmosphere isPlaying={isPlaying} theme={cmsConfig?.theme} />
 
-      <audio 
-        ref={silentAudioRef} 
-        loop 
-        src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" 
-      />
-      
-      {/* Persistent Single-Engine YouTube Player & Loopra Cinematic Video Experience */}
-      <CinematicVideoPlayer
-        videoModalSong={videoModalSong}
-        currentSong={currentSong}
-        isPlaying={isPlaying}
-        currentTime={currentTimeRef.current || 0}
-        duration={durationRef.current || 0}
-        volume={volume}
-        isMuted={isMuted}
-        isPipActive={isPipActive}
-        setIsPipActive={setIsPipActive}
-        onClose={handleCloseVideo}
-        onTogglePlayPause={togglePlayPause}
-        onSeek={handleSeek}
-        onSeekRelative={seekRelative}
-        onVolumeChange={handleVolumeChange}
-        onToggleMute={toggleMute}
-        onToggleLike={toggleLike}
-        isLiked={isSongLiked(videoModalSong || currentSong)}
-        onAddToPlaylist={handleAddToPlaylistClick}
-        onShare={handleShareTrack}
-        playbackSpeed={playbackSpeed}
-        onPlaybackSpeedChange={(speed) => {
-          setPlaybackSpeed(speed);
-          try {
-            if (playerRef.current?.isReady && typeof playerRef.current.setPlaybackRate === 'function') {
-              playerRef.current.setPlaybackRate(speed);
-            }
-          } catch (e) {}
-        }}
-        playerRef={playerRef}
-        ytContainerRef={ytContainerRef}
-        showToast={showToast}
-        cmsConfig={cmsConfig}
-      />
+        <link rel="preconnect" href="https://i.ytimg.com" />
+        <link rel="preconnect" href="https://www.youtube.com" />
+
+        <audio
+          ref={silentAudioRef}
+          loop
+          src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA=="
+        />
+
+        {/* Persistent Single-Engine YouTube Player & Loopra Cinematic Video Experience */}
+        <CinematicVideoPlayer
+          videoModalSong={videoModalSong}
+          currentSong={currentSong}
+          isPlaying={isPlaying}
+          currentTime={currentTimeRef.current || 0}
+          duration={durationRef.current || 0}
+          volume={volume}
+          isMuted={isMuted}
+          isPipActive={isPipActive}
+          setIsPipActive={setIsPipActive}
+          onClose={handleCloseVideo}
+          onTogglePlayPause={togglePlayPause}
+          onSeek={handleSeek}
+          onSeekRelative={seekRelative}
+          onVolumeChange={handleVolumeChange}
+          onToggleMute={toggleMute}
+          onToggleLike={toggleLike}
+          isLiked={isSongLiked(videoModalSong || currentSong)}
+          onAddToPlaylist={handleAddToPlaylistClick}
+          onShare={handleShareTrack}
+          playbackSpeed={playbackSpeed}
+          onPlaybackSpeedChange={(speed) => {
+            setPlaybackSpeed(speed);
+            try {
+              if (playerRef.current?.isReady && typeof playerRef.current.setPlaybackRate === 'function') {
+                playerRef.current.setPlaybackRate(speed);
+              }
+            } catch (e) { }
+          }}
+          playerRef={playerRef}
+          ytContainerRef={ytContainerRef}
+          showToast={showToast}
+          cmsConfig={cmsConfig}
+        />
 
         {/* Unified Top Navbar for both Mobile and Desktop (hidden on DJ Club & Relax Mode where full-screen dedicated navbar is active) */}
         <header
@@ -7433,12 +7426,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           {/* CENTER (Desktop only): ACTIVE USERS (Subtle, muted presence indicator) */}
           <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-900/40 border border-neutral-800/50 shadow-sm shrink-0">
             <span className="relative flex h-2 w-2">
-              <span className={`animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite] absolute inline-flex h-full w-full rounded-full ${
-                isLiveCountStale ? 'bg-amber-400 opacity-40' : 'bg-emerald-400 opacity-60'
-              }`}></span>
-              <span className={`relative inline-flex rounded-full h-2 w-2 ${
-                isLiveCountStale ? 'bg-amber-500' : 'bg-emerald-500'
-              }`}></span>
+              <span className={`animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite] absolute inline-flex h-full w-full rounded-full ${isLiveCountStale ? 'bg-amber-400 opacity-40' : 'bg-emerald-400 opacity-60'
+                }`}></span>
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${isLiveCountStale ? 'bg-amber-500' : 'bg-emerald-500'
+                }`}></span>
             </span>
             <span className="text-[11px] font-normal text-neutral-400 tracking-wide flex items-center gap-1.5 leading-none">
               <span className="text-neutral-300 font-mono font-medium">
@@ -7469,28 +7460,27 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         localStorage.setItem('loopra_avatar_roaming', 'false');
                         localStorage.setItem('loopra_avatar_roam', 'false');
                       }
-                    } catch (_) {}
+                    } catch (_) { }
                     return next;
                   });
                   setIsSidebarOpen(false);
                   // Dispatch storage event asynchronously to avoid setState-during-render
                   // (CharacterBuddy listens for storage events and calls setIsRoamEnabled)
                   queueMicrotask(() => {
-                    try { window.dispatchEvent(new Event('storage')); } catch (_) {}
+                    try { window.dispatchEvent(new Event('storage')); } catch (_) { }
                   });
                 }}
                 title={isAvatarVisible ? "Toggle AI Companion (Active)" : "Talk to Loopra Avatar"}
                 aria-label={isAvatarVisible ? "Hide Loopra AI Companion" : "Talk to Loopra Avatar"}
-                className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all duration-300 shadow-md active:scale-95 cursor-pointer shrink-0 ${
-                  isAvatarVisible
+                className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all duration-300 shadow-md active:scale-95 cursor-pointer shrink-0 ${isAvatarVisible
                     ? 'ring-2 ring-amber-500 bg-amber-500/20 text-amber-400 shadow-amber-500/30'
                     : 'bg-white/5 hover:bg-white/10 text-zinc-300 border border-white/10'
-                }`}
+                  }`}
               >
                 <Icon name="sparkles" className={`w-4 h-4 ${isAvatarVisible ? 'text-amber-400 animate-pulse' : 'text-zinc-300'}`} />
               </button>
             )}
-            
+
             {user ? (
               <div className="flex items-center gap-2 relative shrink-0" ref={accountMenuRef}>
                 {/* Compact Profile Avatar Button */}
@@ -7500,11 +7490,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   aria-label="User Account Menu"
                   aria-expanded={isAccountMenuOpen}
                   title={user.displayName || user.username || "Account"}
-                  className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center relative overflow-hidden transition-all cursor-pointer focus:outline-none shrink-0 ${
-                    isAccountMenuOpen
+                  className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center relative overflow-hidden transition-all cursor-pointer focus:outline-none shrink-0 ${isAccountMenuOpen
                       ? 'ring-2 ring-amber-400 border-transparent shadow-lg shadow-amber-500/20'
                       : 'border border-amber-500/40 hover:border-amber-400 hover:ring-2 hover:ring-amber-400/40'
-                  }`}
+                    }`}
                 >
                   <UserAvatar
                     user={user}
@@ -7525,11 +7514,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         <span className="text-xs font-bold text-white truncate">
                           {user.displayName || user.username || 'User'}
                         </span>
-                        <span className={`text-[10px] uppercase font-mono font-bold px-2 py-0.5 rounded-full border ${
-                          isAdmin 
-                            ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' 
+                        <span className={`text-[10px] uppercase font-mono font-bold px-2 py-0.5 rounded-full border ${isAdmin
+                            ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
                             : 'bg-neutral-800 text-neutral-300 border-neutral-700'
-                        }`}>
+                          }`}>
                           {isAdmin ? 'Admin' : 'Member'}
                         </span>
                       </div>
@@ -7623,2336 +7611,2320 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
         </header>
 
-      {/* Main Body Layout Container (Sidebar + Content side-by-side below Navbar) */}
-      <div className="flex-1 flex flex-row min-h-0 min-w-0 overflow-hidden relative">
-      {/* V2 Navigation Drawer / Sidebar Feature Flag (USE_V2_DRAWER) */}
-      {USE_V2_DRAWER ? (
-        <>
-          {/* Glassmorphic Backdrop overlay only on mobile (< md) - hidden on desktop */}
-          <div 
-            onClick={() => setIsSidebarOpen(false)}
-            className={`md:hidden fixed inset-0 bg-black/80 backdrop-blur-md z-[90] transition-opacity duration-300 ease-out cursor-pointer ${
-              isSidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-            }`}
-            aria-label="Close sidebar backdrop"
-            aria-hidden={!isSidebarOpen}
-          />
+        {/* Main Body Layout Container (Sidebar + Content side-by-side below Navbar) */}
+        <div className="flex-1 flex flex-row min-h-0 min-w-0 overflow-hidden relative">
+          {/* V2 Navigation Drawer / Sidebar Feature Flag (USE_V2_DRAWER) */}
+          {USE_V2_DRAWER ? (
+            <>
+              {/* Glassmorphic Backdrop overlay only on mobile (< md) - hidden on desktop */}
+              <div
+                onClick={() => setIsSidebarOpen(false)}
+                className={`md:hidden fixed inset-0 bg-black/80 backdrop-blur-md z-[90] transition-opacity duration-300 ease-out cursor-pointer ${isSidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                  }`}
+                aria-label="Close sidebar backdrop"
+                aria-hidden={!isSidebarOpen}
+              />
 
-          <aside 
-            style={{
-              paddingTop: isMobileScreen ? 'max(env(safe-area-inset-top, 0px), 16px)' : undefined,
-              paddingBottom: isMobileScreen ? 'max(env(safe-area-inset-bottom, 0px), 16px)' : undefined,
-            }}
-            className={`h-full flex flex-col shrink-0 transition-transform duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform overflow-y-auto overflow-x-hidden md:sticky md:top-0 md:h-full ${
-              activeTab === 'dj-club' || activeTab === 'relax'
-                ? 'hidden'
-                : isSidebarOpen
-                  ? 'fixed md:relative top-0 bottom-0 left-0 z-[100] md:z-30 h-[100dvh] md:h-full w-72 md:w-[290px] translate-x-0 p-3.5 sm:p-4 bg-[#0c0d12]/98 md:bg-neutral-900/95 backdrop-blur-2xl md:backdrop-blur-xl border-r border-amber-500/20 md:border-neutral-800/80 shadow-[0_0_60px_rgba(0,0,0,0.95)] md:shadow-none opacity-100'
-                  : 'fixed md:relative top-0 bottom-0 left-0 z-[100] md:z-30 h-[100dvh] md:h-full -translate-x-full md:translate-x-0 w-72 md:w-0 md:p-0 md:border-none md:overflow-hidden md:opacity-0 pointer-events-none'
-            }`}
-          >
-            {/* Inner Content Container - full width without horizontal clipping */}
-            <div className="w-full shrink-0 flex-1 flex flex-col min-h-0">
-              {/* Header Section: Mobile-only brand badge (top navbar button handles toggling) */}
-              <div className="flex items-center justify-between px-1.5 py-2 mb-4 border-b border-white/[0.06] pb-3 sticky top-0 z-20 bg-[#0c0d12]/95 md:bg-neutral-900/95 backdrop-blur-md">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500/20 to-neutral-900 border border-amber-500/40 p-0.5 flex items-center justify-center shadow shrink-0 overflow-hidden">
-                    <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
-                  </div>
-                  <span className="text-xs font-display font-black tracking-tight text-white truncate">
-                    {cmsConfig?.branding?.siteName || 'Loopra'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Navigation Items Grouping */}
-              <nav className="space-y-3.5 flex-1">
-                {(() => {
-                  const defaultNav = [
-                    { id: 'home', label: 'Home', icon: 'home', group: 'main' },
-                    { id: 'dj-club', label: 'Loopra DJ Club', icon: 'headphones', badge: 'Live', group: 'main' },
-                    { id: 'discover', label: 'Discover & Search', icon: 'discover', group: 'main' },
-                    { id: 'radio', label: 'Indian Live Radio', icon: 'radio', badge: 'Live', group: 'main' },
-                    { id: 'mood', label: 'Mood-to-Music AI', icon: 'sparkles', badge: 'AI', group: 'discovery' },
-                    { id: 'timemachine', label: 'Time Machine Radio', icon: 'radio', badge: 'Retro', group: 'discovery' },
-                    { id: 'activity', label: 'Listening Activity', icon: 'flame', group: 'discovery' },
-                    { id: 'swipe', label: 'Discover Swipe', icon: 'swipe', group: 'discovery' },
-                    { id: 'barber', label: stationsMap?.barber?.title || 'Saloon FM', icon: 'scissors', badge: '90s', group: 'stations' },
-                    { id: 'truck', label: stationsMap?.truck?.title || 'Horn Ok Please', icon: 'truck', badge: 'Dhaba', group: 'stations' },
-                    { id: 'pauwa', label: stationsMap?.pauwa?.title || 'Theka Session', icon: 'beer', badge: 'Desi', group: 'stations' },
-                    { id: 'library', label: 'Liked Songs Collection', icon: 'library', group: 'collection' },
-                    { id: 'history', label: 'Listening History', icon: 'history', group: 'collection' },
-                    { id: 'playlists', label: 'Playlists', icon: 'list', group: 'collection' },
-                    { id: 'stats', label: 'Recap & Stats', icon: 'sparkles', group: 'collection' }
-                  ];
-
-                  const canonicalGroup = (id, rawGroup) => {
-                    if (['home', 'dj-club', 'chat', 'ai-chat', 'discover', 'radio'].includes(id)) return 'main';
-                    if (['mood', 'timemachine', 'activity', 'swipe'].includes(id)) return 'discovery';
-                    if (['barber', 'truck', 'pauwa'].includes(id)) return 'stations';
-                    if (['library', 'history', 'playlists', 'stats'].includes(id)) return 'collection';
-                    return rawGroup || 'main';
-                  };
-
-                  const disabledIds = new Set();
-                  const configuredItems = Array.isArray(cmsConfig?.navigation) ? cmsConfig.navigation : [];
-                  configuredItems.forEach(item => {
-                    if (item && item.id && item.enabled === false) {
-                      disabledIds.add(item.id);
-                    }
-                  });
-
-                  const navMap = new Map();
-
-                  if (configuredItems.length > 0) {
-                    configuredItems.forEach(item => {
-                      if (!item || !item.id || item.id === 'downloads' || item.id === 'profile' || item.id === 'equalizer' || item.id === 'custom-vip-lounge' || item.id === 'vip-lounge' || item.label === 'Ultra VIP Lounge') return;
-                      if (item.enabled === false || disabledIds.has(item.id)) return;
-                      if (item.id === 'admin' && !isAdmin) return;
-                      const group = canonicalGroup(item.id, item.group);
-                      navMap.set(item.id, {
-                        ...item,
-                        group
-                      });
-                    });
-
-                    defaultNav.forEach(def => {
-                      if (disabledIds.has(def.id)) return;
-                      if (configuredItems.some(c => c && c.id === def.id)) return;
-                      navMap.set(def.id, { ...def });
-                    });
-                  } else {
-                    defaultNav.forEach(def => {
-                      if (!disabledIds.has(def.id)) {
-                        navMap.set(def.id, { ...def });
-                      }
-                    });
-                  }
-
-                  const extraStations = (Array.isArray(cmsConfig?.stations) ? cmsConfig.stations : [])
-                    .filter(st => st && st.id && !navMap.has(st.id) && !disabledIds.has(st.id) && st.isActive !== false && st.enabled !== false)
-                    .map(st => ({
-                      id: st.id,
-                      label: st.title || st.name || st.id,
-                      icon: st.icon || 'radio',
-                      badge: st.badge,
-                      group: 'stations',
-                      route: `/${st.id}`
-                    }));
-
-                  extraStations.forEach(st => {
-                    navMap.set(st.id, st);
-                  });
-
-                  const bottomNavIds = new Set(['home', 'discover', 'library', 'liked', 'playlists', 'radio', 'indian-radio']);
-                  const allItems = Array.from(navMap.values()).filter(item => {
-                    if (!item || item.enabled === false || disabledIds.has(item.id)) return false;
-                    // Remove Loopra AI Chat and Downloaded Songs (offline) from sidebar
-                    if (item.id === 'chat' || item.id === 'ai-chat' || item.id === 'downloads' || item.id === 'downloads_explore' || item.id === 'offline') return false;
-                    if (isMobileScreen && bottomNavIds.has(item.id)) return false;
-                    return true;
-                  });
-
-                  const groups = [
-                    { key: 'main', title: null },
-                    { key: 'discovery', title: 'AI & DISCOVERY' },
-                    { key: 'stations', title: 'NOSTALGIA STATIONS' },
-                    { key: 'collection', title: 'YOUR COLLECTION' }
-                  ];
-
-                  return groups.map(grp => {
-                    const groupItems = allItems.filter(item => {
-                      if (item.id === 'profile' || item.id === 'chat' || item.id === 'ai-chat') return false;
-                      return (item.group || 'main') === grp.key;
-                    });
-
-                    if (groupItems.length === 0) return null;
-
-                    return (
-                      <div key={grp.key} className="space-y-1">
-                        {grp.title && (
-                          !isSidebarCollapsed ? (
-                            <div className="pt-2 pb-1 px-2.5 flex items-center justify-between">
-                              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest whitespace-nowrap">
-                                {grp.title}
-                              </p>
-                              <div className="h-px flex-1 ml-2 bg-white/[0.04]" />
-                            </div>
-                          ) : (
-                            <div className="h-2 border-b border-neutral-800/40 mb-1.5" />
-                          )
-                        )}
-
-                        <div className="space-y-0.5">
-                          {groupItems.map(item => {
-                            const itemKey = item.id || item.route?.replace(/^\//, '');
-                            const isActive = item.id === 'stats'
-                              ? isStatsOpen
-                              : (item.id === 'chat' || item.id === 'ai-chat')
-                              ? activeAssistantPanel === 'ai'
-                              : (activeTab === item.id || activeTab === itemKey);
-
-                            let displayLabel = stationsMap?.[item.id]?.title || item.label;
-                            if (item.id === 'library' && (displayLabel === 'Liked Songs' || !displayLabel)) {
-                              displayLabel = 'Liked Songs Collection';
-                            } else if (item.id === 'history' && (displayLabel === 'History' || !displayLabel)) {
-                              displayLabel = 'Listening History';
-                            }
-
-                            const isDjClub = item.id === 'dj-club';
-
-                            return (
-                              <button
-                                key={item.id}
-                                data-nav-id={item.id}
-                                onClick={() => {
-                                  if (item.id === 'stats') {
-                                    setIsStatsOpen(true);
-                                  } else if (item.id === 'chat' || item.id === 'ai-chat') {
-                                    setActiveAssistantPanel(prev => prev === 'ai' ? null : 'ai');
-                                    setIsStatsOpen(false);
-                                  } else if (item.id === 'playlists') {
-                                    handleStationSelect('playlists');
-                                    setSelectedPlaylistForView(null);
-                                    setIsStatsOpen(false);
-                                  } else if (item.id === 'admin') {
-                                    handleStationSelect('admin');
-                                    window.history.pushState({ tab: 'admin' }, '', '/admin');
-                                    setIsStatsOpen(false);
-                                  } else {
-                                    handleStationSelect(item.id);
-                                    setIsStatsOpen(false);
-                                  }
-                                  if (isMobileScreen) setIsSidebarOpen(false);
-                                }}
-                                title={displayLabel}
-                                className={`w-full flex items-center ${
-                                  isSidebarCollapsed ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'
-                                } rounded-xl font-medium text-xs transition-all duration-150 cursor-pointer ${
-                                  isDjClub
-                                    ? isActive
-                                      ? 'bg-gradient-to-r from-amber-500/30 to-amber-600/30 text-amber-200 border border-amber-500/50 shadow-md shadow-amber-950/40'
-                                      : 'bg-gradient-to-r from-amber-500/10 to-transparent hover:from-amber-500/20 text-amber-300 border border-amber-500/20'
-                                    : isActive
-                                    ? 'bg-amber-500/15 text-amber-200 border border-amber-500/40 shadow-sm shadow-amber-950/40 font-semibold'
-                                    : 'text-neutral-400 hover:bg-white/[0.05] hover:text-white active:bg-white/[0.08]'
-                                }`}
-                              >
-                                <Icon name={item.icon || 'music'} className={`w-4 h-4 shrink-0 ${
-                                  isDjClub ? 'text-amber-400 animate-pulse' : isActive ? 'text-amber-400' : 'text-neutral-400'
-                                }`} />
-                                {!isSidebarCollapsed && (
-                                  <span className="whitespace-nowrap truncate text-xs">{displayLabel}</span>
-                                )}
-                                {!isSidebarCollapsed && item.badge && (
-                                  <span className="ml-auto text-[9px] font-bold text-amber-300 bg-amber-500/15 px-1.5 py-0.2 rounded-full border border-amber-500/25 shrink-0">
-                                    {item.badge}
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  });
-                })()}
-
-                {/* Admin Highlight Item */}
-                {isAdmin && !cmsConfig?.navigation?.some(n => n.id === 'admin' && n.enabled !== false) && (
-                  <button
-                    onClick={() => {
-                      handleStationSelect('admin');
-                      window.history.pushState({ tab: 'admin' }, '', '/admin');
-                      if (isMobileScreen) setIsSidebarOpen(false);
-                    }}
-                    title="Admin Dashboard"
-                    className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl font-semibold text-xs transition-all cursor-pointer ${
-                      activeTab === 'admin' 
-                        ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50 shadow-md shadow-amber-500/20' 
-                        : 'text-amber-400/90 bg-amber-500/[0.06] border border-amber-500/20 hover:bg-amber-500/15 hover:border-amber-500/40'
-                    }`}
-                  >
-                    <Icon name="shield" className="w-4 h-4 shrink-0 text-amber-400" />
-                    {!isSidebarCollapsed && <span className="whitespace-nowrap">Admin Dashboard</span>}
-                  </button>
-                )}
-              </nav>
-
-              {/* Bottom Action Area: User Profile, APK Download & Auth / Logout */}
-              <div 
-                style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 20px)' }}
-                className="pt-3 pb-20 md:pb-6 border-t border-white/[0.06] mt-4 space-y-2"
-              >
-                {/* 1. Avatar Autonomous Free Roam Toggle Button (Strictly Admin Only and when Voice/Avatar is active) */}
-                {isAdmin && isVoiceActive && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      try {
-                        const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) === 'true';
-                        const next = !cur;
-                        localStorage.setItem('loopra_avatar_roaming', String(next));
-                        localStorage.setItem('loopra_avatar_roam', String(next));
-                        window.dispatchEvent(new Event('storage'));
-                        showToast?.(`Avatar Free Roam ${next ? 'Enabled' : 'Paused'}`);
-                      } catch (_) {}
-                    }}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 text-neutral-300 font-medium text-xs transition cursor-pointer"
-                    title="Toggle Avatar Autonomous Roaming (Admin Only)"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
-                      {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Avatar Free Roam</span>}
-                    </div>
-                    {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
-                      <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
-                        ON/OFF
-                      </span>
-                    )}
-                  </button>
-                )}
-
-                {/* 2. Download APK Button directly downloading Loopra.apk */}
-                <a
-                  href="/Loopra.apk"
-                  download="Loopra.apk"
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
-                  title="Download APK (Direct)"
-                >
-                  <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
-                  {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Download APK</span>}
-                </a>
-
-                {/* 3. Logged-in User Profile Card & 4. Logout / Sign In Button */}
-                {user ? (
-                  <div className="space-y-2">
-                    {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
-                      <div className="px-2.5 py-1.5 rounded-xl bg-white/[0.02] border border-white/[0.04] flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-full overflow-hidden shrink-0">
-                          <UserAvatar
-                            user={user}
-                            className="w-full h-full object-cover"
-                            fallbackClassName="w-full h-full bg-gradient-to-br from-amber-500 to-amber-600 text-neutral-950 font-bold text-[10px] flex items-center justify-center shadow-inner uppercase select-none"
-                          />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-semibold text-white truncate">{user.displayName || user.username || 'User'}</p>
-                          <p className="text-[9px] text-zinc-500 truncate">{user.email || 'Online'}</p>
-                        </div>
-                      </div>
-                    )}
-                    <button
-                      onClick={() => { logout(); setIsSidebarOpen(false); }}
-                      className={`w-full flex items-center ${isSidebarCollapsed && !isSidebarOpen && !isMobileScreen ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl font-medium text-xs transition text-neutral-400 hover:text-red-400 hover:bg-red-500/10 active:scale-95`}
-                    >
-                      <Icon name="logout" className="w-4 h-4 shrink-0" />
-                      {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Logout</span>}
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => {
-                      if (isPlaying) {
-                        togglePlayPause();
-                      }
-                      openAuthModal();
-                      setIsSidebarOpen(false);
-                    }}
-                    className={`w-full flex items-center ${isSidebarCollapsed && !isSidebarOpen && !isMobileScreen ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl font-semibold text-xs transition bg-gradient-to-r from-amber-500/20 to-amber-600/20 text-amber-300 border border-amber-500/30 hover:from-amber-500/30 hover:to-amber-600/30 active:scale-95`}
-                  >
-                    <Icon name="user" className="w-4 h-4 shrink-0 text-amber-400" />
-                    {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Login / Sign Up</span>}
-                  </button>
-                )}
-              </div>
-            </div>
-          </aside>
-        </>
-      ) : (
-        <>
-          {/* Backdrop overlay only for mobile drawer - hidden on desktop */}
-          <div 
-            onClick={() => setIsSidebarOpen(false)}
-            className={`md:hidden fixed inset-0 bg-black/80 backdrop-blur-md z-[90] transition-opacity duration-300 ease-out cursor-pointer ${
-              isSidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-            }`}
-            aria-label="Close sidebar backdrop"
-            aria-hidden={!isSidebarOpen}
-          />
-
-          <aside 
-            style={{
-              paddingTop: isMobileScreen ? 'max(env(safe-area-inset-top, 0px), 16px)' : undefined,
-              paddingBottom: isMobileScreen ? 'max(env(safe-area-inset-bottom, 0px), 16px)' : undefined,
-            }}
-            className={`h-full flex flex-col shrink-0 transition-transform duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform overflow-y-auto overflow-x-hidden md:sticky md:top-0 md:h-full ${
-              activeTab === 'dj-club' || activeTab === 'relax'
-                ? 'hidden'
-                : isSidebarOpen
-                  ? 'fixed md:relative top-0 bottom-0 left-0 z-[100] md:z-30 h-[100dvh] md:h-full w-72 md:w-[290px] translate-x-0 p-4 bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80 opacity-100'
-                  : 'fixed md:relative top-0 bottom-0 left-0 z-[100] md:z-30 h-[100dvh] md:h-full -translate-x-full md:translate-x-0 w-72 md:w-0 md:p-0 md:border-none md:overflow-hidden md:opacity-0 pointer-events-none'
-            }`}
-          >
-            <div className="w-full shrink-0 flex-1 flex flex-col min-h-0">
-              <div className="flex items-center justify-between px-2 py-3 mb-6 sticky top-0 z-20 bg-neutral-900/95 backdrop-blur-md">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-7 h-7 rounded-lg bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow shrink-0 overflow-hidden">
-                    <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
-                  </div>
-                  {cmsConfig?.branding?.siteName ? (
-                    <span className="text-xs font-display font-extrabold tracking-tight text-white whitespace-nowrap">{cmsConfig.branding.siteName}</span>
-                  ) : null}
-                </div>
-              </div>
-
-          <nav className="space-y-2">
-            {(() => {
-              const defaultNav = [
-                { id: 'home', label: 'Home', icon: 'home', group: 'main' },
-                { id: 'dj-club', label: 'Loopra DJ Club', icon: 'headphones', badge: 'Live', group: 'main' },
-                { id: 'discover', label: 'Discover & Search', icon: 'discover', group: 'main' },
-                { id: 'radio', label: 'Indian Live Radio', icon: 'radio', badge: 'Live', group: 'main' },
-                { id: 'mood', label: 'Mood-to-Music AI', icon: 'sparkles', badge: 'AI', group: 'discovery' },
-                { id: 'timemachine', label: 'Time Machine Radio', icon: 'radio', badge: 'Retro', group: 'discovery' },
-                { id: 'activity', label: 'Listening Activity', icon: 'flame', group: 'discovery' },
-                { id: 'swipe', label: 'Discover Swipe', icon: 'swipe', group: 'discovery' },
-                { id: 'barber', label: stationsMap?.barber?.title || 'Saloon FM', icon: 'scissors', badge: '90s', group: 'stations' },
-                { id: 'truck', label: stationsMap?.truck?.title || 'Horn Ok Please', icon: 'truck', badge: 'Dhaba', group: 'stations' },
-                { id: 'pauwa', label: stationsMap?.pauwa?.title || 'Theka Session', icon: 'beer', badge: 'Desi', group: 'stations' },
-                { id: 'library', label: 'Liked Songs Collection', icon: 'library', group: 'collection' },
-                { id: 'history', label: 'Listening History', icon: 'history', group: 'collection' },
-                { id: 'playlists', label: 'Playlists', icon: 'list', group: 'collection' },
-                { id: 'stats', label: 'Recap & Stats', icon: 'sparkles', group: 'collection' }
-              ];
-
-              const canonicalGroup = (id, rawGroup) => {
-                if (['home', 'dj-club', 'chat', 'ai-chat', 'discover', 'radio'].includes(id)) return 'main';
-                if (['mood', 'timemachine', 'activity', 'swipe'].includes(id)) return 'discovery';
-                if (['barber', 'truck', 'pauwa'].includes(id)) return 'stations';
-                if (['library', 'history', 'playlists', 'stats'].includes(id)) return 'collection';
-                return rawGroup || 'main';
-              };
-
-              // 1. Collect all explicitly disabled item IDs so defaults never override user choices
-              const disabledIds = new Set();
-              const configuredItems = Array.isArray(cmsConfig?.navigation) ? cmsConfig.navigation : [];
-              configuredItems.forEach(item => {
-                if (item && item.id && item.enabled === false) {
-                  disabledIds.add(item.id);
-                }
-              });
-
-              // 2. Build active navigation map
-              const navMap = new Map();
-
-              if (configuredItems.length > 0) {
-                // Admin configuration is present: add configured enabled items
-                configuredItems.forEach(item => {
-                  if (!item || !item.id || item.id === 'downloads' || item.id === 'profile' || item.id === 'equalizer' || item.id === 'custom-vip-lounge' || item.id === 'vip-lounge' || item.label === 'Ultra VIP Lounge') return;
-                  if (item.enabled === false || disabledIds.has(item.id)) return;
-                  if (item.id === 'admin' && !isAdmin) return;
-                  const group = canonicalGroup(item.id, item.group);
-                  navMap.set(item.id, {
-                    ...item,
-                    group
-                  });
-                });
-
-                // Check defaultNav for any canonical categories missing from old legacy DB configurations
-                defaultNav.forEach(def => {
-                  if (disabledIds.has(def.id)) return; // Explicitly hidden by admin
-                  if (configuredItems.some(c => c && c.id === def.id)) return; // Already tracked in configuration
-                  navMap.set(def.id, { ...def });
-                });
-              } else {
-                // Fallback to defaultNav if no configuration exists
-                defaultNav.forEach(def => {
-                  if (!disabledIds.has(def.id)) {
-                    navMap.set(def.id, { ...def });
-                  }
-                });
-              }
-
-              // Discover any custom stations configured in cmsConfig.stations that aren't already in navigation
-              const extraStations = (Array.isArray(cmsConfig?.stations) ? cmsConfig.stations : [])
-                .filter(st => st && st.id && !navMap.has(st.id) && !disabledIds.has(st.id) && st.isActive !== false && st.enabled !== false)
-                .map(st => ({
-                  id: st.id,
-                  label: st.title || st.name || st.id,
-                  icon: st.icon || 'radio',
-                  badge: st.badge,
-                  group: 'stations',
-                  route: `/${st.id}`
-                }));
-
-              extraStations.forEach(st => {
-                navMap.set(st.id, st);
-              });
-
-              // Destinations present in the mobile lower navbar (MobileBottomNav)
-              const bottomNavIds = new Set(['home', 'discover', 'library', 'liked', 'playlists', 'radio', 'indian-radio']);
-              const allItems = Array.from(navMap.values()).filter(item => {
-                if (!item || item.enabled === false || disabledIds.has(item.id)) return false;
-                // Remove Loopra AI Chat and Downloaded Songs (offline) from sidebar
-                if (item.id === 'chat' || item.id === 'ai-chat' || item.id === 'downloads' || item.id === 'downloads_explore' || item.id === 'offline') return false;
-                // Restriction applies ONLY to phone/mobile mode: do not show lower navbar destinations in mobile sidebar
-                if (isMobileScreen && bottomNavIds.has(item.id)) return false;
-                return true;
-              });
-              const groups = [
-                { key: 'main', title: null },
-                { key: 'discovery', title: 'AI & DISCOVERY' },
-                { key: 'stations', title: 'NOSTALGIA STATIONS' },
-                { key: 'collection', title: 'YOUR COLLECTION' }
-              ];
-
-              return groups.map(grp => {
-                const groupItems = allItems.filter(item => {
-                  if (item.id === 'profile' || item.id === 'chat' || item.id === 'ai-chat') return false;
-                  return (item.group || 'main') === grp.key;
-                });
-
-                if (groupItems.length === 0) return null;
-
-                return (
-                  <div key={grp.key} className="space-y-1">
-                    {grp.title && (
-                      !isSidebarCollapsed ? (
-                        <div className="pt-3 pb-1 px-3">
-                          <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest whitespace-nowrap">
-                            {grp.title}
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="h-4 border-b border-neutral-800/50 mb-2" />
-                      )
-                    )}
-
-                    {groupItems.map(item => {
-                      const itemKey = item.id || item.route?.replace(/^\//, '');
-                      const isActive = item.id === 'stats'
-                        ? isStatsOpen
-                        : (item.id === 'chat' || item.id === 'ai-chat')
-                        ? activeAssistantPanel === 'ai'
-                        : (activeTab === item.id || activeTab === itemKey);
-
-                      // Display label: if it's a station, use station's updated title if available; format collections
-                      let displayLabel = stationsMap?.[item.id]?.title || item.label;
-                      if (item.id === 'library' && (displayLabel === 'Liked Songs' || !displayLabel)) {
-                        displayLabel = 'Liked Songs Collection';
-                      } else if (item.id === 'history' && (displayLabel === 'History' || !displayLabel)) {
-                        displayLabel = 'Listening History';
-                      }
-
-                      return (
-                        <button
-                          key={item.id}
-                          data-nav-id={item.id}
-                          onClick={() => {
-                            if (item.id === 'stats') {
-                              setIsStatsOpen(true);
-                            } else if (item.id === 'chat' || item.id === 'ai-chat') {
-                              setActiveAssistantPanel(prev => prev === 'ai' ? null : 'ai');
-                              setIsStatsOpen(false);
-                            } else if (item.id === 'playlists') {
-                              handleStationSelect('playlists');
-                              setSelectedPlaylistForView(null);
-                              setIsStatsOpen(false);
-                            } else if (item.id === 'admin') {
-                              handleStationSelect('admin');
-                              window.history.pushState({ tab: 'admin' }, '', '/admin');
-                              setIsStatsOpen(false);
-                            } else {
-                              handleStationSelect(item.id);
-                              setIsStatsOpen(false);
-                            }
-                            if (isMobileScreen) setIsSidebarOpen(false);
-                          }}
-                          title={displayLabel}
-                          className={`w-full flex items-center ${
-                            isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'
-                          } rounded-2xl font-medium text-xs transition cursor-pointer ${
-                            isActive
-                              ? 'bg-amber-600/25 text-amber-200 border border-amber-500/50 shadow-lg shadow-amber-950/50'
-                              : 'text-neutral-400 hover:bg-neutral-800 hover:text-white active:scale-[0.98]/50'
-                          }`}
-                        >
-                          <Icon name={item.icon || 'music'} className="w-5 h-5 shrink-0 text-amber-400" />
-                          {!isSidebarCollapsed && (
-                            <span className="whitespace-nowrap truncate">{displayLabel}</span>
-                          )}
-                          {!isSidebarCollapsed && item.badge && (
-                            <span className="ml-auto text-[9px] font-bold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded-full border border-amber-500/20 shrink-0">
-                              {item.badge}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                );
-              });
-            })()}
-
-            {isAdmin && !cmsConfig?.navigation?.some(n => n.id === 'admin' && n.enabled !== false) && (
-              <button
-                onClick={() => {
-                  handleStationSelect('admin');
-                  window.history.pushState({ tab: 'admin' }, '', '/admin');
+              <aside
+                style={{
+                  paddingTop: isMobileScreen ? 'max(env(safe-area-inset-top, 0px), 16px)' : undefined,
+                  paddingBottom: isMobileScreen ? 'max(env(safe-area-inset-bottom, 0px), 16px)' : undefined,
                 }}
-                title="Admin Dashboard"
-                className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-semibold text-xs transition cursor-pointer ${
-                  activeTab === 'admin' ? 'bg-amber-500 text-neutral-950 font-bold shadow-lg shadow-amber-500/30' : 'text-amber-400 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20'
-                }`}
+                className={`h-full flex flex-col shrink-0 transition-transform duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform overflow-y-auto overflow-x-hidden md:sticky md:top-0 md:h-full ${activeTab === 'dj-club' || activeTab === 'relax'
+                    ? 'hidden'
+                    : isSidebarOpen
+                      ? 'fixed md:relative top-0 bottom-0 left-0 z-[100] md:z-30 h-[100dvh] md:h-full w-72 md:w-[290px] translate-x-0 p-3.5 sm:p-4 bg-[#0c0d12]/98 md:bg-neutral-900/95 backdrop-blur-2xl md:backdrop-blur-xl border-r border-amber-500/20 md:border-neutral-800/80 shadow-[0_0_60px_rgba(0,0,0,0.95)] md:shadow-none opacity-100'
+                      : 'fixed md:relative top-0 bottom-0 left-0 z-[100] md:z-30 h-[100dvh] md:h-full -translate-x-full md:translate-x-0 w-72 md:w-0 md:p-0 md:border-none md:overflow-hidden md:opacity-0 pointer-events-none'
+                  }`}
               >
-                <Icon name="shield" className="w-5 h-5 shrink-0" />
-                {!isSidebarCollapsed && <span className="whitespace-nowrap">Admin Dashboard</span>}
-              </button>
-            )}
-
-            {/* Bottom Action Area: User Profile, APK Download & Auth / Logout */}
-            <div 
-              style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 20px)' }}
-              className="pt-4 pb-20 md:pb-6 border-t border-neutral-800 mt-4 space-y-2"
-            >
-              {/* 1. Avatar Autonomous Free Roam Toggle Button (Strictly Admin Only and when Voice/Avatar is active) */}
-              {isAdmin && isVoiceActive && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) === 'true';
-                      const next = !cur;
-                      localStorage.setItem('loopra_avatar_roaming', String(next));
-                      localStorage.setItem('loopra_avatar_roam', String(next));
-                      window.dispatchEvent(new Event('storage'));
-                      showToast?.(`Avatar Free Roam ${next ? 'Enabled' : 'Paused'}`);
-                    } catch (_) {}
-                  }}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 text-neutral-300 font-medium text-xs transition cursor-pointer"
-                  title="Toggle Avatar Autonomous Roaming (Admin Only)"
-                >
-                  <div className="flex items-center gap-2">
-                    <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
-                    {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Avatar Free Roam</span>}
-                  </div>
-                  {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
-                    <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
-                      ON/OFF
-                    </span>
-                  )}
-                </button>
-              )}
-
-              {/* 2. Download APK Button directly downloading Loopra.apk */}
-              <a
-                href="/Loopra.apk"
-                download="Loopra.apk"
-                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
-                title="Download APK (Direct)"
-              >
-                <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
-                {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Download APK</span>}
-              </a>
-
-              {/* 3. Logged-in User Profile Card & 4. Logout / Sign In Button */}
-              {user ? (
-                <div className="space-y-2">
-                  {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
-                    <div className="px-2.5 py-1.5 rounded-xl bg-white/[0.02] border border-white/[0.04] flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-full overflow-hidden shrink-0">
-                        <UserAvatar
-                          user={user}
-                          className="w-full h-full object-cover"
-                          fallbackClassName="w-full h-full bg-gradient-to-br from-amber-500 to-amber-600 text-neutral-950 font-bold text-[10px] flex items-center justify-center shadow-inner uppercase select-none"
-                        />
+                {/* Inner Content Container - full width without horizontal clipping */}
+                <div className="w-full shrink-0 flex-1 flex flex-col min-h-0">
+                  {/* Header Section: Mobile-only brand badge (top navbar button handles toggling) */}
+                  <div className="flex items-center justify-between px-1.5 py-2 mb-4 border-b border-white/[0.06] pb-3 sticky top-0 z-20 bg-[#0c0d12]/95 md:bg-neutral-900/95 backdrop-blur-md">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500/20 to-neutral-900 border border-amber-500/40 p-0.5 flex items-center justify-center shadow shrink-0 overflow-hidden">
+                        <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-semibold text-white truncate">{user.displayName || user.username || 'User'}</p>
-                        <p className="text-[9px] text-zinc-500 truncate">{user.email || 'Online'}</p>
-                      </div>
+                      <span className="text-xs font-display font-black tracking-tight text-white truncate">
+                        {cmsConfig?.branding?.siteName || 'Loopra'}
+                      </span>
                     </div>
-                  )}
-                  <button
-                    onClick={() => { logout(); setIsSidebarOpen(false); }}
-                    className={`w-full flex items-center ${isSidebarCollapsed && !isSidebarOpen && !isMobileScreen ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl font-medium text-xs transition text-neutral-400 hover:text-red-400 hover:bg-red-500/10 active:scale-95`}
-                  >
-                    <Icon name="logout" className="w-4 h-4 shrink-0" />
-                    {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Logout</span>}
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => {
-                    if (isPlaying) {
-                      togglePlayPause();
-                    }
-                    openAuthModal();
-                    setIsSidebarOpen(false);
-                  }}
-                  className={`w-full flex items-center ${isSidebarCollapsed && !isSidebarOpen && !isMobileScreen ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl font-semibold text-xs transition bg-gradient-to-r from-amber-500/20 to-amber-600/20 text-amber-300 border border-amber-500/30 hover:from-amber-500/30 hover:to-amber-600/30 active:scale-95`}
-                >
-                  <Icon name="user" className="w-4 h-4 shrink-0 text-amber-400" />
-                  {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Login / Sign Up</span>}
-                </button>
-              )}
-            </div>
-            
-          </nav>
-        </div>
-      </aside>
-    </>
-  )}
-
-      <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 relative overflow-hidden">
-
-
-        {/* Site-wide CMS Announcement Bar */}
-        {activeTab !== 'dj-club' && activeTab !== 'relax' && <CmsAnnouncementBar announcement={cmsConfig?.announcement} />}
-
-        {(() => {
-          const isStationPage = Boolean(
-            currentStation &&
-            !['home', 'discover', 'swipe', 'for-you', 'library', 'history', 'radio', 'indian-radio', 'mood', 'timemachine', 'activity', 'admin', 'offline', 'offline-explore'].includes(activeTab)
-          );
-          return (
-            <main
-              ref={mainScrollRef}
-              onScroll={(e) => {
-                if (activeTab === 'home') setIsHomeScrolled(e.currentTarget.scrollTop > 320);
-              }}
-              className={`flex-1 h-full min-h-0 ${
-                activeTab === 'dj-club' || activeTab === 'relax' || isStationPage
-                  ? 'overflow-hidden p-0'
-                  : (USE_V2_SWIPE_UI && activeTab === 'swipe' ? 'overflow-hidden p-0' : 'overflow-y-auto px-2.5 py-3 sm:px-4 sm:py-4 md:p-8')
-              } bg-neutral-950 box-border relative w-full transition-all duration-300 ${
-                activeTab === 'dj-club' || activeTab === 'relax' || isStationPage
-                  ? 'pb-0'
-                  : (USE_V2_SWIPE_UI && activeTab === 'swipe' ? 'pb-0' : (isBottomPlayerVisible ? 'pb-44 md:pb-28' : 'pb-24 md:pb-8'))
-              }`}
-            >
-              {currentStation && currentBgImage && activeTab !== 'dj-club' && (
-                <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden transition-all duration-700">
-                  <img 
-                    key={currentBgImage}
-                    src={currentBgImage} 
-                    alt="Station Background" 
-                    loading="lazy"
-                    className="w-full h-full object-cover filter brightness-[0.75] contrast-100 scale-105 transition-opacity duration-1000 animate-fadeIn"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/85" />
-                </div>
-              )}
-
-              {canGoBack(navigationStack, activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio, selectedPlaylistForView, offlineSubView }) && activeTab !== 'artist' && activeTab !== 'dj-club' && !isStationPage && (
-                <div className="relative z-20 mb-6 flex justify-start pl-0">
-                  <button
-                    data-voice-back="true"
-                    onClick={handleGoBack}
-                    className="flex items-center gap-2 px-4 py-2 bg-neutral-900/80 hover:bg-neutral-800 backdrop-blur-xl border border-neutral-700/50 rounded-2xl text-neutral-300 hover:text-white transition shadow-lg group cursor-pointer active:scale-95"
-                  >
-                    <Icon name="arrowLeft" className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-                    <span className="text-sm font-medium tracking-wide">Back</span>
-                  </button>
-                </div>
-              )}
-
-        {activeTab === 'artist' && (
-          <div key={`page-artist-${selectedArtistId}`} className="page-transition w-full min-w-0 px-2 sm:px-4 md:px-8 pt-0.5 md:pt-2">
-            <ArtistProfileView
-              artistId={selectedArtistId || 'arijit-singh'}
-              backendUrl={BACKEND_URL}
-              authToken={authToken}
-              user={user}
-              currentSong={currentSong}
-              isPlaying={isPlaying}
-              onPlaySong={(track, trackQueue) => {
-                if (trackQueue && trackQueue.length > 0) {
-                  setQueue(trackQueue);
-                }
-                playSong(track);
-              }}
-              onTogglePlayPause={togglePlayPause}
-              onToggleLike={toggleLike}
-              isLiked={isSongLiked}
-              onAddToPlaylist={handleAddToPlaylistClick}
-              onAddToQueue={(track) => {
-                setQueue(prev => [...prev, track]);
-                showToast(`Added "${track.title}" to queue`);
-              }}
-              onArtistClick={handleArtistClick}
-              onGoBack={handleGoBack}
-              showToast={showToast}
-            />
-            <DisclaimerFooter {...commonFooterProps} />
-          </div>
-        )}
-
-        {activeTab === 'discover' && (
-          <div key="page-discover" className="page-transition w-full relative z-10">
-            <DiscoverView
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
-              searchResults={searchResults}
-              fetchYouTubeMusic={fetchYouTubeMusic}
-              isLoading={isLoading}
-              searchError={searchError}
-              hasSearched={hasSearched}
-              isLoadingMoreSearch={isLoadingMoreSearch}
-              hasMoreSearchResults={hasMoreSearchResults}
-              searchLoadMoreError={searchLoadMoreError}
-              handleLoadMoreSearchResults={handleLoadMoreSearchResults}
-              currentSong={currentSong}
-              playSong={playSong}
-              openMenuId={openMenuId}
-              setOpenMenuId={setOpenMenuId}
-              handleOpenVideo={handleOpenVideo}
-              queue={queue}
-              addToQueue={addToQueue}
-              removeFromQueue={removeFromQueue}
-              likedSongs={likedSongs}
-              toggleLike={toggleLike}
-              playNext={playNext}
-              handleFindSimilar={handleFindSimilar}
-              handleAddToPlaylistClick={handleAddToPlaylistClick}
-              showToast={showToast}
-              handleImageError={handleImageError}
-              trendingSongs={trendingSongs}
-              popularAlbums={popularAlbums}
-              user={user}
-              authToken={authToken}
-              backendUrl={BACKEND_URL}
-              cmsConfig={cmsConfig}
-              onNavigate={(tab, extraParams) => {
-                handleStationSelect(tab, extraParams);
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-              onArtistClick={handleArtistClick}
-            />
-          </div>
-        )}
-
-        {activeTab === 'swipe' && (
-          <div key="page-swipe" className={`page-transition relative z-10 w-full ${USE_V2_SWIPE_UI ? 'h-full flex flex-col justify-center overflow-hidden' : 'max-w-2xl mx-auto space-y-6 py-2 sm:py-4'}`}>
-            <DiscoverSwipe
-              onPlaySong={playSong}
-              onTogglePlay={togglePlayPause}
-              currentSong={currentSong}
-              isPlaying={isPlaying}
-              likedSongs={likedSongs}
-              onToggleLike={toggleLike}
-              showToast={showToast}
-              fetchTracks={handleFetchDiscoveryTracks}
-              onNavigate={handleStationSelect}
-            />
-          </div>
-        )}
-
-        {activeTab === 'relax' && (
-          <div key="page-relax" className="fixed inset-0 z-50 w-screen h-screen overflow-hidden">
-            <RelaxModeView
-              onBack={handleGoBack}
-              currentSong={currentSong}
-              isPlaying={isPlaying}
-              onTogglePlay={togglePlayPause}
-              onNextSong={handleNextSong}
-              onPrevSong={handlePrevSong}
-              volume={volume}
-              onVolumeChange={handleVolumeChange}
-              getCleanThumbnail={getCleanThumbnail}
-              onOpenExpandedPlayer={handleOpenExpandedPlayer}
-            />
-          </div>
-        )}
-
-        {activeTab === 'for-you' && (
-          <div key="page-for-you" className="page-transition w-full min-w-0 px-2 sm:px-4 md:px-8 pt-1 md:pt-6 space-y-6 md:space-y-10">
-            <PersonalizedRecommendationsSection
-              backendUrl={BACKEND_URL}
-              authToken={authToken}
-              user={user}
-              onPlayTrack={(track) => {
-                playSong(track);
-              }}
-              onOpenAuth={openAuthModal}
-              onToggleLike={toggleLike}
-              isLiked={isSongLiked}
-              onAddToPlaylist={handleAddToPlaylistClick}
-              showToast={showToast}
-              onArtistClick={handleArtistClick}
-            />
-          </div>
-        )}
-
-        {activeTab === 'home' && (
-          <div key={`page-home-${showAllTrending ? 'trending' : showAllArtists ? 'artists' : showAllAlbums ? 'albums' : showAllRadio ? 'radio' : 'main'}`} className="page-transition w-full min-w-0 px-2 sm:px-4 md:px-8 pt-0.5 md:pt-2 space-y-4 md:space-y-6">
-            {/* Promotional Hero Banner if configured in CMS */}
-            <CmsHeroBanner 
-              banner={cmsConfig?.banner} 
-              onActionClick={(url) => {
-                if (url?.startsWith('/station/')) {
-                  handleStationSelect(url.replace('/station/', ''));
-                } else if (url === '/discover') {
-                  handleStationSelect('discover');
-                } else if (url?.startsWith('http')) {
-                  window.open(url, '_blank', 'noopener,noreferrer');
-                }
-              }}
-            />
-
-            {/* Cinematic Hero Banner with Integrated Voice Search & Quick Tags */}
-            {USE_COMPACT_V2_UI ? (
-              <CompactHeroV2
-                clockString={clockString}
-                onSearch={handleSearchFromHome}
-                onSelectSong={playSong}
-                onPlaySong={playSong}
-                onArtistClick={handleArtistClick}
-                placeholder={cmsConfig?.searchPage?.placeholder || "Search songs, artists, albums..."}
-                suggestions={cmsConfig?.searchPage?.quickTags}
-              />
-            ) : (
-              <HomeHero 
-                clockString={clockString}
-                onSearch={handleSearchFromHome}
-                onSelectSong={playSong}
-                onPlaySong={playSong}
-                onArtistClick={handleArtistClick}
-                placeholder={cmsConfig?.searchPage?.placeholder || "Search songs, artists, albums..."}
-                suggestions={cmsConfig?.searchPage?.quickTags}
-                user={user}
-                token={authToken}
-                backendUrl={BACKEND_URL}
-                onNavigate={handleStationSelect}
-                onOpenInsights={() => setIsStatsOpen(true)}
-              />
-            )}
-
-            {/* Premium Feature Shortcut Cards */}
-            {USE_COMPACT_V2_UI ? (
-              <CompactFeatureDeckV2 onNavigate={handleStationSelect} />
-            ) : (
-              <FeatureShortcuts 
-                onNavigate={handleStationSelect}
-                onOpenInsights={() => setIsStatsOpen(true)}
-              />
-            )}
-
-            {/* Featured 3D Turntable Lounge Showcase for Mobile & Desktop (Hidden on mobile if V2 compact mode is active to eliminate mid-screen clutter) */}
-            <div className={`${USE_COMPACT_V2_UI ? 'hidden md:block' : 'block'} relative rounded-2xl sm:rounded-3xl p-3.5 sm:p-6 md:p-8 bg-gradient-to-r from-neutral-900/95 via-neutral-900/80 to-neutral-950/95 border border-amber-500/25 shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_30px_rgba(var(--accent-rgb,245,158,11),0.1)] backdrop-blur-2xl overflow-hidden mb-4 sm:mb-6 select-none w-full min-w-0`}>
-              <div className="absolute top-0 right-1/4 w-72 h-72 rounded-full bg-amber-500/10 blur-[80px] pointer-events-none" />
-              <div className="absolute bottom-0 left-1/4 w-72 h-72 rounded-full bg-orange-500/10 blur-[80px] pointer-events-none" />
-
-              <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-4 sm:gap-6 lg:gap-8 w-full min-w-0">
-                {/* 3D Turntable Platter */}
-                <div className="flex flex-col items-center justify-center shrink-0 w-full lg:w-auto">
-                  <Turntable3D 
-                    currentSong={currentSong || (trendingSongs?.[0] || TRENDING_SONGS[0])}
-                    isPlaying={isPlaying}
-                    onTogglePlay={currentSong ? togglePlayPause : () => handlePlayTrending((trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs)}
-                    size="compact"
-                  />
-                  <AudioSpectrumVisualizer 
-                    isPlaying={isPlaying} 
-                    barCount={32}
-                    height={32}
-                    className="w-full max-w-[190px] min-[360px]:max-w-[220px] sm:max-w-xs mt-2 sm:mt-3"
-                  />
-                </div>
-
-                {/* Lounge Info & Tactile Controls */}
-                <div className="flex-1 flex flex-col items-center lg:items-start text-center lg:text-left space-y-2.5 sm:space-y-4 w-full max-w-lg min-w-0">
-                  <div className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] sm:text-xs font-mono font-semibold">
-                    <span className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${isPlaying ? 'bg-amber-400 shadow-[0_0_8px_var(--accent-color,#f59e0b)] animate-pulse' : 'bg-neutral-500'}`} />
-                    <span>{isPlaying ? 'NOW SPINNING ON VINYL' : 'LOOPRA 3D VINYL LOUNGE'}</span>
                   </div>
 
-                  <div className="w-full min-w-0 px-1 sm:px-0">
-                    <h1 className="text-base sm:text-2xl md:text-3xl font-display font-extrabold text-white tracking-tight line-clamp-2 leading-snug">
-                      {currentSong ? currentSong.title : ((trendingSongs?.[0] || TRENDING_SONGS[0])?.title || 'High-Fidelity Retro & Modern Lounge')}
-                    </h1>
-                    <p
-                      className="text-xs sm:text-sm text-amber-400/90 font-medium mt-0.5 sm:mt-1 truncate max-w-full select-none"
+                  {/* Navigation Items Grouping */}
+                  <nav className="space-y-3.5 flex-1">
+                    {(() => {
+                      const defaultNav = [
+                        { id: 'home', label: 'Home', icon: 'home', group: 'main' },
+                        { id: 'dj-club', label: 'Loopra DJ Club', icon: 'headphones', badge: 'Live', group: 'main' },
+                        { id: 'discover', label: 'Discover & Search', icon: 'discover', group: 'main' },
+                        { id: 'radio', label: 'Indian Live Radio', icon: 'radio', badge: 'Live', group: 'main' },
+                        { id: 'mood', label: 'Mood-to-Music AI', icon: 'sparkles', badge: 'AI', group: 'discovery' },
+                        { id: 'timemachine', label: 'Time Machine Radio', icon: 'radio', badge: 'Retro', group: 'discovery' },
+                        { id: 'activity', label: 'Listening Activity', icon: 'flame', group: 'discovery' },
+                        { id: 'swipe', label: 'Discover Swipe', icon: 'swipe', group: 'discovery' },
+                        { id: 'barber', label: stationsMap?.barber?.title || 'Saloon FM', icon: 'scissors', badge: '90s', group: 'stations' },
+                        { id: 'truck', label: stationsMap?.truck?.title || 'Horn Ok Please', icon: 'truck', badge: 'Dhaba', group: 'stations' },
+                        { id: 'pauwa', label: stationsMap?.pauwa?.title || 'Theka Session', icon: 'beer', badge: 'Desi', group: 'stations' },
+                        { id: 'library', label: 'Liked Songs Collection', icon: 'library', group: 'collection' },
+                        { id: 'downloads', label: 'Downloaded Songs', icon: 'download', group: 'collection' },
+                        { id: 'history', label: 'Listening History', icon: 'history', group: 'collection' },
+                        { id: 'playlists', label: 'Playlists', icon: 'list', group: 'collection' },
+                        { id: 'stats', label: 'Recap & Stats', icon: 'sparkles', group: 'collection' }
+                      ];
+
+                      const canonicalGroup = (id, rawGroup) => {
+                        if (['home', 'dj-club', 'chat', 'ai-chat', 'discover', 'radio'].includes(id)) return 'main';
+                        if (['mood', 'timemachine', 'activity', 'swipe'].includes(id)) return 'discovery';
+                        if (['barber', 'truck', 'pauwa'].includes(id)) return 'stations';
+                        if (['library', 'downloads', 'history', 'playlists', 'stats'].includes(id)) return 'collection';
+                        return rawGroup || 'main';
+                      };
+
+                      const disabledIds = new Set();
+                      const configuredItems = Array.isArray(cmsConfig?.navigation) ? cmsConfig.navigation : [];
+                      configuredItems.forEach(item => {
+                        if (item && item.id && item.enabled === false) {
+                          disabledIds.add(item.id);
+                        }
+                      });
+
+                      const navMap = new Map();
+
+                      if (configuredItems.length > 0) {
+                        configuredItems.forEach(item => {
+                          if (!item || !item.id || item.id === 'profile' || item.id === 'equalizer' || item.id === 'custom-vip-lounge' || item.id === 'vip-lounge' || item.label === 'Ultra VIP Lounge') return;
+                          if (item.enabled === false || disabledIds.has(item.id)) return;
+                          if (item.id === 'admin' && !isAdmin) return;
+                          const group = canonicalGroup(item.id, item.group);
+                          navMap.set(item.id, {
+                            ...item,
+                            group
+                          });
+                        });
+
+                        defaultNav.forEach(def => {
+                          if (disabledIds.has(def.id)) return;
+                          if (configuredItems.some(c => c && c.id === def.id)) return;
+                          navMap.set(def.id, { ...def });
+                        });
+                      } else {
+                        defaultNav.forEach(def => {
+                          if (!disabledIds.has(def.id)) {
+                            navMap.set(def.id, { ...def });
+                          }
+                        });
+                      }
+
+                      const extraStations = (Array.isArray(cmsConfig?.stations) ? cmsConfig.stations : [])
+                        .filter(st => st && st.id && !navMap.has(st.id) && !disabledIds.has(st.id) && st.isActive !== false && st.enabled !== false)
+                        .map(st => ({
+                          id: st.id,
+                          label: st.title || st.name || st.id,
+                          icon: st.icon || 'radio',
+                          badge: st.badge,
+                          group: 'stations',
+                          route: `/${st.id}`
+                        }));
+
+                      extraStations.forEach(st => {
+                        navMap.set(st.id, st);
+                      });
+
+                      const bottomNavIds = new Set(['home', 'discover', 'library', 'liked', 'playlists', 'radio', 'indian-radio']);
+                      const allItems = Array.from(navMap.values()).filter(item => {
+                        if (!item || item.enabled === false || disabledIds.has(item.id)) return false;
+                        // Remove Loopra AI Chat from sidebar
+                        if (item.id === 'chat' || item.id === 'ai-chat') return false;
+                        if (isMobileScreen && bottomNavIds.has(item.id)) return false;
+                        return true;
+                      });
+
+                      const groups = [
+                        { key: 'main', title: null },
+                        { key: 'discovery', title: 'AI & DISCOVERY' },
+                        { key: 'stations', title: 'NOSTALGIA STATIONS' },
+                        { key: 'collection', title: 'YOUR COLLECTION' }
+                      ];
+
+                      return groups.map(grp => {
+                        const groupItems = allItems.filter(item => {
+                          if (item.id === 'profile' || item.id === 'chat' || item.id === 'ai-chat') return false;
+                          return (item.group || 'main') === grp.key;
+                        });
+
+                        if (groupItems.length === 0) return null;
+
+                        return (
+                          <div key={grp.key} className="space-y-1">
+                            {grp.title && (
+                              !isSidebarCollapsed ? (
+                                <div className="pt-2 pb-1 px-2.5 flex items-center justify-between">
+                                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest whitespace-nowrap">
+                                    {grp.title}
+                                  </p>
+                                  <div className="h-px flex-1 ml-2 bg-white/[0.04]" />
+                                </div>
+                              ) : (
+                                <div className="h-2 border-b border-neutral-800/40 mb-1.5" />
+                              )
+                            )}
+
+                            <div className="space-y-0.5">
+                              {groupItems.map(item => {
+                                const itemKey = item.id || item.route?.replace(/^\//, '');
+                                const isActive = item.id === 'stats'
+                                  ? isStatsOpen
+                                  : (item.id === 'chat' || item.id === 'ai-chat')
+                                    ? activeAssistantPanel === 'ai'
+                                    : (activeTab === item.id || activeTab === itemKey);
+
+                                let displayLabel = stationsMap?.[item.id]?.title || item.label;
+                                if (item.id === 'library' && (displayLabel === 'Liked Songs' || !displayLabel)) {
+                                  displayLabel = 'Liked Songs Collection';
+                                } else if (item.id === 'history' && (displayLabel === 'History' || !displayLabel)) {
+                                  displayLabel = 'Listening History';
+                                }
+
+                                const isDjClub = item.id === 'dj-club';
+
+                                return (
+                                  <button
+                                    key={item.id}
+                                    data-nav-id={item.id}
+                                    onClick={() => {
+                                      if (item.id === 'stats') {
+                                        setIsStatsOpen(true);
+                                      } else if (item.id === 'chat' || item.id === 'ai-chat') {
+                                        setActiveAssistantPanel(prev => prev === 'ai' ? null : 'ai');
+                                        setIsStatsOpen(false);
+                                      } else if (item.id === 'playlists') {
+                                        handleStationSelect('playlists');
+                                        setSelectedPlaylistForView(null);
+                                        setIsStatsOpen(false);
+                                      } else if (item.id === 'admin') {
+                                        handleStationSelect('admin');
+                                        window.history.pushState({ tab: 'admin' }, '', '/admin');
+                                        setIsStatsOpen(false);
+                                      } else {
+                                        handleStationSelect(item.id);
+                                        setIsStatsOpen(false);
+                                      }
+                                      if (isMobileScreen) setIsSidebarOpen(false);
+                                    }}
+                                    title={displayLabel}
+                                    className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'
+                                      } rounded-xl font-medium text-xs transition-all duration-150 cursor-pointer ${isDjClub
+                                        ? isActive
+                                          ? 'bg-gradient-to-r from-amber-500/30 to-amber-600/30 text-amber-200 border border-amber-500/50 shadow-md shadow-amber-950/40'
+                                          : 'bg-gradient-to-r from-amber-500/10 to-transparent hover:from-amber-500/20 text-amber-300 border border-amber-500/20'
+                                        : isActive
+                                          ? 'bg-amber-500/15 text-amber-200 border border-amber-500/40 shadow-sm shadow-amber-950/40 font-semibold'
+                                          : 'text-neutral-400 hover:bg-white/[0.05] hover:text-white active:bg-white/[0.08]'
+                                      }`}
+                                  >
+                                    <Icon name={item.icon || 'music'} className={`w-4 h-4 shrink-0 ${isDjClub ? 'text-amber-400 animate-pulse' : isActive ? 'text-amber-400' : 'text-neutral-400'
+                                      }`} />
+                                    {!isSidebarCollapsed && (
+                                      <span className="whitespace-nowrap truncate text-xs">{displayLabel}</span>
+                                    )}
+                                    {!isSidebarCollapsed && item.badge && (
+                                      <span className="ml-auto text-[9px] font-bold text-amber-300 bg-amber-500/15 px-1.5 py-0.2 rounded-full border border-amber-500/25 shrink-0">
+                                        {item.badge}
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+
+                    {/* Admin Highlight Item */}
+                    {isAdmin && !cmsConfig?.navigation?.some(n => n.id === 'admin' && n.enabled !== false) && (
+                      <button
+                        onClick={() => {
+                          handleStationSelect('admin');
+                          window.history.pushState({ tab: 'admin' }, '', '/admin');
+                          if (isMobileScreen) setIsSidebarOpen(false);
+                        }}
+                        title="Admin Dashboard"
+                        className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl font-semibold text-xs transition-all cursor-pointer ${activeTab === 'admin'
+                            ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50 shadow-md shadow-amber-500/20'
+                            : 'text-amber-400/90 bg-amber-500/[0.06] border border-amber-500/20 hover:bg-amber-500/15 hover:border-amber-500/40'
+                          }`}
+                      >
+                        <Icon name="shield" className="w-4 h-4 shrink-0 text-amber-400" />
+                        {!isSidebarCollapsed && <span className="whitespace-nowrap">Admin Dashboard</span>}
+                      </button>
+                    )}
+                  </nav>
+
+                  {/* Bottom Action Area: User Profile, APK Download & Auth / Logout */}
+                  <div
+                    style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 20px)' }}
+                    className="pt-3 pb-20 md:pb-6 border-t border-white/[0.06] mt-4 space-y-2"
+                  >
+                    {/* 1. Avatar Autonomous Free Roam Toggle Button (Strictly Admin Only and when Voice/Avatar is active) */}
+                    {isAdmin && isVoiceActive && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) === 'true';
+                            const next = !cur;
+                            localStorage.setItem('loopra_avatar_roaming', String(next));
+                            localStorage.setItem('loopra_avatar_roam', String(next));
+                            window.dispatchEvent(new Event('storage'));
+                            showToast?.(`Avatar Free Roam ${next ? 'Enabled' : 'Paused'}`);
+                          } catch (_) { }
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 text-neutral-300 font-medium text-xs transition cursor-pointer"
+                        title="Toggle Avatar Autonomous Roaming (Admin Only)"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
+                          {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Avatar Free Roam</span>}
+                        </div>
+                        {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
+                          <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                            ON/OFF
+                          </span>
+                        )}
+                      </button>
+                    )}
+
+                    {/* 2. Download APK Button directly downloading Loopra.apk */}
+                    <a
+                      href="/Loopra.apk"
+                      download="Loopra.apk"
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
+                      title="Download APK (Direct)"
                     >
-                      {currentSong ? (currentSong.artist || currentSong.channel) : ((trendingSongs?.[0] || TRENDING_SONGS[0])?.channel || 'Drop the needle on curated trending hits, nostalgia stations, or search any track.')}
-                    </p>
-                  </div>
+                      <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
+                      {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Download APK</span>}
+                    </a>
 
-                  {/* Tactile Control Buttons Container */}
-                  <div className="flex flex-col items-center lg:items-start gap-2 pt-1 w-full" onClick={(e) => e.stopPropagation()}>
-                    {currentSong ? (
-                      <>
-                        <div className="flex items-center justify-center lg:justify-start gap-2 w-full">
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              togglePlayPause();
-                            }}
-                            className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-full bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-md cursor-pointer active:scale-95 transition-all"
-                            title={isPlaying ? "Pause" : "Play"}
-                            aria-label={isPlaying ? "Pause playback" : "Resume playback"}
-                          >
-                            <Icon name={isPlaying ? "pause" : "play"} className="w-4 h-4 fill-current" />
-                            <span>{isPlaying ? 'Pause' : 'Resume'}</span>
-                          </button>
-
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleNextSong();
-                            }}
-                            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-neutral-900 hover:bg-neutral-800 active:scale-95 text-neutral-200 hover:text-white border border-neutral-700/80 transition shadow-md flex items-center justify-center cursor-pointer shrink-0"
-                            title="Next Track"
-                            aria-label="Next Track"
-                          >
-                            <Icon name="skipNext" className="w-4 h-4 text-neutral-300" />
-                          </button>
-
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenExpandedPlayer('player');
-                            }}
-                            className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full bg-neutral-900/90 hover:bg-neutral-800 active:scale-95 text-neutral-200 hover:text-white font-medium text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-1.5 shadow-md cursor-pointer shrink-0"
-                            title="Open Expanded Now Playing"
-                            aria-label="Open Expanded Now Playing"
-                          >
-                            <Icon name="expand" className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
-                            <span>Now Playing</span>
-                          </button>
-                        </div>
-
-                        {/* Centered Queue Pill */}
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenExpandedPlayer('queue');
-                          }}
-                          className="px-3.5 py-1 rounded-full bg-neutral-900/80 hover:bg-neutral-800 active:scale-95 text-neutral-400 hover:text-neutral-200 font-medium text-[10px] sm:text-xs border border-neutral-800 transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 mx-auto lg:mx-0 mt-0.5"
-                          title="View Queue"
-                          aria-label="View Queue"
+                    {/* 3. Logged-in User Profile Card & 4. Logout / Sign In Button */}
+                    {user ? (
+                      <div className="space-y-2">
+                        {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
+                          <div className="px-2.5 py-1.5 rounded-xl bg-white/[0.02] border border-white/[0.04] flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full overflow-hidden shrink-0">
+                              <UserAvatar
+                                user={user}
+                                className="w-full h-full object-cover"
+                                fallbackClassName="w-full h-full bg-gradient-to-br from-amber-500 to-amber-600 text-neutral-950 font-bold text-[10px] flex items-center justify-center shadow-inner uppercase select-none"
+                              />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-semibold text-white truncate">{user.displayName || user.username || 'User'}</p>
+                              <p className="text-[9px] text-zinc-500 truncate">{user.email || 'Online'}</p>
+                            </div>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => { logout(); setIsSidebarOpen(false); }}
+                          className={`w-full flex items-center ${isSidebarCollapsed && !isSidebarOpen && !isMobileScreen ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl font-medium text-xs transition text-neutral-400 hover:text-red-400 hover:bg-red-500/10 active:scale-95`}
                         >
-                          <Icon name="list" className="w-3 h-3 text-amber-400 shrink-0" />
-                          <span>Queue ({queue.length})</span>
+                          <Icon name="logout" className="w-4 h-4 shrink-0" />
+                          {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Logout</span>}
                         </button>
-                      </>
+                      </div>
                     ) : (
-                      <>
-                        <div className="flex items-center justify-center lg:justify-start gap-2 w-full">
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handlePlayTrending((trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs);
-                            }}
-                            className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-full bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-md cursor-pointer active:scale-95 transition-all"
-                            title="Spin Trending Hit"
-                            aria-label="Spin Trending Hit"
-                          >
-                            <Icon name="play" className="w-4 h-4 fill-current" />
-                            <span>Spin Hit</span>
-                          </button>
-
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handlePlayTrending((trendingSongs?.[1] || trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[1] || trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs);
-                            }}
-                            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-neutral-900 hover:bg-neutral-800 active:scale-95 text-neutral-200 hover:text-white border border-neutral-700/80 transition shadow-md flex items-center justify-center cursor-pointer shrink-0"
-                            title="Next Track"
-                            aria-label="Next Track"
-                          >
-                            <Icon name="skipNext" className="w-4 h-4 text-neutral-300" />
-                          </button>
-
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenExpandedPlayer('player');
-                            }}
-                            className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full bg-neutral-900/90 hover:bg-neutral-800 active:scale-95 text-neutral-200 hover:text-white font-medium text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-1.5 shadow-md cursor-pointer shrink-0"
-                            title="Open Expanded Now Playing"
-                            aria-label="Open Expanded Now Playing"
-                          >
-                            <Icon name="expand" className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
-                            <span>Now Playing</span>
-                          </button>
-                        </div>
-
-                        {/* Centered Queue Pill */}
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenExpandedPlayer('queue');
-                          }}
-                          className="px-3.5 py-1 rounded-full bg-neutral-900/80 hover:bg-neutral-800 active:scale-95 text-neutral-400 hover:text-neutral-200 font-medium text-[10px] sm:text-xs border border-neutral-800 transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 mx-auto lg:mx-0 mt-0.5"
-                          title="View Queue"
-                          aria-label="View Queue"
-                        >
-                          <Icon name="list" className="w-3 h-3 text-amber-400 shrink-0" />
-                          <span>Queue ({queue.length})</span>
-                        </button>
-                      </>
+                      <button
+                        onClick={() => {
+                          if (isPlaying) {
+                            togglePlayPause();
+                          }
+                          openAuthModal();
+                          setIsSidebarOpen(false);
+                        }}
+                        className={`w-full flex items-center ${isSidebarCollapsed && !isSidebarOpen && !isMobileScreen ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl font-semibold text-xs transition bg-gradient-to-r from-amber-500/20 to-amber-600/20 text-amber-300 border border-amber-500/30 hover:from-amber-500/30 hover:to-amber-600/30 active:scale-95`}
+                      >
+                        <Icon name="user" className="w-4 h-4 shrink-0 text-amber-400" />
+                        {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Login / Sign Up</span>}
+                      </button>
                     )}
                   </div>
                 </div>
-              </div>
-            </div>
+              </aside>
+            </>
+          ) : (
+            <>
+              {/* Backdrop overlay only for mobile drawer - hidden on desktop */}
+              <div
+                onClick={() => setIsSidebarOpen(false)}
+                className={`md:hidden fixed inset-0 bg-black/80 backdrop-blur-md z-[90] transition-opacity duration-300 ease-out cursor-pointer ${isSidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                  }`}
+                aria-label="Close sidebar backdrop"
+                aria-hidden={!isSidebarOpen}
+              />
 
-            {/* Gemini AI-Powered Personalized Recommendations Lounge */}
-            <PersonalizedRecommendationsSection
-              backendUrl={BACKEND_URL}
-              authToken={authToken}
-              user={user}
-              onPlayTrack={(track) => {
-                playSong(track);
-              }}
-              onOpenAuth={openAuthModal}
-              onToggleLike={toggleLike}
-              isLiked={isSongLiked}
-              onAddToPlaylist={handleAddToPlaylistClick}
-              showToast={showToast}
-              onTracksRendered={handlePersonalizedTracksRendered}
-              onArtistClick={handleArtistClick}
-            />
-
-            {/* Dynamic Homepage Sections from CMS Configuration */}
-            {(() => {
-              const sections = (cmsConfig?.sections && cmsConfig.sections.length > 0)
-                ? cmsConfig.sections
-                : [
-                    { id: 'trending', title: 'Trending songs', subtitle: 'The most played hits right now', enabled: true, order: 1 },
-                    { id: 'curated', title: 'Curated Featured Collections', subtitle: 'Handpicked mixes, nostalgia sets, and soundtracks curated by our editors', enabled: true, order: 2 },
-                    { id: 'artists', title: 'Popular artists', subtitle: 'Find your favorite singers', enabled: true, order: 3 },
-                    { id: 'albums', title: 'Popular albums and singles', subtitle: 'Latest releases', enabled: true, order: 4 },
-                    { id: 'radio', title: 'Popular radio', subtitle: 'Live streams 24/7', enabled: true, order: 5 }
-                  ];
-
-              const sortedSections = [...sections]
-                .filter(s => s && s.enabled !== false)
-                .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
-
-              return sortedSections.map(sec => {
-                switch (sec.id) {
-                  case 'trending':
-                    return (
-                      <ScrollableRow
-                        key="sec-trending"
-                        title={sec.title || "Trending songs"}
-                        subtitle={sec.subtitle || "The most played hits right now"}
-                        items={uniqueTrendingSongs}
-                        fallbackItems={[]}
-                        showAll={showAllTrending}
-                        setShowAll={handleSetShowAllTrending}
-                        renderItem={(song) => (
-                          <div 
-                            onClick={() => handlePlayTrending(song.query || song.title, song, uniqueTrendingSongs)} 
-                            className="group relative flex flex-col p-2.5 sm:p-3 rounded-2xl bg-neutral-900/60 hover:bg-neutral-800/80 border border-neutral-800/80 hover:border-amber-500/40 transition-all duration-300 cursor-pointer shadow-md hover:shadow-[0_10px_25px_rgba(245,158,11,0.12)] active:scale-[0.98]"
-                          >
-                            <div className="relative mb-2.5 overflow-hidden rounded-xl aspect-square shadow-lg">
-                              <img 
-                                src={getCleanThumbnail(song)} 
-                                alt={song.title} 
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
-                                onError={(e) => handleImageError(e, song.title, song.id)} 
-                              />
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-                                <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-r from-amber-400 to-orange-500 rounded-full flex items-center justify-center shadow-xl transform scale-75 group-hover:scale-100 transition-transform">
-                                  <Icon name="play" className="w-4 h-4 sm:w-5 sm:h-5 text-neutral-950 translate-x-[1px]" />
-                                </div>
-                              </div>
-                            </div>
-                            <h3 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-amber-400 transition-colors leading-tight">
-                              {song.title}
-                            </h3>
-                            <p className="text-[11px] text-neutral-400 truncate mt-1 font-medium">
-                              {song.artist || song.channel || 'Featured Track'}
-                            </p>
-                          </div>
-                        )}
-                      />
-                    );
-
-                  case 'curated':
-                    return (
-                      <CmsCuratedCollectionsRow
-                        key="sec-curated"
-                        backendUrl={BACKEND_URL}
-                        title={sec.title || "Curated Featured Collections"}
-                        subtitle={sec.subtitle || "Handpicked mixes, nostalgia sets, and soundtracks curated by our editors"}
-                        onPlayTrack={(track, collectionTracks) => {
-                          handlePlayTrending(track.title || track.name, track, collectionTracks);
-                        }}
-                      />
-                    );
-
-                  case 'artists':
-                    return (
-                      <ScrollableRow
-                        key="sec-artists"
-                        title={sec.title || "Popular artists"}
-                        subtitle={sec.subtitle || "The voices that define soundtracks."}
-                        items={POPULAR_ARTISTS}
-                        showAll={showAllArtists}
-                        setShowAll={handleSetShowAllArtists}
-                        renderItem={(artist) => (
-                          <div onClick={() => handleArtistClick(artist.name)} className="group cursor-pointer flex flex-col items-center">
-                            <div className="relative mb-2 md:mb-3 w-full aspect-square rounded-full overflow-hidden shadow-lg border-2 border-transparent group-hover:border-amber-500 transition-all duration-300">
-                              <img src={artist.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(artist.name)}&background=1e1e1e&color=f59e0b&size=300`} alt={artist.name} referrerPolicy="no-referrer" loading="lazy" className="w-full h-full object-cover group-hover:scale-110 transition duration-500" onError={(e) => handleImageError(e, artist.name)} />
-                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
-                                <Icon name="search" className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-white drop-shadow-md transform scale-90 group-hover:scale-100 transition" />
-                              </div>
-                            </div>
-                            <h3 className="text-xs md:text-sm font-bold text-white truncate w-full text-center group-hover:text-amber-400 transition">{artist.name}</h3>
-                            <p className="text-[10px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1 w-full text-center">Artist</p>
-                          </div>
-                        )}
-                      />
-                    );
-
-                  case 'albums':
-                    return (
-                      <ScrollableRow
-                        key="sec-albums"
-                        title={sec.title || "Popular albums and singles"}
-                        subtitle={sec.subtitle || "Latest releases & iconic soundtracks."}
-                        items={popularAlbums}
-                        fallbackItems={POPULAR_ALBUMS}
-                        showAll={showAllAlbums}
-                        setShowAll={handleSetShowAllAlbums}
-                        renderItem={(album) => (
-                          <div onClick={() => handlePlayTrending(album.query || album.title, album, popularAlbums)} className="group cursor-pointer">
-                            <div className="relative mb-2 md:mb-3">
-                              <img src={getCleanThumbnail(album)} alt={album.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => handleImageError(e, album.title, album.id)} />
-                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
-                                <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
-                                  <Icon name="play" className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-neutral-950 translate-x-[1px] md:translate-x-[2px]" />
-                                </div>
-                              </div>
-                            </div>
-                            <h3 className="text-xs md:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{album.title}</h3>
-                            <p className="text-[11px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1">{album.artist}</p>
-                          </div>
-                        )}
-                      />
-                    );
-
-                  case 'radio':
-                    return (
-                      <ScrollableRow
-                        key="sec-radio"
-                        title={sec.title || "Popular radio"}
-                        subtitle={sec.subtitle || "Live streams and 24/7 continuous audio."}
-                        items={popularRadio}
-                        fallbackItems={POPULAR_RADIO}
-                        showAll={showAllRadio}
-                        setShowAll={handleSetShowAllRadio}
-                        renderItem={(radio) => (
-                          <div onClick={() => handlePlayTrending(radio.query || radio.title, radio, popularRadio)} className="group cursor-pointer">
-                            <div className="relative mb-2 md:mb-3">
-                              <img src={getCleanThumbnail(radio)} alt={radio.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => handleImageError(e, radio.title, radio.id)} />
-                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
-                                <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
-                                  <Icon name="play" className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-neutral-950 translate-x-[1px] md:translate-x-[2px]" />
-                                </div>
-                              </div>
-                            </div>
-                            <h3 className="text-xs md:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{radio.title}</h3>
-                            <p className="text-[11px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1">{radio.artist}</p>
-                          </div>
-                        )}
-                      />
-                    );
-
-                  default:
-                    return null;
-                }
-              });
-            })()}
-
-            {/* Ratings & Reviews Community Section */}
-            <HomepageReviewsSection 
-              refreshTrigger={reviewsRefreshKey} 
-              onOpenRatingModal={handleOpenRatingModal} 
-            />
-
-            {/* Loopra Footer — Strictly visible on the Home Page ONLY */}
-            {isActualHomeRoute && <DisclaimerFooter {...commonFooterProps} />}
-          </div>
-        )}
-
-        {Boolean(currentStation && !['home', 'discover', 'swipe', 'for-you', 'library', 'history', 'radio', 'indian-radio', 'mood', 'timemachine', 'activity', 'admin', 'offline', 'offline-explore'].includes(activeTab)) && (
-          <NostalgiaStationView
-            key={`page-station-${activeTab}`}
-            station={currentStation}
-            songs={songs}
-            stationLoading={stationLoading}
-            stationVisibleCount={stationVisibleCount}
-            currentSong={currentSong}
-            openMenuId={openMenuId}
-            setOpenMenuId={setOpenMenuId}
-            playSong={playSong}
-            handleOpenVideo={handleOpenVideo}
-            queue={queue}
-            removeFromQueue={removeFromQueue}
-            addToQueue={addToQueue}
-            toggleLike={toggleLike}
-            likedSongs={likedSongs}
-            playNext={playNext}
-            handleFindSimilar={handleFindSimilar}
-            handleAddToPlaylistClick={handleAddToPlaylistClick}
-            showToast={showToast}
-            handleLoadMoreStationSongs={handleLoadMoreStationSongs}
-            isLoadingMoreStation={isLoadingMoreStation}
-            onGoBack={canGoBack(navigationStack, activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio, selectedPlaylistForView, offlineSubView }) ? handleGoBack : null}
-            getCleanThumbnail={getCleanThumbnail}
-            handleImageError={handleImageError}
-          />
-        )}
-
-        {activeTab === 'library' && (
-          <div key="page-library" className={`page-transition w-full px-2 sm:px-4 md:px-8 space-y-5 relative z-10 ${USE_V2_LIBRARY_UI ? 'pb-32' : ''}`}>
-            {USE_V2_LIBRARY_UI ? (
-              /* ========================================================================= */
-              /* V2 LIKED SONGS & LIBRARY REDESIGN (Dynamic Header, Artwork, Clearance)   */
-              /* ========================================================================= */
-              <>
-                {/* Dynamic Gradient Heart Playlist Cover Header */}
-                <div className="relative rounded-3xl overflow-hidden p-5 sm:p-7 bg-gradient-to-br from-purple-900/40 via-amber-950/30 to-neutral-950 border border-amber-500/20 shadow-2xl backdrop-blur-xl">
-                  <div className="absolute inset-0 bg-radial from-amber-500/10 via-transparent to-transparent pointer-events-none" />
-
-                  <div className="relative z-10 flex flex-col sm:flex-row sm:items-end justify-between gap-5">
-                    <div className="flex items-center gap-4">
-                      {/* Gradient Heart Artwork Square */}
-                      <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-rose-500 via-pink-600 to-amber-500 flex items-center justify-center shadow-[0_10px_30px_rgba(244,63,94,0.35)] shrink-0 group">
-                        <svg className="w-10 h-10 sm:w-12 sm:h-12 text-white fill-current filter drop-shadow-md group-hover:scale-110 transition-transform" viewBox="0 0 24 24">
-                          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-                        </svg>
+              <aside
+                style={{
+                  paddingTop: isMobileScreen ? 'max(env(safe-area-inset-top, 0px), 16px)' : undefined,
+                  paddingBottom: isMobileScreen ? 'max(env(safe-area-inset-bottom, 0px), 16px)' : undefined,
+                }}
+                className={`h-full flex flex-col shrink-0 transition-transform duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform overflow-y-auto overflow-x-hidden md:sticky md:top-0 md:h-full ${activeTab === 'dj-club' || activeTab === 'relax'
+                    ? 'hidden'
+                    : isSidebarOpen
+                      ? 'fixed md:relative top-0 bottom-0 left-0 z-[100] md:z-30 h-[100dvh] md:h-full w-72 md:w-[290px] translate-x-0 p-4 bg-neutral-900/95 backdrop-blur-xl border-r border-neutral-800/80 opacity-100'
+                      : 'fixed md:relative top-0 bottom-0 left-0 z-[100] md:z-30 h-[100dvh] md:h-full -translate-x-full md:translate-x-0 w-72 md:w-0 md:p-0 md:border-none md:overflow-hidden md:opacity-0 pointer-events-none'
+                  }`}
+              >
+                <div className="w-full shrink-0 flex-1 flex flex-col min-h-0">
+                  <div className="flex items-center justify-between px-2 py-3 mb-6 sticky top-0 z-20 bg-neutral-900/95 backdrop-blur-md">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-7 h-7 rounded-lg bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow shrink-0 overflow-hidden">
+                        <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
                       </div>
-
-                      <div className="min-w-0">
-                        <span className="text-[10px] font-mono uppercase tracking-wider text-amber-400 font-bold bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/20">
-                          Playlist Collection
-                        </span>
-                        <h1 className="text-2xl sm:text-4xl font-display font-black text-white tracking-tight mt-1">
-                          Liked <span className="text-amber-400">Songs</span>
-                        </h1>
-                        <div className="flex items-center gap-2 mt-1.5 text-xs text-zinc-400 font-medium">
-                          <span>{likedSongs.length} {likedSongs.length === 1 ? 'Track' : 'Tracks'}</span>
-                          <span>•</span>
-                          <span className="text-amber-300/90 font-mono">Personal Vault</span>
-                        </div>
-                      </div>
+                      {cmsConfig?.branding?.siteName ? (
+                        <span className="text-xs font-display font-extrabold tracking-tight text-white whitespace-nowrap">{cmsConfig.branding.siteName}</span>
+                      ) : null}
                     </div>
+                  </div>
 
-                    {/* Action Row: Big Circular Play/Shuffle Button */}
-                    {likedSongs.length > 0 && (
-                      <div className="flex items-center gap-3 shrink-0">
+                  <nav className="space-y-2">
+                    {(() => {
+                      const defaultNav = [
+                        { id: 'home', label: 'Home', icon: 'home', group: 'main' },
+                        { id: 'dj-club', label: 'Loopra DJ Club', icon: 'headphones', badge: 'Live', group: 'main' },
+                        { id: 'discover', label: 'Discover & Search', icon: 'discover', group: 'main' },
+                        { id: 'radio', label: 'Indian Live Radio', icon: 'radio', badge: 'Live', group: 'main' },
+                        { id: 'mood', label: 'Mood-to-Music AI', icon: 'sparkles', badge: 'AI', group: 'discovery' },
+                        { id: 'timemachine', label: 'Time Machine Radio', icon: 'radio', badge: 'Retro', group: 'discovery' },
+                        { id: 'activity', label: 'Listening Activity', icon: 'flame', group: 'discovery' },
+                        { id: 'swipe', label: 'Discover Swipe', icon: 'swipe', group: 'discovery' },
+                        { id: 'barber', label: stationsMap?.barber?.title || 'Saloon FM', icon: 'scissors', badge: '90s', group: 'stations' },
+                        { id: 'truck', label: stationsMap?.truck?.title || 'Horn Ok Please', icon: 'truck', badge: 'Dhaba', group: 'stations' },
+                        { id: 'pauwa', label: stationsMap?.pauwa?.title || 'Theka Session', icon: 'beer', badge: 'Desi', group: 'stations' },
+                        { id: 'library', label: 'Liked Songs Collection', icon: 'library', group: 'collection' },
+                        { id: 'downloads', label: 'Downloaded Songs', icon: 'download', group: 'collection' },
+                        { id: 'history', label: 'Listening History', icon: 'history', group: 'collection' },
+                        { id: 'playlists', label: 'Playlists', icon: 'list', group: 'collection' },
+                        { id: 'stats', label: 'Recap & Stats', icon: 'sparkles', group: 'collection' }
+                      ];
+
+                      const canonicalGroup = (id, rawGroup) => {
+                        if (['home', 'dj-club', 'chat', 'ai-chat', 'discover', 'radio'].includes(id)) return 'main';
+                        if (['mood', 'timemachine', 'activity', 'swipe'].includes(id)) return 'discovery';
+                        if (['barber', 'truck', 'pauwa'].includes(id)) return 'stations';
+                        if (['library', 'downloads', 'history', 'playlists', 'stats'].includes(id)) return 'collection';
+                        return rawGroup || 'main';
+                      };
+
+                      // 1. Collect all explicitly disabled item IDs so defaults never override user choices
+                      const disabledIds = new Set();
+                      const configuredItems = Array.isArray(cmsConfig?.navigation) ? cmsConfig.navigation : [];
+                      configuredItems.forEach(item => {
+                        if (item && item.id && item.enabled === false) {
+                          disabledIds.add(item.id);
+                        }
+                      });
+
+                      // 2. Build active navigation map
+                      const navMap = new Map();
+
+                      if (configuredItems.length > 0) {
+                        // Admin configuration is present: add configured enabled items
+                        configuredItems.forEach(item => {
+                          if (!item || !item.id || item.id === 'profile' || item.id === 'equalizer' || item.id === 'custom-vip-lounge' || item.id === 'vip-lounge' || item.label === 'Ultra VIP Lounge') return;
+                          if (item.enabled === false || disabledIds.has(item.id)) return;
+                          if (item.id === 'admin' && !isAdmin) return;
+                          const group = canonicalGroup(item.id, item.group);
+                          navMap.set(item.id, {
+                            ...item,
+                            group
+                          });
+                        });
+
+                        // Check defaultNav for any canonical categories missing from old legacy DB configurations
+                        defaultNav.forEach(def => {
+                          if (disabledIds.has(def.id)) return; // Explicitly hidden by admin
+                          if (configuredItems.some(c => c && c.id === def.id)) return; // Already tracked in configuration
+                          navMap.set(def.id, { ...def });
+                        });
+                      } else {
+                        // Fallback to defaultNav if no configuration exists
+                        defaultNav.forEach(def => {
+                          if (!disabledIds.has(def.id)) {
+                            navMap.set(def.id, { ...def });
+                          }
+                        });
+                      }
+
+                      // Discover any custom stations configured in cmsConfig.stations that aren't already in navigation
+                      const extraStations = (Array.isArray(cmsConfig?.stations) ? cmsConfig.stations : [])
+                        .filter(st => st && st.id && !navMap.has(st.id) && !disabledIds.has(st.id) && st.isActive !== false && st.enabled !== false)
+                        .map(st => ({
+                          id: st.id,
+                          label: st.title || st.name || st.id,
+                          icon: st.icon || 'radio',
+                          badge: st.badge,
+                          group: 'stations',
+                          route: `/${st.id}`
+                        }));
+
+                      extraStations.forEach(st => {
+                        navMap.set(st.id, st);
+                      });
+
+                      // Destinations present in the mobile lower navbar (MobileBottomNav)
+                      const bottomNavIds = new Set(['home', 'discover', 'library', 'liked', 'playlists', 'radio', 'indian-radio']);
+                      const allItems = Array.from(navMap.values()).filter(item => {
+                        if (!item || item.enabled === false || disabledIds.has(item.id)) return false;
+                        // Remove Loopra AI Chat from sidebar
+                        if (item.id === 'chat' || item.id === 'ai-chat') return false;
+                        // Restriction applies ONLY to phone/mobile mode: do not show lower navbar destinations in mobile sidebar
+                        if (isMobileScreen && bottomNavIds.has(item.id)) return false;
+                        return true;
+                      });
+                      const groups = [
+                        { key: 'main', title: null },
+                        { key: 'discovery', title: 'AI & DISCOVERY' },
+                        { key: 'stations', title: 'NOSTALGIA STATIONS' },
+                        { key: 'collection', title: 'YOUR COLLECTION' }
+                      ];
+
+                      return groups.map(grp => {
+                        const groupItems = allItems.filter(item => {
+                          if (item.id === 'profile' || item.id === 'chat' || item.id === 'ai-chat') return false;
+                          return (item.group || 'main') === grp.key;
+                        });
+
+                        if (groupItems.length === 0) return null;
+
+                        return (
+                          <div key={grp.key} className="space-y-1">
+                            {grp.title && (
+                              !isSidebarCollapsed ? (
+                                <div className="pt-3 pb-1 px-3">
+                                  <p className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest whitespace-nowrap">
+                                    {grp.title}
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="h-4 border-b border-neutral-800/50 mb-2" />
+                              )
+                            )}
+
+                            {groupItems.map(item => {
+                              const itemKey = item.id || item.route?.replace(/^\//, '');
+                              const isActive = item.id === 'stats'
+                                ? isStatsOpen
+                                : (item.id === 'chat' || item.id === 'ai-chat')
+                                  ? activeAssistantPanel === 'ai'
+                                  : (activeTab === item.id || activeTab === itemKey);
+
+                              // Display label: if it's a station, use station's updated title if available; format collections
+                              let displayLabel = stationsMap?.[item.id]?.title || item.label;
+                              if (item.id === 'library' && (displayLabel === 'Liked Songs' || !displayLabel)) {
+                                displayLabel = 'Liked Songs Collection';
+                              } else if (item.id === 'history' && (displayLabel === 'History' || !displayLabel)) {
+                                displayLabel = 'Listening History';
+                              }
+
+                              return (
+                                <button
+                                  key={item.id}
+                                  data-nav-id={item.id}
+                                  onClick={() => {
+                                    if (item.id === 'stats') {
+                                      setIsStatsOpen(true);
+                                    } else if (item.id === 'chat' || item.id === 'ai-chat') {
+                                      setActiveAssistantPanel(prev => prev === 'ai' ? null : 'ai');
+                                      setIsStatsOpen(false);
+                                    } else if (item.id === 'playlists') {
+                                      handleStationSelect('playlists');
+                                      setSelectedPlaylistForView(null);
+                                      setIsStatsOpen(false);
+                                    } else if (item.id === 'admin') {
+                                      handleStationSelect('admin');
+                                      window.history.pushState({ tab: 'admin' }, '', '/admin');
+                                      setIsStatsOpen(false);
+                                    } else {
+                                      handleStationSelect(item.id);
+                                      setIsStatsOpen(false);
+                                    }
+                                    if (isMobileScreen) setIsSidebarOpen(false);
+                                  }}
+                                  title={displayLabel}
+                                  className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'
+                                    } rounded-2xl font-medium text-xs transition cursor-pointer ${isActive
+                                      ? 'bg-amber-600/25 text-amber-200 border border-amber-500/50 shadow-lg shadow-amber-950/50'
+                                      : 'text-neutral-400 hover:bg-neutral-800 hover:text-white active:scale-[0.98]/50'
+                                    }`}
+                                >
+                                  <Icon name={item.icon || 'music'} className="w-5 h-5 shrink-0 text-amber-400" />
+                                  {!isSidebarCollapsed && (
+                                    <span className="whitespace-nowrap truncate">{displayLabel}</span>
+                                  )}
+                                  {!isSidebarCollapsed && item.badge && (
+                                    <span className="ml-auto text-[9px] font-bold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded-full border border-amber-500/20 shrink-0">
+                                      {item.badge}
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      });
+                    })()}
+
+                    {isAdmin && !cmsConfig?.navigation?.some(n => n.id === 'admin' && n.enabled !== false) && (
+                      <button
+                        onClick={() => {
+                          handleStationSelect('admin');
+                          window.history.pushState({ tab: 'admin' }, '', '/admin');
+                        }}
+                        title="Admin Dashboard"
+                        className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'gap-3 px-3.5 py-2.5'} rounded-2xl font-semibold text-xs transition cursor-pointer ${activeTab === 'admin' ? 'bg-amber-500 text-neutral-950 font-bold shadow-lg shadow-amber-500/30' : 'text-amber-400 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20'
+                          }`}
+                      >
+                        <Icon name="shield" className="w-5 h-5 shrink-0" />
+                        {!isSidebarCollapsed && <span className="whitespace-nowrap">Admin Dashboard</span>}
+                      </button>
+                    )}
+
+                    {/* Bottom Action Area: User Profile, APK Download & Auth / Logout */}
+                    <div
+                      style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 20px)' }}
+                      className="pt-4 pb-20 md:pb-6 border-t border-neutral-800 mt-4 space-y-2"
+                    >
+                      {/* 1. Avatar Autonomous Free Roam Toggle Button (Strictly Admin Only and when Voice/Avatar is active) */}
+                      {isAdmin && isVoiceActive && (
                         <button
                           type="button"
                           onClick={() => {
-                            if (likedSongs.length > 0) {
-                              playSong(likedSongs[0], likedSongs);
-                            }
+                            try {
+                              const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) === 'true';
+                              const next = !cur;
+                              localStorage.setItem('loopra_avatar_roaming', String(next));
+                              localStorage.setItem('loopra_avatar_roam', String(next));
+                              window.dispatchEvent(new Event('storage'));
+                              showToast?.(`Avatar Free Roam ${next ? 'Enabled' : 'Paused'}`);
+                            } catch (_) { }
                           }}
-                          className="flex items-center gap-2.5 px-6 py-3 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-neutral-950 font-black text-sm shadow-[0_0_25px_rgba(245,158,11,0.4)] active:scale-95 transition-all cursor-pointer"
+                          className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 text-neutral-300 font-medium text-xs transition cursor-pointer"
+                          title="Toggle Avatar Autonomous Roaming (Admin Only)"
                         >
-                          <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                            <path d="M8 5v14l11-7z" />
-                          </svg>
-                          <span>Play All</span>
+                          <div className="flex items-center gap-2">
+                            <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
+                            {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Avatar Free Roam</span>}
+                          </div>
+                          {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
+                            <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                              ON/OFF
+                            </span>
+                          )}
                         </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                      )}
 
-                {/* Track List Section */}
-                <div className="space-y-2 mt-2">
-                  {likedSongs.length === 0 ? (
-                    <div className="p-12 text-center rounded-3xl bg-neutral-900/30 border border-white/5 space-y-3">
-                      <div className="w-14 h-14 rounded-full bg-white/5 text-zinc-500 flex items-center justify-center mx-auto">
-                        <svg className="w-7 h-7 fill-current" viewBox="0 0 24 24">
-                          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-                        </svg>
-                      </div>
-                      <h3 className="font-bold text-white text-sm">No liked tracks yet</h3>
-                      <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-                        Tap the heart icon on any track while streaming to add it to your permanent personal collection.
-                      </p>
-                    </div>
-                  ) : (
-                    likedSongs.map((track, i) => {
-                      const isMenuOpen = openMenuId === `${track.id}-${i}`;
-                      const isCurrent = (currentSong?.id || currentSong?.videoId) === (track.id || track.videoId);
-                      const thumb = getCleanThumbnail(track);
+                      {/* 2. Download APK Button directly downloading Loopra.apk */}
+                      <a
+                        href="/Loopra.apk"
+                        download="Loopra.apk"
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
+                        title="Download APK (Direct)"
+                      >
+                        <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
+                        {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Download APK</span>}
+                      </a>
 
-                      return (
-                        <div
-                          key={track.id + i}
-                          onClick={() => playSong(track, likedSongs)}
-                          onContextMenu={(e) => handleTrackContextMenu(e, track)}
-                          className={`px-3.5 py-2.5 rounded-2xl border grid grid-cols-12 items-center gap-2 cursor-pointer transition-all duration-200 group relative backdrop-blur-md select-none ${
-                            isMenuOpen ? 'z-30' : 'z-auto'
-                          } ${
-                            isCurrent
-                              ? 'bg-amber-500/15 border-amber-500/60 shadow-[0_0_20px_rgba(245,158,11,0.2)]'
-                              : 'bg-neutral-900/50 hover:bg-neutral-900/90 border-white/5 hover:border-amber-500/30 active:scale-[0.99]'
-                          }`}
+                      {/* 3. Logged-in User Profile Card & 4. Logout / Sign In Button */}
+                      {user ? (
+                        <div className="space-y-2">
+                          {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
+                            <div className="px-2.5 py-1.5 rounded-xl bg-white/[0.02] border border-white/[0.04] flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-full overflow-hidden shrink-0">
+                                <UserAvatar
+                                  user={user}
+                                  className="w-full h-full object-cover"
+                                  fallbackClassName="w-full h-full bg-gradient-to-br from-amber-500 to-amber-600 text-neutral-950 font-bold text-[10px] flex items-center justify-center shadow-inner uppercase select-none"
+                                />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-semibold text-white truncate">{user.displayName || user.username || 'User'}</p>
+                                <p className="text-[9px] text-zinc-500 truncate">{user.email || 'Online'}</p>
+                              </div>
+                            </div>
+                          )}
+                          <button
+                            onClick={() => { logout(); setIsSidebarOpen(false); }}
+                            className={`w-full flex items-center ${isSidebarCollapsed && !isSidebarOpen && !isMobileScreen ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl font-medium text-xs transition text-neutral-400 hover:text-red-400 hover:bg-red-500/10 active:scale-95`}
+                          >
+                            <Icon name="logout" className="w-4 h-4 shrink-0" />
+                            {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Logout</span>}
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            if (isPlaying) {
+                              togglePlayPause();
+                            }
+                            openAuthModal();
+                            setIsSidebarOpen(false);
+                          }}
+                          className={`w-full flex items-center ${isSidebarCollapsed && !isSidebarOpen && !isMobileScreen ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-2'} rounded-xl font-semibold text-xs transition bg-gradient-to-r from-amber-500/20 to-amber-600/20 text-amber-300 border border-amber-500/30 hover:from-amber-500/30 hover:to-amber-600/30 active:scale-95`}
                         >
-                          {/* Col 1: # Index / Waveform (1 col on desktop, auto on mobile) */}
-                          <div className="col-span-1 sm:col-span-1 flex items-center justify-center">
-                            {isCurrent && isPlaying ? (
-                              <span className="inline-flex items-center gap-0.5 h-3">
-                                <span className="w-0.5 h-3 bg-amber-400 animate-pulse" />
-                                <span className="w-0.5 h-2 bg-amber-400 animate-ping" />
-                                <span className="w-0.5 h-3 bg-amber-400 animate-pulse" />
-                              </span>
-                            ) : (
-                              <span className={`text-xs font-mono font-medium ${isCurrent ? 'text-amber-400' : 'text-zinc-500 group-hover:text-amber-300'}`}>
-                                {i + 1}
-                              </span>
-                            )}
+                          <Icon name="user" className="w-4 h-4 shrink-0 text-amber-400" />
+                          {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Login / Sign Up</span>}
+                        </button>
+                      )}
+                    </div>
+
+                  </nav>
+                </div>
+              </aside>
+            </>
+          )}
+
+          <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 relative overflow-hidden">
+
+
+            {/* Site-wide CMS Announcement Bar */}
+            {activeTab !== 'dj-club' && activeTab !== 'relax' && <CmsAnnouncementBar announcement={cmsConfig?.announcement} />}
+
+            {(() => {
+              const isStationPage = Boolean(
+                currentStation &&
+                !['home', 'discover', 'swipe', 'for-you', 'library', 'history', 'radio', 'indian-radio', 'mood', 'timemachine', 'activity', 'admin', 'offline', 'offline-explore'].includes(activeTab)
+              );
+              return (
+                <main
+                  ref={mainScrollRef}
+                  onScroll={(e) => {
+                    if (activeTab === 'home') setIsHomeScrolled(e.currentTarget.scrollTop > 320);
+                  }}
+                  className={`flex-1 h-full min-h-0 ${activeTab === 'dj-club' || activeTab === 'relax' || isStationPage
+                      ? 'overflow-hidden p-0'
+                      : (USE_V2_SWIPE_UI && activeTab === 'swipe' ? 'overflow-hidden p-0' : 'overflow-y-auto px-2.5 py-3 sm:px-4 sm:py-4 md:p-8')
+                    } bg-neutral-950 box-border relative w-full transition-all duration-300 ${activeTab === 'dj-club' || activeTab === 'relax' || isStationPage
+                      ? 'pb-0'
+                      : (USE_V2_SWIPE_UI && activeTab === 'swipe' ? 'pb-0' : (isBottomPlayerVisible ? 'pb-44 md:pb-28' : 'pb-24 md:pb-8'))
+                    }`}
+                >
+                  {currentStation && currentBgImage && activeTab !== 'dj-club' && (
+                    <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden transition-all duration-700">
+                      <img
+                        key={currentBgImage}
+                        src={currentBgImage}
+                        alt="Station Background"
+                        loading="lazy"
+                        className="w-full h-full object-cover filter brightness-[0.75] contrast-100 scale-105 transition-opacity duration-1000 animate-fadeIn"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/85" />
+                    </div>
+                  )}
+
+                  {canGoBack(navigationStack, activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio, selectedPlaylistForView, offlineSubView }) && activeTab !== 'artist' && activeTab !== 'dj-club' && !isStationPage && (
+                    <div className="relative z-20 mb-6 flex justify-start pl-0">
+                      <button
+                        data-voice-back="true"
+                        onClick={handleGoBack}
+                        className="flex items-center gap-2 px-4 py-2 bg-neutral-900/80 hover:bg-neutral-800 backdrop-blur-xl border border-neutral-700/50 rounded-2xl text-neutral-300 hover:text-white transition shadow-lg group cursor-pointer active:scale-95"
+                      >
+                        <Icon name="arrowLeft" className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                        <span className="text-sm font-medium tracking-wide">Back</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {activeTab === 'artist' && (
+                    <div key={`page-artist-${selectedArtistId}`} className="page-transition w-full min-w-0 px-2 sm:px-4 md:px-8 pt-0.5 md:pt-2">
+                      <ArtistProfileView
+                        artistId={selectedArtistId || 'arijit-singh'}
+                        backendUrl={BACKEND_URL}
+                        authToken={authToken}
+                        user={user}
+                        currentSong={currentSong}
+                        isPlaying={isPlaying}
+                        onPlaySong={(track, trackQueue) => {
+                          if (trackQueue && trackQueue.length > 0) {
+                            setQueue(trackQueue);
+                          }
+                          playSong(track);
+                        }}
+                        onTogglePlayPause={togglePlayPause}
+                        onToggleLike={toggleLike}
+                        isLiked={isSongLiked}
+                        onAddToPlaylist={handleAddToPlaylistClick}
+                        onAddToQueue={(track) => {
+                          setQueue(prev => [...prev, track]);
+                          showToast(`Added "${track.title}" to queue`);
+                        }}
+                        onArtistClick={handleArtistClick}
+                        onGoBack={handleGoBack}
+                        showToast={showToast}
+                      />
+                      <DisclaimerFooter {...commonFooterProps} />
+                    </div>
+                  )}
+
+                  {activeTab === 'discover' && (
+                    <div key="page-discover" className="page-transition w-full relative z-10">
+                      <DiscoverView
+                        searchQuery={searchQuery}
+                        setSearchQuery={setSearchQuery}
+                        searchResults={searchResults}
+                        fetchYouTubeMusic={fetchYouTubeMusic}
+                        isLoading={isLoading}
+                        searchError={searchError}
+                        hasSearched={hasSearched}
+                        isLoadingMoreSearch={isLoadingMoreSearch}
+                        hasMoreSearchResults={hasMoreSearchResults}
+                        searchLoadMoreError={searchLoadMoreError}
+                        handleLoadMoreSearchResults={handleLoadMoreSearchResults}
+                        currentSong={currentSong}
+                        playSong={playSong}
+                        openMenuId={openMenuId}
+                        setOpenMenuId={setOpenMenuId}
+                        handleOpenVideo={handleOpenVideo}
+                        queue={queue}
+                        addToQueue={addToQueue}
+                        removeFromQueue={removeFromQueue}
+                        likedSongs={likedSongs}
+                        toggleLike={toggleLike}
+                        playNext={playNext}
+                        handleFindSimilar={handleFindSimilar}
+                        handleAddToPlaylistClick={handleAddToPlaylistClick}
+                        showToast={showToast}
+                        handleImageError={handleImageError}
+                        trendingSongs={trendingSongs}
+                        popularAlbums={popularAlbums}
+                        user={user}
+                        authToken={authToken}
+                        backendUrl={BACKEND_URL}
+                        cmsConfig={cmsConfig}
+                        onNavigate={(tab, extraParams) => {
+                          handleStationSelect(tab, extraParams);
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        onArtistClick={handleArtistClick}
+                      />
+                    </div>
+                  )}
+
+                  {activeTab === 'swipe' && (
+                    <div key="page-swipe" className={`page-transition relative z-10 w-full ${USE_V2_SWIPE_UI ? 'h-full flex flex-col justify-center overflow-hidden' : 'max-w-2xl mx-auto space-y-6 py-2 sm:py-4'}`}>
+                      <DiscoverSwipe
+                        onPlaySong={playSong}
+                        onTogglePlay={togglePlayPause}
+                        currentSong={currentSong}
+                        isPlaying={isPlaying}
+                        likedSongs={likedSongs}
+                        onToggleLike={toggleLike}
+                        showToast={showToast}
+                        fetchTracks={handleFetchDiscoveryTracks}
+                        onNavigate={handleStationSelect}
+                      />
+                    </div>
+                  )}
+
+                  {activeTab === 'relax' && (
+                    <div key="page-relax" className="fixed inset-0 z-50 w-screen h-screen overflow-hidden">
+                      <RelaxModeView
+                        onBack={handleGoBack}
+                        currentSong={currentSong}
+                        isPlaying={isPlaying}
+                        onTogglePlay={togglePlayPause}
+                        onNextSong={handleNextSong}
+                        onPrevSong={handlePrevSong}
+                        volume={volume}
+                        onVolumeChange={handleVolumeChange}
+                        getCleanThumbnail={getCleanThumbnail}
+                        onOpenExpandedPlayer={handleOpenExpandedPlayer}
+                      />
+                    </div>
+                  )}
+
+                  {activeTab === 'for-you' && (
+                    <div key="page-for-you" className="page-transition w-full min-w-0 px-2 sm:px-4 md:px-8 pt-1 md:pt-6 space-y-6 md:space-y-10">
+                      <PersonalizedRecommendationsSection
+                        backendUrl={BACKEND_URL}
+                        authToken={authToken}
+                        user={user}
+                        onPlayTrack={(track) => {
+                          playSong(track);
+                        }}
+                        onOpenAuth={openAuthModal}
+                        onToggleLike={toggleLike}
+                        isLiked={isSongLiked}
+                        onAddToPlaylist={handleAddToPlaylistClick}
+                        showToast={showToast}
+                        onArtistClick={handleArtistClick}
+                      />
+                    </div>
+                  )}
+
+                  {activeTab === 'home' && (
+                    <div key={`page-home-${showAllTrending ? 'trending' : showAllArtists ? 'artists' : showAllAlbums ? 'albums' : showAllRadio ? 'radio' : 'main'}`} className="page-transition w-full min-w-0 px-2 sm:px-4 md:px-8 pt-0.5 md:pt-2 space-y-4 md:space-y-6">
+                      {/* Promotional Hero Banner if configured in CMS */}
+                      <CmsHeroBanner
+                        banner={cmsConfig?.banner}
+                        onActionClick={(url) => {
+                          if (url?.startsWith('/station/')) {
+                            handleStationSelect(url.replace('/station/', ''));
+                          } else if (url === '/discover') {
+                            handleStationSelect('discover');
+                          } else if (url?.startsWith('http')) {
+                            window.open(url, '_blank', 'noopener,noreferrer');
+                          }
+                        }}
+                      />
+
+                      {/* Cinematic Hero Banner with Integrated Voice Search & Quick Tags */}
+                      {USE_COMPACT_V2_UI ? (
+                        <CompactHeroV2
+                          clockString={clockString}
+                          onSearch={handleSearchFromHome}
+                          onSelectSong={playSong}
+                          onPlaySong={playSong}
+                          onArtistClick={handleArtistClick}
+                          placeholder={cmsConfig?.searchPage?.placeholder || "Search songs, artists, albums..."}
+                          suggestions={cmsConfig?.searchPage?.quickTags}
+                        />
+                      ) : (
+                        <HomeHero
+                          clockString={clockString}
+                          onSearch={handleSearchFromHome}
+                          onSelectSong={playSong}
+                          onPlaySong={playSong}
+                          onArtistClick={handleArtistClick}
+                          placeholder={cmsConfig?.searchPage?.placeholder || "Search songs, artists, albums..."}
+                          suggestions={cmsConfig?.searchPage?.quickTags}
+                          user={user}
+                          token={authToken}
+                          backendUrl={BACKEND_URL}
+                          onNavigate={handleStationSelect}
+                          onOpenInsights={() => setIsStatsOpen(true)}
+                        />
+                      )}
+
+                      {/* Premium Feature Shortcut Cards */}
+                      {USE_COMPACT_V2_UI ? (
+                        <CompactFeatureDeckV2 onNavigate={handleStationSelect} />
+                      ) : (
+                        <FeatureShortcuts
+                          onNavigate={handleStationSelect}
+                          onOpenInsights={() => setIsStatsOpen(true)}
+                        />
+                      )}
+
+                      {/* Featured 3D Turntable Lounge Showcase for Mobile & Desktop (Hidden on mobile if V2 compact mode is active to eliminate mid-screen clutter) */}
+                      <div className={`${USE_COMPACT_V2_UI ? 'hidden md:block' : 'block'} relative rounded-2xl sm:rounded-3xl p-3.5 sm:p-6 md:p-8 bg-gradient-to-r from-neutral-900/95 via-neutral-900/80 to-neutral-950/95 border border-amber-500/25 shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_30px_rgba(var(--accent-rgb,245,158,11),0.1)] backdrop-blur-2xl overflow-hidden mb-4 sm:mb-6 select-none w-full min-w-0`}>
+                        <div className="absolute top-0 right-1/4 w-72 h-72 rounded-full bg-amber-500/10 blur-[80px] pointer-events-none" />
+                        <div className="absolute bottom-0 left-1/4 w-72 h-72 rounded-full bg-orange-500/10 blur-[80px] pointer-events-none" />
+
+                        <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-4 sm:gap-6 lg:gap-8 w-full min-w-0">
+                          {/* 3D Turntable Platter */}
+                          <div className="flex flex-col items-center justify-center shrink-0 w-full lg:w-auto">
+                            <Turntable3D
+                              currentSong={currentSong || (trendingSongs?.[0] || TRENDING_SONGS[0])}
+                              isPlaying={isPlaying}
+                              onTogglePlay={currentSong ? togglePlayPause : () => handlePlayTrending((trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs)}
+                              size="compact"
+                            />
+                            <AudioSpectrumVisualizer
+                              isPlaying={isPlaying}
+                              barCount={32}
+                              height={32}
+                              className="w-full max-w-[190px] min-[360px]:max-w-[220px] sm:max-w-xs mt-2 sm:mt-3"
+                            />
                           </div>
 
-                          {/* Col 2: Thumbnail + Title + Artist (7 cols on desktop, 9 cols on mobile) */}
-                          <div className="col-span-8 sm:col-span-7 flex items-center gap-3 min-w-0 pr-2">
-                            <div className="relative w-11 h-11 rounded-xl overflow-hidden bg-neutral-800 shrink-0 border border-white/10 shadow-md">
-                              {thumb ? (
-                                <img
-                                  src={thumb}
-                                  alt={track.title || ""}
-                                  loading="lazy"
-                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                  onError={(e) => handleImageError(e, track.title, track.id)}
-                                />
+                          {/* Lounge Info & Tactile Controls */}
+                          <div className="flex-1 flex flex-col items-center lg:items-start text-center lg:text-left space-y-2.5 sm:space-y-4 w-full max-w-lg min-w-0">
+                            <div className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] sm:text-xs font-mono font-semibold">
+                              <span className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${isPlaying ? 'bg-amber-400 shadow-[0_0_8px_var(--accent-color,#f59e0b)] animate-pulse' : 'bg-neutral-500'}`} />
+                              <span>{isPlaying ? 'NOW SPINNING ON VINYL' : 'LOOPRA 3D VINYL LOUNGE'}</span>
+                            </div>
+
+                            <div className="w-full min-w-0 px-1 sm:px-0">
+                              <h1 className="text-base sm:text-2xl md:text-3xl font-display font-extrabold text-white tracking-tight line-clamp-2 leading-snug">
+                                {currentSong ? currentSong.title : ((trendingSongs?.[0] || TRENDING_SONGS[0])?.title || 'High-Fidelity Retro & Modern Lounge')}
+                              </h1>
+                              <p
+                                className="text-xs sm:text-sm text-amber-400/90 font-medium mt-0.5 sm:mt-1 truncate max-w-full select-none"
+                              >
+                                {currentSong ? (currentSong.artist || currentSong.channel) : ((trendingSongs?.[0] || TRENDING_SONGS[0])?.channel || 'Drop the needle on curated trending hits, nostalgia stations, or search any track.')}
+                              </p>
+                            </div>
+
+                            {/* Tactile Control Buttons Container */}
+                            <div className="flex flex-col items-center lg:items-start gap-2 pt-1 w-full" onClick={(e) => e.stopPropagation()}>
+                              {currentSong ? (
+                                <>
+                                  <div className="flex items-center justify-center lg:justify-start gap-2 w-full">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        togglePlayPause();
+                                      }}
+                                      className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-full bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-md cursor-pointer active:scale-95 transition-all"
+                                      title={isPlaying ? "Pause" : "Play"}
+                                      aria-label={isPlaying ? "Pause playback" : "Resume playback"}
+                                    >
+                                      <Icon name={isPlaying ? "pause" : "play"} className="w-4 h-4 fill-current" />
+                                      <span>{isPlaying ? 'Pause' : 'Resume'}</span>
+                                    </button>
+
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleNextSong();
+                                      }}
+                                      className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-neutral-900 hover:bg-neutral-800 active:scale-95 text-neutral-200 hover:text-white border border-neutral-700/80 transition shadow-md flex items-center justify-center cursor-pointer shrink-0"
+                                      title="Next Track"
+                                      aria-label="Next Track"
+                                    >
+                                      <Icon name="skipNext" className="w-4 h-4 text-neutral-300" />
+                                    </button>
+
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenExpandedPlayer('player');
+                                      }}
+                                      className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full bg-neutral-900/90 hover:bg-neutral-800 active:scale-95 text-neutral-200 hover:text-white font-medium text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-1.5 shadow-md cursor-pointer shrink-0"
+                                      title="Open Expanded Now Playing"
+                                      aria-label="Open Expanded Now Playing"
+                                    >
+                                      <Icon name="expand" className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                                      <span>Now Playing</span>
+                                    </button>
+                                  </div>
+
+                                  {/* Centered Queue Pill */}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenExpandedPlayer('queue');
+                                    }}
+                                    className="px-3.5 py-1 rounded-full bg-neutral-900/80 hover:bg-neutral-800 active:scale-95 text-neutral-400 hover:text-neutral-200 font-medium text-[10px] sm:text-xs border border-neutral-800 transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 mx-auto lg:mx-0 mt-0.5"
+                                    title="View Queue"
+                                    aria-label="View Queue"
+                                  >
+                                    <Icon name="list" className="w-3 h-3 text-amber-400 shrink-0" />
+                                    <span>Queue ({queue.length})</span>
+                                  </button>
+                                </>
                               ) : (
-                                <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-amber-400">
-                                  <Icon name="music" className="w-4 h-4" />
+                                <>
+                                  <div className="flex items-center justify-center lg:justify-start gap-2 w-full">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handlePlayTrending((trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs);
+                                      }}
+                                      className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-full bg-amber-400 hover:bg-amber-300 text-neutral-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-md cursor-pointer active:scale-95 transition-all"
+                                      title="Spin Trending Hit"
+                                      aria-label="Spin Trending Hit"
+                                    >
+                                      <Icon name="play" className="w-4 h-4 fill-current" />
+                                      <span>Spin Hit</span>
+                                    </button>
+
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handlePlayTrending((trendingSongs?.[1] || trendingSongs?.[0] || TRENDING_SONGS[0]).title, (trendingSongs?.[1] || trendingSongs?.[0] || TRENDING_SONGS[0]), trendingSongs);
+                                      }}
+                                      className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-neutral-900 hover:bg-neutral-800 active:scale-95 text-neutral-200 hover:text-white border border-neutral-700/80 transition shadow-md flex items-center justify-center cursor-pointer shrink-0"
+                                      title="Next Track"
+                                      aria-label="Next Track"
+                                    >
+                                      <Icon name="skipNext" className="w-4 h-4 text-neutral-300" />
+                                    </button>
+
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenExpandedPlayer('player');
+                                      }}
+                                      className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full bg-neutral-900/90 hover:bg-neutral-800 active:scale-95 text-neutral-200 hover:text-white font-medium text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-1.5 shadow-md cursor-pointer shrink-0"
+                                      title="Open Expanded Now Playing"
+                                      aria-label="Open Expanded Now Playing"
+                                    >
+                                      <Icon name="expand" className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                                      <span>Now Playing</span>
+                                    </button>
+                                  </div>
+
+                                  {/* Centered Queue Pill */}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenExpandedPlayer('queue');
+                                    }}
+                                    className="px-3.5 py-1 rounded-full bg-neutral-900/80 hover:bg-neutral-800 active:scale-95 text-neutral-400 hover:text-neutral-200 font-medium text-[10px] sm:text-xs border border-neutral-800 transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 mx-auto lg:mx-0 mt-0.5"
+                                    title="View Queue"
+                                    aria-label="View Queue"
+                                  >
+                                    <Icon name="list" className="w-3 h-3 text-amber-400 shrink-0" />
+                                    <span>Queue ({queue.length})</span>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Gemini AI-Powered Personalized Recommendations Lounge */}
+                      <PersonalizedRecommendationsSection
+                        backendUrl={BACKEND_URL}
+                        authToken={authToken}
+                        user={user}
+                        onPlayTrack={(track) => {
+                          playSong(track);
+                        }}
+                        onOpenAuth={openAuthModal}
+                        onToggleLike={toggleLike}
+                        isLiked={isSongLiked}
+                        onAddToPlaylist={handleAddToPlaylistClick}
+                        showToast={showToast}
+                        onTracksRendered={handlePersonalizedTracksRendered}
+                        onArtistClick={handleArtistClick}
+                      />
+
+                      {/* Dynamic Homepage Sections from CMS Configuration */}
+                      {(() => {
+                        const sections = (cmsConfig?.sections && cmsConfig.sections.length > 0)
+                          ? cmsConfig.sections
+                          : [
+                            { id: 'trending', title: 'Trending songs', subtitle: 'The most played hits right now', enabled: true, order: 1 },
+                            { id: 'curated', title: 'Curated Featured Collections', subtitle: 'Handpicked mixes, nostalgia sets, and soundtracks curated by our editors', enabled: true, order: 2 },
+                            { id: 'artists', title: 'Popular artists', subtitle: 'Find your favorite singers', enabled: true, order: 3 },
+                            { id: 'albums', title: 'Popular albums and singles', subtitle: 'Latest releases', enabled: true, order: 4 },
+                            { id: 'radio', title: 'Popular radio', subtitle: 'Live streams 24/7', enabled: true, order: 5 }
+                          ];
+
+                        const sortedSections = [...sections]
+                          .filter(s => s && s.enabled !== false)
+                          .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+
+                        return sortedSections.map(sec => {
+                          switch (sec.id) {
+                            case 'trending':
+                              return (
+                                <ScrollableRow
+                                  key="sec-trending"
+                                  title={sec.title || "Trending songs"}
+                                  subtitle={sec.subtitle || "The most played hits right now"}
+                                  items={uniqueTrendingSongs}
+                                  fallbackItems={[]}
+                                  showAll={showAllTrending}
+                                  setShowAll={handleSetShowAllTrending}
+                                  renderItem={(song) => (
+                                    <div
+                                      onClick={() => handlePlayTrending(song.query || song.title, song, uniqueTrendingSongs)}
+                                      className="group relative flex flex-col p-2.5 sm:p-3 rounded-2xl bg-neutral-900/60 hover:bg-neutral-800/80 border border-neutral-800/80 hover:border-amber-500/40 transition-all duration-300 cursor-pointer shadow-md hover:shadow-[0_10px_25px_rgba(245,158,11,0.12)] active:scale-[0.98]"
+                                    >
+                                      <div className="relative mb-2.5 overflow-hidden rounded-xl aspect-square shadow-lg">
+                                        <img
+                                          src={getCleanThumbnail(song)}
+                                          alt={song.title}
+                                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                          onError={(e) => handleImageError(e, song.title, song.id)}
+                                        />
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                                          <div className="w-9 h-9 sm:w-10 sm:h-10 bg-gradient-to-r from-amber-400 to-orange-500 rounded-full flex items-center justify-center shadow-xl transform scale-75 group-hover:scale-100 transition-transform">
+                                            <Icon name="play" className="w-4 h-4 sm:w-5 sm:h-5 text-neutral-950 translate-x-[1px]" />
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <h3 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-amber-400 transition-colors leading-tight">
+                                        {song.title}
+                                      </h3>
+                                      <p className="text-[11px] text-neutral-400 truncate mt-1 font-medium">
+                                        {song.artist || song.channel || 'Featured Track'}
+                                      </p>
+                                    </div>
+                                  )}
+                                />
+                              );
+
+                            case 'curated':
+                              return (
+                                <CmsCuratedCollectionsRow
+                                  key="sec-curated"
+                                  backendUrl={BACKEND_URL}
+                                  title={sec.title || "Curated Featured Collections"}
+                                  subtitle={sec.subtitle || "Handpicked mixes, nostalgia sets, and soundtracks curated by our editors"}
+                                  onPlayTrack={(track, collectionTracks) => {
+                                    handlePlayTrending(track.title || track.name, track, collectionTracks);
+                                  }}
+                                />
+                              );
+
+                            case 'artists':
+                              return (
+                                <ScrollableRow
+                                  key="sec-artists"
+                                  title={sec.title || "Popular artists"}
+                                  subtitle={sec.subtitle || "The voices that define soundtracks."}
+                                  items={POPULAR_ARTISTS}
+                                  showAll={showAllArtists}
+                                  setShowAll={handleSetShowAllArtists}
+                                  renderItem={(artist) => (
+                                    <div onClick={() => handleArtistClick(artist.name)} className="group cursor-pointer flex flex-col items-center">
+                                      <div className="relative mb-2 md:mb-3 w-full aspect-square rounded-full overflow-hidden shadow-lg border-2 border-transparent group-hover:border-amber-500 transition-all duration-300">
+                                        <img src={artist.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(artist.name)}&background=1e1e1e&color=f59e0b&size=300`} alt={artist.name} referrerPolicy="no-referrer" loading="lazy" className="w-full h-full object-cover group-hover:scale-110 transition duration-500" onError={(e) => handleImageError(e, artist.name)} />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                                          <Icon name="search" className="w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 text-white drop-shadow-md transform scale-90 group-hover:scale-100 transition" />
+                                        </div>
+                                      </div>
+                                      <h3 className="text-xs md:text-sm font-bold text-white truncate w-full text-center group-hover:text-amber-400 transition">{artist.name}</h3>
+                                      <p className="text-[10px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1 w-full text-center">Artist</p>
+                                    </div>
+                                  )}
+                                />
+                              );
+
+                            case 'albums':
+                              return (
+                                <ScrollableRow
+                                  key="sec-albums"
+                                  title={sec.title || "Popular albums and singles"}
+                                  subtitle={sec.subtitle || "Latest releases & iconic soundtracks."}
+                                  items={popularAlbums}
+                                  fallbackItems={POPULAR_ALBUMS}
+                                  showAll={showAllAlbums}
+                                  setShowAll={handleSetShowAllAlbums}
+                                  renderItem={(album) => (
+                                    <div onClick={() => handlePlayTrending(album.query || album.title, album, popularAlbums)} className="group cursor-pointer">
+                                      <div className="relative mb-2 md:mb-3">
+                                        <img src={getCleanThumbnail(album)} alt={album.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => handleImageError(e, album.title, album.id)} />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
+                                          <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
+                                            <Icon name="play" className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-neutral-950 translate-x-[1px] md:translate-x-[2px]" />
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <h3 className="text-xs md:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{album.title}</h3>
+                                      <p className="text-[11px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1">{album.artist}</p>
+                                    </div>
+                                  )}
+                                />
+                              );
+
+                            case 'radio':
+                              return (
+                                <ScrollableRow
+                                  key="sec-radio"
+                                  title={sec.title || "Popular radio"}
+                                  subtitle={sec.subtitle || "Live streams and 24/7 continuous audio."}
+                                  items={popularRadio}
+                                  fallbackItems={POPULAR_RADIO}
+                                  showAll={showAllRadio}
+                                  setShowAll={handleSetShowAllRadio}
+                                  renderItem={(radio) => (
+                                    <div onClick={() => handlePlayTrending(radio.query || radio.title, radio, popularRadio)} className="group cursor-pointer">
+                                      <div className="relative mb-2 md:mb-3">
+                                        <img src={getCleanThumbnail(radio)} alt={radio.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => handleImageError(e, radio.title, radio.id)} />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
+                                          <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-amber-500 rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
+                                            <Icon name="play" className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5 text-neutral-950 translate-x-[1px] md:translate-x-[2px]" />
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <h3 className="text-xs md:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{radio.title}</h3>
+                                      <p className="text-[11px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1">{radio.artist}</p>
+                                    </div>
+                                  )}
+                                />
+                              );
+
+                            default:
+                              return null;
+                          }
+                        });
+                      })()}
+
+                      {/* Ratings & Reviews Community Section */}
+                      <HomepageReviewsSection
+                        refreshTrigger={reviewsRefreshKey}
+                        onOpenRatingModal={handleOpenRatingModal}
+                      />
+
+                      {/* Loopra Footer — Strictly visible on the Home Page ONLY */}
+                      {isActualHomeRoute && <DisclaimerFooter {...commonFooterProps} />}
+                    </div>
+                  )}
+
+                  {Boolean(currentStation && !['home', 'discover', 'swipe', 'for-you', 'library', 'history', 'radio', 'indian-radio', 'mood', 'timemachine', 'activity', 'admin', 'offline', 'offline-explore'].includes(activeTab)) && (
+                    <NostalgiaStationView
+                      key={`page-station-${activeTab}`}
+                      station={currentStation}
+                      songs={songs}
+                      stationLoading={stationLoading}
+                      stationVisibleCount={stationVisibleCount}
+                      currentSong={currentSong}
+                      openMenuId={openMenuId}
+                      setOpenMenuId={setOpenMenuId}
+                      playSong={playSong}
+                      handleOpenVideo={handleOpenVideo}
+                      queue={queue}
+                      removeFromQueue={removeFromQueue}
+                      addToQueue={addToQueue}
+                      toggleLike={toggleLike}
+                      likedSongs={likedSongs}
+                      playNext={playNext}
+                      handleFindSimilar={handleFindSimilar}
+                      handleAddToPlaylistClick={handleAddToPlaylistClick}
+                      showToast={showToast}
+                      handleLoadMoreStationSongs={handleLoadMoreStationSongs}
+                      isLoadingMoreStation={isLoadingMoreStation}
+                      onGoBack={canGoBack(navigationStack, activeTab, { showAllTrending, showAllArtists, showAllAlbums, showAllRadio, selectedPlaylistForView, offlineSubView }) ? handleGoBack : null}
+                      getCleanThumbnail={getCleanThumbnail}
+                      handleImageError={handleImageError}
+                    />
+                  )}
+
+                  {activeTab === 'library' && (
+                    <div key="page-library" className={`page-transition w-full px-2 sm:px-4 md:px-8 space-y-5 relative z-10 ${USE_V2_LIBRARY_UI ? 'pb-32' : ''}`}>
+                      {USE_V2_LIBRARY_UI ? (
+                        /* ========================================================================= */
+                        /* V2 LIKED SONGS & LIBRARY REDESIGN (Dynamic Header, Artwork, Clearance)   */
+                        /* ========================================================================= */
+                        <>
+                          {/* Dynamic Gradient Heart Playlist Cover Header */}
+                          <div className="relative rounded-3xl overflow-hidden p-5 sm:p-7 bg-gradient-to-br from-purple-900/40 via-amber-950/30 to-neutral-950 border border-amber-500/20 shadow-2xl backdrop-blur-xl">
+                            <div className="absolute inset-0 bg-radial from-amber-500/10 via-transparent to-transparent pointer-events-none" />
+
+                            <div className="relative z-10 flex flex-col sm:flex-row sm:items-end justify-between gap-5">
+                              <div className="flex items-center gap-4">
+                                {/* Gradient Heart Artwork Square */}
+                                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-rose-500 via-pink-600 to-amber-500 flex items-center justify-center shadow-[0_10px_30px_rgba(244,63,94,0.35)] shrink-0 group">
+                                  <svg className="w-10 h-10 sm:w-12 sm:h-12 text-white fill-current filter drop-shadow-md group-hover:scale-110 transition-transform" viewBox="0 0 24 24">
+                                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                                  </svg>
+                                </div>
+
+                                <div className="min-w-0">
+                                  <span className="text-[10px] font-mono uppercase tracking-wider text-amber-400 font-bold bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/20">
+                                    Playlist Collection
+                                  </span>
+                                  <h1 className="text-2xl sm:text-4xl font-display font-black text-white tracking-tight mt-1">
+                                    Liked <span className="text-amber-400">Songs</span>
+                                  </h1>
+                                  <div className="flex items-center gap-2 mt-1.5 text-xs text-zinc-400 font-medium">
+                                    <span>{likedSongs.length} {likedSongs.length === 1 ? 'Track' : 'Tracks'}</span>
+                                    <span>•</span>
+                                    <span className="text-amber-300/90 font-mono">Personal Vault</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Action Row: Big Circular Play/Shuffle Button */}
+                              {likedSongs.length > 0 && (
+                                <div className="flex items-center gap-3 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (likedSongs.length > 0) {
+                                        playSong(likedSongs[0], likedSongs);
+                                      }
+                                    }}
+                                    className="flex items-center gap-2.5 px-6 py-3 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-neutral-950 font-black text-sm shadow-[0_0_25px_rgba(245,158,11,0.4)] active:scale-95 transition-all cursor-pointer"
+                                  >
+                                    <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                                      <path d="M8 5v14l11-7z" />
+                                    </svg>
+                                    <span>Play All</span>
+                                  </button>
                                 </div>
                               )}
                             </div>
-                            <div className="min-w-0 flex-1">
-                              <h4 className={`font-bold text-xs sm:text-sm truncate transition ${isCurrent ? 'text-amber-300' : 'text-white group-hover:text-amber-300'}`}>
-                                {track.title}
-                              </h4>
-                              <p className="text-[11px] text-zinc-400 truncate mt-0.5">
-                                {track.channel || track.artist || 'Artist'}
-                              </p>
-                            </div>
                           </div>
 
-                          {/* Col 3: Duration (2 cols on desktop, hidden on tiny mobile) */}
-                          <div className="hidden sm:flex col-span-2 items-center justify-center text-xs font-mono text-zinc-400">
-                            <span>{formatTrackDuration(track.duration)}</span>
-                          </div>
-
-                          {/* Col 4: Hover Actions [Play, ✕ Remove, ⋮ More] (2 cols on desktop, 3 cols on mobile) */}
-                          <div className={`col-span-3 sm:col-span-2 flex items-center justify-end gap-1.5 relative ${isMenuOpen ? 'z-40' : ''}`} onClick={(e) => e.stopPropagation()}>
-                            {/* Quick Play button on hover */}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                playSong(track, likedSongs);
-                              }}
-                              className="p-1.5 rounded-xl bg-white/5 hover:bg-amber-500/20 text-zinc-400 hover:text-amber-400 border border-white/10 hover:border-amber-500/40 transition opacity-80 sm:opacity-0 group-hover:opacity-100 shrink-0 cursor-pointer"
-                              title="Play Track"
-                              aria-label="Play Track"
-                            >
-                              <Icon name={isCurrent && isPlaying ? "pause" : "play"} className="w-3.5 h-3.5 fill-current" />
-                            </button>
-
-                            {/* Quick Delete / Unlike Button (One-Tap Cross Icon) */}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleLike(track);
-                              }}
-                              className="p-1.5 rounded-xl bg-white/5 hover:bg-red-500/15 text-zinc-400 hover:text-red-400 border border-white/10 hover:border-red-500/30 transition flex items-center shrink-0 cursor-pointer active:scale-95"
-                              title="Remove from Liked Songs"
-                              aria-label="Remove from Liked Songs"
-                            >
-                              <Icon name="close" className="w-3.5 h-3.5 shrink-0" />
-                            </button>
-                            
-                            <button 
-                              type="button"
-                              onClick={(e) => { 
-                                e.stopPropagation(); 
-                                setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); 
-                              }} 
-                              className="p-1.5 text-zinc-400 hover:text-white rounded-xl hover:bg-white/10 transition shrink-0 cursor-pointer"
-                              title="More Options"
-                              aria-label="More Options"
-                            >
-                              <Icon name="moreVertical" className="w-4 h-4 shrink-0" />
-                            </button>
-
-                            {isMenuOpen && (
-                              <div className="absolute right-0 top-full mt-1.5 w-48 bg-neutral-900/95 backdrop-blur-2xl rounded-2xl shadow-2xl border border-white/10 overflow-hidden z-50 animate-fadeIn">
-                                {currentSong?.id !== track.id && (
-                                  <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
-                                )}
-                                <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{isSongLiked(track) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
-                                <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
-                                  <span>⏭️</span>
-                                  <span>Play Next</span>
-                                </button>
-                                <button onClick={(e) => { e.stopPropagation(); handleFindSimilar(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-amber-400 hover:bg-neutral-800 transition flex items-center gap-2">
-                                  <span>✨</span>
-                                  <span>Similar Songs</span>
-                                </button>
-                                <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleRemoveSongFromPlaylist(selectedPlaylistForView.id, track.id || track.videoId);
-                                    setOpenMenuId(null);
-                                  }}
-                                  className="w-full text-left px-4 py-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-neutral-800 transition"
-                                >
-                                  Remove from Playlist
-                                </button>
-                                <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
+                          {/* Track List Section */}
+                          <div className="space-y-2 mt-2">
+                            {likedSongs.length === 0 ? (
+                              <div className="p-12 text-center rounded-3xl bg-neutral-900/30 border border-white/5 space-y-3">
+                                <div className="w-14 h-14 rounded-full bg-white/5 text-zinc-500 flex items-center justify-center mx-auto">
+                                  <svg className="w-7 h-7 fill-current" viewBox="0 0 24 24">
+                                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                                  </svg>
+                                </div>
+                                <h3 className="font-bold text-white text-sm">No liked tracks yet</h3>
+                                <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                                  Tap the heart icon on any track while streaming to add it to your permanent personal collection.
+                                </p>
                               </div>
+                            ) : (
+                              likedSongs.map((track, i) => {
+                                const isMenuOpen = openMenuId === `${track.id}-${i}`;
+                                const isCurrent = (currentSong?.id || currentSong?.videoId) === (track.id || track.videoId);
+                                const thumb = getCleanThumbnail(track);
+
+                                return (
+                                  <div
+                                    key={track.id + i}
+                                    onClick={() => playSong(track, likedSongs)}
+                                    onContextMenu={(e) => handleTrackContextMenu(e, track)}
+                                    className={`px-3.5 py-2.5 rounded-2xl border grid grid-cols-12 items-center gap-2 cursor-pointer transition-all duration-200 group relative backdrop-blur-md select-none ${isMenuOpen ? 'z-30' : 'z-auto'
+                                      } ${isCurrent
+                                        ? 'bg-amber-500/15 border-amber-500/60 shadow-[0_0_20px_rgba(245,158,11,0.2)]'
+                                        : 'bg-neutral-900/50 hover:bg-neutral-900/90 border-white/5 hover:border-amber-500/30 active:scale-[0.99]'
+                                      }`}
+                                  >
+                                    {/* Col 1: # Index / Waveform (1 col on desktop, auto on mobile) */}
+                                    <div className="col-span-1 sm:col-span-1 flex items-center justify-center">
+                                      {isCurrent && isPlaying ? (
+                                        <span className="inline-flex items-center gap-0.5 h-3">
+                                          <span className="w-0.5 h-3 bg-amber-400 animate-pulse" />
+                                          <span className="w-0.5 h-2 bg-amber-400 animate-ping" />
+                                          <span className="w-0.5 h-3 bg-amber-400 animate-pulse" />
+                                        </span>
+                                      ) : (
+                                        <span className={`text-xs font-mono font-medium ${isCurrent ? 'text-amber-400' : 'text-zinc-500 group-hover:text-amber-300'}`}>
+                                          {i + 1}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Col 2: Thumbnail + Title + Artist (7 cols on desktop, 9 cols on mobile) */}
+                                    <div className="col-span-8 sm:col-span-7 flex items-center gap-3 min-w-0 pr-2">
+                                      <div className="relative w-11 h-11 rounded-xl overflow-hidden bg-neutral-800 shrink-0 border border-white/10 shadow-md">
+                                        {thumb ? (
+                                          <img
+                                            src={thumb}
+                                            alt={track.title || ""}
+                                            loading="lazy"
+                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                            onError={(e) => handleImageError(e, track.title, track.id)}
+                                          />
+                                        ) : (
+                                          <div className="w-full h-full flex items-center justify-center bg-neutral-900 text-amber-400">
+                                            <Icon name="music" className="w-4 h-4" />
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <h4 className={`font-bold text-xs sm:text-sm truncate transition ${isCurrent ? 'text-amber-300' : 'text-white group-hover:text-amber-300'}`}>
+                                          {track.title}
+                                        </h4>
+                                        <p className="text-[11px] text-zinc-400 truncate mt-0.5">
+                                          {track.channel || track.artist || 'Artist'}
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    {/* Col 3: Duration (2 cols on desktop, hidden on tiny mobile) */}
+                                    <div className="hidden sm:flex col-span-2 items-center justify-center text-xs font-mono text-zinc-400">
+                                      <span>{formatTrackDuration(track.duration)}</span>
+                                    </div>
+
+                                    {/* Col 4: Hover Actions [Play, ✕ Remove, ⋮ More] (2 cols on desktop, 3 cols on mobile) */}
+                                    <div className={`col-span-3 sm:col-span-2 flex items-center justify-end gap-1.5 relative ${isMenuOpen ? 'z-40' : ''}`} onClick={(e) => e.stopPropagation()}>
+                                      {/* Quick Play button on hover */}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          playSong(track, likedSongs);
+                                        }}
+                                        className="p-1.5 rounded-xl bg-white/5 hover:bg-amber-500/20 text-zinc-400 hover:text-amber-400 border border-white/10 hover:border-amber-500/40 transition opacity-80 sm:opacity-0 group-hover:opacity-100 shrink-0 cursor-pointer"
+                                        title="Play Track"
+                                        aria-label="Play Track"
+                                      >
+                                        <Icon name={isCurrent && isPlaying ? "pause" : "play"} className="w-3.5 h-3.5 fill-current" />
+                                      </button>
+
+                                      {/* Quick Delete / Unlike Button (One-Tap Cross Icon) */}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          toggleLike(track);
+                                        }}
+                                        className="p-1.5 rounded-xl bg-white/5 hover:bg-red-500/15 text-zinc-400 hover:text-red-400 border border-white/10 hover:border-red-500/30 transition flex items-center shrink-0 cursor-pointer active:scale-95"
+                                        title="Remove from Liked Songs"
+                                        aria-label="Remove from Liked Songs"
+                                      >
+                                        <Icon name="close" className="w-3.5 h-3.5 shrink-0" />
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`);
+                                        }}
+                                        className="p-1.5 text-zinc-400 hover:text-white rounded-xl hover:bg-white/10 transition shrink-0 cursor-pointer"
+                                        title="More Options"
+                                        aria-label="More Options"
+                                      >
+                                        <Icon name="moreVertical" className="w-4 h-4 shrink-0" />
+                                      </button>
+
+                                      {isMenuOpen && (
+                                        <div className="absolute right-0 top-full mt-1.5 w-48 bg-neutral-900/95 backdrop-blur-2xl rounded-2xl shadow-2xl border border-white/10 overflow-hidden z-50 animate-fadeIn">
+                                          {currentSong?.id !== track.id && (
+                                            <button onClick={(e) => { e.stopPropagation(); queue.some(s => s.id === track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s => s.id === track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
+                                          )}
+                                          <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{isSongLiked(track) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                                          <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
+                                            <span>⏭️</span>
+                                            <span>Play Next</span>
+                                          </button>
+                                          <button onClick={(e) => { e.stopPropagation(); handleFindSimilar(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-amber-400 hover:bg-neutral-800 transition flex items-center gap-2">
+                                            <span>✨</span>
+                                            <span>Similar Songs</span>
+                                          </button>
+                                          <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleRemoveSongFromPlaylist(selectedPlaylistForView.id, track.id || track.videoId);
+                                              setOpenMenuId(null);
+                                            }}
+                                            className="w-full text-left px-4 py-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-neutral-800 transition"
+                                          >
+                                            Remove from Playlist
+                                          </button>
+                                          <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })
                             )}
                           </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </>
-            ) : (
-              /* Original V1 Liked Songs Layout */
-              <>
-                <div className="flex items-center justify-between">
-                  <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">Liked Songs Collection</h2>
-                  {likedSongs.length > 0 && (
-                    <span className="text-xs text-neutral-400 font-mono">{likedSongs.length} tracks</span>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 gap-2">
-                  {likedSongs.length === 0 ? (
-                    <p className="text-xs text-neutral-500">No liked songs yet.</p>
-                  ) : (
-                    likedSongs.map((track, i) => {
-                      const isMenuOpen = openMenuId === `${track.id}-${i}`;
-                      return (
-                        <div key={track.id + i} onClick={() => playSong(track)} onContextMenu={(e) => handleTrackContextMenu(e, track)} className={`p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition relative ${isMenuOpen ? 'z-30' : 'z-auto'}`}>
-                          <div className="flex items-center gap-3.5 min-w-0">
-                            <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => handleImageError(e, track.title, track.id)} />
-                            <div className="min-w-0">
-                              <h4 className="font-bold text-xs text-white truncate">{track.title}</h4>
-                              <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
-                            </div>
-                          </div>
-                          <div className={`flex items-center gap-2 shrink-0 relative ${isMenuOpen ? 'z-40' : ''}`}>
-                            {/* Quick Delete / Unlike Button (One-Tap Cross Icon) */}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleLike(track);
-                              }}
-                              className="p-1.5 rounded-2xl bg-white/5 hover:bg-red-500/15 text-neutral-400 hover:text-red-400 border border-white/10 hover:border-red-500/30 transition flex items-center shrink-0 cursor-pointer active:scale-95"
-                              title="Remove from Liked Songs"
-                              aria-label="Remove from Liked Songs"
-                            >
-                              <Icon name="close" className="w-3.5 h-3.5 shrink-0" />
-                            </button>
-                            
-                            <button 
-                              onClick={(e) => { 
-                                e.stopPropagation(); 
-                                setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); 
-                              }} 
-                              className="p-1 text-neutral-500 hover:text-white transition shrink-0"
-                            >
-                              <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
-                            </button>
-
-                            {isMenuOpen && (
-                              <div className="absolute right-0 top-full mt-1.5 w-44 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
-                                {currentSong?.id !== track.id && (
-                                  <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
-                                )}
-                                <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{isSongLiked(track) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
-                                <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
-                                    <span>⏭️</span>
-                                    <span>Play Next</span>
-                                  </button>
-                                  <button onClick={(e) => { e.stopPropagation(); handleFindSimilar(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-amber-400 hover:bg-neutral-800 transition flex items-center gap-2">
-                                    <span>✨</span>
-                                    <span>Similar Songs</span>
-                                  </button>
-                                  <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
-                                  <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
-                              </div>
+                        </>
+                      ) : (
+                        /* Original V1 Liked Songs Layout */
+                        <>
+                          <div className="flex items-center justify-between">
+                            <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">Liked Songs Collection</h2>
+                            {likedSongs.length > 0 && (
+                              <span className="text-xs text-neutral-400 font-mono">{likedSongs.length} tracks</span>
                             )}
                           </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        )}
+                          <div className="grid grid-cols-1 gap-2">
+                            {likedSongs.length === 0 ? (
+                              <p className="text-xs text-neutral-500">No liked songs yet.</p>
+                            ) : (
+                              likedSongs.map((track, i) => {
+                                const isMenuOpen = openMenuId === `${track.id}-${i}`;
+                                return (
+                                  <div key={track.id + i} onClick={() => playSong(track)} onContextMenu={(e) => handleTrackContextMenu(e, track)} className={`p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition relative ${isMenuOpen ? 'z-30' : 'z-auto'}`}>
+                                    <div className="flex items-center gap-3.5 min-w-0">
+                                      <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => handleImageError(e, track.title, track.id)} />
+                                      <div className="min-w-0">
+                                        <h4 className="font-bold text-xs text-white truncate">{track.title}</h4>
+                                        <p className="text-[10px] text-neutral-400 truncate">{track.channel}</p>
+                                      </div>
+                                    </div>
+                                    <div className={`flex items-center gap-2 shrink-0 relative ${isMenuOpen ? 'z-40' : ''}`}>
+                                      {/* Quick Delete / Unlike Button (One-Tap Cross Icon) */}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          toggleLike(track);
+                                        }}
+                                        className="p-1.5 rounded-2xl bg-white/5 hover:bg-red-500/15 text-neutral-400 hover:text-red-400 border border-white/10 hover:border-red-500/30 transition flex items-center shrink-0 cursor-pointer active:scale-95"
+                                        title="Remove from Liked Songs"
+                                        aria-label="Remove from Liked Songs"
+                                      >
+                                        <Icon name="close" className="w-3.5 h-3.5 shrink-0" />
+                                      </button>
 
-        {activeTab === 'history' && (
-          <div key="page-history" className="page-transition w-full px-2 sm:px-4 md:px-8 space-y-6 relative z-10">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">Listening History</h2>
-                <p className="text-xs text-neutral-400 mt-0.5">Your recently played tracks and listening log</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIsStatsOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-semibold transition shadow-sm cursor-pointer active:scale-95"
-                  title="View Weekly Recap & Statistics"
-                >
-                  <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Weekly Recap & Stats</span>
-                </button>
-                {history.length > 0 && (
-                  <button
-                    onClick={() => {
-                      if (window.confirm("Are you sure you want to clear your entire listening history?")) {
-                        clearHistory();
-                      }
-                    }}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-2xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs transition cursor-pointer active:scale-95"
-                    title="Clear Listening History"
-                  >
-                    <Icon name="trash" className="w-3.5 h-3.5" />
-                    <span>Clear All</span>
-                  </button>
-                )}
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-2">
-              {history.length === 0 ? (
-                <p className="text-xs text-neutral-500">No history available.</p>
-              ) : (
-                history.slice(0, historyPageLimit).map((track, i) => {
-                  const isMenuOpen = openMenuId === `${track.id}-${i}`;
-                  return (
-                    <div key={track.id + i} onClick={() => playSong(track)} onContextMenu={(e) => handleTrackContextMenu(e, track)} className={`p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition relative ${isMenuOpen ? 'z-30' : 'z-auto'}`}>
-                      <div className="flex items-center gap-3.5 min-w-0">
-                        <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => handleImageError(e, track.title, track.id)} />
-                        <div className="min-w-0">
-                          <h4 className="font-bold text-xs text-white truncate">{track.title}</h4>
-                          <p className="text-[10px] text-neutral-400 truncate">{track.channel || track.artist}</p>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`);
+                                        }}
+                                        className="p-1 text-neutral-500 hover:text-white transition shrink-0"
+                                      >
+                                        <Icon name="moreVertical" className="w-5 h-5 shrink-0" />
+                                      </button>
+
+                                      {isMenuOpen && (
+                                        <div className="absolute right-0 top-full mt-1.5 w-44 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
+                                          {currentSong?.id !== track.id && (
+                                            <button onClick={(e) => { e.stopPropagation(); queue.some(s => s.id === track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s => s.id === track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
+                                          )}
+                                          <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{isSongLiked(track) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                                          <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
+                                            <span>⏭️</span>
+                                            <span>Play Next</span>
+                                          </button>
+                                          <button onClick={(e) => { e.stopPropagation(); handleFindSimilar(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-amber-400 hover:bg-neutral-800 transition flex items-center gap-2">
+                                            <span>✨</span>
+                                            <span>Similar Songs</span>
+                                          </button>
+                                          <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                                          <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {activeTab === 'history' && (
+                    <div key="page-history" className="page-transition w-full px-2 sm:px-4 md:px-8 space-y-6 relative z-10">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">Listening History</h2>
+                          <p className="text-xs text-neutral-400 mt-0.5">Your recently played tracks and listening log</p>
                         </div>
-                      </div>
-                      <div className={`flex items-center gap-1.5 relative ${isMenuOpen ? 'z-40' : ''}`}>
-                        {/* Quick Delete from History (One-Tap Cross Icon) */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setHistory(prev => prev.filter((_, idx) => idx !== i));
-                            showToast("Removed from history");
-                          }}
-                          className="p-1.5 rounded-2xl bg-white/5 hover:bg-red-500/15 text-neutral-400 hover:text-red-400 border border-white/10 hover:border-red-500/30 transition flex items-center shrink-0 cursor-pointer active:scale-95"
-                          title="Remove from History"
-                          aria-label="Remove from History"
-                        >
-                          <Icon name="close" className="w-3.5 h-3.5 shrink-0" />
-                        </button>
-                        <div className="relative">
-                          <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); }} className="p-1.5 rounded-2xl hover:bg-white/10 text-neutral-400 transition flex items-center shrink-0 cursor-pointer">
-                            <Icon name="moreVertical" className="w-4 h-4 shrink-0" />
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setIsStatsOpen(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-semibold transition shadow-sm cursor-pointer active:scale-95"
+                            title="View Weekly Recap & Statistics"
+                          >
+                            <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Weekly Recap & Stats</span>
                           </button>
-                          {isMenuOpen && (
-                            <div className="absolute right-0 top-full mt-1.5 w-48 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
-                              <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
-                              <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{isSongLiked(track) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
-                              <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
-                                <span>⏭️</span>
-                                <span>Play Next</span>
-                              </button>
-                              <button onClick={(e) => { e.stopPropagation(); handleFindSimilar(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-amber-400 hover:bg-neutral-800 transition flex items-center gap-2">
-                                <span>✨</span>
-                                <span>Similar Songs</span>
-                              </button>
-                              <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setHistory(prev => prev.filter((_, idx) => idx !== i));
-                                  setOpenMenuId(null);
-                                  showToast("Removed from history");
-                                }}
-                                className="w-full text-left px-4 py-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-neutral-800 transition"
-                              >
-                                Remove from History
-                              </button>
-                              <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
-                            </div>
+                          {history.length > 0 && (
+                            <button
+                              onClick={() => {
+                                if (window.confirm("Are you sure you want to clear your entire listening history?")) {
+                                  clearHistory();
+                                }
+                              }}
+                              className="flex items-center gap-1 px-3 py-1.5 rounded-2xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs transition cursor-pointer active:scale-95"
+                              title="Clear Listening History"
+                            >
+                              <Icon name="trash" className="w-3.5 h-3.5" />
+                              <span>Clear All</span>
+                            </button>
                           )}
                         </div>
                       </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {history.length > historyPageLimit && (
-              <div className="text-center pt-2">
-                <button
-                  onClick={() => setHistoryPageLimit(prev => prev + 15)}
-                  className="px-5 py-2.5 rounded-2xl bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-amber-300 border border-neutral-700/80 transition cursor-pointer"
-                >
-                  Load More History ({history.length - historyPageLimit} remaining)
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'playlists' && (
-          <div key={`page-playlists-${selectedPlaylistForView?.id || 'list'}`} className={`page-transition w-full px-2 sm:px-4 md:px-8 space-y-6 relative z-10 ${USE_V2_PLAYLISTS_UI ? 'pb-32' : ''}`}>
-            {!selectedPlaylistForView ? (
-              USE_V2_PLAYLISTS_UI ? (
-                /* ========================================================================= */
-                /* V2 PLAYLISTS & MIXTAPES REDESIGN (Aesthetic cards, 4-tile art, filter chips) */
-                /* ========================================================================= */
-                <>
-                  {/* Modern Header: Back + Title + New Playlist Quick Pill */}
-                  <div className="flex items-center justify-between gap-3 pt-1">
-                    <div>
-                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-400/90 bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/20">
-                        Mixtapes & Jukeboxes
-                      </span>
-                      <h2 className="text-xl sm:text-2xl font-display font-black tracking-tight text-white mt-1">
-                        Your <span className="text-amber-400">Playlists</span>
-                      </h2>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const name = window.prompt("Enter new playlist name:");
-                        if (name && name.trim()) {
-                          const newPlaylist = {
-                            id: Date.now().toString(),
-                            name: name.trim(),
-                            songs: []
-                          };
-                          setPlaylists([...playlists, newPlaylist]);
-                        }
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-neutral-950 font-bold text-xs shadow-lg shadow-amber-500/20 active:scale-95 transition cursor-pointer"
-                    >
-                      <Icon name="plus" className="w-3.5 h-3.5" />
-                      <span>New Playlist</span>
-                    </button>
-                  </div>
-
-                  {/* Filter chips strip */}
-                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
-                    {['All Playlists', 'Created by You', 'Saved Mixtapes'].map((chip, idx) => (
-                      <span
-                        key={chip}
-                        className={`text-xs px-3 py-1 rounded-full whitespace-nowrap cursor-pointer transition select-none ${
-                          idx === 0
-                            ? 'bg-amber-400 text-neutral-950 font-bold shadow-md shadow-amber-500/20'
-                            : 'bg-white/5 hover:bg-white/10 text-neutral-300 border border-white/10'
-                        }`}
-                      >
-                        {chip}
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* Rich Visual Playlist Cards Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4 mt-2">
-                    {/* Create Playlist Action Card */}
-                    <div 
-                      onClick={() => {
-                        const name = window.prompt("Enter new playlist name:");
-                        if (name && name.trim()) {
-                          const newPlaylist = {
-                            id: Date.now().toString(),
-                            name: name.trim(),
-                            songs: []
-                          };
-                          setPlaylists([...playlists, newPlaylist]);
-                        }
-                      }}
-                      className="p-4 rounded-2xl border border-dashed border-amber-500/35 bg-gradient-to-br from-amber-500/10 via-neutral-900/40 to-neutral-950/80 hover:border-amber-400 hover:bg-amber-500/15 active:scale-[0.98] cursor-pointer flex flex-col items-center justify-center gap-2.5 transition-all group text-center aspect-square shadow-lg backdrop-blur-md"
-                    >
-                      <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/30 text-amber-400 group-hover:scale-110 flex items-center justify-center transition shadow-[0_0_15px_rgba(245,158,11,0.2)]">
-                        <Icon name="plus" className="w-6 h-6" />
+                      <div className="grid grid-cols-1 gap-2">
+                        {history.length === 0 ? (
+                          <p className="text-xs text-neutral-500">No history available.</p>
+                        ) : (
+                          history.slice(0, historyPageLimit).map((track, i) => {
+                            const isMenuOpen = openMenuId === `${track.id}-${i}`;
+                            return (
+                              <div key={track.id + i} onClick={() => playSong(track)} onContextMenu={(e) => handleTrackContextMenu(e, track)} className={`p-3.5 rounded-2xl border bg-neutral-900/50 border-neutral-800 flex items-center justify-between cursor-pointer hover:bg-neutral-900 active:scale-[0.98] transition relative ${isMenuOpen ? 'z-30' : 'z-auto'}`}>
+                                <div className="flex items-center gap-3.5 min-w-0">
+                                  <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-12 h-12 rounded-2xl object-cover shrink-0" onError={(e) => handleImageError(e, track.title, track.id)} />
+                                  <div className="min-w-0">
+                                    <h4 className="font-bold text-xs text-white truncate">{track.title}</h4>
+                                    <p className="text-[10px] text-neutral-400 truncate">{track.channel || track.artist}</p>
+                                  </div>
+                                </div>
+                                <div className={`flex items-center gap-1.5 relative ${isMenuOpen ? 'z-40' : ''}`}>
+                                  {/* Quick Delete from History (One-Tap Cross Icon) */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setHistory(prev => prev.filter((_, idx) => idx !== i));
+                                      showToast("Removed from history");
+                                    }}
+                                    className="p-1.5 rounded-2xl bg-white/5 hover:bg-red-500/15 text-neutral-400 hover:text-red-400 border border-white/10 hover:border-red-500/30 transition flex items-center shrink-0 cursor-pointer active:scale-95"
+                                    title="Remove from History"
+                                    aria-label="Remove from History"
+                                  >
+                                    <Icon name="close" className="w-3.5 h-3.5 shrink-0" />
+                                  </button>
+                                  <div className="relative">
+                                    <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); }} className="p-1.5 rounded-2xl hover:bg-white/10 text-neutral-400 transition flex items-center shrink-0 cursor-pointer">
+                                      <Icon name="moreVertical" className="w-4 h-4 shrink-0" />
+                                    </button>
+                                    {isMenuOpen && (
+                                      <div className="absolute right-0 top-full mt-1.5 w-48 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
+                                        <button onClick={(e) => { e.stopPropagation(); queue.some(s => s.id === track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s => s.id === track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
+                                        <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{isSongLiked(track) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                                        <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
+                                          <span>⏭️</span>
+                                          <span>Play Next</span>
+                                        </button>
+                                        <button onClick={(e) => { e.stopPropagation(); handleFindSimilar(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-amber-400 hover:bg-neutral-800 transition flex items-center gap-2">
+                                          <span>✨</span>
+                                          <span>Similar Songs</span>
+                                        </button>
+                                        <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setHistory(prev => prev.filter((_, idx) => idx !== i));
+                                            setOpenMenuId(null);
+                                            showToast("Removed from history");
+                                          }}
+                                          className="w-full text-left px-4 py-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-neutral-800 transition"
+                                        >
+                                          Remove from History
+                                        </button>
+                                        <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
                       </div>
-                      <div>
-                        <h3 className="font-black text-white text-xs sm:text-sm truncate w-full group-hover:text-amber-300 transition">
-                          Create Playlist
-                        </h3>
-                        <p className="text-[10px] text-amber-400/80 font-mono mt-0.5">New Collection</p>
-                      </div>
+
+                      {history.length > historyPageLimit && (
+                        <div className="text-center pt-2">
+                          <button
+                            onClick={() => setHistoryPageLimit(prev => prev + 15)}
+                            className="px-5 py-2.5 rounded-2xl bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-amber-300 border border-neutral-700/80 transition cursor-pointer"
+                          >
+                            Load More History ({history.length - historyPageLimit} remaining)
+                          </button>
+                        </div>
+                      )}
                     </div>
+                  )}
 
-                    {/* User Playlist Cards with 4-tile artwork / cassette vinyl depth */}
-                    {playlists.map(pl => {
-                      const songThumbs = (pl.songs || [])
-                        .slice(0, 4)
-                        .map(s => getCleanThumbnail(s))
-                        .filter(Boolean);
+                  {activeTab === 'playlists' && (
+                    <div key={`page-playlists-${selectedPlaylistForView?.id || 'list'}`} className={`page-transition w-full px-2 sm:px-4 md:px-8 space-y-6 relative z-10 ${USE_V2_PLAYLISTS_UI ? 'pb-32' : ''}`}>
+                      {!selectedPlaylistForView ? (
+                        USE_V2_PLAYLISTS_UI ? (
+                          /* ========================================================================= */
+                          /* V2 PLAYLISTS & MIXTAPES REDESIGN (Aesthetic cards, 4-tile art, filter chips) */
+                          /* ========================================================================= */
+                          <>
+                            {/* Modern Header: Back + Title + New Playlist Quick Pill */}
+                            <div className="flex items-center justify-between gap-3 pt-1">
+                              <div>
+                                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-400/90 bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/20">
+                                  Mixtapes & Jukeboxes
+                                </span>
+                                <h2 className="text-xl sm:text-2xl font-display font-black tracking-tight text-white mt-1">
+                                  Your <span className="text-amber-400">Playlists</span>
+                                </h2>
+                              </div>
 
-                      return (
-                        <div 
-                          key={pl.id} 
-                          onClick={() => {
-                            setSelectedPlaylistForView(pl);
-                            handleStationSelect('playlists', { id: pl.id });
-                          }}
-                          className="relative p-3 rounded-2xl border border-white/5 hover:border-amber-500/40 bg-gradient-to-br from-neutral-900/90 via-[#121216] to-[#0c0c0e] active:scale-[0.98] cursor-pointer flex flex-col justify-between transition-all group aspect-square shadow-xl backdrop-blur-md overflow-hidden"
-                        >
-                          {/* Ambient glow on hover */}
-                          <div className="absolute inset-0 bg-amber-500/0 group-hover:bg-amber-500/5 transition-colors pointer-events-none" />
-
-                          {/* Top row: Track Count Micro-Pill & Quick Actions */}
-                          <div className="flex items-center justify-between w-full relative z-10" onClick={(e) => e.stopPropagation()}>
-                            <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-neutral-800/90 text-amber-400 border border-neutral-700/60 font-semibold">
-                              {pl.songs.length === 1 ? '1 Track' : pl.songs.length === 0 ? 'Empty' : `${pl.songs.length} Tracks`}
-                            </span>
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button
                                 type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleRenamePlaylist(pl.id);
+                                onClick={() => {
+                                  const name = window.prompt("Enter new playlist name:");
+                                  if (name && name.trim()) {
+                                    const newPlaylist = {
+                                      id: Date.now().toString(),
+                                      name: name.trim(),
+                                      songs: []
+                                    };
+                                    setPlaylists([...playlists, newPlaylist]);
+                                  }
                                 }}
-                                className="p-1 rounded-lg bg-neutral-800/90 hover:bg-amber-500/20 text-neutral-400 hover:text-amber-400 border border-neutral-700/60 transition"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-neutral-950 font-bold text-xs shadow-lg shadow-amber-500/20 active:scale-95 transition cursor-pointer"
+                              >
+                                <Icon name="plus" className="w-3.5 h-3.5" />
+                                <span>New Playlist</span>
+                              </button>
+                            </div>
+
+                            {/* Filter chips strip */}
+                            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+                              {['All Playlists', 'Created by You', 'Saved Mixtapes'].map((chip, idx) => (
+                                <span
+                                  key={chip}
+                                  className={`text-xs px-3 py-1 rounded-full whitespace-nowrap cursor-pointer transition select-none ${idx === 0
+                                      ? 'bg-amber-400 text-neutral-950 font-bold shadow-md shadow-amber-500/20'
+                                      : 'bg-white/5 hover:bg-white/10 text-neutral-300 border border-white/10'
+                                    }`}
+                                >
+                                  {chip}
+                                </span>
+                              ))}
+                            </div>
+
+                            {/* Rich Visual Playlist Cards Grid */}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4 mt-2">
+                              {/* Create Playlist Action Card */}
+                              <div
+                                onClick={() => {
+                                  const name = window.prompt("Enter new playlist name:");
+                                  if (name && name.trim()) {
+                                    const newPlaylist = {
+                                      id: Date.now().toString(),
+                                      name: name.trim(),
+                                      songs: []
+                                    };
+                                    setPlaylists([...playlists, newPlaylist]);
+                                  }
+                                }}
+                                className="p-4 rounded-2xl border border-dashed border-amber-500/35 bg-gradient-to-br from-amber-500/10 via-neutral-900/40 to-neutral-950/80 hover:border-amber-400 hover:bg-amber-500/15 active:scale-[0.98] cursor-pointer flex flex-col items-center justify-center gap-2.5 transition-all group text-center aspect-square shadow-lg backdrop-blur-md"
+                              >
+                                <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/30 text-amber-400 group-hover:scale-110 flex items-center justify-center transition shadow-[0_0_15px_rgba(245,158,11,0.2)]">
+                                  <Icon name="plus" className="w-6 h-6" />
+                                </div>
+                                <div>
+                                  <h3 className="font-black text-white text-xs sm:text-sm truncate w-full group-hover:text-amber-300 transition">
+                                    Create Playlist
+                                  </h3>
+                                  <p className="text-[10px] text-amber-400/80 font-mono mt-0.5">New Collection</p>
+                                </div>
+                              </div>
+
+                              {/* User Playlist Cards with 4-tile artwork / cassette vinyl depth */}
+                              {playlists.map(pl => {
+                                const songThumbs = (pl.songs || [])
+                                  .slice(0, 4)
+                                  .map(s => getCleanThumbnail(s))
+                                  .filter(Boolean);
+
+                                return (
+                                  <div
+                                    key={pl.id}
+                                    onClick={() => {
+                                      setSelectedPlaylistForView(pl);
+                                      handleStationSelect('playlists', { id: pl.id });
+                                    }}
+                                    className="relative p-3 rounded-2xl border border-white/5 hover:border-amber-500/40 bg-gradient-to-br from-neutral-900/90 via-[#121216] to-[#0c0c0e] active:scale-[0.98] cursor-pointer flex flex-col justify-between transition-all group aspect-square shadow-xl backdrop-blur-md overflow-hidden"
+                                  >
+                                    {/* Ambient glow on hover */}
+                                    <div className="absolute inset-0 bg-amber-500/0 group-hover:bg-amber-500/5 transition-colors pointer-events-none" />
+
+                                    {/* Top row: Track Count Micro-Pill & Quick Actions */}
+                                    <div className="flex items-center justify-between w-full relative z-10" onClick={(e) => e.stopPropagation()}>
+                                      <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-neutral-800/90 text-amber-400 border border-neutral-700/60 font-semibold">
+                                        {pl.songs.length === 1 ? '1 Track' : pl.songs.length === 0 ? 'Empty' : `${pl.songs.length} Tracks`}
+                                      </span>
+                                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleRenamePlaylist(pl.id);
+                                          }}
+                                          className="p-1 rounded-lg bg-neutral-800/90 hover:bg-amber-500/20 text-neutral-400 hover:text-amber-400 border border-neutral-700/60 transition"
+                                          title="Rename Playlist"
+                                          aria-label="Rename Playlist"
+                                        >
+                                          <Icon name="edit" className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeletePlaylist(pl.id);
+                                          }}
+                                          className="p-1 rounded-lg bg-neutral-800/90 hover:bg-red-500/20 text-neutral-400 hover:text-red-400 border border-neutral-700/60 transition"
+                                          title="Delete Playlist"
+                                          aria-label="Delete Playlist"
+                                        >
+                                          <Icon name="trash" className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Center Collage / Cassette Vinyl Placeholder */}
+                                    <div className="relative z-10 w-full flex items-center justify-center my-auto">
+                                      {songThumbs.length >= 4 ? (
+                                        <div className="grid grid-cols-2 gap-1 w-16 h-16 rounded-xl overflow-hidden shadow-lg border border-white/10">
+                                          {songThumbs.map((t, idx) => (
+                                            <img key={idx} src={t} alt="" className="w-full h-full object-cover" />
+                                          ))}
+                                        </div>
+                                      ) : songThumbs.length > 0 ? (
+                                        <div className="w-16 h-16 rounded-xl overflow-hidden shadow-lg border border-amber-500/20">
+                                          <img src={songThumbs[0]} alt="" className="w-full h-full object-cover" />
+                                        </div>
+                                      ) : (
+                                        <div className="w-14 h-14 rounded-2xl bg-neutral-800/80 border border-white/10 group-hover:border-amber-500/30 text-amber-400 flex items-center justify-center shadow-inner group-hover:scale-105 transition">
+                                          <Icon name="list" className="w-7 h-7" />
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Bottom Label */}
+                                    <div className="relative z-10 text-left pt-1">
+                                      <h3 className="font-extrabold text-white text-xs sm:text-sm truncate w-full group-hover:text-amber-300 transition">
+                                        {pl.name}
+                                      </h3>
+                                      <p className="text-[10px] text-zinc-400 truncate">Tap to play & view</p>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </>
+                        ) : (
+                          /* Original V1 Playlist Grid Layout */
+                          <>
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                              <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">Your Playlists</h2>
+                            </div>
+
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-6">
+                              <div
+                                onClick={() => {
+                                  const name = window.prompt("Enter new playlist name:");
+                                  if (name && name.trim()) {
+                                    const newPlaylist = {
+                                      id: Date.now().toString(),
+                                      name: name.trim(),
+                                      songs: []
+                                    };
+                                    setPlaylists([...playlists, newPlaylist]);
+                                  }
+                                }}
+                                className="p-4 rounded-2xl border border-dashed border-neutral-700 bg-neutral-900/30 hover:bg-neutral-800/50 active:scale-[0.98] cursor-pointer flex flex-col items-center justify-center gap-3 transition group text-center aspect-square"
+                              >
+                                <div className="w-16 h-16 rounded-2xl bg-neutral-800/50 group-hover:bg-amber-500/20 text-neutral-500 group-hover:text-amber-500 flex items-center justify-center transition">
+                                  <Icon name="plus" className="w-8 h-8" />
+                                </div>
+                                <div>
+                                  <h3 className="font-bold text-white text-sm truncate w-full">Create Playlist</h3>
+                                  <p className="text-[10px] text-neutral-400 mt-0.5">New folder</p>
+                                </div>
+                              </div>
+                              {playlists.map(pl => (
+                                <div
+                                  key={pl.id}
+                                  onClick={() => {
+                                    setSelectedPlaylistForView(pl);
+                                    handleStationSelect('playlists', { id: pl.id });
+                                  }}
+                                  className="relative p-4 rounded-2xl border bg-neutral-900/50 hover:bg-neutral-800 active:scale-[0.98] border-neutral-800 cursor-pointer flex flex-col items-center justify-center gap-3 transition group text-center aspect-square"
+                                >
+                                  <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10" onClick={(e) => e.stopPropagation()}>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRenamePlaylist(pl.id);
+                                      }}
+                                      className="p-1 rounded-lg bg-neutral-800/90 hover:bg-amber-500/20 text-neutral-400 hover:text-amber-400 border border-neutral-700/60 transition"
+                                      title="Rename Playlist"
+                                      aria-label="Rename Playlist"
+                                    >
+                                      <Icon name="edit" className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeletePlaylist(pl.id);
+                                      }}
+                                      className="p-1 rounded-lg bg-neutral-800/90 hover:bg-red-500/20 text-neutral-400 hover:text-red-400 border border-neutral-700/60 transition"
+                                      title="Delete Playlist"
+                                      aria-label="Delete Playlist"
+                                    >
+                                      <Icon name="trash" className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                  <div className="w-16 h-16 rounded-2xl bg-neutral-800 group-hover:bg-amber-500/20 text-neutral-500 group-hover:text-amber-500 flex items-center justify-center transition">
+                                    <Icon name="list" className="w-8 h-8" />
+                                  </div>
+                                  <div>
+                                    <h3 className="font-bold text-white text-sm truncate w-full">{pl.name}</h3>
+                                    <p className="text-[10px] text-neutral-400 mt-0.5">{pl.songs.length} tracks</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )
+                      ) : (
+                        <>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="flex items-center gap-4 pl-0">
+                              <button
+                                data-voice-back="true"
+                                onClick={handleGoBack}
+                                className="p-2 rounded-2xl bg-neutral-800 hover:bg-neutral-700 text-white transition flex items-center justify-center cursor-pointer active:scale-95"
+                                title="Back to Playlists"
+                                aria-label="Back to Playlists"
+                              >
+                                <Icon name="skipPrev" className="w-4 h-4 rotate-180" />
+                              </button>
+                              <div>
+                                <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">{selectedPlaylistForView.name}</h2>
+                                <p className="text-xs text-neutral-400">{selectedPlaylistForView.songs.length} tracks</p>
+                              </div>
+                            </div>
+
+                            {/* Action Buttons: Rename, Delete, Share */}
+                            <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => handleRenamePlaylist(selectedPlaylistForView.id)}
+                                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/60 text-xs font-semibold transition active:scale-95 cursor-pointer"
                                 title="Rename Playlist"
                                 aria-label="Rename Playlist"
                               >
-                                <Icon name="edit" className="w-3 h-3" />
+                                <Icon name="edit" className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                <span>Rename</span>
                               </button>
+
                               <button
                                 type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeletePlaylist(pl.id);
-                                }}
-                                className="p-1 rounded-lg bg-neutral-800/90 hover:bg-red-500/20 text-neutral-400 hover:text-red-400 border border-neutral-700/60 transition"
+                                onClick={() => handleDeletePlaylist(selectedPlaylistForView.id)}
+                                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800/80 hover:bg-red-500/20 text-neutral-200 hover:text-red-300 border border-neutral-700/60 hover:border-red-500/40 text-xs font-semibold transition active:scale-95 cursor-pointer"
                                 title="Delete Playlist"
                                 aria-label="Delete Playlist"
                               >
-                                <Icon name="trash" className="w-3 h-3" />
+                                <Icon name="trash" className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                                <span>Delete</span>
+                              </button>
+
+                              {/* Share Playlist Button */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const shareUrl = `${window.location.origin}?playlist=${encodeURIComponent(selectedPlaylistForView.id || selectedPlaylistForView.name)}`;
+                                  const shareTitle = `${selectedPlaylistForView.name} - Loopra Playlist`;
+                                  const shareText = `Check out the "${selectedPlaylistForView.name}" playlist on Loopra with ${selectedPlaylistForView.songs.length} tracks!`;
+
+                                  if (navigator.share) {
+                                    navigator.share({
+                                      title: shareTitle,
+                                      text: shareText,
+                                      url: shareUrl
+                                    }).catch(() => { });
+                                  } else {
+                                    navigator.clipboard?.writeText(shareUrl);
+                                    showToast("Playlist link copied to clipboard!");
+                                  }
+                                }}
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition shadow-sm cursor-pointer active:scale-95"
+                                title="Share Playlist"
+                                aria-label="Share Playlist"
+                              >
+                                <Icon name="share" className="w-4 h-4 text-amber-400 shrink-0" />
+                                <span>Share Playlist</span>
                               </button>
                             </div>
                           </div>
 
-                          {/* Center Collage / Cassette Vinyl Placeholder */}
-                          <div className="relative z-10 w-full flex items-center justify-center my-auto">
-                            {songThumbs.length >= 4 ? (
-                              <div className="grid grid-cols-2 gap-1 w-16 h-16 rounded-xl overflow-hidden shadow-lg border border-white/10">
-                                {songThumbs.map((t, idx) => (
-                                  <img key={idx} src={t} alt="" className="w-full h-full object-cover" />
-                                ))}
-                              </div>
-                            ) : songThumbs.length > 0 ? (
-                              <div className="w-16 h-16 rounded-xl overflow-hidden shadow-lg border border-amber-500/20">
-                                <img src={songThumbs[0]} alt="" className="w-full h-full object-cover" />
-                              </div>
+                          <div className="grid grid-cols-1 gap-2 mt-4">
+                            {selectedPlaylistForView.songs.length === 0 ? (
+                              <p className="text-xs text-neutral-500 p-4 text-center border border-dashed border-neutral-800 rounded-2xl">Empty playlist.</p>
                             ) : (
-                              <div className="w-14 h-14 rounded-2xl bg-neutral-800/80 border border-white/10 group-hover:border-amber-500/30 text-amber-400 flex items-center justify-center shadow-inner group-hover:scale-105 transition">
-                                <Icon name="list" className="w-7 h-7" />
-                              </div>
+                              selectedPlaylistForView.songs.map((track, i) => {
+                                const isMenuOpen = openMenuId === `${track.id}-${i}`;
+                                return (
+                                  <div
+                                    key={track.id + i}
+                                    onClick={() => playSong(track)}
+                                    onContextMenu={(e) => handleTrackContextMenu(e, track)}
+                                    className={`px-3.5 py-2.5 rounded-2xl border grid grid-cols-12 items-center gap-2 cursor-pointer transition-all duration-200 group relative backdrop-blur-md select-none ${isMenuOpen ? 'z-30' : 'z-auto'
+                                      } ${(currentSong?.id || currentSong?.videoId) === (track.id || track.videoId)
+                                        ? 'bg-amber-500/15 border-amber-500/60 shadow-[0_0_20px_rgba(245,158,11,0.2)]'
+                                        : 'bg-neutral-900/50 hover:bg-neutral-900/90 border-neutral-800 hover:border-amber-500/30 active:scale-[0.99]'
+                                      }`}
+                                  >
+                                    {/* Col 1: # Index */}
+                                    <div className="col-span-1 flex items-center justify-center">
+                                      <span className="text-xs font-mono font-medium text-zinc-500 group-hover:text-amber-300">
+                                        {i + 1}
+                                      </span>
+                                    </div>
+
+                                    {/* Col 2: Thumbnail + Title + Artist */}
+                                    <div className="col-span-8 sm:col-span-7 flex items-center gap-3 min-w-0 pr-2">
+                                      <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-11 h-11 rounded-xl object-cover shrink-0 border border-white/10 shadow-md" onError={(e) => handleImageError(e, track.title, track.id)} />
+                                      <div className="min-w-0 flex-1">
+                                        <h4 className="font-bold text-xs sm:text-sm text-white truncate group-hover:text-amber-400 transition">{track.title}</h4>
+                                        <p className="text-[11px] text-zinc-400 truncate mt-0.5">{track.channel || track.artist || 'Artist'}</p>
+                                      </div>
+                                    </div>
+
+                                    {/* Col 3: Duration */}
+                                    <div className="hidden sm:flex col-span-2 items-center justify-center text-xs font-mono text-zinc-400">
+                                      <span>{formatTrackDuration(track.duration)}</span>
+                                    </div>
+
+                                    {/* Col 4: Hover Actions [Play, ✕ Remove, ⋮ More] */}
+                                    <div className={`col-span-3 sm:col-span-2 flex items-center justify-end gap-1.5 relative ${isMenuOpen ? 'z-40' : ''}`} onClick={(e) => e.stopPropagation()}>
+                                      {/* Quick Play on hover */}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          playSong(track);
+                                        }}
+                                        className="p-1.5 rounded-xl bg-white/5 hover:bg-amber-500/20 text-zinc-400 hover:text-amber-400 border border-white/10 hover:border-amber-500/40 transition opacity-80 sm:opacity-0 group-hover:opacity-100 shrink-0 cursor-pointer"
+                                        title="Play Track"
+                                        aria-label="Play Track"
+                                      >
+                                        <Icon name={(currentSong?.id || currentSong?.videoId) === (track.id || track.videoId) && isPlaying ? "pause" : "play"} className="w-3.5 h-3.5 fill-current" />
+                                      </button>
+
+                                      {/* Quick Delete from Playlist (One-Tap Cross Icon) */}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleRemoveSongFromPlaylist(selectedPlaylistForView.id, track.id || track.videoId);
+                                        }}
+                                        className="p-1.5 rounded-xl bg-white/5 hover:bg-red-500/15 text-neutral-400 hover:text-red-400 border border-white/10 hover:border-red-500/30 transition flex items-center shrink-0 cursor-pointer active:scale-95"
+                                        title="Remove from Playlist"
+                                        aria-label="Remove from Playlist"
+                                      >
+                                        <Icon name="close" className="w-3.5 h-3.5 shrink-0" />
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`);
+                                        }}
+                                        className="p-1.5 text-neutral-400 hover:text-white rounded-xl hover:bg-white/10 transition shrink-0 cursor-pointer"
+                                        title="More Options"
+                                        aria-label="More Options"
+                                      >
+                                        <Icon name="moreVertical" className="w-4 h-4 shrink-0" />
+                                      </button>
+
+                                      {isMenuOpen && (
+                                        <div className="absolute right-0 top-full mt-1.5 w-44 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
+                                          {currentSong?.id !== track.id && (
+                                            <button onClick={(e) => { e.stopPropagation(); queue.some(s => s.id === track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s => s.id === track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
+                                          )}
+                                          <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{isSongLiked(track) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
+                                          <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
+                                            <span>⏭️</span>
+                                            <span>Play Next</span>
+                                          </button>
+                                          <button onClick={(e) => { e.stopPropagation(); handleFindSimilar(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-amber-400 hover:bg-neutral-800 transition flex items-center gap-2">
+                                            <span>✨</span>
+                                            <span>Similar Songs</span>
+                                          </button>
+                                          <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
+                                          <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })
                             )}
                           </div>
+                        </>
+                      )}
+                    </div>
+                  )}
 
-                          {/* Bottom Label */}
-                          <div className="relative z-10 text-left pt-1">
-                            <h3 className="font-extrabold text-white text-xs sm:text-sm truncate w-full group-hover:text-amber-300 transition">
-                              {pl.name}
-                            </h3>
-                            <p className="text-[10px] text-zinc-400 truncate">Tap to play & view</p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              ) : (
-                /* Original V1 Playlist Grid Layout */
-                <>
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">Your Playlists</h2>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-6">
-                    <div 
-                      onClick={() => {
-                        const name = window.prompt("Enter new playlist name:");
-                        if (name && name.trim()) {
+                  {activeTab === 'downloads' && (
+                    <div key={`page-downloads-${offlineSubView}`} className="page-transition flex-1 w-full px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+                      {offlineSubView === 'explore' ? (
+                        <OfflineEligibleExploreView
+                          onBack={handleGoBack}
+                          onPlayTrack={(track, list) => {
+                            playSong(track, list || [track]);
+                          }}
+                          currentSong={currentSong}
+                          isPlaying={isPlaying}
+                          showToast={showToast}
+                          backendUrl={BACKEND_URL}
+                        />
+                      ) : (
+                        <OfflineLibraryView
+                          onPlayTrack={(track, list) => {
+                            playSong(track, list || [track]);
+                          }}
+                          currentSong={currentSong}
+                          isPlaying={isPlaying}
+                          showToast={showToast}
+                          onExploreAuthorizedTracks={() => {
+                            setOfflineSubView('explore');
+                            handleStationSelect('downloads', { subView: 'explore' });
+                          }}
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {activeTab === 'mood' && (
+                    <div key="page-mood" className="page-transition flex-1 w-full px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+                      <MoodToMusicSection
+                        onPlaySong={playSong}
+                        onAddToQueue={(track) => addToQueue(track)}
+                        onToggleFavorite={toggleLike}
+                        favorites={likedSongs}
+                        currentSong={currentSong}
+                        isPlaying={isPlaying}
+                        user={user}
+                        token={authToken}
+                        backendUrl={BACKEND_URL}
+                        onSavePlaylist={(name, playlistTracks) => {
                           const newPlaylist = {
                             id: Date.now().toString(),
-                            name: name.trim(),
-                            songs: []
+                            name,
+                            songs: playlistTracks
                           };
-                          setPlaylists([...playlists, newPlaylist]);
-                        }
-                      }}
-                      className="p-4 rounded-2xl border border-dashed border-neutral-700 bg-neutral-900/30 hover:bg-neutral-800/50 active:scale-[0.98] cursor-pointer flex flex-col items-center justify-center gap-3 transition group text-center aspect-square"
-                    >
-                      <div className="w-16 h-16 rounded-2xl bg-neutral-800/50 group-hover:bg-amber-500/20 text-neutral-500 group-hover:text-amber-500 flex items-center justify-center transition">
-                        <Icon name="plus" className="w-8 h-8" />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-white text-sm truncate w-full">Create Playlist</h3>
-                        <p className="text-[10px] text-neutral-400 mt-0.5">New folder</p>
-                      </div>
-                    </div>
-                    {playlists.map(pl => (
-                      <div 
-                        key={pl.id} 
-                        onClick={() => {
-                          setSelectedPlaylistForView(pl);
-                          handleStationSelect('playlists', { id: pl.id });
+                          setPlaylists(prev => [...prev, newPlaylist]);
+                          showToast(`Saved mood playlist "${name}" (${playlistTracks.length} tracks)`);
                         }}
-                        className="relative p-4 rounded-2xl border bg-neutral-900/50 hover:bg-neutral-800 active:scale-[0.98] border-neutral-800 cursor-pointer flex flex-col items-center justify-center gap-3 transition group text-center aspect-square"
-                      >
-                        <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRenamePlaylist(pl.id);
-                            }}
-                            className="p-1 rounded-lg bg-neutral-800/90 hover:bg-amber-500/20 text-neutral-400 hover:text-amber-400 border border-neutral-700/60 transition"
-                            title="Rename Playlist"
-                            aria-label="Rename Playlist"
-                          >
-                            <Icon name="edit" className="w-3 h-3" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeletePlaylist(pl.id);
-                            }}
-                            className="p-1 rounded-lg bg-neutral-800/90 hover:bg-red-500/20 text-neutral-400 hover:text-red-400 border border-neutral-700/60 transition"
-                            title="Delete Playlist"
-                            aria-label="Delete Playlist"
-                          >
-                            <Icon name="trash" className="w-3 h-3" />
-                          </button>
-                        </div>
-                        <div className="w-16 h-16 rounded-2xl bg-neutral-800 group-hover:bg-amber-500/20 text-neutral-500 group-hover:text-amber-500 flex items-center justify-center transition">
-                          <Icon name="list" className="w-8 h-8" />
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-white text-sm truncate w-full">{pl.name}</h3>
-                          <p className="text-[10px] text-neutral-400 mt-0.5">{pl.songs.length} tracks</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )
-            ) : (
-              <>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-4 pl-0">
-                    <button 
-                      data-voice-back="true"
-                      onClick={handleGoBack}
-                      className="p-2 rounded-2xl bg-neutral-800 hover:bg-neutral-700 text-white transition flex items-center justify-center cursor-pointer active:scale-95"
-                      title="Back to Playlists"
-                      aria-label="Back to Playlists"
-                    >
-                      <Icon name="skipPrev" className="w-4 h-4 rotate-180" />
-                    </button>
-                    <div>
-                      <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">{selectedPlaylistForView.name}</h2>
-                      <p className="text-xs text-neutral-400">{selectedPlaylistForView.songs.length} tracks</p>
+                      />
                     </div>
-                  </div>
-
-                  {/* Action Buttons: Rename, Delete, Share */}
-                  <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-                    <button
-                      type="button"
-                      onClick={() => handleRenamePlaylist(selectedPlaylistForView.id)}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/60 text-xs font-semibold transition active:scale-95 cursor-pointer"
-                      title="Rename Playlist"
-                      aria-label="Rename Playlist"
-                    >
-                      <Icon name="edit" className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                      <span>Rename</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDeletePlaylist(selectedPlaylistForView.id)}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800/80 hover:bg-red-500/20 text-neutral-200 hover:text-red-300 border border-neutral-700/60 hover:border-red-500/40 text-xs font-semibold transition active:scale-95 cursor-pointer"
-                      title="Delete Playlist"
-                      aria-label="Delete Playlist"
-                    >
-                      <Icon name="trash" className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                      <span>Delete</span>
-                    </button>
-
-                    {/* Share Playlist Button */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const shareUrl = `${window.location.origin}?playlist=${encodeURIComponent(selectedPlaylistForView.id || selectedPlaylistForView.name)}`;
-                        const shareTitle = `${selectedPlaylistForView.name} - Loopra Playlist`;
-                        const shareText = `Check out the "${selectedPlaylistForView.name}" playlist on Loopra with ${selectedPlaylistForView.songs.length} tracks!`;
-
-                        if (navigator.share) {
-                          navigator.share({
-                            title: shareTitle,
-                            text: shareText,
-                            url: shareUrl
-                          }).catch(() => {});
-                        } else {
-                          navigator.clipboard?.writeText(shareUrl);
-                          showToast("Playlist link copied to clipboard!");
-                        }
-                      }}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition shadow-sm cursor-pointer active:scale-95"
-                      title="Share Playlist"
-                      aria-label="Share Playlist"
-                    >
-                      <Icon name="share" className="w-4 h-4 text-amber-400 shrink-0" />
-                      <span>Share Playlist</span>
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-1 gap-2 mt-4">
-                  {selectedPlaylistForView.songs.length === 0 ? (
-                    <p className="text-xs text-neutral-500 p-4 text-center border border-dashed border-neutral-800 rounded-2xl">Empty playlist.</p>
-                  ) : (
-                    selectedPlaylistForView.songs.map((track, i) => {
-                      const isMenuOpen = openMenuId === `${track.id}-${i}`;
-                      return (
-                        <div
-                          key={track.id + i}
-                          onClick={() => playSong(track)}
-                          onContextMenu={(e) => handleTrackContextMenu(e, track)}
-                          className={`px-3.5 py-2.5 rounded-2xl border grid grid-cols-12 items-center gap-2 cursor-pointer transition-all duration-200 group relative backdrop-blur-md select-none ${
-                            isMenuOpen ? 'z-30' : 'z-auto'
-                          } ${
-                            (currentSong?.id || currentSong?.videoId) === (track.id || track.videoId)
-                              ? 'bg-amber-500/15 border-amber-500/60 shadow-[0_0_20px_rgba(245,158,11,0.2)]'
-                              : 'bg-neutral-900/50 hover:bg-neutral-900/90 border-neutral-800 hover:border-amber-500/30 active:scale-[0.99]'
-                          }`}
-                        >
-                          {/* Col 1: # Index */}
-                          <div className="col-span-1 flex items-center justify-center">
-                            <span className="text-xs font-mono font-medium text-zinc-500 group-hover:text-amber-300">
-                              {i + 1}
-                            </span>
-                          </div>
-
-                          {/* Col 2: Thumbnail + Title + Artist */}
-                          <div className="col-span-8 sm:col-span-7 flex items-center gap-3 min-w-0 pr-2">
-                            <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-11 h-11 rounded-xl object-cover shrink-0 border border-white/10 shadow-md" onError={(e) => handleImageError(e, track.title, track.id)} />
-                            <div className="min-w-0 flex-1">
-                              <h4 className="font-bold text-xs sm:text-sm text-white truncate group-hover:text-amber-400 transition">{track.title}</h4>
-                              <p className="text-[11px] text-zinc-400 truncate mt-0.5">{track.channel || track.artist || 'Artist'}</p>
-                            </div>
-                          </div>
-
-                          {/* Col 3: Duration */}
-                          <div className="hidden sm:flex col-span-2 items-center justify-center text-xs font-mono text-zinc-400">
-                            <span>{formatTrackDuration(track.duration)}</span>
-                          </div>
-
-                          {/* Col 4: Hover Actions [Play, ✕ Remove, ⋮ More] */}
-                          <div className={`col-span-3 sm:col-span-2 flex items-center justify-end gap-1.5 relative ${isMenuOpen ? 'z-40' : ''}`} onClick={(e) => e.stopPropagation()}>
-                            {/* Quick Play on hover */}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                playSong(track);
-                              }}
-                              className="p-1.5 rounded-xl bg-white/5 hover:bg-amber-500/20 text-zinc-400 hover:text-amber-400 border border-white/10 hover:border-amber-500/40 transition opacity-80 sm:opacity-0 group-hover:opacity-100 shrink-0 cursor-pointer"
-                              title="Play Track"
-                              aria-label="Play Track"
-                            >
-                              <Icon name={(currentSong?.id || currentSong?.videoId) === (track.id || track.videoId) && isPlaying ? "pause" : "play"} className="w-3.5 h-3.5 fill-current" />
-                            </button>
-
-                            {/* Quick Delete from Playlist (One-Tap Cross Icon) */}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRemoveSongFromPlaylist(selectedPlaylistForView.id, track.id || track.videoId);
-                              }}
-                              className="p-1.5 rounded-xl bg-white/5 hover:bg-red-500/15 text-neutral-400 hover:text-red-400 border border-white/10 hover:border-red-500/30 transition flex items-center shrink-0 cursor-pointer active:scale-95"
-                              title="Remove from Playlist"
-                              aria-label="Remove from Playlist"
-                            >
-                              <Icon name="close" className="w-3.5 h-3.5 shrink-0" />
-                            </button>
-
-                            <button 
-                              type="button"
-                              onClick={(e) => { 
-                                e.stopPropagation(); 
-                                setOpenMenuId(isMenuOpen ? null : `${track.id}-${i}`); 
-                              }} 
-                              className="p-1.5 text-neutral-400 hover:text-white rounded-xl hover:bg-white/10 transition shrink-0 cursor-pointer"
-                              title="More Options"
-                              aria-label="More Options"
-                            >
-                              <Icon name="moreVertical" className="w-4 h-4 shrink-0" />
-                            </button>
-
-                            {isMenuOpen && (
-                              <div className="absolute right-0 top-full mt-1.5 w-44 bg-neutral-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden z-50 animate-fadeIn">
-                                {currentSong?.id !== track.id && (
-                                  <button onClick={(e) => { e.stopPropagation(); queue.some(s=>s.id===track.id) ? removeFromQueue(track.id) : addToQueue(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">{queue.some(s=>s.id===track.id) ? 'Remove from Queue' : 'Add to Queue'}</button>
-                                )}
-                                <button onClick={(e) => { e.stopPropagation(); toggleLike(track); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-pink-400 hover:bg-neutral-800 transition">{isSongLiked(track) ? 'Remove from Favourite' : 'Add to Favourite'}</button>
-                                <button onClick={(e) => { e.stopPropagation(); playNext(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2">
-                                <span>⏭️</span>
-                                <span>Play Next</span>
-                              </button>
-                              <button onClick={(e) => { e.stopPropagation(); handleFindSimilar(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-amber-400 hover:bg-neutral-800 transition flex items-center gap-2">
-                                <span>✨</span>
-                                <span>Similar Songs</span>
-                              </button>
-                              <button onClick={(e) => { e.stopPropagation(); handleAddToPlaylistClick(track, e); setOpenMenuId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition">Add to Playlist</button>
-                                <DownloadTrackButton track={track} variant="menu-item" showToast={showToast} />
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })
                   )}
-                </div>
-              </>
-            )}
-          </div>
-        )}
 
-        {activeTab === 'downloads' && (
-          <div key={`page-downloads-${offlineSubView}`} className="page-transition flex-1 w-full px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
-            {offlineSubView === 'explore' ? (
-              <OfflineEligibleExploreView
-                onBack={handleGoBack}
-                onPlayTrack={(track, list) => {
-                  playSong(track, list || [track]);
-                }}
-                currentSong={currentSong}
-                isPlaying={isPlaying}
-                showToast={showToast}
-                backendUrl={BACKEND_URL}
-              />
-            ) : (
-              <OfflineLibraryView
-                onPlayTrack={(track, list) => {
-                  playSong(track, list || [track]);
-                }}
-                currentSong={currentSong}
-                isPlaying={isPlaying}
-                showToast={showToast}
-                onExploreAuthorizedTracks={() => {
-                  setOfflineSubView('explore');
-                  handleStationSelect('downloads', { subView: 'explore' });
-                }}
-              />
-            )}
-          </div>
-        )}
+                  {(activeTab === 'radio' || activeTab === 'indian-radio') && (
+                    <div key="page-radio" className="page-transition flex-1 w-full px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+                      <IndianRadioView
+                        currentSong={currentSong}
+                        isPlaying={isPlaying}
+                        onPlayStation={playSong}
+                        onTogglePlay={togglePlayPause}
+                        apiBase={BACKEND_URL}
+                      />
+                    </div>
+                  )}
 
-        {activeTab === 'mood' && (
-          <div key="page-mood" className="page-transition flex-1 w-full px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
-            <MoodToMusicSection
-              onPlaySong={playSong}
-              onAddToQueue={(track) => addToQueue(track)}
-              onToggleFavorite={toggleLike}
-              favorites={likedSongs}
-              currentSong={currentSong}
-              isPlaying={isPlaying}
+                  {activeTab === 'timemachine' && (
+                    <div key="page-timemachine" className="page-transition flex-1 w-full px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+                      <TimeMachineRadio
+                        cmsConfig={cmsConfig}
+                        onPlaySong={playSong}
+                        onAddToQueue={(track) => addToQueue(track)}
+                        onToggleFavorite={toggleLike}
+                        favorites={likedSongs}
+                        currentSong={currentSong}
+                        isPlaying={isPlaying}
+                        backendUrl={BACKEND_URL}
+                      />
+                    </div>
+                  )}
+
+                  {activeTab === 'activity' && (
+                    <div key="page-activity" className="page-transition flex-1 w-full px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
+                      <ActivityFeed
+                        user={user}
+                        token={authToken}
+                        onPlaySong={playSong}
+                        onAddToQueue={(track) => addToQueue(track)}
+                        onToggleFavorite={toggleLike}
+                        favorites={likedSongs}
+                        currentSong={currentSong}
+                        isPlaying={isPlaying}
+                        backendUrl={BACKEND_URL}
+                      />
+                    </div>
+                  )}
+
+                  {activeTab === 'admin' && (
+                    <div key="page-admin" className="page-transition fixed inset-0 z-[60] bg-neutral-950 overflow-y-auto">
+                      <AdminDashboard
+                        user={user}
+                        token={authToken}
+                        backendUrl={BACKEND_URL}
+                        onExit={() => {
+                          handleGoBack();
+                          setReviewsRefreshKey(k => k + 1);
+                          // Revert any uncommitted live draft preview back to published config
+                          const published = getCachedCmsConfig();
+                          setCmsConfig(published);
+                          applyThemeToDom(published.theme, true);
+                          fetchPublicCmsConfig(BACKEND_URL).then(cfg => {
+                            if (cfg) {
+                              const normalized = normalizeCmsConfig(cfg);
+                              setCmsConfig(normalized);
+                              applyThemeToDom(normalized.theme, true);
+                            }
+                          });
+                        }}
+                        onOpenAuth={openAuthModal}
+                        showToast={showToast}
+                        onReviewsUpdated={() => setReviewsRefreshKey(k => k + 1)}
+                        onUserUpdated={(updatedUser) => {
+                          if (!updatedUser) return;
+                          setUser(prev => {
+                            const merged = { ...(prev || {}), ...updatedUser };
+                            try {
+                              localStorage.setItem('afterhours_user', JSON.stringify(merged));
+                            } catch (e) {
+                              console.warn('[LocalStorage] Could not persist updated user:', e);
+                            }
+                            return merged;
+                          });
+                        }}
+                        onPreviewConfig={(previewConfig) => {
+                          if (previewConfig) {
+                            const normalized = normalizeCmsConfig(previewConfig);
+                            setCmsConfig(normalized);
+                            applyThemeToDom(normalized.theme, false);
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {(activeTab === 'download' || activeTab === 'download-app' || activeTab === 'apk') && (
+                    <div key="page-download" className="page-transition w-full px-2 sm:px-4 md:px-8 space-y-6 relative z-10">
+                      <AndroidApkDownloadSection onBack={handleGoBack} />
+                    </div>
+                  )}
+
+                  {activeTab === 'dj-club' && (
+                    <div key="page-dj-club" className="absolute inset-0 z-30 w-full h-full overflow-hidden">
+                      <DjClubPage
+                        currentSong={currentSong}
+                        isPlaying={isPlaying}
+                        onPlaySong={playSong}
+                        onTogglePlay={togglePlayPause}
+                        onNextSong={handleNextSong}
+                        onPrevSong={handlePrevSong}
+                        volume={volume}
+                        onVolumeChange={handleVolumeChange}
+                        isShuffle={isShuffle}
+                        onToggleShuffle={toggleShuffle}
+                        isRepeat={isRepeat}
+                        onToggleRepeat={toggleRepeatMode}
+                        onNavigate={(tab) => {
+                          setActiveTab(tab);
+                          window.history.pushState({ tab }, '', buildPath(tab));
+                        }}
+                        user={user}
+                        cmsConfig={cmsConfig}
+                        onOpenSearch={() => {
+                          setActiveTab('discover');
+                          window.history.pushState({ tab: 'discover' }, '', '/discover');
+                        }}
+                        onOpenProfile={() => setIsAccountMenuOpen(true)}
+                      />
+                    </div>
+                  )}
+                </main>
+              );
+            })()}
+            <ListeningRoomsModal
+              isOpen={isListeningRoomsOpen}
+              onClose={() => setIsListeningRoomsOpen(false)}
+              socket={socket}
               user={user}
-              token={authToken}
-              backendUrl={BACKEND_URL}
-              onSavePlaylist={(name, playlistTracks) => {
-                const newPlaylist = {
-                  id: Date.now().toString(),
-                  name,
-                  songs: playlistTracks
-                };
-                setPlaylists(prev => [...prev, newPlaylist]);
-                showToast(`Saved mood playlist "${name}" (${playlistTracks.length} tracks)`);
-              }}
-            />
-          </div>
-        )}
-
-        {(activeTab === 'radio' || activeTab === 'indian-radio') && (
-          <div key="page-radio" className="page-transition flex-1 w-full px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
-            <IndianRadioView
               currentSong={currentSong}
               isPlaying={isPlaying}
-              onPlayStation={playSong}
-              onTogglePlay={togglePlayPause}
-              apiBase={BACKEND_URL}
-            />
-          </div>
-        )}
-
-        {activeTab === 'timemachine' && (
-          <div key="page-timemachine" className="page-transition flex-1 w-full px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
-            <TimeMachineRadio
-              cmsConfig={cmsConfig}
               onPlaySong={playSong}
-              onAddToQueue={(track) => addToQueue(track)}
-              onToggleFavorite={toggleLike}
-              favorites={likedSongs}
-              currentSong={currentSong}
-              isPlaying={isPlaying}
-              backendUrl={BACKEND_URL}
-            />
-          </div>
-        )}
-
-        {activeTab === 'activity' && (
-          <div key="page-activity" className="page-transition flex-1 w-full px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
-            <ActivityFeed
-              user={user}
-              token={authToken}
-              onPlaySong={playSong}
-              onAddToQueue={(track) => addToQueue(track)}
-              onToggleFavorite={toggleLike}
-              favorites={likedSongs}
-              currentSong={currentSong}
-              isPlaying={isPlaying}
-              backendUrl={BACKEND_URL}
-            />
-          </div>
-        )}
-
-        {activeTab === 'admin' && (
-          <div key="page-admin" className="page-transition fixed inset-0 z-[60] bg-neutral-950 overflow-y-auto">
-            <AdminDashboard
-              user={user}
-              token={authToken}
-              backendUrl={BACKEND_URL}
-              onExit={() => {
-                handleGoBack();
-                setReviewsRefreshKey(k => k + 1);
-                // Revert any uncommitted live draft preview back to published config
-                const published = getCachedCmsConfig();
-                setCmsConfig(published);
-                applyThemeToDom(published.theme, true);
-                fetchPublicCmsConfig(BACKEND_URL).then(cfg => {
-                  if (cfg) {
-                    const normalized = normalizeCmsConfig(cfg);
-                    setCmsConfig(normalized);
-                    applyThemeToDom(normalized.theme, true);
-                  }
-                });
-              }}
-              onOpenAuth={openAuthModal}
               showToast={showToast}
-              onReviewsUpdated={() => setReviewsRefreshKey(k => k + 1)}
-              onUserUpdated={(updatedUser) => {
-                if (!updatedUser) return;
-                setUser(prev => {
-                  const merged = { ...(prev || {}), ...updatedUser };
-                  try {
-                    localStorage.setItem('afterhours_user', JSON.stringify(merged));
-                  } catch (e) {
-                    console.warn('[LocalStorage] Could not persist updated user:', e);
-                  }
-                  return merged;
-                });
-              }}
-              onPreviewConfig={(previewConfig) => {
-                if (previewConfig) {
-                  const normalized = normalizeCmsConfig(previewConfig);
-                  setCmsConfig(normalized);
-                  applyThemeToDom(normalized.theme, false);
-                }
-              }}
             />
-          </div>
-        )}
 
-        {(activeTab === 'download' || activeTab === 'download-app' || activeTab === 'apk') && (
-          <div key="page-download" className="page-transition w-full px-2 sm:px-4 md:px-8 space-y-6 relative z-10">
-            <AndroidApkDownloadSection onBack={handleGoBack} />
-          </div>
-        )}
-
-        {activeTab === 'dj-club' && (
-          <div key="page-dj-club" className="absolute inset-0 z-30 w-full h-full overflow-hidden">
-            <DjClubPage
-              currentSong={currentSong}
-              isPlaying={isPlaying}
+            <SimilarSongsModal
+              isOpen={Boolean(similarSongsTrack)}
+              onClose={() => setSimilarSongsTrack(null)}
+              track={similarSongsTrack}
               onPlaySong={playSong}
-              onTogglePlay={togglePlayPause}
-              onNextSong={handleNextSong}
-              onPrevSong={handlePrevSong}
-              volume={volume}
-              onVolumeChange={handleVolumeChange}
-              isShuffle={isShuffle}
-              onToggleShuffle={toggleShuffle}
-              isRepeat={isRepeat}
-              onToggleRepeat={toggleRepeatMode}
-              onNavigate={(tab) => {
-                setActiveTab(tab);
-                window.history.pushState({ tab }, '', buildPath(tab));
-              }}
-              user={user}
-              cmsConfig={cmsConfig}
-              onOpenSearch={() => {
-                setActiveTab('discover');
-                window.history.pushState({ tab: 'discover' }, '', '/discover');
-              }}
-              onOpenProfile={() => setIsAccountMenuOpen(true)}
+              onAddToQueue={addToQueue}
+              showToast={showToast}
             />
-          </div>
-        )}
-      </main>
-    );
-  })()}
-      <ListeningRoomsModal
-        isOpen={isListeningRoomsOpen}
-        onClose={() => setIsListeningRoomsOpen(false)}
-        socket={socket}
-        user={user}
-        currentSong={currentSong}
-        isPlaying={isPlaying}
-        onPlaySong={playSong}
-        showToast={showToast}
-      />
 
-      <SimilarSongsModal
-        isOpen={Boolean(similarSongsTrack)}
-        onClose={() => setSimilarSongsTrack(null)}
-        track={similarSongsTrack}
-        onPlaySong={playSong}
-        onAddToQueue={addToQueue}
-        showToast={showToast}
-      />
-
-      {isBottomPlayerVisible && (
-        <footer 
-          role="region"
-          aria-label="Audio player mini bar"
-          onClick={() => handleOpenExpandedPlayer('player')}
-          className={`fixed md:relative z-40 transition-all duration-300 ease-in-out select-none cursor-pointer ${showQueuePanel ? 'hidden' : 'block'}
+            {isBottomPlayerVisible && (
+              <footer
+                role="region"
+                aria-label="Audio player mini bar"
+                onClick={() => handleOpenExpandedPlayer('player')}
+                className={`fixed md:relative z-40 transition-all duration-300 ease-in-out select-none cursor-pointer ${showQueuePanel ? 'hidden' : 'block'}
             bottom-[calc(3.75rem+max(0.5rem,env(safe-area-inset-bottom)))] left-1/2 -translate-x-1/2
             rounded-2xl border border-amber-500/30 hover:border-amber-500/50 bg-neutral-950/95 backdrop-blur-2xl
             shadow-[0_10px_35px_rgba(0,0,0,0.8),0_0_20px_rgba(var(--accent-rgb,245,158,11),0.06)]
@@ -9960,1583 +9932,1065 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             ${isMiniPlayerExpanded ? 'w-[calc(100%-1rem)] max-w-xl' : 'w-[calc(100%-1.75rem)] max-w-sm sm:max-w-md'}
             md:bottom-0 md:inset-x-0 md:translate-x-0 md:shrink-0
             md:w-full md:max-w-none md:rounded-none md:border-t md:border-x-0 md:border-b-0 md:border-amber-500/20 md:bg-neutral-950/95 md:py-3 md:pl-6 md:pr-28 md:shadow-[0_-10px_35px_rgba(0,0,0,0.8),0_0_20px_rgba(var(--accent-rgb,245,158,11),0.06)]`}
-        >
-          {/* Quick Horizontal Expand/Collapse Pill for Mobile */}
-          <div className="md:hidden absolute -top-3.5 right-3 z-50 shrink-0 pointer-events-auto">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsMiniPlayerExpanded(prev => !prev);
-              }}
-              className="px-2.5 py-0.5 rounded-full bg-neutral-900/95 hover:bg-neutral-800 border border-amber-500/40 text-amber-400 text-[10px] font-bold shadow-lg flex items-center gap-1 transition shrink-0 cursor-pointer select-none active:scale-95"
-              title={isMiniPlayerExpanded ? "Collapse mini-player width" : "Expand mini-player horizontally"}
-              aria-label={isMiniPlayerExpanded ? "Collapse mini-player width" : "Expand mini-player horizontally"}
-            >
-              <Icon name={isMiniPlayerExpanded ? "collapse" : "expand"} className="w-3.5 h-3.5 shrink-0" />
-              <span>{isMiniPlayerExpanded ? "Compact" : "Expand Player"}</span>
-            </button>
-          </div>
-
-          {/* Desktop Full 3-Section Footer (>= md) */}
-          <div className="hidden md:flex w-full items-center justify-between gap-6 px-4 md:px-8">
-            {/* Zone 1 (Left): Artwork, Track Info with overflow marquee, and Like Button */}
-            <div 
-              className="flex items-center gap-3 w-1/4 min-w-0 select-none cursor-pointer"
-              onClick={() => handleOpenExpandedPlayer('player')}
-              title="Expand Now Playing"
-            >
-              <div className="relative group shrink-0">
-                <img 
-                  src={getCleanThumbnail(currentSong)} 
-                  alt={currentSong.title || ""} 
-                  className="rounded-xl object-cover shrink-0 shadow-md transition-all duration-300 w-12 h-12 border border-amber-500/30 group-hover:border-amber-400" 
-                  onError={(e) => handleImageError(e, currentSong.title, currentSong.id)} 
-                />
-                {isPlaying && (
-                  <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-gradient-to-tr from-amber-500 to-orange-500 text-neutral-950 flex items-center justify-center text-[9px] font-bold animate-spin-slow shadow-md border border-neutral-950">
-                    💿
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0 flex-1 overflow-hidden">
-                <h4 className="font-bold text-xs text-white truncate group-hover:text-amber-300 transition-colors whitespace-nowrap">{currentSong.title}</h4>
-                <p className="text-[10px] text-amber-400/90 truncate select-none mt-0.5">{currentSong.channel || currentSong.artist}</p>
-              </div>
-              <div className="flex items-center gap-1 shrink-0 ml-1" onClick={(e) => e.stopPropagation()}>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); toggleLike(currentSong); }} 
-                  className="p-1.5 rounded-full hover:bg-white/10 text-neutral-400 hover:text-pink-500 transition cursor-pointer shrink-0" 
-                  title={isSongLiked(currentSong) ? "Unlike" : "Like"}
-                  aria-label="Toggle Like"
-                >
-                  <Icon name={isSongLiked(currentSong) ? "heart" : "heartOutline"} className={`w-4 h-4 ${isSongLiked(currentSong) ? 'text-pink-500 fill-pink-500' : 'text-neutral-400'}`} />
-                </button>
-                <button onClick={(e) => handleAddToPlaylistClick(currentSong, e)} className="p-1.5 rounded-full hover:bg-white/10 text-neutral-400 hover:text-amber-400 transition cursor-pointer shrink-0" title="Add to Playlist">
-                  <Icon name="plus" className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Zone 2 (Center): Playback Controls & Scrubber */}
-            <div className="flex flex-col items-center w-2/4 gap-1.5 animate-fadeIn min-w-0" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center gap-5 shrink-0">
-                <button onClick={toggleShuffle} className={`transition cursor-pointer p-1 rounded-full hover:bg-white/5 ${isShuffle ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} title={isShuffle ? "Shuffle On" : "Shuffle Off"}>
-                  <Icon name="shuffle" className="w-4 h-4 shrink-0" />
-                </button>
-                <button onClick={handlePrevSong} className="text-neutral-300 hover:text-white transition cursor-pointer p-1 rounded-full hover:bg-white/5" title="Previous Track">
-                  <Icon name="skipPrev" className="w-5 h-5 shrink-0" />
-                </button>
-                <button onClick={togglePlayPause} className="w-11 h-11 rounded-full bg-amber-500 hover:bg-amber-400 active:scale-95 text-neutral-950 flex items-center justify-center font-bold shadow-[0_0_20px_rgba(245,158,11,0.5)] hover:shadow-[0_0_28px_rgba(245,158,11,0.7)] transition-all shrink-0 cursor-pointer border border-amber-300/40" title={isPlaying ? "Pause" : "Play"}>
-                  <Icon name={isPlaying ? "pause" : "play"} className="w-5 h-5 fill-current" />
-                </button>
-                <button onClick={handleNextSong} className="text-neutral-300 hover:text-white transition cursor-pointer p-1 rounded-full hover:bg-white/5" title="Next Track">
-                  <Icon name="skipNext" className="w-5 h-5 shrink-0" />
-                </button>
-                <button 
-                  onClick={toggleRepeatMode} 
-                  className={`relative transition cursor-pointer p-1 rounded-full hover:bg-white/5 ${isRepeat ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} 
-                  title={isRepeat === 'one' ? 'Repeat One' : isRepeat === 'all' ? 'Repeat All' : 'Repeat Off'}
-                >
-                  <Icon name="repeat" className="w-4 h-4 shrink-0" />
-                  {isRepeat === 'one' && (
-                    <span className="absolute -top-1 -right-1 text-[8px] font-bold bg-amber-500 text-white rounded-full w-3 h-3 flex items-center justify-center">1</span>
-                  )}
-                </button>
-              </div>
-
-              {/* Dedicated Scrubber & Time Display Row */}
-              <div className="w-full flex items-center gap-3">
-                <PlayerProgress 
-                  playerRef={playerRef} 
-                  isPlaying={isPlaying} 
-                  onSeek={handleSeek} 
-                  currentSongId={currentSong?.id} 
-                  isRadio={Boolean(currentSong?.isRadio)} 
-                  currentTimeRef={currentTimeRef} 
-                  durationRef={durationRef} 
-                />
-              </div>
-            </div>
-
-            {/* Zone 3 (Right): Volume Slider with Mute Toggle, Queue Toggle, and Avatar Roam Status */}
-            <div className="flex items-center justify-end w-1/4 gap-2.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-              {/* Avatar Free Roam Quick Status Pill (Strictly Admin Only and when Voice/Avatar is active) */}
-              {isAdmin && isVoiceActive && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) === 'true';
-                      const next = !cur;
-                      localStorage.setItem('loopra_avatar_roaming', String(next));
-                      localStorage.setItem('loopra_avatar_roam', String(next));
-                      window.dispatchEvent(new Event('storage'));
-                      showToast?.(`Avatar Roam ${next ? 'Active' : 'Parked'}`);
-                    } catch (_) {}
-                  }}
-                  className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-900/80 hover:bg-neutral-800 border border-neutral-800 text-[10px] font-mono text-neutral-400 hover:text-amber-300 transition cursor-pointer shadow-sm shrink-0"
-                  title="Toggle Avatar Roam Status (Admin Only)"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                  <span>ROAM</span>
-                </button>
-              )}
-
-              {/* Volume Slider & Click-to-Mute Toggle Icon */}
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={handleToggleMute}
-                  className="p-1 text-neutral-400 hover:text-white transition cursor-pointer shrink-0"
-                  title={isMuted ? "Unmute" : "Mute Audio"}
-                  aria-label={isMuted ? "Unmute" : "Mute Audio"}
-                >
-                  <Icon name={isMuted ? "volumeMute" : volume === 0 ? "volumeMute" : "volume"} className="w-4 h-4 shrink-0" />
-                </button>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={isMuted ? 0 : volume}
-                  onChange={handleVolumeChange}
-                  className="w-18 lg:w-22 h-1 bg-neutral-800 rounded-xl appearance-none cursor-pointer accent-amber-500 shrink-0"
-                />
-              </div>
-
-              {/* Queue Panel Toggle Button */}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowQueuePanel(prev => !prev);
-                }}
-                className={`p-1.5 rounded-xl border transition shrink-0 cursor-pointer flex items-center gap-1 text-xs active:scale-95 ${
-                  showQueuePanel
-                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 shadow-sm'
-                    : 'bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-amber-400 border-neutral-700/60'
-                }`}
-                title={showQueuePanel ? "Close Queue" : "Open Queue"}
-                aria-label="Queue list toggle"
               >
-                <Icon name="list" className="w-4 h-4 shrink-0" />
-                <span className="hidden lg:inline text-[11px] font-medium">Queue</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Mobile Sleek Single-Row Mini-Player (< md) */}
-          <div 
-            className="md:hidden flex items-center justify-between gap-2 w-full min-w-0 cursor-pointer"
-            onClick={() => handleOpenExpandedPlayer('player')}
-          >
-            {/* Left: Thumbnail & Song Info */}
-            <div 
-              className="flex items-center gap-2.5 min-w-0 flex-1 select-none"
-              title="Expand Now Playing"
-            >
-              <div className="relative shrink-0">
-                <img 
-                  src={getCleanThumbnail(currentSong)} 
-                  alt={currentSong.title || ""} 
-                  className="rounded-xl object-cover shrink-0 shadow-md w-12 h-12 border border-amber-500/30" 
-                  onError={(e) => handleImageError(e, currentSong.title, currentSong.id)} 
-                />
-                {isPlaying && (
-                  <div className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-gradient-to-tr from-amber-500 to-orange-500 text-neutral-950 flex items-center justify-center text-[8px] font-bold animate-spin-slow shadow-md border border-neutral-950">
-                    💿
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <h4 className="font-bold text-xs text-white truncate leading-tight">{currentSong.title}</h4>
-                <p className="text-[10px] text-amber-400 truncate mt-0.5 select-none">{currentSong.channel || currentSong.artist}</p>
-              </div>
-            </div>
-
-            {/* Right: Touch Playback Controls */}
-            <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-              {/* Extra controls revealed horizontally when isMiniPlayerExpanded is true */}
-              {isMiniPlayerExpanded && (
-                <>
-                  <button 
+                {/* Quick Horizontal Expand/Collapse Pill for Mobile */}
+                <div className="md:hidden absolute -top-3.5 right-3 z-50 shrink-0 pointer-events-auto">
+                  <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleOpenExpandedPlayer('queue');
-                    }} 
-                    className="text-neutral-400 hover:text-amber-400 transition p-2 shrink-0 cursor-pointer active:scale-90 min-w-[48px] min-h-[48px] flex items-center justify-center touch-manipulation" 
-                    title="View Queue"
-                    aria-label="View Queue"
+                      setIsMiniPlayerExpanded(prev => !prev);
+                    }}
+                    className="px-2.5 py-0.5 rounded-full bg-neutral-900/95 hover:bg-neutral-800 border border-amber-500/40 text-amber-400 text-[10px] font-bold shadow-lg flex items-center gap-1 transition shrink-0 cursor-pointer select-none active:scale-95"
+                    title={isMiniPlayerExpanded ? "Collapse mini-player width" : "Expand mini-player horizontally"}
+                    aria-label={isMiniPlayerExpanded ? "Collapse mini-player width" : "Expand mini-player horizontally"}
                   >
-                    <Icon name="list" className="w-5 h-5 shrink-0" />
+                    <Icon name={isMiniPlayerExpanded ? "collapse" : "expand"} className="w-3.5 h-3.5 shrink-0" />
+                    <span>{isMiniPlayerExpanded ? "Compact" : "Expand Player"}</span>
                   </button>
+                </div>
 
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handlePrevSong();
-                    }} 
-                    className="text-neutral-300 hover:text-white transition p-2 shrink-0 cursor-pointer active:scale-90 min-w-[48px] min-h-[48px] flex items-center justify-center touch-manipulation" 
-                    title="Previous Track"
-                    aria-label="Previous Track"
+                {/* Desktop Full 3-Section Footer (>= md) */}
+                <div className="hidden md:flex w-full items-center justify-between gap-6 px-4 md:px-8">
+                  {/* Zone 1 (Left): Artwork, Track Info with overflow marquee, and Like Button */}
+                  <div
+                    className="flex items-center gap-3 w-1/4 min-w-0 select-none cursor-pointer"
+                    onClick={() => handleOpenExpandedPlayer('player')}
+                    title="Expand Now Playing"
                   >
-                    <Icon name="skipPrev" className="w-5 h-5 shrink-0" />
-                  </button>
-                </>
-              )}
+                    <div className="relative group shrink-0">
+                      <img
+                        src={getCleanThumbnail(currentSong)}
+                        alt={currentSong.title || ""}
+                        className="rounded-xl object-cover shrink-0 shadow-md transition-all duration-300 w-12 h-12 border border-amber-500/30 group-hover:border-amber-400"
+                        onError={(e) => handleImageError(e, currentSong.title, currentSong.id)}
+                      />
+                      {isPlaying && (
+                        <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-gradient-to-tr from-amber-500 to-orange-500 text-neutral-950 flex items-center justify-center text-[9px] font-bold animate-spin-slow shadow-md border border-neutral-950">
+                          💿
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1 overflow-hidden">
+                      <h4 className="font-bold text-xs text-white truncate group-hover:text-amber-300 transition-colors whitespace-nowrap">{currentSong.title}</h4>
+                      <p className="text-[10px] text-amber-400/90 truncate select-none mt-0.5">{currentSong.channel || currentSong.artist}</p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0 ml-1" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleLike(currentSong); }}
+                        className="p-1.5 rounded-full hover:bg-white/10 text-neutral-400 hover:text-pink-500 transition cursor-pointer shrink-0"
+                        title={isSongLiked(currentSong) ? "Unlike" : "Like"}
+                        aria-label="Toggle Like"
+                      >
+                        <Icon name={isSongLiked(currentSong) ? "heart" : "heartOutline"} className={`w-4 h-4 ${isSongLiked(currentSong) ? 'text-pink-500 fill-pink-500' : 'text-neutral-400'}`} />
+                      </button>
+                      <button onClick={(e) => handleAddToPlaylistClick(currentSong, e)} className="p-1.5 rounded-full hover:bg-white/10 text-neutral-400 hover:text-amber-400 transition cursor-pointer shrink-0" title="Add to Playlist">
+                        <Icon name="plus" className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
 
-              {/* Play / Pause is always accessible */}
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  togglePlayPause();
-                }} 
-                className="w-12 h-12 min-w-[48px] min-h-[48px] rounded-full amber-glow-btn text-neutral-950 flex items-center justify-center shadow-md active:scale-95 transition shrink-0 cursor-pointer border border-amber-300/40 touch-manipulation" 
-                title={isPlaying ? "Pause" : "Play"}
-                aria-label={isPlaying ? "Pause" : "Play"}
-              >
-                <Icon name={isPlaying ? "pause" : "play"} className="w-5 h-5 fill-current translate-x-0.5" />
-              </button>
+                  {/* Zone 2 (Center): Playback Controls & Scrubber */}
+                  <div className="flex flex-col items-center w-2/4 gap-1.5 animate-fadeIn min-w-0" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-5 shrink-0">
+                      <button onClick={toggleShuffle} className={`transition cursor-pointer p-1 rounded-full hover:bg-white/5 ${isShuffle ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} title={isShuffle ? "Shuffle On" : "Shuffle Off"}>
+                        <Icon name="shuffle" className="w-4 h-4 shrink-0" />
+                      </button>
+                      <button onClick={handlePrevSong} className="text-neutral-300 hover:text-white transition cursor-pointer p-1 rounded-full hover:bg-white/5" title="Previous Track">
+                        <Icon name="skipPrev" className="w-5 h-5 shrink-0" />
+                      </button>
+                      <button onClick={togglePlayPause} className="w-11 h-11 rounded-full bg-amber-500 hover:bg-amber-400 active:scale-95 text-neutral-950 flex items-center justify-center font-bold shadow-[0_0_20px_rgba(245,158,11,0.5)] hover:shadow-[0_0_28px_rgba(245,158,11,0.7)] transition-all shrink-0 cursor-pointer border border-amber-300/40" title={isPlaying ? "Pause" : "Play"}>
+                        <Icon name={isPlaying ? "pause" : "play"} className="w-5 h-5 fill-current" />
+                      </button>
+                      <button onClick={handleNextSong} className="text-neutral-300 hover:text-white transition cursor-pointer p-1 rounded-full hover:bg-white/5" title="Next Track">
+                        <Icon name="skipNext" className="w-5 h-5 shrink-0" />
+                      </button>
+                      <button
+                        onClick={toggleRepeatMode}
+                        className={`relative transition cursor-pointer p-1 rounded-full hover:bg-white/5 ${isRepeat ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`}
+                        title={isRepeat === 'one' ? 'Repeat One' : isRepeat === 'all' ? 'Repeat All' : 'Repeat Off'}
+                      >
+                        <Icon name="repeat" className="w-4 h-4 shrink-0" />
+                        {isRepeat === 'one' && (
+                          <span className="absolute -top-1 -right-1 text-[8px] font-bold bg-amber-500 text-white rounded-full w-3 h-3 flex items-center justify-center">1</span>
+                        )}
+                      </button>
+                    </div>
 
-              {/* Next button revealed horizontally when isMiniPlayerExpanded is true */}
-              {isMiniPlayerExpanded && (
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleNextSong();
-                  }} 
-                  className="text-neutral-300 hover:text-white transition p-2 shrink-0 cursor-pointer active:scale-90 min-w-[48px] min-h-[48px] flex items-center justify-center touch-manipulation" 
-                  title="Next Track"
-                  aria-label="Next Track"
+                    {/* Dedicated Scrubber & Time Display Row */}
+                    <div className="w-full flex items-center gap-3">
+                      <PlayerProgress
+                        playerRef={playerRef}
+                        isPlaying={isPlaying}
+                        onSeek={handleSeek}
+                        currentSongId={currentSong?.id}
+                        isRadio={Boolean(currentSong?.isRadio)}
+                        currentTimeRef={currentTimeRef}
+                        durationRef={durationRef}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Zone 3 (Right): Volume Slider with Mute Toggle, Queue Toggle, and Avatar Roam Status */}
+                  <div className="flex items-center justify-end w-1/4 gap-2.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    {/* Avatar Free Roam Quick Status Pill (Strictly Admin Only and when Voice/Avatar is active) */}
+                    {isAdmin && isVoiceActive && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            const cur = (localStorage.getItem('loopra_avatar_roaming') ?? localStorage.getItem('loopra_avatar_roam')) === 'true';
+                            const next = !cur;
+                            localStorage.setItem('loopra_avatar_roaming', String(next));
+                            localStorage.setItem('loopra_avatar_roam', String(next));
+                            window.dispatchEvent(new Event('storage'));
+                            showToast?.(`Avatar Roam ${next ? 'Active' : 'Parked'}`);
+                          } catch (_) { }
+                        }}
+                        className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-900/80 hover:bg-neutral-800 border border-neutral-800 text-[10px] font-mono text-neutral-400 hover:text-amber-300 transition cursor-pointer shadow-sm shrink-0"
+                        title="Toggle Avatar Roam Status (Admin Only)"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                        <span>ROAM</span>
+                      </button>
+                    )}
+
+                    {/* Volume Slider & Click-to-Mute Toggle Icon */}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={handleToggleMute}
+                        className="p-1 text-neutral-400 hover:text-white transition cursor-pointer shrink-0"
+                        title={isMuted ? "Unmute" : "Mute Audio"}
+                        aria-label={isMuted ? "Unmute" : "Mute Audio"}
+                      >
+                        <Icon name={isMuted ? "volumeMute" : volume === 0 ? "volumeMute" : "volume"} className="w-4 h-4 shrink-0" />
+                      </button>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={isMuted ? 0 : volume}
+                        onChange={handleVolumeChange}
+                        className="w-18 lg:w-22 h-1 bg-neutral-800 rounded-xl appearance-none cursor-pointer accent-amber-500 shrink-0"
+                      />
+                    </div>
+
+                    {/* Queue Panel Toggle Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowQueuePanel(prev => !prev);
+                      }}
+                      className={`p-1.5 rounded-xl border transition shrink-0 cursor-pointer flex items-center gap-1 text-xs active:scale-95 ${showQueuePanel
+                          ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 shadow-sm'
+                          : 'bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-amber-400 border-neutral-700/60'
+                        }`}
+                      title={showQueuePanel ? "Close Queue" : "Open Queue"}
+                      aria-label="Queue list toggle"
+                    >
+                      <Icon name="list" className="w-4 h-4 shrink-0" />
+                      <span className="hidden lg:inline text-[11px] font-medium">Queue</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Mobile Sleek Single-Row Mini-Player (< md) */}
+                <div
+                  className="md:hidden flex items-center justify-between gap-2 w-full min-w-0 cursor-pointer"
+                  onClick={() => handleOpenExpandedPlayer('player')}
                 >
-                  <Icon name="skipNext" className="w-5 h-5 shrink-0" />
-                </button>
-              )}
+                  {/* Left: Thumbnail & Song Info */}
+                  <div
+                    className="flex items-center gap-2.5 min-w-0 flex-1 select-none"
+                    title="Expand Now Playing"
+                  >
+                    <div className="relative shrink-0">
+                      <img
+                        src={getCleanThumbnail(currentSong)}
+                        alt={currentSong.title || ""}
+                        className="rounded-xl object-cover shrink-0 shadow-md w-12 h-12 border border-amber-500/30"
+                        onError={(e) => handleImageError(e, currentSong.title, currentSong.id)}
+                      />
+                      {isPlaying && (
+                        <div className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-gradient-to-tr from-amber-500 to-orange-500 text-neutral-950 flex items-center justify-center text-[8px] font-bold animate-spin-slow shadow-md border border-neutral-950">
+                          💿
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-bold text-xs text-white truncate leading-tight">{currentSong.title}</h4>
+                      <p className="text-[10px] text-amber-400 truncate mt-0.5 select-none">{currentSong.channel || currentSong.artist}</p>
+                    </div>
+                  </div>
 
-              {/* Designated Fullscreen Player Open Button */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleOpenExpandedPlayer('player');
-                }}
-                className="p-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-amber-400 border border-neutral-700/60 transition shrink-0 cursor-pointer flex items-center justify-center active:scale-90 min-w-[48px] min-h-[48px] touch-manipulation"
-                title="Open Fullscreen Player"
-                aria-label="Open Fullscreen Player"
-              >
-                <Icon name="expand" className="w-4 h-4 shrink-0 text-amber-400" />
-              </button>
-            </div>
+                  {/* Right: Touch Playback Controls */}
+                  <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    {/* Extra controls revealed horizontally when isMiniPlayerExpanded is true */}
+                    {isMiniPlayerExpanded && (
+                      <>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenExpandedPlayer('queue');
+                          }}
+                          className="text-neutral-400 hover:text-amber-400 transition p-2 shrink-0 cursor-pointer active:scale-90 min-w-[48px] min-h-[48px] flex items-center justify-center touch-manipulation"
+                          title="View Queue"
+                          aria-label="View Queue"
+                        >
+                          <Icon name="list" className="w-5 h-5 shrink-0" />
+                        </button>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePrevSong();
+                          }}
+                          className="text-neutral-300 hover:text-white transition p-2 shrink-0 cursor-pointer active:scale-90 min-w-[48px] min-h-[48px] flex items-center justify-center touch-manipulation"
+                          title="Previous Track"
+                          aria-label="Previous Track"
+                        >
+                          <Icon name="skipPrev" className="w-5 h-5 shrink-0" />
+                        </button>
+                      </>
+                    )}
+
+                    {/* Play / Pause is always accessible */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        togglePlayPause();
+                      }}
+                      className="w-12 h-12 min-w-[48px] min-h-[48px] rounded-full amber-glow-btn text-neutral-950 flex items-center justify-center shadow-md active:scale-95 transition shrink-0 cursor-pointer border border-amber-300/40 touch-manipulation"
+                      title={isPlaying ? "Pause" : "Play"}
+                      aria-label={isPlaying ? "Pause" : "Play"}
+                    >
+                      <Icon name={isPlaying ? "pause" : "play"} className="w-5 h-5 fill-current translate-x-0.5" />
+                    </button>
+
+                    {/* Next button revealed horizontally when isMiniPlayerExpanded is true */}
+                    {isMiniPlayerExpanded && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleNextSong();
+                        }}
+                        className="text-neutral-300 hover:text-white transition p-2 shrink-0 cursor-pointer active:scale-90 min-w-[48px] min-h-[48px] flex items-center justify-center touch-manipulation"
+                        title="Next Track"
+                        aria-label="Next Track"
+                      >
+                        <Icon name="skipNext" className="w-5 h-5 shrink-0" />
+                      </button>
+                    )}
+
+                    {/* Designated Fullscreen Player Open Button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenExpandedPlayer('player');
+                      }}
+                      className="p-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-amber-400 border border-neutral-700/60 transition shrink-0 cursor-pointer flex items-center justify-center active:scale-90 min-w-[48px] min-h-[48px] touch-manipulation"
+                      title="Open Fullscreen Player"
+                      aria-label="Open Fullscreen Player"
+                    >
+                      <Icon name="expand" className="w-4 h-4 shrink-0 text-amber-400" />
+                    </button>
+                  </div>
+                </div>
+              </footer>
+            )}
+
           </div>
-        </footer>
-      )}
+        </div>
 
-      </div>
-      </div>
-
-      {/* Mobile Persistent Bottom Navigation Bar (< md) */}
-      <MobileBottomNav 
-        activeTab={activeTab}
-        isProfileOpen={isProfileOpen}
-        isAiOpen={activeAssistantPanel === 'ai'}
-        onToggleAi={() => setActiveAssistantPanel(prev => prev === 'ai' ? null : 'ai')}
-        onNavigate={(tab) => {
-          setIsProfileOpen(false);
-          handleStationSelect(tab);
-        }}
-        onOpenPlaylists={() => {
-          setIsProfileOpen(false);
-          handleStationSelect('playlists');
-          setSelectedPlaylistForView(null);
-        }}
-        onOpenProfile={() => {
-          if (user) {
-            setIsProfileOpen(true);
-          } else {
-            if (isPlaying) {
-              togglePlayPause();
+        {/* Mobile Persistent Bottom Navigation Bar (< md) */}
+        <MobileBottomNav
+          activeTab={activeTab}
+          isProfileOpen={isProfileOpen}
+          isAiOpen={activeAssistantPanel === 'ai'}
+          onToggleAi={() => setActiveAssistantPanel(prev => prev === 'ai' ? null : 'ai')}
+          onNavigate={(tab) => {
+            setIsProfileOpen(false);
+            handleStationSelect(tab);
+          }}
+          onOpenPlaylists={() => {
+            setIsProfileOpen(false);
+            handleStationSelect('playlists');
+            setSelectedPlaylistForView(null);
+          }}
+          onOpenProfile={() => {
+            if (user) {
+              setIsProfileOpen(true);
+            } else {
+              if (isPlaying) {
+                togglePlayPause();
+              }
+              openAuthModal();
             }
-            openAuthModal();
-          }
-          setIsSidebarOpen(false);
-        }}
-        user={user}
-        isVisible={!showQueuePanel && activeTab !== 'dj-club' && activeTab !== 'relax'}
-      />
+            setIsSidebarOpen(false);
+          }}
+          user={user}
+          isVisible={!showQueuePanel && activeTab !== 'dj-club' && activeTab !== 'relax'}
+        />
 
 
-      {showQueuePanel && !isPipActive && (
-        <div 
-          className="fixed inset-0 z-[120] bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn pb-[env(safe-area-inset-bottom,0px)]"
-        >
-          {/* Mobile Tab Header with Segmented Switcher & Close Button */}
-          <div className="md:hidden flex items-center justify-between px-3 py-1.5 border-b border-neutral-800/80 bg-neutral-900/95 backdrop-blur-xl shrink-0 z-50">
-            <div className="flex bg-neutral-800/90 p-0.5 rounded-xl gap-1 border border-neutral-700/60 shadow-inner">
-              <button 
-                onClick={() => setMobileQueueTab('player')}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${mobileQueueTab === 'player' ? 'bg-amber-500 text-neutral-950 font-bold shadow' : 'text-neutral-400 hover:text-white'}`}
+        {showQueuePanel && !isPipActive && (
+          <div
+            className="fixed inset-0 z-[120] bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn pb-[env(safe-area-inset-bottom,0px)]"
+          >
+            {/* Mobile Tab Header with Segmented Switcher & Close Button */}
+            <div className="md:hidden flex items-center justify-between px-3 py-1.5 border-b border-neutral-800/80 bg-neutral-900/95 backdrop-blur-xl shrink-0 z-50">
+              <div className="flex bg-neutral-800/90 p-0.5 rounded-xl gap-1 border border-neutral-700/60 shadow-inner">
+                <button
+                  onClick={() => setMobileQueueTab('player')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${mobileQueueTab === 'player' ? 'bg-amber-500 text-neutral-950 font-bold shadow' : 'text-neutral-400 hover:text-white'}`}
+                >
+                  Now Playing
+                </button>
+                <button
+                  onClick={() => setMobileQueueTab('queue')}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${mobileQueueTab === 'queue' ? 'bg-amber-500 text-neutral-950 font-bold shadow' : 'text-neutral-400 hover:text-white'}`}
+                >
+                  Up Next ({queue.length})
+                </button>
+              </div>
+
+              <button
+                onClick={() => setShowQueuePanel(false)}
+                className="text-neutral-400 hover:text-white bg-neutral-800/90 hover:bg-neutral-700 p-1.5 rounded-full border border-neutral-700/60 shadow-md cursor-pointer transition shrink-0 flex items-center justify-center"
+                title="Collapse Player"
+                aria-label="Collapse Player"
               >
-                Now Playing
-              </button>
-              <button 
-                onClick={() => setMobileQueueTab('queue')}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${mobileQueueTab === 'queue' ? 'bg-amber-500 text-neutral-950 font-bold shadow' : 'text-neutral-400 hover:text-white'}`}
-              >
-                Up Next ({queue.length})
+                <Icon name="chevronDown" className="w-4 h-4" />
               </button>
             </div>
 
-            <button 
-              onClick={() => setShowQueuePanel(false)} 
-              className="text-neutral-400 hover:text-white bg-neutral-800/90 hover:bg-neutral-700 p-1.5 rounded-full border border-neutral-700/60 shadow-md cursor-pointer transition shrink-0 flex items-center justify-center"
+            {/* Desktop Collapse Button */}
+            <button
+              onClick={() => setShowQueuePanel(false)}
+              className="hidden md:flex items-center gap-1.5 absolute top-4 right-4 text-neutral-400 hover:text-white z-50 bg-neutral-900/80 hover:bg-neutral-800 px-3.5 py-1.5 rounded-full backdrop-blur-md border border-neutral-700/60 shadow-lg cursor-pointer transition text-xs font-semibold"
               title="Collapse Player"
               aria-label="Collapse Player"
             >
               <Icon name="chevronDown" className="w-4 h-4" />
+              <span>Collapse</span>
             </button>
-          </div>
 
-          {/* Desktop Collapse Button */}
-          <button 
-            onClick={() => setShowQueuePanel(false)} 
-            className="hidden md:flex items-center gap-1.5 absolute top-4 right-4 text-neutral-400 hover:text-white z-50 bg-neutral-900/80 hover:bg-neutral-800 px-3.5 py-1.5 rounded-full backdrop-blur-md border border-neutral-700/60 shadow-lg cursor-pointer transition text-xs font-semibold"
-            title="Collapse Player"
-            aria-label="Collapse Player"
-          >
-            <Icon name="chevronDown" className="w-4 h-4" />
-            <span>Collapse</span>
-          </button>
-
-          {/* Player Column (Full on Mobile when 'player' tab is active; 50% on Desktop) */}
-          <div className={`${mobileQueueTab === 'player' ? 'flex' : 'hidden'} md:flex w-full md:w-1/2 p-2 sm:p-4 md:p-6 flex-col items-center bg-gradient-to-br from-neutral-900 to-neutral-950 border-r border-neutral-800/50 overflow-y-auto overflow-x-hidden flex-1 md:flex-initial h-full max-h-full`}>
-            {currentSong ? (
-              <div className="w-full max-w-sm flex flex-col items-center">
-                {/* Initial Viewport: Main music player controls */}
-                <div className="w-full flex flex-col items-center justify-between py-1 sm:py-2 min-h-[calc(100vh-4rem)] md:min-h-[calc(100vh-2rem)] shrink-0">
-                {/* 1. 3D Illuminated Virtual Turntable Section */}
-                <div className="w-full flex items-center justify-center shrink min-h-0 pt-1 pb-1">
-                  <Turntable3D 
-                    currentSong={currentSong} 
-                    isPlaying={isPlaying} 
-                    onTogglePlay={togglePlayPause} 
-                    size="responsive"
-                  />
-                </div>
-
-                {/* 2. Animated Audio Spectrum Visualizer Section (Directly below vinyl, separated layout) */}
-                <div className="w-full flex items-center justify-center shrink-0 mb-4 sm:mb-5">
-                  <AudioSpectrumVisualizer 
-                    isPlaying={isPlaying} 
-                    barCount={28}
-                    height={24}
-                    className="w-full max-w-[200px] sm:max-w-xs" 
-                  />
-                </div>
-
-                {/* 3. Song Information Section (Title & Artist with guaranteed 16-24px vertical spacing) */}
-                <div className="w-full text-center space-y-1 shrink-0 px-2 mb-2">
-                  <h2 className="text-base sm:text-lg md:text-xl font-display font-bold text-white line-clamp-2 leading-snug">
-                    {currentSong.title}
-                  </h2>
-                  <p
-                    className="text-xs sm:text-sm text-amber-500 font-medium truncate max-w-full select-none"
-                  >
-                    {currentSong.channel || currentSong.artist}
-                  </p>
-                </div>
-
-                {/* 4. Expanded Player Action Bar: Add to Favorites, Add to Playlist, Video */}
-                {(() => {
-                  const isFav = isSongLiked(currentSong);
-                  const hasVid = Boolean(currentSong && (currentSong.id || currentSong.videoId));
-                  return (
-                    <div className="flex items-center justify-center gap-2 sm:gap-2.5 shrink-0 mb-3 w-full max-w-sm px-1">
-                      {/* 1. Add to Favorites */}
-                      <button 
-                        onClick={(e) => { 
-                          e.stopPropagation(); 
-                          toggleLike(currentSong); 
-                        }} 
-                        className={`flex-1 min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-3 py-2 rounded-2xl border transition-all duration-200 flex items-center justify-center gap-1.5 text-xs font-semibold shadow-md active:scale-95 cursor-pointer select-none ${
-                          isFav 
-                            ? 'bg-pink-500/15 border-pink-500/50 text-pink-400 shadow-[0_0_15px_rgba(236,72,153,0.2)] hover:bg-pink-500/25' 
-                            : 'bg-neutral-800/80 hover:bg-neutral-700/80 border-neutral-700/70 text-neutral-300 hover:text-white'
-                        }`}
-                        title={isFav ? "Remove from Favorites" : "Add to Favorites"}
-                        aria-label={isFav ? "Remove from Favorites" : "Add to Favorites"}
-                        aria-pressed={isFav}
-                      >
-                        <Icon 
-                          name={isFav ? "heart" : "heartOutline"} 
-                          className={`w-4 h-4 shrink-0 transition-transform ${isFav ? 'text-pink-500 fill-current scale-110' : 'text-neutral-400'}`} 
-                        />
-                        <span className="truncate">{isFav ? 'Favorited' : 'Favorite'}</span>
-                      </button>
-
-                      {/* 2. Add to Playlist */}
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleAddToPlaylistClick(currentSong, e);
-                        }} 
-                        className="flex-1 min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-3 py-2 rounded-2xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 hover:border-amber-500/40 transition-all duration-200 flex items-center justify-center gap-1.5 text-xs font-semibold shadow-md active:scale-95 cursor-pointer select-none"
-                        title="Add to Playlist"
-                        aria-label="Add to Playlist"
-                      >
-                        <Icon name="plus" className="w-4 h-4 text-amber-400 shrink-0" />
-                        <span className="truncate">Playlist</span>
-                      </button>
-
-                      {/* 3. Video / Music Mode Toggle */}
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (videoModalSong) {
-                            handleCloseVideo();
-                          } else {
-                            handleOpenVideo(currentSong, e);
-                          }
-                        }} 
-                        className={`flex-1 min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-3 py-2 rounded-2xl border transition-all duration-200 flex items-center justify-center gap-1.5 text-xs font-semibold shadow-md active:scale-95 cursor-pointer select-none ${
-                          hasVid
-                            ? videoModalSong
-                              ? 'bg-amber-500 text-neutral-950 border-amber-400 shadow-[0_0_20px_rgba(var(--accent-rgb,245,158,11),0.4)]'
-                              : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-300 hover:text-amber-200 shadow-[0_0_15px_rgba(var(--accent-rgb,245,158,11),0.15)]'
-                            : 'bg-neutral-800/40 border-neutral-800 text-neutral-500 cursor-not-allowed opacity-60'
-                        }`}
-                        title={hasVid ? (videoModalSong ? "Switch to Music Mode" : "Watch Video") : "Video Unavailable"}
-                        aria-label={hasVid ? (videoModalSong ? "Switch to Music Mode" : "Watch Video") : "Video Unavailable"}
-                      >
-                        <Icon name={videoModalSong ? "music" : "video"} className={`w-4 h-4 shrink-0 ${hasVid ? (videoModalSong ? 'text-neutral-950' : 'text-amber-400') : 'text-neutral-500'}`} />
-                        <span className="truncate">{videoModalSong ? "Music Mode" : "Video Mode"}</span>
-                      </button>
-
-                      {/* Offline Download button */}
-                      <DownloadTrackButton track={currentSong} variant="icon" showToast={showToast} />
+            {/* Player Column (Full on Mobile when 'player' tab is active; 50% on Desktop) */}
+            <div className={`${mobileQueueTab === 'player' ? 'flex' : 'hidden'} md:flex w-full md:w-1/2 p-2 sm:p-4 md:p-6 flex-col items-center bg-gradient-to-br from-neutral-900 to-neutral-950 border-r border-neutral-800/50 overflow-y-auto overflow-x-hidden flex-1 md:flex-initial h-full max-h-full`}>
+              {currentSong ? (
+                <div className="w-full max-w-sm flex flex-col items-center">
+                  {/* Initial Viewport: Main music player controls */}
+                  <div className="w-full flex flex-col items-center justify-between py-1 sm:py-2 min-h-[calc(100vh-4rem)] md:min-h-[calc(100vh-2rem)] shrink-0">
+                    {/* 1. 3D Illuminated Virtual Turntable Section */}
+                    <div className="w-full flex items-center justify-center shrink min-h-0 pt-1 pb-1">
+                      <Turntable3D
+                        currentSong={currentSong}
+                        isPlaying={isPlaying}
+                        onTogglePlay={togglePlayPause}
+                        size="responsive"
+                      />
                     </div>
-                  );
-                })()}
 
-                {/* Secondary Action Row: Canvas, EQ, Lyrics, Sleep Timer, Speed, Mute, Share */}
-                <div className="flex items-center justify-center gap-1.5 sm:gap-2 shrink-0 mb-2 w-full max-w-sm px-1">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setIsCanvasOpen(true); }}
-                    className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 border border-amber-500/40 text-amber-300 transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer"
-                    title="Loopra Canvas Visualizer"
-                    aria-label="Loopra Canvas Visualizer"
-                  >
-                    <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
-                    <span className="hidden sm:inline">Canvas</span>
-                  </button>
+                    {/* 2. Animated Audio Spectrum Visualizer Section (Directly below vinyl, separated layout) */}
+                    <div className="w-full flex items-center justify-center shrink-0 mb-4 sm:mb-5">
+                      <AudioSpectrumVisualizer
+                        isPlaying={isPlaying}
+                        barCount={28}
+                        height={24}
+                        className="w-full max-w-[200px] sm:max-w-xs"
+                      />
+                    </div>
 
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setIsLyricsOpen(true); }}
-                    className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer"
-                    title="Synchronized Lyrics"
-                    aria-label="Synchronized Lyrics"
-                  >
-                    <Icon name="mic" className="w-3.5 h-3.5 text-amber-400" />
-                    <span className="hidden sm:inline">Lyrics</span>
-                  </button>
+                    {/* 3. Song Information Section (Title & Artist with guaranteed 16-24px vertical spacing) */}
+                    <div className="w-full text-center space-y-1 shrink-0 px-2 mb-2">
+                      <h2 className="text-base sm:text-lg md:text-xl font-display font-bold text-white line-clamp-2 leading-snug">
+                        {currentSong.title}
+                      </h2>
+                      <p
+                        className="text-xs sm:text-sm text-amber-500 font-medium truncate max-w-full select-none"
+                      >
+                        {currentSong.channel || currentSong.artist}
+                      </p>
+                    </div>
 
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setIsSleepTimerOpen(true); }}
-                    className={`relative p-2 sm:px-2.5 sm:py-1.5 rounded-xl border transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer ${
-                      sleepTimerRemaining ? 'bg-amber-500/20 border-amber-500/60 text-amber-300' : 'bg-neutral-800/80 hover:bg-neutral-700/80 border-neutral-700/70 text-neutral-300 hover:text-amber-400'
-                    }`}
-                    title={sleepTimerRemaining ? `Timer active: ${Math.ceil(sleepTimerRemaining / 60)}m left` : "Set Sleep Timer"}
-                    aria-label="Set Sleep Timer"
-                  >
-                    <Icon name="timer" className="w-3.5 h-3.5 text-amber-400" />
-                    <span className="hidden sm:inline">
-                      {sleepTimerRemaining ? `${Math.ceil(sleepTimerRemaining / 60)}m` : 'Timer'}
-                    </span>
-                    {sleepTimerRemaining && (
-                      <span className="sm:hidden absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                    )}
-                  </button>
+                    {/* 4. Expanded Player Action Bar: Add to Favorites, Add to Playlist, Video */}
+                    {(() => {
+                      const isFav = isSongLiked(currentSong);
+                      const hasVid = Boolean(currentSong && (currentSong.id || currentSong.videoId));
+                      return (
+                        <div className="flex items-center justify-center gap-2 sm:gap-2.5 shrink-0 mb-3 w-full max-w-sm px-1">
+                          {/* 1. Add to Favorites */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleLike(currentSong);
+                            }}
+                            className={`flex-1 min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-3 py-2 rounded-2xl border transition-all duration-200 flex items-center justify-center gap-1.5 text-xs font-semibold shadow-md active:scale-95 cursor-pointer select-none ${isFav
+                                ? 'bg-pink-500/15 border-pink-500/50 text-pink-400 shadow-[0_0_15px_rgba(236,72,153,0.2)] hover:bg-pink-500/25'
+                                : 'bg-neutral-800/80 hover:bg-neutral-700/80 border-neutral-700/70 text-neutral-300 hover:text-white'
+                              }`}
+                            title={isFav ? "Remove from Favorites" : "Add to Favorites"}
+                            aria-label={isFav ? "Remove from Favorites" : "Add to Favorites"}
+                            aria-pressed={isFav}
+                          >
+                            <Icon
+                              name={isFav ? "heart" : "heartOutline"}
+                              className={`w-4 h-4 shrink-0 transition-transform ${isFav ? 'text-pink-500 fill-current scale-110' : 'text-neutral-400'}`}
+                            />
+                            <span className="truncate">{isFav ? 'Favorited' : 'Favorite'}</span>
+                          </button>
 
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleCyclePlaybackSpeed(); }}
-                    className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1 text-xs font-mono font-semibold shadow-sm active:scale-95 cursor-pointer"
-                    title={`Playback speed: ${playbackSpeed}x. Click to change.`}
-                    aria-label="Playback speed"
-                  >
-                    <span>{playbackSpeed}x</span>
-                  </button>
+                          {/* 2. Add to Playlist */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAddToPlaylistClick(currentSong, e);
+                            }}
+                            className="flex-1 min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-3 py-2 rounded-2xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 hover:border-amber-500/40 transition-all duration-200 flex items-center justify-center gap-1.5 text-xs font-semibold shadow-md active:scale-95 cursor-pointer select-none"
+                            title="Add to Playlist"
+                            aria-label="Add to Playlist"
+                          >
+                            <Icon name="plus" className="w-4 h-4 text-amber-400 shrink-0" />
+                            <span className="truncate">Playlist</span>
+                          </button>
 
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleToggleMute(); }}
-                    className={`p-2 sm:px-2.5 sm:py-1.5 rounded-xl border transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer ${
-                      isMuted ? 'bg-red-500/20 border-red-500/50 text-red-400' : 'bg-neutral-800/80 hover:bg-neutral-700/80 border-neutral-700/70 text-neutral-300 hover:text-amber-400'
-                    }`}
-                    title={isMuted ? "Unmute" : "Mute"}
-                    aria-label={isMuted ? "Unmute" : "Mute"}
-                  >
-                    <Icon name={isMuted ? "volumeMute" : "volume"} className="w-3.5 h-3.5" />
-                  </button>
+                          {/* 3. Video / Music Mode Toggle */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (videoModalSong) {
+                                handleCloseVideo();
+                              } else {
+                                handleOpenVideo(currentSong, e);
+                              }
+                            }}
+                            className={`flex-1 min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-3 py-2 rounded-2xl border transition-all duration-200 flex items-center justify-center gap-1.5 text-xs font-semibold shadow-md active:scale-95 cursor-pointer select-none ${hasVid
+                                ? videoModalSong
+                                  ? 'bg-amber-500 text-neutral-950 border-amber-400 shadow-[0_0_20px_rgba(var(--accent-rgb,245,158,11),0.4)]'
+                                  : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-300 hover:text-amber-200 shadow-[0_0_15px_rgba(var(--accent-rgb,245,158,11),0.15)]'
+                                : 'bg-neutral-800/40 border-neutral-800 text-neutral-500 cursor-not-allowed opacity-60'
+                              }`}
+                            title={hasVid ? (videoModalSong ? "Switch to Music Mode" : "Watch Video") : "Video Unavailable"}
+                            aria-label={hasVid ? (videoModalSong ? "Switch to Music Mode" : "Watch Video") : "Video Unavailable"}
+                          >
+                            <Icon name={videoModalSong ? "music" : "video"} className={`w-4 h-4 shrink-0 ${hasVid ? (videoModalSong ? 'text-neutral-950' : 'text-amber-400') : 'text-neutral-500'}`} />
+                            <span className="truncate">{videoModalSong ? "Music Mode" : "Video Mode"}</span>
+                          </button>
 
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleShareTrack(currentSong); }}
-                    className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer"
-                    title="Share Track"
-                    aria-label="Share Track"
-                  >
-                    <Icon name="share" className="w-3.5 h-3.5 text-amber-400" />
-                  </button>
+                          {/* Offline Download button */}
+                          <DownloadTrackButton track={currentSong} variant="icon" showToast={showToast} />
+                        </div>
+                      );
+                    })()}
 
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setIsPlayerSettingsOpen(true); }}
-                    className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer"
-                    title="Audio & Player Settings (Crossfade, Sleep Timer, Gapless)"
-                    aria-label="Audio & Player Settings"
-                  >
-                    <Icon name="sliders" className="w-3.5 h-3.5 text-amber-400" />
-                    <span className="hidden sm:inline">Settings</span>
-                  </button>
-                </div>
+                    {/* Secondary Action Row: Canvas, EQ, Lyrics, Sleep Timer, Speed, Mute, Share */}
+                    <div className="flex items-center justify-center gap-1.5 sm:gap-2 shrink-0 mb-2 w-full max-w-sm px-1">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setIsCanvasOpen(true); }}
+                        className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 border border-amber-500/40 text-amber-300 transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer"
+                        title="Loopra Canvas Visualizer"
+                        aria-label="Loopra Canvas Visualizer"
+                      >
+                        <Icon name="sparkles" className="w-3.5 h-3.5 text-amber-400" />
+                        <span className="hidden sm:inline">Canvas</span>
+                      </button>
 
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setIsLyricsOpen(true); }}
+                        className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer"
+                        title="Synchronized Lyrics"
+                        aria-label="Synchronized Lyrics"
+                      >
+                        <Icon name="mic" className="w-3.5 h-3.5 text-amber-400" />
+                        <span className="hidden sm:inline">Lyrics</span>
+                      </button>
 
-                {/* Progress Bar */}
-                <div className="w-full px-2 shrink-0 my-1">
-                  <PlayerProgress 
-                    playerRef={playerRef} 
-                    isPlaying={isPlaying} 
-                    onSeek={handleSeek} 
-                    currentSongId={currentSong?.id} 
-                    isRadio={Boolean(currentSong?.isRadio)} 
-                    currentTimeRef={currentTimeRef} 
-                    durationRef={durationRef} 
-                  />
-                </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setIsSleepTimerOpen(true); }}
+                        className={`relative p-2 sm:px-2.5 sm:py-1.5 rounded-xl border transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer ${sleepTimerRemaining ? 'bg-amber-500/20 border-amber-500/60 text-amber-300' : 'bg-neutral-800/80 hover:bg-neutral-700/80 border-neutral-700/70 text-neutral-300 hover:text-amber-400'
+                          }`}
+                        title={sleepTimerRemaining ? `Timer active: ${Math.ceil(sleepTimerRemaining / 60)}m left` : "Set Sleep Timer"}
+                        aria-label="Set Sleep Timer"
+                      >
+                        <Icon name="timer" className="w-3.5 h-3.5 text-amber-400" />
+                        <span className="hidden sm:inline">
+                          {sleepTimerRemaining ? `${Math.ceil(sleepTimerRemaining / 60)}m` : 'Timer'}
+                        </span>
+                        {sleepTimerRemaining && (
+                          <span className="sm:hidden absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                        )}
+                      </button>
 
-                {/* Main Playback Controls with Tactile 3D Buttons */}
-                <div className="flex items-center justify-center gap-4 sm:gap-6 w-full shrink-0 my-1">
-                  <button 
-                    onClick={toggleShuffle} 
-                    className={`p-1.5 transition ${isShuffle ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} 
-                    title={isShuffle ? "Shuffle On" : "Shuffle Off"}
-                  >
-                    <Icon name="shuffle" className="w-4 h-4" />
-                  </button>
-                  
-                  <button 
-                    onClick={handlePrevSong} 
-                    className="p-2 sm:p-3 rounded-full bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/60 text-neutral-200 hover:text-white hover:scale-110 active:scale-95 transition-all shadow-md" 
-                    title="Previous Track"
-                  >
-                    <Icon name="skipPrev" className="w-5 h-5 sm:w-6 sm:h-6" />
-                  </button>
-                  
-                  <button 
-                    onClick={togglePlayPause} 
-                    className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-full amber-glow-btn text-neutral-950 flex items-center justify-center font-bold shadow-[0_0_25px_rgba(var(--accent-rgb,245,158,11),0.5)] hover:shadow-[0_0_35px_rgba(var(--accent-rgb,245,158,11),0.7)] hover:scale-105 active:scale-95 transition-all cursor-pointer border border-amber-300/40"
-                    title={isPlaying ? "Pause" : "Play"}
-                  >
-                    <Icon name={isPlaying ? "pause" : "play"} className="w-6 h-6 sm:w-7 sm:h-7 fill-current" />
-                  </button>
-                  
-                  <button 
-                    onClick={handleNextSong} 
-                    className="p-2 sm:p-3 rounded-full bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/60 text-neutral-200 hover:text-white hover:scale-110 active:scale-95 transition-all shadow-md" 
-                    title="Next Track"
-                  >
-                    <Icon name="skipNext" className="w-5 h-5 sm:w-6 sm:h-6" />
-                  </button>
-                  
-                  <button 
-                    onClick={toggleRepeatMode} 
-                    className={`relative p-1.5 transition ${isRepeat ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`} 
-                    title={isRepeat === 'one' ? 'Repeat One' : isRepeat === 'all' ? 'Repeat All' : 'Repeat Off'}
-                  >
-                    <Icon name="repeat" className="w-4 h-4" />
-                    {isRepeat === 'one' && (
-                      <span className="absolute top-0.5 right-0.5 text-[8px] font-bold bg-amber-500 text-white rounded-full w-3 h-3 flex items-center justify-center">1</span>
-                    )}
-                  </button>
-                </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleCyclePlaybackSpeed(); }}
+                        className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1 text-xs font-mono font-semibold shadow-sm active:scale-95 cursor-pointer"
+                        title={`Playback speed: ${playbackSpeed}x. Click to change.`}
+                        aria-label="Playback speed"
+                      >
+                        <span>{playbackSpeed}x</span>
+                      </button>
 
-                {/* Volume Slider */}
-                <div className="flex items-center gap-2.5 w-full max-w-[240px] justify-center px-3 py-1 rounded-xl bg-neutral-900/60 border border-neutral-800/60 shrink-0 my-0.5">
-                  <Icon name="volume" className="w-3 h-3 text-neutral-400 shrink-0" />
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={volume}
-                    onChange={handleVolumeChange}
-                    className="flex-1 h-1 bg-neutral-800 rounded-xl appearance-none cursor-pointer accent-amber-500"
-                  />
-                  <span className="text-[9px] font-mono text-neutral-400 w-6 text-right">{volume}%</span>
-                </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleToggleMute(); }}
+                        className={`p-2 sm:px-2.5 sm:py-1.5 rounded-xl border transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer ${isMuted ? 'bg-red-500/20 border-red-500/50 text-red-400' : 'bg-neutral-800/80 hover:bg-neutral-700/80 border-neutral-700/70 text-neutral-300 hover:text-amber-400'
+                          }`}
+                        title={isMuted ? "Unmute" : "Mute"}
+                        aria-label={isMuted ? "Unmute" : "Mute"}
+                      >
+                        <Icon name={isMuted ? "volumeMute" : "volume"} className="w-3.5 h-3.5" />
+                      </button>
 
-                </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleShareTrack(currentSong); }}
+                        className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer"
+                        title="Share Track"
+                        aria-label="Share Track"
+                      >
+                        <Icon name="share" className="w-3.5 h-3.5 text-amber-400" />
+                      </button>
 
-                {/* Suggested for You Section: Positioned below main player in normal vertical flow (accessible on scroll) */}
-                <SuggestedForYouSection
-                  currentSong={currentSong}
-                  onPlaySong={playSong}
-                  onAddToQueue={addToQueue}
-                  queue={queue}
-                  onSuggestionsLoaded={(items) => {
-                    currentSuggestionsRef.current = items;
-                  }}
-                />
-              </div>
-            ) : (
-              <div className="text-neutral-500 text-lg flex flex-col items-center gap-3 py-16">
-                <Icon name="music" className="w-12 h-12 text-neutral-700" />
-                <span>No song playing</span>
-              </div>
-            )}
-          </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setIsPlayerSettingsOpen(true); }}
+                        className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer"
+                        title="Audio & Player Settings (Crossfade, Sleep Timer, Gapless)"
+                        aria-label="Audio & Player Settings"
+                      >
+                        <Icon name="sliders" className="w-3.5 h-3.5 text-amber-400" />
+                        <span className="hidden sm:inline">Settings</span>
+                      </button>
+                    </div>
 
 
-          {/* Up Next Column (Full on Mobile when 'queue' tab is active; 50% on Desktop) */}
-          <div className={`${mobileQueueTab === 'queue' ? 'flex' : 'hidden'} md:flex w-full md:w-1/2 flex-col bg-neutral-900/30 backdrop-blur-3xl overflow-y-auto hide-scrollbar pb-32 flex-1 md:flex-initial`}>
-            <div className="p-4 sm:p-6 md:p-12 mt-2 md:mt-0">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => setMobileQueueTab('player')}
-                    className="md:hidden p-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium border border-neutral-700/60"
-                    title="Back to Now Playing"
-                  >
-                    ←
-                  </button>
-                  <h3 className="text-xl sm:text-2xl font-display font-bold text-white flex items-center gap-2.5">
-                    <Icon name="list" className="w-6 h-6 text-amber-500" />
-                    Up Next
-                  </h3>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-amber-400/80 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full hidden sm:inline-flex items-center gap-1.5 font-medium">
-                    <Icon name="grip" className="w-3.5 h-3.5" />
-                    Tap & hold to slide
-                  </span>
-                  <span className="text-xs font-medium bg-neutral-800 text-neutral-400 px-3 py-1 rounded-full">{queue.length} tracks</span>
-                                    {queue.length > 0 && (
-                    <button
-                      onClick={handleSaveQueueAsPlaylist}
-                      className="text-xs text-amber-300 hover:text-amber-200 px-3 py-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition cursor-pointer flex items-center gap-1 font-medium"
-                      title="Save Queue as Playlist"
-                      aria-label="Save Queue as Playlist"
-                    >
-                      <Icon name="plus" className="w-3.5 h-3.5" />
-                      <span>Save Playlist</span>
-                    </button>
-                  )}
-                  {queue.length > 0 && (
-                    <button
-                      onClick={() => {
-                        if (window.confirm("Clear all tracks from your playback queue?")) {
-                          setQueue([]);
-                          showToast("Playback queue cleared");
-                        }
-                      }}
-                      className="text-xs text-neutral-400 hover:text-red-400 px-2.5 py-1 rounded-full bg-neutral-800/90 hover:bg-neutral-800 border border-neutral-700/60 transition cursor-pointer"
-                      title="Clear Queue"
-                      aria-label="Clear Queue"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-              </div>
+                    {/* Progress Bar */}
+                    <div className="w-full px-2 shrink-0 my-1">
+                      <PlayerProgress
+                        playerRef={playerRef}
+                        isPlaying={isPlaying}
+                        onSeek={handleSeek}
+                        currentSongId={currentSong?.id}
+                        isRadio={Boolean(currentSong?.isRadio)}
+                        currentTimeRef={currentTimeRef}
+                        durationRef={durationRef}
+                      />
+                    </div>
 
-              {queue.length > 0 && (
-                <p className="text-[11px] text-neutral-500 mb-3 flex items-center gap-1.5 sm:hidden">
-                  <Icon name="grip" className="w-3.5 h-3.5 text-amber-500/80 shrink-0" />
-                  <span>Tap & hold or slide grip to rearrange queue</span>
-                </p>
-              )}
-              
-              <Reorder.Group axis="y" values={queue} onReorder={setQueue} layoutScroll className="space-y-2.5">
-                {queue.map((track, idx) => {
-                  const isCurrent = currentSong?.id === track.id;
-                  return (
-                    <QueueItem
-                      key={track.id}
-                      track={track}
-                      isCurrent={isCurrent}
-                      isPlaying={isPlaying}
-                      onPlay={playSong}
-                      onRemove={removeFromQueue}
-                      canMoveUp={idx > 0}
-                      canMoveDown={idx < queue.length - 1}
-                      onMoveUp={() => {
-                        if (idx <= 0) return;
-                        setQueue(prev => {
-                          const copy = [...prev];
-                          const item = copy.splice(idx, 1)[0];
-                          copy.splice(idx - 1, 0, item);
-                          return copy;
-                        });
-                      }}
-                      onMoveDown={() => {
-                        if (idx >= queue.length - 1) return;
-                        setQueue(prev => {
-                          const copy = [...prev];
-                          const item = copy.splice(idx, 1)[0];
-                          copy.splice(idx + 1, 0, item);
-                          return copy;
-                        });
-                      }}
-                    />
-                  );
-                })}
+                    {/* Main Playback Controls with Tactile 3D Buttons */}
+                    <div className="flex items-center justify-center gap-4 sm:gap-6 w-full shrink-0 my-1">
+                      <button
+                        onClick={toggleShuffle}
+                        className={`p-1.5 transition ${isShuffle ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`}
+                        title={isShuffle ? "Shuffle On" : "Shuffle Off"}
+                      >
+                        <Icon name="shuffle" className="w-4 h-4" />
+                      </button>
 
-                {queue.length === 0 && (
-                  <div className="text-center py-12">
-                    <Icon name="music" className="w-12 h-12 text-neutral-700 mx-auto mb-4" />
-                    <p className="text-neutral-500">Your queue is empty</p>
+                      <button
+                        onClick={handlePrevSong}
+                        className="p-2 sm:p-3 rounded-full bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/60 text-neutral-200 hover:text-white hover:scale-110 active:scale-95 transition-all shadow-md"
+                        title="Previous Track"
+                      >
+                        <Icon name="skipPrev" className="w-5 h-5 sm:w-6 sm:h-6" />
+                      </button>
+
+                      <button
+                        onClick={togglePlayPause}
+                        className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-full amber-glow-btn text-neutral-950 flex items-center justify-center font-bold shadow-[0_0_25px_rgba(var(--accent-rgb,245,158,11),0.5)] hover:shadow-[0_0_35px_rgba(var(--accent-rgb,245,158,11),0.7)] hover:scale-105 active:scale-95 transition-all cursor-pointer border border-amber-300/40"
+                        title={isPlaying ? "Pause" : "Play"}
+                      >
+                        <Icon name={isPlaying ? "pause" : "play"} className="w-6 h-6 sm:w-7 sm:h-7 fill-current" />
+                      </button>
+
+                      <button
+                        onClick={handleNextSong}
+                        className="p-2 sm:p-3 rounded-full bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/60 text-neutral-200 hover:text-white hover:scale-110 active:scale-95 transition-all shadow-md"
+                        title="Next Track"
+                      >
+                        <Icon name="skipNext" className="w-5 h-5 sm:w-6 sm:h-6" />
+                      </button>
+
+                      <button
+                        onClick={toggleRepeatMode}
+                        className={`relative p-1.5 transition ${isRepeat ? 'text-amber-400' : 'text-neutral-500 hover:text-white'}`}
+                        title={isRepeat === 'one' ? 'Repeat One' : isRepeat === 'all' ? 'Repeat All' : 'Repeat Off'}
+                      >
+                        <Icon name="repeat" className="w-4 h-4" />
+                        {isRepeat === 'one' && (
+                          <span className="absolute top-0.5 right-0.5 text-[8px] font-bold bg-amber-500 text-white rounded-full w-3 h-3 flex items-center justify-center">1</span>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Volume Slider */}
+                    <div className="flex items-center gap-2.5 w-full max-w-[240px] justify-center px-3 py-1 rounded-xl bg-neutral-900/60 border border-neutral-800/60 shrink-0 my-0.5">
+                      <Icon name="volume" className="w-3 h-3 text-neutral-400 shrink-0" />
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={volume}
+                        onChange={handleVolumeChange}
+                        className="flex-1 h-1 bg-neutral-800 rounded-xl appearance-none cursor-pointer accent-amber-500"
+                      />
+                      <span className="text-[9px] font-mono text-neutral-400 w-6 text-right">{volume}%</span>
+                    </div>
+
                   </div>
-                )}
-              </Reorder.Group>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {showAuthModal && (
-        <div 
-          className="fixed inset-0 z-[130] bg-neutral-950/85 backdrop-blur-md flex items-center justify-center p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) closeAuthModal(false); }}
-        >
-          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 md:p-8 w-full max-w-sm relative shadow-2xl">
-            <button onClick={() => closeAuthModal(false)} className="absolute top-4 right-4 text-neutral-500 hover:text-white transition">
-              <Icon name="close" className="w-6 h-6" />
-            </button>
-            <h2 className="text-2xl font-display font-extrabold tracking-tight text-white mb-6 text-center">
-              {isLoginMode ? "Welcome Back" : "Create Account"}
-            </h2>
-            
-            {authError && (
-              <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-2xl text-center">
-                {authError}
-              </div>
-            )}
-            
-            <form onSubmit={handleAuth} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-neutral-400 mb-1.5">Username</label>
-                <input
-                  type="text"
-                  required
-                  autoComplete="username"
-                  value={authForm.username}
-                  onChange={(e) => setAuthForm({...authForm, username: e.target.value})}
-                  className="w-full px-4 py-3 rounded-2xl bg-neutral-900/50 backdrop-blur-lg border border-neutral-800 text-white text-sm focus:outline-none focus:border-amber-500 transition"
-                  placeholder="Enter username"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-neutral-400 mb-1.5">Password</label>
-                <input
-                  type="password"
-                  required
-                  autoComplete={isLoginMode ? "current-password" : "new-password"}
-                  value={authForm.password}
-                  onChange={(e) => setAuthForm({...authForm, password: e.target.value})}
-                  className="w-full px-4 py-3 rounded-2xl bg-neutral-900/50 backdrop-blur-lg border border-neutral-800 text-white text-sm focus:outline-none focus:border-amber-500 transition"
-                  placeholder="Enter password"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={authLoading}
-                className="w-full py-3.5 mt-2 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white font-medium tracking-wide text-sm transition shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {authLoading ? (
-                  <>
-                    <Icon name="sparkles" className="w-5 h-5 animate-spin" />
-                    <span>{isAuthSlow ? "Connecting to server..." : (isLoginMode ? "Logging in..." : "Signing up...")}</span>
-                  </>
-                ) : (isLoginMode ? "Log In" : "Sign Up")}
-              </button>
-            </form>
-            
-            <div className="mt-6 flex items-center justify-center gap-4">
-               <div className="h-px bg-neutral-800 flex-1"></div>
-               <span className="text-xs text-neutral-500 font-medium">OR</span>
-               <div className="h-px bg-neutral-800 flex-1"></div>
-            </div>
-            <div className="mt-6 flex flex-col items-center justify-center gap-2 w-full">
-              <button
-                type="button"
-                onClick={() => triggerGoogleLogin()}
-                disabled={authLoading}
-                className="w-full py-3 px-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 text-white font-medium text-sm border border-neutral-700/80 shadow-md flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
-              >
-                <svg className="w-5 h-5" viewBox="0 0 24 24">
-                  <path
-                    fill="#4285F4"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  {/* Suggested for You Section: Positioned below main player in normal vertical flow (accessible on scroll) */}
+                  <SuggestedForYouSection
+                    currentSong={currentSong}
+                    onPlaySong={playSong}
+                    onAddToQueue={addToQueue}
+                    queue={queue}
+                    onSuggestionsLoaded={(items) => {
+                      currentSuggestionsRef.current = items;
+                    }}
                   />
-                  <path
-                    fill="#34A853"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                  />
-                </svg>
-                <span>Continue with Google</span>
-              </button>
-              {authLoading && isAuthSlow && (
-                <p className="text-[11px] text-amber-400/90 font-medium animate-pulse flex items-center gap-1.5 mt-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                  Connecting to server...
-                </p>
+                </div>
+              ) : (
+                <div className="text-neutral-500 text-lg flex flex-col items-center gap-3 py-16">
+                  <Icon name="music" className="w-12 h-12 text-neutral-700" />
+                  <span>No song playing</span>
+                </div>
               )}
             </div>
 
-            <div className="mt-6 text-center">
-              <p className="text-xs text-neutral-400">
-                {isLoginMode ? "Don't have an account?" : "Already have an account?"}{' '}
+
+            {/* Up Next Column (Full on Mobile when 'queue' tab is active; 50% on Desktop) */}
+            <div className={`${mobileQueueTab === 'queue' ? 'flex' : 'hidden'} md:flex w-full md:w-1/2 flex-col bg-neutral-900/30 backdrop-blur-3xl overflow-y-auto hide-scrollbar pb-32 flex-1 md:flex-initial`}>
+              <div className="p-4 sm:p-6 md:p-12 mt-2 md:mt-0">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setMobileQueueTab('player')}
+                      className="md:hidden p-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium border border-neutral-700/60"
+                      title="Back to Now Playing"
+                    >
+                      ←
+                    </button>
+                    <h3 className="text-xl sm:text-2xl font-display font-bold text-white flex items-center gap-2.5">
+                      <Icon name="list" className="w-6 h-6 text-amber-500" />
+                      Up Next
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-amber-400/80 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full hidden sm:inline-flex items-center gap-1.5 font-medium">
+                      <Icon name="grip" className="w-3.5 h-3.5" />
+                      Tap & hold to slide
+                    </span>
+                    <span className="text-xs font-medium bg-neutral-800 text-neutral-400 px-3 py-1 rounded-full">{queue.length} tracks</span>
+                    {queue.length > 0 && (
+                      <button
+                        onClick={handleSaveQueueAsPlaylist}
+                        className="text-xs text-amber-300 hover:text-amber-200 px-3 py-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition cursor-pointer flex items-center gap-1 font-medium"
+                        title="Save Queue as Playlist"
+                        aria-label="Save Queue as Playlist"
+                      >
+                        <Icon name="plus" className="w-3.5 h-3.5" />
+                        <span>Save Playlist</span>
+                      </button>
+                    )}
+                    {queue.length > 0 && (
+                      <button
+                        onClick={() => {
+                          if (window.confirm("Clear all tracks from your playback queue?")) {
+                            setQueue([]);
+                            showToast("Playback queue cleared");
+                          }
+                        }}
+                        className="text-xs text-neutral-400 hover:text-red-400 px-2.5 py-1 rounded-full bg-neutral-800/90 hover:bg-neutral-800 border border-neutral-700/60 transition cursor-pointer"
+                        title="Clear Queue"
+                        aria-label="Clear Queue"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {queue.length > 0 && (
+                  <p className="text-[11px] text-neutral-500 mb-3 flex items-center gap-1.5 sm:hidden">
+                    <Icon name="grip" className="w-3.5 h-3.5 text-amber-500/80 shrink-0" />
+                    <span>Tap & hold or slide grip to rearrange queue</span>
+                  </p>
+                )}
+
+                <Reorder.Group axis="y" values={queue} onReorder={setQueue} layoutScroll className="space-y-2.5">
+                  {queue.map((track, idx) => {
+                    const isCurrent = currentSong?.id === track.id;
+                    return (
+                      <QueueItem
+                        key={track.id}
+                        track={track}
+                        isCurrent={isCurrent}
+                        isPlaying={isPlaying}
+                        onPlay={playSong}
+                        onRemove={removeFromQueue}
+                        canMoveUp={idx > 0}
+                        canMoveDown={idx < queue.length - 1}
+                        onMoveUp={() => {
+                          if (idx <= 0) return;
+                          setQueue(prev => {
+                            const copy = [...prev];
+                            const item = copy.splice(idx, 1)[0];
+                            copy.splice(idx - 1, 0, item);
+                            return copy;
+                          });
+                        }}
+                        onMoveDown={() => {
+                          if (idx >= queue.length - 1) return;
+                          setQueue(prev => {
+                            const copy = [...prev];
+                            const item = copy.splice(idx, 1)[0];
+                            copy.splice(idx + 1, 0, item);
+                            return copy;
+                          });
+                        }}
+                      />
+                    );
+                  })}
+
+                  {queue.length === 0 && (
+                    <div className="text-center py-12">
+                      <Icon name="music" className="w-12 h-12 text-neutral-700 mx-auto mb-4" />
+                      <p className="text-neutral-500">Your queue is empty</p>
+                    </div>
+                  )}
+                </Reorder.Group>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showAuthModal && (
+          <div
+            className="fixed inset-0 z-[130] bg-neutral-950/85 backdrop-blur-md flex items-center justify-center p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) closeAuthModal(false); }}
+          >
+            <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 md:p-8 w-full max-w-sm relative shadow-2xl">
+              <button onClick={() => closeAuthModal(false)} className="absolute top-4 right-4 text-neutral-500 hover:text-white transition">
+                <Icon name="close" className="w-6 h-6" />
+              </button>
+              <h2 className="text-2xl font-display font-extrabold tracking-tight text-white mb-6 text-center">
+                {isLoginMode ? "Welcome Back" : "Create Account"}
+              </h2>
+
+              {authError && (
+                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-2xl text-center">
+                  {authError}
+                </div>
+              )}
+
+              <form onSubmit={handleAuth} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-neutral-400 mb-1.5">Username</label>
+                  <input
+                    type="text"
+                    required
+                    autoComplete="username"
+                    value={authForm.username}
+                    onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })}
+                    className="w-full px-4 py-3 rounded-2xl bg-neutral-900/50 backdrop-blur-lg border border-neutral-800 text-white text-sm focus:outline-none focus:border-amber-500 transition"
+                    placeholder="Enter username"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-neutral-400 mb-1.5">Password</label>
+                  <input
+                    type="password"
+                    required
+                    autoComplete={isLoginMode ? "current-password" : "new-password"}
+                    value={authForm.password}
+                    onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+                    className="w-full px-4 py-3 rounded-2xl bg-neutral-900/50 backdrop-blur-lg border border-neutral-800 text-white text-sm focus:outline-none focus:border-amber-500 transition"
+                    placeholder="Enter password"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={authLoading}
+                  className="w-full py-3.5 mt-2 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white font-medium tracking-wide text-sm transition shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {authLoading ? (
+                    <>
+                      <Icon name="sparkles" className="w-5 h-5 animate-spin" />
+                      <span>{isAuthSlow ? "Connecting to server..." : (isLoginMode ? "Logging in..." : "Signing up...")}</span>
+                    </>
+                  ) : (isLoginMode ? "Log In" : "Sign Up")}
+                </button>
+              </form>
+
+              <div className="mt-6 flex items-center justify-center gap-4">
+                <div className="h-px bg-neutral-800 flex-1"></div>
+                <span className="text-xs text-neutral-500 font-medium">OR</span>
+                <div className="h-px bg-neutral-800 flex-1"></div>
+              </div>
+              <div className="mt-6 flex flex-col items-center justify-center gap-2 w-full">
                 <button
                   type="button"
-                  onClick={() => { setIsLoginMode(!isLoginMode); setAuthError(''); }}
-                  className="text-amber-400 hover:text-amber-300 font-bold underline transition"
+                  onClick={() => triggerGoogleLogin()}
+                  disabled={authLoading}
+                  className="w-full py-3 px-4 rounded-2xl bg-neutral-900 hover:bg-neutral-800 text-white font-medium text-sm border border-neutral-700/80 shadow-md flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
                 >
-                  {isLoginMode ? "Sign Up" : "Log In"}
+                  <svg className="w-5 h-5" viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                    />
+                  </svg>
+                  <span>Continue with Google</span>
                 </button>
-              </p>
+                {authLoading && isAuthSlow && (
+                  <p className="text-[11px] text-amber-400/90 font-medium animate-pulse flex items-center gap-1.5 mt-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                    Connecting to server...
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-6 text-center">
+                <p className="text-xs text-neutral-400">
+                  {isLoginMode ? "Don't have an account?" : "Already have an account?"}{' '}
+                  <button
+                    type="button"
+                    onClick={() => { setIsLoginMode(!isLoginMode); setAuthError(''); }}
+                    className="text-amber-400 hover:text-amber-300 font-bold underline transition"
+                  >
+                    {isLoginMode ? "Sign Up" : "Log In"}
+                  </button>
+                </p>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {isPlaylistModalOpen && (
-        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-neutral-950/80 backdrop-blur-md" onClick={() => { setIsPlaylistModalOpen(false); setSelectedSongForPlaylist(null); }}></div>
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-sm relative z-10 p-6 shadow-2xl animate-scaleIn">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-white">Add to Playlist</h2>
-              <button 
-                onClick={() => { setIsPlaylistModalOpen(false); setSelectedSongForPlaylist(null); }}
-                className="text-neutral-400 hover:text-white p-1 rounded-lg hover:bg-neutral-800 transition"
-                title="Close"
-              >
-                <Icon name="close" className="w-5 h-5" />
-              </button>
-            </div>
-            {selectedSongForPlaylist && (
-              <div className="flex items-center gap-3 mb-6 p-3 rounded-2xl bg-neutral-800/50">
-                <img src={getCleanThumbnail(selectedSongForPlaylist)} className="w-10 h-10 rounded object-cover" alt={selectedSongForPlaylist.title || ""} onError={(e) => handleImageError(e, selectedSongForPlaylist.title, selectedSongForPlaylist.id)} />
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-white truncate">{selectedSongForPlaylist.title}</p>
-                  <p className="text-xs text-amber-500/80 truncate">{selectedSongForPlaylist.channel}</p>
-                </div>
-              </div>
-            )}
-            <div className="mb-4 relative">
-              <select
-                className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500/50 appearance-none cursor-pointer"
-                onChange={(e) => {
-                  if (e.target.value) {
-                    handleAddSongToExistingPlaylist(e.target.value);
-                  }
-                }}
-                defaultValue=""
-              >
-                <option value="" disabled>Select a playlist...</option>
-                {playlists.map(pl => {
-                  const hasSong = selectedSongForPlaylist && pl.songs.some(s => s.id === selectedSongForPlaylist.id);
-                  return (
-                    <option key={pl.id} value={pl.id} disabled={hasSong}>
-                      {pl.name} {hasSong ? '(Already added)' : `(${pl.songs.length} songs)`}
-                    </option>
-                  );
-                })}
-              </select>
-              <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-neutral-500">
-                <Icon name="chevronDown" className="w-4 h-4" />
-              </div>
-            </div>
-            <form onSubmit={handleCreatePlaylist} className="mt-4 pt-4 border-t border-neutral-800">
-              <p className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2">Create New Playlist</p>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  placeholder="Playlist Name"
-                  value={newPlaylistName}
-                  onChange={(e) => setNewPlaylistName(e.target.value)}
-                  className="flex-1 bg-neutral-950 border border-neutral-800 rounded-2xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
-                />
-                <button data-voice-confirm="true" type="submit" disabled={!newPlaylistName.trim()} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white font-medium tracking-wide text-sm rounded-2xl transition disabled:opacity-50 disabled:cursor-not-allowed">
-                  Create
+        {isPlaylistModalOpen && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-neutral-950/80 backdrop-blur-md" onClick={() => { setIsPlaylistModalOpen(false); setSelectedSongForPlaylist(null); }}></div>
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-sm relative z-10 p-6 shadow-2xl animate-scaleIn">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-white">Add to Playlist</h2>
+                <button
+                  onClick={() => { setIsPlaylistModalOpen(false); setSelectedSongForPlaylist(null); }}
+                  className="text-neutral-400 hover:text-white p-1 rounded-lg hover:bg-neutral-800 transition"
+                  title="Close"
+                >
+                  <Icon name="close" className="w-5 h-5" />
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Sleek Dark-Themed Rename Playlist Modal */}
-      {renameModalPlaylist && (
-        <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-neutral-950/80 backdrop-blur-md" onClick={() => { setRenameModalPlaylist(null); setRenameModalName(''); }}></div>
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-sm relative z-10 p-6 shadow-2xl animate-scaleIn">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
-                  <Icon name="edit" className="w-4 h-4" />
+              {selectedSongForPlaylist && (
+                <div className="flex items-center gap-3 mb-6 p-3 rounded-2xl bg-neutral-800/50">
+                  <img src={getCleanThumbnail(selectedSongForPlaylist)} className="w-10 h-10 rounded object-cover" alt={selectedSongForPlaylist.title || ""} onError={(e) => handleImageError(e, selectedSongForPlaylist.title, selectedSongForPlaylist.id)} />
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-white truncate">{selectedSongForPlaylist.title}</p>
+                    <p className="text-xs text-amber-500/80 truncate">{selectedSongForPlaylist.channel}</p>
+                  </div>
                 </div>
-                <h2 className="text-lg font-bold text-white">Rename Playlist</h2>
+              )}
+              <div className="mb-4 relative">
+                <select
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500/50 appearance-none cursor-pointer"
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleAddSongToExistingPlaylist(e.target.value);
+                    }
+                  }}
+                  defaultValue=""
+                >
+                  <option value="" disabled>Select a playlist...</option>
+                  {playlists.map(pl => {
+                    const hasSong = selectedSongForPlaylist && pl.songs.some(s => s.id === selectedSongForPlaylist.id);
+                    return (
+                      <option key={pl.id} value={pl.id} disabled={hasSong}>
+                        {pl.name} {hasSong ? '(Already added)' : `(${pl.songs.length} songs)`}
+                      </option>
+                    );
+                  })}
+                </select>
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-neutral-500">
+                  <Icon name="chevronDown" className="w-4 h-4" />
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => { setRenameModalPlaylist(null); setRenameModalName(''); }}
-                className="p-1 rounded-xl text-neutral-400 hover:text-white hover:bg-neutral-800 transition"
-              >
-                <Icon name="close" className="w-5 h-5" />
-              </button>
+              <form onSubmit={handleCreatePlaylist} className="mt-4 pt-4 border-t border-neutral-800">
+                <p className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2">Create New Playlist</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Playlist Name"
+                    value={newPlaylistName}
+                    onChange={(e) => setNewPlaylistName(e.target.value)}
+                    className="flex-1 bg-neutral-950 border border-neutral-800 rounded-2xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                  />
+                  <button data-voice-confirm="true" type="submit" disabled={!newPlaylistName.trim()} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white font-medium tracking-wide text-sm rounded-2xl transition disabled:opacity-50 disabled:cursor-not-allowed">
+                    Create
+                  </button>
+                </div>
+              </form>
             </div>
+          </div>
+        )}
 
-            <form onSubmit={handleSaveRenamePlaylist}>
-              <label className="text-xs font-semibold text-neutral-400 block mb-2">Playlist Name</label>
-              <input
-                type="text"
-                autoFocus
-                value={renameModalName}
-                onChange={(e) => setRenameModalName(e.target.value)}
-                placeholder="Enter new name..."
-                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500/60 transition mb-5"
-              />
-              <div className="flex items-center justify-end gap-2.5">
+        {/* Sleek Dark-Themed Rename Playlist Modal */}
+        {renameModalPlaylist && (
+          <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-neutral-950/80 backdrop-blur-md" onClick={() => { setRenameModalPlaylist(null); setRenameModalName(''); }}></div>
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-sm relative z-10 p-6 shadow-2xl animate-scaleIn">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
+                    <Icon name="edit" className="w-4 h-4" />
+                  </div>
+                  <h2 className="text-lg font-bold text-white">Rename Playlist</h2>
+                </div>
                 <button
                   type="button"
                   onClick={() => { setRenameModalPlaylist(null); setRenameModalName(''); }}
+                  className="p-1 rounded-xl text-neutral-400 hover:text-white hover:bg-neutral-800 transition"
+                >
+                  <Icon name="close" className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveRenamePlaylist}>
+                <label className="text-xs font-semibold text-neutral-400 block mb-2">Playlist Name</label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={renameModalName}
+                  onChange={(e) => setRenameModalName(e.target.value)}
+                  placeholder="Enter new name..."
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500/60 transition mb-5"
+                />
+                <div className="flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => { setRenameModalPlaylist(null); setRenameModalName(''); }}
+                    className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-semibold transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!renameModalName.trim() || renameModalName.trim() === renameModalPlaylist.name}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-neutral-950 text-xs font-bold transition shadow-md shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Sleek Dark-Themed Delete Playlist Confirmation Modal */}
+        {deleteModalPlaylist && (
+          <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-neutral-950/80 backdrop-blur-md" onClick={() => setDeleteModalPlaylist(null)}></div>
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-sm relative z-10 p-6 shadow-2xl animate-scaleIn">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-2xl bg-red-500/15 text-red-400 flex items-center justify-center border border-red-500/30 shrink-0">
+                  <Icon name="trash" className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-white">Delete Playlist?</h2>
+                  <p className="text-xs text-neutral-400 mt-0.5">This action cannot be undone.</p>
+                </div>
+              </div>
+
+              <p className="text-xs text-neutral-300 bg-neutral-950/60 p-3 rounded-xl border border-neutral-800/80 my-4">
+                Are you sure you want to permanently delete <span className="font-bold text-white">"{deleteModalPlaylist.name}"</span>?
+              </p>
+
+              <div className="flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setDeleteModalPlaylist(null)}
                   className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-semibold transition"
                 >
                   Cancel
                 </button>
                 <button
-                  type="submit"
-                  disabled={!renameModalName.trim() || renameModalName.trim() === renameModalPlaylist.name}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-neutral-950 text-xs font-bold transition shadow-md shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  type="button"
+                  onClick={handleConfirmDeletePlaylist}
+                  className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 active:scale-95 text-white text-xs font-bold transition shadow-md shadow-red-500/20"
                 >
-                  Save Changes
+                  Delete Playlist
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Sleek Dark-Themed Delete Playlist Confirmation Modal */}
-      {deleteModalPlaylist && (
-        <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-neutral-950/80 backdrop-blur-md" onClick={() => setDeleteModalPlaylist(null)}></div>
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-sm relative z-10 p-6 shadow-2xl animate-scaleIn">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-2xl bg-red-500/15 text-red-400 flex items-center justify-center border border-red-500/30 shrink-0">
-                <Icon name="trash" className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-base font-bold text-white">Delete Playlist?</h2>
-                <p className="text-xs text-neutral-400 mt-0.5">This action cannot be undone.</p>
-              </div>
-            </div>
-
-            <p className="text-xs text-neutral-300 bg-neutral-950/60 p-3 rounded-xl border border-neutral-800/80 my-4">
-              Are you sure you want to permanently delete <span className="font-bold text-white">"{deleteModalPlaylist.name}"</span>?
-            </p>
-
-            <div className="flex items-center justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={() => setDeleteModalPlaylist(null)}
-                className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-semibold transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDeletePlaylist}
-                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 active:scale-95 text-white text-xs font-bold transition shadow-md shadow-red-500/20"
-              >
-                Delete Playlist
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Upgraded Feature Modals */}
-      {isCanvasOpen && (
-        <LoopraCanvas
-          isOpen={isCanvasOpen}
-          onClose={() => setIsCanvasOpen(false)}
+        {/* Upgraded Feature Modals */}
+        {isCanvasOpen && (
+          <LoopraCanvas
+            isOpen={isCanvasOpen}
+            onClose={() => setIsCanvasOpen(false)}
+            currentSong={currentSong}
+            isPlaying={isPlaying}
+            onTogglePlay={togglePlayPause}
+            onNext={handleNextSong}
+            onPrev={handlePrevSong}
+            onNextTrack={handleNextSong}
+            onPrevTrack={handlePrevSong}
+            currentTime={currentTimeRef.current}
+            duration={durationRef.current}
+            onSeek={handleSeek}
+            volume={volume}
+            onVolumeChange={handleVolumeChange}
+            isMuted={isMuted}
+            onToggleMute={handleToggleMute}
+            playerRef={playerRef}
+          />
+        )}
+
+        <LyricsModal
+          isOpen={isLyricsOpen}
+          onClose={() => setIsLyricsOpen(false)}
           currentSong={currentSong}
-          isPlaying={isPlaying}
-          onTogglePlay={togglePlayPause}
-          onNext={handleNextSong}
-          onPrev={handlePrevSong}
-          onNextTrack={handleNextSong}
-          onPrevTrack={handlePrevSong}
-          currentTime={currentTimeRef.current}
-          duration={durationRef.current}
-          onSeek={handleSeek}
-          volume={volume}
-          onVolumeChange={handleVolumeChange}
-          isMuted={isMuted}
-          onToggleMute={handleToggleMute}
           playerRef={playerRef}
         />
-      )}
 
-      <LyricsModal 
-        isOpen={isLyricsOpen} 
-        onClose={() => setIsLyricsOpen(false)} 
-        currentSong={currentSong} 
-        playerRef={playerRef} 
-      />
+        <SleepTimerModal
+          isOpen={isSleepTimerOpen}
+          onClose={() => setIsSleepTimerOpen(false)}
+          activeTimerRemaining={sleepTimerRemaining}
+          onSetTimer={(mins) => {
+            setSleepTimerRemaining(mins * 60);
+            showToast(`Sleep timer set for ${mins} minutes`);
+          }}
+          onCancelTimer={() => {
+            setSleepTimerRemaining(null);
+            showToast('Sleep timer cancelled');
+          }}
+        />
 
-      <SleepTimerModal 
-        isOpen={isSleepTimerOpen} 
-        onClose={() => setIsSleepTimerOpen(false)} 
-        activeTimerRemaining={sleepTimerRemaining} 
-        onSetTimer={(mins) => {
-          setSleepTimerRemaining(mins * 60);
-          showToast(`Sleep timer set for ${mins} minutes`);
-        }} 
-        onCancelTimer={() => {
-          setSleepTimerRemaining(null);
-          showToast('Sleep timer cancelled');
-        }} 
-      />
-
-      <PlayerSettingsModal
-        isOpen={isPlayerSettingsOpen}
-        onClose={() => setIsPlayerSettingsOpen(false)}
-        currentSong={currentSong}
-        sleepTimerRemaining={sleepTimerRemaining}
-        isDataSaverEnabled={isDataSaverEnabled}
-        onToggleDataSaver={toggleDataSaver}
-        isAutoPipEnabled={isAutoPipEnabled}
-        onToggleAutoPip={() => {
-          setIsAutoPipEnabled(prev => {
-            const next = !prev;
-            try {
-              localStorage.setItem('loopra_auto_pip_enabled', next ? 'true' : 'false');
-            } catch (_) {}
-            showToast(next ? 'Auto Floating Mini-Player enabled' : 'Auto Floating Mini-Player disabled');
-            return next;
-          });
-        }}
-        onSetSleepTimer={(mins) => {
-          setSleepTimerRemaining(mins * 60);
-          showToast(`Sleep timer set for ${mins} minutes`);
-        }}
-        onCancelSleepTimer={() => {
-          setSleepTimerRemaining(null);
-          showToast('Sleep timer cancelled');
-        }}
-        isAdmin={isAdmin}
-        crossfadeDuration={crossfadeDuration}
-        onSetCrossfadeDuration={handleSetCrossfadeDuration}
-        isGaplessEnabled={isGaplessEnabled}
-        onToggleGapless={handleToggleGapless}
-        playbackSpeed={playbackSpeed}
-        onSetPlaybackSpeed={(speed) => {
-          setPlaybackSpeed(speed);
-          if (playerRef.current && typeof playerRef.current.setPlaybackRate === 'function') {
-            playerRef.current.setPlaybackRate(speed);
-          }
-        }}
-      />
-
-      <ListeningStatsModal 
-        isOpen={isStatsOpen} 
-        onClose={() => setIsStatsOpen(false)} 
-        showToast={showToast}
-        authToken={authToken}
-        user={user}
-        backendUrl={BACKEND_URL}
-        onPlaySong={playSong}
-        currentSong={currentSong}
-        isPlaying={isPlaying}
-      />
-
-      <UserProfileModal 
-        isOpen={isProfileOpen} 
-        onClose={() => setIsProfileOpen(false)} 
-        currentUser={user} 
-        onUserUpdated={(updated) => {
-          setUser(prev => {
-            const merged = { ...(prev || {}), ...updated };
-            try {
-              localStorage.setItem('afterhours_user', JSON.stringify(merged));
-            } catch (_) {}
-            return merged;
-          });
-        }} 
-        showToast={showToast} 
-      />
-
-      {/* Loopra AI Floating Music Companion */}
-      <LoopraAiCompanion
-        backendUrl={BACKEND_URL}
-        authToken={authToken}
-        user={user}
-        currentSong={currentSong}
-        isPlaying={isPlaying}
-        playbackPosition={currentTimeRef.current}
-        duration={durationRef.current}
-        onPlayTrack={(track) => {
-          playSong(track);
-        }}
-        onTogglePlayPause={togglePlayPause}
-        onNextTrack={handleNextSong}
-        onPrevTrack={handlePrevSong}
-        onToggleShuffle={toggleShuffle}
-        onToggleRepeat={toggleRepeatMode}
-        onSetVolume={(vol) => {
-          setVolume(vol);
-          try { playerRef.current?.setVolume?.(vol); } catch (_) {}
-        }}
-        onToggleLike={toggleLike}
-        isLiked={isSongLiked}
-        onAddToPlaylist={handleAddToPlaylistClick}
-        onNavigate={(page, extra) => {
-          if (page === 'admin' && !isAdmin) {
-            return { success: false, reason: 'NO_ACCESS' };
-          }
-          const validDestinations = [
-            'home', 'discover', 'swipe', 'for-you', 'library', 'history',
-            'playlists', 'activity', 'dj-club', 'downloads', 'downloads_explore',
-            'radio', 'indian-radio', 'mood', 'timemachine', 'barber', 'truck', 'pauwa',
-            'artist', 'admin', 'apk', 'download'
-          ];
-          if (!validDestinations.includes(page) && !SPECIAL_STATIONS[page] && !stationsMap[page]) {
-            return { success: false, reason: 'NOT_FOUND' };
-          }
-          if (page === 'home') {
-            window.history.pushState(null, '', '/');
-            handleStationSelect('home');
-          } else if (page === 'discover') {
-            if (extra?.query) {
-              handleSearchFromHome(extra.query);
-            } else {
-              handleStationSelect('discover');
-            }
-          } else {
-            handleStationSelect(page, extra);
-          }
-          return { success: true };
-        }}
-        onOpenInsights={() => setIsStatsOpen(true)}
-        onOpenQueue={() => {
-          if (typeof handleOpenExpandedPlayer === 'function') {
-            handleOpenExpandedPlayer('queue');
-          } else {
-            setShowQueuePanel(true);
-          }
-        }}
-        onOpenLyrics={() => setIsLyricsOpen(true)}
-        onOpenListeningRooms={() => setIsListeningRoomsOpen(true)}
-        onOpenSimilarSongs={(track) => setSimilarSongsTrack(track || currentSong)}
-        onOpenPlayerSettings={() => setIsPlayerSettingsOpen(true)}
-        onOpenSleepTimer={() => setIsSleepTimerOpen(true)}
-        onOpenCanvas={() => setIsCanvasOpen(true)}
-        onOpenProfile={() => setIsProfileOpen(true)}
-        onOpenRatingModal={() => setIsRatingModalOpen(true)}
-        onSetPlaybackSpeed={(spd) => {
-          try {
-            if (typeof playerRef.current?.setPlaybackRate === 'function') {
-              playerRef.current.setPlaybackRate(spd);
-            }
-            showToast?.(`Playback speed set to ${spd}x`);
-          } catch (_) {}
-        }}
-        onDjAction={(actionObj) => {
-          try {
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('loopra_dj_action', { detail: actionObj }));
-            }
-          } catch (_) {}
-        }}
-        onGoBack={handleGoBack}
-        onOpenArtist={(artistName) => handleArtistClick(artistName)}
-        showToast={showToast}
-        isBottomPlayerVisible={isBottomPlayerVisible}
-        isOpen={activeAssistantPanel === 'ai'}
-        onToggleOpen={(open) => setActiveAssistantPanel(open ? 'ai' : null)}
-        onClose={() => setActiveAssistantPanel(null)}
-        hideFloatingButton={showSplashScreen || !isAppInitialized || showQueuePanel || showAuthModal || (isSidebarOpen && isMobileScreen) || Boolean(videoModalSong && !isPipActive)}
-        canAccessVoice={canAccessVoice}
-        isAvatarActive={isAvatarVisible}
-      />
-
-      {/* Loopra Dedicated Voice Agent & Shared Floating Assistant Action Bar */}
-      {isVoiceActive && (
-        <VoiceAgentModal
-          user={user}
-          token={authToken}
-          backendUrl={BACKEND_URL}
+        <PlayerSettingsModal
+          isOpen={isPlayerSettingsOpen}
+          onClose={() => setIsPlayerSettingsOpen(false)}
           currentSong={currentSong}
-        isPlaying={isPlaying}
-        volume={volume}
-        isSongLiked={isSongLiked}
-        isBottomPlayerVisible={isBottomPlayerVisible}
-        activeTab={activeTab}
-        isAiOpen={activeAssistantPanel === 'ai'}
-        onToggleAi={() => setActiveAssistantPanel(prev => prev === 'ai' ? null : 'ai')}
-        isPanelOpen={activeAssistantPanel === 'voice'}
-        onOpenPanel={() => setActiveAssistantPanel('voice')}
-        onClosePanel={() => setActiveAssistantPanel(null)}
-        isAvatarVisible={isAvatarVisible}
-        showSplashScreen={showSplashScreen}
-        isAppInitialized={isAppInitialized}
-        onToggleAvatar={(vis) => {
-          setIsAvatarVisible((prev) => {
-            const next = typeof vis === 'boolean' ? vis : !prev;
-            try {
-              localStorage.setItem('loopra_avatar_visible', next ? 'true' : 'false');
-            } catch (_) {}
-            return next;
-          });
-        }}
-        onPlayTrack={(track) => playSong(track)}
-        onTogglePlayPause={togglePlayPause}
-        onNextTrack={handleNextSong}
-        onPrevTrack={handlePrevSong}
-        onToggleShuffle={toggleShuffle}
-        onToggleRepeat={toggleRepeatMode}
-        onSetVolume={(vol) => {
-          setVolume(vol);
-          try { playerRef.current?.setVolume?.(vol); } catch (_) {}
-        }}
-        onToggleLike={(track) => toggleLike(track || currentSong)}
-        onRemoveFromFavorites={(trackOrTitle) => {
-          const title = typeof trackOrTitle === 'string' ? trackOrTitle : trackOrTitle?.title;
-          if (title) {
-            setLikedSongs(prev => prev.filter(s => !s.title?.toLowerCase().includes(title.toLowerCase())));
-            showToast?.(`Removed "${title}" from favorites`);
-          } else if (currentSong) {
-            toggleLike(currentSong);
-          }
-        }}
-        onAddToPlaylist={(track) => handleAddToPlaylistClick(track || currentSong)}
-        onCreatePlaylist={(name) => {
-          const trimmed = (name || '').trim() || 'New Playlist';
-          const newPl = {
-            id: `pl_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-            name: trimmed,
-            createdAt: new Date().toISOString(),
-            songs: []
-          };
-          setPlaylists(prev => [newPl, ...prev]);
-          showToast?.(`Created playlist "${trimmed}"`);
-          return newPl;
-        }}
-        onOpenPlaylistByName={(name) => {
-          const pl = playlists.find(p => p.name?.toLowerCase().includes(name.toLowerCase()));
-          if (pl) {
-            setSelectedPlaylistForView(pl);
-            handleStationSelect('playlists');
-          } else {
-            handleStationSelect('playlists');
-          }
-        }}
-        onPlayPlaylist={(name) => {
-          const pl = playlists.find(p => p.name?.toLowerCase().includes(name.toLowerCase()));
-          if (pl && pl.songs?.length > 0) {
-            setQueue(pl.songs);
-            playSong(pl.songs[0]);
-            showToast?.(`Playing playlist "${pl.name}"`);
-          } else {
-            showToast?.('Playlist is empty or not found', 'warning');
-          }
-        }}
-        onPlayRadioStation={(stationName) => {
-          handleStationSelect('radio', { station: stationName, autoplay: true });
-        }}
-        onPlayFromHistory={(queryOrIndex) => {
-          if (history && history.length > 0) {
-            let track = history[0];
-            if (typeof queryOrIndex === 'string') {
-              const matched = history.find(s => s.title?.toLowerCase().includes(queryOrIndex.toLowerCase()));
-              if (matched) track = matched;
-            }
-            playSong(track);
-            showToast?.(`Playing "${track.title}" from history`);
-          } else {
-            showToast?.('No songs found in listening history', 'warning');
-          }
-        }}
-        onRemoveHistoryItem={(queryOrId) => {
-          if (queryOrId) {
-            const queryLower = String(queryOrId).toLowerCase().trim();
-            setHistory(prev => prev.filter(s => {
-              const match = s.id === queryOrId ||
-                s.title?.toLowerCase().includes(queryLower) ||
-                s.artist?.toLowerCase().includes(queryLower);
-              return !match;
-            }));
-            showToast?.('Removed from listening history');
-          }
-        }}
-        onClearHistory={clearHistory}
-        onAddToQueue={(track) => {
-          const songToAdd = track || currentSong;
-          if (songToAdd) {
-            setQueue(prev => [...prev, songToAdd]);
-            showToast?.(`Added "${songToAdd.title}" to queue`);
-          }
-        }}
-        onNavigate={(page, extra) => {
-          if (page === 'admin' && !isAdmin) {
-            return { success: false, reason: 'NO_ACCESS' };
-          }
-          const validDestinations = [
-            'home', 'discover', 'swipe', 'for-you', 'library', 'history',
-            'playlists', 'activity', 'dj-club', 'downloads', 'downloads_explore',
-            'radio', 'indian-radio', 'mood', 'timemachine', 'barber', 'truck', 'pauwa',
-            'artist', 'admin', 'apk', 'download'
-          ];
-          if (!validDestinations.includes(page) && !SPECIAL_STATIONS[page] && !stationsMap[page]) {
-            return { success: false, reason: 'NOT_FOUND' };
-          }
-          if (page === 'home') {
-            window.history.pushState(null, '', '/');
-            handleStationSelect('home');
-          } else if (page === 'discover') {
-            if (extra?.query) {
-              handleSearchFromHome(extra.query);
-            } else {
-              handleStationSelect('discover');
-            }
-          } else {
-            handleStationSelect(page, extra);
-          }
-          return { success: true };
-        }}
-        onOpenInsights={() => setIsStatsOpen(true)}
-        onOpenQueue={() => {
-          if (typeof handleOpenExpandedPlayer === 'function') {
-            handleOpenExpandedPlayer('queue');
-          } else {
-            setShowQueuePanel(true);
-          }
-        }}
-        onOpenLyrics={() => setIsLyricsOpen(true)}
-        onOpenListeningRooms={() => setIsListeningRoomsOpen(true)}
-        onOpenSimilarSongs={(track) => setSimilarSongsTrack(track || currentSong)}
-        onOpenPlayerSettings={() => setIsPlayerSettingsOpen(true)}
-        onOpenSleepTimer={() => setIsSleepTimerOpen(true)}
-        onOpenCanvas={() => setIsCanvasOpen(true)}
-        onOpenProfile={() => setIsProfileOpen(true)}
-        onOpenRatingModal={() => setIsRatingModalOpen(true)}
-        onSetPlaybackSpeed={(spd) => {
-          try {
-            if (typeof playerRef.current?.setPlaybackRate === 'function') {
-              playerRef.current.setPlaybackRate(spd);
-            }
-            showToast?.(`Playback speed set to ${spd}x`);
-          } catch (_) {}
-        }}
-        onDjAction={(actionObj) => {
-          try {
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('loopra_dj_action', { detail: actionObj }));
-            }
-          } catch (_) {}
-        }}
-        onGoBack={handleGoBack}
-        onOpenArtist={(artistName) => handleArtistClick(artistName)}
-        userPlaylists={playlists}
-        selectedPlaylistForView={selectedPlaylistForView}
-        getCurrentVisibleTracks={() => currentContextTracksRef.current}
-        playFromCurrentContext={async ({ mode, songQuery }) => {
-          const tracks = currentContextTracksRef.current || [];
-          if (!tracks || tracks.length === 0) {
-            return { success: false, message: 'Collection is empty or still loading.' };
-          }
-          let trackToPlay = null;
-          if (songQuery) {
-            const q = songQuery.toLowerCase().trim();
-            const matched = tracks.find(t => 
-              (t.title && t.title.toLowerCase().includes(q)) ||
-              (t.artist && t.artist.toLowerCase().includes(q))
-            );
-            if (matched) {
-              trackToPlay = matched;
-            } else {
-              return { success: false, message: `"${songQuery}" is collection mein nahi mila.` };
-            }
-          } else if (mode === 'first') {
-            trackToPlay = tracks[0];
-          } else {
-            // random / shuffle / default
-            const idx = Math.floor(Math.random() * tracks.length);
-            trackToPlay = tracks[idx];
-          }
-
-          if (trackToPlay) {
-            playSong(trackToPlay);
-            showToast?.(`Playing "${trackToPlay.title}"`);
-            return { success: true, track: trackToPlay, description: `Playing "${trackToPlay.title}" from collection` };
-          }
-          return { success: false, message: 'No track found to play.' };
-        }}
-        showToast={showToast}
-      />
-      )}
-
-      {/* Automatic 5-Minute Active Usage & Direct Rate/Review Modal */}
-      <RatingPopupModal
-        user={user}
-        authToken={authToken}
-        isPlaying={isPlaying}
-        showToast={showToast}
-        isOpen={isRatingModalOpen}
-        onClose={() => setIsRatingModalOpen(false)}
-        initialMode={ratingModalMode}
-        onReviewSubmitted={() => setReviewsRefreshKey(k => k + 1)}
-      />
-
-      {toastMessage && (
-        <div className={`fixed ${isBottomPlayerVisible ? 'bottom-36 md:bottom-28' : 'bottom-20 md:bottom-8'} left-1/2 -translate-x-1/2 z-[9999] px-4 py-2.5 rounded-2xl bg-neutral-900/95 text-white text-xs border border-amber-500/40 shadow-2xl backdrop-blur-xl flex items-center gap-2 animate-fadeIn pointer-events-none`}>
-          <Icon name="sparkles" className="w-4 h-4 text-amber-400 shrink-0" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
-
-      {/* Autoplay Policy Block Prompt Banner: Prompts user with interactive play button when browser blocks autoplay */}
-      {isAutoplayBlocked && currentSong && (
-        <div className={`fixed ${isBottomPlayerVisible ? 'bottom-36 md:bottom-28' : 'bottom-20 md:bottom-8'} left-1/2 -translate-x-1/2 z-[10001] px-4 py-2.5 rounded-2xl bg-neutral-900/95 text-white text-xs border border-amber-500 shadow-[0_0_30px_rgba(245,158,11,0.25)] backdrop-blur-2xl flex items-center gap-3 animate-fadeIn`}>
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
-            <span className="font-medium">Autoplay blocked by browser. Tap to start playback:</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setIsAutoplayBlocked(false);
-              togglePlayPause();
-            }}
-            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 font-bold text-xs flex items-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer"
-          >
-            <span>▶</span>
-            <span>Tap to Play</span>
-          </button>
-        </div>
-      )}
-
-      {/* Render Free-Tier Cold-Start Wake-Up Badge Removed */}
-
-      {/* Global Right-Click Track Context Menu */}
-      {contextMenu && (
-        <div
-          style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
-          className="fixed z-[10000] w-52 bg-neutral-900/95 backdrop-blur-2xl rounded-2xl shadow-2xl border border-neutral-700/80 overflow-hidden py-1.5 animate-fadeIn select-none"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="px-3.5 py-1.5 border-b border-white/5 mb-1">
-            <p className="text-[11px] font-bold text-white truncate">{contextMenu.track.title}</p>
-            <p className="text-[9px] text-neutral-400 truncate">{contextMenu.track.artist || contextMenu.track.channel}</p>
-          </div>
-
-          <button
-            onClick={() => {
-              playSong(contextMenu.track);
-              setContextMenu(null);
-            }}
-            className="w-full text-left px-3.5 py-2 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800/80 transition flex items-center gap-2.5 cursor-pointer"
-          >
-            <span className="text-amber-400">▶</span>
-            <span>Play Now</span>
-          </button>
-
-          <button
-            onClick={() => {
-              playNext(contextMenu.track);
-              setContextMenu(null);
-            }}
-            className="w-full text-left px-3.5 py-2 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800/80 transition flex items-center gap-2.5 cursor-pointer"
-          >
-            <span>⏭️</span>
-            <span>Play Next</span>
-          </button>
-
-          <button
-            onClick={() => {
-              if (queue.some(s => (s.id || s.videoId) === (contextMenu.track.id || contextMenu.track.videoId))) {
-                removeFromQueue(contextMenu.track.id || contextMenu.track.videoId);
-              } else {
-                addToQueue(contextMenu.track);
-              }
-              setContextMenu(null);
-            }}
-            className="w-full text-left px-3.5 py-2 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800/80 transition flex items-center gap-2.5 cursor-pointer"
-          >
-            <span>➕</span>
-            <span>{queue.some(s => (s.id || s.videoId) === (contextMenu.track.id || contextMenu.track.videoId)) ? 'Remove from Queue' : 'Add to Queue'}</span>
-          </button>
-
-          <button
-            onClick={() => {
-              toggleLike(contextMenu.track);
-              setContextMenu(null);
-            }}
-            className="w-full text-left px-3.5 py-2 text-xs font-medium text-neutral-200 hover:text-pink-400 hover:bg-neutral-800/80 transition flex items-center gap-2.5 cursor-pointer"
-          >
-            <span className="text-pink-400">♥</span>
-            <span>{likedSongs.some(s => (s.id || s.videoId) === (contextMenu.track.id || contextMenu.track.videoId)) ? 'Remove Favorite' : 'Add to Favorite'}</span>
-          </button>
-
-          <button
-            onClick={() => {
-              handleAddToPlaylistClick(contextMenu.track);
-              setContextMenu(null);
-            }}
-            className="w-full text-left px-3.5 py-2 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800/80 transition flex items-center gap-2.5 cursor-pointer"
-          >
-            <span>📁</span>
-            <span>Add to Playlist</span>
-          </button>
-
-          <div className="pt-1 border-t border-white/5 mt-1">
-            <DownloadTrackButton
-              track={contextMenu.track}
-              variant="menu-item"
-              showToast={showToast}
-              onDownloaded={() => setContextMenu(null)}
-            />
-          </div>
-        </div>
-      )}
-      </Suspense>
-    </div>
-  );
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+          sleepTimerRemaining={sleepTimerRemaining}
+          isDataSaverEnabled={isDataSaverEnabled}
+          onToggleDataSaver={toggleDataSaver}
+          isAutoPipEnabled={isAutoPipEnabled}
+          onToggleAutoPip={() => {
+            setIsAutoPipEnabled(prev => {
+              const next = !prev;
+              try {
+                localStorage.setItem('loopra_auto_pip_enabled', next ? 'true' : 'false');
+              } catch (_) { }
+              showToast(
+                ...[truncated for diff preview]

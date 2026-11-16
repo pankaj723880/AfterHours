@@ -29,12 +29,13 @@ self.addEventListener('install', (event) => {
 });
 
 // Activate event - clean up all outdated caches and claim clients immediately
+// Note: Preserves 'loopra-offline-songs' cache used for user-downloaded offline tracks
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
-          if (key !== CACHE_NAME) {
+          if (key !== CACHE_NAME && key !== 'loopra-offline-songs') {
             console.log('[SW] Clearing outdated cache:', key);
             return caches.delete(key);
           }

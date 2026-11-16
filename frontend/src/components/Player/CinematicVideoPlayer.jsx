@@ -15,7 +15,9 @@ import {
   Heart,
   X,
   Music,
-  CheckCircle2
+  CheckCircle2,
+  Sliders,
+  Check
 } from 'lucide-react';
 
 export default function CinematicVideoPlayer({
@@ -53,6 +55,10 @@ export default function CinematicVideoPlayer({
   const [hoverSeekPercent, setHoverSeekPercent] = useState(0);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [scrubTime, setScrubTime] = useState(0);
+  const [showQualityMenu, setShowQualityMenu] = useState(false);
+  const [availableQualities, setAvailableQualities] = useState([]);
+  const [currentQuality, setCurrentQuality] = useState('small');
+  const qualityMenuRef = useRef(null);
 
   const playerContainerRef = useRef(null);
   const progressBarRef = useRef(null);
@@ -67,9 +73,9 @@ export default function CinematicVideoPlayer({
         // Unlock orientation if returning from fullscreen
         try {
           if (screen?.orientation?.unlock) {
-            screen.orientation.unlock().catch(() => {});
+            screen.orientation.unlock().catch(() => { });
           }
-        } catch (_) {}
+        } catch (_) { }
       }
     };
     document.addEventListener('fullscreenchange', handleFsChange);
@@ -114,7 +120,7 @@ export default function CinematicVideoPlayer({
           }
         }
       }
-    } catch (_) {}
+    } catch (_) { }
     onTogglePlayPause?.();
     resetControlsTimer();
   }, [isPlaying, onTogglePlayPause, playerRef, resetControlsTimer]);
@@ -143,7 +149,7 @@ export default function CinematicVideoPlayer({
           const d = playerRef.current.getDuration();
           if (typeof d === 'number' && !isNaN(d) && d > 0) setInternalDuration(d);
         }
-      } catch (e) {}
+      } catch (e) { }
     }, 250);
     return () => clearInterval(interval);
   }, [videoModalSong, isPlaying, playerRef, isScrubbing]);
@@ -159,7 +165,7 @@ export default function CinematicVideoPlayer({
       if (playerRef?.current && typeof playerRef.current.seekTo === 'function') {
         playerRef.current.seekTo(clamped, true);
       }
-    } catch (_) {}
+    } catch (_) { }
     onSeek?.(clamped);
     resetControlsTimer();
   }, [activeDuration, onSeek, playerRef, resetControlsTimer]);
@@ -184,9 +190,9 @@ export default function CinematicVideoPlayer({
         // Force / trigger YouTube-style landscape orientation on mobile/tablets
         try {
           if (screen?.orientation?.lock) {
-            await screen.orientation.lock('landscape').catch(() => {});
+            await screen.orientation.lock('landscape').catch(() => { });
           }
-        } catch (_) {}
+        } catch (_) { }
       } else {
         if (document.exitFullscreen) {
           await document.exitFullscreen();
@@ -197,11 +203,11 @@ export default function CinematicVideoPlayer({
         }
         try {
           if (screen?.orientation?.unlock) {
-            screen.orientation.unlock().catch(() => {});
+            screen.orientation.unlock().catch(() => { });
           }
-        } catch (_) {}
+        } catch (_) { }
       }
-    } catch (_) {}
+    } catch (_) { }
   }, []);
 
   const toggleCaptions = useCallback(() => {
@@ -228,6 +234,78 @@ export default function CinematicVideoPlayer({
       showToast?.('Subtitles not available for this video');
     }
   }, [captionsEnabled, playerRef, showToast]);
+
+  // Quality Label Mapper
+  const getQualityLabel = (q) => {
+    switch (q) {
+      case 'small': return '240p (Data Saver)';
+      case 'medium': return '360p';
+      case 'large': return '480p';
+      case 'hd720': return '720p HD';
+      case 'hd1080': return '1080p Full HD';
+      case 'highres': return 'Original / High';
+      case 'auto':
+      case 'default': return 'Auto';
+      default: return q;
+    }
+  };
+
+  // Retrieve available qualities from YouTube player and toggle menu
+  const toggleQualityMenu = useCallback(() => {
+    setShowQualityMenu(prev => {
+      const next = !prev;
+      if (next && playerRef?.current) {
+        try {
+          if (typeof playerRef.current.getAvailableQualityLevels === 'function') {
+            const levels = playerRef.current.getAvailableQualityLevels() || [];
+            // Filter out empty or duplicate entries
+            const validLevels = Array.isArray(levels) ? levels.filter(Boolean) : [];
+            setAvailableQualities(validLevels.length > 0 ? validLevels : ['small', 'medium', 'large', 'hd720']);
+          } else {
+            setAvailableQualities(['small', 'medium', 'large', 'hd720']);
+          }
+          if (typeof playerRef.current.getPlaybackQuality === 'function') {
+            const q = playerRef.current.getPlaybackQuality();
+            if (q) setCurrentQuality(q);
+          }
+        } catch (_) {
+          setAvailableQualities(['small', 'medium', 'large', 'hd720']);
+        }
+      }
+      return next;
+    });
+    resetControlsTimer();
+  }, [playerRef, resetControlsTimer]);
+
+  const handleSelectQuality = useCallback((quality) => {
+    try {
+      if (playerRef?.current && typeof playerRef.current.setPlaybackQuality === 'function') {
+        playerRef.current.setPlaybackQuality(quality);
+      }
+      setCurrentQuality(quality);
+      showToast?.(`Quality set to ${getQualityLabel(quality)}`);
+    } catch (_) {
+      showToast?.(`Failed to change quality`);
+    }
+    setShowQualityMenu(false);
+    resetControlsTimer();
+  }, [playerRef, showToast, resetControlsTimer]);
+
+  // Close quality menu on outside click
+  useEffect(() => {
+    if (!showQualityMenu) return;
+    const handleOutsideClick = (e) => {
+      if (qualityMenuRef.current && !qualityMenuRef.current.contains(e.target)) {
+        setShowQualityMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, [showQualityMenu]);
 
   useEffect(() => {
     if (!videoModalSong || isPipActive) return;
@@ -282,7 +360,7 @@ export default function CinematicVideoPlayer({
           break;
         case 'Escape':
           if (document.fullscreenElement) {
-            document.exitFullscreen().catch(() => {});
+            document.exitFullscreen().catch(() => { });
           } else if (isTheaterMode) {
             setIsTheaterMode(false);
           } else {
@@ -356,7 +434,7 @@ export default function CinematicVideoPlayer({
           ? "fixed top-0 left-0 w-[1px] h-[1px] opacity-[0.01] pointer-events-none -z-[999] overflow-hidden"
           : isPipActive
             ? "fixed inset-0 w-screen h-screen z-[999999] bg-black m-0 p-0 overflow-hidden pointer-events-auto"
-            : "fixed inset-0 z-[9999] bg-neutral-950/90 backdrop-blur-xl flex items-center justify-center p-2 sm:p-5 md:p-8 transition-all duration-300 pointer-events-auto overflow-y-auto"
+            : "fixed inset-0 z-[9999] bg-neutral-950/95 backdrop-blur-xl flex items-center justify-center p-0 sm:p-4 md:p-6 transition-all duration-300 pointer-events-auto overflow-hidden"
       }
     >
       <div
@@ -368,23 +446,20 @@ export default function CinematicVideoPlayer({
               ? "w-full h-full bg-black border-0 rounded-none overflow-hidden flex flex-col p-0 m-0"
               : isFullscreen
                 ? "w-screen h-screen max-w-none max-h-none rounded-none border-0 bg-black flex flex-col justify-between overflow-hidden relative m-0 p-0 shadow-none"
-                : `w-full my-auto bg-neutral-900/95 backdrop-blur-2xl border border-neutral-800/90 rounded-2xl sm:rounded-3xl overflow-hidden shadow-[0_25px_80px_rgba(0,0,0,0.95)] shadow-amber-500/5 flex flex-col transition-all duration-300 relative ${
-                    isTheaterMode
-                      ? 'max-w-[98vw] max-h-[96vh]'
-                      : 'max-w-5xl max-h-[94vh]'
-                  }`
+                : `w-full h-full sm:h-auto sm:max-h-[96vh] sm:w-[min(100%,calc(96vh*9/16))] bg-neutral-900/98 sm:border sm:border-neutral-800/90 sm:rounded-3xl overflow-hidden shadow-[0_25px_80px_rgba(0,0,0,0.95)] shadow-amber-500/5 flex flex-col transition-all duration-300 relative aspect-[9/16] ${isTheaterMode
+                  ? 'sm:w-[min(100%,calc(98vh*9/16))] sm:max-h-[98vh]'
+                  : ''
+                }`
         }
       >
         {videoModalSong && !isPipActive && (
           <header
             style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
-            className={`w-full border-b transition-colors select-none z-40 shrink-0 ${
-              isFullscreen
-                ? `absolute top-0 inset-x-0 bg-gradient-to-b from-black/90 via-black/60 to-transparent border-transparent px-4 sm:px-8 py-3.5 sm:py-5 transition-opacity duration-300 pointer-events-auto ${
-                    showControls || !isPlaying ? 'opacity-100' : 'opacity-0 pointer-events-none'
-                  }`
+            className={`w-full border-b transition-colors select-none z-40 shrink-0 ${isFullscreen
+                ? `absolute top-0 inset-x-0 bg-gradient-to-b from-black/90 via-black/60 to-transparent border-transparent px-4 sm:px-8 py-3.5 sm:py-5 transition-opacity duration-300 pointer-events-auto ${showControls || !isPlaying ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                }`
                 : 'px-4 sm:px-7 py-3 sm:py-4 bg-neutral-900/95 border-neutral-800/80 shadow-sm'
-            }`}
+              }`}
           >
             <div className="w-full flex items-center justify-between gap-3 sm:gap-6">
               {/* Branding */}
@@ -421,13 +496,12 @@ export default function CinematicVideoPlayer({
                 <button
                   type="button"
                   onClick={() => onToggleLike?.(activeSong)}
-                  className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer active:scale-95 ${
-                    isLiked
+                  className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer active:scale-95 ${isLiked
                       ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.3)]'
                       : isFullscreen
                         ? 'bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-amber-300 backdrop-blur-md'
                         : 'bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300 hover:text-amber-300'
-                  }`}
+                    }`}
                   title={isLiked ? 'Remove from Favorites' : 'Add to Favorites'}
                 >
                   <Heart className={`w-4 h-4 sm:w-4.5 sm:h-4.5 ${isLiked ? 'fill-current text-rose-500' : ''}`} />
@@ -436,11 +510,10 @@ export default function CinematicVideoPlayer({
                 <button
                   type="button"
                   onClick={() => onShare?.(activeSong)}
-                  className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer active:scale-95 ${
-                    isFullscreen
+                  className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer active:scale-95 ${isFullscreen
                       ? 'bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-white backdrop-blur-md'
                       : 'bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300 hover:text-white'
-                  }`}
+                    }`}
                   title="Share Track"
                 >
                   <Share2 className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
@@ -449,11 +522,10 @@ export default function CinematicVideoPlayer({
                 <button
                   type="button"
                   onClick={() => setIsPipActive?.(true)}
-                  className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer active:scale-95 hidden sm:flex items-center justify-center ${
-                    isFullscreen
+                  className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer active:scale-95 hidden sm:flex items-center justify-center ${isFullscreen
                       ? 'bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-white backdrop-blur-md'
                       : 'bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300 hover:text-white'
-                  }`}
+                    }`}
                   title="Minimize to Picture-in-Picture"
                 >
                   <Minimize2 className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
@@ -462,11 +534,10 @@ export default function CinematicVideoPlayer({
                 <button
                   type="button"
                   onClick={onClose}
-                  className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer active:scale-95 ${
-                    isFullscreen
+                  className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer active:scale-95 ${isFullscreen
                       ? 'bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-amber-300 backdrop-blur-md'
                       : 'bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300 hover:text-amber-300'
-                  }`}
+                    }`}
                   title="Switch to Music Mode (Audio continues in background)"
                 >
                   <X className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
@@ -485,11 +556,11 @@ export default function CinematicVideoPlayer({
                 ? "w-full h-full bg-black overflow-hidden flex items-center justify-center p-0 m-0"
                 : isFullscreen
                   ? "relative w-full h-full flex-1 bg-black overflow-hidden select-none group flex items-center justify-center"
-                  : "relative w-full aspect-video bg-black overflow-hidden select-none group flex items-center justify-center"
+                  : "relative w-full h-full flex-1 bg-black overflow-hidden select-none group flex items-center justify-center"
           }
         >
-          <div ref={ytContainerRef} className="w-full h-full relative z-0 pointer-events-none flex items-center justify-center">
-            <div id="yt-player-instance" className={isFullscreen ? "w-full h-full" : ""}></div>
+          <div ref={ytContainerRef} className="w-full h-full relative z-0 pointer-events-none flex items-center justify-center overflow-hidden">
+            <div id="yt-player-instance" className="w-full h-full object-cover"></div>
           </div>
 
           {videoModalSong && !isPipActive && (
@@ -509,9 +580,8 @@ export default function CinematicVideoPlayer({
                 <button
                   type="button"
                   onClick={handleDirectTogglePlayPause}
-                  className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-neutral-950/80 backdrop-blur-md border border-amber-500/50 flex items-center justify-center text-amber-400 transition-all duration-200 hover:scale-110 active:scale-95 hover:bg-amber-500 hover:text-neutral-950 shadow-[0_0_30px_rgba(0,0,0,0.85)] cursor-pointer pointer-events-auto z-30 ${
-                    showControls || !isPlaying ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
-                  }`}
+                  className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-neutral-950/80 backdrop-blur-md border border-amber-500/50 flex items-center justify-center text-amber-400 transition-all duration-200 hover:scale-110 active:scale-95 hover:bg-amber-500 hover:text-neutral-950 shadow-[0_0_30px_rgba(0,0,0,0.85)] cursor-pointer pointer-events-auto z-30 ${showControls || !isPlaying ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
+                    }`}
                   aria-label={isPlaying ? 'Pause Video' : 'Play Video'}
                 >
                   {isPlaying ? (
@@ -525,15 +595,13 @@ export default function CinematicVideoPlayer({
               {/* Custom Playback Controls Overlay - Full-Width Span */}
               <div
                 onClick={(e) => e.stopPropagation()}
-                className={`absolute inset-x-0 bottom-0 z-30 transition-opacity duration-300 flex flex-col justify-end ${
-                  showControls || !isPlaying ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-                }`}
+                className={`absolute inset-x-0 bottom-0 z-30 transition-opacity duration-300 flex flex-col justify-end ${showControls || !isPlaying ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                  }`}
               >
-                <div className={`bg-gradient-to-t from-neutral-950/98 via-neutral-950/85 to-transparent flex flex-col gap-2.5 pointer-events-auto w-full ${
-                  isFullscreen
+                <div className={`bg-gradient-to-t from-neutral-950/98 via-neutral-950/85 to-transparent flex flex-col gap-2.5 pointer-events-auto w-full ${isFullscreen
                     ? 'pt-16 pb-6 px-4 sm:px-8'
                     : 'pt-12 pb-3 px-3 sm:px-6'
-                }`}>
+                  }`}>
                   <div className="w-full max-w-full mx-auto flex flex-col gap-2">
                     {/* Touch & Mouse Interactive Scrub Progress Bar */}
                     <div
@@ -674,14 +742,68 @@ export default function CinematicVideoPlayer({
                       </div>
 
                       <div className="flex items-center gap-1 sm:gap-2 relative">
+                        {/* Quality Resolution Switcher */}
+                        <div className="relative" ref={qualityMenuRef}>
+                          <button
+                            type="button"
+                            onClick={toggleQualityMenu}
+                            className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer flex items-center gap-1 text-xs font-semibold ${showQualityMenu
+                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.25)]'
+                                : 'text-neutral-300 hover:text-white hover:bg-neutral-800/80'
+                              }`}
+                            title="Video Resolution Settings"
+                            aria-label="Video Resolution Settings"
+                          >
+                            <Sliders className="w-4 h-4 sm:w-5 sm:h-5" />
+                            <span className="hidden sm:inline-block text-[11px] font-mono text-amber-400">
+                              {currentQuality === 'small' ? '240p' : currentQuality === 'medium' ? '360p' : currentQuality === 'large' ? '480p' : currentQuality === 'hd720' ? '720p' : 'Auto'}
+                            </span>
+                          </button>
+
+                          {/* Clean Resolution Quality Popup */}
+                          {showQualityMenu && (
+                            <div className="absolute right-0 bottom-full mb-3 w-52 sm:w-56 bg-neutral-900/98 backdrop-blur-xl border border-neutral-700/80 rounded-2xl shadow-2xl p-2 z-50 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150">
+                              <div className="px-3 py-1.5 text-[11px] font-bold text-neutral-400 uppercase tracking-wider border-b border-neutral-800 flex items-center justify-between">
+                                <span>Resolution</span>
+                                <span className="text-amber-400 font-mono lowercase">{currentQuality}</span>
+                              </div>
+                              <div className="flex flex-col gap-0.5 max-h-56 overflow-y-auto pt-1">
+                                {availableQualities.map((q) => {
+                                  const isSelected = currentQuality === q;
+                                  return (
+                                    <button
+                                      key={q}
+                                      type="button"
+                                      onClick={() => handleSelectQuality(q)}
+                                      className={`w-full px-3 py-2 rounded-xl text-left text-xs font-medium flex items-center justify-between transition cursor-pointer ${isSelected
+                                          ? 'bg-amber-500/15 text-amber-300 font-bold border border-amber-500/30'
+                                          : 'text-neutral-300 hover:bg-neutral-800/80 hover:text-white'
+                                        }`}
+                                    >
+                                      <span className="flex items-center gap-2">
+                                        {isSelected && <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                                        <span className={!isSelected ? 'ml-5.5' : ''}>{getQualityLabel(q)}</span>
+                                      </span>
+                                      {q === 'small' && (
+                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono">
+                                          Save Data
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
                         <button
                           type="button"
                           onClick={toggleCaptions}
-                          className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer ${
-                            captionsEnabled
+                          className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer ${captionsEnabled
                               ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.25)]'
                               : 'text-neutral-300 hover:text-white hover:bg-neutral-800/80'
-                          }`}
+                            }`}
                           title="Subtitles / Captions (C)"
                         >
                           <Subtitles className="w-4 h-4 sm:w-5 sm:h-5" />

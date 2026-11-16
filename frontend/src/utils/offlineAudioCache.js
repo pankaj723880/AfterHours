@@ -10,6 +10,8 @@ import { getApiUrl } from './apiUrl';
 const DB_NAME = 'LoopraOfflineCacheDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'cached_tracks';
+const CACHE_API_NAME = 'loopra-offline-songs';
+const METADATA_LOCAL_STORAGE_KEY = 'loopra_offline_tracks_meta';
 
 let dbInstance = null;
 let dbInitPromise = null;
@@ -76,57 +78,105 @@ export async function initOfflineAudioCacheDB() {
 }
 
 /**
- * Checks if a track exists with a valid audioBlob in IndexedDB.
+ * Checks if a track exists with a valid audioBlob in IndexedDB or Cache API.
  */
 export async function isTrackCachedInDB(trackOrId) {
   const videoId = extractCleanVideoId(trackOrId);
   if (!videoId) return false;
   const db = await initOfflineAudioCacheDB();
-  if (!db) return false;
+  if (db) {
+    const fromDB = await new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.get(videoId);
+        req.onsuccess = () => {
+          const item = req.result;
+          resolve(Boolean(item && item.audioBlob && item.audioBlob.size > 50000));
+        };
+        req.onerror = () => resolve(false);
+      } catch (_) {
+        resolve(false);
+      }
+    });
+    if (fromDB) return true;
+  }
 
-  return new Promise((resolve) => {
+  // Check Cache API
+  if (typeof window !== 'undefined' && 'caches' in window) {
     try {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.get(videoId);
-      req.onsuccess = () => {
-        const item = req.result;
-        resolve(Boolean(item && item.audioBlob && item.audioBlob.size > 50000));
-      };
-      req.onerror = () => resolve(false);
-    } catch (_) {
-      resolve(false);
-    }
-  });
+      const cache = await window.caches.open(CACHE_API_NAME);
+      const match = await cache.match(`/api/audio-stream/${encodeURIComponent(videoId)}`);
+      if (match) return true;
+    } catch (_) {}
+  }
+
+  return false;
 }
 
 /**
- * Retrieves the cached audio record from IndexedDB.
+ * Retrieves the cached audio record from IndexedDB or Cache API.
  */
 export async function getCachedAudioFromDB(trackOrId) {
   const videoId = extractCleanVideoId(trackOrId);
   if (!videoId) return null;
   const db = await initOfflineAudioCacheDB();
-  if (!db) return null;
+  if (db) {
+    const fromDB = await new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.get(videoId);
+        req.onsuccess = () => {
+          const item = req.result;
+          if (item && item.audioBlob && item.audioBlob.size > 50000) {
+            resolve(item);
+          } else {
+            resolve(null);
+          }
+        };
+        req.onerror = () => resolve(null);
+      } catch (_) {
+        resolve(null);
+      }
+    });
+    if (fromDB) return fromDB;
+  }
 
-  return new Promise((resolve, reject) => {
+  // Check Cache API fallback
+  if (typeof window !== 'undefined' && 'caches' in window) {
     try {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.get(videoId);
-      req.onsuccess = () => {
-        const item = req.result;
-        if (item && item.audioBlob && item.audioBlob.size > 50000) {
-          resolve(item);
-        } else {
-          resolve(null);
+      const cache = await window.caches.open(CACHE_API_NAME);
+      const match = await cache.match(`/api/audio-stream/${encodeURIComponent(videoId)}`);
+      if (match) {
+        const blob = await match.blob();
+        if (blob && blob.size > 50000) {
+          let meta = {};
+          try {
+            const raw = localStorage.getItem(METADATA_LOCAL_STORAGE_KEY);
+            const list = raw ? JSON.parse(raw) : [];
+            meta = list.find(item => (item.videoId || item.id) === videoId) || {};
+          } catch (_) {}
+
+          return {
+            id: videoId,
+            videoId,
+            title: meta.title || 'Downloaded Track',
+            artist: meta.artist || 'Loopra Artist',
+            thumbnail: meta.thumbnail || '',
+            duration: meta.duration || '',
+            audioBlob: blob,
+            fileSize: blob.size,
+            mimeType: blob.type || 'audio/mp4',
+            isOffline: true,
+            cachedAt: meta.cachedAt || Date.now()
+          };
         }
-      };
-      req.onerror = () => reject(req.error);
-    } catch (err) {
-      reject(err);
-    }
-  });
+      }
+    } catch (_) {}
+  }
+
+  return null;
 }
 
 /**
@@ -228,6 +278,46 @@ export async function cacheSongToDB(track, onProgress = () => {}) {
         reject(err);
       }
     });
+
+    // Also store audio blob into Cache API (loopra-offline-songs)
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      try {
+        const cache = await window.caches.open(CACHE_API_NAME);
+        const cacheRequest = new Request(`/api/audio-stream/${encodeURIComponent(videoId)}`);
+        const cacheResponse = new Response(audioBlob, {
+          status: 200,
+          headers: {
+            'Content-Type': 'audio/mp4',
+            'Content-Length': String(audioBlob.size),
+            'X-Loopra-Offline': 'true'
+          }
+        });
+        await cache.put(cacheRequest, cacheResponse);
+      } catch (cacheErr) {
+        console.warn('[LoopraOfflineCache] Cache API put notice:', cacheErr?.message || cacheErr);
+      }
+    }
+
+    // Mirror metadata to LocalStorage for quick listing and offline inspection
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const raw = localStorage.getItem(METADATA_LOCAL_STORAGE_KEY);
+        let list = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(list)) list = [];
+        list = list.filter(item => (item.videoId || item.id) !== videoId);
+        list.unshift({
+          id: videoId,
+          videoId,
+          title: record.title,
+          artist: record.artist,
+          thumbnail: record.thumbnail,
+          duration: record.duration,
+          cachedAt: record.cachedAt,
+          fileSize: record.fileSize
+        });
+        localStorage.setItem(METADATA_LOCAL_STORAGE_KEY, JSON.stringify(list.slice(0, 100)));
+      } catch (_) {}
+    }
 
     onProgress(100);
     notifyCacheListeners();
