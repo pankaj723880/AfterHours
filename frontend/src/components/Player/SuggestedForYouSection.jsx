@@ -60,6 +60,9 @@ export default function SuggestedForYouSection({
       artist: trackArtist,
       genre: trackGenre
     });
+    if (forceRefresh) {
+      params.set('refresh', 'true');
+    }
 
     const endpointUrl = getApiUrl(`/api/recommendations/similar?${params.toString()}`);
 

@@ -143,7 +143,7 @@ const socket = io(BACKEND_URL || (typeof window !== 'undefined' ? window.locatio
     token: getInitialAuthToken()
   },
   query: { sessionId: getOrCreateSessionId() },
-  transports: ['websocket', 'polling'],
+  transports: ['polling', 'websocket'],
   withCredentials: true,
   reconnection: true,
   reconnectionAttempts: 5,
@@ -4174,13 +4174,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       // Immediately start playback without waiting for delayed re-renders
       if (playerRef.current && isPlayerReadyRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline && !song?.isRadio && targetVideoId) {
         try {
-          // Detect low-end or mobile device for stream quality optimization
-          const isLowEndDevice = typeof navigator !== 'undefined' && (
-            (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
-            (window.innerWidth < 768)
-          );
-          const quality = isLowEndDevice ? 'small' : 'medium';
-          playerRef.current.loadVideoById({ videoId: targetVideoId, suggestedQuality: quality });
+          // Resolution configuration: Preserve manual quality selection in session or default to 144p ('tiny')
+          const sessionQuality = (typeof window !== 'undefined' && window.sessionStorage?.getItem('loopra_user_selected_quality')) || 'tiny';
+          playerRef.current.loadVideoById({ videoId: targetVideoId, suggestedQuality: sessionQuality });
+          if (typeof playerRef.current.setPlaybackQuality === 'function') {
+            try { playerRef.current.setPlaybackQuality(sessionQuality); } catch (_) {}
+          }
           const p = playerRef.current.playVideo();
           if (p && typeof p.catch === 'function') {
             p.catch(err => {
@@ -4902,6 +4901,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             playerRef.current.isReady = true;
           }
           try {
+            const sessionQuality = (typeof window !== 'undefined' && window.sessionStorage?.getItem('loopra_user_selected_quality')) || 'tiny';
+            if (typeof e.target.setPlaybackQuality === 'function') {
+              try { e.target.setPlaybackQuality(sessionQuality); } catch (_) {}
+            }
             if (typeof e.target.setVolume === 'function') {
               e.target.setVolume(volume);
             }
@@ -4972,6 +4975,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               try { silentAudioRef.current.volume = 0.01; } catch (_) {}
               silentAudioRef.current.play().catch(() => {});
             }
+            try {
+              const sessionQuality = (typeof window !== 'undefined' && window.sessionStorage?.getItem('loopra_user_selected_quality')) || 'tiny';
+              if (typeof e.target.setPlaybackQuality === 'function') {
+                e.target.setPlaybackQuality(sessionQuality);
+              }
+            } catch (_) {}
           } else if (e.data === 2) { // Paused
             // Background Auto-Resume Guard: If paused while user intent or React isPlaying is true (i.e. not an explicit user pause), immediately auto-resume
             const isPlayingIntent = isPlayingRef.current || userIntentPlayingRef.current;
@@ -5067,6 +5076,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             } else {
               handleNextSongRef.current?.();
             }
+          }
+        },
+        onPlaybackQualityChange: (e) => {
+          if (e && e.data) {
+            window.dispatchEvent(new CustomEvent('loopra:playback-quality-change', { detail: { quality: e.data } }));
           }
         },
         onError: (e) => {
@@ -5543,22 +5557,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
       if (playerRef.current && isPlayerReadyRef.current && typeof playerRef.current.loadVideoById === 'function' && !playerRef.current.isOffline) {
         try {
-          // Detect low-end or mobile device for stream quality optimization
-          const isLowEndDevice = typeof navigator !== 'undefined' && (
-            (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
-            (window.innerWidth < 768)
-          );
-          const quality = isLowEndDevice ? 'small' : 'medium';
+          // Resolution configuration: Preserve manual quality selection in session or default to 144p ('tiny')
+          const sessionQuality = (typeof window !== 'undefined' && window.sessionStorage?.getItem('loopra_user_selected_quality')) || 'tiny';
 
           if (isFirstMount) {
             if (typeof playerRef.current.cueVideoById === 'function') {
               playerRef.current.cueVideoById({
                 videoId: currentSong.id,
                 startSeconds: savedSeekTime,
-                suggestedQuality: quality
+                suggestedQuality: sessionQuality
               });
             } else {
-              playerRef.current.loadVideoById({ videoId: currentSong.id, startSeconds: savedSeekTime, suggestedQuality: quality });
+              playerRef.current.loadVideoById({ videoId: currentSong.id, startSeconds: savedSeekTime, suggestedQuality: sessionQuality });
               playerRef.current.pauseVideo();
             }
             setIsPlaying(false);
@@ -5566,8 +5576,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             // Direct video switch without destroying or recreating the iframe instance
             playerRef.current.loadVideoById({
               videoId: currentSong.id,
-              suggestedQuality: quality
+              suggestedQuality: sessionQuality
             });
+            if (typeof playerRef.current.setPlaybackQuality === 'function') {
+              try { playerRef.current.setPlaybackQuality(sessionQuality); } catch (_) {}
+            }
             try {
               const p = playerRef.current.playVideo();
               if (p && typeof p.catch === 'function') {

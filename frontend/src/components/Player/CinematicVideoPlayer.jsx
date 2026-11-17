@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { getApiUrl } from '../../utils/apiUrl';
 import {
   Play,
   Pause,
@@ -50,14 +51,31 @@ export default function CinematicVideoPlayer({
   const [isTheaterMode, setIsTheaterMode] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
-  const [captionsEnabled, setCaptionsEnabled] = useState(false);
+  const [captionsEnabled, setCaptionsEnabled] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.sessionStorage?.getItem('loopra_captions_enabled') === 'true';
+  });
+  const [subtitleTracks, setSubtitleTracks] = useState([]);
+  const [selectedLanguage, setSelectedLanguage] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return window.sessionStorage?.getItem('loopra_subtitle_lang') || '';
+  });
+  const [subtitleLines, setSubtitleLines] = useState([]);
+  const [activeSubtitleText, setActiveSubtitleText] = useState('');
+  const [showCaptionsMenu, setShowCaptionsMenu] = useState(false);
+  const [isLoadingCaptions, setIsLoadingCaptions] = useState(false);
+  const captionsMenuRef = useRef(null);
+
   const [hoverSeekTime, setHoverSeekTime] = useState(null);
   const [hoverSeekPercent, setHoverSeekPercent] = useState(0);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [scrubTime, setScrubTime] = useState(0);
   const [showQualityMenu, setShowQualityMenu] = useState(false);
   const [availableQualities, setAvailableQualities] = useState([]);
-  const [currentQuality, setCurrentQuality] = useState('small');
+  const [currentQuality, setCurrentQuality] = useState(() => {
+    if (typeof window === 'undefined') return 'tiny';
+    return window.sessionStorage?.getItem('loopra_user_selected_quality') || 'tiny';
+  });
   const qualityMenuRef = useRef(null);
 
   // Check if device is mobile or running inside Android TWA / PWA
@@ -238,34 +256,10 @@ export default function CinematicVideoPlayer({
     } catch (_) { }
   }, []);
 
-  const toggleCaptions = useCallback(() => {
-    if (!playerRef?.current || !playerRef.current.isReady) {
-      showToast?.('Player is still loading captions...');
-      return;
-    }
-    try {
-      if (typeof playerRef.current.loadModule === 'function') {
-        playerRef.current.loadModule('captions');
-      }
-      const next = !captionsEnabled;
-      if (typeof playerRef.current.setOption === 'function') {
-        if (next) {
-          playerRef.current.setOption('captions', 'track', { languageCode: 'en' });
-          playerRef.current.setOption('captions', 'reload', true);
-        } else {
-          playerRef.current.setOption('captions', 'track', {});
-        }
-      }
-      setCaptionsEnabled(next);
-      showToast?.(next ? 'Subtitles enabled' : 'Subtitles disabled');
-    } catch (err) {
-      showToast?.('Subtitles not available for this video');
-    }
-  }, [captionsEnabled, playerRef, showToast]);
-
   // Quality Label Mapper
   const getQualityLabel = (q) => {
     switch (q) {
+      case 'tiny': return '144p';
       case 'small': return '240p (Data Saver)';
       case 'medium': return '360p';
       case 'large': return '480p';
@@ -278,6 +272,18 @@ export default function CinematicVideoPlayer({
     }
   };
 
+  // Keep track of active resolution broadcast from player events
+  useEffect(() => {
+    const handleQualityChange = (e) => {
+      const newQ = e?.detail?.quality;
+      if (newQ) {
+        setCurrentQuality(newQ);
+      }
+    };
+    window.addEventListener('loopra:playback-quality-change', handleQualityChange);
+    return () => window.removeEventListener('loopra:playback-quality-change', handleQualityChange);
+  }, []);
+
   // Retrieve available qualities from YouTube player and toggle menu
   const toggleQualityMenu = useCallback(() => {
     setShowQualityMenu(prev => {
@@ -286,18 +292,19 @@ export default function CinematicVideoPlayer({
         try {
           if (typeof playerRef.current.getAvailableQualityLevels === 'function') {
             const levels = playerRef.current.getAvailableQualityLevels() || [];
-            // Filter out empty or duplicate entries
             const validLevels = Array.isArray(levels) ? levels.filter(Boolean) : [];
-            setAvailableQualities(validLevels.length > 0 ? validLevels : ['small', 'medium', 'large', 'hd720']);
+            // Ensure 144p ('tiny') is in the list
+            const combined = Array.from(new Set(['tiny', ...(validLevels.length > 0 ? validLevels : ['small', 'medium', 'large', 'hd720'])]));
+            setAvailableQualities(combined);
           } else {
-            setAvailableQualities(['small', 'medium', 'large', 'hd720']);
+            setAvailableQualities(['tiny', 'small', 'medium', 'large', 'hd720']);
           }
           if (typeof playerRef.current.getPlaybackQuality === 'function') {
             const q = playerRef.current.getPlaybackQuality();
             if (q) setCurrentQuality(q);
           }
         } catch (_) {
-          setAvailableQualities(['small', 'medium', 'large', 'hd720']);
+          setAvailableQualities(['tiny', 'small', 'medium', 'large', 'hd720']);
         }
       }
       return next;
@@ -307,11 +314,34 @@ export default function CinematicVideoPlayer({
 
   const handleSelectQuality = useCallback((quality) => {
     try {
-      if (playerRef?.current && typeof playerRef.current.setPlaybackQuality === 'function') {
-        playerRef.current.setPlaybackQuality(quality);
+      // 1. Immediately apply quality on the underlying YouTube player
+      let targetQ = quality;
+      if (playerRef?.current) {
+        if (typeof playerRef.current.getAvailableQualityLevels === 'function') {
+          const avail = playerRef.current.getAvailableQualityLevels() || [];
+          if (avail.length > 0 && !avail.includes(quality)) {
+            // Quality ladder: high to low
+            const ladder = ['highres', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny'];
+            const targetIdx = ladder.indexOf(quality);
+            // Nearest available lower quality
+            const lowerOption = ladder.slice(targetIdx + 1).find(opt => avail.includes(opt));
+            if (lowerOption) {
+              targetQ = lowerOption;
+              showToast?.(`${getQualityLabel(quality)} unavailable, switched to ${getQualityLabel(lowerOption)}`);
+            }
+          }
+        }
+        if (typeof playerRef.current.setPlaybackQuality === 'function') {
+          playerRef.current.setPlaybackQuality(targetQ);
+        }
       }
-      setCurrentQuality(quality);
-      showToast?.(`Quality set to ${getQualityLabel(quality)}`);
+
+      // 2. Persist user selection across session so subsequent songs respect it
+      if (typeof window !== 'undefined') {
+        window.sessionStorage?.setItem('loopra_user_selected_quality', targetQ);
+      }
+      setCurrentQuality(targetQ);
+      showToast?.(`Quality set to ${getQualityLabel(targetQ)}`);
     } catch (_) {
       showToast?.(`Failed to change quality`);
     }
@@ -319,12 +349,147 @@ export default function CinematicVideoPlayer({
     resetControlsTimer();
   }, [playerRef, showToast, resetControlsTimer]);
 
-  // Close quality menu on outside click
+  // Subtitle/Caption Tracks Loader & Synchronizer
+  const currentVideoId = activeSong?.id || activeSong?.videoId;
+
   useEffect(() => {
-    if (!showQualityMenu) return;
+    // When song changes, reset active subtitles immediately so old text does not linger
+    setActiveSubtitleText('');
+    setSubtitleLines([]);
+    setSubtitleTracks([]);
+
+    if (!currentVideoId) return;
+
+    let isCancelled = false;
+    setIsLoadingCaptions(true);
+
+    const backendCaptionsUrl = `${getApiUrl('/api/youtube/captions')}/${encodeURIComponent(currentVideoId)}`;
+
+    fetch(backendCaptionsUrl)
+      .then(res => res.json())
+      .then(data => {
+        if (isCancelled) return;
+        setIsLoadingCaptions(false);
+        const tracks = Array.isArray(data?.tracks) ? data.tracks : [];
+        setSubtitleTracks(tracks);
+
+        // If user already had captions enabled, auto-load their preferred language or first available track
+        const savedPref = typeof window !== 'undefined' ? window.sessionStorage?.getItem('loopra_subtitle_lang') : '';
+        const savedEnabled = typeof window !== 'undefined' ? (window.sessionStorage?.getItem('loopra_captions_enabled') === 'true') : false;
+
+        if (savedEnabled && tracks.length > 0) {
+          const matched = tracks.find(t => t.languageCode === savedPref) || tracks[0];
+          const langToLoad = matched.languageCode;
+          setSelectedLanguage(langToLoad);
+          loadSubtitleLines(currentVideoId, langToLoad);
+        }
+      })
+      .catch(err => {
+        if (isCancelled) return;
+        setIsLoadingCaptions(false);
+        setSubtitleTracks([]);
+      });
+
+    return () => {
+      isCancelled = true;
+      setActiveSubtitleText('');
+      setSubtitleLines([]);
+    };
+  }, [currentVideoId]);
+
+  const loadSubtitleLines = useCallback(async (vid, lang) => {
+    if (!vid || !lang) return;
+    try {
+      const url = `${getApiUrl('/api/youtube/captions')}/${encodeURIComponent(vid)}?lang=${encodeURIComponent(lang)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (Array.isArray(data?.lines) && data.lines.length > 0) {
+        setSubtitleLines(data.lines);
+      } else {
+        setSubtitleLines([]);
+      }
+    } catch (_) {
+      setSubtitleLines([]);
+    }
+  }, []);
+
+  // Sync subtitle text with current playback time
+  useEffect(() => {
+    if (!captionsEnabled || subtitleLines.length === 0) {
+      if (activeSubtitleText) setActiveSubtitleText('');
+      return;
+    }
+
+    const t = Number(currentTime) || 0;
+    // Find matching caption line
+    const match = subtitleLines.find(line => t >= line.start && t <= line.end);
+    if (match) {
+      if (activeSubtitleText !== match.text) {
+        setActiveSubtitleText(match.text);
+      }
+    } else {
+      if (activeSubtitleText) {
+        setActiveSubtitleText('');
+      }
+    }
+  }, [currentTime, captionsEnabled, subtitleLines, activeSubtitleText]);
+
+  const toggleCaptions = useCallback(() => {
+    if (subtitleTracks.length === 0 && !isLoadingCaptions) {
+      showToast?.('Subtitles unavailable for this video');
+      return;
+    }
+
+    const next = !captionsEnabled;
+    setCaptionsEnabled(next);
+    if (typeof window !== 'undefined') {
+      window.sessionStorage?.setItem('loopra_captions_enabled', next ? 'true' : 'false');
+    }
+
+    if (next) {
+      // If no language chosen yet, pick first available
+      let lang = selectedLanguage;
+      if (!lang && subtitleTracks.length > 0) {
+        lang = subtitleTracks[0].languageCode;
+        setSelectedLanguage(lang);
+        if (typeof window !== 'undefined') {
+          window.sessionStorage?.setItem('loopra_subtitle_lang', lang);
+        }
+      }
+      if (lang && currentVideoId) {
+        loadSubtitleLines(currentVideoId, lang);
+      }
+      showToast?.('Subtitles enabled');
+    } else {
+      setActiveSubtitleText('');
+      showToast?.('Subtitles disabled');
+    }
+  }, [captionsEnabled, subtitleTracks, isLoadingCaptions, selectedLanguage, currentVideoId, loadSubtitleLines, showToast]);
+
+  const handleSelectLanguage = useCallback((langCode) => {
+    setSelectedLanguage(langCode);
+    setCaptionsEnabled(true);
+    if (typeof window !== 'undefined') {
+      window.sessionStorage?.setItem('loopra_captions_enabled', 'true');
+      window.sessionStorage?.setItem('loopra_subtitle_lang', langCode);
+    }
+    if (currentVideoId) {
+      loadSubtitleLines(currentVideoId, langCode);
+    }
+    setShowCaptionsMenu(false);
+    const track = subtitleTracks.find(t => t.languageCode === langCode);
+    showToast?.(`Subtitles set to ${track?.languageName || langCode}`);
+  }, [currentVideoId, subtitleTracks, loadSubtitleLines, showToast]);
+
+  // Close quality and captions menus on outside click
+  useEffect(() => {
+    if (!showQualityMenu && !showCaptionsMenu) return;
     const handleOutsideClick = (e) => {
       if (qualityMenuRef.current && !qualityMenuRef.current.contains(e.target)) {
         setShowQualityMenu(false);
+      }
+      if (captionsMenuRef.current && !captionsMenuRef.current.contains(e.target)) {
+        setShowCaptionsMenu(false);
       }
     };
     document.addEventListener('mousedown', handleOutsideClick);
@@ -333,7 +498,7 @@ export default function CinematicVideoPlayer({
       document.removeEventListener('mousedown', handleOutsideClick);
       document.removeEventListener('touchstart', handleOutsideClick);
     };
-  }, [showQualityMenu]);
+  }, [showQualityMenu, showCaptionsMenu]);
 
   useEffect(() => {
     if (!videoModalSong || isPipActive) return;
@@ -598,6 +763,19 @@ export default function CinematicVideoPlayer({
 
           {videoModalSong && !isPipActive && (
             <>
+              {/* Synchronized Closed Captions Overlay Display */}
+              {captionsEnabled && activeSubtitleText && (
+                <div
+                  className={`absolute inset-x-4 sm:inset-x-12 z-25 pointer-events-none flex justify-center transition-all duration-200 ${showControls || !isPlaying ? 'bottom-28 sm:bottom-24' : 'bottom-10 sm:bottom-12'}`}
+                >
+                  <div className="max-w-2xl px-4 py-2 sm:py-2.5 rounded-xl bg-black/85 backdrop-blur-md border border-white/10 shadow-2xl text-center">
+                    <p className="text-white text-xs sm:text-sm md:text-base font-semibold tracking-wide drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] leading-relaxed select-none">
+                      {activeSubtitleText}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Central Play/Pause Tap Overlay */}
               <div
                 onClick={() => {
@@ -789,7 +967,7 @@ export default function CinematicVideoPlayer({
                           >
                             <Sliders className="w-4 h-4 sm:w-5 sm:h-5" />
                             <span className="hidden sm:inline-block text-[11px] font-mono text-amber-400">
-                              {currentQuality === 'small' ? '240p' : currentQuality === 'medium' ? '360p' : currentQuality === 'large' ? '480p' : currentQuality === 'hd720' ? '720p' : 'Auto'}
+                              {currentQuality === 'tiny' ? '144p' : currentQuality === 'small' ? '240p' : currentQuality === 'medium' ? '360p' : currentQuality === 'large' ? '480p' : currentQuality === 'hd720' ? '720p' : 'Auto'}
                             </span>
                           </button>
 
@@ -798,7 +976,7 @@ export default function CinematicVideoPlayer({
                             <div className="absolute right-0 bottom-full mb-3 w-52 sm:w-56 bg-neutral-900/98 backdrop-blur-xl border border-neutral-700/80 rounded-2xl shadow-2xl p-2 z-50 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150">
                               <div className="px-3 py-1.5 text-[11px] font-bold text-neutral-400 uppercase tracking-wider border-b border-neutral-800 flex items-center justify-between">
                                 <span>Resolution</span>
-                                <span className="text-amber-400 font-mono lowercase">{currentQuality}</span>
+                                <span className="text-amber-400 font-mono lowercase">{currentQuality === 'tiny' ? '144p' : currentQuality}</span>
                               </div>
                               <div className="flex flex-col gap-0.5 max-h-56 overflow-y-auto pt-1">
                                 {availableQualities.map((q) => {
@@ -817,9 +995,9 @@ export default function CinematicVideoPlayer({
                                         {isSelected && <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
                                         <span className={!isSelected ? 'ml-5.5' : ''}>{getQualityLabel(q)}</span>
                                       </span>
-                                      {q === 'small' && (
+                                      {(q === 'tiny' || q === 'small') && (
                                         <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono">
-                                          Save Data
+                                          {q === 'tiny' ? 'Default 144p' : 'Save Data'}
                                         </span>
                                       )}
                                     </button>
@@ -830,17 +1008,107 @@ export default function CinematicVideoPlayer({
                           )}
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={toggleCaptions}
-                          className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer ${captionsEnabled
-                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.25)]'
-                              : 'text-neutral-300 hover:text-white hover:bg-neutral-800/80'
-                            }`}
-                          title="Subtitles / Captions (C)"
-                        >
-                          <Subtitles className="w-4 h-4 sm:w-5 sm:h-5" />
-                        </button>
+                        {/* Interactive Subtitles / Closed Captions Toggle & Language Switcher */}
+                        <div className="relative" ref={captionsMenuRef}>
+                          <div className="flex items-center">
+                            <button
+                              type="button"
+                              onClick={toggleCaptions}
+                              className={`p-2 sm:p-2.5 rounded-l-xl transition cursor-pointer flex items-center gap-1 ${captionsEnabled
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.25)]'
+                                  : 'text-neutral-300 hover:text-white hover:bg-neutral-800/80'
+                                }`}
+                              title={subtitleTracks.length > 0 ? (captionsEnabled ? 'Turn Off Subtitles (C)' : 'Turn On Subtitles (C)') : 'Subtitles unavailable for this video'}
+                              aria-label="Toggle Subtitles"
+                            >
+                              <Subtitles className="w-4 h-4 sm:w-5 sm:h-5" />
+                              {captionsEnabled && selectedLanguage && (
+                                <span className="hidden sm:inline-block text-[10px] font-mono text-amber-400 uppercase">
+                                  {selectedLanguage.slice(0, 2)}
+                                </span>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowCaptionsMenu(prev => !prev);
+                                resetControlsTimer();
+                              }}
+                              className={`p-1.5 sm:p-2 rounded-r-xl border-l border-white/10 transition cursor-pointer text-neutral-400 hover:text-white ${captionsEnabled ? 'bg-amber-500/20' : 'hover:bg-neutral-800/80'}`}
+                              title="Subtitle Languages & Settings"
+                              aria-label="Subtitle Languages"
+                            >
+                              <span className="text-[10px] leading-none select-none">▼</span>
+                            </button>
+                          </div>
+
+                          {/* Subtitle Languages Popup */}
+                          {showCaptionsMenu && (
+                            <div className="absolute right-0 bottom-full mb-3 w-56 sm:w-64 bg-neutral-900/98 backdrop-blur-xl border border-neutral-700/80 rounded-2xl shadow-2xl p-2 z-50 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150">
+                              <div className="px-3 py-1.5 text-[11px] font-bold text-neutral-400 uppercase tracking-wider border-b border-neutral-800 flex items-center justify-between">
+                                <span>Subtitles / CC</span>
+                                <span className="text-amber-400 font-mono text-[10px]">
+                                  {subtitleTracks.length} available
+                                </span>
+                              </div>
+
+                              <div className="flex flex-col gap-0.5 max-h-56 overflow-y-auto pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCaptionsEnabled(false);
+                                    setActiveSubtitleText('');
+                                    if (typeof window !== 'undefined') {
+                                      window.sessionStorage?.setItem('loopra_captions_enabled', 'false');
+                                    }
+                                    setShowCaptionsMenu(false);
+                                    showToast?.('Subtitles turned off');
+                                  }}
+                                  className={`w-full px-3 py-2 rounded-xl text-left text-xs font-medium flex items-center justify-between transition cursor-pointer ${!captionsEnabled
+                                      ? 'bg-amber-500/15 text-amber-300 font-bold border border-amber-500/30'
+                                      : 'text-neutral-300 hover:bg-neutral-800/80 hover:text-white'
+                                    }`}
+                                >
+                                  <span className="flex items-center gap-2">
+                                    {!captionsEnabled && <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                                    <span className={captionsEnabled ? 'ml-5.5' : ''}>Off</span>
+                                  </span>
+                                </button>
+
+                                {isLoadingCaptions ? (
+                                  <div className="px-3 py-3 text-center text-xs text-neutral-400">Loading subtitles...</div>
+                                ) : subtitleTracks.length === 0 ? (
+                                  <div className="px-3 py-3 text-center text-xs text-neutral-400">Subtitles unavailable</div>
+                                ) : (
+                                  subtitleTracks.map((tr) => {
+                                    const isSelected = captionsEnabled && selectedLanguage === tr.languageCode;
+                                    return (
+                                      <button
+                                        key={tr.languageCode + (tr.isAutoGenerated ? '_asr' : '')}
+                                        type="button"
+                                        onClick={() => handleSelectLanguage(tr.languageCode)}
+                                        className={`w-full px-3 py-2 rounded-xl text-left text-xs font-medium flex items-center justify-between transition cursor-pointer ${isSelected
+                                            ? 'bg-amber-500/15 text-amber-300 font-bold border border-amber-500/30'
+                                            : 'text-neutral-300 hover:bg-neutral-800/80 hover:text-white'
+                                          }`}
+                                      >
+                                        <span className="flex items-center gap-2 truncate pr-2">
+                                          {isSelected && <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                                          <span className={`truncate ${!isSelected ? 'ml-5.5' : ''}`}>{tr.languageName || tr.languageCode}</span>
+                                        </span>
+                                        {tr.isAutoGenerated && (
+                                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400 font-mono shrink-0">
+                                            auto
+                                          </span>
+                                        )}
+                                      </button>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
 
                         <button
                           type="button"

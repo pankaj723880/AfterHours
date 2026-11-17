@@ -337,6 +337,10 @@ const RELATED_ARTISTS_MAP = {
   'anup jalota': ['Hariharan', 'Anuradha Paudwal', 'Gulshan Kumar', 'Ravindra Jain']
 };
 
+// In-memory cache for /similar requests to avoid redundant YouTube searches and ensure sub-second response times
+const similarSongsCache = new Map();
+const SIMILAR_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
 /**
  * 8. GET /api/recommendations/similar
  * Returns genuine, verified playable tracks similar to a given song
@@ -350,6 +354,7 @@ router.get('/similar', async (req, res) => {
     const artist = (req.query.artist || '').trim();
     const genre = (req.query.genre || '').trim();
     const language = (req.query.language || '').trim();
+    const forceRefresh = req.query.refresh === 'true';
 
     if (!title && !artist && !trackId) {
       return res.status(400).json({ error: 'At least trackId, title, or artist is required' });
@@ -357,6 +362,15 @@ router.get('/similar', async (req, res) => {
 
     const cleanTitle = title.replace(/\(.*?\)|\[.*?\]/g, '').trim();
     const cleanArtist = artist.replace(/vevo|official|channel|topic|records/gi, '').trim();
+
+    // Check in-memory cache unless client explicitly requests forceRefresh
+    const cacheKey = `${trackId.toLowerCase()}_${cleanTitle.toLowerCase()}_${cleanArtist.toLowerCase()}_${genre.toLowerCase()}`;
+    if (!forceRefresh && similarSongsCache.has(cacheKey)) {
+      const cached = similarSongsCache.get(cacheKey);
+      if (Date.now() - cached.timestamp < SIMILAR_CACHE_TTL && Array.isArray(cached.data?.items) && cached.data.items.length > 0) {
+        return res.json(cached.data);
+      }
+    }
 
     // 1. Language & Context Detection from signals
     const combinedText = `${cleanTitle} ${cleanArtist} ${genre} ${language}`.toLowerCase();
@@ -683,13 +697,20 @@ router.get('/similar', async (req, res) => {
       }
     }
 
-    res.json({
+    const responsePayload = {
       success: true,
       originalTrack: { id: trackId, title: cleanTitle || title, artist: cleanArtist || artist, detectedLanguage: detectedLang },
       related: relatedResults,
       discover: discoverResults,
       items: [...relatedResults, ...discoverResults]
+    };
+
+    similarSongsCache.set(cacheKey, {
+      data: responsePayload,
+      timestamp: Date.now()
     });
+
+    res.json(responsePayload);
   } catch (err) {
     console.error('[Recommendations Similar Error]:', err.message);
     res.status(500).json({ error: 'Failed to find similar songs: ' + err.message });
