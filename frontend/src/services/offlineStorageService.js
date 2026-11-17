@@ -21,6 +21,32 @@ class OfflineStorageService {
     this.initPromise = null;
     this.listeners = new Set();
     this.downloadingTrackIds = new Set();
+    this.isDownloadsEnabled = true;
+
+    // Initialize from cached CMS config if present in localStorage
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const raw = localStorage.getItem('afterhours_cms_public_config');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.featureControls && typeof parsed.featureControls.offlineDownloadsEnabled === 'boolean') {
+            this.isDownloadsEnabled = parsed.featureControls.offlineDownloadsEnabled;
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  setDownloadsEnabled(enabled) {
+    const nextVal = enabled !== false;
+    if (this.isDownloadsEnabled !== nextVal) {
+      this.isDownloadsEnabled = nextVal;
+      this.notifyListeners();
+    }
+  }
+
+  isDownloadsGloballyEnabled() {
+    return this.isDownloadsEnabled !== false;
   }
 
   async initDB() {
@@ -375,6 +401,10 @@ class OfflineStorageService {
    * validates MIME type & size, and stores the binary Blob in IndexedDB.
    */
   async downloadAndStoreTrack(track, license, onProgress = () => { }) {
+    if (!this.isDownloadsGloballyEnabled()) {
+      throw new Error('Downloads are currently disabled by the site administrator.');
+    }
+
     if (!track || !track.id) {
       throw new Error('Invalid track information for download.');
     }
@@ -396,9 +426,9 @@ class OfflineStorageService {
     this.notifyListeners();
 
     try {
-      onProgress(5); // Start indication
+      onProgress({ percent: 1, downloadedBytes: 0, totalBytes: license.audioSizeBytes || null, status: 'connecting' });
 
-      const endpoint = license.downloadEndpoint;
+      const endpoint = license.downloadEndpoint.startsWith('http') ? license.downloadEndpoint : getApiUrl(license.downloadEndpoint);
       const res = await fetch(endpoint);
 
       if (!res.ok) {
@@ -412,34 +442,47 @@ class OfflineStorageService {
       const totalBytes = contentLengthHeader ? parseInt(contentLengthHeader, 10) : (license.audioSizeBytes || 0);
       const mimeType = res.headers.get('content-type') || license.audioMimeType || 'audio/wav';
 
+      let completeBlob;
+
       if (!res.body) {
         const blob = await res.blob();
-        onProgress(100);
-        return await this._persistTrackRecord(track, blob, mimeType, license);
-      }
+        completeBlob = blob;
+        onProgress({ percent: 99, downloadedBytes: blob.size, totalBytes: totalBytes || blob.size, status: 'finalizing' });
+      } else {
+        const reader = res.body.getReader();
+        const chunks = [];
+        let receivedBytes = 0;
 
-      const reader = res.body.getReader();
-      const chunks = [];
-      let receivedBytes = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          receivedBytes += value.length;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        receivedBytes += value.length;
-
-        if (totalBytes > 0) {
-          const percent = Math.min(98, Math.round((receivedBytes / totalBytes) * 100));
-          onProgress(percent);
-        } else {
-          onProgress(50);
+          if (totalBytes > 0) {
+            const calculatedPercent = Math.min(98, Math.max(1, Math.round((receivedBytes / totalBytes) * 100)));
+            onProgress({
+              percent: calculatedPercent,
+              downloadedBytes: receivedBytes,
+              totalBytes: totalBytes,
+              status: 'downloading'
+            });
+          } else {
+            onProgress({
+              percent: null,
+              downloadedBytes: receivedBytes,
+              totalBytes: null,
+              status: 'downloading'
+            });
+          }
         }
-      }
 
-      const completeBlob = new Blob(chunks, { type: mimeType });
-      onProgress(100);
+        onProgress({ percent: 99, downloadedBytes: receivedBytes, totalBytes: totalBytes || receivedBytes, status: 'finalizing' });
+        completeBlob = new Blob(chunks, { type: mimeType });
+      }
 
       const record = await this._persistTrackRecord(track, completeBlob, mimeType, license);
+      onProgress({ percent: 100, downloadedBytes: completeBlob.size, totalBytes: completeBlob.size, status: 'completed' });
       return record;
     } finally {
       this.downloadingTrackIds.delete(track.id);
@@ -520,6 +563,9 @@ class OfflineStorageService {
    * or direct license endpoint and saves it into IndexedDB.
    */
   async cacheTrackAudio(track, onProgress = () => {}) {
+    if (!this.isDownloadsGloballyEnabled()) {
+      throw new Error('Downloads are currently disabled by the site administrator.');
+    }
     if (!track) throw new Error('Invalid track data');
     const videoId = this._extractVideoId(track);
     if (!videoId) throw new Error('Track has no valid YouTube video ID');
@@ -537,32 +583,87 @@ class OfflineStorageService {
     this.notifyListeners();
 
     try {
-      onProgress(10);
+      // Step 1: Connecting to stream endpoint
+      onProgress({ percent: 1, downloadedBytes: 0, totalBytes: null, status: 'connecting' });
+
       // Request persistent storage permission immediately
       if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
         try { await navigator.storage.persist(); } catch (_) {}
       }
 
-      // Audio endpoint: /api/audio-stream/:videoId (resolved via getApiUrl)
-      const streamUrl = getApiUrl(`/api/audio-stream/${encodeURIComponent(videoId)}`);
+      // Check if track has an authorized download endpoint in its license metadata
+      let streamUrl = track.license?.downloadEndpoint
+        ? (track.license.downloadEndpoint.startsWith('http') ? track.license.downloadEndpoint : getApiUrl(track.license.downloadEndpoint))
+        : getApiUrl(`/api/audio-stream/${encodeURIComponent(videoId)}`);
 
-      const res = await fetch(streamUrl);
-      if (!res.ok) {
-        throw new Error(`Failed to fetch audio stream for caching (${res.status})`);
+      // Set timeout for stream connection to prevent indefinite freeze
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+      let res;
+      try {
+        res = await fetch(streamUrl, { signal: controller.signal });
+      } catch (fetchErr) {
+        if (fetchErr.name === 'AbortError') {
+          throw new Error('Streaming connection timed out after 20s. Backend is waking up or provider is unreachable.');
+        }
+        throw fetchErr;
+      } finally {
+        clearTimeout(timeoutId);
       }
 
-      onProgress(35);
-      const arrayBuffer = await res.arrayBuffer();
-      onProgress(85);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch audio stream for caching (HTTP ${res.status})`);
+      }
 
-      const completeBlob = new Blob([arrayBuffer], { type: 'audio/mp4' });
+      const contentLengthHeader = res.headers.get('content-length');
+      const totalBytes = contentLengthHeader ? parseInt(contentLengthHeader, 10) : (track.license?.audioSizeBytes || null);
+      const mimeType = res.headers.get('content-type') || 'audio/mp4';
+
+      let completeBlob;
+
+      if (!res.body) {
+        const arrayBuffer = await res.arrayBuffer();
+        completeBlob = new Blob([arrayBuffer], { type: mimeType });
+        onProgress({ percent: 99, downloadedBytes: completeBlob.size, totalBytes: completeBlob.size, status: 'finalizing' });
+      } else {
+        const reader = res.body.getReader();
+        const chunks = [];
+        let receivedBytes = 0;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          receivedBytes += value.length;
+
+          if (totalBytes && totalBytes > 0) {
+            const calculatedPercent = Math.min(98, Math.max(1, Math.round((receivedBytes / totalBytes) * 100)));
+            onProgress({
+              percent: calculatedPercent,
+              downloadedBytes: receivedBytes,
+              totalBytes: totalBytes,
+              status: 'downloading'
+            });
+          } else {
+            // Indeterminate total size: report actual downloaded bytes
+            onProgress({
+              percent: null,
+              downloadedBytes: receivedBytes,
+              totalBytes: null,
+              status: 'downloading'
+            });
+          }
+        }
+
+        onProgress({ percent: 99, downloadedBytes: receivedBytes, totalBytes: totalBytes || receivedBytes, status: 'finalizing' });
+        completeBlob = new Blob(chunks, { type: mimeType });
+      }
 
       // Verify real audio file size > 50,000 bytes
       if (!completeBlob || completeBlob.size < 50000) {
         throw new Error('Downloaded audio stream was incomplete or empty (< 50 KB)');
       }
-
-      onProgress(98);
 
       const record = {
         videoId: videoId,
@@ -572,7 +673,7 @@ class OfflineStorageService {
         channel: track.channel || track.artist || 'Loopra',
         thumbnail: track.thumbnail || track.image || '',
         duration: track.duration || '',
-        mimeType: 'audio/mp4',
+        mimeType: mimeType,
         fileSize: completeBlob.size,
         audioBlob: completeBlob,
         isOffline: true,
@@ -580,7 +681,7 @@ class OfflineStorageService {
       };
 
       await this.saveTrack(record);
-      onProgress(100);
+      onProgress({ percent: 100, downloadedBytes: completeBlob.size, totalBytes: completeBlob.size, status: 'completed' });
 
       // Enforce auto-session cache limit (keep last 25 tracks)
       this.pruneCacheLimit(25).catch(() => {});

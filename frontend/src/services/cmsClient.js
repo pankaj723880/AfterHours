@@ -205,6 +205,9 @@ export const DEFAULT_CMS_CONFIG = {
       queries: ['2010s arijit singh hits amit trivedi prateek kuhad', '2010s hindi indie pop acoustic hits']
     }
   ],
+  featureControls: {
+    offlineDownloadsEnabled: true
+  },
   featuredCollections: []
 };
 
@@ -320,6 +323,12 @@ export const normalizeCmsConfig = (raw) => {
     stations: Array.isArray(raw.stations) ? raw.stations : DEFAULT_CMS_CONFIG.stations,
     timeMachineEras: Array.isArray(raw.timeMachineEras) ? raw.timeMachineEras : DEFAULT_CMS_CONFIG.timeMachineEras,
     navigation: normalizeNavigationList(raw.navigation),
+    featureControls: {
+      offlineDownloadsEnabled: typeof raw.featureControls?.offlineDownloadsEnabled === 'boolean'
+        ? raw.featureControls.offlineDownloadsEnabled
+        : true,
+      ...(raw.featureControls || {})
+    },
     playerDefaults: {
       defaultVolume: typeof raw.playerDefaults?.defaultVolume === 'number' ? raw.playerDefaults.defaultVolume : DEFAULT_CMS_CONFIG.playerDefaults.defaultVolume,
       autoPlayNext: typeof raw.playerDefaults?.autoPlayNext === 'boolean' ? raw.playerDefaults.autoPlayNext : DEFAULT_CMS_CONFIG.playerDefaults.autoPlayNext,

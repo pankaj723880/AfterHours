@@ -84,7 +84,7 @@ export default function MobileBottomNav({
     <nav
       role="navigation"
       aria-label="Mobile Navigation"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 8px)' }}
       className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-neutral-950/95 backdrop-blur-xl border-t border-neutral-800/80 px-2 select-none shadow-[0_-4px_20px_rgba(0,0,0,0.5)]"
     >
       <div className="grid grid-cols-5 h-14 max-w-md mx-auto items-stretch">

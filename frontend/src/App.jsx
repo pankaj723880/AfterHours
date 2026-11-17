@@ -1634,6 +1634,9 @@ export default function App() {
         if (cfg) {
           const normalized = normalizeCmsConfig(cfg);
           setCmsConfig(normalized);
+          if (typeof normalized.featureControls?.offlineDownloadsEnabled === 'boolean') {
+            offlineStorageService.setDownloadsEnabled(normalized.featureControls.offlineDownloadsEnabled);
+          }
           applyThemeToDom(normalized.theme, true);
         }
       })
@@ -1657,6 +1660,9 @@ export default function App() {
       if (data?.config) {
         const normalized = normalizeCmsConfig(data.config);
         setCmsConfig(normalized);
+        if (typeof normalized.featureControls?.offlineDownloadsEnabled === 'boolean') {
+          offlineStorageService.setDownloadsEnabled(normalized.featureControls.offlineDownloadsEnabled);
+        }
         try {
           localStorage.setItem('afterhours_cms_public_config', JSON.stringify(normalized));
         } catch (e) {}
@@ -1666,6 +1672,9 @@ export default function App() {
           if (cfg && isMounted) {
             const normalized = normalizeCmsConfig(cfg);
             setCmsConfig(normalized);
+            if (typeof normalized.featureControls?.offlineDownloadsEnabled === 'boolean') {
+              offlineStorageService.setDownloadsEnabled(normalized.featureControls.offlineDownloadsEnabled);
+            }
             applyThemeToDom(normalized.theme, true);
           }
         });
@@ -7709,6 +7718,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   };
 
                   const disabledIds = new Set();
+                  if (cmsConfig?.featureControls?.offlineDownloadsEnabled === false) {
+                    disabledIds.add('downloads');
+                  }
                   const configuredItems = Array.isArray(cmsConfig?.navigation) ? cmsConfig.navigation : [];
                   configuredItems.forEach(item => {
                     if (item && item.id && item.enabled === false) {
@@ -8051,6 +8063,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
               // 1. Collect all explicitly disabled item IDs so defaults never override user choices
               const disabledIds = new Set();
+              if (cmsConfig?.featureControls?.offlineDownloadsEnabled === false) {
+                disabledIds.add('downloads');
+              }
               const configuredItems = Array.isArray(cmsConfig?.navigation) ? cmsConfig.navigation : [];
               configuredItems.forEach(item => {
                 if (item && item.id && item.enabled === false) {
@@ -9760,6 +9775,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         )}
 
         {activeTab === 'downloads' && (
+          cmsConfig?.featureControls?.offlineDownloadsEnabled === false ? (
+            <div key="downloads-disabled" className="page-transition flex-1 w-full px-4 md:px-8 py-16 flex flex-col items-center justify-center text-center">
+              <div className="w-16 h-16 rounded-full bg-neutral-800/80 border border-neutral-700/60 flex items-center justify-center mb-4 text-neutral-400">
+                <Icon name="download" className="w-8 h-8" />
+              </div>
+              <h2 className="text-xl font-bold text-white mb-2">Offline Downloads Disabled</h2>
+              <p className="text-neutral-400 max-w-md text-sm mb-6">
+                Offline downloads and caching have been temporarily disabled by the administrator. Existing cached songs remain saved on your device.
+              </p>
+              <button
+                onClick={() => handleStationSelect('home')}
+                className="px-5 py-2.5 rounded-full bg-amber-500 hover:bg-amber-400 text-neutral-950 font-semibold text-sm transition"
+              >
+                Return to Home
+              </button>
+            </div>
+          ) : (
           <div key={`page-downloads-${offlineSubView}`} className="page-transition flex-1 w-full px-2 sm:px-4 md:px-8 py-4 sm:py-6 pb-32">
             {offlineSubView === 'explore' ? (
               <OfflineEligibleExploreView
@@ -9787,6 +9819,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               />
             )}
           </div>
+          )
         )}
 
         {activeTab === 'mood' && (

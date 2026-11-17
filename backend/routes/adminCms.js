@@ -1420,6 +1420,20 @@ router.put('/features', async (req, res) => {
 
     await cmsService.saveDraft({ featureControls }, req.user);
 
+    // If offlineDownloadsEnabled was modified, synchronize immediately to published
+    if (typeof featureControls.offlineDownloadsEnabled === 'boolean') {
+      await cmsService.updateDownloadControl(featureControls.offlineDownloadsEnabled, req.user);
+      const io = req.app.get('io');
+      if (io) {
+        const pubConfig = await cmsService.getPublicConfig();
+        io.emit('cms_config_updated', {
+          config: pubConfig,
+          feature: 'download_control',
+          enabled: featureControls.offlineDownloadsEnabled
+        });
+      }
+    }
+
     await AuditLog.create({
       adminId: req.user._id.toString(),
       adminUsername: req.user.username,
@@ -1429,9 +1443,54 @@ router.put('/features', async (req, res) => {
       status: 'SUCCESS'
     });
 
-    res.json({ message: 'Feature controls updated in draft', featureControls });
+    res.json({ message: 'Feature controls updated', featureControls });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update feature controls: ' + err.message });
+  }
+});
+
+// GET /api/admin/cms/download-control (Status of global download control)
+router.get('/download-control', async (req, res) => {
+  try {
+    const enabled = await cmsService.isDownloadsEnabled();
+    res.json({ success: true, enabled });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get download control status: ' + err.message });
+  }
+});
+
+// PUT /api/admin/cms/download-control (Immediate live toggle of global download control)
+router.put('/download-control', async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: 'enabled (boolean) is required' });
+    }
+
+    const updated = await cmsService.updateDownloadControl(enabled, req.user);
+
+    await AuditLog.create({
+      adminId: req.user._id.toString(),
+      adminUsername: req.user.username,
+      action: 'DOWNLOAD_CONTROL_TOGGLE',
+      details: { enabled },
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    const io = req.app.get('io');
+    if (io) {
+      const pubConfig = await cmsService.getPublicConfig();
+      io.emit('cms_config_updated', {
+        config: pubConfig,
+        feature: 'download_control',
+        enabled
+      });
+    }
+
+    res.json({ success: true, message: `Global download feature switched ${enabled ? 'ON' : 'OFF'}`, enabled });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to toggle download control: ' + err.message });
   }
 });
 

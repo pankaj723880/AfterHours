@@ -72,7 +72,10 @@ export default function CinematicVideoPlayer({
   const [scrubTime, setScrubTime] = useState(0);
   const [showQualityMenu, setShowQualityMenu] = useState(false);
   const [availableQualities, setAvailableQualities] = useState([]);
-  const [currentQuality, setCurrentQuality] = useState(() => {
+  const [actualQuality, setActualQuality] = useState(() => {
+    return 'unknown';
+  });
+  const [requestedQuality, setRequestedQuality] = useState(() => {
     if (typeof window === 'undefined') return 'tiny';
     return window.sessionStorage?.getItem('loopra_user_selected_quality') || 'tiny';
   });
@@ -276,13 +279,29 @@ export default function CinematicVideoPlayer({
   useEffect(() => {
     const handleQualityChange = (e) => {
       const newQ = e?.detail?.quality;
-      if (newQ) {
-        setCurrentQuality(newQ);
+      if (newQ && newQ !== 'unknown') {
+        setActualQuality(newQ);
       }
     };
     window.addEventListener('loopra:playback-quality-change', handleQualityChange);
     return () => window.removeEventListener('loopra:playback-quality-change', handleQualityChange);
   }, []);
+
+  // Poll player actual quality on playback
+  useEffect(() => {
+    if (!videoModalSong) return;
+    const interval = setInterval(() => {
+      try {
+        if (playerRef?.current && typeof playerRef.current.getPlaybackQuality === 'function') {
+          const q = playerRef.current.getPlaybackQuality();
+          if (q && q !== 'unknown') {
+            setActualQuality(q);
+          }
+        }
+      } catch (_) {}
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [videoModalSong, playerRef]);
 
   // Retrieve available qualities from YouTube player and toggle menu
   const toggleQualityMenu = useCallback(() => {
@@ -301,7 +320,7 @@ export default function CinematicVideoPlayer({
           }
           if (typeof playerRef.current.getPlaybackQuality === 'function') {
             const q = playerRef.current.getPlaybackQuality();
-            if (q) setCurrentQuality(q);
+            if (q && q !== 'unknown') setActualQuality(q);
           }
         } catch (_) {
           setAvailableQualities(['tiny', 'small', 'medium', 'large', 'hd720']);
@@ -314,7 +333,6 @@ export default function CinematicVideoPlayer({
 
   const handleSelectQuality = useCallback((quality) => {
     try {
-      // 1. Immediately apply quality on the underlying YouTube player
       let targetQ = quality;
       if (playerRef?.current) {
         if (typeof playerRef.current.getAvailableQualityLevels === 'function') {
@@ -336,12 +354,12 @@ export default function CinematicVideoPlayer({
         }
       }
 
-      // 2. Persist user selection across session so subsequent songs respect it
+      // Persist user selection across session so subsequent songs respect it
       if (typeof window !== 'undefined') {
         window.sessionStorage?.setItem('loopra_user_selected_quality', targetQ);
       }
-      setCurrentQuality(targetQ);
-      showToast?.(`Quality set to ${getQualityLabel(targetQ)}`);
+      setRequestedQuality(targetQ);
+      showToast?.(`Requested resolution: ${getQualityLabel(targetQ)}`);
     } catch (_) {
       showToast?.(`Failed to change quality`);
     }
@@ -413,14 +431,14 @@ export default function CinematicVideoPlayer({
     }
   }, []);
 
-  // Sync subtitle text with current playback time
+  // Sync subtitle text with current playback time (using activeCurrentTime which tracks playerRef every 250ms)
   useEffect(() => {
     if (!captionsEnabled || subtitleLines.length === 0) {
       if (activeSubtitleText) setActiveSubtitleText('');
       return;
     }
 
-    const t = Number(currentTime) || 0;
+    const t = Number(activeCurrentTime) || 0;
     // Find matching caption line
     const match = subtitleLines.find(line => t >= line.start && t <= line.end);
     if (match) {
@@ -432,7 +450,7 @@ export default function CinematicVideoPlayer({
         setActiveSubtitleText('');
       }
     }
-  }, [currentTime, captionsEnabled, subtitleLines, activeSubtitleText]);
+  }, [activeCurrentTime, captionsEnabled, subtitleLines, activeSubtitleText]);
 
   const toggleCaptions = useCallback(() => {
     if (subtitleTracks.length === 0 && !isLoadingCaptions) {
@@ -766,9 +784,9 @@ export default function CinematicVideoPlayer({
               {/* Synchronized Closed Captions Overlay Display */}
               {captionsEnabled && activeSubtitleText && (
                 <div
-                  className={`absolute inset-x-4 sm:inset-x-12 z-25 pointer-events-none flex justify-center transition-all duration-200 ${showControls || !isPlaying ? 'bottom-28 sm:bottom-24' : 'bottom-10 sm:bottom-12'}`}
+                  className={`absolute inset-x-4 sm:inset-x-12 z-35 pointer-events-none flex justify-center transition-all duration-200 ${showControls || !isPlaying ? 'bottom-28 sm:bottom-24' : 'bottom-10 sm:bottom-12'}`}
                 >
-                  <div className="max-w-2xl px-4 py-2 sm:py-2.5 rounded-xl bg-black/85 backdrop-blur-md border border-white/10 shadow-2xl text-center">
+                  <div className="max-w-2xl px-4 py-2 sm:py-2.5 rounded-xl bg-black/90 backdrop-blur-md border border-white/20 shadow-2xl text-center">
                     <p className="text-white text-xs sm:text-sm md:text-base font-semibold tracking-wide drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] leading-relaxed select-none">
                       {activeSubtitleText}
                     </p>
@@ -958,29 +976,34 @@ export default function CinematicVideoPlayer({
                           <button
                             type="button"
                             onClick={toggleQualityMenu}
-                            className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer flex items-center gap-1 text-xs font-semibold ${showQualityMenu
+                            className={`p-2 sm:p-2.5 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-semibold ${showQualityMenu
                                 ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_10px_rgba(245,158,11,0.25)]'
                                 : 'text-neutral-300 hover:text-white hover:bg-neutral-800/80'
                               }`}
                             title="Video Resolution Settings"
                             aria-label="Video Resolution Settings"
                           >
-                            <Sliders className="w-4 h-4 sm:w-5 sm:h-5" />
-                            <span className="hidden sm:inline-block text-[11px] font-mono text-amber-400">
-                              {currentQuality === 'tiny' ? '144p' : currentQuality === 'small' ? '240p' : currentQuality === 'medium' ? '360p' : currentQuality === 'large' ? '480p' : currentQuality === 'hd720' ? '720p' : 'Auto'}
+                            <Sliders className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
+                            <span className="text-[11px] font-mono text-amber-300">
+                              {actualQuality && actualQuality !== 'unknown'
+                                ? (actualQuality === 'tiny' ? '144p' : actualQuality === 'small' ? '240p' : actualQuality === 'medium' ? '360p' : actualQuality === 'large' ? '480p' : actualQuality === 'hd720' ? '720p' : actualQuality === 'hd1080' ? '1080p' : actualQuality)
+                                : (requestedQuality === 'tiny' ? '144p' : requestedQuality === 'small' ? '240p' : requestedQuality === 'medium' ? '360p' : requestedQuality === 'large' ? '480p' : requestedQuality === 'hd720' ? '720p' : 'Auto')}
                             </span>
                           </button>
 
                           {/* Clean Resolution Quality Popup */}
                           {showQualityMenu && (
-                            <div className="absolute right-0 bottom-full mb-3 w-52 sm:w-56 bg-neutral-900/98 backdrop-blur-xl border border-neutral-700/80 rounded-2xl shadow-2xl p-2 z-50 flex flex-col gap-1 animate-in fade-in zoom-in-95 duration-150">
+                            <div className="absolute right-0 bottom-full mb-3 w-64 sm:w-72 bg-neutral-900/98 backdrop-blur-xl border border-neutral-700/80 rounded-2xl shadow-2xl p-2.5 z-50 flex flex-col gap-1.5 animate-in fade-in zoom-in-95 duration-150">
                               <div className="px-3 py-1.5 text-[11px] font-bold text-neutral-400 uppercase tracking-wider border-b border-neutral-800 flex items-center justify-between">
                                 <span>Resolution</span>
-                                <span className="text-amber-400 font-mono lowercase">{currentQuality === 'tiny' ? '144p' : currentQuality}</span>
+                                <span className="text-amber-400 font-mono lowercase">
+                                  {actualQuality && actualQuality !== 'unknown' ? `Playing: ${actualQuality === 'tiny' ? '144p' : actualQuality === 'medium' ? '360p' : actualQuality === 'small' ? '240p' : actualQuality}` : `Req: ${requestedQuality === 'tiny' ? '144p' : requestedQuality}`}
+                                </span>
                               </div>
                               <div className="flex flex-col gap-0.5 max-h-56 overflow-y-auto pt-1">
                                 {availableQualities.map((q) => {
-                                  const isSelected = currentQuality === q;
+                                  const isSelected = requestedQuality === q;
+                                  const isActual = actualQuality === q;
                                   return (
                                     <button
                                       key={q}
@@ -995,15 +1018,25 @@ export default function CinematicVideoPlayer({
                                         {isSelected && <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
                                         <span className={!isSelected ? 'ml-5.5' : ''}>{getQualityLabel(q)}</span>
                                       </span>
-                                      {(q === 'tiny' || q === 'small') && (
-                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono">
-                                          {q === 'tiny' ? 'Default 144p' : 'Save Data'}
-                                        </span>
-                                      )}
+                                      <div className="flex items-center gap-1">
+                                        {isActual && (
+                                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono font-bold">
+                                            Active
+                                          </span>
+                                        )}
+                                        {q === 'tiny' && (
+                                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono">
+                                            Default
+                                          </span>
+                                        )}
+                                      </div>
                                     </button>
                                   );
                                 })}
                               </div>
+                              <p className="px-2 pt-1 text-[10px] text-neutral-400 border-t border-neutral-800/80 leading-tight">
+                                Note: YouTube dynamic streaming adjusts bitrate based on device & network.
+                              </p>
                             </div>
                           )}
                         </div>

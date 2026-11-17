@@ -9,22 +9,31 @@ export default function DownloadTrackButton({
   variant = 'icon', // 'icon' | 'pill' | 'menu-item' | 'badge'
   onDownloaded
 }) {
+  const [downloadsGloballyEnabled, setDownloadsGloballyEnabled] = useState(() => offlineStorageService.isDownloadsGloballyEnabled());
   const [isDownloaded, setIsDownloaded] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(null);
+  const [downloadProgress, setDownloadProgress] = useState(null); // { percent, downloadedBytes, totalBytes, status } | null
+  const [downloadFailed, setDownloadFailed] = useState(false);
 
   const trackId = track?.id || track?.videoId;
 
   useEffect(() => {
-    if (!trackId) return;
-
-    offlineStorageService.isTrackDownloaded(trackId).then(setIsDownloaded);
-
     const unsub = offlineStorageService.subscribe(() => {
-      offlineStorageService.isTrackDownloaded(trackId).then(setIsDownloaded);
+      setDownloadsGloballyEnabled(offlineStorageService.isDownloadsGloballyEnabled());
+      if (trackId) {
+        offlineStorageService.isTrackDownloaded(trackId).then(setIsDownloaded);
+      }
     });
+
+    if (trackId) {
+      offlineStorageService.isTrackDownloaded(trackId).then(setIsDownloaded);
+    }
 
     return () => unsub();
   }, [trackId]);
+
+  if (!downloadsGloballyEnabled) {
+    return null;
+  }
 
   const handleDownload = async (e) => {
     if (e) {
@@ -42,15 +51,21 @@ export default function DownloadTrackButton({
       return;
     }
 
-    setDownloadProgress(0);
+    setDownloadFailed(false);
+    setDownloadProgress({ percent: 1, downloadedBytes: 0, totalBytes: null, status: 'connecting' });
 
     try {
-      await offlineStorageService.cacheTrackAudio(track, (percent) => {
-        setDownloadProgress(percent);
+      await offlineStorageService.cacheTrackAudio(track, (info) => {
+        if (typeof info === 'number') {
+          setDownloadProgress({ percent: info, downloadedBytes: 0, totalBytes: null, status: 'downloading' });
+        } else if (info && typeof info === 'object') {
+          setDownloadProgress(info);
+        }
       });
 
       setIsDownloaded(true);
       setDownloadProgress(null);
+      setDownloadFailed(false);
       if (showToast) {
         showToast(`Downloaded "${track.title || 'Song'}" for offline playback!`, 'success');
       }
@@ -58,6 +73,7 @@ export default function DownloadTrackButton({
     } catch (err) {
       console.error('[Download error]:', err);
       setDownloadProgress(null);
+      setDownloadFailed(true);
       if (showToast) {
         showToast(err.message || 'Failed to download track for offline listening', 'error');
       }
@@ -73,22 +89,63 @@ export default function DownloadTrackButton({
     try {
       await offlineStorageService.deleteTrack(trackId);
       setIsDownloaded(false);
+      setDownloadFailed(false);
       if (showToast) showToast(`Removed "${track.title || 'Song'}" from Downloads`, 'info');
     } catch (err) {
       if (showToast) showToast('Failed to remove downloaded song', 'error');
     }
   };
 
+  const formatProgressLabel = (p) => {
+    if (!p) return '0%';
+    if (p.status === 'finalizing') return 'Finalizing...';
+    if (p.percent !== null && p.percent !== undefined) {
+      return `${p.percent}%`;
+    }
+    if (p.downloadedBytes) {
+      const mb = (p.downloadedBytes / (1024 * 1024)).toFixed(1);
+      return `${mb}MB`;
+    }
+    return '0%';
+  };
+
   // 1. Menu Item Variant (for 3-dot popup menus & context menu)
   if (variant === 'menu-item') {
     if (downloadProgress !== null) {
       return (
-        <div className="flex items-center justify-between px-4 py-2.5 text-xs text-amber-400 bg-amber-500/10">
+        <div className="flex items-center justify-between px-4 py-2.5 text-xs text-amber-400 bg-amber-500/10 font-mono">
           <div className="flex items-center gap-2">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            <span>Downloading... {downloadProgress}%</span>
+            <span className="font-bold text-amber-300">
+              {formatProgressLabel(downloadProgress)}
+            </span>
+            <span className="text-[11px] text-amber-400/80">
+              {downloadProgress.status === 'finalizing' ? 'Saving cache...' : 'Downloading...'}
+            </span>
           </div>
+          {downloadProgress.totalBytes ? (
+            <span className="text-[10px] text-neutral-400">
+              {(downloadProgress.downloadedBytes / (1024 * 1024)).toFixed(1)} / {(downloadProgress.totalBytes / (1024 * 1024)).toFixed(1)} MB
+            </span>
+          ) : null}
         </div>
+      );
+    }
+
+    if (downloadFailed) {
+      return (
+        <button
+          type="button"
+          onClick={handleDownload}
+          className="w-full text-left px-4 py-2.5 text-xs font-medium text-rose-400 hover:text-rose-300 hover:bg-neutral-800 transition flex items-center justify-between cursor-pointer"
+        >
+          <span className="flex items-center gap-2">
+            <Download className="w-3.5 h-3.5" />
+            <span>Download Failed (Tap to Retry)</span>
+          </span>
+          <span className="text-[10px] bg-rose-500/20 text-rose-400 px-1.5 py-0.5 rounded font-mono font-semibold">
+            Retry
+          </span>
+        </button>
       );
     }
 
@@ -126,10 +183,28 @@ export default function DownloadTrackButton({
   if (variant === 'pill') {
     if (downloadProgress !== null) {
       return (
-        <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-mono ${className}`}>
-          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          <span>{downloadProgress}%</span>
+        <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-400 text-xs font-mono font-bold tracking-tight shadow-sm ${className}`}>
+          <span className="text-amber-300">{formatProgressLabel(downloadProgress)}</span>
+          {downloadProgress.totalBytes ? (
+            <span className="text-[10px] text-amber-400/80 font-normal">
+              ({(downloadProgress.downloadedBytes / (1024 * 1024)).toFixed(1)}/{(downloadProgress.totalBytes / (1024 * 1024)).toFixed(1)}MB)
+            </span>
+          ) : null}
         </div>
+      );
+    }
+
+    if (downloadFailed) {
+      return (
+        <button
+          type="button"
+          onClick={handleDownload}
+          title="Download failed. Click to retry."
+          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold transition active:scale-95 cursor-pointer ${className}`}
+        >
+          <Download className="w-3.5 h-3.5" />
+          <span>Retry Download</span>
+        </button>
       );
     }
 
@@ -166,9 +241,21 @@ export default function DownloadTrackButton({
   if (variant === 'badge') {
     if (downloadProgress !== null) {
       return (
-        <span className="inline-flex items-center text-amber-400" title={`Downloading ${downloadProgress}%`}>
-          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        <span className="inline-flex items-center font-mono font-bold text-[10px] text-amber-300 bg-amber-500/20 border border-amber-500/40 px-1.5 py-0.5 rounded-full" title={`Downloading ${formatProgressLabel(downloadProgress)}`}>
+          {formatProgressLabel(downloadProgress)}
         </span>
+      );
+    }
+    if (downloadFailed) {
+      return (
+        <button
+          type="button"
+          onClick={handleDownload}
+          className="inline-flex items-center gap-0.5 font-mono text-[9px] font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 px-1.5 py-0.5 rounded-full hover:bg-rose-500/25 cursor-pointer"
+          title="Download failed, click to retry"
+        >
+          <span>Retry</span>
+        </button>
       );
     }
     if (isDownloaded) {
@@ -185,14 +272,24 @@ export default function DownloadTrackButton({
   // 4. Icon Variant (default round button)
   if (downloadProgress !== null) {
     return (
+      <div
+        className={`relative px-2 py-1 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/40 flex items-center justify-center text-[11px] font-mono font-black tracking-tight select-none ${className}`}
+        title={`Downloading ${formatProgressLabel(downloadProgress)}`}
+      >
+        <span>{formatProgressLabel(downloadProgress)}</span>
+      </div>
+    );
+  }
+
+  if (downloadFailed) {
+    return (
       <button
         type="button"
-        disabled
-        className={`relative p-2 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center justify-center text-[10px] font-mono cursor-wait ${className}`}
-        title={`Downloading ${downloadProgress}%`}
+        onClick={handleDownload}
+        title="Download failed. Click to retry"
+        className={`p-2 rounded-full bg-rose-500/15 text-rose-400 hover:bg-rose-500/25 transition cursor-pointer active:scale-90 border border-rose-500/40 ${className}`}
       >
-        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-        <span className="sr-only">Downloading {downloadProgress}%</span>
+        <Download className="w-4 h-4 text-rose-400" />
       </button>
     );
   }

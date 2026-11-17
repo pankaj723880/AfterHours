@@ -7,11 +7,28 @@ import {
 } from '../services/offlineLicenseService.js';
 import OfflineTrackLicense from '../models/OfflineTrackLicense.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
+import { cmsService } from '../services/cmsService.js';
 
 const router = express.Router();
 
+// Middleware: Enforce global download feature control on user-facing offline endpoints
+const checkGlobalDownloadsEnabled = async (req, res, next) => {
+  try {
+    const isEnabled = await cmsService.isDownloadsEnabled();
+    if (!isEnabled) {
+      return res.status(403).json({
+        error: 'Global download and offline audio caching is currently disabled by administrator.',
+        featureDisabled: true
+      });
+    }
+    next();
+  } catch (err) {
+    next();
+  }
+};
+
 // Batch eligibility check for songs in search results, queues, playlists, home sections
-router.post('/eligibility/batch', async (req, res) => {
+router.post('/eligibility/batch', checkGlobalDownloadsEnabled, async (req, res) => {
   try {
     const { trackIds } = req.body || {};
     if (!Array.isArray(trackIds)) {
@@ -31,7 +48,7 @@ router.post('/eligibility/batch', async (req, res) => {
 });
 
 // Single track eligibility check
-router.get('/eligibility/:trackId', async (req, res) => {
+router.get('/eligibility/:trackId', checkGlobalDownloadsEnabled, async (req, res) => {
   try {
     const { trackId } = req.params;
     const result = await checkTrackEligibility(trackId);
@@ -47,7 +64,7 @@ router.get('/eligibility/:trackId', async (req, res) => {
 
 // Download authorized audio binary stream
 // STRICT SECURITY RULE: Streaming-only YouTube tracks or unverified tracks are blocked with 403 Forbidden
-router.get('/download/:trackId', async (req, res) => {
+router.get('/download/:trackId', checkGlobalDownloadsEnabled, async (req, res) => {
   try {
     const { trackId } = req.params;
     const cleanId = (trackId || '').trim();
@@ -77,7 +94,7 @@ router.get('/download/:trackId', async (req, res) => {
 });
 
 // Discover authorized offline-eligible tracks catalog
-router.get('/authorized-tracks', async (req, res) => {
+router.get('/authorized-tracks', checkGlobalDownloadsEnabled, async (req, res) => {
   try {
     const { q, page = 1, limit = 50 } = req.query;
     const pageNum = Math.max(1, parseInt(page, 10) || 1);

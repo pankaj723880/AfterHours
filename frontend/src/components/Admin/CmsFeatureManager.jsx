@@ -1,7 +1,18 @@
-import React from 'react';
-import { Sliders, CheckCircle2, XCircle, Sparkles, Radio, Headphones, Sparkle, Flame, Mic, Download, MessageSquare, Star, Music } from 'lucide-react';
+import React, { useState } from 'react';
+import { Sliders, CheckCircle2, XCircle, Sparkles, Radio, Headphones, Sparkle, Flame, Mic, Download, MessageSquare, Star, Music, Save, Send, Loader2 } from 'lucide-react';
 
-export default function CmsFeatureManager({ draft, onUpdateDraft, showToast }) {
+export default function CmsFeatureManager({
+  draft,
+  onUpdateDraft,
+  showToast,
+  onSaveDraft,
+  onPublishLive,
+  isSavingDraft = false,
+  isPublishingLive = false,
+  token,
+  backendUrl = ''
+}) {
+  const [isUpdatingDownload, setIsUpdatingDownload] = useState(false);
   const features = draft?.featureControls || {
     djClubEnabled: true,
     moodAiEnabled: true,
@@ -90,15 +101,42 @@ export default function CmsFeatureManager({ draft, onUpdateDraft, showToast }) {
     }
   ];
 
-  const handleToggle = (featureKey, currentVal) => {
+  const handleToggle = async (featureKey, currentVal) => {
+    const nextVal = !currentVal;
     onUpdateDraft(prev => ({
       ...prev,
       featureControls: {
         ...(prev.featureControls || {}),
-        [featureKey]: !currentVal
+        [featureKey]: nextVal
       }
     }));
-    showToast?.(`Feature ${featureKey} toggled in draft`, 'info');
+
+    // Special instant global broadcast for download feature toggle
+    if (featureKey === 'offlineDownloadsEnabled' && token && backendUrl) {
+      setIsUpdatingDownload(true);
+      try {
+        const clean = backendUrl.replace(/\/+$/, '');
+        const res = await fetch(`${clean}/api/admin/cms/download-control`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ enabled: nextVal })
+        });
+        if (res.ok) {
+          showToast?.(`Global Download Feature turned ${nextVal ? 'ON' : 'OFF'} and synchronized immediately!`, 'success');
+        } else {
+          showToast?.('Toggled in draft. Use Publish Live to apply changes.', 'info');
+        }
+      } catch (err) {
+        showToast?.('Toggled in draft. Use Publish Live to apply changes.', 'info');
+      } finally {
+        setIsUpdatingDownload(false);
+      }
+    } else {
+      showToast?.(`Feature ${featureKey} toggled in draft`, 'info');
+    }
   };
 
   return (
@@ -159,13 +197,19 @@ export default function CmsFeatureManager({ draft, onUpdateDraft, showToast }) {
 
                 <button
                   type="button"
+                  disabled={f.key === 'offlineDownloadsEnabled' && isUpdatingDownload}
                   onClick={() => handleToggle(f.key, isEnabled)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${isEnabled
                       ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25'
                       : 'bg-neutral-800 text-neutral-400 border border-neutral-700 hover:bg-neutral-700'
-                    }`}
+                    } ${f.key === 'offlineDownloadsEnabled' && isUpdatingDownload ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  {isEnabled ? (
+                  {f.key === 'offlineDownloadsEnabled' && isUpdatingDownload ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                      <span>Syncing...</span>
+                    </>
+                  ) : isEnabled ? (
                     <>
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                       <span>Enabled</span>

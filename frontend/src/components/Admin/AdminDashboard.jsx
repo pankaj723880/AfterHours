@@ -760,6 +760,12 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               draft={cmsDraft}
               onUpdateDraft={handleUpdateDraft}
               showToast={showToast}
+              onSaveDraft={handleSaveDraft}
+              onPublishLive={() => handlePublishLive('Published from Feature Controls')}
+              isSavingDraft={isSavingDraft}
+              isPublishingLive={isPublishingLive}
+              token={token}
+              backendUrl={cleanBackendUrl}
             />
           )}
 

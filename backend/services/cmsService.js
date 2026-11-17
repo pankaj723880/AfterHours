@@ -784,6 +784,66 @@ export const cmsService = {
     return updatedPublished;
   },
 
+  // Update download feature control immediately (updates published & draft, invalidates cache)
+  async updateDownloadControl(enabled, adminUser) {
+    const isEnabled = Boolean(enabled);
+    const published = await SiteConfig.findOne({ configType: 'published' }).sort({ version: -1, updatedAt: -1 });
+    const draft = await SiteConfig.findOne({ configType: 'draft' }).sort({ version: -1, updatedAt: -1 });
+
+    const nextVersion = ((published?.version || 1) + 1);
+
+    const updatedPublished = await SiteConfig.findOneAndUpdate(
+      { configType: 'published' },
+      {
+        $set: {
+          'featureControls.offlineDownloadsEnabled': isEnabled,
+          version: nextVersion,
+          lastModifiedBy: adminUser?.username || 'admin',
+          publishedAt: new Date()
+        }
+      },
+      { upsert: true, returnDocument: 'after' }
+    );
+
+    if (draft) {
+      await SiteConfig.updateOne(
+        { configType: 'draft' },
+        {
+          $set: {
+            'featureControls.offlineDownloadsEnabled': isEnabled,
+            version: nextVersion,
+            lastModifiedBy: adminUser?.username || 'admin'
+          }
+        }
+      );
+    }
+
+    try {
+      await ContentVersion.create({
+        versionNumber: nextVersion,
+        contentType: 'SITE_CONFIG',
+        snapshot: updatedPublished.toObject ? updatedPublished.toObject() : updatedPublished,
+        publishedBy: adminUser?.username || 'admin',
+        changeSummary: `Global Download feature switched ${isEnabled ? 'ON' : 'OFF'} by admin`
+      });
+    } catch (verErr) {
+      console.warn('[CMS Service] Version snapshot notice:', verErr.message);
+    }
+
+    this.invalidateCache();
+    return updatedPublished;
+  },
+
+  // Check if downloads feature is globally allowed
+  async isDownloadsEnabled() {
+    try {
+      const pub = await this.getPublicConfig();
+      return pub?.featureControls?.offlineDownloadsEnabled !== false;
+    } catch (err) {
+      return true; // Default ON
+    }
+  },
+
   // Get full draft config for Admin CMS
   async getDraftConfig() {
     const defaults = getDefaultSiteConfig();

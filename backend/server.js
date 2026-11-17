@@ -2023,6 +2023,32 @@ app.get([
     return res.status(400).json({ error: 'videoId is required' });
   }
 
+  // Security & Global Feature Control Enforcement
+  try {
+    const { cmsService } = await import('./services/cmsService.js');
+    const downloadsEnabled = await cmsService.isDownloadsEnabled();
+    if (!downloadsEnabled) {
+      return res.status(403).json({
+        error: 'Global download and offline audio caching is currently disabled by administrator.',
+        featureDisabled: true
+      });
+    }
+  } catch (_) {}
+
+  // 0. Check verified licensed tracks first (instant guaranteed direct stream)
+  try {
+    const { getAuthorizedAudioBuffer } = await import('./services/offlineLicenseService.js');
+    const authAudio = await getAuthorizedAudioBuffer(cleanId);
+    if (authAudio && authAudio.buffer) {
+      res.setHeader('Content-Type', authAudio.mimeType || 'audio/wav');
+      res.setHeader('Content-Length', String(authAudio.buffer.length));
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Cache-Control', 'public, max-age=604800');
+      res.setHeader('X-Audio-Source', 'authorized_offline_license');
+      return res.status(200).end(authAudio.buffer);
+    }
+  } catch (_) {}
+
   // 1. Try native @distube/ytdl-core download stream (direct audio stream, fastest & most reliable)
   const ytdlDownloadSuccess = await streamViaYtdlDownload(cleanId, res);
   if (ytdlDownloadSuccess) return;
