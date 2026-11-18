@@ -7708,11 +7708,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             <div className="w-full shrink-0 flex-1 flex flex-col min-h-0">
               {/* Header Section: Mobile-only brand badge (top navbar button handles toggling) */}
               <div className="flex items-center justify-between px-1.5 py-2 mb-4 border-b border-white/[0.06] pb-3 sticky top-0 z-20 bg-[#0c0d12]/95 md:bg-neutral-900/95 backdrop-blur-md">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500/20 to-neutral-900 border border-amber-500/40 p-0.5 flex items-center justify-center shadow shrink-0 overflow-hidden">
-                    <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
-                  </div>
-                  <span className="text-xs font-display font-black tracking-tight text-white truncate">
+                <div className="flex items-center min-w-0">
+                  <span className="text-sm font-display font-black tracking-tight text-white truncate">
                     {cmsConfig?.branding?.siteName || 'Loopra'}
                   </span>
                 </div>
@@ -8068,12 +8065,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           >
             <div className="w-full shrink-0 flex-1 flex flex-col min-h-0">
               <div className="flex items-center justify-between px-2 py-3 mb-6 sticky top-0 z-20 bg-neutral-900/95 backdrop-blur-md">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-7 h-7 rounded-lg bg-neutral-900/80 border border-amber-500/30 p-0.5 flex items-center justify-center shadow shrink-0 overflow-hidden">
-                    <img src={cmsConfig?.branding?.logoUrl || "/loopra-logo.png"} alt={cmsConfig?.branding?.siteName || "Brand Logo"} className="w-full h-full object-contain" />
-                  </div>
+                <div className="flex items-center min-w-0">
                   {cmsConfig?.branding?.siteName ? (
-                    <span className="text-xs font-display font-extrabold tracking-tight text-white whitespace-nowrap">{cmsConfig.branding.siteName}</span>
+                    <span className="text-sm font-display font-extrabold tracking-tight text-white whitespace-nowrap">{cmsConfig.branding.siteName}</span>
                   ) : null}
                 </div>
               </div>
