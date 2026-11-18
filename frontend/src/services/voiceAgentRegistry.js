@@ -535,6 +535,17 @@ export function parseVoiceCommandLocally(rawText = '', context = {}) {
     };
   }
 
+  // Offline Eligible Downloads & Downloaded Songs Collection
+  if (/\b(open downloads|downloaded songs|my downloads|downloads kholo|downloaded music|offline songs|offline gaane|downloads page)\b/i.test(lower) || /^(downloads|downloaded)$/i.test(lower)) {
+    return {
+      type: 'navigation',
+      action: 'navigate_page',
+      target: 'downloads',
+      speechResponse: 'Opening Downloaded Songs',
+      description: 'Navigate to Downloads'
+    };
+  }
+
   // Offline Eligible Downloads Explore
   if (/\b(explore downloads|offline explore|downloadable songs|offline eligible|explore offline music|download karne wale gaane|offline catalog)\b/i.test(lower)) {
     return {

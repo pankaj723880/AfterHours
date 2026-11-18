@@ -7426,7 +7426,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
         {/* Unified Top Navbar for both Mobile and Desktop (hidden on DJ Club & Relax Mode where full-screen dedicated navbar is active) */}
         <header
-          className={`${activeTab === 'dj-club' || activeTab === 'relax' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-2.5 sm:px-4 md:px-8 h-12 sm:h-14 md:h-16 flex items-center justify-between shrink-0 w-full box-border select-none'}`}
+          style={{
+            paddingTop: 'env(safe-area-inset-top, 0px)',
+            height: 'calc(3.5rem + env(safe-area-inset-top, 0px))'
+          }}
+          className={`${activeTab === 'dj-club' || activeTab === 'relax' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-2.5 sm:px-4 md:px-8 flex items-center justify-between shrink-0 w-full box-border select-none'}`}
         >
           {/* LEFT: Menu / Sidebar Toggle + Loopra Brand Logo */}
           <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
@@ -7939,16 +7943,31 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   </button>
                 )}
 
-                {/* 2. Download APK Button directly downloading Loopra.apk */}
-                <a
-                  href="/Loopra.apk"
-                  download="Loopra.apk"
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
-                  title="Download APK (Direct)"
-                >
-                  <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
-                  {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Download APK</span>}
-                </a>
+                {/* 2. Downloaded Songs (in APK) or Download APK Button (on Web) */}
+                {typeof window !== 'undefined' && window.LoopraAndroid ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleStationSelect('downloads');
+                      if (isMobileScreen && isSidebarOpen) setIsSidebarOpen(false);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer text-left"
+                    title="View Downloaded Songs"
+                  >
+                    <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
+                    {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Downloaded Songs</span>}
+                  </button>
+                ) : (
+                  <a
+                    href="/Loopra.apk"
+                    download="Loopra.apk"
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
+                    title="Download APK (Direct)"
+                  >
+                    <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
+                    {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Download APK</span>}
+                  </a>
+                )}
 
                 {/* 3. Logged-in User Profile Card & 4. Logout / Sign In Button */}
                 {user ? (
@@ -8275,16 +8294,31 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 </button>
               )}
 
-              {/* 2. Download APK Button directly downloading Loopra.apk */}
-              <a
-                href="/Loopra.apk"
-                download="Loopra.apk"
-                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
-                title="Download APK (Direct)"
-              >
-                <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
-                {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Download APK</span>}
-              </a>
+              {/* 2. Downloaded Songs (in APK) or Download APK Button (on Web) */}
+              {typeof window !== 'undefined' && window.LoopraAndroid ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleStationSelect('downloads');
+                    if (isMobileScreen && isSidebarOpen) setIsSidebarOpen(false);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer text-left"
+                  title="View Downloaded Songs"
+                >
+                  <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
+                  {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Downloaded Songs</span>}
+                </button>
+              ) : (
+                <a
+                  href="/Loopra.apk"
+                  download="Loopra.apk"
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
+                  title="Download APK (Direct)"
+                >
+                  <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
+                  {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Download APK</span>}
+                </a>
+              )}
 
               {/* 3. Logged-in User Profile Card & 4. Logout / Sign In Button */}
               {user ? (
