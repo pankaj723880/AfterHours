@@ -399,7 +399,7 @@ router.get('/similar', async (req, res) => {
         detectedLang = 'kannada';
       } else if (/gujarati|garba|kinjal dave|geeta rabari|kirtidan/i.test(combinedText)) {
         detectedLang = 'gujarati';
-      } else if (/english|pop|taylor|ed sheeran|billie|dualipa|weekend|drake|coldplay/i.test(combinedText)) {
+      } else if (/english|pop|taylor|ed sheeran|billie|dualipa|weekend|drake|coldplay|rock|latin|hip hop|rap|r&b|jazz|electronic|dance|reggaeton|queen|astley|bruno mars/i.test(combinedText)) {
         detectedLang = 'english';
       } else {
         detectedLang = 'hindi';
@@ -560,7 +560,7 @@ router.get('/similar', async (req, res) => {
 
     // Discovery query buckets spanning multiple genres and cultures
     const DISCOVERY_QUERY_POOLS = [
-      ['global pop billboard hits 2025 official music video', 'trending indie pop acoustic songs'],
+      ['global pop billboard hits official music video', 'trending indie pop acoustic songs'],
       ['latest punjabi banger hits official music video', 'latin pop reggaeton hits official'],
       ['popular bollywood acoustic melodious songs', 'top lo-fi chill hop study beats'],
       ['soothing sufiyana qawwali coke studio official', 'classic 90s rock ballads official music video']
@@ -574,9 +574,10 @@ router.get('/similar', async (req, res) => {
     ];
 
     // Fetch primary queries and discovery queries in parallel for ultra-fast response
+    // Fetch 15 primary and 12 discovery candidates to ensure ample headroom after strict single-song filtering
     const [primaryCandidates, dynamicDiscovery, curated] = await Promise.all([
-      catalogService.fetchDynamicCandidates(primaryQueries, 10).catch(() => []),
-      catalogService.fetchDynamicCandidates(selectedDiscoveryQueries, 6).catch(() => []),
+      catalogService.fetchDynamicCandidates(primaryQueries, 15).catch(() => []),
+      catalogService.fetchDynamicCandidates(selectedDiscoveryQueries, 12).catch(() => []),
       catalogService.getCuratedTracks().catch(() => [])
     ]);
 
@@ -606,29 +607,34 @@ router.get('/similar', async (req, res) => {
 
     // Tier C: Secondary queries if still under 5 valid suggestions
     if (results.length < 5 && secondaryQueries.length > 0) {
-      const secondaryCandidates = await catalogService.fetchDynamicCandidates(secondaryQueries, 8);
+      const secondaryCandidates = await catalogService.fetchDynamicCandidates(secondaryQueries, 12);
       for (const track of secondaryCandidates) {
         addTrack(track);
         if (results.length >= 15) break;
       }
     }
 
-    // Tier D: Regional safety net - if regional and still under 5, do NOT fallback to Bollywood/English.
-    // Query YouTube dynamically with broad regional queries until we have at least 5 matching songs.
-    if (results.length < 5 && isRegionalLanguage) {
-      const regionalFallbackQueries = [
-        `${detectedLang} superhit songs official video`,
-        `top ${detectedLang} hit gaana`,
-        `popular ${detectedLang} music hits`
-      ];
-      const regionalCandidates = await catalogService.fetchDynamicCandidates(regionalFallbackQueries, 10);
-      for (const track of regionalCandidates) {
+    // Tier D: Regional / Genre safety net - query YouTube dynamically with fallback queries until we have at least 5 matching songs
+    if (results.length < 5) {
+      const fallbackQueries = isRegionalLanguage
+        ? [
+            `${detectedLang} superhit songs official video`,
+            `top ${detectedLang} hit gaana`,
+            `popular ${detectedLang} music hits`
+          ]
+        : [
+            `${cleanArtist || detectedLang} official songs`,
+            `${genre || 'music'} hit songs official`,
+            `popular songs ${detectedLang}`
+          ];
+      const fallbackCandidates = await catalogService.fetchDynamicCandidates(fallbackQueries, 15);
+      for (const track of fallbackCandidates) {
         addTrack(track, `Top ${detectedLang} selection`);
         if (results.length >= 5) break;
       }
     }
 
-    // Limit related results to exactly up to 5 top items (or up to 10 for pagination if requested)
+    // Guarantee related results has at least 5 items before proceeding
     const relatedResults = results.slice(0, 5);
 
     // 5. Generate Discover Mix: Exactly 5 diverse songs from ANY genre/language/artist,
@@ -678,6 +684,36 @@ router.get('/similar', async (req, res) => {
     // If still under 5, fill any remaining slots from valid candidates without the genre restriction
     if (discoverResults.length < 5) {
       for (const track of discoverCandidatePool) {
+        if (discoverResults.length >= 5) break;
+        if (!isValidAndDistinct(track)) continue;
+
+        const id = track.id || track.videoId;
+        const key = getCanonicalSongKey(track);
+        seenIds.add(id);
+        if (key) seenKeys.add(key);
+
+        const cleanThumb = getCleanTrackThumbnail(track.thumbnail, id);
+        discoverResults.push({
+          ...track,
+          id,
+          videoId: id,
+          thumbnail: cleanThumb,
+          reason: track.genre ? `Discover: ${track.genre}` : 'Discover fresh music'
+        });
+      }
+    }
+
+    // Dynamic Discovery Replenishment: If discoverResults still has fewer than 5 items, fetch additional candidate pools
+    if (discoverResults.length < 5) {
+      const remainingPools = shuffledPoolIndices.slice(2);
+      const extraDiscoveryQueries = [];
+      for (const poolIdx of remainingPools) {
+        extraDiscoveryQueries.push(...DISCOVERY_QUERY_POOLS[poolIdx]);
+      }
+      extraDiscoveryQueries.push('greatest songs official music video', 'popular acoustic studio session songs');
+
+      const extraDiscoveryCandidates = await catalogService.fetchDynamicCandidates(extraDiscoveryQueries, 15);
+      for (const track of extraDiscoveryCandidates) {
         if (discoverResults.length >= 5) break;
         if (!isValidAndDistinct(track)) continue;
 

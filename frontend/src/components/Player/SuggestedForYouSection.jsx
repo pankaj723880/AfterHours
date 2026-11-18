@@ -111,15 +111,29 @@ export default function SuggestedForYouSection({
             return cleaned;
           };
 
-          // Group 1: Up to 5 songs related to currently playing song
+          // Group 1: Exactly 5 songs related to currently playing song
           const rawRelated = data.related || (data.items || []).slice(0, 5);
-          const validRelated = sanitizeGroup(rawRelated).slice(0, 5);
+          let validRelated = sanitizeGroup(rawRelated).slice(0, 5);
 
-          // Group 2: Up to 5 diverse Discover Mix songs (deduplicated against Group 1 and current track)
+          // Group 2: Exactly 5 diverse Discover Mix songs (deduplicated against Group 1 and current track)
           const rawDiscover = data.discover || (data.items || []).slice(5);
-          const validDiscover = sanitizeGroup(rawDiscover).slice(0, 5);
+          let validDiscover = sanitizeGroup(rawDiscover).slice(0, 5);
 
-          // Progressive rendering: immediately publish whatever suggestions are validated
+          // If either group has fewer than 5 items due to client-side thumbnail/title filtering,
+          // backfill from any unused valid candidates in data.items to ensure exactly 10 songs whenever available
+          if (validRelated.length + validDiscover.length < 10 && Array.isArray(data.items)) {
+            const extraCandidates = sanitizeGroup(data.items);
+            for (const candidate of extraCandidates) {
+              if (validRelated.length < 5) {
+                validRelated.push(candidate);
+              } else if (validDiscover.length < 5) {
+                validDiscover.push(candidate);
+              }
+              if (validRelated.length + validDiscover.length >= 10) break;
+            }
+          }
+
+          // Progressive rendering: immediately publish validated suggestions
           const combined = [...validRelated, ...validDiscover];
 
           suggestionsCache.set(cacheKey, combined);
