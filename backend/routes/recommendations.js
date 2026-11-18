@@ -357,7 +357,25 @@ router.get('/similar', async (req, res) => {
     const forceRefresh = req.query.refresh === 'true';
 
     if (!title && !artist && !trackId) {
-      return res.status(400).json({ error: 'At least trackId, title, or artist is required' });
+      // Graceful fallback when called on fresh launch before metadata is populated
+      const curated = await catalogService.getCuratedTracks().catch(() => []);
+      const starterDedup = new TrackDeduplicator();
+      const cleanCurated = starterDedup.filterUnique(curated.filter(t => isSingleSong(t)));
+      const related = cleanCurated.slice(0, 5).map(t => ({
+        ...t,
+        reason: 'Curated popular starter track'
+      }));
+      const discover = cleanCurated.slice(5, 10).map(t => ({
+        ...t,
+        reason: 'Discover fresh music'
+      }));
+      return res.json({
+        success: true,
+        originalTrack: { id: '', title: '', artist: '', detectedLanguage: 'hindi' },
+        related,
+        discover,
+        items: [...related, ...discover]
+      });
     }
 
     const cleanTitle = title.replace(/\(.*?\)|\[.*?\]/g, '').trim();
@@ -635,6 +653,12 @@ router.get('/similar', async (req, res) => {
     }
 
     // Guarantee related results has at least 5 items before proceeding
+    if (results.length < 5) {
+      for (const track of curated) {
+        addTrack(track, 'Curated match');
+        if (results.length >= 5) break;
+      }
+    }
     const relatedResults = results.slice(0, 5);
 
     // 5. Generate Discover Mix: Exactly 5 diverse songs from ANY genre/language/artist,

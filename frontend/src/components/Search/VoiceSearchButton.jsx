@@ -134,8 +134,18 @@ export default function VoiceSearchButton({
     if (!text) return { command: 'search', query: '' };
     const lower = text.toLowerCase().trim();
 
-    // Check for "play" intent in English or Hindi / Hinglish
-    const playPrefixes = [
+    // Remove conversational command prefixes like "search for", "find", "dhundo", "play", "gana bajao"
+    // For voice search, user spoken intent is always searching the catalogue with the target query.
+    const searchPrefixes = [
+      'search for song ',
+      'search for track ',
+      'search for ',
+      'search ',
+      'look up ',
+      'find song ',
+      'find ',
+      'dhundo ',
+      'khojo ',
       'play song ',
       'play track ',
       'play ',
@@ -145,26 +155,21 @@ export default function VoiceSearchButton({
       'gana bajao ',
       'gaana bajao '
     ];
-    for (const prefix of playPrefixes) {
-      if (lower.startsWith(prefix)) {
-        const query = text.slice(prefix.length).trim();
-        return { command: 'play', query };
-      }
-    }
-
-    // Check for "search" prefix
-    const searchPrefixes = [
-      'search for ',
-      'search ',
-      'look up ',
-      'find ',
-      'dhundo ',
-      'khojo '
-    ];
     for (const prefix of searchPrefixes) {
       if (lower.startsWith(prefix)) {
         const query = text.slice(prefix.length).trim();
-        return { command: 'search', query };
+        return { command: 'search', query: query || text.trim() };
+      }
+    }
+
+    // Trailing verbs in Hindi/Hinglish (e.g. "Arijit Singh chalao", "Kesariya bajao", "song dhundo")
+    const trailingVerbs = [
+      /\s+(?:chalao|chala\s+do|bajao|baja\s+do|sunao|suna\s+do|dhundo|khojo|search\s+karo|play\s+karo)$/i
+    ];
+    for (const pattern of trailingVerbs) {
+      if (pattern.test(text)) {
+        const query = text.replace(pattern, '').trim();
+        return { command: 'search', query: query || text.trim() };
       }
     }
 
@@ -213,12 +218,7 @@ export default function VoiceSearchButton({
           onTranscriptChange(transcript);
         }
 
-        const parsed = parseVoiceCommand(transcript);
-        if (parsed.command === 'play') {
-          setDetectedCommand('play');
-        } else {
-          setDetectedCommand('search');
-        }
+        setDetectedCommand('search');
       },
       onFinal: async (speechToProcess) => {
         setIsListening(false);
@@ -236,11 +236,9 @@ export default function VoiceSearchButton({
         }
 
         if (speechToProcess && speechToProcess.trim()) {
-          const { command, query } = parseVoiceCommand(speechToProcess);
-          const finalQuery = query || speechToProcess;
-          if (command === 'play' && onPlaySong) {
-            onPlaySong(finalQuery);
-          } else if (onSearch) {
+          const { query } = parseVoiceCommand(speechToProcess);
+          const finalQuery = (query || speechToProcess).trim();
+          if (finalQuery && onSearch) {
             onSearch(finalQuery);
           }
         }
@@ -391,7 +389,7 @@ export default function VoiceSearchButton({
           {detectedCommand && (
             <div className="mt-2.5 flex items-center justify-between text-xs text-neutral-400">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 font-medium">
-                Action: {detectedCommand === 'play' ? '▶ Play Immediately' : '🔍 Search Catalogue'}
+                Action: 🔍 Search Catalogue
               </span>
               <span className="text-[11px] text-neutral-500">Tap Cancel or stop speaking to submit</span>
             </div>

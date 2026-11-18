@@ -200,68 +200,82 @@ socket.on('listening_stats_updated', (data) => {
 });
 
 const fetchFromBackend = async (query, options = {}) => {
-  const timeoutMs = options.timeoutMs || 15000;
-  const controller = new AbortController();
+  const timeoutMs = options.timeoutMs || 25000;
   const callerSignal = options.signal;
 
-  const onCallerAbort = () => {
-    try { controller.abort(); } catch (_) {}
-  };
-
-  if (callerSignal) {
-    if (callerSignal.aborted) {
-      throw new DOMException('Aborted', 'AbortError');
-    }
-    callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+  if (callerSignal && callerSignal.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
   }
 
-  const timeoutId = setTimeout(() => {
-    try {
-      controller.abort(new Error(`Backend request timed out after ${Math.round(timeoutMs / 1000)}s`));
-    } catch (_) {
-      controller.abort();
+  const { limit, pageToken } = options;
+  let path = `/api/youtube/search?q=${encodeURIComponent(query)}`;
+  if (limit) path += `&limit=${encodeURIComponent(limit)}`;
+  if (pageToken) path += `&pageToken=${encodeURIComponent(pageToken)}`;
+
+  // Function to execute a fetch attempt with its own bounded timeout and caller cancellation listener
+  const attemptFetch = async (targetUrl, attemptTimeoutMs) => {
+    const attemptController = new AbortController();
+    const onCallerAbort = () => {
+      try { attemptController.abort(); } catch (_) {}
+    };
+
+    if (callerSignal) {
+      callerSignal.addEventListener('abort', onCallerAbort, { once: true });
     }
-  }, timeoutMs);
 
-  try {
-    let res;
-    const { limit, pageToken } = options;
-    let path = `/api/youtube/search?q=${encodeURIComponent(query)}`;
-    if (limit) path += `&limit=${encodeURIComponent(limit)}`;
-    if (pageToken) path += `&pageToken=${encodeURIComponent(pageToken)}`;
+    const timerId = setTimeout(() => {
+      try {
+        attemptController.abort(new Error(`Backend request timed out after ${Math.round(attemptTimeoutMs / 1000)}s`));
+      } catch (_) {
+        attemptController.abort();
+      }
+    }, attemptTimeoutMs);
 
     try {
-      res = await fetchWithRetry(getApiUrl(path), {
-        signal: controller.signal,
+      const res = await fetchWithRetry(targetUrl, {
+        signal: attemptController.signal,
         headers: {
           'X-Session-ID': getOrCreateSessionId()
         }
       });
-    } catch (localErr) {
-      if (!BACKEND_URL.includes('onrender.com') && !controller.signal.aborted) {
-        res = await fetchWithRetry(`https://afterhours-zvic.onrender.com${path}`, {
-          signal: controller.signal,
-          headers: {
-            'X-Session-ID': getOrCreateSessionId()
-          }
-        });
+      clearTimeout(timerId);
+      if (callerSignal) {
+        callerSignal.removeEventListener('abort', onCallerAbort);
+      }
+      return res;
+    } catch (err) {
+      clearTimeout(timerId);
+      if (callerSignal) {
+        callerSignal.removeEventListener('abort', onCallerAbort);
+      }
+      throw err;
+    }
+  };
+
+  try {
+    let res;
+    try {
+      res = await attemptFetch(getApiUrl(path), timeoutMs);
+    } catch (primaryErr) {
+      if (callerSignal && callerSignal.aborted) {
+        throw primaryErr;
+      }
+      // If primary URL failed and wasn't already pointing to Render, failover to direct Render URL with fresh controller
+      if (!BACKEND_URL.includes('onrender.com')) {
+        res = await attemptFetch(`https://afterhours-zvic.onrender.com${path}`, timeoutMs);
       } else {
-        throw localErr;
+        throw primaryErr;
       }
     }
-    clearTimeout(timeoutId);
-    if (callerSignal) {
-      callerSignal.removeEventListener('abort', onCallerAbort);
-    }
+
     const parsed = await safeParseJsonResponse(res, 'Backend search failed');
     if (!parsed.ok) {
       throw new Error(parsed.error);
     }
     return parsed.data || { items: [] };
   } catch (err) {
-    clearTimeout(timeoutId);
-    if (callerSignal) {
-      callerSignal.removeEventListener('abort', onCallerAbort);
+    if (callerSignal && callerSignal.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
     }
     if (err?.name !== 'AbortError') {
       console.warn("Backend fetch notice:", err.message);
@@ -6793,7 +6807,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     try {
       const data = await fetchFromBackend(trimmedQuery + " official video original", {
         limit: 10,
-        timeoutMs: 12000,
+        timeoutMs: 25000,
         signal: searchController.signal
       });
 
@@ -8596,6 +8610,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 onArtistClick={handleArtistClick}
                 placeholder={cmsConfig?.searchPage?.placeholder || "Search songs, artists, albums..."}
                 suggestions={cmsConfig?.searchPage?.quickTags}
+                user={user}
+                token={authToken}
+                backendUrl={BACKEND_URL}
               />
             ) : (
               <HomeHero 

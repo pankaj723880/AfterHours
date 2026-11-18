@@ -9,6 +9,8 @@
  * 3. Authoritative state machine: idle, requesting_permission, listening, processing, error.
  */
 
+import { devanagariToHinglish } from './voiceSessionService.js';
+
 export const VOICE_STATES = {
   IDLE: 'idle',
   REQUESTING_PERMISSION: 'requesting_permission',
@@ -25,11 +27,32 @@ class VoiceAssistantService {
     this.listeners = new Set();
     this.activeStream = null;
     this.safetyTimer = null;
+    this.nativeCleanupFns = [];
+    this.isNativeSession = false;
   }
 
   isSupported() {
     if (typeof window === 'undefined') return false;
+    // Check Android native bridge first
+    if (window.LoopraAndroid && typeof window.LoopraAndroid.isNativeSpeechAvailable === 'function') {
+      try {
+        if (window.LoopraAndroid.isNativeSpeechAvailable()) return true;
+      } catch (_) {}
+    }
+    // Web Speech API
     return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+  }
+
+  isNativeAndroidAvailable() {
+    if (typeof window === 'undefined') return false;
+    if (window.LoopraAndroid && typeof window.LoopraAndroid.isNativeSpeechAvailable === 'function') {
+      try {
+        return window.LoopraAndroid.isNativeSpeechAvailable();
+      } catch (_) {
+        return false;
+      }
+    }
+    return false;
   }
 
   subscribe(listener) {
@@ -85,7 +108,7 @@ class VoiceAssistantService {
   async start({ onTranscript, onFinal, onError, lang } = {}) {
     if (!this.isSupported()) {
       this.state = VOICE_STATES.ERROR;
-      const err = new Error('Speech recognition not supported in this browser.');
+      const err = new Error('Speech recognition not supported in this browser or app.');
       this.notify({ error: err.message });
       onError?.(err.message);
       return;
@@ -96,12 +119,112 @@ class VoiceAssistantService {
     const targetLang = lang || this.lang || 'hi-IN';
     this.lang = targetLang;
 
+    // Auto-duck music volume to 10% on listening so background audio doesn't drown user voice
+    if (typeof window !== 'undefined' && window.loopraPlayer?.setVolume) {
+      window.loopraPlayer.setVolume(10);
+    }
+
+    const restoreMusicVolume = () => {
+      if (typeof window !== 'undefined' && window.loopraPlayer?.setVolume) {
+        window.loopraPlayer.setVolume(100);
+      }
+    };
+
+    // =========================================================================
+    // PATH A: Android Native Bridge (Bubblewrap / TWA / Native WebView)
+    // =========================================================================
+    if (this.isNativeAndroidAvailable()) {
+      try {
+        this.isNativeSession = true;
+        this.state = VOICE_STATES.LISTENING;
+        this.notify({ message: 'Listening...' });
+
+        if (this.safetyTimer) clearTimeout(this.safetyTimer);
+        this.safetyTimer = setTimeout(() => {
+          this.stop();
+        }, 12000);
+
+        let latestFinal = '';
+        let latestInterim = '';
+
+        const speechHandler = (e) => {
+          const detail = e.detail || {};
+          const rawText = (detail.text || '').trim();
+          const isFinal = Boolean(detail.isFinal);
+          if (!rawText) return;
+
+          const converted = devanagariToHinglish(rawText);
+          const candidateText = converted || rawText;
+
+          if (isFinal) {
+            latestFinal = candidateText;
+            latestInterim = '';
+          } else {
+            latestInterim = candidateText;
+          }
+
+          const currentText = (latestFinal || latestInterim).trim();
+          this.notify({ interim: latestInterim, final: latestFinal, transcript: currentText });
+          onTranscript?.({ interim: latestInterim, final: latestFinal, transcript: currentText });
+
+          if (isFinal && candidateText) {
+            if (this.safetyTimer) clearTimeout(this.safetyTimer);
+            restoreMusicVolume();
+            this.state = VOICE_STATES.IDLE;
+            this.notify({ state: VOICE_STATES.IDLE, transcript: candidateText });
+            this.cleanupNativeListeners();
+            onFinal?.(candidateText);
+          }
+        };
+
+        const errorHandler = (e) => {
+          const errCode = e.detail?.error || 'unknown';
+          console.warn('[VoiceAssistant:AndroidNative] Speech error:', errCode);
+          if (this.safetyTimer) clearTimeout(this.safetyTimer);
+          restoreMusicVolume();
+          this.state = VOICE_STATES.ERROR;
+          this.cleanupNativeListeners();
+
+          let friendlyError = 'Speech recognition error. Please try speaking again.';
+          if (errCode === 'permission_denied') {
+            friendlyError = 'Microphone permission blocked. Please allow mic access in app settings.';
+          } else if (errCode === 'no_speech' || errCode === 'no_match') {
+            friendlyError = 'No speech detected. Please speak closer to your device.';
+          } else if (errCode === 'network_error' || errCode === 'network_timeout') {
+            friendlyError = 'Voice network error. Please check your internet connection.';
+          }
+
+          this.notify({ error: friendlyError });
+          onError?.(friendlyError);
+        };
+
+        window.addEventListener('loopra-native-speech', speechHandler);
+        window.addEventListener('loopra-native-speech-error', errorHandler);
+        this.nativeCleanupFns.push(() => {
+          window.removeEventListener('loopra-native-speech', speechHandler);
+          window.removeEventListener('loopra-native-speech-error', errorHandler);
+        });
+
+        window.LoopraAndroid.startSpeechRecognition(targetLang);
+        return;
+      } catch (nativeErr) {
+        console.warn('[VoiceAssistant] Android native speech start failed, falling back to Web Speech:', nativeErr.message);
+        this.cleanupNativeListeners();
+      }
+    }
+
+    // =========================================================================
+    // PATH B: Web Speech API (Desktop Chrome/Edge, Mobile Chrome/Safari/Brave)
+    // =========================================================================
     try {
       // 1. Explicit Handshake
       await this.requestMicPermission();
 
       // 2. Initialize SpeechRecognition engine
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        throw new Error('Speech recognition not supported in this browser.');
+      }
       const recognition = new SpeechRecognition();
 
       // Mobile Chrome/Brave PWA drops connections if continuous is true; use false for single-shot commands
@@ -111,19 +234,8 @@ class VoiceAssistantService {
       recognition.lang = targetLang || 'hi-IN'; // Prioritize Hindi/Hinglish Indian accent
       recognition.maxAlternatives = 1;
 
-      // Auto-duck music volume to 10% on listening so background audio doesn't drown user voice
-      if (typeof window !== 'undefined' && window.loopraPlayer?.setVolume) {
-        window.loopraPlayer.setVolume(10);
-      }
-
       let interimBuffer = '';
       let finalBuffer = '';
-
-      const restoreMusicVolume = () => {
-        if (typeof window !== 'undefined' && window.loopraPlayer?.setVolume) {
-          window.loopraPlayer.setVolume(100);
-        }
-      };
 
       recognition.onstart = () => {
         this.state = VOICE_STATES.LISTENING;
@@ -192,15 +304,20 @@ class VoiceAssistantService {
       recognition.start();
     } catch (err) {
       if (this.safetyTimer) clearTimeout(this.safetyTimer);
-      if (typeof window !== 'undefined' && window.loopraPlayer?.setVolume) {
-        window.loopraPlayer.setVolume(100);
-      }
+      restoreMusicVolume();
       this.state = VOICE_STATES.ERROR;
       const msg = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError'
         ? 'Microphone permission denied. Please allow microphone access.'
         : err.message || 'Could not start voice recognition.';
       this.notify({ error: msg });
       onError?.(msg);
+    }
+  }
+
+  cleanupNativeListeners() {
+    while (this.nativeCleanupFns.length > 0) {
+      const fn = this.nativeCleanupFns.pop();
+      try { fn(); } catch (_) {}
     }
   }
 
@@ -211,6 +328,15 @@ class VoiceAssistantService {
     }
     if (typeof window !== 'undefined' && window.loopraPlayer?.setVolume) {
       window.loopraPlayer.setVolume(100);
+    }
+    if (this.isNativeSession) {
+      this.isNativeSession = false;
+      this.cleanupNativeListeners();
+      if (typeof window !== 'undefined' && window.LoopraAndroid && typeof window.LoopraAndroid.stopSpeechRecognition === 'function') {
+        try {
+          window.LoopraAndroid.stopSpeechRecognition();
+        } catch (_) {}
+      }
     }
     if (this.recognition) {
       try {

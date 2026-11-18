@@ -45,9 +45,15 @@ export default function HomeSearchBar({
   voiceControlAllowed = null
 }) {
   const activeSuggestions = (Array.isArray(suggestions) && suggestions.length > 0) ? suggestions : SUGGESTIONS;
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialQuery || '');
   const [isFocused, setIsFocused] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    if (initialQuery && initialQuery !== query) {
+      setQuery(initialQuery);
+    }
+  }, [initialQuery]);
   const [suggestionsList, setSuggestionsList] = useState([]);
   const [recentSearches, setRecentSearches] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -173,7 +179,7 @@ export default function HomeSearchBar({
     if (!trimmed) return;
     const updated = saveRecentSearch(trimmed, currentUserId, { token, backendUrl });
     setRecentSearches(updated);
-    setQuery('');
+    setQuery(trimmed);
     setIsOpen(false);
     setSelectedIndex(-1);
     if (onSearch) {
@@ -220,7 +226,7 @@ export default function HomeSearchBar({
 
     const updated = saveRecentSearch(trimmed, currentUserId, { token, backendUrl });
     setRecentSearches(updated);
-    setQuery('');
+    setQuery(trimmed);
     setIsOpen(false);
     setSelectedIndex(-1);
 
@@ -370,16 +376,16 @@ export default function HomeSearchBar({
               setIsOpen(true);
             }}
             onSearch={(speechQuery) => {
-              setQuery(speechQuery);
-              handleSelectRecentQuery(speechQuery);
+              const trimmed = (speechQuery || '').trim();
+              if (!trimmed) return;
+              setQuery(trimmed);
+              handleSelectRecentQuery(trimmed);
             }}
             onPlaySong={(speechQuery) => {
-              setQuery(speechQuery);
-              if (onPlaySong) {
-                onPlaySong(speechQuery);
-              } else {
-                handleSelectRecentQuery(speechQuery);
-              }
+              const trimmed = (speechQuery || '').trim();
+              if (!trimmed) return;
+              setQuery(trimmed);
+              handleSelectRecentQuery(trimmed);
             }}
           />
 

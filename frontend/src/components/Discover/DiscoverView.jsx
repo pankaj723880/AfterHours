@@ -93,6 +93,7 @@ export default function DiscoverView({
           {/* Integrated Modern Search Bar */}
           <div className="w-full">
             <HomeSearchBar
+              initialQuery={searchQuery}
               onSearch={(queryText) => {
                 const trimmed = (queryText || '').trim();
                 if (!trimmed) return;
@@ -182,6 +183,7 @@ export default function DiscoverView({
               {/* Search Experience Component */}
               <div className="w-full pt-1 sm:pt-2">
                 <HomeSearchBar
+                  initialQuery={searchQuery}
                   onSearch={(queryText) => {
                     const trimmed = (queryText || '').trim();
                     if (!trimmed) return;

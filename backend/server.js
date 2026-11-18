@@ -1553,10 +1553,16 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
           });
 
           const singleSongs = filterSingleSongs(rawMapped);
+          const validationResults = await Promise.all(
+            singleSongs.map(item =>
+              musicValidationService.validateTrack(item).catch(() => ({ eligible: true, category: 'music' }))
+            )
+          );
           const musicValidated = [];
-          for (const item of singleSongs) {
-            const vRes = await musicValidationService.validateTrack(item);
-            if (vRes.eligible) {
+          for (let j = 0; j < singleSongs.length; j++) {
+            const item = singleSongs[j];
+            const vRes = validationResults[j];
+            if (vRes?.eligible) {
               musicValidated.push({
                 ...item,
                 isMusic: true,

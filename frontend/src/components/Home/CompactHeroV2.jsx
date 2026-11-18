@@ -8,7 +8,10 @@ export default function CompactHeroV2({
   onPlaySong,
   onArtistClick,
   placeholder,
-  suggestions
+  suggestions,
+  user = null,
+  token = null,
+  backendUrl = ''
 }) {
   return (
     <div className="relative z-30 w-full rounded-2xl sm:rounded-3xl p-3.5 sm:p-6 bg-gradient-to-b from-[#18181c]/95 via-[#121216]/95 to-[#0c0c0e]/95 border border-amber-500/25 shadow-[0_12px_36px_rgba(0,0,0,0.7),0_0_20px_rgba(245,158,11,0.06)] backdrop-blur-xl overflow-visible">
@@ -71,6 +74,9 @@ export default function CompactHeroV2({
           placeholder={placeholder || "Search songs, artists, or paste link..."}
           suggestions={suggestions}
           showQuickTags={true}
+          user={user}
+          token={token}
+          backendUrl={backendUrl}
         />
       </div>
     </div>
