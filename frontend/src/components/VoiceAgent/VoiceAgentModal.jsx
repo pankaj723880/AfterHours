@@ -499,6 +499,9 @@ export default function VoiceAgentModal({
     const clauses = splitVoiceInstructionIntoClauses(text);
     const isCompound = clauses.length > 1;
 
+    const lower = text.toLowerCase().trim();
+    const cleanLower = lower.replace(/^(hey loopra|ok loopra|loopra|hello loopra)\s+/i, '');
+
     if (!isCompound) {
       // A1. Universal Done / Confirm / Save Handler
       const isConfirmUtterance = /\b(done|confirm|save|apply|submit|ho gaya|confirm karo|save karo|apply karo)\b/i.test(cleanLower) ||

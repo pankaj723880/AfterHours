@@ -6766,7 +6766,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     try {
       const data = await fetchFromBackend(trimmedQuery + " official video original", {
         limit: 10,
-        timeoutMs: 4000,
+        timeoutMs: 12000,
         signal: searchController.signal
       });
 

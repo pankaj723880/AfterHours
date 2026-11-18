@@ -74,8 +74,8 @@ export const featureFlagService = {
    *     No user can access Voice Control.
    * ELSE IF user is an authenticated administrator AND adminAccessEnabled = true:
    *     Allow Voice Control.
-   * ELSE IF user is authenticated AND globalRolloutEnabled = true:
-   *     Allow Voice Control.
+   * ELSE IF globalRolloutEnabled = true:
+   *     Allow Voice Control for all users and guests.
    * ELSE:
    *     Deny Voice Control.
    */
@@ -84,19 +84,23 @@ export const featureFlagService = {
       return false;
     }
 
+    // Global rollout allows voice control for all users, including guests
+    if (config.globalRollout) {
+      return true;
+    }
+
     if (!user) {
-      // Unauthenticated guests do not have voice control access
+      // Unauthenticated guests denied if global rollout is off
       return false;
     }
 
-    const isAdmin = user.role === 'admin';
+    const isAdmin = Boolean(user.role === 'admin' || user.isAdmin === true);
 
     if (isAdmin) {
       return Boolean(config.adminAccess);
     }
 
-    // Authenticated regular user
-    return Boolean(config.globalRollout);
+    return false;
   },
 
   /**

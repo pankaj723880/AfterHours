@@ -199,6 +199,88 @@ class VoiceSessionController {
     // Mobile & Tab Resiliency Listeners
     this.initEnvironmentListeners();
     this.bindVoiceBuddyTtsListener();
+    this.bindNativeAndroidSpeechListener();
+  }
+
+  bindNativeAndroidSpeechListener() {
+    if (typeof window === 'undefined') return;
+
+    window.addEventListener('loopra-native-speech', (e) => {
+      const detail = e.detail || {};
+      const rawText = (detail.text || '').trim();
+      const isFinal = Boolean(detail.isFinal);
+      if (!rawText) return;
+
+      const converted = devanagariToHinglish(rawText);
+      console.log('[VoiceSession:NativeAndroid] loopra-native-speech received:', {
+        raw: rawText,
+        converted,
+        isFinal
+      });
+
+      if (!isFinal) {
+        this.emitInterim(converted || rawText);
+      } else {
+        this.emitInterim(''); // Clear interim
+        if (this.speechDebounceTimer) {
+          clearTimeout(this.speechDebounceTimer);
+        }
+        this.speechDebounceTimer = setTimeout(() => {
+          if (!this.isSessionActive) return;
+          const candidate = converted || rawText;
+          const now = Date.now();
+          if (
+            this.lastExecuted.text === candidate &&
+            (now - this.lastExecuted.timestamp) < 2000
+          ) {
+            return;
+          }
+          this.lastExecuted = { text: candidate, timestamp: now };
+          this.resetInactivityOnValidCommand();
+          this.setState(SESSION_STATES.PROCESSING, `Processing: "${candidate}"`);
+          this.emitFinalTranscript(candidate);
+        }, 200);
+      }
+    });
+
+    window.addEventListener('loopra-native-speech-volume', (e) => {
+      const vol = e.detail?.volume ?? 0;
+      this.emitVolume(vol);
+    });
+
+    window.addEventListener('loopra-native-speech-state', (e) => {
+      const nativeState = e.detail?.state;
+      console.log('[VoiceSession:NativeAndroid] native state:', nativeState);
+      if (nativeState === 'LISTENING') {
+        this.isRecognizing = true;
+        this.isStarting = false;
+        if (this.isSessionActive && !this.isExecuting && !this.isSpeakingTts) {
+          this.setState(SESSION_STATES.LISTENING, 'Listening... (Speak your music command)');
+        }
+      } else if (nativeState === 'TRANSCRIBING') {
+        this.setState(SESSION_STATES.PROCESSING, 'Transcribing speech...');
+      }
+    });
+
+    window.addEventListener('loopra-native-speech-error', (e) => {
+      const err = e.detail?.error;
+      console.warn('[VoiceSession:NativeAndroid] native error:', err);
+      this.isRecognizing = false;
+      this.isStarting = false;
+      if (err === 'no_speech' && this.isSessionActive && !this.isManualStopping) {
+        // Auto-restart native listening after silence
+        setTimeout(() => {
+          if (this.isSessionActive && !this.isRecognizing) {
+            this.safeStartRecognition();
+          }
+        }, 400);
+        return;
+      }
+      if (err === 'permission_denied') {
+        this.setState(SESSION_STATES.ERROR, 'Microphone permission denied. Please allow microphone access.');
+        this.stopSession('permission_denied');
+      }
+    });
   }
 
   initEnvironmentListeners() {
@@ -896,6 +978,20 @@ class VoiceSessionController {
     }
     if (this.isRecognizing || this.isStarting) return;
 
+    // Check Android Native Speech Recognizer bridge first
+    if (typeof window !== 'undefined' && window.LoopraAndroid && typeof window.LoopraAndroid.isNativeSpeechAvailable === 'function') {
+      try {
+        if (window.LoopraAndroid.isNativeSpeechAvailable()) {
+          console.log('[VoiceSessionController] Delegating speech recognition to Android Native SpeechRecognizer');
+          this.isStarting = true;
+          window.LoopraAndroid.startSpeechRecognition(this.lang || 'hi-IN');
+          return;
+        }
+      } catch (nativeErr) {
+        console.warn('[VoiceSessionController] Android Native Speech start error:', nativeErr.message);
+      }
+    }
+
     const isMobileBrowser = typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Brave/i.test(navigator.userAgent);
     // On mobile viewports/browsers, always re-create fresh instance if not recognizing, since dead instances cannot restart
     if (!this.recognition || isMobileBrowser) {
@@ -950,6 +1046,13 @@ class VoiceSessionController {
   safeStopRecognition() {
     this.isStarting = false;
     clearTimeout(this.restartTimer);
+
+    if (typeof window !== 'undefined' && window.LoopraAndroid && typeof window.LoopraAndroid.stopSpeechRecognition === 'function') {
+      try {
+        window.LoopraAndroid.stopSpeechRecognition();
+      } catch (_) {}
+    }
+
     if (!this.recognition) return;
     try {
       this.isRecognizing = false;

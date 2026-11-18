@@ -164,8 +164,8 @@ export default function CharacterBuddy({
 
   const getBestHindiVoice = pickNaturalFemaleVoice;
 
-  // Atomic Speech Gate: Text Sanitizer & 1.2-Second Auto-Dismiss Controller
-  const showSanitizedSpeechBubble = useCallback((rawText, actionTag = null, customDismissMs = 1200) => {
+  // Atomic Speech Gate: Text Sanitizer & Resilient Display Controller
+  const showSanitizedSpeechBubble = useCallback((rawText, actionTag = null, customDismissMs = 2500) => {
     if (isAvatarMuted) return;
     if (!rawText || typeof rawText !== 'string') return;
 
@@ -204,13 +204,14 @@ export default function CharacterBuddy({
     if (actionTag) setLastActionTag(actionTag);
     setIsBubbleVisible(true);
 
-    // Auto-dismiss exactly after 1.2s (or custom dismiss ms)
+    // Auto-dismiss after display duration (minimum 2500ms to allow user to read)
+    const dismissDuration = Math.max(2500, customDismissMs || 2500);
     bubbleDismissTimerRef.current = setTimeout(() => {
       setLiveTranscript('');
       setIsBubbleVisible(false);
       setLastActionTag(null);
       bubbleDismissTimerRef.current = null;
-    }, customDismissMs || 1200);
+    }, dismissDuration);
   }, [isAvatarMuted]);
 
   // Clean & Direct Speech Synthesis Output
@@ -1916,13 +1917,13 @@ export default function CharacterBuddy({
       return [entry, ...prev.slice(0, 4)];
     });
 
-    // Auto-dismiss input text bubble strictly after 1 second
+    // Keep recognized command bubble visible for 3.5 seconds
     bubbleDismissTimerRef.current = setTimeout(() => {
       setIsBubbleVisible(false);
       setLiveTranscript('');
       setLastActionTag(null);
       bubbleDismissTimerRef.current = null;
-    }, 1000);
+    }, 3500);
   }, [stopAutonomousWalking]);
 
   // Expose command recorder and thinking/executing/celebrating triggers globally
@@ -2071,7 +2072,7 @@ export default function CharacterBuddy({
           setIsBubbleVisible(false);
           setLiveTranscript('');
           bubbleDismissTimerRef.current = null;
-        }, 1200);
+        }, 2500);
       } else if (event === 'speech_text_only') {
         setIsSpeaking(false);
         setInternalVolume(0);

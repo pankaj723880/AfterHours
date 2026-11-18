@@ -908,6 +908,33 @@ class VoiceBuddyService {
     const cleanPhonetics = this.preprocessTextForSpeech(text);
     const textToSpeak = cleanPhonetics || text;
 
+    // 0. Android APK Native TextToSpeech Engine (Primary on Android App)
+    if (typeof window !== 'undefined' && window.LoopraAndroid && typeof window.LoopraAndroid.isNativeTtsAvailable === 'function') {
+      try {
+        if (window.LoopraAndroid.isNativeTtsAvailable()) {
+          console.log('[VoiceBuddy] Speaking via Android Native TextToSpeech bridge:', textToSpeak);
+          this.isSpeaking = true;
+          this.notifySubscribers('speech_start', { text: textToSpeak, action: contextAction });
+          this.startSyntheticAudioMeter();
+
+          const handleNativeDone = (e) => {
+            window.removeEventListener('loopra-native-tts-status', handleNativeDone);
+            completeItem();
+          };
+          window.addEventListener('loopra-native-tts-status', (e) => {
+            if (e.detail?.event === 'done' || e.detail?.event === 'error') {
+              handleNativeDone(e);
+            }
+          }, { once: true });
+
+          window.LoopraAndroid.speak(textToSpeak);
+          return;
+        }
+      } catch (nativeTtsErr) {
+        console.warn('[VoiceBuddy] Android Native TTS speak error:', nativeTtsErr.message);
+      }
+    }
+
     // 1. Primary: Zero-Latency Browser SpeechSynthesis with STRICT Indian Accent
     const indianVoice = this.getIndianVoice();
     if (this.speechSynthesis && indianVoice) {
@@ -1030,6 +1057,12 @@ class VoiceBuddyService {
     clearTimeout(this.watchdogTimer);
     this.stopAudioMeter();
     this.stopSyntheticAudioMeter();
+
+    if (typeof window !== 'undefined' && window.LoopraAndroid && typeof window.LoopraAndroid.stopSpeaking === 'function') {
+      try {
+        window.LoopraAndroid.stopSpeaking();
+      } catch (_) {}
+    }
 
     if (this.currentAudio) {
       try {
