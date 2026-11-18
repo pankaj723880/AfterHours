@@ -73,7 +73,36 @@ export const AI_JUNK_AND_COVER_PATTERNS = [
   // Random unofficial amateur covers, bedroom covers, fan covers
   /\b((?:bedroom|acoustic|guitar|piano|ukulele|drum|flute|violin|fan(?:[\s-]made)?|amateur|random|garageband)\s+cover(?:\s+(?:by|with|version|song|tabs))?|cover\s+(?:by|version\s+by)\s+[a-z0-9_]{3,25})\b/i,
   // Foreign drama clips, drama edits, non-music serial/movie clips, status/reel clips
-  /\b(kdrama\s+edit|k-drama|c-drama|drama\s+scene|chinese\s+drama|pakistani\s+drama|anime\s+edit|movie\s+scene|whatsapp\s+status\s+video|shorts\s+video|status\s+video|reel\s+edit|funny\s+clip|reaction\s+video)\b/i
+  /\b(kdrama\s+edit|k-drama|c-drama|drama\s+scene|chinese\s+drama|pakistani\s+drama|anime\s+edit|movie\s+scene|whatsapp\s+status\s+video|shorts\s+video|status\s+video|reel\s+edit|funny\s+clip|reaction\s+video)\b/i,
+  // Challenges & Games
+  /\b(try\s+not\s+to\s+(?:sing|laugh|dance)(?:\s+along)?(?:\s+challenge)?)\b/i,
+  /\b(guess\s+the\s+(?:song|singer|music|track|artist|beat|lyrics?)(?:\s+(?:challenge|quiz|game))?)\b/i,
+  /\b(music\s+quiz|song\s+quiz|name\s+the\s+song|finish\s+the\s+lyrics?|blind\s+karaoke)\b/i,
+  // Reaction & Review videos
+  /\b(reaction\s+video|reacts?\s+to|reacting\s+to|first\s+time\s+hearing|song\s+reaction|trailer\s+reaction)\b/i,
+  // Gaming content
+  /\b(gameplay|walkthrough|playthrough|let'?s\s+play|speedrun|stream\s+highlights|pro\s+gameplay)\b/i,
+  /\b(minecraft|roblox|valorant|gta\s*[v5]|fortnite|pubg|bgmi|free\s*fire|apex\s+legends)\b/i,
+  // Vlogs & Hauls
+  /\b(daily\s+vlog|family\s+vlog|travel\s+vlog|vlog\s+\d+|day\s+in\s+my\s+life|mukbang|haul\s+video|shopping\s+haul)\b/i,
+  // Tutorials & How-To
+  /\b(tutorial|how\s+to|crash\s+course|full\s+course|lecture|masterclass|tips\s+and\s+tricks)\b/i,
+  // News & Debates
+  /\b(breaking\s+news|live\s+news|news\s+bulletin|prime\s+time\s+debate|press\s+conference)\b/i,
+  // Comedy & Pranks
+  /\b(stand[\s-]?up\s+comedy|comedy\s+scene|funny\s+video|prank\s+video|comedy\s+show)\b/i,
+  // Videos using music only as background
+  /\b(with\s+background\s+music|background\s+music\s+for\s+(?:gaming|study|vlog)|bgm\s+for\s+vlogs?)\b/i
+];
+
+// Generic "New Song" promotional title patterns
+// Excludes clickbait titles like "New Song 2026", "Latest Hindi New Song", "New Song Official Video"
+// Strictly preserves genuine song titles containing "New" (e.g. "New Rules", "New Divide", "Brand New Day", "Something New")
+export const GENERIC_NEW_SONG_REGEXES = [
+  /^\s*(?:latest\s+)?(?:hindi\s+|punjabi\s+|bhojpuri\s+|haryana\s+)?new\s+songs?(?:\s+20\d\d)?(?:\s*\|\s*.*|\s*[-–:]\s*.*|\s*official\s+video.*|\s*audio.*)?$/i,
+  /\b(?:latest\s+)?(?:hindi\s+|punjabi\s+|bhojpuri\s+)?new\s+songs?\s+20\d\d\b/i,
+  /\b(?:latest\s+hindi\s+new\s+song|latest\s+new\s+song|new\s+song\s+official\s+video)\b/i,
+  /^\s*new\s+songs?\s*$/i
 ];
 
 // Helper to verify if an artist or title belongs to a mainstream verified artist
@@ -311,6 +340,18 @@ export function verifySingleSong(track) {
         reason: `Rejected: AI-generated music, random cover, or drama clip detected (${regex})`,
         songType: 'junk_or_ai',
         verificationStatus: 'rejected_junk_or_ai'
+      };
+    }
+  }
+
+  // 2c. Generic "New Song" promotional title rejection (preserves legitimate song titles containing "New")
+  for (const regex of GENERIC_NEW_SONG_REGEXES) {
+    if (regex.test(title)) {
+      return {
+        isValid: false,
+        reason: `Rejected: Generic promotional "New Song" title format (${regex})`,
+        songType: 'generic_new_song',
+        verificationStatus: 'rejected_generic_title'
       };
     }
   }

@@ -1807,7 +1807,9 @@ export default function App() {
           image: item.image || item.thumbnail || `https://i.ytimg.com/vi/${rawId}/hqdefault.jpg`
         };
       }).filter(Boolean);
-      return cleaned.length >= 3 ? cleaned : fallback;
+      // Strictly enforce centralized single-song and content-filter validation
+      const singleSongCleaned = filterSingleSongs(cleaned);
+      return singleSongCleaned.length >= 3 ? singleSongCleaned : fallback;
     } catch (e) {
       return fallback;
     }
@@ -1829,11 +1831,13 @@ export default function App() {
   }, []);
 
   // Filter trending songs dynamically so no song rendered above in recommendations ever repeats below
-  // and strictly guarantee valid, usable thumbnails
+  // and strictly guarantee valid, usable thumbnails and single-song content validation
   const uniqueTrendingSongs = React.useMemo(() => {
     const raw = (trendingSongs && trendingSongs.length > 0) ? trendingSongs : TRENDING_SONGS;
+    const validated = filterSingleSongs(raw);
+    const candidateList = validated.length > 0 ? validated : TRENDING_SONGS;
     const dedup = new TrackDeduplicator();
-    return raw.filter(t => {
+    return candidateList.filter(t => {
       const cleanThumb = getCleanThumbnail(t);
       if (!cleanThumb || !isThumbnailUrlFormatValid(cleanThumb)) return false;
       const key = getCanonicalSongKey(t);
@@ -1849,33 +1853,55 @@ export default function App() {
   });
 
   useEffect(() => {
-    const fetchDynamicSection = async (query, setState, storageKey) => {
+    const fetchDynamicSection = async (query, setState, storageKey, options = {}) => {
       try {
-        const res = await fetchFromBackend(query);
-        if (res?.items && Array.isArray(res.items) && res.items.length > 0) {
-          const list = res.items.map(i => {
-            const vid = (typeof i.id === 'string' ? i.id : i.id?.videoId) || (typeof i.videoId === 'string' ? i.videoId : null);
-            const img = getCleanThumbnail(i, vid);
-            return {
-              id: vid,
-              videoId: vid,
-              title: i.snippet?.title || 'Unknown Title',
-              artist: i.snippet?.channelTitle || 'Unknown Artist',
-              image: img,
-              thumbnail: img,
-              query: (i.snippet?.title || '') + " " + (i.snippet?.channelTitle || '')
-            };
-          }).filter(item => item.id && typeof item.id === 'string' && item.id.length >= 5 && item.title && isThumbnailUrlFormatValid(item.thumbnail));
+        const targetLimit = options.targetLimit || 12;
+        let collected = [];
+        let pageToken = null;
+        let attempts = 0;
+        const maxAttempts = options.maxAttempts || 3;
 
-          // Strictly filter for individual single songs only
-          const singleSongs = filterSingleSongs(list);
-          const qualifiedList = singleSongs.length >= 3 ? singleSongs : list;
+        while (collected.length < targetLimit && attempts < maxAttempts) {
+          attempts++;
+          const res = await fetchFromBackend(query, {
+            limit: 20,
+            pageToken: pageToken || undefined
+          });
 
-          // Only replace state if we have a rich, valid list of at least 3 tracks
-          if (qualifiedList.length >= 3) {
-            setState(qualifiedList);
-            try { localStorage.setItem(storageKey, JSON.stringify(qualifiedList)); } catch (e) {}
+          if (res?.items && Array.isArray(res.items) && res.items.length > 0) {
+            const mapped = res.items.map(i => {
+              const vid = (typeof i.id === 'string' ? i.id : i.id?.videoId) || (typeof i.videoId === 'string' ? i.videoId : null);
+              const img = getCleanThumbnail(i, vid);
+              return {
+                id: vid,
+                videoId: vid,
+                title: i.snippet?.title || 'Unknown Title',
+                artist: i.snippet?.channelTitle || 'Unknown Artist',
+                image: img,
+                thumbnail: img,
+                query: (i.snippet?.title || '') + " " + (i.snippet?.channelTitle || '')
+              };
+            }).filter(item => item.id && typeof item.id === 'string' && item.id.length >= 5 && item.title && isThumbnailUrlFormatValid(item.thumbnail));
+
+            // Strictly filter for individual single songs only (excludes challenges, quizzes, generic new songs, etc.)
+            const singleSongs = filterSingleSongs(mapped);
+            for (const s of singleSongs) {
+              if (!collected.some(c => (c.id || c.videoId) === (s.id || s.videoId))) {
+                collected.push(s);
+              }
+            }
+
+            pageToken = res.nextPageToken || null;
+            if (!pageToken) break;
+          } else {
+            break;
           }
+        }
+
+        // Only replace state if we have a rich, valid list of at least 3 tracks
+        if (collected.length >= 3) {
+          setState(collected);
+          try { localStorage.setItem(storageKey, JSON.stringify(collected)); } catch (e) {}
         }
       } catch (e) {
         // Fallback: If network timed out or failed, populate from cached localStorage
@@ -1883,8 +1909,9 @@ export default function App() {
           const cached = localStorage.getItem(storageKey);
           if (cached) {
             const parsed = JSON.parse(cached);
-            if (Array.isArray(parsed) && parsed.length >= 3) {
-              setState(parsed);
+            const validCached = filterSingleSongs(parsed);
+            if (Array.isArray(validCached) && validCached.length >= 3) {
+              setState(validCached);
               return;
             }
           }
