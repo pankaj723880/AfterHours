@@ -767,6 +767,49 @@ export default function VoiceAgentModal({
           return;
         }
 
+        // Open Artist Profile
+        if (directAction.intent === INTENT_CATEGORIES.OPEN_ARTIST || directAction.action === 'open_artist') {
+          const targetArtist = directAction.target || persistentContextRef.current.lastArtist || currentSong?.artist;
+          if (targetArtist && onOpenArtist) {
+            try {
+              onOpenArtist(targetArtist);
+              persistentContextRef.current.lastArtist = targetArtist;
+              const reply = `Opening ${targetArtist}'s profile`;
+              voiceBuddyService.speak(reply);
+              showToast?.(`Opening ${targetArtist}'s profile`);
+            } catch (err) {
+              console.error('[VoiceAgent] Failed to open artist profile:', err);
+              voiceBuddyService.speak('Artist profile open nahi ho paya');
+              showToast?.('Could not open artist profile', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Artist specified nahi hai');
+            showToast?.('Artist not specified', 'warning');
+          }
+          return;
+        }
+
+        // Add to Playlist
+        if (directAction.intent === INTENT_CATEGORIES.ADD_TO_PLAYLIST || directAction.action === 'add_to_playlist') {
+          const targetSong = directAction.target || currentSong || persistentContextRef.current.currentSong || persistentContextRef.current.lastPlayedTrack;
+          if (targetSong && onAddToPlaylist) {
+            try {
+              onAddToPlaylist(targetSong);
+              const reply = `Opening playlist selector for "${targetSong.title || 'song'}"`;
+              voiceBuddyService.speak(reply);
+              showToast?.(`Adding "${targetSong.title || 'song'}" to playlist`);
+            } catch (err) {
+              console.error('[VoiceAgent] Add to playlist failed:', err);
+              voiceBuddyService.speak('Playlist selector open nahi ho paya');
+              showToast?.('Failed to open playlist selector', 'error');
+            }
+          } else {
+            voiceBuddyService.speak('Koi song play nahi ho raha playlist mein daalne ke liye');
+            showToast?.('No song selected or playing', 'warning');
+          }
+          return;
+        }
+
         if (directAction.action === 'open_profile' || directAction.intent === INTENT_CATEGORIES.OPEN_PROFILE) {
           if (onOpenProfile) {
             try {

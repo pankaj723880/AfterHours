@@ -84,6 +84,8 @@ export const INTENT_CATEGORIES = {
   PREVIOUS_TRACK: 'PREVIOUS_TRACK',
   ADD_TO_FAVOURITES: 'ADD_TO_FAVOURITES',
   REMOVE_FROM_FAVOURITES: 'REMOVE_FROM_FAVOURITES',
+  ADD_TO_PLAYLIST: 'ADD_TO_PLAYLIST',
+  OPEN_ARTIST: 'OPEN_ARTIST',
   AVATAR_ACTION: 'AVATAR_ACTION',
   OPEN_PLAYLIST: 'OPEN_PLAYLIST',
   OPEN_RADIO: 'OPEN_RADIO',
@@ -257,6 +259,31 @@ export function parseCommandToAction(rawInput = '', context = {}) {
       target: context.currentSong || context.lastPlayedTrack || null,
       description: 'Like current song'
     };
+  }
+
+  // 8B. Library: Add to Playlist (Evaluated BEFORE page navigation)
+  if (/\b(add to playlist|playlist me daalo|playlist mein daalo|playlist me add|playlist mein add|add this song to playlist|is gaane ko playlist me|is song ko playlist me)\b/i.test(cleanLower)) {
+    return {
+      intent: INTENT_CATEGORIES.ADD_TO_PLAYLIST,
+      action: 'add_to_playlist',
+      target: context.currentSong || context.lastPlayedTrack || null,
+      description: 'Add to Playlist'
+    };
+  }
+
+  // 8C. Navigation: Open Artist Profile
+  const artistProfileMatch = cleanLower.match(/^(?:open|show|view)?\s*artist\s+(?:profile\s+)?(?:of\s+)?([a-zA-Z0-9\s.]+?)(?:\s+(?:kholo|dikhao|open))?$/i) ||
+                             cleanLower.match(/^([a-zA-Z0-9\s.]+?)\s+(?:ka\s+artist\s+profile|ka\s+artist\s+page|artist\s+profile|artist\s+kholo|artist\s+open|ka\s+profile\s+kholo|ka\s+profile)(?:\s+(?:kholo|dikhao|open))?$/i);
+  if (artistProfileMatch && artistProfileMatch[1]) {
+    const rawArtist = artistProfileMatch[1].trim();
+    if (rawArtist && !['profile', 'page', 'songs', 'queue', 'music', 'this', 'the', 'kholo', 'dikhao', 'open'].includes(rawArtist)) {
+      return {
+        intent: INTENT_CATEGORIES.OPEN_ARTIST,
+        action: 'open_artist',
+        target: rawArtist,
+        description: `Open artist profile for "${rawArtist}"`
+      };
+    }
   }
 
   // 9. Interactive Avatar Actions (Wave, Wink, Dance, Jump, Pose)
