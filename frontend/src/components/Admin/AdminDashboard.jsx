@@ -476,12 +476,12 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
       >
         <div className="flex items-center justify-between gap-2 min-w-0">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            {/* Hamburger button on mobile */}
+            {/* Hamburger button on mobile and tablet */}
             <button
               type="button"
               onClick={() => setIsMobileSidebarOpen(prev => !prev)}
               aria-label="Toggle navigation menu"
-              className="md:hidden p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 transition cursor-pointer shrink-0"
+              className="lg:hidden p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 transition cursor-pointer shrink-0"
             >
               <Menu className="w-4 h-4" />
             </button>
@@ -609,18 +609,18 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
       </header>
 
       {/* Main Layout Container */}
-      <div className="flex-1 max-w-7xl w-full mx-auto p-2 sm:p-4 md:p-6 flex flex-col md:flex-row gap-3 sm:gap-5 min-w-0 overflow-x-hidden">
+      <div className="flex-1 max-w-7xl w-full mx-auto p-2 sm:p-4 md:p-6 flex flex-col lg:flex-row gap-3 sm:gap-5 min-w-0 overflow-x-hidden">
         {/* Mobile Drawer Backdrop */}
         {isMobileSidebarOpen && (
           <div
             role="presentation"
             aria-hidden="true"
             onClick={() => setIsMobileSidebarOpen(false)}
-            className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm transition-opacity md:hidden"
+            className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm transition-opacity lg:hidden"
           />
         )}
 
-        {/* Navigation Sidebar (Slide-in Drawer on Mobile, Column on Desktop) */}
+        {/* Navigation Sidebar (Slide-in Drawer on Mobile & Tablet, Column on Desktop >= lg) */}
         <aside
           style={{
             paddingTop: isStandaloneApp
@@ -631,12 +631,12 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
           className={`
             fixed inset-y-0 left-0 z-[60] w-[min(85vw,300px)] bg-neutral-950/98 border-r border-neutral-800 p-4 overflow-y-auto transform transition-transform duration-300 ease-in-out
             ${isMobileSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
-            md:translate-x-0 md:static md:inset-auto md:z-auto md:w-60 md:max-w-none md:bg-transparent md:border-0 md:p-0 md:overflow-visible md:transition-none md:shrink-0
+            lg:translate-x-0 lg:static lg:inset-auto lg:z-auto lg:w-60 lg:max-w-none lg:bg-transparent lg:border-0 lg:p-0 lg:overflow-visible lg:transition-none lg:shrink-0
             space-y-5
           `}
         >
           {/* Mobile Drawer Header with Close Button */}
-          <div className="flex md:hidden items-center justify-between pb-3 mb-2 border-b border-neutral-800">
+          <div className="flex lg:hidden items-center justify-between pb-3 mb-2 border-b border-neutral-800">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50" />
               <span className="text-xs font-bold uppercase tracking-wider text-neutral-200">Admin Navigation</span>
