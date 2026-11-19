@@ -36,7 +36,7 @@ import CmsAnnouncementBar from './components/Common/CmsAnnouncementBar';
 import CmsHeroBanner from './components/Common/CmsHeroBanner';
 import CmsMaintenanceOverlay from './components/Common/CmsMaintenanceOverlay';
 import CmsCuratedCollectionsRow from './components/Common/CmsCuratedCollectionsRow';
-import { getCachedCmsConfig, fetchPublicCmsConfig, applyThemeToDom, normalizeCmsConfig } from './services/cmsClient';
+import { getCachedCmsConfig, fetchPublicCmsConfig, applyThemeToDom, normalizeCmsConfig, resolvePlatformConfig } from './services/cmsClient';
 import { offlineEligibilityService } from './services/offlineEligibilityService';
 import { offlineStorageService } from './services/offlineStorageService';
 import { smartQueueService } from './services/smartQueueService';
@@ -1552,8 +1552,9 @@ export default function App() {
 
   const [cmsConfig, setCmsConfig] = useState(() => {
     const cached = getCachedCmsConfig();
-    applyThemeToDom(cached.theme, false);
-    return cached;
+    const resolved = resolvePlatformConfig(cached);
+    applyThemeToDom(resolved.theme, false);
+    return resolved;
   });
 
   const [isAppInitialized, setIsAppInitialized] = useState(false);
@@ -1647,12 +1648,12 @@ export default function App() {
       .then(cfg => {
         if (!isMounted) return;
         if (cfg) {
-          const normalized = normalizeCmsConfig(cfg);
-          setCmsConfig(normalized);
-          if (typeof normalized.featureControls?.offlineDownloadsEnabled === 'boolean') {
-            offlineStorageService.setDownloadsEnabled(normalized.featureControls.offlineDownloadsEnabled);
+          const resolved = resolvePlatformConfig(cfg);
+          setCmsConfig(resolved);
+          if (typeof resolved.featureControls?.offlineDownloadsEnabled === 'boolean') {
+            offlineStorageService.setDownloadsEnabled(resolved.featureControls.offlineDownloadsEnabled);
           }
-          applyThemeToDom(normalized.theme, true);
+          applyThemeToDom(resolved.theme, true);
         }
       })
       .catch(err => {
@@ -1673,24 +1674,24 @@ export default function App() {
 
     const handleConfigUpdate = (data) => {
       if (data?.config) {
-        const normalized = normalizeCmsConfig(data.config);
-        setCmsConfig(normalized);
-        if (typeof normalized.featureControls?.offlineDownloadsEnabled === 'boolean') {
-          offlineStorageService.setDownloadsEnabled(normalized.featureControls.offlineDownloadsEnabled);
+        const resolved = resolvePlatformConfig(data.config);
+        setCmsConfig(resolved);
+        if (typeof resolved.featureControls?.offlineDownloadsEnabled === 'boolean') {
+          offlineStorageService.setDownloadsEnabled(resolved.featureControls.offlineDownloadsEnabled);
         }
         try {
-          localStorage.setItem('afterhours_cms_public_config', JSON.stringify(normalized));
+          localStorage.setItem('afterhours_cms_public_config', JSON.stringify(normalizeCmsConfig(data.config)));
         } catch (e) {}
-        applyThemeToDom(normalized.theme, true);
+        applyThemeToDom(resolved.theme, true);
       } else {
         fetchPublicCmsConfig(BACKEND_URL).then(cfg => {
           if (cfg && isMounted) {
-            const normalized = normalizeCmsConfig(cfg);
-            setCmsConfig(normalized);
-            if (typeof normalized.featureControls?.offlineDownloadsEnabled === 'boolean') {
-              offlineStorageService.setDownloadsEnabled(normalized.featureControls.offlineDownloadsEnabled);
+            const resolved = resolvePlatformConfig(cfg);
+            setCmsConfig(resolved);
+            if (typeof resolved.featureControls?.offlineDownloadsEnabled === 'boolean') {
+              offlineStorageService.setDownloadsEnabled(resolved.featureControls.offlineDownloadsEnabled);
             }
-            applyThemeToDom(normalized.theme, true);
+            applyThemeToDom(resolved.theme, true);
           }
         });
       }
@@ -10190,13 +10191,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 setReviewsRefreshKey(k => k + 1);
                 // Revert any uncommitted live draft preview back to published config
                 const published = getCachedCmsConfig();
-                setCmsConfig(published);
-                applyThemeToDom(published.theme, true);
+                const resolved = resolvePlatformConfig(published);
+                setCmsConfig(resolved);
+                applyThemeToDom(resolved.theme, true);
                 fetchPublicCmsConfig(BACKEND_URL).then(cfg => {
                   if (cfg) {
-                    const normalized = normalizeCmsConfig(cfg);
-                    setCmsConfig(normalized);
-                    applyThemeToDom(normalized.theme, true);
+                    const res = resolvePlatformConfig(cfg);
+                    setCmsConfig(res);
+                    applyThemeToDom(res.theme, true);
                   }
                 });
               }}
@@ -10217,9 +10219,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               }}
               onPreviewConfig={(previewConfig) => {
                 if (previewConfig) {
-                  const normalized = normalizeCmsConfig(previewConfig);
-                  setCmsConfig(normalized);
-                  applyThemeToDom(normalized.theme, false);
+                  const res = resolvePlatformConfig(previewConfig);
+                  setCmsConfig(res);
+                  applyThemeToDom(res.theme, false);
                 }
               }}
             />

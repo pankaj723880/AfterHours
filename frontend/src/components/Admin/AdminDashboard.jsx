@@ -30,7 +30,9 @@ import {
   Star,
   Download,
   Zap,
-  Key
+  Key,
+  Monitor,
+  Smartphone
 } from 'lucide-react';
 import AccessDenied from './AccessDenied';
 import AdminOverview from './AdminOverview';
@@ -50,12 +52,13 @@ import CmsPublishingHistory from './CmsPublishingHistory';
 import CmsPageManager from './CmsPageManager';
 import CmsSectionManager from './CmsSectionManager';
 import CmsFeatureManager from './CmsFeatureManager';
+import PlatformManager from './PlatformManager';
 import AiLearningIntelligence from './AiLearningIntelligence';
 import VoiceControlManagement from './VoiceControlManagement';
 import AiLiveCodePatcher from './AiLiveCodePatcher';
 import ApiKeyManagement from './ApiKeyManagement';
 import { safeParseJsonResponse } from '../../utils/errorHandler';
-import { DEFAULT_CMS_CONFIG, getCachedCmsConfig, normalizeCmsConfig, applyThemeToDom } from '../../services/cmsClient';
+import { DEFAULT_CMS_CONFIG, getCachedCmsConfig, normalizeCmsConfig, applyThemeToDom, resolvePlatformConfig } from '../../services/cmsClient';
 import { BACKEND_URL } from '../../utils/apiUrl';
 import { USE_V2_MOBILE_ADMIN } from '../../constants/featureFlags';
 
@@ -412,6 +415,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
 
   // Navigation Items Grouped by Category
   const cmsNavItems = [
+    { id: 'cms_platforms', label: 'Platform Targets', icon: Monitor, badge: '3 Targets' },
     { id: 'cms_settings', label: 'Global Branding', icon: Globe },
     { id: 'cms_pages', label: 'Page & Route Manager', icon: Layout },
     { id: 'cms_sections', label: 'Home Section Manager', icon: Layers },
@@ -441,6 +445,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
   // Primary V2 Category Pill Tabs for sleek mobile horizontal strip
   const mobilePillTabs = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'cms_platforms', label: 'Platforms', icon: Monitor },
     { id: 'api_keys', label: 'API Keys', icon: Key },
     { id: 'live_patcher', label: 'Patcher', icon: Zap },
     { id: 'cms_pages', label: 'Pages', icon: Layout },
@@ -766,6 +771,26 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
           )}
 
           {/* CMS TABS */}
+          {activeSubTab === 'cms_platforms' && (
+            <PlatformManager
+              draft={cmsDraft}
+              onUpdateDraft={handleUpdateDraft}
+              showToast={showToast}
+              onSaveDraft={handleSaveDraft}
+              onPublishLive={handlePublishLive}
+              isSavingDraft={isSavingDraft}
+              isPublishingLive={isPublishingLive}
+              onOpenMediaPicker={openMediaPicker}
+              onPreviewPlatform={(platformId) => {
+                if (onPreviewConfig && cmsDraft) {
+                  const resolved = resolvePlatformConfig(cmsDraft, platformId);
+                  onPreviewConfig(resolved);
+                  showToast?.(`Live previewing ${platformId} target overrides!`, 'info');
+                }
+              }}
+            />
+          )}
+
           {activeSubTab === 'cms_settings' && (
             <CmsGlobalSettings
               draft={cmsDraft}

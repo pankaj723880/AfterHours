@@ -175,6 +175,15 @@ const siteConfigSchema = new mongoose.Schema({
     listeningRoomsEnabled: { type: Boolean, default: true }
   },
 
+  platforms: {
+    type: mongoose.Schema.Types.Mixed,
+    default: () => ({
+      desktop: {},
+      mobile_web: {},
+      android_app: {}
+    })
+  },
+
   lastModifiedBy: { type: String, default: 'system' },
   publishedAt: { type: Date }
 }, { timestamps: true });

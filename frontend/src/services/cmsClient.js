@@ -208,6 +208,11 @@ export const DEFAULT_CMS_CONFIG = {
   featureControls: {
     offlineDownloadsEnabled: true
   },
+  platforms: {
+    desktop: {},
+    mobile_web: {},
+    android_app: {}
+  },
   featuredCollections: []
 };
 
@@ -345,6 +350,11 @@ export const normalizeCmsConfig = (raw) => {
       contactEmail: raw.footer?.contactEmail ?? DEFAULT_CMS_CONFIG.footer.contactEmail,
       disclaimerText: raw.footer?.disclaimerText ?? DEFAULT_CMS_CONFIG.footer.disclaimerText,
       infoPages: Array.isArray(raw.footer?.infoPages) ? raw.footer.infoPages : DEFAULT_CMS_CONFIG.footer.infoPages
+    },
+    platforms: (raw.platforms && typeof raw.platforms === 'object') ? raw.platforms : {
+      desktop: {},
+      mobile_web: {},
+      android_app: {}
     },
     featuredCollections: Array.isArray(raw.featuredCollections) ? raw.featuredCollections : []
   };
@@ -542,3 +552,126 @@ export const applyThemeToDom = (theme, persistToStorage = false) => {
     } catch (e) {}
   }
 };
+
+/**
+ * Detect runtime platform of the current client environment:
+ * - 'android_app': Native Bubblewrap TWA, Android WebView with window.LoopraAndroid, or standalone APK
+ * - 'mobile_web': Mobile device browser (viewport < 768px or mobile user agent)
+ * - 'desktop': Desktop browser (viewport >= 768px, non-standalone)
+ */
+export const detectCurrentPlatform = () => {
+  if (typeof window === 'undefined') return 'desktop';
+
+  const isStandalone = Boolean(
+    window.LoopraAndroid ||
+    window.navigator?.standalone ||
+    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+    (navigator?.userAgent && navigator.userAgent.includes('LoopraNativeAndroid'))
+  );
+
+  if (isStandalone) {
+    return 'android_app';
+  }
+
+  const isMobile = (window.innerWidth < 768) || /Mobi|Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Brave/i.test(navigator?.userAgent || '');
+  if (isMobile) {
+    return 'mobile_web';
+  }
+
+  return 'desktop';
+};
+
+/**
+ * Resolve effective CMS configuration for a given platform target.
+ * Merges base global configuration with platform-specific overrides:
+ * baseConfig <- platformOverrides[targetPlatform]
+ *
+ * Supported target platforms: 'all' | 'desktop' | 'mobile_web' | 'android_app'
+ */
+export const resolvePlatformConfig = (baseConfig, targetPlatform = null) => {
+  if (!baseConfig || typeof baseConfig !== 'object') {
+    return normalizeCmsConfig(DEFAULT_CMS_CONFIG);
+  }
+
+  const normalized = normalizeCmsConfig(baseConfig);
+  const platform = targetPlatform || detectCurrentPlatform();
+
+  if (!platform || platform === 'all') {
+    return normalized;
+  }
+
+  const platformOverrides = normalized.platforms?.[platform];
+  if (!platformOverrides || typeof platformOverrides !== 'object' || Object.keys(platformOverrides).length === 0) {
+    return normalized;
+  }
+
+  // Deep merge platform-specific overrides onto normalized config
+  const merged = {
+    ...normalized,
+    branding: {
+      ...normalized.branding,
+      ...(platformOverrides.branding || {})
+    },
+    theme: {
+      ...normalized.theme,
+      ...(platformOverrides.theme || {})
+    },
+    announcement: {
+      ...normalized.announcement,
+      ...(platformOverrides.announcement || {})
+    },
+    banner: {
+      ...normalized.banner,
+      ...(platformOverrides.banner || {})
+    },
+    featureControls: {
+      ...normalized.featureControls,
+      ...(platformOverrides.featureControls || {})
+    },
+    searchPage: {
+      ...normalized.searchPage,
+      ...(platformOverrides.searchPage || {})
+    },
+    footer: {
+      ...normalized.footer,
+      ...(platformOverrides.footer || {})
+    },
+    playerDefaults: {
+      ...normalized.playerDefaults,
+      ...(platformOverrides.playerDefaults || {})
+    }
+  };
+
+  // Section display limits or enabled overrides
+  if (Array.isArray(platformOverrides.sections) && platformOverrides.sections.length > 0) {
+    const secMap = new Map((normalized.sections || []).map(s => [s.id, { ...s }]));
+    platformOverrides.sections.forEach(overrideSec => {
+      if (!overrideSec?.id) return;
+      const existing = secMap.get(overrideSec.id);
+      if (existing) {
+        secMap.set(overrideSec.id, { ...existing, ...overrideSec });
+      } else {
+        secMap.set(overrideSec.id, overrideSec);
+      }
+    });
+    merged.sections = Array.from(secMap.values());
+  }
+
+  // Navigation overrides
+  if (Array.isArray(platformOverrides.navigation) && platformOverrides.navigation.length > 0) {
+    const navMap = new Map((normalized.navigation || []).map(n => [n.id, { ...n }]));
+    platformOverrides.navigation.forEach(overrideNav => {
+      if (!overrideNav?.id) return;
+      const existing = navMap.get(overrideNav.id);
+      if (existing) {
+        navMap.set(overrideNav.id, { ...existing, ...overrideNav });
+      } else {
+        navMap.set(overrideNav.id, overrideNav);
+      }
+    });
+    merged.navigation = Array.from(navMap.values());
+  }
+
+  return merged;
+};
+

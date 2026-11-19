@@ -409,6 +409,11 @@ export const getDefaultSiteConfig = () => ({
     lyricsEnabled: true,
     sleepTimerEnabled: true,
     listeningRoomsEnabled: true
+  },
+  platforms: {
+    desktop: {},
+    mobile_web: {},
+    android_app: {}
   }
 });
 
@@ -707,6 +712,11 @@ export const cmsService = {
         pages: (config.pages || defaults.pages || []).filter(p => p && p.enabled !== false),
         homeSections: (config.homeSections || defaults.homeSections || []).filter(s => s && s.enabled !== false).sort((a, b) => (a.order || 0) - (b.order || 0)),
         featureControls: { ...defaults.featureControls, ...(config.featureControls || {}) },
+        platforms: (config.platforms && typeof config.platforms === 'object') ? config.platforms : {
+          desktop: {},
+          mobile_web: {},
+          android_app: {}
+        },
         featuredCollections: (featuredCollections || []).map(c => ({
           id: c._id.toString(),
           name: c.name,
@@ -965,6 +975,9 @@ export const cmsService = {
       playerDefaults: { ...defaults.playerDefaults, ...(existingDraft.playerDefaults || {}), ...(safeData.playerDefaults || {}) },
       searchPage: { ...defaults.searchPage, ...(existingDraft.searchPage || {}), ...(safeData.searchPage || {}) },
       footer: { ...defaults.footer, ...(existingDraft.footer || {}), ...(safeData.footer || {}) },
+      platforms: (safeData.platforms && typeof safeData.platforms === 'object')
+        ? safeData.platforms
+        : (existingDraft.platforms || { desktop: {}, mobile_web: {}, android_app: {} }),
       lastModifiedBy: adminUser?.username || 'admin'
     };
 
