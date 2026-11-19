@@ -1,14 +1,42 @@
 import { BACKEND_URL } from '../utils/apiUrl.js';
 
-let currentAccessState = {
-  allowed: true,
-  enabled: true,
-  voiceControlEnabled: true,
-  globalRollout: true,
-  enableVoiceControlForAllUsers: true,
-  adminAccess: true,
+const CACHE_STORAGE_KEY = 'loopra_voice_control_access_state';
+
+// Default initial state: Secure Fail-Closed (all false until explicit verification)
+const DEFAULT_ACCESS_STATE = {
+  allowed: false,
+  enabled: false,
+  voiceControlEnabled: false,
+  globalRollout: false,
+  enableVoiceControlForAllUsers: false,
+  adminAccess: false,
   lastChecked: 0
 };
+
+// Initialize from last known valid localStorage cache if available, otherwise fail-closed
+const loadCachedAccessState = () => {
+  if (typeof window === 'undefined') return { ...DEFAULT_ACCESS_STATE };
+  try {
+    const raw = localStorage.getItem(CACHE_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        return {
+          allowed: Boolean(parsed.allowed),
+          enabled: Boolean(parsed.enabled ?? parsed.voiceControlEnabled),
+          voiceControlEnabled: Boolean(parsed.voiceControlEnabled ?? parsed.enabled),
+          globalRollout: Boolean(parsed.globalRollout ?? parsed.enableVoiceControlForAllUsers),
+          enableVoiceControlForAllUsers: Boolean(parsed.enableVoiceControlForAllUsers ?? parsed.globalRollout),
+          adminAccess: Boolean(parsed.adminAccess),
+          lastChecked: Number(parsed.lastChecked) || 0
+        };
+      }
+    }
+  } catch (_) {}
+  return { ...DEFAULT_ACCESS_STATE };
+};
+
+let currentAccessState = loadCachedAccessState();
 
 const subscribers = new Set();
 
@@ -79,9 +107,9 @@ export const voiceControlService = {
 
       if (res.ok) {
         const data = await res.json();
-        const enabled = Boolean(data.enabled ?? data.voiceControlEnabled ?? true);
-        const globalRollout = Boolean(data.globalRollout ?? data.enableVoiceControlForAllUsers ?? true);
-        const adminAccess = Boolean(data.adminAccess ?? true);
+        const enabled = Boolean(data.enabled ?? data.voiceControlEnabled ?? false);
+        const globalRollout = Boolean(data.globalRollout ?? data.enableVoiceControlForAllUsers ?? false);
+        const adminAccess = Boolean(data.adminAccess ?? false);
         const isAdmin = Boolean(user && (user.isAdmin === true || user.role === 'admin'));
         const allowed = enabled && (isAdmin ? adminAccess : globalRollout);
 
@@ -94,6 +122,9 @@ export const voiceControlService = {
           adminAccess,
           lastChecked: Date.now()
         };
+        try {
+          localStorage.setItem(CACHE_STORAGE_KEY, JSON.stringify(currentAccessState));
+        } catch (_) {}
         this.notify();
         return currentAccessState;
       }
@@ -101,10 +132,13 @@ export const voiceControlService = {
       console.warn('[voiceControlService] Check access notice:', err.message);
     }
 
-    // Fallback: evaluate locally based on passed user & last known config
+    // Fail-closed fallback: evaluate strictly against saved cache or default closed state
     if (user) {
       const allowed = this.evaluateLocalAccess(currentAccessState, user);
       currentAccessState.allowed = allowed;
+      this.notify();
+    } else {
+      currentAccessState.allowed = false;
       this.notify();
     }
 
@@ -148,6 +182,10 @@ export const voiceControlService = {
       adminAccess,
       lastChecked: Date.now()
     };
+
+    try {
+      localStorage.setItem(CACHE_STORAGE_KEY, JSON.stringify(currentAccessState));
+    } catch (_) {}
 
     this.notify();
   }

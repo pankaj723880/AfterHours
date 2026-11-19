@@ -1,11 +1,17 @@
 import express from 'express';
 import mongoose from 'mongoose';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { cmsService } from '../services/cmsService.js';
 import CuratedCollection from '../models/CuratedCollection.js';
 import MediaAsset from '../models/MediaAsset.js';
 import ContentVersion from '../models/ContentVersion.js';
 import AuditLog from '../models/AuditLog.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
@@ -94,6 +100,32 @@ router.get('/curated/:slug', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch curated collection: ' + err.message });
+  }
+});
+
+// ==========================================
+// 2. ANDROID APP VERSION MANIFEST ENDPOINT
+// ==========================================
+router.get(['/app-version', '/version'], async (req, res) => {
+  try {
+    res.set('Cache-Control', 'public, max-age=60, s-maxage=60, must-revalidate');
+    const versionPath = path.resolve(__dirname, '../../version.json');
+    if (fs.existsSync(versionPath)) {
+      const versionData = JSON.parse(fs.readFileSync(versionPath, 'utf8'));
+      return res.json(versionData);
+    }
+    // Fallback default version manifest
+    res.json({
+      versionName: '2.1',
+      versionCode: 21,
+      downloadUrl: 'https://loopra1.vercel.app/downloads/loopra.apk',
+      directApkUrl: 'https://loopra1.vercel.app/Loopra.apk',
+      releaseNotes: 'Official Loopra release',
+      releaseDate: new Date().toISOString(),
+      minSdkVersion: 24
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to read app version: ' + err.message });
   }
 });
 

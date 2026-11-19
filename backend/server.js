@@ -1214,8 +1214,29 @@ app.use(['/api/artists', '/artists', '/api/artist', '/artist'], artistRoutes);
 // Mount Public Ratings & Reviews
 app.use(['/api/reviews', '/reviews'], reviewsRoutes);
 
-// Mount Public CMS Routes
+// Mount Public CMS Routes & App Version Manifest
 app.use(['/api/cms', '/cms'], cmsRoutes);
+app.get(['/api/app-version', '/api/version'], (req, res) => {
+  try {
+    res.set('Cache-Control', 'public, max-age=60, s-maxage=60, must-revalidate');
+    const versionPath = path.resolve(__dirname, '../version.json');
+    if (fs.existsSync(versionPath)) {
+      const versionData = JSON.parse(fs.readFileSync(versionPath, 'utf8'));
+      return res.json(versionData);
+    }
+    res.json({
+      versionName: '2.1',
+      versionCode: 21,
+      downloadUrl: 'https://loopra1.vercel.app/downloads/loopra.apk',
+      directApkUrl: 'https://loopra1.vercel.app/Loopra.apk',
+      releaseNotes: 'Official Loopra release',
+      releaseDate: new Date().toISOString(),
+      minSdkVersion: 24
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to read app version: ' + err.message });
+  }
+});
 
 // Mount Offline Licensing & Authorized Audio Download Routes
 app.use(['/api/offline', '/offline'], offlineRoutes);

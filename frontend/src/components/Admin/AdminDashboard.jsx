@@ -458,7 +458,7 @@ export default function AdminDashboard({
     { id: 'ai_learning', label: 'AI Learning Engine', icon: Brain },
     { id: 'traffic', label: 'Live Traffic', icon: Activity, badge: isSocketConnected ? 'LIVE' : null },
     { id: 'users', label: 'Users & Roles', icon: Users },
-    { id: 'offline_licenses', label: 'Offline Licenses', icon: Download },
+    { id: 'download_apk', label: 'Download APK', icon: Smartphone, badge: 'v2.1' },
     { id: 'activity', label: 'Activity Moderation', icon: Activity },
     { id: 'health', label: 'API & Diagnostics', icon: Server },
     { id: 'music', label: 'Music Analytics', icon: Music2 },
@@ -1001,6 +1001,33 @@ export default function AdminDashboard({
               onUserUpdated={onUserUpdated} 
               onOpenAuth={onOpenAuth} 
             />
+          )}
+
+          {activeSubTab === 'download_apk' && (
+            <div className="p-6 max-w-2xl mx-auto space-y-6">
+              <div className="p-6 rounded-3xl bg-neutral-900 border border-amber-500/30 text-center space-y-4 shadow-xl">
+                <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mx-auto">
+                  <Smartphone className="w-8 h-8 text-amber-400" />
+                </div>
+                <h3 className="text-xl font-bold text-white font-display">Download Official Signed APK</h3>
+                <p className="text-xs text-neutral-400 max-w-md mx-auto">
+                  Directly download the latest published Android APK (v2.1). Built with native background audio playback, PiP video support, and offline capabilities.
+                </p>
+                <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+                  <a
+                    href="/downloads/loopra.apk"
+                    download="Loopra.apk"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-neutral-950 font-bold text-sm shadow-lg shadow-amber-500/20 active:scale-95 transition cursor-pointer"
+                  >
+                    <Download className="w-4 h-4 text-neutral-950" />
+                    <span>Download Signed APK (Direct)</span>
+                  </a>
+                </div>
+                <p className="text-[11px] text-neutral-500 font-mono">
+                  Permanent URL: https://loopra1.vercel.app/downloads/loopra.apk
+                </p>
+              </div>
+            </div>
           )}
 
           {activeSubTab === 'offline_licenses' && (

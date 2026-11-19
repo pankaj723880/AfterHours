@@ -28,9 +28,10 @@ export default function PlayerSettingsModal({
   onToggleDataSaver = () => {},
   isAutoPipEnabled = true,
   onToggleAutoPip = () => {},
-  isAdmin = false
+  isAdmin = false,
+  cmsConfig = null
 }) {
-  const { canAccessVoice } = useVoiceRollout(isAdmin ? { isAdmin: true, role: 'admin' } : null);
+  const { canAccessVoice } = useVoiceRollout(isAdmin ? { isAdmin: true, role: 'admin' } : null, cmsConfig);
   const [customTimerMinutes, setCustomTimerMinutes] = useState('');
   const [roamState, setRoamState] = useState(() => {
     try {

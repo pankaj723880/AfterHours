@@ -12,7 +12,7 @@ import { voiceControlService } from '../services/voiceControlService';
  * Formula:
  * const canAccessVoice = voiceConfig.masterEnabled && (voiceConfig.publicRollout || user?.isAdmin);
  */
-export function useVoiceRollout(user) {
+export function useVoiceRollout(user, cmsConfig = null) {
   const [accessState, setAccessState] = useState(() => voiceControlService.getAccessState());
 
   useEffect(() => {
@@ -23,7 +23,11 @@ export function useVoiceRollout(user) {
   }, []);
 
   const isAdmin = Boolean(user && (user.isAdmin === true || user.role === 'admin'));
-  const masterEnabled = Boolean(
+
+  // CMS feature flag gate: If CMS explicitly disables voiceAgentEnabled (globally or for current platform), fail closed!
+  const isCmsVoiceEnabled = cmsConfig?.featureControls?.voiceAgentEnabled !== false;
+
+  const masterEnabled = isCmsVoiceEnabled && Boolean(
     typeof accessState.voiceControlEnabled === 'boolean'
       ? accessState.voiceControlEnabled
       : accessState.enabled

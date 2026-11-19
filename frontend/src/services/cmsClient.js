@@ -206,7 +206,18 @@ export const DEFAULT_CMS_CONFIG = {
     }
   ],
   featureControls: {
-    offlineDownloadsEnabled: true
+    offlineDownloadsEnabled: true,
+    voiceAgentEnabled: false,
+    djClubEnabled: true,
+    moodAiEnabled: true,
+    timeMachineEnabled: true,
+    activityFeedEnabled: true,
+    discoverSwipeEnabled: true,
+    aiChatEnabled: true,
+    ratingsPopupEnabled: true,
+    lyricsEnabled: true,
+    sleepTimerEnabled: true,
+    listeningRoomsEnabled: true
   },
   platforms: {
     desktop: {},
@@ -329,9 +340,7 @@ export const normalizeCmsConfig = (raw) => {
     timeMachineEras: Array.isArray(raw.timeMachineEras) ? raw.timeMachineEras : DEFAULT_CMS_CONFIG.timeMachineEras,
     navigation: normalizeNavigationList(raw.navigation),
     featureControls: {
-      offlineDownloadsEnabled: typeof raw.featureControls?.offlineDownloadsEnabled === 'boolean'
-        ? raw.featureControls.offlineDownloadsEnabled
-        : true,
+      ...DEFAULT_CMS_CONFIG.featureControls,
       ...(raw.featureControls || {})
     },
     playerDefaults: {

@@ -36,6 +36,8 @@ import CmsAnnouncementBar from './components/Common/CmsAnnouncementBar';
 import CmsHeroBanner from './components/Common/CmsHeroBanner';
 import CmsMaintenanceOverlay from './components/Common/CmsMaintenanceOverlay';
 import CmsCuratedCollectionsRow from './components/Common/CmsCuratedCollectionsRow';
+import AppUpdateModal from './components/Common/AppUpdateModal';
+import { triggerApkDownload, checkForAppUpdate } from './services/appUpdateService';
 import { getCachedCmsConfig, fetchPublicCmsConfig, applyThemeToDom, normalizeCmsConfig, resolvePlatformConfig } from './services/cmsClient';
 import { offlineEligibilityService } from './services/offlineEligibilityService';
 import { offlineStorageService } from './services/offlineStorageService';
@@ -1582,7 +1584,7 @@ export default function App() {
   }, []);
 
   // Synchronize voice control access on auth & rollout changes
-  const { canAccessVoice } = useVoiceRollout(user);
+  const { canAccessVoice } = useVoiceRollout(user, cmsConfig);
   const [isVoiceControlAllowed, setIsVoiceControlAllowed] = useState(() => {
     return voiceControlService.getAccessState().allowed;
   });
@@ -1698,6 +1700,19 @@ export default function App() {
     };
 
     socket.on('cms_config_updated', handleConfigUpdate);
+
+    // Automatic In-App Android APK Update Detection
+    checkForAppUpdate(BACKEND_URL)
+      .then((updateResult) => {
+        if (!isMounted) return;
+        if (updateResult && updateResult.shouldPrompt) {
+          setPendingAppUpdate(updateResult);
+        }
+      })
+      .catch((err) => {
+        console.warn('[App] Update check notice:', err?.message);
+      });
+
     return () => {
       isMounted = false;
       clearTimeout(initTimer);
@@ -2519,6 +2534,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [sleepTimerRemaining, setSleepTimerRemaining] = useState(null); // seconds
   const [isStatsOpen, setIsStatsOpen] = useState(false);
   const [activeAssistantPanel, setActiveAssistantPanel] = useState(null); // null | 'ai' | 'voice'
+  const [pendingAppUpdate, setPendingAppUpdate] = useState(null);
   const [isAvatarVisible, setIsAvatarVisible] = useState(() => {
     if (typeof localStorage !== 'undefined') {
       const saved = localStorage.getItem('loopra_avatar_visible');
@@ -6043,6 +6059,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }, 40);
   }, [activeTab]);
 
+  const handleDownloadApk = useCallback(() => {
+    try {
+      triggerApkDownload('/downloads/loopra.apk');
+      showToast('Downloading Loopra Android APK...', 'success');
+    } catch (err) {
+      console.warn('[handleDownloadApk] Download notice:', err.message);
+      showToast('Opening download link...', 'info');
+    }
+  }, [showToast]);
+
   const handleStationSelect = (stationKey, extraParams = {}) => {
     setShowQueuePanel(false);
     if (mainScrollRef.current) {
@@ -8198,31 +8224,24 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   </button>
                 )}
 
-                {/* 2. Downloaded Songs (in APK) or Download APK Button (on Web) */}
-                {typeof window !== 'undefined' && window.LoopraAndroid ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleStationSelect('downloads');
-                      if (isMobileScreen && isSidebarOpen) setIsSidebarOpen(false);
-                    }}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer text-left"
-                    title="View Downloaded Songs"
-                  >
-                    <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
-                    {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Downloaded Songs</span>}
-                  </button>
-                ) : (
-                  <a
-                    href="/Loopra.apk"
-                    download="Loopra.apk"
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
-                    title="Download APK (Direct)"
-                  >
-                    <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
-                    {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Download APK</span>}
-                  </a>
-                )}
+                {/* 2. Download APK Button directly downloading Loopra.apk across Web & Android App */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDownloadApk();
+                    if (isMobileScreen && isSidebarOpen) setIsSidebarOpen(false);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer text-left"
+                  title="Download Latest Android APK"
+                >
+                  <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
+                  {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
+                    <span className="flex items-center justify-between flex-1 gap-1">
+                      <span>Download APK</span>
+                      <span className="text-[10px] font-mono text-amber-400/90 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded">v2.1</span>
+                    </span>
+                  )}
+                </button>
 
                 {/* 3. Logged-in User Profile Card & 4. Logout / Sign In Button */}
                 {user ? (
@@ -8546,31 +8565,24 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 </button>
               )}
 
-              {/* 2. Downloaded Songs (in APK) or Download APK Button (on Web) */}
-              {typeof window !== 'undefined' && window.LoopraAndroid ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleStationSelect('downloads');
-                    if (isMobileScreen && isSidebarOpen) setIsSidebarOpen(false);
-                  }}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer text-left"
-                  title="View Downloaded Songs"
-                >
-                  <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
-                  {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Downloaded Songs</span>}
-                </button>
-              ) : (
-                <a
-                  href="/Loopra.apk"
-                  download="Loopra.apk"
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
-                  title="Download APK (Direct)"
-                >
-                  <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
-                  {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && <span>Download APK</span>}
-                </a>
-              )}
+              {/* 2. Download APK Button directly downloading Loopra.apk across Web & Android App */}
+              <button
+                type="button"
+                onClick={() => {
+                  handleDownloadApk();
+                  if (isMobileScreen && isSidebarOpen) setIsSidebarOpen(false);
+                }}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer text-left"
+                title="Download Latest Android APK"
+              >
+                <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
+                {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
+                  <span className="flex items-center justify-between flex-1 gap-1">
+                    <span>Download APK</span>
+                    <span className="text-[10px] font-mono text-amber-400/90 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded">v2.1</span>
+                  </span>
+                )}
+              </button>
 
               {/* 3. Logged-in User Profile Card & 4. Logout / Sign In Button */}
               {user ? (
@@ -11516,6 +11528,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           showToast('Sleep timer cancelled');
         }}
         isAdmin={isAdmin}
+        cmsConfig={cmsConfig}
         crossfadeDuration={crossfadeDuration}
         onSetCrossfadeDuration={handleSetCrossfadeDuration}
         isGaplessEnabled={isGaplessEnabled}
@@ -11989,6 +12002,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             />
           </div>
         </div>
+      )}
+
+      {/* Automatic In-App Android APK Update Notification Modal */}
+      {pendingAppUpdate && (
+        <AppUpdateModal
+          updateInfo={pendingAppUpdate}
+          onClose={() => setPendingAppUpdate(null)}
+          showToast={showToast}
+        />
       )}
       </Suspense>
     </div>
