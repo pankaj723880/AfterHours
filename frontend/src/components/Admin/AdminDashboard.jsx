@@ -119,6 +119,33 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
 
   const isAdmin = Boolean(user && user.role === 'admin');
 
+  // Detect Standalone / Android APK mode to safely clear device status bar
+  const [isStandaloneApp, setIsStandaloneApp] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return Boolean(
+      window.LoopraAndroid ||
+      window.navigator?.standalone ||
+      (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+      (navigator?.userAgent && navigator.userAgent.includes('LoopraNativeAndroid'))
+    );
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const checkStandalone = () => {
+      setIsStandaloneApp(Boolean(
+        window.LoopraAndroid ||
+        window.navigator?.standalone ||
+        (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+        (navigator?.userAgent && navigator.userAgent.includes('LoopraNativeAndroid'))
+      ));
+    };
+    checkStandalone();
+    const media = window.matchMedia?.('(display-mode: standalone)');
+    media?.addEventListener?.('change', checkStandalone);
+    return () => media?.removeEventListener?.('change', checkStandalone);
+  }, []);
+
   useEffect(() => {
     if (!isAdmin) {
       onExit?.();
@@ -439,7 +466,14 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans">
       {/* Top Navbar */}
-      <header className="sticky top-0 z-40 bg-neutral-950/90 backdrop-blur-xl border-b border-neutral-800/80 px-3 sm:px-6 py-2.5">
+      <header
+        style={{
+          paddingTop: isStandaloneApp
+            ? 'max(var(--safe-area-top, 0px), env(safe-area-inset-top, 0px), 28px)'
+            : 'max(var(--safe-area-top, 0px), env(safe-area-inset-top, 0px), 0.625rem)',
+        }}
+        className="sticky top-0 z-40 bg-neutral-950/90 backdrop-blur-xl border-b border-neutral-800/80 px-3 sm:px-6 pb-2.5 box-border select-none"
+      >
         <div className="flex items-center justify-between gap-2 min-w-0">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             {/* Hamburger button on mobile */}
@@ -588,6 +622,12 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
 
         {/* Navigation Sidebar (Slide-in Drawer on Mobile, Column on Desktop) */}
         <aside
+          style={{
+            paddingTop: isStandaloneApp
+              ? 'max(var(--safe-area-top, 0px), env(safe-area-inset-top, 0px), 24px)'
+              : 'max(var(--safe-area-top, 0px), env(safe-area-inset-top, 0px), 1rem)',
+            paddingBottom: 'max(var(--safe-area-bottom, 0px), env(safe-area-inset-bottom, 0px), 1rem)'
+          }}
           className={`
             fixed inset-y-0 left-0 z-[60] w-[min(85vw,300px)] bg-neutral-950/98 border-r border-neutral-800 p-4 overflow-y-auto transform transition-transform duration-300 ease-in-out
             ${isMobileSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
