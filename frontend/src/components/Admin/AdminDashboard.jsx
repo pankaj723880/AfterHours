@@ -81,20 +81,23 @@ export default function AdminDashboard({
     ? backendUrl.trim().replace(/\/+$/, '')
     : BACKEND_URL;
 
-  // Active Workspace Navigation (Defaults to 'cms_platforms' or 'overview')
+  // Active Workspace Navigation (Defaults to 'cms_settings' or 'overview')
   const [activeSubTab, setActiveSubTab] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
         const params = new URLSearchParams(window.location.search);
         const sectionParam = params.get('section');
-        if (sectionParam) return sectionParam;
+        if (sectionParam) {
+          if (sectionParam === 'cms_platforms') return 'cms_settings';
+          return sectionParam;
+        }
       } catch (_) {}
     }
-    return 'cms_platforms';
+    return 'cms_settings';
   });
 
-  // Top Bar Platform Selector target preview mode
-  const [selectedTopPlatform, setSelectedTopPlatform] = useState('desktop');
+  // Secondary Navbar Active Platform / Scope Selector: 'global' | 'desktop' | 'mobile_web' | 'android_app'
+  const [activeScope, setActiveScope] = useState('global');
 
   // Sidebar collapse toggle state (Desktop)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -351,14 +354,34 @@ export default function AdminDashboard({
     setMediaPickerOpen(true);
   };
 
-  // Switch Platform Preview from Topbar
-  const handleTopPlatformChange = (platformId) => {
-    setSelectedTopPlatform(platformId);
+  // Switch Scope from Secondary Navbar
+  const handleScopeChange = (scopeId) => {
+    setActiveScope(scopeId);
     if (onPreviewConfig && cmsDraft) {
-      const resolved = resolvePlatformConfig(cmsDraft, platformId);
-      onPreviewConfig(resolved);
-      showToast?.(`Previewing ${platformId === 'desktop' ? 'Desktop' : platformId === 'mobile_web' ? 'Mobile Web' : 'Android App'} target`, 'info');
+      if (scopeId === 'global') {
+        onPreviewConfig(cmsDraft);
+        showToast?.('Switched scope to Global base configuration', 'info');
+      } else {
+        const resolved = resolvePlatformConfig(cmsDraft, scopeId);
+        onPreviewConfig(resolved);
+        showToast?.(`Switched scope to ${scopeId === 'desktop' ? 'Desktop' : scopeId === 'mobile_web' ? 'Mobile Web' : 'Android App'} (overrides active)`, 'info');
+      }
     }
+  };
+
+  // Helper to count platform overrides
+  const getOverrideCount = (scopeId) => {
+    if (scopeId === 'global' || !cmsDraft?.platforms?.[scopeId]) return 0;
+    const p = cmsDraft.platforms[scopeId];
+    let count = 0;
+    for (const key of Object.keys(p)) {
+      if (typeof p[key] === 'object' && p[key] !== null) {
+        count += Object.keys(p[key]).length;
+      } else if (p[key] !== undefined) {
+        count += 1;
+      }
+    }
+    return count;
   };
 
   if (!isAdmin) {
@@ -389,43 +412,36 @@ export default function AdminDashboard({
     );
   }
 
-  // 6 CORE CMS WORKSPACES
+  // 5 CORE CMS WORKSPACES (Platform Targets is consolidated into the secondary navbar)
   const cmsWorkspaces = [
     { 
-      id: 'cms_platforms', 
-      label: '1. Platform Targets', 
-      desc: 'Desktop, Mobile Web & Android TWA',
-      icon: Monitor, 
-      badge: 'Isolated' 
-    },
-    { 
       id: 'cms_settings', 
-      label: '2. Global Branding', 
+      label: '1. Global Branding', 
       desc: 'Logo, Themes & Identity',
       icon: Globe 
     },
     { 
       id: 'cms_broadcast', 
-      label: '3. Broadcast & Promos', 
+      label: '2. Broadcast & Promos', 
       desc: 'Announcements & Banners',
       icon: Bell,
       badge: cmsDraft?.announcement?.enabled ? 'Active' : null 
     },
     { 
       id: 'cms_content', 
-      label: '4. Content & Curation', 
+      label: '3. Content & Curation', 
       desc: 'Sections, Stations & Media',
       icon: ListMusic 
     },
     { 
       id: 'cms_navigation', 
-      label: '5. Navigation & Routes', 
+      label: '4. Navigation & Routes', 
       desc: 'Sidebars, Drawers & Routes',
       icon: Layout 
     },
     { 
       id: 'cms_governance', 
-      label: '6. Feature Matrix', 
+      label: '5. Feature Matrix', 
       desc: 'Feature Flags & Version Rollback',
       icon: Sliders,
       badge: cmsPublishedMeta ? `v${cmsPublishedMeta.version}` : null
@@ -512,35 +528,8 @@ export default function AdminDashboard({
             </div>
           </div>
 
-          {/* Center / Right: Platform Selector & Actions */}
+          {/* Center / Right: Quick Actions & User */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            {/* Topbar Platform Selector Pills */}
-            <div className="hidden md:flex items-center gap-1 bg-neutral-900 border border-neutral-800 p-1 rounded-xl">
-              {[
-                { id: 'desktop', label: 'Desktop', icon: Monitor },
-                { id: 'mobile_web', label: 'Mobile Web', icon: Smartphone },
-                { id: 'android_app', label: 'Android App', icon: Smartphone }
-              ].map((p) => {
-                const Icon = p.icon;
-                const isSelected = selectedTopPlatform === p.id;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => handleTopPlatformChange(p.id)}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                      isSelected
-                        ? 'bg-amber-500 text-neutral-950 font-bold shadow-sm'
-                        : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                    }`}
-                  >
-                    <Icon className="w-3 h-3" />
-                    <span>{p.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-
             {/* Quick CMS Action Controls */}
             {isCmsWorkspace && (
               <div className="flex items-center gap-1.5 sm:gap-2">
@@ -548,10 +537,10 @@ export default function AdminDashboard({
                   type="button"
                   disabled={isSavingDraft}
                   onClick={handleSaveDraft}
-                  title="Save Draft"
+                  title={`Save Draft (${activeScope === 'global' ? 'Global' : activeScope === 'desktop' ? 'Desktop' : activeScope === 'mobile_web' ? 'Mobile Web' : 'Android App'})`}
                   className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-200 text-xs font-semibold border border-neutral-700 transition cursor-pointer disabled:opacity-50 shrink-0"
                 >
-                  <Save className="w-3.5 h-3.5 shrink-0" />
+                  <Save className="w-3.5 h-3.5 shrink-0 text-neutral-400" />
                   <span className="hidden sm:inline">{isSavingDraft ? 'Saving...' : 'Save Draft'}</span>
                   <span className="sm:hidden">{isSavingDraft ? '...' : 'Draft'}</span>
                 </button>
@@ -559,7 +548,7 @@ export default function AdminDashboard({
                 <button
                   type="button"
                   disabled={isPublishingLive}
-                  onClick={() => handlePublishLive('Published via dashboard bar')}
+                  onClick={() => handlePublishLive(`Published via topbar (${activeScope.toUpperCase()})`)}
                   title="Publish Live"
                   className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 font-bold text-xs shadow-md shadow-amber-500/20 transition cursor-pointer disabled:opacity-50 shrink-0"
                 >
@@ -586,6 +575,84 @@ export default function AdminDashboard({
           </div>
         </div>
       </header>
+
+      {/* SECONDARY NAVBAR: Platform & Scope Selector (Visible Across All CMS Workspaces) */}
+      {isCmsWorkspace && (
+        <div className="sticky top-[53px] z-30 bg-neutral-950/90 backdrop-blur-md border-b border-neutral-800/80 px-3 sm:px-6 py-2 select-none shadow-sm">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            {/* 4 Scope Buttons */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+              {[
+                { 
+                  id: 'global', 
+                  label: 'Global', 
+                  desc: 'All Platforms Base',
+                  icon: Globe 
+                },
+                { 
+                  id: 'desktop', 
+                  label: 'Desktop', 
+                  desc: 'Website Overrides',
+                  icon: Monitor 
+                },
+                { 
+                  id: 'mobile_web', 
+                  label: 'Mobile Web', 
+                  desc: 'Browser Overrides',
+                  icon: Smartphone 
+                },
+                { 
+                  id: 'android_app', 
+                  label: 'Android App', 
+                  desc: 'TWA Overrides',
+                  icon: Smartphone 
+                }
+              ].map((scopeItem) => {
+                const Icon = scopeItem.icon;
+                const isSelected = activeScope === scopeItem.id;
+                const overrideCount = getOverrideCount(scopeItem.id);
+
+                return (
+                  <button
+                    key={scopeItem.id}
+                    type="button"
+                    onClick={() => handleScopeChange(scopeItem.id)}
+                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 ${
+                      isSelected
+                        ? 'bg-amber-500 text-neutral-950 font-bold shadow-md shadow-amber-500/25 ring-1 ring-amber-400'
+                        : 'bg-neutral-900/90 text-neutral-400 hover:text-white hover:bg-neutral-800 border border-neutral-800/90'
+                    }`}
+                  >
+                    <Icon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-neutral-950' : 'text-neutral-400'}`} />
+                    <span>{scopeItem.label}</span>
+                    {scopeItem.id !== 'global' && overrideCount > 0 && (
+                      <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold ${
+                        isSelected ? 'bg-neutral-950 text-amber-400' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      }`}>
+                        {overrideCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Scope Status Banner */}
+            <div className="flex items-center gap-2 text-[11px] text-neutral-400">
+              <span className="flex items-center gap-1.5 font-medium">
+                <span className={`w-1.5 h-1.5 rounded-full ${activeScope === 'global' ? 'bg-amber-400' : 'bg-cyan-400'}`} />
+                <span>
+                  {activeScope === 'global' ? (
+                    <span>Scope: <strong className="text-amber-300">Global Base</strong> (applies to all unless overridden)</span>
+                  ) : (
+                    <span>Scope: <strong className="text-cyan-300">{activeScope === 'desktop' ? 'Desktop' : activeScope === 'mobile_web' ? 'Mobile Web' : 'Android App'}</strong> (overrides active)</span>
+                  )}
+                </span>
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Layout Workspace Container */}
       <div className="flex-1 max-w-7xl w-full mx-auto p-2.5 sm:p-4 md:p-6 flex flex-col lg:flex-row gap-4 sm:gap-6 min-w-0 overflow-x-hidden">
@@ -774,29 +841,8 @@ export default function AdminDashboard({
             </div>
           )}
 
-          {/* 6 CORE CMS WORKSPACES */}
-          {/* 1. Platform Targets & Presentation */}
-          {activeSubTab === 'cms_platforms' && (
-            <PlatformManager
-              draft={cmsDraft}
-              onUpdateDraft={handleUpdateDraft}
-              showToast={showToast}
-              onSaveDraft={handleSaveDraft}
-              onPublishLive={handlePublishLive}
-              isSavingDraft={isSavingDraft}
-              isPublishingLive={isPublishingLive}
-              onOpenMediaPicker={openMediaPicker}
-              onPreviewPlatform={(platformId) => {
-                if (onPreviewConfig && cmsDraft) {
-                  const resolved = resolvePlatformConfig(cmsDraft, platformId);
-                  onPreviewConfig(resolved);
-                  showToast?.(`Live previewing ${platformId} target overrides!`, 'info');
-                }
-              }}
-            />
-          )}
-
-          {/* 2. Global Branding & Appearance */}
+          {/* 5 CORE CMS WORKSPACES */}
+          {/* 1. Global Branding & Appearance */}
           {activeSubTab === 'cms_settings' && (
             <CmsGlobalSettings
               draft={cmsDraft}
@@ -804,13 +850,14 @@ export default function AdminDashboard({
               onOpenMediaPicker={openMediaPicker}
               showToast={showToast}
               onSaveDraft={handleSaveDraft}
-              onPublishLive={() => handlePublishLive('Published from Global Settings')}
+              onPublishLive={() => handlePublishLive(`Published from Global Settings (${activeScope})`)}
               isSavingDraft={isSavingDraft}
               isPublishingLive={isPublishingLive}
+              activeScope={activeScope}
             />
           )}
 
-          {/* 3. Broadcast & Promotions */}
+          {/* 2. Broadcast & Promotions */}
           {activeSubTab === 'cms_broadcast' && (
             <CmsBroadcastPromotions
               draft={cmsDraft}
@@ -822,10 +869,11 @@ export default function AdminDashboard({
               isPublishingLive={isPublishingLive}
               onOpenMediaPicker={openMediaPicker}
               onPreviewConfig={onPreviewConfig}
+              activeScope={activeScope}
             />
           )}
 
-          {/* 4. Content & Curation */}
+          {/* 3. Content & Curation */}
           {activeSubTab === 'cms_content' && (
             <CmsContentCuration
               draft={cmsDraft}
@@ -838,10 +886,11 @@ export default function AdminDashboard({
               token={token}
               backendUrl={cleanBackendUrl}
               onOpenMediaPicker={openMediaPicker}
+              activeScope={activeScope}
             />
           )}
 
-          {/* 5. Navigation & Routes */}
+          {/* 4. Navigation & Routes */}
           {activeSubTab === 'cms_navigation' && (
             <CmsNavigationRoutes
               draft={cmsDraft}
@@ -853,10 +902,11 @@ export default function AdminDashboard({
               isPublishingLive={isPublishingLive}
               token={token}
               backendUrl={cleanBackendUrl}
+              activeScope={activeScope}
             />
           )}
 
-          {/* 6. Feature Matrix & Governance */}
+          {/* 5. Feature Matrix & Governance */}
           {activeSubTab === 'cms_governance' && (
             <CmsFeatureGovernance
               draft={cmsDraft}
@@ -869,11 +919,17 @@ export default function AdminDashboard({
               token={token}
               backendUrl={cleanBackendUrl}
               publishedMeta={cmsPublishedMeta}
+              activeScope={activeScope}
               onTogglePreview={() => {
                 if (onPreviewConfig && cmsDraft) {
-                  onPreviewConfig(cmsDraft);
+                  if (activeScope === 'global') {
+                    onPreviewConfig(cmsDraft);
+                  } else {
+                    const resolved = resolvePlatformConfig(cmsDraft, activeScope);
+                    onPreviewConfig(resolved);
+                  }
                 } else if (showToast) {
-                  showToast('Preview mode enabled with current draft configuration!', 'info');
+                  showToast('Preview mode enabled with current configuration!', 'info');
                 }
               }}
             />

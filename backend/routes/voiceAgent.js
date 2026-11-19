@@ -39,7 +39,7 @@ const resolveCallingUser = async (req) => {
 };
 
 /**
- * Common middleware helper to verify voice control / Lipra AI feature access
+ * Common middleware helper to verify voice control / Loopra AI feature access
  */
 const checkVoiceAccessOrReject = async (req, res, next) => {
   try {
@@ -50,7 +50,7 @@ const checkVoiceAccessOrReject = async (req, res, next) => {
     if (!allowed) {
       return res.status(403).json({
         success: false,
-        error: 'Lipra AI and Voice Control are currently disabled by the administrator.',
+        error: 'Loopra AI and Voice Control are currently disabled by the administrator.',
         allowed: false
       });
     }
@@ -61,7 +61,7 @@ const checkVoiceAccessOrReject = async (req, res, next) => {
   } catch (err) {
     return res.status(500).json({
       success: false,
-      error: 'Failed to verify Lipra AI permissions: ' + err.message
+      error: 'Failed to verify Loopra AI permissions: ' + err.message
     });
   }
 };
@@ -80,7 +80,7 @@ export const handleTranscribeEndpoint = async (req, res) => {
       return res.status(403).json({
         success: false,
         transcript: '',
-        error: 'Lipra AI and Voice Control are currently disabled by the administrator.',
+        error: 'Loopra AI and Voice Control are currently disabled by the administrator.',
         allowed: false
       });
     }
@@ -458,7 +458,7 @@ const handleTtsRequest = async (req, res) => {
   const allowed = featureFlagService.evaluateAccess(config, user);
   if (!allowed) {
     return res.status(403).json({
-      error: 'Lipra AI and Voice Control are currently disabled by the administrator.',
+      error: 'Loopra AI and Voice Control are currently disabled by the administrator.',
       allowed: false
     });
   }
@@ -684,7 +684,7 @@ export const handleGreetingEndpoint = async (req, res) => {
       return res.status(403).json({
         success: false,
         greeting: '',
-        error: 'Lipra AI and Voice Control are currently disabled by the administrator.',
+        error: 'Loopra AI and Voice Control are currently disabled by the administrator.',
         allowed: false
       });
     }
@@ -715,7 +715,7 @@ router.post('/translate', async (req, res) => {
     if (!allowed) {
       return res.status(403).json({
         success: false,
-        error: 'Lipra AI and Voice Control are currently disabled by the administrator.',
+        error: 'Loopra AI and Voice Control are currently disabled by the administrator.',
         allowed: false
       });
     }

@@ -23,26 +23,117 @@ export default function CmsBroadcastPromotions({
   isSavingDraft = false,
   isPublishingLive = false,
   onOpenMediaPicker,
-  onPreviewConfig
+  onPreviewConfig,
+  activeScope = 'global'
 }) {
   const [activeTab, setActiveTab] = useState('announcement');
   const safeDraft = normalizeCmsConfig(draft);
-  const announcement = safeDraft.announcement || {};
-  const banner = safeDraft.banner || {};
-  const maintenance = safeDraft.maintenance || {};
+
+  const isScopeGlobal = activeScope === 'global';
+  const platformOverrides = (!isScopeGlobal && safeDraft.platforms?.[activeScope]) || {};
+
+  // Resolve values based on scope with clear inheritance detection
+  const getEffectiveField = (section, field, fallback = '') => {
+    if (isScopeGlobal) {
+      return {
+        value: safeDraft[section]?.[field] ?? fallback,
+        isOverridden: false
+      };
+    }
+    const hasOverride = platformOverrides[section] && Object.prototype.hasOwnProperty.call(platformOverrides[section], field);
+    return {
+      value: hasOverride ? platformOverrides[section][field] : (safeDraft[section]?.[field] ?? fallback),
+      isOverridden: hasOverride
+    };
+  };
 
   const handleFieldChange = (section, field, value) => {
     onUpdateDraft(prev => {
       const base = normalizeCmsConfig(prev || draft);
+      if (isScopeGlobal) {
+        return {
+          ...base,
+          [section]: {
+            ...(base[section] || {}),
+            [field]: value
+          }
+        };
+      }
+
+      // Platform specific override
+      const prevPlatforms = { ...(base.platforms || {}) };
+      const currentPlatformObj = { ...(prevPlatforms[activeScope] || {}) };
+      const currentSectionObj = { ...(currentPlatformObj[section] || {}) };
+
+      currentSectionObj[field] = value;
+      currentPlatformObj[section] = currentSectionObj;
+      prevPlatforms[activeScope] = currentPlatformObj;
+
       return {
         ...base,
-        [section]: {
-          ...(base[section] || {}),
-          [field]: value
-        }
+        platforms: prevPlatforms
       };
     });
   };
+
+  const handleClearOverride = (section, field) => {
+    if (isScopeGlobal) return;
+    onUpdateDraft(prev => {
+      const base = normalizeCmsConfig(prev || draft);
+      const prevPlatforms = { ...(base.platforms || {}) };
+      const currentPlatformObj = { ...(prevPlatforms[activeScope] || {}) };
+      if (!currentPlatformObj[section]) return base;
+
+      const currentSectionObj = { ...currentPlatformObj[section] };
+      delete currentSectionObj[field];
+
+      if (Object.keys(currentSectionObj).length === 0) {
+        delete currentPlatformObj[section];
+      } else {
+        currentPlatformObj[section] = currentSectionObj;
+      }
+
+      if (Object.keys(currentPlatformObj).length === 0) {
+        delete prevPlatforms[activeScope];
+      } else {
+        prevPlatforms[activeScope] = currentPlatformObj;
+      }
+
+      return {
+        ...base,
+        platforms: prevPlatforms
+      };
+    });
+    showToast?.(`Reset to Global shared default`, 'info');
+  };
+
+  // Build effective objects for previewing
+  const announcement = {
+    enabled: getEffectiveField('announcement', 'enabled', false).value,
+    message: getEffectiveField('announcement', 'message', '').value,
+    type: getEffectiveField('announcement', 'type', 'info').value,
+    linkText: getEffectiveField('announcement', 'linkText', '').value,
+    linkUrl: getEffectiveField('announcement', 'linkUrl', '').value
+  };
+
+  const banner = {
+    enabled: getEffectiveField('banner', 'enabled', false).value,
+    title: getEffectiveField('banner', 'title', '').value,
+    subtitle: getEffectiveField('banner', 'subtitle', '').value,
+    imageUrl: getEffectiveField('banner', 'imageUrl', '').value,
+    actionText: getEffectiveField('banner', 'actionText', '').value,
+    actionUrl: getEffectiveField('banner', 'actionUrl', '').value
+  };
+
+  const maintenance = {
+    enabled: getEffectiveField('maintenance', 'enabled', false).value,
+    title: getEffectiveField('maintenance', 'title', '').value,
+    message: getEffectiveField('maintenance', 'message', '').value
+  };
+
+  const scopeLabel = isScopeGlobal 
+    ? 'Global Base' 
+    : (activeScope === 'desktop' ? 'Desktop' : activeScope === 'mobile_web' ? 'Mobile Web' : 'Android App');
 
   const tabs = [
     { id: 'announcement', label: 'Site-Wide Announcement Bar', icon: Bell, badge: announcement.enabled ? 'ACTIVE' : null },
@@ -188,22 +279,52 @@ export default function CmsBroadcastPromotions({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2 space-y-1.5">
-                <label className="text-xs font-semibold text-neutral-300">Announcement Message</label>
+                <div className="flex items-center justify-between text-xs font-semibold text-neutral-300">
+                  <label>Announcement Message</label>
+                  {!isScopeGlobal && getEffectiveField('announcement', 'message').isOverridden && (
+                    <button
+                      type="button"
+                      onClick={() => handleClearOverride('announcement', 'message')}
+                      className="text-[10px] text-amber-400 hover:underline cursor-pointer"
+                    >
+                      Reset to Global
+                    </button>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={announcement.message || ''}
                   onChange={(e) => handleFieldChange('announcement', 'message', e.target.value)}
                   placeholder="Welcome to Loopra! Enjoy uninterrupted retro Bollywood and curated hits."
-                  className="w-full bg-black/40 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 focus:border-amber-500/60 outline-none"
+                  className={`w-full bg-black/40 border rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 outline-none transition ${
+                    !isScopeGlobal && getEffectiveField('announcement', 'message').isOverridden
+                      ? 'border-amber-500/60 ring-1 ring-amber-500/20'
+                      : 'border-neutral-700 focus:border-amber-500/60'
+                  }`}
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-neutral-300">Style Category</label>
+                <div className="flex items-center justify-between text-xs font-semibold text-neutral-300">
+                  <label>Style Category</label>
+                  {!isScopeGlobal && getEffectiveField('announcement', 'type').isOverridden && (
+                    <button
+                      type="button"
+                      onClick={() => handleClearOverride('announcement', 'type')}
+                      className="text-[10px] text-amber-400 hover:underline cursor-pointer"
+                    >
+                      Reset to Global
+                    </button>
+                  )}
+                </div>
                 <select
                   value={announcement.type || 'info'}
                   onChange={(e) => handleFieldChange('announcement', 'type', e.target.value)}
-                  className="w-full bg-black/40 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 focus:border-amber-500/60 outline-none"
+                  className={`w-full bg-black/40 border rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 outline-none transition ${
+                    !isScopeGlobal && getEffectiveField('announcement', 'type').isOverridden
+                      ? 'border-amber-500/60 ring-1 ring-amber-500/20'
+                      : 'border-neutral-700 focus:border-amber-500/60'
+                  }`}
                 >
                   <option value="info">Info (Emerald Subtle)</option>
                   <option value="promo">Promo (Amber Warm Spotlight)</option>
@@ -213,24 +334,54 @@ export default function CmsBroadcastPromotions({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-neutral-300">Action Button Label (Optional)</label>
+                <div className="flex items-center justify-between text-xs font-semibold text-neutral-300">
+                  <label>Action Button Label (Optional)</label>
+                  {!isScopeGlobal && getEffectiveField('announcement', 'linkText').isOverridden && (
+                    <button
+                      type="button"
+                      onClick={() => handleClearOverride('announcement', 'linkText')}
+                      className="text-[10px] text-amber-400 hover:underline cursor-pointer"
+                    >
+                      Reset to Global
+                    </button>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={announcement.linkText || ''}
                   onChange={(e) => handleFieldChange('announcement', 'linkText', e.target.value)}
                   placeholder="e.g. Learn More or Listen Now"
-                  className="w-full bg-black/40 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 focus:border-amber-500/60 outline-none"
+                  className={`w-full bg-black/40 border rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 outline-none transition ${
+                    !isScopeGlobal && getEffectiveField('announcement', 'linkText').isOverridden
+                      ? 'border-amber-500/60 ring-1 ring-amber-500/20'
+                      : 'border-neutral-700 focus:border-amber-500/60'
+                  }`}
                 />
               </div>
 
               <div className="md:col-span-2 space-y-1.5">
-                <label className="text-xs font-semibold text-neutral-300">Destination Link URL</label>
+                <div className="flex items-center justify-between text-xs font-semibold text-neutral-300">
+                  <label>Destination Link URL</label>
+                  {!isScopeGlobal && getEffectiveField('announcement', 'linkUrl').isOverridden && (
+                    <button
+                      type="button"
+                      onClick={() => handleClearOverride('announcement', 'linkUrl')}
+                      className="text-[10px] text-amber-400 hover:underline cursor-pointer"
+                    >
+                      Reset to Global
+                    </button>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={announcement.linkUrl || ''}
                   onChange={(e) => handleFieldChange('announcement', 'linkUrl', e.target.value)}
                   placeholder="/station/barber or https://..."
-                  className="w-full bg-black/40 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 focus:border-amber-500/60 outline-none"
+                  className={`w-full bg-black/40 border rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 outline-none transition ${
+                    !isScopeGlobal && getEffectiveField('announcement', 'linkUrl').isOverridden
+                      ? 'border-amber-500/60 ring-1 ring-amber-500/20'
+                      : 'border-neutral-700 focus:border-amber-500/60'
+                  }`}
                 />
               </div>
             </div>
@@ -302,47 +453,107 @@ export default function CmsBroadcastPromotions({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-neutral-300">Banner Heading</label>
+                <div className="flex items-center justify-between text-xs font-semibold text-neutral-300">
+                  <label>Banner Heading</label>
+                  {!isScopeGlobal && getEffectiveField('banner', 'title').isOverridden && (
+                    <button
+                      type="button"
+                      onClick={() => handleClearOverride('banner', 'title')}
+                      className="text-[10px] text-amber-400 hover:underline cursor-pointer"
+                    >
+                      Reset to Global
+                    </button>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={banner.title || ''}
                   onChange={(e) => handleFieldChange('banner', 'title', e.target.value)}
                   placeholder="Nostalgic Radio Stations Now Live"
-                  className="w-full bg-black/40 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 focus:border-amber-500/60 outline-none"
+                  className={`w-full bg-black/40 border rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 outline-none transition ${
+                    !isScopeGlobal && getEffectiveField('banner', 'title').isOverridden
+                      ? 'border-amber-500/60 ring-1 ring-amber-500/20'
+                      : 'border-neutral-700 focus:border-amber-500/60'
+                  }`}
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-neutral-300">Action Button Text</label>
+                <div className="flex items-center justify-between text-xs font-semibold text-neutral-300">
+                  <label>Action Button Text</label>
+                  {!isScopeGlobal && getEffectiveField('banner', 'actionText').isOverridden && (
+                    <button
+                      type="button"
+                      onClick={() => handleClearOverride('banner', 'actionText')}
+                      className="text-[10px] text-amber-400 hover:underline cursor-pointer"
+                    >
+                      Reset to Global
+                    </button>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={banner.actionText || ''}
                   onChange={(e) => handleFieldChange('banner', 'actionText', e.target.value)}
                   placeholder="Tune In Now"
-                  className="w-full bg-black/40 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 focus:border-amber-500/60 outline-none"
+                  className={`w-full bg-black/40 border rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 outline-none transition ${
+                    !isScopeGlobal && getEffectiveField('banner', 'actionText').isOverridden
+                      ? 'border-amber-500/60 ring-1 ring-amber-500/20'
+                      : 'border-neutral-700 focus:border-amber-500/60'
+                  }`}
                 />
               </div>
 
               <div className="md:col-span-2 space-y-1.5">
-                <label className="text-xs font-semibold text-neutral-300">Subtitle & Details</label>
+                <div className="flex items-center justify-between text-xs font-semibold text-neutral-300">
+                  <label>Subtitle & Details</label>
+                  {!isScopeGlobal && getEffectiveField('banner', 'subtitle').isOverridden && (
+                    <button
+                      type="button"
+                      onClick={() => handleClearOverride('banner', 'subtitle')}
+                      className="text-[10px] text-amber-400 hover:underline cursor-pointer"
+                    >
+                      Reset to Global
+                    </button>
+                  )}
+                </div>
                 <textarea
                   rows={2}
                   value={banner.subtitle || ''}
                   onChange={(e) => handleFieldChange('banner', 'subtitle', e.target.value)}
                   placeholder="Listen to 90s Saloon FM, Highway Truck Melodies, and Theka Session nonstop."
-                  className="w-full bg-black/40 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 focus:border-amber-500/60 outline-none"
+                  className={`w-full bg-black/40 border rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 outline-none transition ${
+                    !isScopeGlobal && getEffectiveField('banner', 'subtitle').isOverridden
+                      ? 'border-amber-500/60 ring-1 ring-amber-500/20'
+                      : 'border-neutral-700 focus:border-amber-500/60'
+                  }`}
                 />
               </div>
 
               <div className="md:col-span-2 space-y-1.5">
-                <label className="text-xs font-semibold text-neutral-300">Background Image URL</label>
+                <div className="flex items-center justify-between text-xs font-semibold text-neutral-300">
+                  <label>Background Image URL</label>
+                  {!isScopeGlobal && getEffectiveField('banner', 'imageUrl').isOverridden && (
+                    <button
+                      type="button"
+                      onClick={() => handleClearOverride('banner', 'imageUrl')}
+                      className="text-[10px] text-amber-400 hover:underline cursor-pointer"
+                    >
+                      Reset to Global
+                    </button>
+                  )}
+                </div>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
                     value={banner.imageUrl || ''}
                     onChange={(e) => handleFieldChange('banner', 'imageUrl', e.target.value)}
                     placeholder="https://images.unsplash.com/... or choose from Media Library"
-                    className="flex-1 bg-black/40 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 focus:border-amber-500/60 outline-none"
+                    className={`flex-1 bg-black/40 border rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 outline-none transition ${
+                      !isScopeGlobal && getEffectiveField('banner', 'imageUrl').isOverridden
+                        ? 'border-amber-500/60 ring-1 ring-amber-500/20'
+                        : 'border-neutral-700 focus:border-amber-500/60'
+                    }`}
                   />
                   {onOpenMediaPicker && (
                     <button
@@ -357,13 +568,28 @@ export default function CmsBroadcastPromotions({
               </div>
 
               <div className="md:col-span-2 space-y-1.5">
-                <label className="text-xs font-semibold text-neutral-300">Action Destination URL</label>
+                <div className="flex items-center justify-between text-xs font-semibold text-neutral-300">
+                  <label>Action Destination URL</label>
+                  {!isScopeGlobal && getEffectiveField('banner', 'actionUrl').isOverridden && (
+                    <button
+                      type="button"
+                      onClick={() => handleClearOverride('banner', 'actionUrl')}
+                      className="text-[10px] text-amber-400 hover:underline cursor-pointer"
+                    >
+                      Reset to Global
+                    </button>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={banner.actionUrl || ''}
                   onChange={(e) => handleFieldChange('banner', 'actionUrl', e.target.value)}
                   placeholder="/station/barber or /discover"
-                  className="w-full bg-black/40 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 focus:border-amber-500/60 outline-none"
+                  className={`w-full bg-black/40 border rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 outline-none transition ${
+                    !isScopeGlobal && getEffectiveField('banner', 'actionUrl').isOverridden
+                      ? 'border-amber-500/60 ring-1 ring-amber-500/20'
+                      : 'border-neutral-700 focus:border-amber-500/60'
+                  }`}
                 />
               </div>
             </div>
@@ -400,24 +626,54 @@ export default function CmsBroadcastPromotions({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2 space-y-1.5">
-                <label className="text-xs font-semibold text-neutral-300">Maintenance Modal Title</label>
+                <div className="flex items-center justify-between text-xs font-semibold text-neutral-300">
+                  <label>Maintenance Modal Title</label>
+                  {!isScopeGlobal && getEffectiveField('maintenance', 'title').isOverridden && (
+                    <button
+                      type="button"
+                      onClick={() => handleClearOverride('maintenance', 'title')}
+                      className="text-[10px] text-amber-400 hover:underline cursor-pointer"
+                    >
+                      Reset to Global
+                    </button>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={maintenance.title || ''}
                   onChange={(e) => handleFieldChange('maintenance', 'title', e.target.value)}
                   placeholder="Loopra Under Scheduled Maintenance"
-                  className="w-full bg-black/40 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 focus:border-rose-500/60 outline-none"
+                  className={`w-full bg-black/40 border rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 outline-none transition ${
+                    !isScopeGlobal && getEffectiveField('maintenance', 'title').isOverridden
+                      ? 'border-amber-500/60 ring-1 ring-amber-500/20'
+                      : 'border-neutral-700 focus:border-rose-500/60'
+                  }`}
                 />
               </div>
 
               <div className="md:col-span-2 space-y-1.5">
-                <label className="text-xs font-semibold text-neutral-300">Public Maintenance Message</label>
+                <div className="flex items-center justify-between text-xs font-semibold text-neutral-300">
+                  <label>Public Maintenance Message</label>
+                  {!isScopeGlobal && getEffectiveField('maintenance', 'message').isOverridden && (
+                    <button
+                      type="button"
+                      onClick={() => handleClearOverride('maintenance', 'message')}
+                      className="text-[10px] text-amber-400 hover:underline cursor-pointer"
+                    >
+                      Reset to Global
+                    </button>
+                  )}
+                </div>
                 <textarea
                   rows={3}
                   value={maintenance.message || ''}
                   onChange={(e) => handleFieldChange('maintenance', 'message', e.target.value)}
                   placeholder="We are currently upgrading our streaming nodes. Streaming will resume shortly."
-                  className="w-full bg-black/40 border border-neutral-700 rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 focus:border-rose-500/60 outline-none"
+                  className={`w-full bg-black/40 border rounded-xl px-3.5 py-2.5 text-sm text-neutral-100 outline-none transition ${
+                    !isScopeGlobal && getEffectiveField('maintenance', 'message').isOverridden
+                      ? 'border-amber-500/60 ring-1 ring-amber-500/20'
+                      : 'border-neutral-700 focus:border-rose-500/60'
+                  }`}
                 />
               </div>
             </div>

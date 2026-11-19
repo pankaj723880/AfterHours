@@ -217,7 +217,8 @@ export default function CmsGlobalSettings({
   onPublishLive,
   isSavingDraft,
   isPublishingLive,
-  initialTab = 'branding'
+  initialTab = 'branding',
+  activeScope = 'global'
 }) {
   const [activeTab, setActiveTab] = useState(initialTab);
 
@@ -228,8 +229,100 @@ export default function CmsGlobalSettings({
   }, [initialTab]);
 
   const safeDraft = normalizeCmsConfig(draft);
-  const branding = safeDraft.branding;
-  const theme = safeDraft.theme;
+  const isScopeGlobal = activeScope === 'global';
+  const platformOverrides = (!isScopeGlobal && safeDraft.platforms?.[activeScope]) || {};
+
+  // Resolve field values based on active scope with inheritance detection
+  const getEffectiveField = (section, field, fallback = '') => {
+    if (isScopeGlobal) {
+      return {
+        value: safeDraft[section]?.[field] ?? fallback,
+        isOverridden: false
+      };
+    }
+    const hasOverride = platformOverrides[section] && Object.prototype.hasOwnProperty.call(platformOverrides[section], field);
+    return {
+      value: hasOverride ? platformOverrides[section][field] : (safeDraft[section]?.[field] ?? fallback),
+      isOverridden: hasOverride
+    };
+  };
+
+  const handleFieldChange = (section, field, value) => {
+    onUpdateDraft(prev => {
+      const base = normalizeCmsConfig(prev || draft);
+      if (isScopeGlobal) {
+        return {
+          ...base,
+          [section]: {
+            ...(base[section] || {}),
+            [field]: value
+          }
+        };
+      }
+
+      // Platform specific override
+      const prevPlatforms = { ...(base.platforms || {}) };
+      const currentPlatformObj = { ...(prevPlatforms[activeScope] || {}) };
+      const currentSectionObj = { ...(currentPlatformObj[section] || {}) };
+
+      currentSectionObj[field] = value;
+      currentPlatformObj[section] = currentSectionObj;
+      prevPlatforms[activeScope] = currentPlatformObj;
+
+      return {
+        ...base,
+        platforms: prevPlatforms
+      };
+    });
+  };
+
+  const handleClearOverride = (section, field) => {
+    if (isScopeGlobal) return;
+    onUpdateDraft(prev => {
+      const base = normalizeCmsConfig(prev || draft);
+      const prevPlatforms = { ...(base.platforms || {}) };
+      const currentPlatformObj = { ...(prevPlatforms[activeScope] || {}) };
+      if (!currentPlatformObj[section]) return base;
+
+      const currentSectionObj = { ...currentPlatformObj[section] };
+      delete currentSectionObj[field];
+
+      if (Object.keys(currentSectionObj).length === 0) {
+        delete currentPlatformObj[section];
+      } else {
+        currentPlatformObj[section] = currentSectionObj;
+      }
+
+      if (Object.keys(currentPlatformObj).length === 0) {
+        delete prevPlatforms[activeScope];
+      } else {
+        prevPlatforms[activeScope] = currentPlatformObj;
+      }
+
+      return {
+        ...base,
+        platforms: prevPlatforms
+      };
+    });
+    showToast?.(`Reset to Global shared default`, 'info');
+  };
+
+  const branding = {
+    siteName: getEffectiveField('branding', 'siteName', '').value,
+    tagline: getEffectiveField('branding', 'tagline', '').value,
+    logoUrl: getEffectiveField('branding', 'logoUrl', '').value,
+    faviconUrl: getEffectiveField('branding', 'faviconUrl', '').value,
+    description: getEffectiveField('branding', 'description', '').value
+  };
+
+  const theme = {
+    accentColor: getEffectiveField('theme', 'accentColor', '#f59e0b').value,
+    themeMode: getEffectiveField('theme', 'themeMode', 'dark').value,
+    glassmorphism: getEffectiveField('theme', 'glassmorphism', true).value,
+    meshGradient: getEffectiveField('theme', 'meshGradient', true).value,
+    particles: getEffectiveField('theme', 'particles', true).value
+  };
+
   const announcement = safeDraft.announcement;
   const banner = safeDraft.banner;
   const maintenance = safeDraft.maintenance;
@@ -330,19 +423,6 @@ export default function CmsGlobalSettings({
         footer: {
           ...(base.footer || {}),
           infoPages: currentPages
-        }
-      };
-    });
-  };
-
-  const handleFieldChange = (section, field, value) => {
-    onUpdateDraft(prev => {
-      const base = normalizeCmsConfig(prev || draft);
-      return {
-        ...base,
-        [section]: {
-          ...(base[section] || {}),
-          [field]: value
         }
       };
     });
