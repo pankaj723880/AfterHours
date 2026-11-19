@@ -1,8 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bell, Sparkles, AlertTriangle, AlertCircle, X, ExternalLink } from 'lucide-react';
 
 export default function CmsAnnouncementBar({ announcement }) {
   const [dismissed, setDismissed] = useState(false);
+
+  // If announcement message changes or announcement is re-enabled, reset dismiss state
+  useEffect(() => {
+    setDismissed(false);
+  }, [announcement?.message, announcement?.enabled]);
 
   if (!announcement?.enabled || !announcement?.message || dismissed) {
     return null;

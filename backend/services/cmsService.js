@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import SiteConfig from '../models/SiteConfig.js';
 import CuratedCollection from '../models/CuratedCollection.js';
 import ContentVersion from '../models/ContentVersion.js';
