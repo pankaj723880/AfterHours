@@ -216,9 +216,16 @@ export default function CmsGlobalSettings({
   onSaveDraft,
   onPublishLive,
   isSavingDraft,
-  isPublishingLive
+  isPublishingLive,
+  initialTab = 'branding'
 }) {
-  const [activeTab, setActiveTab] = useState('branding');
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   const safeDraft = normalizeCmsConfig(draft);
   const branding = safeDraft.branding;

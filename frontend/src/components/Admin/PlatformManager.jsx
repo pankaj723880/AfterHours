@@ -779,7 +779,7 @@ export default function PlatformManager({
                   { key: 'djClubEnabled', name: '3D DJ Club', desc: 'Dual vinyl turntable WebGL mixer.' },
                   { key: 'discoverSwipeEnabled', name: 'Discover Swipe Deck', desc: 'Mobile-first music card deck.' },
                   { key: 'moodAiEnabled', name: 'Mood AI Assistant', desc: 'AI-generated emotion playlists.' },
-                  { key: 'voiceAgentEnabled', name: 'Lipra Voice Companion', desc: 'Voice-controlled song playback.' },
+                  { key: 'voiceAgentEnabled', name: 'Loopra Voice Companion', desc: 'Voice-controlled song playback.' },
                   { key: 'timeMachineEnabled', name: 'Time Machine Retro Radio', desc: 'Decade retro bollywood station.' }
                 ].map((feat) => {
                   const { value: enabled, isOverridden } = getEffectiveField('featureControls', feat.key, true);

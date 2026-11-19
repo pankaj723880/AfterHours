@@ -2,23 +2,30 @@ import React from 'react';
 import { Layers, ArrowUp, ArrowDown, Eye, EyeOff, Hash, Sparkles } from 'lucide-react';
 
 export default function CmsSectionManager({ draft, onUpdateDraft, showToast }) {
-  const sections = draft?.homeSections || [];
+  // Synchronize both homeSections and sections so edits immediately take effect on App.jsx
+  const sections = (draft?.homeSections && draft.homeSections.length > 0)
+    ? draft.homeSections
+    : (draft?.sections || []);
 
   const handleToggleSection = (sectionId, currentVal) => {
     onUpdateDraft(prev => {
-      const homeSections = [...(prev.homeSections || [])];
+      const homeSections = [...((prev.homeSections && prev.homeSections.length > 0) ? prev.homeSections : (prev.sections || []))];
       const idx = homeSections.findIndex(s => s.id === sectionId);
       if (idx >= 0) {
         homeSections[idx] = { ...homeSections[idx], enabled: !currentVal };
       }
-      return { ...prev, homeSections };
+      return { 
+        ...prev, 
+        homeSections,
+        sections: homeSections 
+      };
     });
     showToast?.(`Section ${sectionId} ${!currentVal ? 'enabled' : 'hidden'} in draft`, 'info');
   };
 
   const handleMoveOrder = (index, direction) => {
     onUpdateDraft(prev => {
-      const homeSections = [...(prev.homeSections || [])];
+      const homeSections = [...((prev.homeSections && prev.homeSections.length > 0) ? prev.homeSections : (prev.sections || []))];
       const targetIndex = direction === 'up' ? index - 1 : index + 1;
       if (targetIndex < 0 || targetIndex >= homeSections.length) return prev;
 
@@ -31,18 +38,26 @@ export default function CmsSectionManager({ draft, onUpdateDraft, showToast }) {
         s.order = idx + 1;
       });
 
-      return { ...prev, homeSections };
+      return { 
+        ...prev, 
+        homeSections,
+        sections: homeSections 
+      };
     });
   };
 
   const handleFieldChange = (sectionId, field, val) => {
     onUpdateDraft(prev => {
-      const homeSections = [...(prev.homeSections || [])];
+      const homeSections = [...((prev.homeSections && prev.homeSections.length > 0) ? prev.homeSections : (prev.sections || []))];
       const idx = homeSections.findIndex(s => s.id === sectionId);
       if (idx >= 0) {
         homeSections[idx] = { ...homeSections[idx], [field]: val };
       }
-      return { ...prev, homeSections };
+      return { 
+        ...prev, 
+        homeSections,
+        sections: homeSections 
+      };
     });
   };
 

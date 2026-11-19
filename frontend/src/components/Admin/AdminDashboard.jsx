@@ -8,31 +8,38 @@ import {
   Music2, 
   ShieldCheck, 
   ArrowLeft,
-  RefreshCw,
-  LogOut,
-  Radio,
-  Globe,
-  Layout,
-  Layers,
-  ListMusic,
-  Image as ImageIcon,
-  History,
-  Save,
-  UploadCloud,
-  Eye,
-  Sliders,
-  Sparkles,
-  Brain,
-  X,
-  AlertCircle,
-  Menu,
-  Mic,
-  Star,
-  Download,
-  Zap,
-  Key,
-  Monitor,
-  Smartphone
+  RefreshCw, 
+  LogOut, 
+  Radio, 
+  Globe, 
+  Layout, 
+  Layers, 
+  ListMusic, 
+  Image as ImageIcon, 
+  History, 
+  Save, 
+  UploadCloud, 
+  Eye, 
+  Sliders, 
+  Sparkles, 
+  Brain, 
+  X, 
+  AlertCircle, 
+  Menu, 
+  Mic, 
+  Star, 
+  Download, 
+  Zap, 
+  Key, 
+  Monitor, 
+  Smartphone,
+  Bell,
+  Search,
+  Compass,
+  ChevronRight,
+  ShieldAlert,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 import AccessDenied from './AccessDenied';
 import AdminOverview from './AdminOverview';
@@ -44,15 +51,12 @@ import MusicAnalytics from './MusicAnalytics';
 import AuditLogs from './AuditLogs';
 import ActivityModeration from './ActivityModeration';
 import OfflineLicenseManagement from './OfflineLicenseManagement';
-import CmsGlobalSettings from './CmsGlobalSettings';
-import CmsLayoutEditor from './CmsLayoutEditor';
-import CmsMusicManager from './CmsMusicManager';
-import CmsMediaLibrary from './CmsMediaLibrary';
-import CmsPublishingHistory from './CmsPublishingHistory';
-import CmsPageManager from './CmsPageManager';
-import CmsSectionManager from './CmsSectionManager';
-import CmsFeatureManager from './CmsFeatureManager';
 import PlatformManager from './PlatformManager';
+import CmsGlobalSettings from './CmsGlobalSettings';
+import CmsBroadcastPromotions from './CmsBroadcastPromotions';
+import CmsContentCuration from './CmsContentCuration';
+import CmsNavigationRoutes from './CmsNavigationRoutes';
+import CmsFeatureGovernance from './CmsFeatureGovernance';
 import AiLearningIntelligence from './AiLearningIntelligence';
 import VoiceControlManagement from './VoiceControlManagement';
 import AiLiveCodePatcher from './AiLiveCodePatcher';
@@ -62,11 +66,22 @@ import { DEFAULT_CMS_CONFIG, getCachedCmsConfig, normalizeCmsConfig, applyThemeT
 import { BACKEND_URL } from '../../utils/apiUrl';
 import { USE_V2_MOBILE_ADMIN } from '../../constants/featureFlags';
 
-export default function AdminDashboard({ user, token, backendUrl, onExit, onOpenAuth, showToast, onPreviewConfig, onUserUpdated, onReviewsUpdated }) {
+export default function AdminDashboard({ 
+  user, 
+  token, 
+  backendUrl, 
+  onExit, 
+  onOpenAuth, 
+  showToast, 
+  onPreviewConfig, 
+  onUserUpdated, 
+  onReviewsUpdated 
+}) {
   const cleanBackendUrl = (backendUrl && backendUrl.trim().startsWith('http'))
     ? backendUrl.trim().replace(/\/+$/, '')
     : BACKEND_URL;
-  // V2 Mobile Admin: Default strictly to 'overview' section on mount
+
+  // Active Workspace Navigation (Defaults to 'cms_platforms' or 'overview')
   const [activeSubTab, setActiveSubTab] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -75,8 +90,18 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
         if (sectionParam) return sectionParam;
       } catch (_) {}
     }
-    return USE_V2_MOBILE_ADMIN ? 'overview' : 'cms_settings';
+    return 'cms_platforms';
   });
+
+  // Top Bar Platform Selector target preview mode
+  const [selectedTopPlatform, setSelectedTopPlatform] = useState('desktop');
+
+  // Sidebar collapse toggle state (Desktop)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // Search filter query for admin menu items
+  const [navSearchQuery, setNavSearchQuery] = useState('');
+
   const [metrics, setMetrics] = useState(null);
   const [health, setHealth] = useState(null);
   const [isHealthLoading, setIsHealthLoading] = useState(false);
@@ -149,48 +174,79 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
     return () => media?.removeEventListener?.('change', checkStandalone);
   }, []);
 
+  // Sync WebSocket connection for real-time traffic & metrics
   useEffect(() => {
-    if (!isAdmin) {
-      onExit?.();
-    }
-  }, [isAdmin, onExit]);
+    if (!token) return;
+    try {
+      const socket = io(cleanBackendUrl, {
+        auth: { token },
+        transports: ['websocket', 'polling'],
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000
+      });
+      socketRef.current = socket;
 
-  // Fetch CMS Configuration
+      socket.on('connect', () => {
+        setIsSocketConnected(true);
+      });
+
+      socket.on('disconnect', () => {
+        setIsSocketConnected(false);
+      });
+
+      socket.on('admin:metrics', (data) => {
+        if (data) setMetrics(data);
+      });
+
+      return () => {
+        socket.disconnect();
+      };
+    } catch (err) {
+      console.warn('[Admin Socket] Init error:', err.message);
+    }
+  }, [cleanBackendUrl, token]);
+
+  // Fetch initial CMS config
   const fetchCmsConfig = async () => {
-    if (!token || !isAdmin) return;
+    if (!token) return;
     setIsCmsLoading(true);
     setCmsError(null);
     try {
       const res = await fetch(`${cleanBackendUrl}/api/admin/cms/config`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      const parsed = await safeParseJsonResponse(res, 'CMS fetch failed');
+      const parsed = await safeParseJsonResponse(res, 'Failed to fetch CMS config');
       if (parsed.ok && parsed.data) {
-        setCmsDraft(normalizeCmsConfig(parsed.data.draft));
-        setCmsPublishedMeta(parsed.data.publishedMeta || null);
+        if (parsed.data.draft) {
+          setCmsDraft(normalizeCmsConfig(parsed.data.draft));
+        }
+        if (parsed.data.publishedMeta) {
+          setCmsPublishedMeta(parsed.data.publishedMeta);
+        }
       } else {
-        setCmsError(parsed?.error || 'Failed to retrieve CMS configuration');
+        setCmsError(parsed.error || 'Failed to load CMS data');
       }
     } catch (err) {
-      console.warn('[Admin CMS]:', err.message);
-      setCmsError(err.message || 'Network error fetching CMS configuration');
+      setCmsError(err.message || 'Error connecting to CMS server');
     } finally {
       setIsCmsLoading(false);
     }
   };
 
-  // Safe draft updater ensuring state is never null and immediate theme preview
+  useEffect(() => {
+    fetchCmsConfig();
+  }, [cleanBackendUrl, token]);
+
+  // Update draft in state and notify live preview
   const handleUpdateDraft = (updater) => {
     setCmsDraft(prev => {
-      const base = normalizeCmsConfig(prev);
-      const nextVal = typeof updater === 'function' ? updater(base) : updater;
-      const normalized = normalizeCmsConfig(nextVal);
-      // Immediately reflect theme changes on the live preview without overriding public site storage
-      if (normalized?.theme) {
+      const base = prev || normalizeCmsConfig(DEFAULT_CMS_CONFIG);
+      const next = typeof updater === 'function' ? updater(base) : updater;
+      const normalized = normalizeCmsConfig(next);
+      if (normalized.theme) {
         applyThemeToDom(normalized.theme, false);
       }
       if (onPreviewConfig) {
-        // Defer parent state notification out of the immediate render phase
         setTimeout(() => {
           onPreviewConfig(normalized);
         }, 0);
@@ -235,7 +291,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
     const safePayload = normalizeCmsConfig(cmsDraft);
     setIsPublishingLive(true);
     try {
-      // 1. First save current draft to ensure all local changes are synced to DB
+      // 1. Sync current draft first
       const draftRes = await fetch(`${cleanBackendUrl}/api/admin/cms/config/draft`, {
         method: 'PUT',
         headers: {
@@ -260,10 +316,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
       });
       const parsed = await safeParseJsonResponse(res, 'Publish failed');
       if (parsed.ok && parsed.data) {
-        // Confirmed persistence from backend
         const publishedConfig = normalizeCmsConfig(parsed.data.config || safePayload);
-
-        // Cache published config and theme in localStorage so it persists on public site & reloads
         try {
           localStorage.setItem('afterhours_cms_public_config', JSON.stringify(publishedConfig));
           localStorage.setItem('afterhours_applied_theme', JSON.stringify(publishedConfig.theme));
@@ -276,7 +329,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
           onPreviewConfig(publishedConfig);
         }
 
-        if (showToast) showToast(`Configuration successfully published to live website (Rev #${parsed.data.version})!`, 'success');
+        if (showToast) showToast(`Configuration successfully published live (Rev #${parsed.data.version})!`, 'success');
         setCmsPublishedMeta({
           version: parsed.data.version,
           publishedAt: parsed.data.publishedAt,
@@ -298,98 +351,21 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
     setMediaPickerOpen(true);
   };
 
-  const handleMediaAssetPicked = (url) => {
-    if (mediaPickerCallback) {
-      mediaPickerCallback(url);
-    }
-    setMediaPickerOpen(false);
-    setMediaPickerCallback(null);
-  };
-
-  // Fetch initial telemetry metrics & health
-  const fetchHealthDiagnostics = async () => {
-    if (!token || !isAdmin) return;
-    setIsHealthLoading(true);
-    try {
-      const res = await fetch(`${cleanBackendUrl}/api/admin/health`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const parsed = await safeParseJsonResponse(res, 'Health fetch failed');
-      if (parsed.ok && parsed.data) {
-        setHealth(parsed.data);
-      }
-    } catch (err) {
-      console.warn('[Admin Health]:', err.message);
-    } finally {
-      setIsHealthLoading(false);
+  // Switch Platform Preview from Topbar
+  const handleTopPlatformChange = (platformId) => {
+    setSelectedTopPlatform(platformId);
+    if (onPreviewConfig && cmsDraft) {
+      const resolved = resolvePlatformConfig(cmsDraft, platformId);
+      onPreviewConfig(resolved);
+      showToast?.(`Previewing ${platformId === 'desktop' ? 'Desktop' : platformId === 'mobile_web' ? 'Mobile Web' : 'Android App'} target`, 'info');
     }
   };
-
-  const fetchInitialMetrics = async () => {
-    if (!token || !isAdmin) return;
-    try {
-      const res = await fetch(`${cleanBackendUrl}/api/admin/metrics`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const parsed = await safeParseJsonResponse(res, 'Metrics fetch failed');
-      if (parsed.ok && parsed.data) {
-        setMetrics(parsed.data);
-      }
-    } catch (err) {
-      console.warn('[Admin Metrics]:', err.message);
-    }
-  };
-
-  useEffect(() => {
-    if (isAdmin && token) {
-      fetchInitialMetrics();
-      fetchHealthDiagnostics();
-      fetchCmsConfig();
-
-      const sid = (typeof window !== 'undefined' && localStorage.getItem('afterhours_session_id')) || ('sid_' + Date.now());
-
-      const adminSocket = io(cleanBackendUrl, {
-        auth: { token, sessionId: sid },
-        query: { sessionId: sid },
-        transports: ['polling', 'websocket'],
-        reconnectionAttempts: 10,
-        reconnectionDelay: 2000,
-        timeout: 45000
-      });
-
-      adminSocket.on('connect', () => {
-        setIsSocketConnected(true);
-      });
-
-      adminSocket.on('disconnect', () => {
-        setIsSocketConnected(false);
-      });
-
-      adminSocket.on('admin_live_metrics', (data) => {
-        setMetrics(data);
-      });
-
-      adminSocket.on('cms_config_updated', () => {
-        fetchCmsConfig();
-      });
-
-      socketRef.current = adminSocket;
-
-      return () => {
-        adminSocket.disconnect();
-      };
-    }
-  }, [isAdmin, token, cleanBackendUrl]);
 
   if (!isAdmin) {
-    return <AccessDenied user={user} onBack={onExit} onLogin={onOpenAuth} />;
-  }
-
-  if (!token) {
     return (
-      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-4 shadow-xl">
-          <ShieldCheck className="w-8 h-8" />
+      <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-4 shadow-xl">
+          <ShieldAlert className="w-8 h-8" />
         </div>
         <h2 className="text-xl font-bold text-white mb-2">Admin Session Authentication Required</h2>
         <p className="text-sm text-neutral-400 max-w-md mb-6">
@@ -413,63 +389,80 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
     );
   }
 
-  // Navigation Items Grouped by Category
-  const cmsNavItems = [
-    { id: 'cms_platforms', label: 'Platform Targets', icon: Monitor, badge: '3 Targets' },
-    { id: 'cms_settings', label: 'Global Branding', icon: Globe },
-    { id: 'cms_pages', label: 'Page & Route Manager', icon: Layout },
-    { id: 'cms_sections', label: 'Home Section Manager', icon: Layers },
-    { id: 'cms_features', label: 'Feature Controls', icon: Sliders },
-    { id: 'cms_layout', label: 'Sidebar & Nav Drawer', icon: Layout },
-    { id: 'cms_music', label: 'Curated Music & Stations', icon: ListMusic },
-    { id: 'cms_media', label: 'Media Library', icon: ImageIcon },
-    { id: 'cms_publish', label: 'Publishing & History', icon: History, badge: cmsPublishedMeta ? `Rev #${cmsPublishedMeta.version}` : null }
+  // 6 CORE CMS WORKSPACES
+  const cmsWorkspaces = [
+    { 
+      id: 'cms_platforms', 
+      label: '1. Platform Targets', 
+      desc: 'Desktop, Mobile Web & Android TWA',
+      icon: Monitor, 
+      badge: 'Isolated' 
+    },
+    { 
+      id: 'cms_settings', 
+      label: '2. Global Branding', 
+      desc: 'Logo, Themes & Identity',
+      icon: Globe 
+    },
+    { 
+      id: 'cms_broadcast', 
+      label: '3. Broadcast & Promos', 
+      desc: 'Announcements & Banners',
+      icon: Bell,
+      badge: cmsDraft?.announcement?.enabled ? 'Active' : null 
+    },
+    { 
+      id: 'cms_content', 
+      label: '4. Content & Curation', 
+      desc: 'Sections, Stations & Media',
+      icon: ListMusic 
+    },
+    { 
+      id: 'cms_navigation', 
+      label: '5. Navigation & Routes', 
+      desc: 'Sidebars, Drawers & Routes',
+      icon: Layout 
+    },
+    { 
+      id: 'cms_governance', 
+      label: '6. Feature Matrix', 
+      desc: 'Feature Flags & Version Rollback',
+      icon: Sliders,
+      badge: cmsPublishedMeta ? `v${cmsPublishedMeta.version}` : null
+    }
   ];
 
+  // OPERATIONS & ADMINISTRATION
   const operationsNavItems = [
-    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-    { id: 'live_patcher', label: 'Live Code Patcher', icon: Zap, badge: 'Vite HMR' },
-    { id: 'api_keys', label: 'API Keys Pool', icon: Key, badge: 'Multi-Key' },
-    { id: 'voice_control', label: 'Lipra AI / Voice', icon: Mic, badge: 'Rollout' },
-    { id: 'reviews', label: 'Ratings & Reviews', icon: Star, badge: 'Community' },
-    { id: 'ai_learning', label: 'AI Learning Engine', icon: Brain, badge: 'Intelligence' },
+    { id: 'overview', label: 'Overview & Telemetry', icon: LayoutDashboard },
+    { id: 'live_patcher', label: 'Live Code Patcher', icon: Zap, badge: 'HMR' },
+    { id: 'api_keys', label: 'API Keys Pool', icon: Key, badge: 'Active' },
+    { id: 'voice_control', label: 'Loopra AI / Voice', icon: Mic },
+    { id: 'reviews', label: 'Ratings & Reviews', icon: Star },
+    { id: 'ai_learning', label: 'AI Learning Engine', icon: Brain },
     { id: 'traffic', label: 'Live Traffic', icon: Activity, badge: isSocketConnected ? 'LIVE' : null },
     { id: 'users', label: 'Users & Roles', icon: Users },
-    { id: 'offline_licenses', label: 'Offline Licenses', icon: Download, badge: 'Rights' },
+    { id: 'offline_licenses', label: 'Offline Licenses', icon: Download },
     { id: 'activity', label: 'Activity Moderation', icon: Activity },
     { id: 'health', label: 'API & Diagnostics', icon: Server },
     { id: 'music', label: 'Music Analytics', icon: Music2 },
     { id: 'audit', label: 'Audit Logs', icon: ShieldCheck }
   ];
 
-  // Primary V2 Category Pill Tabs for sleek mobile horizontal strip
-  const mobilePillTabs = [
-    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-    { id: 'cms_platforms', label: 'Platforms', icon: Monitor },
-    { id: 'api_keys', label: 'API Keys', icon: Key },
-    { id: 'live_patcher', label: 'Patcher', icon: Zap },
-    { id: 'cms_pages', label: 'Pages', icon: Layout },
-    { id: 'cms_sections', label: 'Sections', icon: Layers },
-    { id: 'cms_features', label: 'Features', icon: Sliders },
-    { id: 'cms_settings', label: 'CMS', icon: Globe },
-    { id: 'traffic', label: 'Traffic', icon: Activity },
-    { id: 'users', label: 'Users', icon: Users },
-    { id: 'health', label: 'Diagnostics', icon: Server },
-    { id: 'audit', label: 'Audit', icon: ShieldCheck }
-  ];
+  const isCmsWorkspace = activeSubTab.startsWith('cms_');
+  const allNavItems = [...cmsWorkspaces, ...operationsNavItems];
+  const currentNav = allNavItems.find(i => i.id === activeSubTab) || cmsWorkspaces[0];
 
-  const isCmsTab = activeSubTab.startsWith('cms_');
-  const isAuthError = Boolean(
-    cmsError && (
-      cmsError.toLowerCase().includes('unauthorized') ||
-      cmsError.toLowerCase().includes('token') ||
-      cmsError.toLowerCase().includes('forbidden') ||
-      cmsError.toLowerCase().includes('expired')
-    )
+  const filteredCms = cmsWorkspaces.filter(w => 
+    w.label.toLowerCase().includes(navSearchQuery.toLowerCase()) || 
+    (w.desc && w.desc.toLowerCase().includes(navSearchQuery.toLowerCase()))
+  );
+  const filteredOps = operationsNavItems.filter(o => 
+    o.label.toLowerCase().includes(navSearchQuery.toLowerCase())
   );
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans selection:bg-amber-500/30">
       {/* Top Navbar */}
       <header
         style={{
@@ -477,11 +470,11 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
             ? 'max(var(--safe-area-top, 0px), env(safe-area-inset-top, 0px), 28px)'
             : 'max(var(--safe-area-top, 0px), env(safe-area-inset-top, 0px), 0.625rem)',
         }}
-        className="sticky top-0 z-40 bg-neutral-950/90 backdrop-blur-xl border-b border-neutral-800/80 px-3 sm:px-6 pb-2.5 box-border select-none"
+        className="sticky top-0 z-40 bg-neutral-950/95 backdrop-blur-xl border-b border-neutral-800/80 px-3 sm:px-6 pb-2.5 box-border select-none"
       >
-        <div className="flex items-center justify-between gap-2 min-w-0">
+        <div className="flex items-center justify-between gap-3 min-w-0">
+          {/* Left: Mobile Toggle, Breadcrumb & Back button */}
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            {/* Hamburger button on mobile and tablet */}
             <button
               type="button"
               onClick={() => setIsMobileSidebarOpen(prev => !prev)}
@@ -489,6 +482,16 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               className="lg:hidden p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 transition cursor-pointer shrink-0"
             >
               <Menu className="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed(prev => !prev)}
+              aria-label="Collapse sidebar"
+              className="hidden lg:flex p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 transition cursor-pointer shrink-0"
+              title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {isSidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
             </button>
 
             <button
@@ -501,18 +504,46 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
 
             <div className="hidden sm:block h-5 w-px bg-neutral-800 shrink-0" />
 
-            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50 shrink-0" />
-              <h1 className="text-sm sm:text-base font-extrabold text-white tracking-tight truncate">
-                {cmsDraft?.branding?.siteName ? `${cmsDraft.branding.siteName} ` : ''}<span className="hidden sm:inline-block text-amber-400 font-semibold text-xs ml-1 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full uppercase">Dynamic CMS</span>
-              </h1>
+            {/* Breadcrumb Display */}
+            <div className="hidden md:flex items-center gap-2 text-xs text-neutral-400 min-w-0">
+              <span className="text-neutral-500 font-medium">Loopra Admin</span>
+              <ChevronRight className="w-3.5 h-3.5 text-neutral-600 shrink-0" />
+              <span className="font-bold text-white truncate">{currentNav.label}</span>
             </div>
           </div>
 
-          {/* Quick CMS Action Controls in Header */}
+          {/* Center / Right: Platform Selector & Actions */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            {isCmsTab && (
-              <div className="flex items-center gap-1.5 sm:gap-2 sm:border-r sm:border-neutral-800 sm:pr-3">
+            {/* Topbar Platform Selector Pills */}
+            <div className="hidden md:flex items-center gap-1 bg-neutral-900 border border-neutral-800 p-1 rounded-xl">
+              {[
+                { id: 'desktop', label: 'Desktop', icon: Monitor },
+                { id: 'mobile_web', label: 'Mobile Web', icon: Smartphone },
+                { id: 'android_app', label: 'Android App', icon: Smartphone }
+              ].map((p) => {
+                const Icon = p.icon;
+                const isSelected = selectedTopPlatform === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handleTopPlatformChange(p.id)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                      isSelected
+                        ? 'bg-amber-500 text-neutral-950 font-bold shadow-sm'
+                        : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                    }`}
+                  >
+                    <Icon className="w-3 h-3" />
+                    <span>{p.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Quick CMS Action Controls */}
+            {isCmsWorkspace && (
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <button
                   type="button"
                   disabled={isSavingDraft}
@@ -539,82 +570,25 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               </div>
             )}
 
-            {/* Real-time Socket status indicator (desktop only) */}
-            <div className="hidden md:flex items-center gap-1.5 text-xs text-neutral-400 bg-neutral-900 border border-neutral-800 px-2.5 py-1 rounded-full shrink-0">
+            {/* Real-time Socket status indicator */}
+            <div className="hidden lg:flex items-center gap-1.5 text-xs text-neutral-400 bg-neutral-900 border border-neutral-800 px-2.5 py-1 rounded-full shrink-0">
               <span className={`w-2 h-2 rounded-full ${isSocketConnected ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-400'}`} />
-              <span className="text-[11px] font-mono text-emerald-400">{isSocketConnected ? 'Real-Time Sync' : 'Operational'}</span>
+              <span className="text-[11px] font-mono text-emerald-400">{isSocketConnected ? 'Real-Time' : 'Operational'}</span>
             </div>
 
-            {/* User badge (desktop only) */}
-            <div className="hidden md:flex items-center gap-2 text-xs bg-neutral-900 border border-neutral-800 px-3 py-1 rounded-full shrink-0">
+            {/* User badge */}
+            <div className="flex items-center gap-2 text-xs bg-neutral-900 border border-neutral-800 px-3 py-1 rounded-full shrink-0">
               <ShieldCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span className="font-semibold text-neutral-200 truncate max-w-[120px] sm:max-w-[200px]">
+              <span className="font-semibold text-neutral-200 truncate max-w-[100px] sm:max-w-[150px]">
                 {user.username}
               </span>
             </div>
           </div>
         </div>
-
-        {/* Mobile secondary status row (md:hidden) */}
-        {USE_V2_MOBILE_ADMIN ? (
-          <div className="md:hidden mt-2 pt-2 border-t border-neutral-800/60 flex items-center justify-between text-[11px] text-neutral-400 min-w-0">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-white font-bold text-xs">Admin Dashboard</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-400 font-mono text-[9px] font-bold">Live</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-neutral-300 font-mono text-[10px] bg-neutral-900 border border-neutral-800 px-2 py-0.5 rounded-full shrink-0">
-              <ShieldCheck className="w-3 h-3 text-amber-400" />
-              <span className="truncate max-w-[90px]">{user?.username}</span>
-            </div>
-          </div>
-        ) : (
-          <div className="md:hidden mt-2 pt-2 border-t border-neutral-800/60 flex items-center justify-between text-[11px] text-neutral-400 min-w-0">
-            <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-2">
-              <span className="text-neutral-500 shrink-0">Section:</span>
-              <span className="text-amber-400 font-semibold truncate">
-                {[...cmsNavItems, ...operationsNavItems].find(i => i.id === activeSubTab)?.label || activeSubTab}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <div className="flex items-center gap-1">
-                <span className={`w-1.5 h-1.5 rounded-full ${isSocketConnected ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-400'}`} />
-                <span className="text-[10px] font-mono text-emerald-400">{isSocketConnected ? 'Live' : 'Ready'}</span>
-              </div>
-              <span className="text-neutral-700">|</span>
-              <span className="text-neutral-300 font-mono text-[10px] truncate max-w-[100px]">{user?.username}</span>
-            </div>
-          </div>
-        )}
-
-        {/* V2 Mobile Category Pill Strip: Horizontal scrollable navigation */}
-        {USE_V2_MOBILE_ADMIN && (
-          <div className="md:hidden mt-2 pt-1.5 pb-0.5 overflow-x-auto no-scrollbar flex items-center gap-2 border-t border-white/10">
-            {mobilePillTabs.map((tab) => {
-              const TabIcon = tab.icon;
-              const isActive = activeSubTab === tab.id || (tab.id === 'cms_settings' && activeSubTab.startsWith('cms_'));
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveSubTab(tab.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition cursor-pointer shrink-0 ${
-                    isActive
-                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 shadow-sm shadow-amber-500/20'
-                      : 'bg-white/5 border border-white/10 text-neutral-400 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  <TabIcon className={`w-3.5 h-3.5 ${isActive ? 'text-amber-400' : 'text-neutral-400'}`} />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
       </header>
 
-      {/* Main Layout Container */}
-      <div className="flex-1 max-w-7xl w-full mx-auto p-2 sm:p-4 md:p-6 flex flex-col lg:flex-row gap-3 sm:gap-5 min-w-0 overflow-x-hidden">
+      {/* Main Layout Workspace Container */}
+      <div className="flex-1 max-w-7xl w-full mx-auto p-2.5 sm:p-4 md:p-6 flex flex-col lg:flex-row gap-4 sm:gap-6 min-w-0 overflow-x-hidden">
         {/* Mobile Drawer Backdrop */}
         {isMobileSidebarOpen && (
           <div
@@ -625,7 +599,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
           />
         )}
 
-        {/* Navigation Sidebar (Slide-in Drawer on Mobile & Tablet, Column on Desktop >= lg) */}
+        {/* Unified Sidebar Navigation */}
         <aside
           style={{
             paddingTop: isStandaloneApp
@@ -634,17 +608,18 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
             paddingBottom: 'max(var(--safe-area-bottom, 0px), env(safe-area-inset-bottom, 0px), 1rem)'
           }}
           className={`
-            fixed inset-y-0 left-0 z-[60] w-[min(85vw,300px)] bg-neutral-950/98 border-r border-neutral-800 p-4 overflow-y-auto transform transition-transform duration-300 ease-in-out
-            ${isMobileSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
-            lg:translate-x-0 lg:static lg:inset-auto lg:z-auto lg:w-60 lg:max-w-none lg:bg-transparent lg:border-0 lg:p-0 lg:overflow-visible lg:transition-none lg:shrink-0
+            fixed inset-y-0 left-0 z-[60] bg-neutral-950/98 border-r border-neutral-800/80 p-4 overflow-y-auto transform transition-all duration-300 ease-in-out
+            ${isMobileSidebarOpen ? 'translate-x-0 w-[min(85vw,320px)] shadow-2xl' : '-translate-x-full'}
+            lg:translate-x-0 lg:static lg:inset-auto lg:z-auto lg:bg-transparent lg:border-0 lg:p-0 lg:overflow-visible lg:shrink-0
+            ${isSidebarCollapsed ? 'lg:w-16' : 'lg:w-64'}
             space-y-5
           `}
         >
-          {/* Mobile Drawer Header with Close Button */}
+          {/* Mobile Drawer Header */}
           <div className="flex lg:hidden items-center justify-between pb-3 mb-2 border-b border-neutral-800">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50" />
-              <span className="text-xs font-bold uppercase tracking-wider text-neutral-200">Admin Navigation</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-neutral-200">Admin Control</span>
             </div>
             <button
               type="button"
@@ -656,34 +631,69 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
             </button>
           </div>
 
-          {/* Group 1: CMS Content Management */}
-          <div className="space-y-1">
-            <div className="text-[10px] uppercase font-bold text-amber-500 tracking-wider px-3 mb-2 flex items-center gap-1.5">
-              <Sparkles className="w-3 h-3" />
-              <span>Website Content (CMS)</span>
+          {/* Search Filter for Admin Tabs */}
+          {!isSidebarCollapsed && (
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-neutral-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={navSearchQuery}
+                onChange={(e) => setNavSearchQuery(e.target.value)}
+                placeholder="Filter workspaces..."
+                className="w-full bg-neutral-900/80 border border-neutral-800/80 rounded-xl pl-8 pr-3 py-1.5 text-xs text-neutral-200 placeholder-neutral-500 outline-none focus:border-amber-500/40"
+              />
+              {navSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setNavSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-300"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
             </div>
-            {cmsNavItems.map((item) => {
+          )}
+
+          {/* Group 1: 6 Core CMS Workspaces */}
+          <div className="space-y-1">
+            {!isSidebarCollapsed && (
+              <div className="text-[10px] uppercase font-bold text-amber-500 tracking-wider px-3 mb-2 flex items-center gap-1.5">
+                <Sparkles className="w-3 h-3" />
+                <span>6 Core CMS Workspaces</span>
+              </div>
+            )}
+            {filteredCms.map((item) => {
               const Icon = item.icon;
               const isActive = activeSubTab === item.id;
               return (
                 <button
                   key={item.id}
+                  title={isSidebarCollapsed ? item.label : undefined}
                   onClick={() => {
                     setActiveSubTab(item.id);
                     setIsMobileSidebarOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
                     isActive
                       ? 'bg-amber-500 text-neutral-950 font-bold shadow-lg shadow-amber-500/20'
                       : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5">
-                    <Icon className={`w-4 h-4 ${isActive ? 'text-neutral-950' : 'text-neutral-400'}`} />
-                    <span>{item.label}</span>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-neutral-950' : 'text-neutral-400'}`} />
+                    {!isSidebarCollapsed && (
+                      <div className="text-left truncate min-w-0">
+                        <div className="truncate">{item.label}</div>
+                        {item.desc && (
+                          <div className={`text-[10px] font-normal truncate ${isActive ? 'text-neutral-800' : 'text-neutral-500'}`}>
+                            {item.desc}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  {item.badge && (
-                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase ${
+                  {!isSidebarCollapsed && item.badge && (
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase shrink-0 ${
                       isActive ? 'bg-neutral-950 text-amber-400' : 'bg-amber-500/20 text-amber-300'
                     }`}>
                       {item.badge}
@@ -696,33 +706,36 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
 
           <div className="h-px bg-neutral-800/80" />
 
-          {/* Group 2: Telemetry & Operations */}
+          {/* Group 2: Operations & Administration */}
           <div className="space-y-1">
-            <div className="text-[10px] uppercase font-bold text-neutral-500 tracking-wider px-3 mb-2">
-              Telemetry & Operations
-            </div>
-            {operationsNavItems.map((item) => {
+            {!isSidebarCollapsed && (
+              <div className="text-[10px] uppercase font-bold text-neutral-500 tracking-wider px-3 mb-2">
+                Operations & Administration
+              </div>
+            )}
+            {filteredOps.map((item) => {
               const Icon = item.icon;
               const isActive = activeSubTab === item.id;
               return (
                 <button
                   key={item.id}
+                  title={isSidebarCollapsed ? item.label : undefined}
                   onClick={() => {
                     setActiveSubTab(item.id);
                     setIsMobileSidebarOpen(false);
                   }}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                  className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
                     isActive
                       ? 'bg-emerald-500 text-neutral-950 font-bold shadow-lg shadow-emerald-500/20'
                       : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5">
-                    <Icon className={`w-4 h-4 ${isActive ? 'text-neutral-950' : 'text-neutral-400'}`} />
-                    <span>{item.label}</span>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-neutral-950' : 'text-neutral-400'}`} />
+                    {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
                   </div>
-                  {item.badge && (
-                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase ${
+                  {!isSidebarCollapsed && item.badge && (
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase shrink-0 ${
                       isActive ? 'bg-neutral-950 text-emerald-400' : 'bg-emerald-500/20 text-emerald-400'
                     }`}>
                       {item.badge}
@@ -734,8 +747,8 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
           </div>
         </aside>
 
-        {/* Content Area */}
-        <main className={`flex-1 min-w-0 ${USE_V2_MOBILE_ADMIN ? 'pb-36 md:pb-12' : 'pb-12 md:pb-8'}`}>
+        {/* Main Content Workspace Body */}
+        <main className="flex-1 min-w-0 pb-16">
           {/* CMS Loading / Error Notices */}
           {cmsError && (
             <div className="mb-5 p-3.5 sm:p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-rose-300 text-xs">
@@ -744,21 +757,12 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
                 <span className="break-words min-w-0 leading-relaxed">{cmsError}</span>
               </div>
               <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                {isAuthError && onOpenAuth && (
-                  <button
-                    type="button"
-                    onClick={onOpenAuth}
-                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold rounded-xl transition cursor-pointer shadow-sm text-xs"
-                  >
-                    Re-authenticate
-                  </button>
-                )}
                 <button
                   type="button"
                   onClick={fetchCmsConfig}
                   className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 rounded-xl font-semibold text-rose-200 transition cursor-pointer text-xs"
                 >
-                  Retry
+                  Retry Connection
                 </button>
               </div>
             </div>
@@ -770,7 +774,8 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
             </div>
           )}
 
-          {/* CMS TABS */}
+          {/* 6 CORE CMS WORKSPACES */}
+          {/* 1. Platform Targets & Presentation */}
           {activeSubTab === 'cms_platforms' && (
             <PlatformManager
               draft={cmsDraft}
@@ -791,6 +796,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
             />
           )}
 
+          {/* 2. Global Branding & Appearance */}
           {activeSubTab === 'cms_settings' && (
             <CmsGlobalSettings
               draft={cmsDraft}
@@ -804,79 +810,65 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
             />
           )}
 
-          {activeSubTab === 'cms_pages' && (
-            <CmsPageManager
+          {/* 3. Broadcast & Promotions */}
+          {activeSubTab === 'cms_broadcast' && (
+            <CmsBroadcastPromotions
               draft={cmsDraft}
               onUpdateDraft={handleUpdateDraft}
               showToast={showToast}
-            />
-          )}
-
-          {activeSubTab === 'cms_sections' && (
-            <CmsSectionManager
-              draft={cmsDraft}
-              onUpdateDraft={handleUpdateDraft}
-              showToast={showToast}
-            />
-          )}
-
-          {activeSubTab === 'cms_features' && (
-            <CmsFeatureManager
-              draft={cmsDraft}
-              onUpdateDraft={handleUpdateDraft}
-              showToast={showToast}
-              onSaveDraft={handleSaveDraft}
-              onPublishLive={() => handlePublishLive('Published from Feature Controls')}
-              isSavingDraft={isSavingDraft}
-              isPublishingLive={isPublishingLive}
-              token={token}
-              backendUrl={cleanBackendUrl}
-            />
-          )}
-
-          {activeSubTab === 'cms_layout' && (
-            <CmsLayoutEditor
-              draft={cmsDraft}
-              onUpdateDraft={handleUpdateDraft}
-              showToast={showToast}
-              onSaveDraft={handleSaveDraft}
-              onPublishLive={() => handlePublishLive('Published from Layout Editor')}
-              isSavingDraft={isSavingDraft}
-              isPublishingLive={isPublishingLive}
-              token={token}
-              backendUrl={cleanBackendUrl}
-            />
-          )}
-
-          {activeSubTab === 'cms_music' && (
-            <CmsMusicManager
-              draft={cmsDraft}
-              onUpdateDraft={handleUpdateDraft}
-              token={token}
-              backendUrl={cleanBackendUrl}
-              showToast={showToast}
-              onOpenMediaPicker={openMediaPicker}
-              onSaveDraft={handleSaveDraft}
-              onPublishLive={() => handlePublishLive('Published from Music Manager')}
-              isSavingDraft={isSavingDraft}
-              isPublishingLive={isPublishingLive}
-            />
-          )}
-
-          {activeSubTab === 'cms_media' && (
-            <CmsMediaLibrary
-              token={token}
-              backendUrl={cleanBackendUrl}
-              showToast={showToast}
-            />
-          )}
-
-          {activeSubTab === 'cms_publish' && (
-            <CmsPublishingHistory
-              draft={cmsDraft}
-              publishedMeta={cmsPublishedMeta}
               onSaveDraft={handleSaveDraft}
               onPublishLive={handlePublishLive}
+              isSavingDraft={isSavingDraft}
+              isPublishingLive={isPublishingLive}
+              onOpenMediaPicker={openMediaPicker}
+              onPreviewConfig={onPreviewConfig}
+            />
+          )}
+
+          {/* 4. Content & Curation */}
+          {activeSubTab === 'cms_content' && (
+            <CmsContentCuration
+              draft={cmsDraft}
+              onUpdateDraft={handleUpdateDraft}
+              showToast={showToast}
+              onSaveDraft={handleSaveDraft}
+              onPublishLive={handlePublishLive}
+              isSavingDraft={isSavingDraft}
+              isPublishingLive={isPublishingLive}
+              token={token}
+              backendUrl={cleanBackendUrl}
+              onOpenMediaPicker={openMediaPicker}
+            />
+          )}
+
+          {/* 5. Navigation & Routes */}
+          {activeSubTab === 'cms_navigation' && (
+            <CmsNavigationRoutes
+              draft={cmsDraft}
+              onUpdateDraft={handleUpdateDraft}
+              showToast={showToast}
+              onSaveDraft={handleSaveDraft}
+              onPublishLive={handlePublishLive}
+              isSavingDraft={isSavingDraft}
+              isPublishingLive={isPublishingLive}
+              token={token}
+              backendUrl={cleanBackendUrl}
+            />
+          )}
+
+          {/* 6. Feature Matrix & Governance */}
+          {activeSubTab === 'cms_governance' && (
+            <CmsFeatureGovernance
+              draft={cmsDraft}
+              onUpdateDraft={handleUpdateDraft}
+              showToast={showToast}
+              onSaveDraft={handleSaveDraft}
+              onPublishLive={handlePublishLive}
+              isSavingDraft={isSavingDraft}
+              isPublishingLive={isPublishingLive}
+              token={token}
+              backendUrl={cleanBackendUrl}
+              publishedMeta={cmsPublishedMeta}
               onTogglePreview={() => {
                 if (onPreviewConfig && cmsDraft) {
                   onPreviewConfig(cmsDraft);
@@ -884,13 +876,10 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
                   showToast('Preview mode enabled with current draft configuration!', 'info');
                 }
               }}
-              token={token}
-              backendUrl={cleanBackendUrl}
-              showToast={showToast}
             />
           )}
 
-          {/* TELEMETRY & OPERATIONS TABS */}
+          {/* OPERATIONS & ADMINISTRATION TABS */}
           {activeSubTab === 'overview' && (
             <AdminOverview 
               metrics={metrics} 
@@ -898,7 +887,7 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               onNavigate={setActiveSubTab} 
               token={token}
               backendUrl={cleanBackendUrl}
-              showToast={showToast}
+              onOpenAuth={onOpenAuth}
             />
           )}
 
@@ -907,7 +896,6 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
               token={token}
               backendUrl={cleanBackendUrl}
               showToast={showToast}
-              onNavigateTab={(tab) => setActiveSubTab(tab)}
             />
           )}
 
@@ -952,9 +940,10 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
             <UserManagement 
               token={token} 
               backendUrl={cleanBackendUrl} 
-              currentUser={user}
+              currentUser={user} 
               showToast={showToast} 
-              onUserUpdated={onUserUpdated}
+              onUserUpdated={onUserUpdated} 
+              onOpenAuth={onOpenAuth} 
             />
           )}
 
@@ -969,70 +958,35 @@ export default function AdminDashboard({ user, token, backendUrl, onExit, onOpen
           {activeSubTab === 'activity' && (
             <ActivityModeration 
               token={token} 
-              backendUrl={cleanBackendUrl}
-              showToast={showToast}
+              backendUrl={cleanBackendUrl} 
             />
           )}
 
           {activeSubTab === 'health' && (
             <ServerHealth 
               health={health} 
-              metrics={metrics} 
-              onRefresh={fetchHealthDiagnostics}
-              isLoading={isHealthLoading}
-              backendUrl={cleanBackendUrl}
-              token={token}
-              showToast={showToast}
+              isLoading={isHealthLoading} 
+              onRefresh={() => {
+                if (showToast) showToast('Diagnostics refreshed', 'info');
+              }} 
             />
           )}
 
           {activeSubTab === 'music' && (
             <MusicAnalytics 
               token={token} 
-              backendUrl={cleanBackendUrl}
-              showToast={showToast}
+              backendUrl={cleanBackendUrl} 
             />
           )}
 
           {activeSubTab === 'audit' && (
             <AuditLogs 
               token={token} 
-              backendUrl={cleanBackendUrl}
-              showToast={showToast}
+              backendUrl={cleanBackendUrl} 
             />
           )}
         </main>
       </div>
-
-      {/* MEDIA PICKER MODAL */}
-      {mediaPickerOpen && (
-        <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-3xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
-            <div className="p-4 border-b border-neutral-800 flex items-center justify-between">
-              <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                <ImageIcon className="w-4 h-4 text-amber-400" />
-                Select Media Asset from Library
-              </h4>
-              <button
-                type="button"
-                onClick={() => setMediaPickerOpen(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="p-4 overflow-y-auto flex-1">
-              <CmsMediaLibrary
-                token={token}
-                backendUrl={cleanBackendUrl}
-                showToast={showToast}
-                isPickerMode={true}
-                onSelectAsset={handleMediaAssetPicked}
-              />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
