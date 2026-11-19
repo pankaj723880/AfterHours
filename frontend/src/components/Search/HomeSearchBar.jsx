@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import VoiceSearchButton from './VoiceSearchButton';
+import { fetchWithRetry } from '../../utils/apiClient';
 import {
   getRecentSearches,
   saveRecentSearch,
@@ -101,7 +102,7 @@ export default function HomeSearchBar({
           ? `${cleanBase}/api/youtube/search?q=${encodeURIComponent(trimmed)}&limit=10`
           : `/api/youtube/search?q=${encodeURIComponent(trimmed)}&limit=10`;
 
-        const res = await fetch(targetUrl, { signal: controller.signal });
+        const res = await fetchWithRetry(targetUrl, { signal: controller.signal }, { maxRetries: 2, delays: [1500, 3000] });
 
         // If another search started in the meantime, ignore this response
         if (currentReqId !== requestIdRef.current) return;

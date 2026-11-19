@@ -16,8 +16,14 @@ let healthCheckPromise = null;
  * Updates the wake-up badge visibility across the application.
  */
 function updateWakeUpState(waking) {
-  // Silent state update: Never dispatch blocking UI overlays
-  isWakingUp = false;
+  isWakingUp = Boolean(waking);
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(new CustomEvent('loopra:server-wake-status', {
+        detail: { isWakingUp }
+      }));
+    } catch (_) {}
+  }
 }
 
 /**

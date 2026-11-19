@@ -235,6 +235,36 @@ export default function PlayerSettingsModal({
 
           <hr className="border-neutral-800/80" />
 
+          {/* Section: Continuous Listening / Autoplay */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-neutral-300 uppercase tracking-wider">Autoplay Similar Songs</h4>
+                <p className="text-[11px] text-neutral-500">Keep music playing with smart queue recommendations</p>
+              </div>
+              <button
+                onClick={onToggleContinuousListening}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  isContinuousListening ? 'bg-amber-500' : 'bg-neutral-800'
+                }`}
+                role="switch"
+                aria-checked={isContinuousListening}
+                aria-label="Toggle Continuous Listening"
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    isContinuousListening ? 'translate-x-5 bg-neutral-950' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+            <div className="p-2.5 rounded-xl bg-neutral-950/60 border border-neutral-800 text-[11px] text-neutral-400">
+              <span>{isContinuousListening ? '✨ Continuous listening active: Automatically queues 5 similar + 5 discovery tracks when queue ends.' : '⏹️ Autoplay off: Playback stops when your current queue finishes.'}</span>
+            </div>
+          </div>
+
+          <hr className="border-neutral-800/80" />
+
           {/* Section: Gapless Playback */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">

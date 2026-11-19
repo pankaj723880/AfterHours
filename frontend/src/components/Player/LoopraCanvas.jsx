@@ -1,5 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getCleanThumbnail } from '../../utils/storage';
+import {
+  ArrowLeft,
+  Settings2,
+  X,
+  Maximize2,
+  Minimize2,
+  Play,
+  Pause,
+  SkipBack,
+  SkipForward,
+  Check
+} from 'lucide-react';
 
 const CANVAS_MODES = [
   { id: 'vinyl', label: '3D Vinyl Studio', icon: '💿' },
@@ -31,10 +43,20 @@ export default function LoopraCanvas({
   const [duration, setDuration] = useState(0);
   const [isSeeking, setIsSeeking] = useState(false);
 
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+
   const canvasRef = useRef(null);
   const animFrameId = useRef(null);
   const containerRef = useRef(null);
+  const settingsPanelRef = useRef(null);
   const isHiddenRef = useRef(false);
+  const hideTimerRef = useRef(null);
+  const isSettingsOpenRef = useRef(false);
+
+  useEffect(() => {
+    isSettingsOpenRef.current = isSettingsOpen;
+  }, [isSettingsOpen]);
 
   // Normalize previous / next handlers across both naming conventions
   const handleNext = onNext || onNextTrack;
@@ -151,17 +173,115 @@ export default function LoopraCanvas({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Fullscreen toggle
-  const toggleFullscreen = useCallback(() => {
-    if (!containerRef.current) return;
-    if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().catch(() => {});
-      setIsFullscreen(true);
-    } else {
-      document.exitFullscreen().catch(() => {});
-      setIsFullscreen(false);
+  // Auto-hide Top Navbar after 5 seconds of inactivity
+  const showControlsAndResetTimer = useCallback(() => {
+    setIsHeaderVisible(true);
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
     }
+    hideTimerRef.current = setTimeout(() => {
+      // Don't auto-hide if settings panel is currently open
+      if (!isSettingsOpenRef.current) {
+        setIsHeaderVisible(false);
+      }
+    }, 5000);
   }, []);
+
+  // Listen for user interactions (mouse movement, clicks, touches, keys) to reveal navbar
+  useEffect(() => {
+    if (!isOpen) return;
+
+    showControlsAndResetTimer();
+
+    const handleUserActivity = () => {
+      showControlsAndResetTimer();
+    };
+
+    const container = containerRef.current || window;
+    container.addEventListener('mousemove', handleUserActivity, { passive: true });
+    container.addEventListener('mousedown', handleUserActivity, { passive: true });
+    container.addEventListener('touchstart', handleUserActivity, { passive: true });
+    window.addEventListener('keydown', handleUserActivity, { passive: true });
+
+    return () => {
+      if (hideTimerRef.current) {
+        clearTimeout(hideTimerRef.current);
+      }
+      container.removeEventListener('mousemove', handleUserActivity);
+      container.removeEventListener('mousedown', handleUserActivity);
+      container.removeEventListener('touchstart', handleUserActivity);
+      window.removeEventListener('keydown', handleUserActivity);
+    };
+  }, [isOpen, showControlsAndResetTimer]);
+
+  // Sync fullscreen state changes with document events (browser escape or OS controls)
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const active = Boolean(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+      setIsFullscreen(active);
+      showControlsAndResetTimer();
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+    };
+  }, [showControlsAndResetTimer]);
+
+  // Click outside visual settings panel to close
+  useEffect(() => {
+    if (!isSettingsOpen) return;
+
+    const handleClickOutside = (e) => {
+      if (settingsPanelRef.current && !settingsPanelRef.current.contains(e.target)) {
+        setIsSettingsOpen(false);
+        showControlsAndResetTimer();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isSettingsOpen, showControlsAndResetTimer]);
+
+  // Fullscreen toggle with cross-browser support
+  const toggleFullscreen = useCallback(async () => {
+    if (!containerRef.current) return;
+    try {
+      const active = Boolean(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+      if (!active) {
+        if (containerRef.current.requestFullscreen) {
+          await containerRef.current.requestFullscreen();
+        } else if (containerRef.current.webkitRequestFullscreen) {
+          await containerRef.current.webkitRequestFullscreen();
+        } else if (containerRef.current.msRequestFullscreen) {
+          await containerRef.current.msRequestFullscreen();
+        }
+        setIsFullscreen(true);
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          await document.webkitExitFullscreen();
+        } else if (document.msExitFullscreen) {
+          await document.msExitFullscreen();
+        }
+        setIsFullscreen(false);
+      }
+    } catch (e) {}
+    showControlsAndResetTimer();
+  }, [showControlsAndResetTimer]);
 
   // Format seconds to mm:ss
   const formatTime = (sec) => {
@@ -340,70 +460,148 @@ export default function LoopraCanvas({
         <canvas ref={canvasRef} className="w-full h-full" />
       </div>
 
-      {/* Top Bar with Navigation & Modes */}
+      {/* Top Bar with Navigation & Modes (Auto-hides after 5s of inactivity) */}
       <header
         style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
-        className="relative z-20 flex items-center justify-between px-4 sm:px-8 py-3 backdrop-blur-md bg-neutral-950/60 border-b border-neutral-800/60"
+        className={`fixed top-0 inset-x-0 z-30 flex items-center justify-between px-4 sm:px-8 py-3 backdrop-blur-md bg-neutral-950/60 border-b border-neutral-800/40 transition-all duration-500 ease-out ${
+          isHeaderVisible
+            ? 'opacity-100 translate-y-0 pointer-events-auto'
+            : 'opacity-0 -translate-y-4 pointer-events-none'
+        }`}
       >
-        <div className="flex items-center gap-3">
+        {/* Left Side: Compact Back Button */}
+        <div className="flex items-center">
           <button
             onClick={onClose}
-            className="p-2 px-3 rounded-xl bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700/60 transition active:scale-95 cursor-pointer text-xs font-semibold"
-            title="Exit Canvas"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700/60 transition active:scale-95 cursor-pointer text-xs font-semibold shadow-md"
+            title="Exit Canvas (Esc)"
+            aria-label="Back"
           >
-            ← Back
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back</span>
           </button>
-          <div>
-            <span className="text-[10px] font-mono uppercase tracking-widest text-amber-500 font-bold flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-              LOOPRA CANVAS
-            </span>
-            <p className="text-[11px] text-neutral-400 font-medium">Harmonic Visual Experience</p>
-          </div>
         </div>
 
-        {/* Visual Mode Selector Tabs */}
-        <div className="hidden md:flex items-center gap-1 bg-neutral-900/90 p-1 rounded-2xl border border-neutral-800">
-          {CANVAS_MODES.map((m) => {
-            const isActive = mode === m.id;
-            return (
-              <button
-                key={m.id}
-                onClick={() => setMode(m.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
-                  isActive
-                    ? 'bg-amber-500 text-neutral-950 shadow-md font-bold'
-                    : 'text-neutral-400 hover:text-white'
-                }`}
-              >
-                <span>{m.icon}</span>
-                <span>{m.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Action Controls: Effects Toggle & Fullscreen */}
-        <div className="flex items-center gap-2">
+        {/* Right Side: Visual Settings Toggle & Fullscreen Toggle */}
+        <div className="flex items-center gap-2 relative">
+          {/* Visual Settings Toggle Button */}
           <button
-            onClick={() => setEffectsEnabled(!effectsEnabled)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
-              effectsEnabled
-                ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
-                : 'bg-neutral-800/80 border-neutral-700 text-neutral-500'
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsSettingsOpen(!isSettingsOpen);
+              showControlsAndResetTimer();
+            }}
+            className={`p-2 rounded-full border transition active:scale-95 cursor-pointer shadow-md ${
+              isSettingsOpen
+                ? 'bg-amber-500 text-neutral-950 border-amber-400 font-bold'
+                : 'bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-white border-neutral-700/60'
             }`}
-            title={effectsEnabled ? "Disable Visual Effects (Battery Saver)" : "Enable Visual Effects"}
+            title={isSettingsOpen ? "Close Visual Settings" : "Visual Modes & FX Settings"}
+            aria-label="Visual Settings"
           >
-            FX {effectsEnabled ? 'ON' : 'OFF'}
+            {isSettingsOpen ? (
+              <X className="w-4 h-4" />
+            ) : (
+              <Settings2 className="w-4 h-4" />
+            )}
           </button>
 
+          {/* Fullscreen Maximize / Minimize Button */}
           <button
-            onClick={toggleFullscreen}
-            className="p-2 rounded-xl bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700/60 transition active:scale-95 cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFullscreen();
+            }}
+            className="p-2 rounded-full bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700/60 transition active:scale-95 cursor-pointer shadow-md"
             title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+            aria-label={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
           >
-            {isFullscreen ? '🗗' : '⛶'}
+            {isFullscreen ? (
+              <Minimize2 className="w-4 h-4" />
+            ) : (
+              <Maximize2 className="w-4 h-4" />
+            )}
           </button>
+
+          {/* Visual Settings Dropdown / Popover Panel */}
+          {isSettingsOpen && (
+            <div
+              ref={settingsPanelRef}
+              onClick={(e) => e.stopPropagation()}
+              className="absolute right-0 top-full mt-2 w-64 max-w-[calc(100vw-2rem)] p-3 rounded-2xl bg-neutral-900/95 backdrop-blur-2xl border border-neutral-800 shadow-2xl space-y-3 z-50 animate-fadeIn"
+            >
+              <div className="flex items-center justify-between pb-2 border-b border-neutral-800/80">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">
+                  Visual Settings
+                </span>
+                <button
+                  onClick={() => {
+                    setIsSettingsOpen(false);
+                    showControlsAndResetTimer();
+                  }}
+                  className="p-1 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition cursor-pointer"
+                  title="Close"
+                  aria-label="Close Settings Panel"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Five Visual Modes List */}
+              <div className="space-y-1">
+                <span className="text-[10px] font-semibold text-neutral-400 block px-1">
+                  Canvas Mode
+                </span>
+                {CANVAS_MODES.map((m) => {
+                  const isActive = mode === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => {
+                        setMode(m.id);
+                        setIsSettingsOpen(false);
+                        showControlsAndResetTimer();
+                      }}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer ${
+                        isActive
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold'
+                          : 'text-neutral-300 hover:bg-neutral-800/80 hover:text-white'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span>{m.icon}</span>
+                        <span>{m.label}</span>
+                      </span>
+                      {isActive && <Check className="w-3.5 h-3.5 text-amber-400" />}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Effects ON / OFF Toggle */}
+              <div className="pt-2 border-t border-neutral-800/80 flex items-center justify-between px-1">
+                <div className="flex flex-col">
+                  <span className="text-xs font-semibold text-neutral-200">Visual Effects</span>
+                  <span className="text-[10px] text-neutral-400">Particles & Aura glow</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEffectsEnabled(!effectsEnabled);
+                    showControlsAndResetTimer();
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                    effectsEnabled
+                      ? 'bg-amber-500 text-neutral-950 border-amber-400'
+                      : 'bg-neutral-800 text-neutral-400 border-neutral-700'
+                  }`}
+                  aria-label={effectsEnabled ? "Turn Effects Off" : "Turn Effects On"}
+                >
+                  {effectsEnabled ? 'ON' : 'OFF'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
@@ -448,117 +646,49 @@ export default function LoopraCanvas({
         </div>
       </main>
 
-      {/* Bottom Floating Playback Controls Bar */}
-      <footer className="relative z-20 w-full max-w-2xl mx-auto p-4 sm:p-6 backdrop-blur-2xl bg-neutral-900/85 rounded-3xl border border-neutral-800/80 shadow-2xl space-y-3 mb-2 sm:mb-6">
-        {/* Scrubber Progress or Live Radio Indicator */}
-        {isRadio ? (
-          <div className="w-full flex items-center justify-center gap-2 py-1 text-xs font-mono text-amber-400 select-none">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-            <span className="font-bold tracking-wider uppercase">● LIVE BROADCAST</span>
-            <span className="text-neutral-500">•</span>
-            <span className="text-neutral-400 text-[11px]">Continuous Indian Stream</span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-3 text-xs font-mono text-neutral-400 select-none">
-            <span className="w-10 text-right">{formatTime(currentTime)}</span>
-            <div className="flex-1 relative flex items-center">
-              <input
-                type="range"
-                min="0"
-                max={duration > 0 ? duration : 100}
-                step="0.5"
-                value={currentTime}
-                disabled={duration <= 0}
-                onChange={handleSeekChange}
-                onMouseDown={() => setIsSeeking(true)}
-                onTouchStart={() => setIsSeeking(true)}
-                onMouseUp={handleSeekCommit}
-                onTouchEnd={handleSeekCommit}
-                aria-label="Seek track"
-                className="w-full h-1.5 bg-neutral-800 rounded-full appearance-none cursor-pointer accent-amber-500 focus:outline-none disabled:opacity-50"
-              />
-            </div>
-            <span className="w-10 text-left">
-              {duration > 0 ? formatTime(duration) : '--:--'}
-            </span>
-          </div>
-        )}
+      {/* Minimal Bottom Floating Playback Controls Bar (Always Visible) */}
+      <footer
+        className="fixed bottom-4 sm:bottom-6 inset-x-0 z-30 flex items-center justify-center pointer-events-none"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="pointer-events-auto flex items-center gap-3 px-4 py-2 rounded-full backdrop-blur-2xl bg-neutral-900/80 border border-neutral-800/80 shadow-[0_8px_32px_rgba(0,0,0,0.6)] select-none"
+        >
+          {/* 1. Previous Track */}
+          <button
+            onClick={handlePrev}
+            className="p-2 rounded-full text-neutral-400 hover:text-white hover:bg-white/5 active:scale-95 transition cursor-pointer"
+            title="Previous Track"
+            aria-label="Previous Track"
+          >
+            <SkipBack className="w-4 h-4 fill-current" />
+          </button>
 
-        {/* Tactile Control Buttons */}
-        <div className="flex items-center justify-between gap-4">
-          {/* Mobile Mode Switcher Dropdown */}
-          <div className="md:hidden">
-            <select
-              value={mode}
-              onChange={(e) => setMode(e.target.value)}
-              className="bg-neutral-800 border border-neutral-700 text-white rounded-xl px-2 py-1 text-xs"
-            >
-              {CANVAS_MODES.map(m => (
-                <option key={m.id} value={m.id}>{m.icon} {m.label}</option>
-              ))}
-            </select>
-          </div>
+          {/* 2. Play / Pause (Primary control, slightly prominent with subtle gold accent) */}
+          <button
+            onClick={onTogglePlay}
+            className="w-10 h-10 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-neutral-950 flex items-center justify-center shadow-[0_0_16px_rgba(245,158,11,0.4)] hover:scale-105 active:scale-95 transition cursor-pointer"
+            title={isPlaying ? "Pause" : "Play"}
+            aria-label={isPlaying ? "Pause" : "Play"}
+          >
+            {isPlaying ? (
+              <Pause className="w-4 h-4 fill-current" />
+            ) : (
+              <Play className="w-4 h-4 fill-current ml-0.5" />
+            )}
+          </button>
 
-          <div className="flex items-center justify-center gap-4 flex-1">
-            <button
-              onClick={handlePrev}
-              className="p-3 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition active:scale-95 cursor-pointer shadow-md"
-              title="Previous Track (Restarts if > 3s)"
-              aria-label="Previous Track"
-            >
-              <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
-              </svg>
-            </button>
-
-            <button
-              onClick={onTogglePlay}
-              className="w-14 h-14 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-neutral-950 font-bold text-lg flex items-center justify-center shadow-[0_0_25px_rgba(245,158,11,0.5)] hover:scale-105 active:scale-95 transition cursor-pointer"
-              title={isPlaying ? "Pause" : "Play"}
-              aria-label={isPlaying ? "Pause" : "Play"}
-            >
-              {isPlaying ? (
-                <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
-                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
-                </svg>
-              ) : (
-                <svg className="w-6 h-6 fill-current ml-0.5" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z"/>
-                </svg>
-              )}
-            </button>
-
-            <button
-              onClick={handleNext}
-              className="p-3 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition active:scale-95 cursor-pointer shadow-md"
-              title="Next Track"
-              aria-label="Next Track"
-            >
-              <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
-              </svg>
-            </button>
-          </div>
-
-          {/* Volume Control */}
-          <div className="hidden sm:flex items-center gap-2">
-            <span className="text-xs text-neutral-400">🔊</span>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={volume || 80}
-              onChange={onVolumeChange}
-              aria-label="Volume slider"
-              className="w-20 h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
-            />
-          </div>
+          {/* 3. Next Track */}
+          <button
+            onClick={handleNext}
+            className="p-2 rounded-full text-neutral-400 hover:text-white hover:bg-white/5 active:scale-95 transition cursor-pointer"
+            title="Next Track"
+            aria-label="Next Track"
+          >
+            <SkipForward className="w-4 h-4 fill-current" />
+          </button>
         </div>
-
-        {/* Audio Transparency Disclaimer */}
-        <p className="text-[10px] text-center text-neutral-500 font-mono">
-          Visual Mode: Harmonic Canvas (Rhythmic Simulation — YouTube iframe audio is sandboxed by browser security)
-        </p>
       </footer>
     </div>
   );

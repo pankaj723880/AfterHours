@@ -952,6 +952,26 @@ export const listeningStatsService = {
 
   formatListeningHours(secondsOrHours, isSeconds = false) {
     return formatListeningHours(secondsOrHours, isSeconds);
+  },
+
+  /**
+   * Fetches the user's authentic AI-Learned Music DNA profile
+   */
+  async fetchMusicDna({ backendUrl = '', token = null } = {}) {
+    if (!token) return null;
+    try {
+      const base = (backendUrl || '').replace(/\/+$/, '');
+      const res = await fetch(`${base}/api/learning-intelligence/my-dna`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (e) {
+      console.warn('[listeningStatsService] fetchMusicDna error:', e.message);
+      return null;
+    }
   }
 };
 

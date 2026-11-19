@@ -392,6 +392,43 @@ app.get(['/api/rooms', '/rooms'], (req, res) => {
   res.json({ success: true, rooms: roomsList });
 });
 
+// Dedicated liveness endpoint (HTTP 200 process liveness, zero DB overhead, no sensitive data)
+app.get(['/api/health/live', '/health/live'], (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.status(200).json({
+    status: 'ok',
+    liveness: 'alive',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Dedicated readiness endpoint (HTTP 200 when MongoDB is connected, HTTP 503 if connecting/disconnected)
+app.get(['/api/health/ready', '/health/ready'], (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  const ready = isDatabaseReady();
+  if (!ready) {
+    return res.status(503).json({
+      status: 'not_ready',
+      database: 'disconnected',
+      readyState: mongoose.connection.readyState,
+      timestamp: new Date().toISOString()
+    });
+  }
+  res.status(200).json({
+    status: 'ready',
+    database: 'connected',
+    readyState: 1,
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Fast, zero-DB-overhead health check and ping endpoint for Render wake-up and uptime monitoring
 app.all(['/ping', '/api/ping', '/health', '/api/health'], (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');

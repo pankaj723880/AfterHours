@@ -19,6 +19,10 @@ export const maintenanceMiddleware = async (req, res, next) => {
       path === '/api/ping' ||
       path === '/health' ||
       path === '/api/health' ||
+      path === '/api/health/live' ||
+      path === '/health/live' ||
+      path === '/api/health/ready' ||
+      path === '/health/ready' ||
       path.startsWith('/uploads/') ||
       path === '/api/cms/public-config' ||
       path === '/cms/public-config' ||

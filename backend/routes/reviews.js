@@ -6,6 +6,17 @@ import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 
+const INDIAN_NAMES_POOL = [
+  'Rahul Sharma', 'Priya Verma', 'Amit Kumar', 'Neha Singh', 'Anjali Gupta',
+  'Rohit Mishra', 'Sneha Patel', 'Arjun Yadav', 'Pooja Chauhan', 'Karan Malhotra',
+  'Vikram Malhotra', 'Ritu Agarwal', 'Sanjay Joshi', 'Deepika Nair', 'Manish Tiwari',
+  'Swati Deshmukh', 'Aditya Roy', 'Meera Iyer', 'Rohan Bhatia', 'Tanvi Kapoor'
+];
+
+function getRandomIndianName() {
+  return INDIAN_NAMES_POOL[Math.floor(Math.random() * INDIAN_NAMES_POOL.length)];
+}
+
 /**
  * Sanitizes text by stripping HTML tags and trimming.
  */
@@ -122,6 +133,33 @@ router.get('/summary', async (req, res) => {
             count5: c5
           }
         };
+
+        // Combine configured + genuine user ratings for Mode A without double counting
+        const combinedC1 = genuineSummary.distribution[1] + c1;
+        const combinedC2 = genuineSummary.distribution[2] + c2;
+        const combinedC3 = genuineSummary.distribution[3] + c3;
+        const combinedC4 = genuineSummary.distribution[4] + c4;
+        const combinedC5 = genuineSummary.distribution[5] + c5;
+        const combinedTotal = combinedC1 + combinedC2 + combinedC3 + combinedC4 + combinedC5;
+        const combinedWeightedSum = (1 * combinedC1) + (2 * combinedC2) + (3 * combinedC3) + (4 * combinedC4) + (5 * combinedC5);
+        const combinedAvg = combinedTotal > 0 ? parseFloat((combinedWeightedSum / combinedTotal).toFixed(2)) : 5.0;
+
+        editorialSummary.combinedSummary = {
+          totalRatings: combinedTotal,
+          averageRating: combinedAvg,
+          distribution: {
+            1: combinedC1,
+            2: combinedC2,
+            3: combinedC3,
+            4: combinedC4,
+            5: combinedC5,
+            count1: combinedC1,
+            count2: combinedC2,
+            count3: combinedC3,
+            count4: combinedC4,
+            count5: combinedC5
+          }
+        };
       }
     } catch (e) {}
 
@@ -148,19 +186,27 @@ router.get('/', async (req, res) => {
     const limit = Math.min(10, Math.max(1, parseInt(req.query.limit, 10) || 5));
     const skip = (page - 1) * limit;
 
-    const source = (req.query.source === 'editorial' || req.query.source === 'configured') ? 'editorial' : 'user';
-    const filter = {
-      source,
+    let filter = {
       status: 'published',
       reviewText: { $exists: true, $ne: '' }
     };
+
+    if (req.query.source === 'all' || req.query.source === 'combined') {
+      // Mode A: Configured & Editorial Reviews - returns both genuine user and editorial reviews together
+      filter.source = { $in: ['user', 'editorial'] };
+    } else if (req.query.source === 'editorial' || req.query.source === 'configured') {
+      filter.source = 'editorial';
+    } else {
+      // Mode B (Default): Real User Reviews Only
+      filter.source = 'user';
+    }
 
     const [reviews, total] = await Promise.all([
       Review.find(filter)
         .sort({ submittedAt: -1 })
         .skip(skip)
         .limit(limit)
-        .select('displayName username avatarUrl rating reviewText submittedAt userRole status')
+        .select('displayName username avatarUrl rating reviewText submittedAt userRole status source')
         .lean(),
       Review.countDocuments(filter)
     ]);
@@ -544,10 +590,12 @@ router.post(['/admin/configured', '/configured', '/admin/editorial', '/editorial
       return res.status(400).json({ error: 'Rating must be an integer between 1 and 5' });
     }
 
+    const chosenDisplayName = sanitizeText(displayName) || getRandomIndianName();
+
     const review = await Review.create({
       userId: null,
       username: 'editorial',
-      displayName: sanitizeText(displayName) || 'Verified Listener',
+      displayName: chosenDisplayName,
       avatarUrl: '',
       rating: ratingNum,
       reviewText: sanitizeText(reviewText).slice(0, 1000),

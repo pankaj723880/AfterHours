@@ -475,6 +475,11 @@ export const cmsService = {
 
   // Initialize DB with defaults if not present
   async initDefaults() {
+    // Prevent query execution if MongoDB connection is not yet ready (avoids bufferCommands=false crash)
+    if (!mongoose.connection || mongoose.connection.readyState !== 1) {
+      console.log('[CMS Service] MongoDB not yet ready, deferring initDefaults');
+      return;
+    }
     try {
       // 1. Deduplicate published/draft configs if any redundant documents exist
       const publishedDocs = await SiteConfig.find({ configType: 'published' }).sort({ version: -1, updatedAt: -1 });
@@ -631,6 +636,12 @@ export const cmsService = {
     const now = Date.now();
     if (publicConfigCache && now - publicConfigCacheTime < CACHE_TTL_MS) {
       return publicConfigCache;
+    }
+
+    // If MongoDB is not connected yet, immediately return static default config
+    // to avoid bufferCommands = false race condition crash during cold boot
+    if (!mongoose.connection || mongoose.connection.readyState !== 1) {
+      return getDefaultSiteConfig();
     }
 
     try {

@@ -62,6 +62,7 @@ export default function DiscoverView({
   // Discovery carousels
   trendingSongs = [],
   popularAlbums = [],
+  isServerWakingUp = false,
 
   // System & navigation
   user,
@@ -510,9 +511,15 @@ export default function DiscoverView({
 
       {/* 5B. LOADING SKELETONS */}
       {isLoading && (
-        <section aria-label="Loading search" className="space-y-3 pt-2 animate-pulse">
-          <div className="h-4 bg-neutral-800 rounded w-1/3"></div>
-          <div className="grid grid-cols-1 gap-2.5">
+        <section aria-label="Loading search" className="space-y-3 pt-2">
+          {isServerWakingUp ? (
+            <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs animate-pulse">
+              <Sparkles className="w-4 h-4 text-amber-400 shrink-0 animate-spin" />
+              <span>Connecting to music server... Your search will display automatically in a moment.</span>
+            </div>
+          ) : null}
+          <div className="h-4 bg-neutral-800 rounded w-1/3 animate-pulse"></div>
+          <div className="grid grid-cols-1 gap-2.5 animate-pulse">
             {[1, 2, 3, 4, 5].map((n) => (
               <div key={n} className="p-3.5 rounded-2xl border border-neutral-800/60 bg-neutral-900/40 flex items-center justify-between">
                 <div className="flex items-center gap-3.5 flex-1">

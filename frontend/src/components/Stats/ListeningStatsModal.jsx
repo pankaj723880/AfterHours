@@ -12,8 +12,10 @@ export default function ListeningStatsModal({
   currentSong = null,
   isPlaying = false
 }) {
-  const [activeTab, setActiveTab] = useState('daily'); // 'daily' | 'recap' | 'monthly' | 'all-time'
+  const [activeTab, setActiveTab] = useState('daily'); // 'daily' | 'recap' | 'monthly' | 'all-time' | 'dna'
   const [stats, setStats] = useState(null);
+  const [musicDna, setMusicDna] = useState(null);
+  const [isLoadingDna, setIsLoadingDna] = useState(false);
   const [dailyRecap, setDailyRecap] = useState(null);
   const [weeklyRecap, setWeeklyRecap] = useState(null);
   const [monthlyRecap, setMonthlyRecap] = useState(null);
@@ -67,6 +69,17 @@ export default function ListeningStatsModal({
         setStreaks(data.streaks || null);
         setTelemetryStatus(data.telemetryStatus || null);
         setLastUpdated(data.updatedAt ? new Date(data.updatedAt) : new Date());
+      }
+
+      // Fetch Music DNA in background if user is authenticated
+      if (authToken) {
+        setIsLoadingDna(true);
+        listeningStatsService.fetchMusicDna({ backendUrl, token: authToken })
+          .then(dna => {
+            if (dna?.success) setMusicDna(dna);
+          })
+          .catch(() => {})
+          .finally(() => setIsLoadingDna(false));
       }
     } catch (err) {
       console.warn('[ListeningStatsModal] Refresh notice:', err.message);
@@ -646,6 +659,16 @@ export default function ListeningStatsModal({
             >
               <span>All-Time Stats</span>
             </button>
+            <button
+              onClick={() => setActiveTab('dna')}
+              className={`px-4 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'dna'
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-neutral-950 shadow-md shadow-amber-500/20'
+                  : 'bg-neutral-900/80 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800'
+              }`}
+            >
+              <span>🧬 Music DNA</span>
+            </button>
           </div>
 
           {/* Date Range, Month Switcher & Streak Badges */}
@@ -708,6 +731,119 @@ export default function ListeningStatsModal({
 
         {/* 3. MAIN DASHBOARD CONTENT */}
         <div className="p-4 sm:p-5 overflow-y-auto space-y-4 max-h-[calc(92vh-130px)] custom-scrollbar">
+          {/* Music DNA Tab Dedicated View */}
+          {activeTab === 'dna' ? (
+            <div className="space-y-4 animate-fadeIn">
+              {/* DNA Hero Header */}
+              <div className="bg-gradient-to-br from-neutral-900/90 via-[#13141f] to-amber-950/40 border border-amber-500/20 rounded-2xl p-5 relative overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">🧬</span>
+                    <h2 className="text-xl sm:text-2xl font-black text-white">Your AI Music DNA</h2>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      {musicDna ? `${Math.round((musicDna.confidenceScore || 0) * 100)}% Confidence` : 'Learning'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-neutral-400 max-w-md">
+                    Mapped directly from your personal listening patterns, replay habits, skip signals, and genre choices by Loopra's AI Learning Intelligence Engine.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <div className="text-right">
+                    <span className="text-[10px] text-neutral-500 block uppercase font-bold tracking-wider">Signals Observed</span>
+                    <span className="text-lg font-mono font-bold text-amber-400">{musicDna?.totalEventsObserved || 0} events</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* DNA Key Dimensions Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-4 rounded-2xl bg-neutral-900/60 border border-neutral-800 flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center text-lg shrink-0">
+                    🌅
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">Peak Listening Vibe</span>
+                    <span className="text-sm font-bold text-white capitalize">{musicDna?.peakTimeOfDay || 'Daytime'}</span>
+                    <span className="text-[10px] text-neutral-500 block">Most active listening period</span>
+                  </div>
+                </div>
+                <div className="p-4 rounded-2xl bg-neutral-900/60 border border-neutral-800 flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center text-lg shrink-0">
+                    🔁
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">Replay Affinity</span>
+                    <span className="text-sm font-bold text-white">{Math.round((musicDna?.replayRatio || 0) * 100)}%</span>
+                    <span className="text-[10px] text-neutral-500 block">Tendency to loop beloved songs</span>
+                  </div>
+                </div>
+                <div className="p-4 rounded-2xl bg-neutral-900/60 border border-neutral-800 flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/15 text-blue-400 flex items-center justify-center text-lg shrink-0">
+                    ⏱️
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">Total Hours Logged</span>
+                    <span className="text-sm font-bold text-amber-400">{musicDna?.totalListeningHours || '0.00'} hrs</span>
+                    <span className="text-[10px] text-neutral-500 block">Private playback duration</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Learned Genres & Artist Affinity Breakdowns */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Genres */}
+                <div className="p-4 rounded-2xl bg-neutral-900/50 border border-neutral-800 space-y-3">
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <span>🎼</span> Top Learned Genres & Acoustic Styles
+                  </h3>
+                  {musicDna?.genres?.length > 0 ? (
+                    <div className="space-y-2">
+                      {musicDna.genres.map(g => (
+                        <div key={g.name} className="flex items-center justify-between text-xs">
+                          <span className="text-neutral-300 font-medium">{g.name}</span>
+                          <div className="flex items-center gap-2">
+                            <div className="w-24 h-2 bg-neutral-800 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-amber-500 to-amber-300 rounded-full"
+                                style={{ width: `${Math.min(100, Math.max(15, g.confidence))}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] font-mono text-neutral-400 w-8 text-right">{g.confidence}%</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-neutral-500 py-3 text-center">Genre signals are being collected as you listen.</p>
+                  )}
+                </div>
+
+                {/* Artists */}
+                <div className="p-4 rounded-2xl bg-neutral-900/50 border border-neutral-800 space-y-3">
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <span>🎤</span> Highest Affinity Artists
+                  </h3>
+                  {musicDna?.topArtists?.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      {musicDna.topArtists.slice(0, 6).map(a => (
+                        <div key={a.name} className="p-2.5 rounded-xl bg-neutral-950/60 border border-neutral-800/80 flex items-center justify-between">
+                          <div className="min-w-0 pr-1">
+                            <span className="text-xs text-neutral-200 font-medium block truncate">{a.name}</span>
+                            <span className="text-[10px] text-neutral-500">{a.confidence}% match</span>
+                          </div>
+                          <span className="text-[11px] font-mono text-amber-400 shrink-0">{a.playCount}p</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-neutral-500 py-3 text-center">Artist affinity models will appear here after playback.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
           {/* Daily Listening Summary Banner */}
           {activeTab === 'daily' && dailyRecap?.dailySummary && (
             <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-orange-500/15 border border-amber-500/30 flex items-center gap-3 text-xs text-amber-200 shadow-sm animate-fadeIn">
@@ -1302,6 +1438,8 @@ export default function ListeningStatsModal({
               </div>
             </div>
           </div>
+          </>
+          )}
         </div>
 
         {/* 4. FOOTER */}

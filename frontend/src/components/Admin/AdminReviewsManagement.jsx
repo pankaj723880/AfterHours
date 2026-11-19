@@ -649,9 +649,9 @@ export default function AdminReviewsManagement({ token, backendUrl, showToast, o
           <form onSubmit={handleSaveConfiguredSettings} className="bg-neutral-900/60 border border-neutral-800 rounded-3xl p-6 space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-800/80 pb-4">
               <div>
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Configured Rating & Distribution Controls</h3>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Review Display Mode Controls</h3>
                 <p className="text-xs text-neutral-400 mt-0.5">
-                  Set exact individual star counts; total ratings and weighted average are automatically calculated.
+                  Choose between displaying combined editorial + genuine listener reviews (Mode A) or real user reviews only (Mode B).
                 </p>
               </div>
               <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer shrink-0">
@@ -662,7 +662,7 @@ export default function AdminReviewsManagement({ token, backendUrl, showToast, o
                   className="rounded bg-neutral-950 border-neutral-700 text-amber-500 focus:ring-amber-500"
                 />
                 <span className={configuredSettings.enabled ? 'text-emerald-400 font-bold' : 'text-neutral-400'}>
-                  {configuredSettings.enabled ? 'Enabled on Homepage' : 'Disabled'}
+                  {configuredSettings.enabled ? 'Mode A: Configured & Editorial + Real Users' : 'Mode B: Real User Reviews Only'}
                 </span>
               </label>
             </div>
@@ -936,7 +936,7 @@ export default function AdminReviewsManagement({ token, backendUrl, showToast, o
                       required
                       value={editorialForm.displayName}
                       onChange={(e) => setEditorialForm(prev => ({ ...prev, displayName: e.target.value }))}
-                      placeholder="e.g. Vintage Bollywood Journal"
+                      placeholder="e.g. Rahul Sharma, Priya Verma, Amit Kumar"
                       className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
                     />
                   </div>

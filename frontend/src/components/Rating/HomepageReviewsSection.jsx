@@ -29,7 +29,9 @@ export default function HomepageReviewsSection({ refreshTrigger = 0, onOpenRatin
 
       // 2. Determine mode directly from fresh summary
       const isConfigured = Boolean(freshSummary?.editorialSummary?.enabled);
-      const sourceQuery = isConfigured ? 'editorial' : 'user';
+      // Mode A: When configured mode is enabled, fetch 'all' (editorial + genuine real user reviews together)
+      // Mode B: When disabled, fetch 'user' (real user reviews only)
+      const sourceQuery = isConfigured ? 'all' : 'user';
 
       // 3. Fetch strictly corresponding reviews (strictly isolated, no fallback)
       const reviewsRes = await fetch(
@@ -64,7 +66,7 @@ export default function HomepageReviewsSection({ refreshTrigger = 0, onOpenRatin
 
     try {
       const isConfigured = Boolean(summary?.editorialSummary?.enabled);
-      const sourceQuery = isConfigured ? 'editorial' : 'user';
+      const sourceQuery = isConfigured ? 'all' : 'user';
 
       const reviewsRes = await fetch(
         getApiUrl(`/api/reviews?page=${newPage}&limit=5&source=${sourceQuery}&_t=${Date.now()}`),
@@ -104,16 +106,17 @@ export default function HomepageReviewsSection({ refreshTrigger = 0, onOpenRatin
   const isConfigured = Boolean(summary?.editorialSummary?.enabled);
   const editorial = summary?.editorialSummary;
 
+  // Mode A: Combined total ratings & average rating if combinedSummary is present, or configured fallback
   const activeRating = isConfigured 
-    ? (Number(editorial?.displayRating) || 0.0) 
+    ? (Number(editorial?.combinedSummary?.averageRating ?? editorial?.displayRating) || 0.0) 
     : (Number(summary?.averageRating) || 0.0);
 
   const activeTotal = isConfigured 
-    ? (Number(editorial?.displayCount) || 0) 
+    ? (Number(editorial?.combinedSummary?.totalRatings ?? editorial?.displayCount) || 0) 
     : (Number(summary?.totalRatings) || 0);
 
   const activeDistribution = isConfigured 
-    ? (editorial?.distribution || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }) 
+    ? (editorial?.combinedSummary?.distribution || editorial?.distribution || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }) 
     : (summary?.distribution || { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 });
 
   const activeBadge = isConfigured 
@@ -271,7 +274,17 @@ export default function HomepageReviewsSection({ refreshTrigger = 0, onOpenRatin
                         <div className="min-w-0">
                           <h4 className="text-xs font-bold text-white truncate flex items-center gap-1.5">
                             <span>{rev.displayName || rev.username || 'Listener'}</span>
-                            <UserCheck className="w-3 h-3 text-emerald-400 shrink-0" title="Verified Listener" />
+                            {rev.source === 'editorial' ? (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[9px] font-bold tracking-tight bg-amber-500/15 border border-amber-500/30 text-amber-300 shrink-0" title="Editorial Review">
+                                <Sparkles className="w-2.5 h-2.5 text-amber-400" />
+                                <span>Editorial</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[9px] font-semibold tracking-tight bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 shrink-0" title="Verified Listener">
+                                <UserCheck className="w-2.5 h-2.5 text-emerald-400" />
+                                <span>Verified</span>
+                              </span>
+                            )}
                           </h4>
                           <span className="text-[10px] text-neutral-400 block font-mono">
                             {formatDate(rev.submittedAt)}

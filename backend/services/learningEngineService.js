@@ -1051,11 +1051,21 @@ class LearningEngineService {
     if (!userId) throw new Error('userId is required');
     const uObjId = new mongoose.Types.ObjectId(userId.toString());
 
+    // Defensive check: if database is not connected, return empty baseline gracefully
+    if (!mongoose.connection || mongoose.connection.readyState !== 1) {
+      return {
+        user: { id: uObjId, username: 'user', role: 'user' },
+        profile: null,
+        recentUpdates: [],
+        recentEvents: []
+      };
+    }
+
     const [user, profile, recentLogs, recentEvents] = await Promise.all([
-      User.findById(uObjId).select('username email createdAt role').lean(),
-      UserLearningProfile.findOne({ userId: uObjId }).lean(),
-      LearningUpdateLog.find({ userId: uObjId }).sort({ timestamp: -1 }).limit(10).lean(),
-      UserBehaviorEvent.find({ userId: uObjId }).sort({ createdAt: -1 }).limit(15).lean()
+      User.findById(uObjId).select('username email createdAt role').lean().maxTimeMS(2500).catch(() => null),
+      UserLearningProfile.findOne({ userId: uObjId }).lean().maxTimeMS(2500).catch(() => null),
+      LearningUpdateLog.find({ userId: uObjId }).sort({ timestamp: -1 }).limit(10).lean().maxTimeMS(2500).catch(() => []),
+      UserBehaviorEvent.find({ userId: uObjId }).sort({ createdAt: -1 }).limit(15).lean().maxTimeMS(2500).catch(() => [])
     ]);
 
     if (!user) return null;

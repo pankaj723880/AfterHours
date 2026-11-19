@@ -35,7 +35,9 @@ export default function UserProfileModal({
   const [favoriteGenres, setFavoriteGenres] = useState([]);
   const [isPublic, setIsPublic] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'edit'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'dna' | 'edit'
+  const [musicDna, setMusicDna] = useState(null);
+  const [isLoadingDna, setIsLoadingDna] = useState(false);
 
   // Image upload states
   const [selectedFile, setSelectedFile] = useState(null);
@@ -91,6 +93,22 @@ export default function UserProfileModal({
         }
       })
       .catch(() => {});
+
+    // Fetch user Music DNA
+    if (token) {
+      setIsLoadingDna(true);
+      fetch(getApiUrl('/api/learning-intelligence/my-dna'), {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(r => r.json())
+        .then(dnaData => {
+          if (dnaData?.success) {
+            setMusicDna(dnaData);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setIsLoadingDna(false));
+    }
   }, [isOpen, currentUser, onUserUpdated]);
 
   if (!isOpen || !currentUser) return null;
@@ -409,20 +427,134 @@ export default function UserProfileModal({
                 </button>
               )}
 
-              {/* Toggle Edit Details Mode */}
-              <div className="pt-1">
+              {/* Profile Navigation Tabs: Overview, Music DNA, Edit Display */}
+              <div className="pt-2 flex items-center justify-center gap-2">
                 <button
                   type="button"
                   onClick={() => {
                     clearPreview();
-                    setActiveTab(activeTab === 'overview' ? 'edit' : 'overview');
+                    setActiveTab('overview');
                   }}
-                  className="px-4 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-neutral-200 text-xs font-semibold border border-white/10 transition active:scale-95 cursor-pointer"
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition active:scale-95 cursor-pointer ${
+                    activeTab === 'overview'
+                      ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
+                      : 'bg-white/5 hover:bg-white/10 text-neutral-300 border border-white/10'
+                  }`}
                 >
-                  {activeTab === 'overview' ? 'Edit Display Name' : 'Done Editing'}
+                  Overview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearPreview();
+                    setActiveTab('dna');
+                  }}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition active:scale-95 cursor-pointer flex items-center gap-1 ${
+                    activeTab === 'dna'
+                      ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
+                      : 'bg-white/5 hover:bg-white/10 text-neutral-300 border border-white/10'
+                  }`}
+                >
+                  <span>🧬</span>
+                  <span>Music DNA</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearPreview();
+                    setActiveTab(activeTab === 'edit' ? 'overview' : 'edit');
+                  }}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition active:scale-95 cursor-pointer ${
+                    activeTab === 'edit'
+                      ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
+                      : 'bg-white/5 hover:bg-white/10 text-neutral-300 border border-white/10'
+                  }`}
+                >
+                  {activeTab === 'edit' ? 'Done' : 'Edit Name'}
                 </button>
               </div>
             </div>
+
+            {/* Music DNA Tab Content */}
+            {activeTab === 'dna' && (
+              <div className="space-y-3.5 p-3.5 bg-black/40 rounded-2xl border border-white/[0.08] animate-fadeIn">
+                <div className="flex items-center justify-between border-b border-neutral-800/80 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🧬</span>
+                    <div>
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider">AI Music DNA Profile</h4>
+                      <p className="text-[10px] text-neutral-400">Learned from your private listening telemetry</p>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    {musicDna ? `${Math.round((musicDna.confidenceScore || 0) * 100)}% Confidence` : 'Learning...'}
+                  </span>
+                </div>
+
+                {isLoadingDna ? (
+                  <div className="py-6 text-center text-xs text-neutral-400">
+                    <Loader2 className="w-5 h-5 animate-spin mx-auto text-amber-500 mb-2" />
+                    <span>Analyzing your musical genome...</span>
+                  </div>
+                ) : musicDna && (musicDna.topArtists?.length > 0 || musicDna.genres?.length > 0) ? (
+                  <div className="space-y-3 text-left">
+                    {/* Top Learned Genres */}
+                    {musicDna.genres?.length > 0 && (
+                      <div>
+                        <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block mb-1.5">
+                          Top Learned Genres
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {musicDna.genres.map(g => (
+                            <span key={g.name} className="px-2.5 py-1 rounded-lg bg-neutral-900 border border-neutral-800 text-[11px] text-amber-300 font-medium">
+                              {g.name} <span className="text-neutral-500 text-[9px]">({g.confidence}%)</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Top Affinity Artists */}
+                    {musicDna.topArtists?.length > 0 && (
+                      <div>
+                        <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block mb-1.5">
+                          Most Listened Artists
+                        </span>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {musicDna.topArtists.slice(0, 6).map(a => (
+                            <div key={a.name} className="p-2 rounded-xl bg-neutral-900/80 border border-neutral-800/80 flex items-center justify-between">
+                              <span className="text-xs text-neutral-200 font-medium truncate pr-1">{a.name}</span>
+                              <span className="text-[10px] font-mono text-amber-400 shrink-0">{a.playCount} plays</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Metrics grid: Peak Time, Total Hours, Replay Ratio */}
+                    <div className="grid grid-cols-3 gap-2 pt-1">
+                      <div className="p-2 rounded-xl bg-neutral-900/60 border border-neutral-800 text-center">
+                        <span className="text-[10px] text-neutral-400 block">Peak Vibe</span>
+                        <span className="text-xs font-bold text-white capitalize">{musicDna.peakTimeOfDay || 'Daytime'}</span>
+                      </div>
+                      <div className="p-2 rounded-xl bg-neutral-900/60 border border-neutral-800 text-center">
+                        <span className="text-[10px] text-neutral-400 block">Total Hours</span>
+                        <span className="text-xs font-bold text-amber-400">{musicDna.totalListeningHours || '0.00'}h</span>
+                      </div>
+                      <div className="p-2 rounded-xl bg-neutral-900/60 border border-neutral-800 text-center">
+                        <span className="text-[10px] text-neutral-400 block">Replay Affinity</span>
+                        <span className="text-xs font-bold text-emerald-400">{Math.round((musicDna.replayRatio || 0) * 100)}%</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-4 text-center text-xs text-neutral-400">
+                    <p className="font-semibold text-neutral-300">Your Music DNA is currently forming.</p>
+                    <p className="text-[11px] text-neutral-500 mt-1">Listen to a few more tracks, and our AI Learning Engine will map your taste profile!</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Edit Display Name Input when in edit mode */}
             {activeTab === 'edit' && (

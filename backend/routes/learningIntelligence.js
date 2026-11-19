@@ -68,6 +68,75 @@ router.post('/batch', authenticateToken, async (req, res) => {
 });
 
 /**
+ * 2b. GET /api/learning-intelligence/my-dna
+ * Returns authenticated user's genuine Music DNA & learned profile (Privacy-Isolated).
+ */
+router.get('/my-dna', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.userId || req.user.id;
+    const detail = await learningEngineService.getUserProfileDetail(userId);
+
+    const profile = detail?.profile;
+    const learnedGenres = (profile?.learnedGenres || []).slice(0, 6).map(g => ({
+      name: g.name,
+      score: g.score,
+      confidence: Math.round((g.confidence || 0) * 100),
+      playCount: g.playCount
+    }));
+
+    const topArtists = (profile?.favoriteArtists || []).slice(0, 8).map(a => ({
+      name: a.name,
+      score: a.score,
+      confidence: Math.round((a.confidence || 0) * 100),
+      playCount: a.playCount,
+      replayCount: a.replayCount,
+      skipCount: a.skipCount
+    }));
+
+    const languages = (profile?.preferredLanguages || []).slice(0, 5).map(l => ({
+      language: l.language,
+      score: l.score,
+      count: l.count
+    }));
+
+    const eras = (profile?.preferredEras || []).slice(0, 5).map(e => ({
+      era: e.era,
+      score: e.score,
+      count: e.count
+    }));
+
+    const moods = (profile?.moodPreferences || []).slice(0, 5).map(m => ({
+      mood: m.mood,
+      score: m.score,
+      count: m.count
+    }));
+
+    res.json({
+      success: true,
+      userId,
+      confidenceScore: profile?.confidenceScore || 0,
+      confidenceLevel: profile?.confidenceLevel || 'low',
+      totalEventsObserved: profile?.totalEventsObserved || 0,
+      lastLearnedAt: profile?.lastLearnedAt || null,
+      peakTimeOfDay: profile?.listeningTimePatterns?.peakTimeOfDay || 'undetermined',
+      totalListeningHours: profile?.listeningTimePatterns?.totalListeningHours || 0,
+      replayRatio: profile?.repeatedListening?.replayRatio || 0,
+      skipRate: profile?.skipPatterns?.skipRate || 0,
+      genres: learnedGenres,
+      topArtists,
+      languages,
+      eras,
+      moods,
+      strongSignals: profile?.signalsSummary?.strongSignals || [],
+      uncertainSignals: profile?.signalsSummary?.uncertainSignals || []
+    });
+  } catch (err) {
+    console.error('[Learning My-DNA Error]:', err.message);
+    res.status(500).json({ error: 'Failed to retrieve music DNA: ' + err.message });
+  }
+});
+
+/**
  * 3. GET /api/learning-intelligence/admin/overview
  * Returns full intelligence overview, health, metrics, and trends (Admin only).
  */

@@ -39,6 +39,7 @@ import CmsCuratedCollectionsRow from './components/Common/CmsCuratedCollectionsR
 import { getCachedCmsConfig, fetchPublicCmsConfig, applyThemeToDom, normalizeCmsConfig } from './services/cmsClient';
 import { offlineEligibilityService } from './services/offlineEligibilityService';
 import { offlineStorageService } from './services/offlineStorageService';
+import { smartQueueService } from './services/smartQueueService';
 import { getCachedAudioFromDB, isTrackCachedInDB, cacheSongToDB, extractCleanVideoId } from './utils/offlineAudioCache';
 import DownloadTrackButton from './components/Offline/DownloadTrackButton';
 import UserAvatar from './components/Common/UserAvatar';
@@ -2079,6 +2080,49 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     } catch (e) {}
   }, [isRepeat]);
 
+  const [toastMessage, setToastMessage] = useState(null);
+  const toastTimerRef = useRef(null);
+
+  const showToast = useCallback((msg, duration = 3200) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage(msg);
+    toastTimerRef.current = setTimeout(() => {
+      setToastMessage(null);
+    }, duration);
+  }, []);
+
+  // Continuous Listening (Autoplay Smart Queue when manual queue is exhausted)
+  const [isContinuousListening, setIsContinuousListening] = useState(() => {
+    try {
+      return localStorage.getItem('loopra_continuous_listening') !== 'false';
+    } catch (e) {
+      return true;
+    }
+  });
+  const isContinuousListeningRef = useRef(isContinuousListening);
+  useEffect(() => {
+    isContinuousListeningRef.current = isContinuousListening;
+  }, [isContinuousListening]);
+
+  const toggleContinuousListening = useCallback(() => {
+    setIsContinuousListening(prev => {
+      const next = !prev;
+      isContinuousListeningRef.current = next;
+      try {
+        localStorage.setItem('loopra_continuous_listening', next ? 'true' : 'false');
+      } catch (err) {
+        console.warn('[Loopra] Unable to persist continuous listening setting:', err);
+      }
+      showToast(next ? 'Continuous Autoplay enabled' : 'Continuous Autoplay disabled');
+      return next;
+    });
+  }, [showToast]);
+
+  // Playback History stack (ordered in exact sequence of played songs for precise Prev navigation)
+  const playbackHistoryStackRef = useRef([]);
+  // Error skip consecutive failure guard
+  const consecutiveErrorSkipCountRef = useRef(0);
+
   const [volume, setVolume] = useState(() => {
     try {
       const v = localStorage.getItem('afterhours_volume');
@@ -2404,6 +2448,56 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [isListeningRoomsOpen, setIsListeningRoomsOpen] = useState(false);
   const [similarSongsTrack, setSimilarSongsTrack] = useState(null);
   const currentSuggestionsRef = useRef([]);
+
+  // Smart Queue State (Autoplay pool: 5 similar + 5 discovery)
+  const [smartQueue, setSmartQueue] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('afterhours_smart_queue')) || [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const smartQueueRef = useRef(smartQueue);
+  useEffect(() => {
+    smartQueueRef.current = smartQueue;
+    try {
+      localStorage.setItem('afterhours_smart_queue', JSON.stringify(smartQueue));
+    } catch (e) {}
+  }, [smartQueue]);
+
+  const isPrefetchingSmartQueueRef = useRef(false);
+  const lastPrefetchedTrackIdRef = useRef(null);
+
+  const prefetchSmartQueue = useCallback(async (baseTrack, force = false) => {
+    if (!baseTrack) return;
+    const trackId = smartQueueService.getTrackId(baseTrack);
+    if (!trackId) return;
+    if (!force && lastPrefetchedTrackIdRef.current === trackId && smartQueueRef.current.length >= 3) {
+      return;
+    }
+    if (isPrefetchingSmartQueueRef.current) return;
+    isPrefetchingSmartQueueRef.current = true;
+    lastPrefetchedTrackIdRef.current = trackId;
+
+    try {
+      const data = await smartQueueService.fetchRecommendations(baseTrack, { forceRefresh: force });
+      const recs = data.items || [];
+      const deduplicated = smartQueueService.deduplicateAgainstContext(recs, {
+        currentSong: currentSongRef.current,
+        manualQueue: queue,
+        history: playbackHistoryStackRef.current
+      });
+
+      if (deduplicated.length > 0) {
+        setSmartQueue(deduplicated);
+        currentSuggestionsRef.current = deduplicated;
+      }
+    } catch (err) {
+      console.warn('[SmartQueue] Background prefetch notice:', err.message);
+    } finally {
+      isPrefetchingSmartQueueRef.current = false;
+    }
+  }, [queue]);
   const closeExpandedPlayer = useCallback(() => {
     setShowQueuePanel(false);
   }, []);
@@ -2547,8 +2641,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [searchError, setSearchError] = useState("");
-  const [toastMessage, setToastMessage] = useState(null);
-  const toastTimerRef = useRef(null);
   const [isServerWakingUp, setIsServerWakingUp] = useState(false);
   const [isAutoplayBlocked, setIsAutoplayBlocked] = useState(false);
 
@@ -2558,14 +2650,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       setIsServerWakingUp(waking);
     });
     return unsub;
-  }, []);
-
-  const showToast = useCallback((msg, duration = 3200) => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToastMessage(msg);
-    toastTimerRef.current = setTimeout(() => {
-      setToastMessage(null);
-    }, duration);
   }, []);
 
   // Listen for global toast events dispatched across services (e.g. voiceAgent/Brave PWA alerts)
@@ -4282,9 +4366,28 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       activeListeningDurationRef.current = 0;
       lastSyncedDurationRef.current = 0;
       hasLoggedListenForCurrentSongRef.current = false;
+
+      // Update Playback History stack (record previous song if different)
+      if (currentSongRef.current && song) {
+        const prevId = currentSongRef.current.id || currentSongRef.current.videoId;
+        const newId = song.id || song.videoId;
+        if (prevId && prevId !== newId) {
+          playbackHistoryStackRef.current = [
+            currentSongRef.current,
+            ...playbackHistoryStackRef.current.filter(s => (s.id || s.videoId) !== prevId)
+          ].slice(0, 50);
+        }
+      }
+      consecutiveErrorSkipCountRef.current = 0;
+
       setCurrentSong(song);
       trackPlaybackStartTimeRef.current = Date.now();
       hasLoggedCompletionRef.current = false;
+
+      // Trigger background prefetch of Smart Queue recommendations for continuous listening
+      if (song && !song.isRadio) {
+        prefetchSmartQueue(song).catch(() => {});
+      }
 
       if (authToken && song) {
         recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
@@ -4453,66 +4556,110 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         playSong(nextShuffleTrack);
         return;
       }
-      const randomIndex = Math.floor(Math.random() * effectiveQueue.length);
-      playSong(effectiveQueue[randomIndex]);
-      return;
+      const pool = (queue && queue.length > 0) ? queue : (smartQueue && smartQueue.length > 0 ? smartQueue : (trendingSongs || []));
+      if (pool.length > 0) {
+        const randomIndex = Math.floor(Math.random() * pool.length);
+        playSong(pool[randomIndex]);
+        return;
+      }
     }
 
     const currentId = currentSong?.id || currentSong?.videoId;
-    const currentIndex = effectiveQueue.findIndex(s => (s.id || s.videoId) === currentId);
-    if (currentIndex === -1) {
-      playSong(effectiveQueue[0]);
+
+    // Spotify-Style 3-Tier Queue Priority:
+    // Tier 1 & 2: User-added queue (Play Next and Manual Queue items)
+    if (queue && queue.length > 0) {
+      const currentIndex = queue.findIndex(s => (s.id || s.videoId) === currentId);
+      let nextIndex = currentIndex !== -1 ? currentIndex + 1 : 0;
+
+      if (nextIndex < queue.length) {
+        const nextTrack = queue[nextIndex];
+        playSong(nextTrack);
+        // Pre-warm background recommendations if remaining queue is small
+        if (queue.length - nextIndex <= 2) {
+          prefetchSmartQueue(nextTrack).catch(() => {});
+        }
+        return;
+      }
+    }
+
+    // Tier 3: Smart Queue (Continuous Listening with 5 similar + 5 discovery recommendations)
+    if (isContinuousListeningRef.current) {
+      const smartCandidates = (smartQueue && smartQueue.length > 0)
+        ? smartQueue
+        : (currentSuggestionsRef.current || []);
+
+      const nextSmartTrack = smartCandidates.find(s => {
+        const sid = s.id || s.videoId;
+        if (!sid || sid === currentId) return false;
+        if (queue.some(q => (q.id || q.videoId) === sid)) return false;
+        return true;
+      });
+
+      if (nextSmartTrack) {
+        // Dequeue from smartQueue state to advance
+        setSmartQueue(prev => prev.filter(s => (s.id || s.videoId) !== (nextSmartTrack.id || nextSmartTrack.videoId)));
+        playSong(nextSmartTrack);
+
+        // If smartQueue is getting depleted, prefetch fresh recommendations for this new track
+        if (smartCandidates.length <= 3) {
+          prefetchSmartQueue(nextSmartTrack, true).catch(() => {});
+        }
+        return;
+      }
+    }
+
+    // Repeat 'all' support
+    if (isRepeat === 'all') {
+      if (queue && queue.length > 0) {
+        playSong(queue[0]);
+        return;
+      }
+      if (playbackHistoryStackRef.current.length > 0) {
+        const oldestTrack = playbackHistoryStackRef.current[playbackHistoryStackRef.current.length - 1];
+        if (oldestTrack) {
+          playSong(oldestTrack);
+          return;
+        }
+      }
+    }
+
+    // Continuous listening fallback to trending if continuous listening is on but smart queue was empty
+    if (isContinuousListeningRef.current && trendingSongs && trendingSongs.length > 0) {
+      const nextFallback = trendingSongs.find(s => (s.id || s.videoId) !== currentId) || trendingSongs[0];
+      playSong(nextFallback);
       return;
     }
 
-    // Auto-play continuation priority:
-    // 1. If queue has items, play next queued item
-    // 2. If queue is empty or exhausted, autoplay a relevant suggested song
-    // 3. Fallback to trending pool so music never abruptly halts
-    const nextIdx = (currentIndex + 1);
-    if (nextIdx < effectiveQueue.length) {
-      playSong(effectiveQueue[nextIdx]);
-    } else {
-      // Queue is exhausted: check suggested songs list
-      const suggestedCandidates = currentSuggestionsRef.current || [];
-      const unplayedSuggested = suggestedCandidates.find(s => {
-        const sid = s.id || s.videoId;
-        return sid && sid !== currentId && !queue.some(q => (q.id || q.videoId) === sid);
-      });
-
-      if (unplayedSuggested) {
-        playSong(unplayedSuggested);
-      } else if (trendingSongs && trendingSongs.length > 0) {
-        const nextFallback = trendingSongs.find(s => (s.id || s.videoId) !== currentId) || trendingSongs[0];
-        playSong(nextFallback);
-      } else {
-        playSong(effectiveQueue[0]);
-      }
-    }
-  }, [queue, trendingSongs, isShuffle, isRepeat, currentSong, isPlaying, playSong]);
+    // If continuous listening is disabled and queue ended, stop playback cleanly
+    setIsPlaying(false);
+    try { playerRef.current?.pauseVideo?.(); } catch (e) {}
+    showToast('Queue ended');
+  }, [queue, smartQueue, trendingSongs, isShuffle, isRepeat, currentSong, isPlaying, playSong, prefetchSmartQueue, showToast]);
 
   useEffect(() => {
     handleNextSongRef.current = handleNextSong;
   }, [handleNextSong]);
 
-  // Preload next track metadata / image / stream cache at 80% mark
+  // Preload next track metadata / image / stream cache at 80% mark or when queue is low
   useEffect(() => {
     const handlePreloadEvent = () => {
-      const effectiveQueue = (queue && queue.length > 0)
-        ? queue
-        : (trendingSongs && trendingSongs.length > 0 ? trendingSongs : TRENDING_SONGS);
-      if (!effectiveQueue || effectiveQueue.length === 0) return;
-
       let nextTrack = null;
       if (isShuffle) {
         nextTrack = shuffleService.getNextTrack(currentSong?.id);
       } else {
         const currentId = currentSong?.id || currentSong?.videoId;
-        const currentIndex = effectiveQueue.findIndex(s => (s.id || s.videoId) === currentId);
-        if (currentIndex !== -1 && currentIndex + 1 < effectiveQueue.length) {
-          nextTrack = effectiveQueue[currentIndex + 1];
-        } else if (effectiveQueue.length > 0) {
-          nextTrack = effectiveQueue[0];
+        if (queue && queue.length > 0) {
+          const currentIndex = queue.findIndex(s => (s.id || s.videoId) === currentId);
+          if (currentIndex !== -1 && currentIndex + 1 < queue.length) {
+            nextTrack = queue[currentIndex + 1];
+          } else if (smartQueue && smartQueue.length > 0) {
+            nextTrack = smartQueue[0];
+          }
+        } else if (smartQueue && smartQueue.length > 0) {
+          nextTrack = smartQueue[0];
+        } else if (trendingSongs && trendingSongs.length > 0) {
+          nextTrack = trendingSongs[0];
         }
       }
 
@@ -4532,18 +4679,18 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           document.head.appendChild(link);
         }
       }
+
+      // Proactively prefetch smart queue if queue is running low
+      if (currentSong && (!smartQueue || smartQueue.length < 3)) {
+        prefetchSmartQueue(currentSong).catch(() => {});
+      }
     };
 
     window.addEventListener('loopra:preload-next-track', handlePreloadEvent);
     return () => window.removeEventListener('loopra:preload-next-track', handlePreloadEvent);
-  }, [queue, trendingSongs, isShuffle, currentSong]);
+  }, [queue, smartQueue, trendingSongs, isShuffle, currentSong, prefetchSmartQueue]);
 
   const handlePrevSong = useCallback(() => {
-    const effectiveQueue = (queue && queue.length > 0)
-      ? queue
-      : (trendingSongs && trendingSongs.length > 0 ? trendingSongs : TRENDING_SONGS);
-    if (!effectiveQueue || effectiveQueue.length === 0) return;
-
     let currentPos = currentTimeRef.current;
     if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
       try {
@@ -4554,6 +4701,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       } catch (e) {}
     }
 
+    // Spotify rule: If played > 3s, restart current track
     if (currentPos > 3) {
       if (playerRef.current && typeof playerRef.current.seekTo === 'function') {
         playerRef.current.seekTo(0, true);
@@ -4583,21 +4731,33 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         playSong(prevShuffleTrack);
         return;
       }
-      const randomIndex = Math.floor(Math.random() * effectiveQueue.length);
-      playSong(effectiveQueue[randomIndex]);
-      return;
     }
 
-    const currentId = currentSong?.id || currentSong?.videoId;
-    const currentIndex = effectiveQueue.findIndex(s => (s.id || s.videoId) === currentId);
-    if (currentIndex === -1) {
-      playSong(effectiveQueue[0]);
-      return;
+    // Spotify rule: If played <= 3s, step backwards into actual played history stack
+    if (playbackHistoryStackRef.current.length > 0) {
+      const prevSong = playbackHistoryStackRef.current.shift();
+      if (prevSong && (prevSong.id || prevSong.videoId) !== (currentSong?.id || currentSong?.videoId)) {
+        playSong(prevSong);
+        return;
+      }
     }
 
-    const prevIdx = currentIndex > 0 ? currentIndex - 1 : effectiveQueue.length - 1;
-    playSong(effectiveQueue[prevIdx]);
-  }, [queue, trendingSongs, currentSong, isPlaying, isShuffle, playSong]);
+    // Fallback: previous item in manual queue
+    if (queue && queue.length > 0) {
+      const currentId = currentSong?.id || currentSong?.videoId;
+      const currentIndex = queue.findIndex(s => (s.id || s.videoId) === currentId);
+      if (currentIndex > 0) {
+        playSong(queue[currentIndex - 1]);
+        return;
+      }
+    }
+
+    // If no previous history or queue item, restart from 0
+    if (playerRef.current && typeof playerRef.current.seekTo === 'function') {
+      playerRef.current.seekTo(0, true);
+    }
+    currentTimeRef.current = 0;
+  }, [queue, currentSong, isPlaying, isShuffle, playSong]);
 
   const toggleShuffle = useCallback(() => {
     setIsShuffle(prev => {
@@ -5179,15 +5339,27 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   return;
                 }
                 const msg = isRestricted 
-                  ? "Playback restricted by video owner (Error 150). Please select another song or radio station."
-                  : "Playback error encountered. Please tap to retry.";
-                showToast(msg, 4000);
+                  ? "Playback restricted by video owner (Error 150). Skipping to next playable track..."
+                  : "Playback error encountered. Skipping to next playable track...";
+                showToast(msg, 3000);
+                if (consecutiveErrorSkipCountRef.current < 3) {
+                  consecutiveErrorSkipCountRef.current += 1;
+                  setTimeout(() => {
+                    handleNextSongRef.current?.();
+                  }, 1200);
+                }
               })
               .catch(() => {
                 const msg = isRestricted 
-                  ? "Playback restricted by video owner (Error 150). Please select another song or radio station."
-                  : "Playback error encountered. Please tap to retry.";
-                showToast(msg, 4000);
+                  ? "Playback restricted by video owner (Error 150). Skipping to next track..."
+                  : "Playback error encountered. Skipping to next track...";
+                showToast(msg, 3000);
+                if (consecutiveErrorSkipCountRef.current < 3) {
+                  consecutiveErrorSkipCountRef.current += 1;
+                  setTimeout(() => {
+                    handleNextSongRef.current?.();
+                  }, 1200);
+                }
               });
             return;
           }
@@ -5196,16 +5368,20 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             return;
           }
 
-          const msg = isRestricted 
-            ? "Playback restricted by video owner. Please tap to retry or select another song."
-            : "Playback error encountered. Please tap to retry.";
-          showToast(msg, 4000);
-
-          // CRITICAL SAFETY GUARD:
-          // Never automatically skip to the next track on playback error.
-          // Automatic skipping on error caused infinite high-speed skipping loops (50+ songs/sec)
-          // when multiple tracks were blocked or embedding was restricted.
-          // The current song must remain selected and visible so the user can choose when to retry.
+          // Safety-guarded automatic advance on unrecoverable player errors (max 3 consecutive skips to prevent loops)
+          if (consecutiveErrorSkipCountRef.current < 3) {
+            consecutiveErrorSkipCountRef.current += 1;
+            const msg = isRestricted 
+              ? "Playback restricted by video owner. Moving to next track in queue..."
+              : "Playback error encountered. Moving to next track in queue...";
+            showToast(msg, 3000);
+            setTimeout(() => {
+              handleNextSongRef.current?.();
+            }, 1200);
+          } else {
+            const msg = "Multiple playback errors encountered. Please tap to retry or choose another track.";
+            showToast(msg, 4000);
+          }
         }
       }
     });
@@ -8519,6 +8695,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               handleImageError={handleImageError}
               trendingSongs={trendingSongs}
               popularAlbums={popularAlbums}
+              isServerWakingUp={isServerWakingUp}
               user={user}
               authToken={authToken}
               backendUrl={BACKEND_URL}
@@ -10762,6 +10939,50 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 </div>
               </div>
 
+              {/* Now Playing Mini Header in Up Next */}
+              {currentSong && (
+                <div className="mb-6 p-3 sm:p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 backdrop-blur-xl flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <img
+                      src={getCleanThumbnail(currentSong)}
+                      alt={currentSong.title}
+                      className="w-12 h-12 rounded-xl object-cover shrink-0 shadow-md border border-amber-500/30"
+                      onError={(e) => handleImageError(e, currentSong.title, currentSong.id)}
+                    />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] uppercase font-bold text-amber-400 tracking-wider">Now Playing</span>
+                        {isPlaying && (
+                          <div className="flex items-end gap-0.5 h-2.5">
+                            <span className="w-0.5 h-2.5 bg-amber-400 rounded-full animate-pulse" />
+                            <span className="w-0.5 h-1.5 bg-amber-400 rounded-full animate-[pulse_0.7s_infinite_0.2s]" />
+                            <span className="w-0.5 h-3 bg-amber-400 rounded-full animate-[pulse_0.5s_infinite_0.4s]" />
+                          </div>
+                        )}
+                      </div>
+                      <h4 className="font-semibold text-sm text-white truncate">{currentSong.title}</h4>
+                      <p className="text-xs text-neutral-400 truncate">{currentSong.artist || currentSong.channel}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={togglePlayPause}
+                    className="p-2.5 rounded-full bg-amber-500 text-neutral-950 font-bold hover:scale-105 active:scale-95 transition cursor-pointer shadow-md shadow-amber-500/20 shrink-0"
+                    title={isPlaying ? "Pause" : "Play"}
+                  >
+                    <Icon name={isPlaying ? "pause" : "play"} className="w-4 h-4 fill-current" />
+                  </button>
+                </div>
+              )}
+
+              {queue.length > 0 && (
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs uppercase font-bold text-neutral-400 tracking-wider">Next In Queue</span>
+                  <p className="text-[11px] text-neutral-500 hidden sm:flex items-center gap-1.5">
+                    <span>Reorderable</span>
+                  </p>
+                </div>
+              )}
+
               {queue.length > 0 && (
                 <p className="text-[11px] text-neutral-500 mb-3 flex items-center gap-1.5 sm:hidden">
                   <Icon name="grip" className="w-3.5 h-3.5 text-amber-500/80 shrink-0" />
@@ -10805,12 +11026,99 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 })}
 
                 {queue.length === 0 && (
-                  <div className="text-center py-12">
-                    <Icon name="music" className="w-12 h-12 text-neutral-700 mx-auto mb-4" />
-                    <p className="text-neutral-500">Your queue is empty</p>
+                  <div className="text-center py-6 border border-dashed border-neutral-800 rounded-2xl">
+                    <p className="text-neutral-400 text-xs font-medium">No manually queued songs</p>
+                    <p className="text-neutral-500 text-[11px] mt-0.5">Use "Add to Queue" or "Play Next" on any song</p>
                   </div>
                 )}
               </Reorder.Group>
+
+              {/* Autoplay & Smart Recommendations Section (Continuous Listening) */}
+              <div className="mt-8 pt-6 border-t border-neutral-800/80">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                      Smart Queue & Autoplay
+                    </h4>
+                    <p className="text-[11px] text-neutral-400">Up next based on current listening vibe</p>
+                  </div>
+                  <button
+                    onClick={toggleContinuousListening}
+                    className={`px-3 py-1 rounded-full text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 ${
+                      isContinuousListening
+                        ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                        : 'bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-neutral-200'
+                    }`}
+                    title="Toggle Continuous Autoplay"
+                  >
+                    <span>{isContinuousListening ? 'Autoplay ON' : 'Autoplay OFF'}</span>
+                  </button>
+                </div>
+
+                {isContinuousListening ? (
+                  smartQueue.length > 0 ? (
+                    <div className="space-y-2">
+                      {smartQueue.slice(0, 10).map((track, idx) => (
+                        <div
+                          key={track.id || track.videoId || idx}
+                          onClick={() => playSong(track)}
+                          className="group flex items-center justify-between gap-3 p-2.5 rounded-2xl bg-neutral-900/40 hover:bg-neutral-800/60 border border-neutral-800/60 hover:border-amber-500/30 transition cursor-pointer"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="relative w-10 h-10 rounded-xl overflow-hidden shrink-0 shadow-sm">
+                              <img
+                                src={getCleanThumbnail(track)}
+                                alt={track.title}
+                                className="w-full h-full object-cover"
+                                onError={(e) => handleImageError(e, track.title, track.id)}
+                              />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                                <Icon name="play" className="w-4 h-4 text-amber-400" />
+                              </div>
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <h5 className="font-medium text-xs text-white group-hover:text-amber-300 transition truncate">
+                                  {track.title}
+                                </h5>
+                                {track._recommendationType === 'discover' && (
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0 font-medium">Discover</span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-neutral-400 truncate">{track.artist || track.channel}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={(e) => playNext(track, e)}
+                              className="p-1.5 rounded-lg text-neutral-400 hover:text-amber-400 hover:bg-neutral-800 transition"
+                              title="Play Next"
+                            >
+                              <Icon name="skipNext" className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => addToQueue(track, e)}
+                              className="p-1.5 rounded-lg text-neutral-400 hover:text-amber-400 hover:bg-neutral-800 transition"
+                              title="Add to Queue"
+                            >
+                              <Icon name="plus" className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-4 text-center text-xs text-neutral-500">
+                      Generating tailored smart recommendations...
+                    </div>
+                  )
+                ) : (
+                  <div className="py-4 text-center text-xs text-neutral-500 bg-neutral-900/30 rounded-xl border border-neutral-800/50">
+                    Continuous listening is disabled. Enable Autoplay above to keep the music flowing.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -11149,6 +11457,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             return next;
           });
         }}
+        isContinuousListening={isContinuousListening}
+        onToggleContinuousListening={toggleContinuousListening}
         onSetSleepTimer={(mins) => {
           setSleepTimerRemaining(mins * 60);
           showToast(`Sleep timer set for ${mins} minutes`);
