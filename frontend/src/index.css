@@ -153,6 +153,27 @@ body {
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
+
+  /* Safe Area Insets (Edge-to-Edge Android / TWA / Notch / Standalone PWA) */
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+}
+
+/* In Standalone / TWA / Installed PWA mode on mobile devices where WebView draws behind transparent status bar */
+@media all and (display-mode: standalone) {
+  :root {
+    --safe-area-top: max(env(safe-area-inset-top, 0px), 24px);
+    --safe-area-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
+  }
+}
+
+/* When Loopra Android App / TWA class is applied to html */
+html.loopra-standalone,
+html.loopra-android-app {
+  --safe-area-top: max(env(safe-area-inset-top, 0px), 28px);
+  --safe-area-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
 }
 
 html, body {

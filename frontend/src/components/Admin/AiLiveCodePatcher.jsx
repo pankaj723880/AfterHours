@@ -26,7 +26,8 @@ import {
   GitPullRequest,
   GitCommit,
   Check,
-  Play
+  Play,
+  Search
 } from 'lucide-react';
 import { formatAdminTimestamp } from '../../utils/adminDateUtils';
 

@@ -2544,6 +2544,42 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     return typeof window !== 'undefined' ? window.innerWidth < 768 : false;
   });
 
+  // Standalone / Android APK environment detection to ensure system status bar clearance
+  const [isStandaloneApp, setIsStandaloneApp] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return Boolean(
+      window.LoopraAndroid ||
+      window.navigator?.standalone ||
+      (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+      (navigator?.userAgent && navigator.userAgent.includes('LoopraNativeAndroid'))
+    );
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const checkStandalone = () => {
+      const isStandalone = Boolean(
+        window.LoopraAndroid ||
+        window.navigator?.standalone ||
+        (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+        (navigator?.userAgent && navigator.userAgent.includes('LoopraNativeAndroid'))
+      );
+      setIsStandaloneApp(isStandalone);
+      if (isStandalone) {
+        document.documentElement.classList.add('loopra-standalone');
+        if (window.LoopraAndroid || (navigator?.userAgent && navigator.userAgent.includes('LoopraNativeAndroid'))) {
+          document.documentElement.classList.add('loopra-android-app');
+        }
+      }
+    };
+    checkStandalone();
+    const media = window.matchMedia?.('(display-mode: standalone)');
+    media?.addEventListener?.('change', checkStandalone);
+    return () => {
+      media?.removeEventListener?.('change', checkStandalone);
+    };
+  }, []);
+
   useEffect(() => {
     const handleResize = () => {
       setIsMobileScreen(window.innerWidth < 768);
@@ -7644,8 +7680,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         {/* Unified Top Navbar for both Mobile and Desktop (hidden on DJ Club & Relax Mode where full-screen dedicated navbar is active) */}
         <header
           style={{
-            paddingTop: 'env(safe-area-inset-top, 0px)',
-            height: 'calc(3.5rem + env(safe-area-inset-top, 0px))'
+            paddingTop: isStandaloneApp
+              ? 'max(var(--safe-area-top, 0px), env(safe-area-inset-top, 0px), 28px)'
+              : 'max(var(--safe-area-top, 0px), env(safe-area-inset-top, 0px))',
+            height: isStandaloneApp
+              ? 'calc(3.5rem + max(var(--safe-area-top, 0px), env(safe-area-inset-top, 0px), 28px))'
+              : 'calc(3.5rem + max(var(--safe-area-top, 0px), env(safe-area-inset-top, 0px)))'
           }}
           className={`${activeTab === 'dj-club' || activeTab === 'relax' ? 'hidden' : 'sticky top-0 z-50 bg-neutral-900/95 backdrop-blur-xl border-b border-neutral-800/80 px-2.5 sm:px-4 md:px-8 flex items-center justify-between shrink-0 w-full box-border select-none'}`}
         >
@@ -7883,8 +7923,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
           <aside 
             style={{
-              paddingTop: isMobileScreen ? 'max(env(safe-area-inset-top, 0px), 16px)' : undefined,
-              paddingBottom: isMobileScreen ? 'max(env(safe-area-inset-bottom, 0px), 16px)' : undefined,
+              paddingTop: isMobileScreen ? 'max(var(--safe-area-top, 0px), env(safe-area-inset-top, 0px), 24px)' : undefined,
+              paddingBottom: isMobileScreen ? 'max(var(--safe-area-bottom, 0px), env(safe-area-inset-bottom, 0px), 16px)' : undefined,
             }}
             className={`h-full flex flex-col shrink-0 transition-transform duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform overflow-y-auto overflow-x-hidden md:sticky md:top-0 md:h-full ${
               activeTab === 'dj-club' || activeTab === 'relax'
@@ -8242,8 +8282,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
           <aside 
             style={{
-              paddingTop: isMobileScreen ? 'max(env(safe-area-inset-top, 0px), 16px)' : undefined,
-              paddingBottom: isMobileScreen ? 'max(env(safe-area-inset-bottom, 0px), 16px)' : undefined,
+              paddingTop: isMobileScreen ? 'max(var(--safe-area-top, 0px), env(safe-area-inset-top, 0px), 24px)' : undefined,
+              paddingBottom: isMobileScreen ? 'max(var(--safe-area-bottom, 0px), env(safe-area-inset-bottom, 0px), 16px)' : undefined,
             }}
             className={`h-full flex flex-col shrink-0 transition-transform duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform overflow-y-auto overflow-x-hidden md:sticky md:top-0 md:h-full ${
               activeTab === 'dj-club' || activeTab === 'relax'
@@ -10250,7 +10290,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           aria-label="Audio player mini bar"
           onClick={() => handleOpenExpandedPlayer('player')}
           className={`fixed md:relative z-40 transition-all duration-300 ease-in-out select-none cursor-pointer ${showQueuePanel ? 'hidden' : 'block'}
-            bottom-[calc(3.75rem+max(0.5rem,env(safe-area-inset-bottom)))] left-1/2 -translate-x-1/2
+            bottom-[calc(3.75rem+max(0.5rem,var(--safe-area-bottom,0px),env(safe-area-inset-bottom,0px)))] left-1/2 -translate-x-1/2
             rounded-2xl border border-amber-500/30 hover:border-amber-500/50 bg-neutral-950/95 backdrop-blur-2xl
             shadow-[0_10px_35px_rgba(0,0,0,0.8),0_0_20px_rgba(var(--accent-rgb,245,158,11),0.06)]
             py-2 px-3
@@ -10562,7 +10602,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
       {showQueuePanel && !isPipActive && (
         <div 
-          className="fixed inset-0 z-[120] bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn pb-[env(safe-area-inset-bottom,0px)]"
+          style={{
+            paddingTop: isStandaloneApp
+              ? 'max(var(--safe-area-top, 0px), env(safe-area-inset-top, 0px), 24px)'
+              : 'max(var(--safe-area-top, 0px), env(safe-area-inset-top, 0px))',
+            paddingBottom: 'max(var(--safe-area-bottom, 0px), env(safe-area-inset-bottom, 0px))'
+          }}
+          className="fixed inset-0 z-[120] bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn"
         >
           {/* Mobile Tab Header with Segmented Switcher & Close Button */}
           <div className="md:hidden flex items-center justify-between px-3 py-1.5 border-b border-neutral-800/80 bg-neutral-900/95 backdrop-blur-xl shrink-0 z-50">
