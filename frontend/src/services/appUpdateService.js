@@ -138,66 +138,83 @@ export async function fetchPublishedAppVersion(backendUrl = '') {
 
 /**
  * Initiates APK download.
- * In Native Android App: Downloads directly in-app, verifies integrity & package signatures,
- * and launches Android's PackageInstaller directly (NO CHROME / EXTERNAL BROWSER).
- * In Web Browser: Downloads the file via standard direct link.
+ * In Native Android App: Invokes the native background download & package installer
+ * via `window.LoopraAndroid.downloadAndInstallApk()`.
+ * Fallback: Opens the direct APK download URL (https://loopra1.vercel.app/Loopra.apk?v=<versionCode>)
+ * in Chrome / default external browser so that the user's browser reliably handles the download.
  */
 export function triggerApkDownload(downloadUrl, manifest = null) {
-  const targetUrl = downloadUrl || manifest?.directApkUrl || manifest?.downloadUrl || 'https://loopra1.vercel.app/Loopra.apk';
+  const publishedCode = manifest?.versionCode || 21;
+  const rawTargetUrl = downloadUrl || manifest?.directApkUrl || manifest?.downloadUrl || 'https://loopra1.vercel.app/Loopra.apk';
 
-  // 1. If running inside native Android App:
+  // 1. If running inside native Android App with downloadAndInstallApk bridge available:
   if (typeof window !== 'undefined' && window.LoopraAndroid) {
-    // Prefer enhanced downloadAndInstallApk with SHA256 & VersionCode verification
     if (typeof window.LoopraAndroid.downloadAndInstallApk === 'function') {
       try {
         const expectedSha = manifest?.sha256 || '';
         const expectedCode = manifest?.versionCode ? parseInt(manifest.versionCode, 10) : 0;
-        window.LoopraAndroid.downloadAndInstallApk(targetUrl, expectedSha, expectedCode);
+        window.LoopraAndroid.downloadAndInstallApk(rawTargetUrl, expectedSha, expectedCode);
         return true;
       } catch (err) {
-        console.warn('[appUpdateService] downloadAndInstallApk failed:', err.message);
+        console.warn('[appUpdateService] downloadAndInstallApk failed, falling back to browser:', err.message);
       }
-    }
-
-    // Fallback to native downloadApk
-    if (typeof window.LoopraAndroid.downloadApk === 'function') {
+    } else if (typeof window.LoopraAndroid.downloadApk === 'function') {
       try {
-        window.LoopraAndroid.downloadApk(targetUrl);
+        window.LoopraAndroid.downloadApk(rawTargetUrl);
         return true;
       } catch (err) {
-        console.warn('[appUpdateService] Native downloadApk failed:', err.message);
+        console.warn('[appUpdateService] downloadApk failed, falling back to browser:', err.message);
       }
     }
   }
 
-  // 2. If running inside Android TWA container without direct window.LoopraAndroid bridge,
-  // trigger native background download and installer via custom native URI
-  if (typeof window !== 'undefined' && isRunningInAndroidApp()) {
+  // Ensure targetUrl for browser download points to https://loopra1.vercel.app/Loopra.apk?v=<versionCode>
+  let browserUrl = rawTargetUrl;
+  try {
+    const urlObj = new URL(browserUrl, typeof window !== 'undefined' ? (window.location?.origin || 'https://loopra1.vercel.app') : 'https://loopra1.vercel.app');
+    if (!urlObj.searchParams.has('v')) {
+      urlObj.searchParams.set('v', String(publishedCode));
+    }
+    browserUrl = urlObj.toString();
+  } catch (_) {
+    if (!browserUrl.includes('?v=')) {
+      browserUrl += (browserUrl.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(publishedCode);
+    }
+  }
+
+  // 2. If running inside native Android WebView with LoopraAndroid bridge providing openInBrowser
+  if (typeof window !== 'undefined' && window.LoopraAndroid && typeof window.LoopraAndroid.openInBrowser === 'function') {
     try {
-      const expectedSha = manifest?.sha256 || '';
-      const expectedCode = manifest?.versionCode ? parseInt(manifest.versionCode, 10) : 0;
-      const intentUrl = `web+loopra://update?url=${encodeURIComponent(targetUrl)}&sha256=${encodeURIComponent(expectedSha)}&versionCode=${expectedCode}`;
-      window.location.href = intentUrl;
+      window.LoopraAndroid.openInBrowser(browserUrl);
       return true;
     } catch (err) {
-      console.warn('[appUpdateService] Custom intent trigger failed:', err.message);
+      console.warn('[appUpdateService] LoopraAndroid.openInBrowser failed:', err.message);
     }
   }
 
-  // 2. Web browser: direct file download trigger
+  // 3. Open directly in external browser / new tab as reliable fallback
   if (typeof window !== 'undefined') {
     try {
-      const link = document.createElement('a');
-      link.href = targetUrl;
-      link.download = 'Loopra.apk';
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      return true;
-    } catch (_) {
-      window.location.href = targetUrl;
+      const opened = window.open(browserUrl, '_blank', 'noopener,noreferrer');
+      if (opened) return true;
+    } catch (_) {}
+
+    try {
+      if (typeof document !== 'undefined') {
+        const link = document.createElement('a');
+        link.href = browserUrl;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.download = 'Loopra.apk';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        return true;
+      }
+    } catch (_) {}
+
+    if (window.location) {
+      window.location.href = browserUrl;
       return true;
     }
   }

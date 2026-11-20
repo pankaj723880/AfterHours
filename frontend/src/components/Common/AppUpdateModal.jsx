@@ -38,16 +38,17 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
   const handleDownload = () => {
     try {
       setDownloadStatus('downloading');
-      setDownloadProgress(0);
+      setDownloadProgress(10);
       setStatusMessage('Starting download...');
       triggerApkDownload(downloadUrl, manifest);
       if (showToast) {
-        showToast('Starting Loopra APK download and verification...', 'success');
+        showToast('Starting Loopra APK download...', 'success');
       }
     } catch (err) {
       if (showToast) {
-        showToast('Download started in background browser', 'info');
+        showToast('Opening download in browser...', 'info');
       }
+      onClose();
     }
   };
 
