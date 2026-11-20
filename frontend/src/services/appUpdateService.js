@@ -159,6 +159,16 @@ export function triggerApkDownload(downloadUrl, manifest = null) {
 
   // 1. If running inside native Android WebView with LoopraAndroid bridge:
   if (typeof window !== 'undefined' && window.LoopraAndroid) {
+    if (typeof window.LoopraAndroid.downloadAndInstallApk === 'function') {
+      try {
+        const expectedSha = manifest?.sha256 || '';
+        const expectedCode = manifest?.versionCode ? parseInt(manifest.versionCode, 10) : publishedCode;
+        window.LoopraAndroid.downloadAndInstallApk(rawTargetUrl, expectedSha, expectedCode);
+        return true;
+      } catch (err) {
+        console.warn('[appUpdateService] LoopraAndroid.downloadAndInstallApk failed:', err.message);
+      }
+    }
     if (typeof window.LoopraAndroid.openInBrowser === 'function') {
       try {
         window.LoopraAndroid.openInBrowser(browserUrl);
