@@ -1710,22 +1710,40 @@ export default function App() {
       })
       .catch(() => {});
 
-    // Automatic In-App Android APK Update Detection
-    checkForAppUpdate(BACKEND_URL)
-      .then((updateResult) => {
-        if (!isMounted) return;
-        if (updateResult && updateResult.shouldPrompt) {
-          setPendingAppUpdate(updateResult);
-        }
-      })
-      .catch((err) => {
-        console.warn('[App] Update check notice:', err?.message);
+    // Automatic In-App Android APK Update Detection (with bridge settlement delay)
+    const updateCheckTimer = setTimeout(() => {
+      checkForAppUpdate(BACKEND_URL)
+        .then((updateResult) => {
+          if (!isMounted) return;
+          if (updateResult && updateResult.shouldPrompt) {
+            setPendingAppUpdate(updateResult);
+          }
+        })
+        .catch((err) => {
+          console.warn('[App] Update check notice:', err?.message);
+        });
+    }, 1200);
+
+    // Listen for native Android container update signals
+    const handleNativeUpdateAvailable = (event) => {
+      if (!isMounted || !event?.detail) return;
+      const detail = event.detail;
+      setPendingAppUpdate({
+        shouldPrompt: true,
+        installedVersion: detail.installedVersion || '2.1',
+        latestVersion: detail.latestVersion || '2.2',
+        downloadUrl: detail.downloadUrl,
+        manifest: detail
       });
+    };
+    window.addEventListener('loopra-native-update-available', handleNativeUpdateAvailable);
 
     return () => {
       isMounted = false;
       clearTimeout(initTimer);
+      clearTimeout(updateCheckTimer);
       socket.off('cms_config_updated', handleConfigUpdate);
+      window.removeEventListener('loopra-native-update-available', handleNativeUpdateAvailable);
     };
   }, []);
 

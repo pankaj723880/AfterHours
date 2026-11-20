@@ -43,11 +43,11 @@ export function isRunningInAndroidApp() {
 /**
  * Retrieves the currently installed native Android app version:
  * 1. Checks native bridge `window.LoopraAndroid.getAppVersionName()`
- * 2. Fallbacks to reading cached version or defaults to '2.1'
+ * 2. Does NOT return fake fallback 2.1/21 when detection fails.
  */
 export function getInstalledAppVersion() {
   if (typeof window === 'undefined') {
-    return { versionName: '2.1', versionCode: 21, isNative: false };
+    return { versionName: null, versionCode: 0, isNative: false };
   }
 
   if (window.LoopraAndroid && typeof window.LoopraAndroid.getAppVersionName === 'function') {
@@ -55,15 +55,17 @@ export function getInstalledAppVersion() {
       const vName = window.LoopraAndroid.getAppVersionName();
       const vCode = typeof window.LoopraAndroid.getAppVersionCode === 'function'
         ? window.LoopraAndroid.getAppVersionCode()
-        : 21;
-      return { versionName: vName || '2.1', versionCode: vCode || 21, isNative: true };
+        : 0;
+      if (vName && vCode > 0) {
+        return { versionName: vName, versionCode: vCode, isNative: true };
+      }
     } catch (err) {
       console.warn('[appUpdateService] Native version read error:', err.message);
     }
   }
 
   const isAndroid = isRunningInAndroidApp();
-  return { versionName: '2.1', versionCode: 21, isNative: isAndroid };
+  return { versionName: null, versionCode: 0, isNative: isAndroid };
 }
 
 /**
@@ -188,6 +190,11 @@ export async function checkForAppUpdate(backendUrl = '') {
 
   if (!published) {
     return { shouldPrompt: false, reason: 'MANIFEST_UNAVAILABLE' };
+  }
+
+  // If installed version detection failed completely, do NOT prompt false update
+  if (!installed.versionName || installed.versionCode === 0) {
+    return { shouldPrompt: false, reason: 'INSTALLED_VERSION_UNKNOWN', published, installed };
   }
 
   // Check if this release was dismissed during the current session

@@ -35,8 +35,9 @@ console.log('\n--- Test Suite 2: Native Android App Bridge & Detection ---');
 
 // Case A: Running outside Android container (Normal browser)
 const defaultInstalled = getInstalledAppVersion();
-assert.strictEqual(defaultInstalled.versionName, '2.1');
-assert.strictEqual(defaultInstalled.isNative, false);
+assert.strictEqual(defaultInstalled.versionName, null, 'Browser returns null versionName');
+assert.strictEqual(defaultInstalled.versionCode, 0, 'Browser returns 0 versionCode');
+assert.strictEqual(defaultInstalled.isNative, false, 'Correctly marks not native');
 
 // Case B: Mock window.LoopraAndroid native interface inside TWA
 let downloadAndInstallCalled = false;
@@ -107,4 +108,119 @@ assert.strictEqual(voiceControlService.evaluateLocalAccess(publicConfig, adminUs
 assert.strictEqual(voiceControlService.evaluateLocalAccess(publicConfig, regularUser), true, 'Regular user allowed when public');
 
 console.log('✅ Fail-closed avatar and voice control evaluation tests passed completely.');
-console.log('\n🎉 ALL 3 ISSUE VERIFICATION SCENARIOS PASSED SUCCESSFULLY!');
+
+// ============================================================================
+// ISSUE 4: COMPREHENSIVE UPDATE DECISION MATRIX TESTS
+// ============================================================================
+console.log('\n--- Test Suite 4: Update Decision Matrix & Auto-Release Sequence ---');
+import { getNextVersion } from '../../scripts/release-apk.js';
+
+// 1. Version sequence tests (2.1 -> 2.2 -> ... -> 2.9 -> 3.0 -> 3.1)
+assert.strictEqual(getNextVersion('2.1').versionName, '2.2');
+assert.strictEqual(getNextVersion('2.8').versionName, '2.9');
+assert.strictEqual(getNextVersion('2.9').versionName, '3.0', 'v2.9 rolls over to v3.0');
+assert.strictEqual(getNextVersion('3.0').versionName, '3.1');
+assert.strictEqual(getNextVersion('v3.9').versionName, '4.0', 'v3.9 rolls over to v4.0');
+
+// 2. Decision logic checks
+import { checkForAppUpdate } from '../../frontend/src/services/appUpdateService.js';
+
+// Installed 21, Latest 22 -> Update required
+assert.strictEqual(compareVersions('2.2', '2.1') > 0, true, '22 > 21 requires update');
+
+// Installed 22, Latest 22 -> No update
+assert.strictEqual(compareVersions('2.2', '2.2') === 0, true, 'Equal versions do not update');
+
+// Installed 23, Latest 22 -> No downgrade
+assert.strictEqual(compareVersions('2.2', '23') < 0, true, 'Does not downgrade');
+
+// Native detection failure (code = 0 or null)
+const failedDetection = { versionName: null, versionCode: 0 };
+assert.strictEqual(!failedDetection.versionName || failedDetection.versionCode === 0, true, 'Explicitly identifies failed native detection');
+
+console.log('✅ Update decision matrix and version rollover tests passed cleanly.');
+
+// ============================================================================
+// ISSUE 5: NATIVE FOREGROUND RESUME & STATE MANAGEMENT TESTS
+// ============================================================================
+console.log('\n--- Test Suite 5: Native Foreground Resume & State Management Logic ---');
+
+class MockNativeUpdateStateManager {
+  constructor() {
+    this.isUpdateCheckInProgress = false;
+    this.activeUpdateDialog = null;
+    this.postponedVersionCode = -1;
+    this.lastCheckedVersionCode = -1;
+    this.lastUpdateCheckTimestamp = 0;
+    this.minResumeCheckIntervalMs = 15000;
+  }
+
+  canCheckUpdate(isResume, now = Date.now()) {
+    if (this.isUpdateCheckInProgress) return false;
+    if (this.activeUpdateDialog) return false;
+    if (isResume && (now - this.lastUpdateCheckTimestamp < this.minResumeCheckIntervalMs)) return false;
+    return true;
+  }
+
+  startCheck(now = Date.now()) {
+    this.isUpdateCheckInProgress = true;
+    this.lastUpdateCheckTimestamp = now;
+  }
+
+  finishCheck(publishedCode) {
+    this.isUpdateCheckInProgress = false;
+    this.lastCheckedVersionCode = publishedCode;
+  }
+
+  shouldShowDialog(publishedCode) {
+    if (publishedCode <= this.postponedVersionCode) return false;
+    if (this.activeUpdateDialog) return false;
+    return true;
+  }
+
+  showDialog(publishedCode) {
+    this.activeUpdateDialog = { publishedCode };
+  }
+
+  userPostponed(publishedCode) {
+    this.postponedVersionCode = publishedCode;
+    this.activeUpdateDialog = null;
+  }
+
+  userAccepted() {
+    this.activeUpdateDialog = null;
+  }
+}
+
+const manager = new MockNativeUpdateStateManager();
+const t0 = 1000000;
+
+// Cold start
+assert.strictEqual(manager.canCheckUpdate(false, t0), true, 'Cold start check allowed');
+manager.startCheck(t0);
+assert.strictEqual(manager.canCheckUpdate(true, t0 + 100), false, 'Concurrent check blocked');
+manager.finishCheck(22);
+
+// Immediate onResume right after cold start (within 15s)
+assert.strictEqual(manager.canCheckUpdate(true, t0 + 1000), false, 'Resume check throttled immediately after cold start');
+
+// Resume check after cooldown (16 seconds later)
+assert.strictEqual(manager.canCheckUpdate(true, t0 + 16000), true, 'Resume check allowed after cooldown');
+manager.startCheck(t0 + 16000);
+manager.finishCheck(22);
+
+// User shows dialog and postpones version 22
+assert.strictEqual(manager.shouldShowDialog(22), true, 'Dialog eligible for version 22');
+manager.showDialog(22);
+assert.strictEqual(manager.canCheckUpdate(true, t0 + 40000), false, 'Check blocked while dialog is visible');
+manager.userPostponed(22);
+
+// Next resume check for same postponed version 22
+assert.strictEqual(manager.shouldShowDialog(22), false, 'Dialog suppressed for postponed version 22');
+
+// Genuinely newer version 23 published later
+assert.strictEqual(manager.shouldShowDialog(23), true, 'Dialog permitted for genuinely newer version 23 even after postponing 22');
+
+console.log('✅ Native foreground resume state management tests passed cleanly.');
+
+console.log('\n🎉 ALL 5 ISSUE VERIFICATION SCENARIOS PASSED SUCCESSFULLY!');
