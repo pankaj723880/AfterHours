@@ -108,7 +108,9 @@ router.get('/curated/:slug', async (req, res) => {
 // ==========================================
 router.get(['/app-version', '/version'], async (req, res) => {
   try {
-    res.set('Cache-Control', 'public, max-age=60, s-maxage=60, must-revalidate');
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
     const versionPath = path.resolve(__dirname, '../../version.json');
     if (fs.existsSync(versionPath)) {
       const versionData = JSON.parse(fs.readFileSync(versionPath, 'utf8'));
@@ -118,11 +120,13 @@ router.get(['/app-version', '/version'], async (req, res) => {
     res.json({
       versionName: '2.1',
       versionCode: 21,
-      downloadUrl: 'https://loopra1.vercel.app/downloads/loopra.apk',
-      directApkUrl: 'https://loopra1.vercel.app/Loopra.apk',
+      downloadUrl: 'https://loopra1.vercel.app/Loopra.apk?v=21&sha=26efc5e6',
+      directApkUrl: 'https://loopra1.vercel.app/Loopra.apk?v=21&sha=26efc5e6',
       releaseNotes: 'Official Loopra release',
       releaseDate: new Date().toISOString(),
-      minSdkVersion: 24
+      minSdkVersion: 24,
+      fileSize: 5744624,
+      sha256: '26efc5e600dd26a1ef75a85e1981e350db0f7337b8c20ed09b1eb3ebce1b387b'
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to read app version: ' + err.message });

@@ -45,7 +45,43 @@ export function getNextVersion(currentVersion) {
 
 export function calculateSha256(filePath) {
   const buffer = fs.readFileSync(filePath);
-  return crypto.createHash('sha256').update(buffer).digest('hex');
+  return crypto.createHash('sha256').update(buffer).digest('hex').toLowerCase();
+}
+
+/**
+ * Syncs the SHA-256 and byte size of any existing or updated frontend/public/Loopra.apk
+ * into version.json, frontend/public/version.json, and returns the updated manifest.
+ */
+export function syncApkChecksum(apkPath = null) {
+  const targetApk = apkPath || path.join(ROOT_DIR, 'frontend', 'public', 'Loopra.apk');
+  const versionFile = path.join(ROOT_DIR, 'version.json');
+  const publicVersionFile = path.join(ROOT_DIR, 'frontend', 'public', 'version.json');
+
+  if (!fs.existsSync(targetApk)) {
+    throw new Error(`Target APK file does not exist at ${targetApk}`);
+  }
+
+  const sha256 = calculateSha256(targetApk);
+  const fileSize = fs.statSync(targetApk).size;
+  const shortSha = sha256.substring(0, 8);
+
+  const manifest = fs.existsSync(versionFile)
+    ? JSON.parse(fs.readFileSync(versionFile, 'utf8'))
+    : { versionName: '2.1', versionCode: 21 };
+
+  const vCode = manifest.versionCode || 21;
+  const downloadUrl = `https://loopra1.vercel.app/Loopra.apk?v=${vCode}&sha=${shortSha}`;
+
+  manifest.sha256 = sha256;
+  manifest.fileSize = fileSize;
+  manifest.downloadUrl = downloadUrl;
+  manifest.directApkUrl = downloadUrl;
+
+  fs.writeFileSync(versionFile, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+  fs.writeFileSync(publicVersionFile, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+
+  console.log(`✅ Synced APK checksum: SHA-256=${sha256} (${fileSize} bytes) -> version.json`);
+  return manifest;
 }
 
 export function runRelease(options = {}) {
@@ -140,11 +176,14 @@ export function runRelease(options = {}) {
     // 7. Atomically copy artifact and update manifest
     fs.copyFileSync(signedApkPath, publicApkPath);
 
+    const shortSha = sha256.substring(0, 8);
+    const downloadUrl = `https://loopra1.vercel.app/Loopra.apk?v=${nextVerCode}&sha=${shortSha}`;
+
     const updatedManifest = {
       versionName: nextVerName,
       versionCode: nextVerCode,
-      downloadUrl: 'https://loopra1.vercel.app/downloads/loopra.apk',
-      directApkUrl: 'https://loopra1.vercel.app/Loopra.apk',
+      downloadUrl: downloadUrl,
+      directApkUrl: downloadUrl,
       releaseNotes: `Official Loopra Android Release ${nextVerObj.versionString} with automatic update detection and seamless installer.`,
       releaseDate: new Date().toISOString(),
       minSdkVersion: 24,
@@ -169,8 +208,13 @@ export function runRelease(options = {}) {
 // Allow CLI execution if called directly
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const isDryRun = process.argv.includes('--dry-run');
+  const isSyncOnly = process.argv.includes('--sync-only');
   try {
-    runRelease({ dryRun: isDryRun });
+    if (isSyncOnly) {
+      syncApkChecksum();
+    } else {
+      runRelease({ dryRun: isDryRun });
+    }
   } catch (e) {
     console.error('Fatal release error:', e.message);
     process.exit(1);
