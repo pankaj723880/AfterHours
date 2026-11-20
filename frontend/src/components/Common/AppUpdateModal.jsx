@@ -35,11 +35,14 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
 
   const { installedVersion = '1', latestVersion = '2.1', downloadUrl, releaseNotes, manifest } = updateInfo;
 
+  const publishedCode = manifest?.versionCode || 21;
+  const directApkUrl = `https://loopra1.vercel.app/Loopra.apk?v=${publishedCode}&t=${Date.now()}`;
+
   const handleDownload = () => {
     try {
       setDownloadStatus('downloading');
-      setDownloadProgress(10);
-      setStatusMessage('Starting download...');
+      setDownloadProgress(20);
+      setStatusMessage('Starting download in browser...');
       triggerApkDownload(downloadUrl, manifest);
       if (showToast) {
         showToast('Starting Loopra APK download...', 'success');
@@ -48,7 +51,6 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
       if (showToast) {
         showToast('Opening download in browser...', 'info');
       }
-      onClose();
     }
   };
 
@@ -149,9 +151,23 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
               </div>
 
               {statusMessage && (
-                <p className="text-[11px] text-neutral-400 truncate">
-                  {statusMessage}
-                </p>
+                <div className="space-y-1">
+                  <p className="text-[11px] text-neutral-300 truncate">
+                    {statusMessage}
+                  </p>
+                  <p className="text-[10px] text-neutral-400">
+                    If download does not begin automatically,{' '}
+                    <a
+                      href={directApkUrl}
+                      download="Loopra.apk"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-amber-400 hover:text-amber-300 underline font-semibold"
+                    >
+                      tap here to download directly
+                    </a>.
+                  </p>
+                </div>
               )}
             </div>
           )}

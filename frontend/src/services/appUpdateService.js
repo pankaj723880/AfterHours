@@ -168,18 +168,17 @@ export function triggerApkDownload(downloadUrl, manifest = null) {
     }
   }
 
-  // Ensure targetUrl for browser download points to https://loopra1.vercel.app/Loopra.apk?v=<versionCode>
+  // Ensure targetUrl for browser download points to https://loopra1.vercel.app/Loopra.apk?v=<versionCode>&t=<timestamp>
   let browserUrl = rawTargetUrl;
+  const timestamp = Date.now();
   try {
     const urlObj = new URL(browserUrl, typeof window !== 'undefined' ? (window.location?.origin || 'https://loopra1.vercel.app') : 'https://loopra1.vercel.app');
-    if (!urlObj.searchParams.has('v')) {
-      urlObj.searchParams.set('v', String(publishedCode));
-    }
+    urlObj.searchParams.set('v', String(publishedCode));
+    urlObj.searchParams.set('t', String(timestamp));
     browserUrl = urlObj.toString();
   } catch (_) {
-    if (!browserUrl.includes('?v=')) {
-      browserUrl += (browserUrl.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(publishedCode);
-    }
+    const sep = browserUrl.includes('?') ? '&' : '?';
+    browserUrl += `${sep}v=${encodeURIComponent(publishedCode)}&t=${timestamp}`;
   }
 
   // 2. If running inside native Android WebView with LoopraAndroid bridge providing openInBrowser
