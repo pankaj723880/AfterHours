@@ -39,11 +39,20 @@ assert.strictEqual(defaultInstalled.versionName, '2.1');
 assert.strictEqual(defaultInstalled.isNative, false);
 
 // Case B: Mock window.LoopraAndroid native interface inside TWA
+let downloadAndInstallCalled = false;
+let downloadApkCalled = false;
 global.window = {
   LoopraAndroid: {
     getAppVersionName: () => '2.1',
     getAppVersionCode: () => 21,
-    downloadApk: (url) => { urlCalled = url; }
+    canRequestPackageInstalls: () => true,
+    downloadAndInstallApk: (url, sha, code) => {
+      downloadAndInstallCalled = true;
+      assert.strictEqual(url, 'https://loopra1.vercel.app/downloads/loopra.apk');
+      assert.strictEqual(sha, 'mock-sha-256');
+      assert.strictEqual(code, 22);
+    },
+    downloadApk: (url) => { downloadApkCalled = true; }
   }
 };
 
@@ -53,7 +62,15 @@ assert.strictEqual(nativeInstalled.versionName, '2.1', 'Bridge reads native vers
 assert.strictEqual(nativeInstalled.versionCode, 21, 'Bridge reads native versionCode');
 assert.strictEqual(nativeInstalled.isNative, true, 'Correctly flags native Android container');
 
-console.log('✅ Native Android bridge methods (getAppVersionName, getAppVersionCode) function as expected.');
+// Test triggerApkDownload calls downloadAndInstallApk with sha256 and versionCode
+import { triggerApkDownload } from '../../frontend/src/services/appUpdateService.js';
+triggerApkDownload('https://loopra1.vercel.app/downloads/loopra.apk', {
+  sha256: 'mock-sha-256',
+  versionCode: 22
+});
+assert.strictEqual(downloadAndInstallCalled, true, 'triggerApkDownload calls native downloadAndInstallApk');
+
+console.log('✅ Native Android bridge methods (getAppVersionName, getAppVersionCode, downloadAndInstallApk) function as expected.');
 
 // ============================================================================
 // ISSUE 3: FAIL-CLOSED AVATAR / VOICE VISIBILITY TESTS

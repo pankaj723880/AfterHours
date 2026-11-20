@@ -5,13 +5,13 @@ import { triggerApkDownload, dismissUpdateForSession } from '../../services/appU
 export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
   if (!updateInfo) return null;
 
-  const { installedVersion = '2.1', latestVersion = '2.2', downloadUrl, releaseNotes } = updateInfo;
+  const { installedVersion = '2.1', latestVersion = '2.2', downloadUrl, releaseNotes, manifest } = updateInfo;
 
   const handleDownload = () => {
     try {
-      triggerApkDownload(downloadUrl);
+      triggerApkDownload(downloadUrl, manifest);
       if (showToast) {
-        showToast('Starting Loopra APK download...', 'success');
+        showToast('Starting Loopra APK download and verification...', 'success');
       }
     } catch (err) {
       if (showToast) {

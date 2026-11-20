@@ -37,7 +37,7 @@ import CmsHeroBanner from './components/Common/CmsHeroBanner';
 import CmsMaintenanceOverlay from './components/Common/CmsMaintenanceOverlay';
 import CmsCuratedCollectionsRow from './components/Common/CmsCuratedCollectionsRow';
 import AppUpdateModal from './components/Common/AppUpdateModal';
-import { triggerApkDownload, checkForAppUpdate } from './services/appUpdateService';
+import { triggerApkDownload, checkForAppUpdate, fetchPublishedAppVersion, getInstalledAppVersion } from './services/appUpdateService';
 import { getCachedCmsConfig, fetchPublicCmsConfig, applyThemeToDom, normalizeCmsConfig, resolvePlatformConfig } from './services/cmsClient';
 import { offlineEligibilityService } from './services/offlineEligibilityService';
 import { offlineStorageService } from './services/offlineStorageService';
@@ -1701,6 +1701,15 @@ export default function App() {
 
     socket.on('cms_config_updated', handleConfigUpdate);
 
+    // Fetch and sync published Android version manifest
+    fetchPublishedAppVersion(BACKEND_URL)
+      .then(pub => {
+        if (isMounted && pub) {
+          setPublishedVersionInfo(pub);
+        }
+      })
+      .catch(() => {});
+
     // Automatic In-App Android APK Update Detection
     checkForAppUpdate(BACKEND_URL)
       .then((updateResult) => {
@@ -2535,6 +2544,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [isStatsOpen, setIsStatsOpen] = useState(false);
   const [activeAssistantPanel, setActiveAssistantPanel] = useState(null); // null | 'ai' | 'voice'
   const [pendingAppUpdate, setPendingAppUpdate] = useState(null);
+  const [publishedVersionInfo, setPublishedVersionInfo] = useState(null);
   const [isAvatarVisible, setIsAvatarVisible] = useState(() => {
     if (typeof localStorage !== 'undefined') {
       const saved = localStorage.getItem('loopra_avatar_visible');
@@ -6059,15 +6069,34 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }, 40);
   }, [activeTab]);
 
-  const handleDownloadApk = useCallback(() => {
+  const handleDownloadApk = useCallback(async () => {
     try {
-      triggerApkDownload('/downloads/loopra.apk');
+      const isAndroid = Boolean(isStandaloneApp || (typeof window !== 'undefined' && window.LoopraAndroid));
+      if (isAndroid) {
+        showToast('Checking for Loopra Android updates...', 'info');
+        const manifest = publishedVersionInfo || await fetchPublishedAppVersion(BACKEND_URL);
+        const installed = getInstalledAppVersion();
+
+        if (manifest) {
+          const isHigher = (manifest.versionName && installed.versionName && manifest.versionName !== installed.versionName) ||
+                           (manifest.versionCode && installed.versionCode && manifest.versionCode > installed.versionCode);
+          if (!isHigher && installed.isNative) {
+            showToast(`Loopra is already up to date (v${installed.versionName}).`, 'success');
+            return;
+          }
+          triggerApkDownload(manifest.downloadUrl || '/downloads/loopra.apk', manifest);
+          showToast(`Downloading Loopra update (v${manifest.versionName})...`, 'success');
+          return;
+        }
+      }
+
+      triggerApkDownload('/downloads/loopra.apk', publishedVersionInfo);
       showToast('Downloading Loopra Android APK...', 'success');
     } catch (err) {
       console.warn('[handleDownloadApk] Download notice:', err.message);
       showToast('Opening download link...', 'info');
     }
-  }, [showToast]);
+  }, [showToast, isStandaloneApp, publishedVersionInfo]);
 
   const handleStationSelect = (stationKey, extraParams = {}) => {
     setShowQueuePanel(false);
@@ -7988,7 +8017,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     { id: 'truck', label: stationsMap?.truck?.title || 'Horn Ok Please', icon: 'truck', badge: 'Dhaba', group: 'stations' },
                     { id: 'pauwa', label: stationsMap?.pauwa?.title || 'Theka Session', icon: 'beer', badge: 'Desi', group: 'stations' },
                     { id: 'library', label: 'Liked Songs Collection', icon: 'library', group: 'collection' },
-                    { id: 'downloads', label: 'Downloaded Songs', icon: 'download', group: 'collection' },
+                    ...(!isStandaloneApp && !window.LoopraAndroid ? [{ id: 'downloads', label: 'Downloaded Songs', icon: 'download', group: 'collection' }] : []),
                     { id: 'history', label: 'Listening History', icon: 'history', group: 'collection' },
                     { id: 'playlists', label: 'Playlists', icon: 'list', group: 'collection' },
                     { id: 'stats', label: 'Recap & Stats', icon: 'sparkles', group: 'collection' }
@@ -8002,8 +8031,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     return rawGroup || 'main';
                   };
 
+                  const isAndroidClient = Boolean(isStandaloneApp || (typeof window !== 'undefined' && window.LoopraAndroid));
                   const disabledIds = new Set();
-                  if (cmsConfig?.featureControls?.offlineDownloadsEnabled === false) {
+                  if (cmsConfig?.featureControls?.offlineDownloadsEnabled === false || isAndroidClient) {
                     disabledIds.add('downloads');
                   }
                   const configuredItems = Array.isArray(cmsConfig?.navigation) ? cmsConfig.navigation : [];
@@ -8238,7 +8268,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
                     <span className="flex items-center justify-between flex-1 gap-1">
                       <span>Download APK</span>
-                      <span className="text-[10px] font-mono text-amber-400/90 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded">v2.1</span>
+                      <span className="text-[10px] font-mono text-amber-400/90 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded">
+                        v{publishedVersionInfo?.versionName || '2.1'}
+                      </span>
                     </span>
                   )}
                 </button>
@@ -8337,7 +8369,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 { id: 'truck', label: stationsMap?.truck?.title || 'Horn Ok Please', icon: 'truck', badge: 'Dhaba', group: 'stations' },
                 { id: 'pauwa', label: stationsMap?.pauwa?.title || 'Theka Session', icon: 'beer', badge: 'Desi', group: 'stations' },
                 { id: 'library', label: 'Liked Songs Collection', icon: 'library', group: 'collection' },
-                { id: 'downloads', label: 'Downloaded Songs', icon: 'download', group: 'collection' },
+                ...(!isStandaloneApp && !window.LoopraAndroid ? [{ id: 'downloads', label: 'Downloaded Songs', icon: 'download', group: 'collection' }] : []),
                 { id: 'history', label: 'Listening History', icon: 'history', group: 'collection' },
                 { id: 'playlists', label: 'Playlists', icon: 'list', group: 'collection' },
                 { id: 'stats', label: 'Recap & Stats', icon: 'sparkles', group: 'collection' }
@@ -8352,8 +8384,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               };
 
               // 1. Collect all explicitly disabled item IDs so defaults never override user choices
+              const isAndroidClient = Boolean(isStandaloneApp || (typeof window !== 'undefined' && window.LoopraAndroid));
               const disabledIds = new Set();
-              if (cmsConfig?.featureControls?.offlineDownloadsEnabled === false) {
+              if (cmsConfig?.featureControls?.offlineDownloadsEnabled === false || isAndroidClient) {
                 disabledIds.add('downloads');
               }
               const configuredItems = Array.isArray(cmsConfig?.navigation) ? cmsConfig.navigation : [];
@@ -8579,7 +8612,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
                   <span className="flex items-center justify-between flex-1 gap-1">
                     <span>Download APK</span>
-                    <span className="text-[10px] font-mono text-amber-400/90 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded">v2.1</span>
+                    <span className="text-[10px] font-mono text-amber-400/90 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded">
+                      v{publishedVersionInfo?.versionName || '2.1'}
+                    </span>
                   </span>
                 )}
               </button>

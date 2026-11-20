@@ -120,22 +120,40 @@ export async function fetchPublishedAppVersion(backendUrl = '') {
 }
 
 /**
- * Initiates APK download using Android's native browser / package installer.
+ * Initiates APK download.
+ * In Native Android App: Downloads directly in-app, verifies integrity & package signatures,
+ * and launches Android's PackageInstaller directly (NO CHROME / EXTERNAL BROWSER).
+ * In Web Browser: Downloads the file via standard direct link.
  */
-export function triggerApkDownload(downloadUrl) {
-  const targetUrl = downloadUrl || 'https://loopra1.vercel.app/downloads/loopra.apk';
+export function triggerApkDownload(downloadUrl, manifest = null) {
+  const targetUrl = downloadUrl || manifest?.downloadUrl || manifest?.directApkUrl || 'https://loopra1.vercel.app/downloads/loopra.apk';
 
-  // 1. If native Android interface supports downloadApk, trigger native intent
-  if (typeof window !== 'undefined' && window.LoopraAndroid && typeof window.LoopraAndroid.downloadApk === 'function') {
-    try {
-      window.LoopraAndroid.downloadApk(targetUrl);
-      return true;
-    } catch (err) {
-      console.warn('[appUpdateService] Native downloadApk failed, falling back to window.open:', err.message);
+  // 1. If running inside native Android App:
+  if (typeof window !== 'undefined' && window.LoopraAndroid) {
+    // Prefer enhanced downloadAndInstallApk with SHA256 & VersionCode verification
+    if (typeof window.LoopraAndroid.downloadAndInstallApk === 'function') {
+      try {
+        const expectedSha = manifest?.sha256 || '';
+        const expectedCode = manifest?.versionCode ? parseInt(manifest.versionCode, 10) : 0;
+        window.LoopraAndroid.downloadAndInstallApk(targetUrl, expectedSha, expectedCode);
+        return true;
+      } catch (err) {
+        console.warn('[appUpdateService] downloadAndInstallApk failed:', err.message);
+      }
+    }
+
+    // Fallback to native downloadApk
+    if (typeof window.LoopraAndroid.downloadApk === 'function') {
+      try {
+        window.LoopraAndroid.downloadApk(targetUrl);
+        return true;
+      } catch (err) {
+        console.warn('[appUpdateService] Native downloadApk failed:', err.message);
+      }
     }
   }
 
-  // 2. Direct browser navigation / download trigger
+  // 2. Web browser: direct file download trigger
   if (typeof window !== 'undefined') {
     try {
       const link = document.createElement('a');
