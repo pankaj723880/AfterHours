@@ -36,21 +36,25 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
   const { installedVersion = '1', latestVersion = '2.1', downloadUrl, releaseNotes, manifest } = updateInfo;
 
   const publishedCode = manifest?.versionCode || 21;
-  const directApkUrl = `https://loopra1.vercel.app/Loopra.apk?v=${publishedCode}&t=${Date.now()}`;
+  const directApkUrl = `https://loopra1.vercel.app/Loopra.apk?v=${publishedCode}`;
 
   const handleDownload = () => {
     try {
       setDownloadStatus('downloading');
-      setDownloadProgress(20);
-      setStatusMessage('Starting download in browser...');
+      setDownloadProgress(100);
+      setStatusMessage('Opening in Chrome...');
       triggerApkDownload(downloadUrl, manifest);
       if (showToast) {
-        showToast('Starting Loopra APK download...', 'success');
+        showToast('Opening APK download in Chrome...', 'success');
       }
+      setTimeout(() => {
+        onClose();
+      }, 1500);
     } catch (err) {
       if (showToast) {
-        showToast('Opening download in browser...', 'info');
+        showToast('Opening download in Chrome...', 'info');
       }
+      onClose();
     }
   };
 

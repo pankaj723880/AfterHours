@@ -1,11 +1,11 @@
 {
   "versionName": "2.1",
   "versionCode": 21,
-  "downloadUrl": "https://loopra1.vercel.app/Loopra.apk?v=21&sha=8c26fd97",
-  "directApkUrl": "https://loopra1.vercel.app/Loopra.apk?v=21&sha=8c26fd97",
+  "downloadUrl": "https://loopra1.vercel.app/Loopra.apk?v=21&sha=7d8e09e8",
+  "directApkUrl": "https://loopra1.vercel.app/Loopra.apk?v=21&sha=7d8e09e8",
   "releaseNotes": "Official release with native background audio, PIP mode, and direct APK download.",
   "releaseDate": "2026-11-19T23:37:00.000Z",
   "minSdkVersion": 24,
   "fileSize": 5744624,
-  "sha256": "8c26fd97a902054ba90c376641d658d78f143b115ab366d598de7d004f0e70d4"
+  "sha256": "7d8e09e8a3d8dcd8cc026bb256d72c69de2ee393910b7bd5d3288cfaad17baf8"
 }

@@ -138,60 +138,46 @@ export async function fetchPublishedAppVersion(backendUrl = '') {
 
 /**
  * Initiates APK download.
- * In Native Android App: Invokes the native background download & package installer
- * via `window.LoopraAndroid.downloadAndInstallApk()`.
- * Fallback: Opens the direct APK download URL (https://loopra1.vercel.app/Loopra.apk?v=<versionCode>)
- * in Chrome / default external browser so that the user's browser reliably handles the download.
+ * Opens the direct APK download URL (https://loopra1.vercel.app/Loopra.apk?v=<versionCode>)
+ * in Google Chrome (or default external browser) so that Chrome handles the APK download normally.
+ * Does not invoke background APK downloading, FileProvider, or PackageInstaller.
  */
 export function triggerApkDownload(downloadUrl, manifest = null) {
   const publishedCode = manifest?.versionCode || 21;
   const rawTargetUrl = downloadUrl || manifest?.directApkUrl || manifest?.downloadUrl || 'https://loopra1.vercel.app/Loopra.apk';
 
-  // 1. If running inside native Android App with downloadAndInstallApk bridge available:
-  if (typeof window !== 'undefined' && window.LoopraAndroid) {
-    if (typeof window.LoopraAndroid.downloadAndInstallApk === 'function') {
-      try {
-        const expectedSha = manifest?.sha256 || '';
-        const expectedCode = manifest?.versionCode ? parseInt(manifest.versionCode, 10) : 0;
-        window.LoopraAndroid.downloadAndInstallApk(rawTargetUrl, expectedSha, expectedCode);
-        return true;
-      } catch (err) {
-        console.warn('[appUpdateService] downloadAndInstallApk failed, falling back to browser:', err.message);
-      }
-    } else if (typeof window.LoopraAndroid.downloadApk === 'function') {
-      try {
-        window.LoopraAndroid.downloadApk(rawTargetUrl);
-        return true;
-      } catch (err) {
-        console.warn('[appUpdateService] downloadApk failed, falling back to browser:', err.message);
-      }
-    }
-  }
-
-  // Ensure targetUrl for browser download points to https://loopra1.vercel.app/Loopra.apk?v=<versionCode>&t=<timestamp>
+  // Ensure targetUrl points to https://loopra1.vercel.app/Loopra.apk?v=<versionCode>
   let browserUrl = rawTargetUrl;
-  const timestamp = Date.now();
   try {
     const urlObj = new URL(browserUrl, typeof window !== 'undefined' ? (window.location?.origin || 'https://loopra1.vercel.app') : 'https://loopra1.vercel.app');
     urlObj.searchParams.set('v', String(publishedCode));
-    urlObj.searchParams.set('t', String(timestamp));
     browserUrl = urlObj.toString();
   } catch (_) {
     const sep = browserUrl.includes('?') ? '&' : '?';
-    browserUrl += `${sep}v=${encodeURIComponent(publishedCode)}&t=${timestamp}`;
+    browserUrl += `${sep}v=${encodeURIComponent(publishedCode)}`;
   }
 
-  // 2. If running inside native Android WebView with LoopraAndroid bridge providing openInBrowser
-  if (typeof window !== 'undefined' && window.LoopraAndroid && typeof window.LoopraAndroid.openInBrowser === 'function') {
-    try {
-      window.LoopraAndroid.openInBrowser(browserUrl);
-      return true;
-    } catch (err) {
-      console.warn('[appUpdateService] LoopraAndroid.openInBrowser failed:', err.message);
+  // 1. If running inside native Android WebView with LoopraAndroid bridge:
+  if (typeof window !== 'undefined' && window.LoopraAndroid) {
+    if (typeof window.LoopraAndroid.openInBrowser === 'function') {
+      try {
+        window.LoopraAndroid.openInBrowser(browserUrl);
+        return true;
+      } catch (err) {
+        console.warn('[appUpdateService] LoopraAndroid.openInBrowser failed:', err.message);
+      }
+    }
+    if (typeof window.LoopraAndroid.downloadApk === 'function') {
+      try {
+        window.LoopraAndroid.downloadApk(browserUrl);
+        return true;
+      } catch (err) {
+        console.warn('[appUpdateService] LoopraAndroid.downloadApk failed:', err.message);
+      }
     }
   }
 
-  // 3. Open directly in external browser / new tab as reliable fallback
+  // 2. Open directly in external browser / Google Chrome tab
   if (typeof window !== 'undefined') {
     try {
       const opened = window.open(browserUrl, '_blank', 'noopener,noreferrer');
