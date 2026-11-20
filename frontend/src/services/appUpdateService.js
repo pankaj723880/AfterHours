@@ -50,11 +50,12 @@ export function getInstalledAppVersion() {
     return { versionName: null, versionCode: 0, isNative: false };
   }
 
+  // 1. Authoritative: Native bridge window.LoopraAndroid
   if (window.LoopraAndroid && typeof window.LoopraAndroid.getAppVersionName === 'function') {
     try {
       const vName = window.LoopraAndroid.getAppVersionName();
       const vCode = typeof window.LoopraAndroid.getAppVersionCode === 'function'
-        ? window.LoopraAndroid.getAppVersionCode()
+        ? Number(window.LoopraAndroid.getAppVersionCode())
         : 0;
       if (vName && vCode > 0) {
         return { versionName: vName, versionCode: vCode, isNative: true };
@@ -63,6 +64,20 @@ export function getInstalledAppVersion() {
       console.warn('[appUpdateService] Native version read error:', err.message);
     }
   }
+
+  // 2. Authoritative fallback: URL search parameters passed by Android MainActivity
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const paramCode = parseInt(params.get('appVersionCode'), 10);
+    const paramName = params.get('appVersionName');
+    if (!isNaN(paramCode) && paramCode > 0) {
+      return {
+        versionName: paramName || `v${paramCode}`,
+        versionCode: paramCode,
+        isNative: true
+      };
+    }
+  } catch (_) {}
 
   const isAndroid = isRunningInAndroidApp();
   return { versionName: null, versionCode: 0, isNative: isAndroid };
@@ -152,6 +167,20 @@ export function triggerApkDownload(downloadUrl, manifest = null) {
       } catch (err) {
         console.warn('[appUpdateService] Native downloadApk failed:', err.message);
       }
+    }
+  }
+
+  // 2. If running inside Android TWA container without direct window.LoopraAndroid bridge,
+  // trigger native background download and installer via custom native URI
+  if (typeof window !== 'undefined' && isRunningInAndroidApp()) {
+    try {
+      const expectedSha = manifest?.sha256 || '';
+      const expectedCode = manifest?.versionCode ? parseInt(manifest.versionCode, 10) : 0;
+      const intentUrl = `web+loopra://update?url=${encodeURIComponent(targetUrl)}&sha256=${encodeURIComponent(expectedSha)}&versionCode=${expectedCode}`;
+      window.location.href = intentUrl;
+      return true;
+    } catch (err) {
+      console.warn('[appUpdateService] Custom intent trigger failed:', err.message);
     }
   }
 
