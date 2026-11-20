@@ -31,7 +31,7 @@
       ]
     },
     {
-      "source": "/(loopra.apk|Loopra.apk)",
+      "source": "/(downloads/loopra.apk|downloads/Loopra.apk|downloads/app-release-signed.apk|loopra.apk|Loopra.apk)",
       "headers": [
         {
           "key": "Content-Type",
@@ -43,7 +43,24 @@
         },
         {
           "key": "Cache-Control",
-          "value": "public, max-age=86400, stale-while-revalidate=604800"
+          "value": "public, max-age=300, s-maxage=300, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/version.json",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/json; charset=utf-8"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=60, s-maxage=60, must-revalidate"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
         }
       ]
     },
@@ -121,6 +138,10 @@
     {
       "source": "/manifest.json",
       "destination": "/manifest.json"
+    },
+    {
+      "source": "/downloads/:match*",
+      "destination": "/Loopra.apk"
     },
     {
       "source": "/loopra.apk",

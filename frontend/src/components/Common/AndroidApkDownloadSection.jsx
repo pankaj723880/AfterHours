@@ -46,10 +46,10 @@ export default function AndroidApkDownloadSection({ onBack = null }) {
               className="w-full md:w-auto inline-flex items-center justify-center gap-2.5 px-7 py-3.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-neutral-950 font-bold text-sm sm:text-base shadow-xl shadow-amber-500/25 active:scale-95 transition cursor-pointer"
             >
               <Download className="w-5 h-5 text-neutral-950" />
-              <span>Download APK (v1.0.0)</span>
+              <span>Download APK</span>
             </a>
             <span className="text-[11px] font-mono text-neutral-400">
-              Direct Package • Size: ~2.8 MB • Android 7.0+
+              Direct Package • Size: ~5.7 MB • Android 7.0+
             </span>
           </div>
         </div>

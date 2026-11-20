@@ -95,7 +95,7 @@ export async function fetchPublishedAppVersion(backendUrl = '') {
           const normalized = {
             versionName: manifest.versionName || manifest.version || '2.1',
             versionCode: manifest.versionCode || 21,
-            downloadUrl: manifest.downloadUrl || 'https://loopra1.vercel.app/downloads/loopra.apk',
+            downloadUrl: manifest.directApkUrl || manifest.downloadUrl || 'https://loopra1.vercel.app/Loopra.apk',
             directApkUrl: manifest.directApkUrl || '/Loopra.apk',
             releaseNotes: manifest.releaseNotes || 'New features and improvements for Loopra Android.',
             releaseDate: manifest.releaseDate || new Date().toISOString(),
@@ -128,7 +128,7 @@ export async function fetchPublishedAppVersion(backendUrl = '') {
  * In Web Browser: Downloads the file via standard direct link.
  */
 export function triggerApkDownload(downloadUrl, manifest = null) {
-  const targetUrl = downloadUrl || manifest?.downloadUrl || manifest?.directApkUrl || 'https://loopra1.vercel.app/downloads/loopra.apk';
+  const targetUrl = downloadUrl || manifest?.directApkUrl || manifest?.downloadUrl || 'https://loopra1.vercel.app/Loopra.apk';
 
   // 1. If running inside native Android App:
   if (typeof window !== 'undefined' && window.LoopraAndroid) {
@@ -205,15 +205,23 @@ export async function checkForAppUpdate(backendUrl = '') {
     }
   } catch (_) {}
 
-  // Check if published version is strictly newer than installed version
-  const hasNewerVersion = compareVersions(published.versionName, installed.versionName) > 0 ||
-    (published.versionCode && installed.versionCode && published.versionCode > installed.versionCode);
+  // Integer versionCode comparison is authoritative:
+  // An update is required if published.versionCode > installed.versionCode.
+  // Fall back to semantic version comparison only if versionCode is absent.
+  let hasNewerVersion = false;
+  if (published.versionCode && installed.versionCode) {
+    hasNewerVersion = published.versionCode > installed.versionCode;
+  } else if (published.versionName && installed.versionName) {
+    hasNewerVersion = compareVersions(published.versionName, installed.versionName) > 0;
+  }
 
   if (hasNewerVersion) {
     return {
       shouldPrompt: true,
       installedVersion: installed.versionName,
+      installedVersionCode: installed.versionCode,
       latestVersion: published.versionName,
+      latestVersionCode: published.versionCode,
       downloadUrl: published.downloadUrl,
       releaseNotes: published.releaseNotes,
       manifest: published

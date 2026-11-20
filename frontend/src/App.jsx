@@ -1728,10 +1728,20 @@ export default function App() {
     const handleNativeUpdateAvailable = (event) => {
       if (!isMounted || !event?.detail) return;
       const detail = event.detail;
+
+      // Authoritative integer versionCode check: only prompt if published versionCode > installed versionCode
+      const pCode = detail.versionCode ? parseInt(detail.versionCode, 10) : 0;
+      const iCode = detail.installedVersionCode ? parseInt(detail.installedVersionCode, 10) : 0;
+      if (pCode > 0 && iCode > 0 && pCode <= iCode) {
+        return; // Already up to date
+      }
+
       setPendingAppUpdate({
         shouldPrompt: true,
-        installedVersion: detail.installedVersion || '2.1',
-        latestVersion: detail.latestVersion || '2.2',
+        installedVersion: detail.installedVersion || '1',
+        installedVersionCode: iCode,
+        latestVersion: detail.latestVersion || '2.1',
+        latestVersionCode: pCode,
         downloadUrl: detail.downloadUrl,
         manifest: detail
       });
@@ -6096,19 +6106,20 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         const installed = getInstalledAppVersion();
 
         if (manifest) {
-          const isHigher = (manifest.versionName && installed.versionName && manifest.versionName !== installed.versionName) ||
-                           (manifest.versionCode && installed.versionCode && manifest.versionCode > installed.versionCode);
+          const isHigher = (manifest.versionCode && installed.versionCode)
+            ? manifest.versionCode > installed.versionCode
+            : Boolean(manifest.versionName && installed.versionName && manifest.versionName !== installed.versionName);
           if (!isHigher && installed.isNative) {
             showToast(`Loopra is already up to date (v${installed.versionName}).`, 'success');
             return;
           }
-          triggerApkDownload(manifest.downloadUrl || '/downloads/loopra.apk', manifest);
+          triggerApkDownload(manifest.downloadUrl || manifest.directApkUrl || '/Loopra.apk', manifest);
           showToast(`Downloading Loopra update (v${manifest.versionName})...`, 'success');
           return;
         }
       }
 
-      triggerApkDownload('/downloads/loopra.apk', publishedVersionInfo);
+      triggerApkDownload(publishedVersionInfo?.directApkUrl || '/Loopra.apk', publishedVersionInfo);
       showToast('Downloading Loopra Android APK...', 'success');
     } catch (err) {
       console.warn('[handleDownloadApk] Download notice:', err.message);

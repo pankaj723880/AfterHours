@@ -1,14 +1,45 @@
-import React from 'react';
-import { Download, X, Sparkles, Smartphone, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Download, X, Sparkles, Smartphone, ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
 import { triggerApkDownload, dismissUpdateForSession } from '../../services/appUpdateService';
 
 export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
+  const [downloadStatus, setDownloadStatus] = useState(null); // null | 'downloading' | 'verifying' | 'ready_to_install' | 'permission_required' | 'installer_opened' | 'error'
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [statusMessage, setStatusMessage] = useState('');
+
+  useEffect(() => {
+    const handleStatus = (event) => {
+      const detail = event?.detail;
+      if (!detail) return;
+      setDownloadStatus(detail.status);
+      setDownloadProgress(detail.progress || 0);
+      setStatusMessage(detail.message || '');
+
+      if (detail.status === 'error' && showToast) {
+        showToast(detail.message || 'Update download failed', 'error');
+      } else if (detail.status === 'installer_opened') {
+        if (showToast) {
+          showToast('Android package installer launched', 'success');
+        }
+        setTimeout(() => {
+          onClose();
+        }, 1500);
+      }
+    };
+
+    window.addEventListener('loopra-apk-install-status', handleStatus);
+    return () => window.removeEventListener('loopra-apk-install-status', handleStatus);
+  }, [showToast, onClose]);
+
   if (!updateInfo) return null;
 
-  const { installedVersion = '2.1', latestVersion = '2.2', downloadUrl, releaseNotes, manifest } = updateInfo;
+  const { installedVersion = '1', latestVersion = '2.1', downloadUrl, releaseNotes, manifest } = updateInfo;
 
   const handleDownload = () => {
     try {
+      setDownloadStatus('downloading');
+      setDownloadProgress(0);
+      setStatusMessage('Starting download...');
       triggerApkDownload(downloadUrl, manifest);
       if (showToast) {
         showToast('Starting Loopra APK download and verification...', 'success');
@@ -18,8 +49,6 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
         showToast('Download started in background browser', 'info');
       }
     }
-    dismissUpdateForSession(latestVersion);
-    onClose();
   };
 
   const handleDismiss = () => {
@@ -91,6 +120,41 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
             </div>
           )}
 
+          {/* Progress / Status display if downloading or verifying */}
+          {downloadStatus && (
+            <div className="p-3 rounded-2xl bg-neutral-950/80 border border-amber-500/30 space-y-2">
+              <div className="flex items-center justify-between text-xs font-mono">
+                <span className="flex items-center gap-1.5 text-amber-300 font-semibold">
+                  {downloadStatus === 'downloading' || downloadStatus === 'verifying' ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                  ) : downloadStatus === 'error' ? (
+                    <AlertCircle className="w-3.5 h-3.5 text-red-400" />
+                  ) : (
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  )}
+                  <span className="capitalize">{downloadStatus.replace(/_/g, ' ')}</span>
+                </span>
+                <span className="text-amber-400 font-bold">{downloadProgress}%</span>
+              </div>
+
+              {/* Progress bar */}
+              <div className="w-full h-1.5 bg-neutral-800 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full transition-all duration-300 rounded-full ${
+                    downloadStatus === 'error' ? 'bg-red-500' : 'bg-gradient-to-r from-amber-500 to-amber-300'
+                  }`}
+                  style={{ width: `${downloadProgress}%` }}
+                />
+              </div>
+
+              {statusMessage && (
+                <p className="text-[11px] text-neutral-400 truncate">
+                  {statusMessage}
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center gap-1.5 text-[10px] text-emerald-400/90 font-medium pt-1">
             <ShieldCheck className="w-3 h-3 text-emerald-400" />
             <span>Official signed APK release</span>
@@ -102,7 +166,8 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
           <button
             type="button"
             onClick={handleDismiss}
-            className="flex-1 py-2.5 px-4 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-300 hover:text-white font-semibold text-xs border border-neutral-700/60 active:scale-95 transition-all cursor-pointer text-center"
+            disabled={downloadStatus === 'downloading' || downloadStatus === 'verifying'}
+            className="flex-1 py-2.5 px-4 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 disabled:opacity-50 text-neutral-300 hover:text-white font-semibold text-xs border border-neutral-700/60 active:scale-95 transition-all cursor-pointer text-center"
           >
             Not Now
           </button>
@@ -110,10 +175,20 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
           <button
             type="button"
             onClick={handleDownload}
-            className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-neutral-950 font-bold text-xs shadow-lg shadow-amber-500/25 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center"
+            disabled={downloadStatus === 'downloading' || downloadStatus === 'verifying'}
+            className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 disabled:opacity-50 text-neutral-950 font-bold text-xs shadow-lg shadow-amber-500/25 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center"
           >
-            <Download className="w-3.5 h-3.5 text-neutral-950" />
-            <span>Download Update</span>
+            {downloadStatus === 'downloading' || downloadStatus === 'verifying' ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-neutral-950" />
+                <span>Updating...</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-3.5 h-3.5 text-neutral-950" />
+                <span>Download Update</span>
+              </>
+            )}
           </button>
         </div>
       </div>
