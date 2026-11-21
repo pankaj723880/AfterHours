@@ -111,7 +111,37 @@ const NON_MUSIC_PATTERNS = {
   ai_and_junk_content: [
     /\b(ai\s+generated|ai\s+cover|ai\s+song|ai\s+music|ai\s+version|suno(?:\.ai)?|udio(?:\.ai)?|voicify|ai\s+voice|covers\s+ai|generated\s+by\s+ai|artificial\s+intelligence\s+music|deepfake\s+music)\b/i,
     /\b((?:bedroom|acoustic|guitar|piano|ukulele|drum|flute|violin|fan(?:[\s-]made)?|amateur|random|garageband)\s+cover(?:\s+(?:by|with|version|song|tabs))?|cover\s+(?:by|version\s+by)\s+[a-z0-9_]{3,25})\b/i,
-    /\b(kdrama\s+edit|k-drama|c-drama|drama\s+scene|chinese\s+drama|pakistani\s+drama|anime\s+edit|movie\s+scene|whatsapp\s+status\s+video|shorts\s+video|status\s+video|reel\s+edit|funny\s+clip)\b/i
+    /\b(kdrama\s+edit|k-drama|c-drama|drama\s+scene|chinese\s+drama|pakistani\s+drama|anime\s+edit|movie\s+scene|funny\s+clip)\b/i,
+    // Shorts, ringtones, status/edit videos, and dance/fitness clips
+    /#shorts?\b/i,
+    /\b(?:yt\s*shorts?|youtube\s*shorts?|viralshorts?|shorts)\b/i,
+    /\bshort\s+(?:video|clip|edit|ver|version)\b/i,
+    /\b(?:phone\s+|mobile\s+)?ringtones?\b/i,
+    /\bcaller\s*tunes?\b/i,
+    /\bwhatsapp\s+status\b/i,
+    /\bstatus\s+videos?\b/i,
+    /\big\s+reels?\b/i,
+    /\breels?\b/i,
+    /\bedits?\b/i,
+    /\bvoice\s+comparison\b/i,
+    /\bvs\b/i,
+    /\bsong\s+ideas?\b/i,
+    /\banniversary\b/i,
+    /\bbeach\b/i,
+    /\bkaraoke\b/i,
+    /\binstrumental\s+only\b/i,
+    /\bbhat\s+geet\b/i,
+    /\bbanni\s+geet\b/i,
+    /\bdance\s+cover\b/i,
+    /\bdance\s+performance\b/i,
+    /\bcouple\s+dance\b/i,
+    /\bzumba\b/i,
+    /\bfitness\s+dance\b/i,
+    /\bdancers?\b/i,
+    /\bringtonix\b/i,
+    /\bsayyed\s+ismail\b/i,
+    /\bfact\s+boy\b/i,
+    /\bcinemix\b/i
   ]
 };
 
@@ -232,9 +262,9 @@ class MusicValidationService {
       } else if (durationSec > 900) { // > 15 minutes
         score -= 0.50;
         notes.push(`Duration exceeds 15 minutes (${durationSec}s)`);
-      } else if (durationSec < 45) { // < 45s (Shorts/teasers)
-        score -= 0.35;
-        notes.push(`Duration under 45s (${durationSec}s)`);
+      } else if (durationSec <= 75) { // <= 75s (Shorts/ringtone clips/teasers)
+        score -= 0.60;
+        notes.push(`Duration under 75s (${durationSec}s)`);
       }
     }
 

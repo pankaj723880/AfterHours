@@ -45,6 +45,132 @@ export const STRICT_BLACKLIST_REGEXES = STRICT_BLACKLIST_WORDS.map(word => {
   const escaped = word.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&').replace(/\s+/g, '\\s+');
   return new RegExp(`\\b${escaped}\\b`, 'i');
 });
+
+// Strict Track Sanitizer: Patterns for Shorts, ringtones, edits, dance/fitness clips, and junk
+export const SHORTS_TAGS_AND_KEYWORDS = [
+  /#shorts?\b/i,
+  /\b(?:yt\s*shorts?|youtube\s*shorts?|viralshorts?|shorts)\b/i,
+  /\bshort\s+(?:video|clip|edit|ver|version)\b/i
+];
+
+export const RINGTONE_AND_EDIT_PATTERNS = [
+  /\b(?:phone\s+|mobile\s+)?ringtones?\b/i,
+  /\bcaller\s*tunes?\b/i,
+  /\bwhatsapp\s+status\b/i,
+  /\bstatus\s+videos?\b/i,
+  /\big\s+reels?\b/i,
+  /\breels?\b/i,
+  /\bedits?\b/i,
+  /\bvoice\s+comparison\b/i,
+  /\bvs\b/i,
+  /\bsong\s+ideas?\b/i,
+  /\banniversary\b/i,
+  /\bbeach\b/i,
+  /\bkaraoke\b/i,
+  /\binstrumental\s+only\b/i,
+  /\bbhat\s+geet\b/i,
+  /\bbanni\s+geet\b/i
+];
+
+export const DANCE_FITNESS_CLIP_PATTERNS = [
+  /\bdance\s+cover\b/i,
+  /\bdance\s+performance\b/i,
+  /\bcouple\s+dance\b/i,
+  /\bzumba\b/i,
+  /\bfitness\s+dance\b/i,
+  /\bdancers?\b/i,
+  /\bringtonix\b/i,
+  /\bsayyed\s+ismail\b/i,
+  /\bfact\s+boy\b/i,
+  /\bcinemix\b/i
+];
+
+/**
+ * Strict Track Sanitizer:
+ * Validates whether a track is a clean genuine music track and NOT:
+ * - Shorts (#shorts, #short, yt shorts, youtube shorts, viralshort, shorts)
+ * - Ringtones & edits (ringtone, phone ringtone, mobile ringtone, caller tune, whatsapp status, status video, ig reel, reels, edit, voice comparison, vs, song ideas, anniversary, beach, karaoke, instrumental only, bhat geet, banni geet)
+ * - Dance / fitness / clip channels or titles (dance cover, dance performance, couple dance, zumba, fitness dance, dancer, ringtonix, sayyed ismail, fact boy, cinemix, karaoke)
+ * - Short-form duration tracks (durationSec > 0 && durationSec <= 75)
+ */
+export function isCleanMusicTrack(track) {
+  if (!track) return false;
+
+  const title = (
+    track.title ||
+    track.snippet?.title ||
+    track.name ||
+    ''
+  ).trim();
+
+  if (!title) return false;
+
+  const channel = (
+    track.channel ||
+    track.artist ||
+    track.author?.name ||
+    track.snippet?.channelTitle ||
+    ''
+  ).trim();
+
+  const desc = (
+    track.description ||
+    track.snippet?.description ||
+    ''
+  ).trim();
+
+  const metadata = `${title} ${channel} ${desc}`;
+
+  // 1. Shorts tags or keywords
+  for (const regex of SHORTS_TAGS_AND_KEYWORDS) {
+    if (regex.test(metadata)) return false;
+  }
+
+  // 2. Ringtones and edits
+  for (const regex of RINGTONE_AND_EDIT_PATTERNS) {
+    if (regex.test(metadata)) return false;
+  }
+
+  // 3. Dance / fitness / clip channels or titles
+  for (const regex of DANCE_FITNESS_CLIP_PATTERNS) {
+    if (regex.test(metadata)) return false;
+  }
+
+  // 4. Short-form duration check (durationSec > 0 && durationSec <= 75)
+  let durationSec = null;
+  const rawDuration = track.durationSec !== undefined
+    ? track.durationSec
+    : (track.duration?.seconds !== undefined
+        ? track.duration.seconds
+        : (track.seconds !== undefined
+            ? track.seconds
+            : (track.duration !== undefined ? track.duration : null)));
+
+  if (typeof rawDuration === 'number' && !isNaN(rawDuration)) {
+    durationSec = rawDuration;
+  } else if (typeof rawDuration === 'string') {
+    const str = rawDuration.trim();
+    if (str.startsWith('PT')) {
+      const h = (str.match(/(\d+)H/) || [])[1] || 0;
+      const m = (str.match(/(\d+)M/) || [])[1] || 0;
+      const s = (str.match(/(\d+)S/) || [])[1] || 0;
+      durationSec = parseInt(h, 10) * 3600 + parseInt(m, 10) * 60 + parseInt(s, 10);
+    } else {
+      const parts = str.split(':').map(p => parseInt(p, 10) || 0);
+      if (parts.length === 3) {
+        durationSec = parts[0] * 3600 + parts[1] * 60 + parts[2];
+      } else if (parts.length === 2) {
+        durationSec = parts[0] * 60 + parts[1];
+      }
+    }
+  }
+
+  if (durationSec !== null && durationSec > 0 && durationSec <= 75) {
+    return false;
+  }
+
+  return true;
+}
 const OFFICIAL_CHANNELS = [
   't-series', 'tseries', 'sony music', 'sonymusic', 'zee music', 'zeemusic',
   'yrf', 'yash raj films', 'tips official', 'tips music', 'saregama', 'saregamamusic',
@@ -356,6 +482,16 @@ export function verifySingleSong(track) {
     }
   }
 
+  // 2d. Strict Track Sanitizer: Shorts, ringtones, edits, dance/fitness clips, and duration <= 75s
+  if (!isCleanMusicTrack(trackObj)) {
+    return {
+      isValid: false,
+      reason: 'Rejected by Strict Track Sanitizer (Shorts, ringtone, edit, dance/fitness clip, or <= 75s)',
+      songType: 'sanitizer_disqualified',
+      verificationStatus: 'rejected_junk_or_ai'
+    };
+  }
+
   // 3. Multi-track forward slash listing: "Song A / Song B / Song C / Song D"
   const slashParts = title.split(/\s*\/\s*/);
   if (slashParts.length >= 4) {
@@ -509,6 +645,7 @@ export function filterSingleSongs(tracks = []) {
 export default {
   verifySingleSong,
   isSingleSong,
+  isCleanMusicTrack,
   isValidYouTubeId,
   classifySongType,
   isOfficialChannel,

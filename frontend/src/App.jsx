@@ -106,7 +106,7 @@ import { voiceControlService } from './services/voiceControlService';
 import { useVoiceRollout } from './hooks/useVoiceRollout';
 import { useServerKeepAlive } from './hooks/useServerKeepAlive';
 import shuffleService from './services/shuffleService';
-import { filterSingleSongs, isSingleSong } from './services/songFilter';
+import { filterSingleSongs, isSingleSong, isCleanMusicTrack } from './services/songFilter';
 import { curateSwipeDeck, filterStrictSoloTracks } from './services/swipeCurationService';
 const RatingPopupModal = lazy(() => import('./components/Rating/RatingPopupModal'));
 import HomepageReviewsSection from './components/Rating/HomepageReviewsSection';
@@ -1889,6 +1889,9 @@ export default function App() {
   const [popularAlbums, setPopularAlbums] = useState(() => {
     return validateAndSanitizeItems(localStorage.getItem('afterhours_albums'), POPULAR_ALBUMS);
   });
+  const [popularRadio, setPopularRadio] = useState(() => {
+    return validateAndSanitizeItems(localStorage.getItem('afterhours_radio'), POPULAR_RADIO);
+  });
   // Track rendered personalized recommendation track keys to coordinate zero duplicates across homepage
   const [renderedRecTrackKeys, setRenderedRecTrackKeys] = useState(() => new Set());
 
@@ -1899,10 +1902,10 @@ export default function App() {
   }, []);
 
   // Filter trending songs dynamically so no song rendered above in recommendations ever repeats below
-  // and strictly guarantee valid, usable thumbnails and single-song content validation
+  // and strictly guarantee valid, usable thumbnails, single-song content, and clean music sanitization
   const uniqueTrendingSongs = React.useMemo(() => {
     const raw = (trendingSongs && trendingSongs.length > 0) ? trendingSongs : TRENDING_SONGS;
-    const validated = filterSingleSongs(raw);
+    const validated = filterSingleSongs(raw).filter(t => isCleanMusicTrack(t));
     const candidateList = validated.length > 0 ? validated : TRENDING_SONGS;
     const dedup = new TrackDeduplicator();
     return candidateList.filter(t => {
@@ -1916,9 +1919,37 @@ export default function App() {
     });
   }, [trendingSongs, renderedRecTrackKeys]);
 
-  const [popularRadio, setPopularRadio] = useState(() => {
-    return validateAndSanitizeItems(localStorage.getItem('afterhours_radio'), POPULAR_RADIO);
-  });
+  const uniquePopularAlbums = React.useMemo(() => {
+    const raw = (popularAlbums && popularAlbums.length > 0) ? popularAlbums : POPULAR_ALBUMS;
+    const validated = filterSingleSongs(raw).filter(t => isCleanMusicTrack(t));
+    const candidateList = validated.length > 0 ? validated : POPULAR_ALBUMS;
+    const dedup = new TrackDeduplicator();
+    return candidateList.filter(t => {
+      const cleanThumb = getCleanThumbnail(t);
+      if (!cleanThumb || !isThumbnailUrlFormatValid(cleanThumb)) return false;
+      const key = getCanonicalSongKey(t);
+      if (renderedRecTrackKeys.has(key)) return false;
+      if (dedup.isDuplicate(t)) return false;
+      dedup.add(t);
+      return true;
+    });
+  }, [popularAlbums, renderedRecTrackKeys]);
+
+  const uniquePopularRadio = React.useMemo(() => {
+    const raw = (popularRadio && popularRadio.length > 0) ? popularRadio : POPULAR_RADIO;
+    const validated = filterSingleSongs(raw).filter(t => isCleanMusicTrack(t));
+    const candidateList = validated.length > 0 ? validated : POPULAR_RADIO;
+    const dedup = new TrackDeduplicator();
+    return candidateList.filter(t => {
+      const cleanThumb = getCleanThumbnail(t);
+      if (!cleanThumb || !isThumbnailUrlFormatValid(cleanThumb)) return false;
+      const key = getCanonicalSongKey(t);
+      if (renderedRecTrackKeys.has(key)) return false;
+      if (dedup.isDuplicate(t)) return false;
+      dedup.add(t);
+      return true;
+    });
+  }, [popularRadio, renderedRecTrackKeys]);
 
   useEffect(() => {
     const fetchDynamicSection = async (query, setState, storageKey, options = {}) => {
@@ -1927,12 +1958,13 @@ export default function App() {
         let collected = [];
         let pageToken = null;
         let attempts = 0;
-        const maxAttempts = options.maxAttempts || 3;
+        const maxAttempts = options.maxAttempts || 5;
+        const dedup = new TrackDeduplicator();
 
         while (collected.length < targetLimit && attempts < maxAttempts) {
           attempts++;
           const res = await fetchFromBackend(query, {
-            limit: 20,
+            limit: 25,
             pageToken: pageToken || undefined
           });
 
@@ -1945,22 +1977,26 @@ export default function App() {
                 videoId: vid,
                 title: i.snippet?.title || 'Unknown Title',
                 artist: i.snippet?.channelTitle || 'Unknown Artist',
+                channel: i.snippet?.channelTitle || 'Unknown Artist',
                 image: img,
                 thumbnail: img,
+                duration: i.duration || i.snippet?.duration,
                 query: (i.snippet?.title || '') + " " + (i.snippet?.channelTitle || '')
               };
             }).filter(item => item.id && typeof item.id === 'string' && item.id.length >= 5 && item.title && isThumbnailUrlFormatValid(item.thumbnail));
 
-            // Strictly filter for individual single songs only (excludes challenges, quizzes, generic new songs, etc.)
-            const singleSongs = filterSingleSongs(mapped);
+            // Strictly filter for individual single songs and clean music tracks only
+            const singleSongs = filterSingleSongs(mapped).filter(t => isCleanMusicTrack(t));
             for (const s of singleSongs) {
-              if (!collected.some(c => (c.id || c.videoId) === (s.id || s.videoId))) {
+              if (!dedup.isDuplicate(s)) {
+                dedup.add(s);
                 collected.push(s);
               }
+              if (collected.length >= targetLimit) break;
             }
 
             pageToken = res.nextPageToken || null;
-            if (!pageToken) break;
+            if (!pageToken && collected.length >= targetLimit) break;
           } else {
             break;
           }
@@ -1968,8 +2004,8 @@ export default function App() {
 
         // Only replace state if we have a rich, valid list of at least 3 tracks
         if (collected.length >= 3) {
-          setState(collected);
-          try { localStorage.setItem(storageKey, JSON.stringify(collected)); } catch (e) {}
+          setState(collected.slice(0, targetLimit));
+          try { localStorage.setItem(storageKey, JSON.stringify(collected.slice(0, targetLimit))); } catch (e) {}
         }
       } catch (e) {
         // Fallback: If network timed out or failed, populate from cached localStorage
@@ -1977,7 +2013,7 @@ export default function App() {
           const cached = localStorage.getItem(storageKey);
           if (cached) {
             const parsed = JSON.parse(cached);
-            const validCached = filterSingleSongs(parsed);
+            const validCached = filterSingleSongs(parsed).filter(t => isCleanMusicTrack(t));
             if (Array.isArray(validCached) && validCached.length >= 3) {
               setState(validCached);
               return;
@@ -1991,14 +2027,15 @@ export default function App() {
     };
 
     // Stagger section fetches to eliminate concurrent YouTube scraping / 429 rate limit
-    fetchDynamicSection("latest trending hindi hit songs official music video -mashup -jukebox", setTrendingSongs, 'afterhours_trending');
+    // Hardened with negative search keywords avoiding Shorts, ringtones, status, dance, karaoke, and edits
+    fetchDynamicSection("latest trending hindi hit songs official music video -shorts -#shorts -ringtone -status -dance -karaoke -edit", setTrendingSongs, 'afterhours_trending');
 
     const albumsTimer = setTimeout(() => {
-      fetchDynamicSection("latest hit bollywood single songs official video -mashup -jukebox -album", setPopularAlbums, 'afterhours_albums');
+      fetchDynamicSection("latest hit bollywood single songs official video -shorts -#shorts -ringtone -status -dance -karaoke -edit", setPopularAlbums, 'afterhours_albums');
     }, 1200);
 
     const radioTimer = setTimeout(() => {
-      fetchDynamicSection("bollywood acoustic unplugged official single songs -mashup -jukebox", setPopularRadio, 'afterhours_radio');
+      fetchDynamicSection("bollywood acoustic unplugged official single songs -shorts -#shorts -ringtone -status -dance -karaoke -edit", setPopularRadio, 'afterhours_radio');
     }, 2400);
 
     return () => {
@@ -9212,12 +9249,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         key="sec-albums"
                         title={sec.title || "Popular albums and singles"}
                         subtitle={sec.subtitle || "Latest releases & iconic soundtracks."}
-                        items={popularAlbums}
+                        items={uniquePopularAlbums}
                         fallbackItems={POPULAR_ALBUMS}
                         showAll={showAllAlbums}
                         setShowAll={handleSetShowAllAlbums}
                         renderItem={(album) => (
-                          <div onClick={() => handlePlayTrending(album.query || album.title, album, popularAlbums)} className="group cursor-pointer">
+                          <div onClick={() => handlePlayTrending(album.query || album.title, album, uniquePopularAlbums)} className="group cursor-pointer">
                             <div className="relative mb-2 md:mb-3">
                               <img src={getCleanThumbnail(album)} alt={album.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => handleImageError(e, album.title, album.id)} />
                               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">
@@ -9239,12 +9276,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         key="sec-radio"
                         title={sec.title || "Popular radio"}
                         subtitle={sec.subtitle || "Live streams and 24/7 continuous audio."}
-                        items={popularRadio}
+                        items={uniquePopularRadio}
                         fallbackItems={POPULAR_RADIO}
                         showAll={showAllRadio}
                         setShowAll={handleSetShowAllRadio}
                         renderItem={(radio) => (
-                          <div onClick={() => handlePlayTrending(radio.query || radio.title, radio, popularRadio)} className="group cursor-pointer">
+                          <div onClick={() => handlePlayTrending(radio.query || radio.title, radio, uniquePopularRadio)} className="group cursor-pointer">
                             <div className="relative mb-2 md:mb-3">
                               <img src={getCleanThumbnail(radio)} alt={radio.title} className="w-full aspect-square rounded-md object-cover shadow-lg group-hover:shadow-amber-500/20 transition-all duration-300" onError={(e) => handleImageError(e, radio.title, radio.id)} />
                               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center">

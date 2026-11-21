@@ -3,7 +3,7 @@ import { recommendationsClient } from '../../services/recommendationsClient';
 import { TrackDeduplicator } from '../../utils/trackIdentity';
 import { getCleanThumbnail, isThumbnailUrlFormatValid } from '../../utils/thumbnailValidator';
 import { CURATED_STATION_TRACKS } from '../../constants/curatedPlaylists';
-import { isSingleSong, filterSingleSongs } from '../../services/songFilter';
+import { isSingleSong, filterSingleSongs, isCleanMusicTrack } from '../../services/songFilter';
 import DownloadTrackButton from '../Offline/DownloadTrackButton';
 
 // Track-level runtime failed image cache for graceful component fallbacks
@@ -107,12 +107,13 @@ export default function PersonalizedRecommendationsSection({
   const [showPrivacySettings, setShowPrivacySettings] = useState(false);
   const backupPoolRef = useRef([]);
 
-  // Filter helper to ensure tracks have clean, valid, non-placeholder thumbnails
+  // Filter helper to ensure tracks have clean, valid, non-placeholder thumbnails and are clean music tracks
   const sanitizeThumbnailTracks = useCallback((tracks = []) => {
     if (!Array.isArray(tracks)) return [];
     const valid = [];
     for (const t of tracks) {
       if (!t) continue;
+      if (!isCleanMusicTrack(t)) continue;
       const cleanThumb = getCleanThumbnail(t);
       if (cleanThumb && isThumbnailUrlFormatValid(cleanThumb)) {
         valid.push({

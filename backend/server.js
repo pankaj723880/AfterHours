@@ -38,7 +38,7 @@ import { analyticsService } from './services/analyticsService.js';
 import analyticsRoutes from './routes/analytics.js';
 import aiMusicRoutes from './routes/aiMusic.js';
 import chatRouter from './routes/chat.js';
-import { isSingleSong, filterSingleSongs, isMainstreamArtist, isOfficialChannel } from './services/songFilter.js';
+import { isSingleSong, filterSingleSongs, isMainstreamArtist, isOfficialChannel, isCleanMusicTrack } from './services/songFilter.js';
 import { liveUsersService } from './services/liveUsersService.js';
 import learningRoutes from './routes/learningIntelligence.js';
 import { learningEngineService } from './services/learningEngineService.js';
@@ -1699,7 +1699,12 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
     let fetchPage = Math.floor(cachedPool.videos.length / 15) + 1;
     while (cachedPool.videos.length < pageOffset + limit && fetchPage <= 2) {
       try {
-        const searchPromise = ytSearch({ query: queryStr, page: fetchPage });
+        const searchPromise = ytSearch({
+          query: (queryStr.includes('-shorts') || queryStr.includes('-#shorts'))
+            ? queryStr
+            : `${queryStr} -shorts -#shorts -ringtone -status -dance -karaoke -edit`,
+          page: fetchPage
+        });
         const timeoutPromise = new Promise((_, reject) =>
           setTimeout(() => reject(new Error('yt-search timeout after 3500ms')), 3500)
         );

@@ -2,7 +2,7 @@ import express from 'express';
 import axios from 'axios';
 import { interpretMoodPrompt } from '../services/moodClassifier.js';
 import ytSearch from 'yt-search';
-import { filterSingleSongs } from '../services/songFilter.js';
+import { filterSingleSongs, isCleanMusicTrack } from '../services/songFilter.js';
 
 const router = express.Router();
 
@@ -76,7 +76,8 @@ router.post('/recommend', async (req, res) => {
 
     // Filter and format single-song tracks only
     const singleSongs = filterSingleSongs(rawItems);
-    const chosenItems = singleSongs.length > 0 ? singleSongs : rawItems;
+    const cleanSongs = (singleSongs.length > 0 ? singleSongs : rawItems).filter(item => isCleanMusicTrack(item));
+    const chosenItems = cleanSongs.length > 0 ? cleanSongs : (singleSongs.length > 0 ? singleSongs : rawItems);
 
     const seenIds = new Set();
     const tracks = [];

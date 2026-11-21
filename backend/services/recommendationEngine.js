@@ -6,6 +6,7 @@ import { catalogService } from './catalogService.js';
 import { geminiRecommendationService, geminiDiagnostics } from './geminiRecommendationService.js';
 import { getCanonicalSongKey, cleanSongTitle, cleanArtistName, areTracksSame, TrackDeduplicator } from './recommendationHistoryService.js';
 import { getCleanTrackThumbnail, isValidThumbnailUrlFormat, filterTracksWithValidThumbnailsSync, isKnownInvalidId } from './thumbnailValidationService.js';
+import { isCleanMusicTrack } from './songFilter.js';
 
 // Configuration
 const CACHE_TTL_HOURS = 6;
@@ -556,6 +557,7 @@ export const recommendationEngine = {
 
     const cleanTrack = (t, defaultReason = '') => {
       if (!t) return null;
+      if (!isCleanMusicTrack(t)) return null;
       const trackId = t.id || t.videoId;
       if (!trackId || isKnownInvalidId(trackId)) return null;
 

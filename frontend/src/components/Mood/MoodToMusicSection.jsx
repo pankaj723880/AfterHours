@@ -1,4 +1,6 @@
 import React, { useState, useCallback } from 'react';
+import { isCleanMusicTrack, filterSingleSongs } from '../../services/songFilter';
+import { TrackDeduplicator } from '../../utils/trackIdentity';
 
 const ACTIVITY_SHORTCUTS = [
   { id: 'studying', label: 'Studying', icon: '📚', prompt: 'Deep focus instrumental ambient lofi music for studying' },
@@ -110,7 +112,17 @@ export default function MoodToMusicSection({
       }
 
       const data = await res.json();
-      setRecommendations(Array.isArray(data.tracks) ? data.tracks : []);
+      const rawTracks = Array.isArray(data.tracks) ? data.tracks : [];
+      const singleTracks = filterSingleSongs(rawTracks);
+      const cleanTracks = singleTracks.filter(t => isCleanMusicTrack(t));
+      const dedup = new TrackDeduplicator();
+      const uniqueCleanTracks = cleanTracks.filter(t => {
+        if (dedup.isDuplicate(t)) return false;
+        dedup.add(t);
+        return true;
+      });
+
+      setRecommendations(uniqueCleanTracks);
       setAnalysisInfo(data.analysis || null);
       setHasGenerated(true);
     } catch (err) {
