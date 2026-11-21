@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import User from '../models/User.js';
+import SharedPlaylist from '../models/SharedPlaylist.js';
 import { authenticateToken, verifyToken } from '../middleware/auth.js';
 import { listeningEventService } from '../services/listeningEventService.js';
 import { analyticsService } from '../services/analyticsService.js';
@@ -652,6 +653,170 @@ router.delete('/playlist/:playlistId/collaborator/:targetUserId', authenticateTo
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to remove collaborator: ' + err.message });
+  }
+});
+
+// Publish / Share Playlist Publicly (Generates or returns shareable record)
+router.post('/playlist/share', async (req, res) => {
+  try {
+    const { id, name, songs } = req.body || {};
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'Playlist name is required' });
+    }
+
+    const playlistId = (id || `pl_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`).toString().trim();
+    const playlistName = name.trim().slice(0, 120);
+    const songsList = Array.isArray(songs) ? songs.slice(0, 500) : [];
+
+    // Optional user token if signed in
+    let creatorInfo = { id: '', username: 'Loopra Listener', displayName: 'Loopra Listener' };
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      try {
+        const decoded = verifyToken(token);
+        if (decoded && decoded.userId) {
+          const user = await User.findById(decoded.userId).lean();
+          if (user) {
+            creatorInfo = {
+              id: user._id.toString(),
+              username: user.username,
+              displayName: user.displayName || user.username
+            };
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Upsert shared playlist record
+    const updated = await SharedPlaylist.findOneAndUpdate(
+      { shareId: playlistId },
+      {
+        $set: {
+          name: playlistName,
+          creator: creatorInfo,
+          songs: songsList,
+          songsCount: songsList.length
+        }
+      },
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
+    );
+
+    res.json({
+      success: true,
+      shareId: updated.shareId,
+      playlist: {
+        id: updated.shareId,
+        name: updated.name,
+        creator: updated.creator,
+        songs: updated.songs,
+        songsCount: updated.songsCount
+      }
+    });
+  } catch (err) {
+    console.error('[Share Playlist Error]:', err.message);
+    res.status(500).json({ error: 'Failed to share playlist: ' + err.message });
+  }
+});
+
+// Public Shared Playlist Details (No auth required)
+router.get('/shared-playlist/:playlistId', async (req, res) => {
+  try {
+    const rawId = (req.params.playlistId || '').trim();
+    if (!rawId) {
+      return res.status(400).json({ error: 'Playlist ID is required' });
+    }
+
+    // 1. Try finding in dedicated SharedPlaylist collection
+    let shared = await SharedPlaylist.findOne({ shareId: rawId });
+    if (!shared) {
+      // Also try case-insensitive or exact match on name if shareId was name-based
+      shared = await SharedPlaylist.findOne({
+        $or: [
+          { shareId: rawId },
+          { name: rawId }
+        ]
+      });
+    }
+
+    if (shared) {
+      // Increment view count non-blockingly
+      SharedPlaylist.updateOne({ _id: shared._id }, { $inc: { viewsCount: 1 } }).catch(() => {});
+
+      return res.json({
+        playlist: {
+          id: shared.shareId,
+          name: shared.name,
+          creator: shared.creator,
+          songs: shared.songs || [],
+          songsCount: (shared.songs || []).length,
+          isShared: true
+        }
+      });
+    }
+
+    // 2. Fallback: Search across all users for a playlist with matching id or name
+    const owner = await User.findOne({
+      $or: [
+        { 'playlists.id': rawId },
+        { 'playlists._id': rawId },
+        { 'playlists.name': rawId }
+      ]
+    }).lean();
+
+    if (owner) {
+      const match = (owner.playlists || []).find(
+        p => String(p.id || p._id) === rawId || String(p.name) === rawId
+      );
+      if (match) {
+        // Cache it in SharedPlaylist collection for high performance subsequent reads
+        const cached = await SharedPlaylist.findOneAndUpdate(
+          { shareId: String(match.id || match._id || rawId) },
+          {
+            $set: {
+              name: match.name,
+              creator: {
+                id: owner._id.toString(),
+                username: owner.username,
+                displayName: owner.displayName || owner.username
+              },
+              songs: match.songs || [],
+              songsCount: (match.songs || []).length
+            }
+          },
+          { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
+        );
+
+        return res.json({
+          playlist: {
+            id: cached.shareId,
+            name: cached.name,
+            creator: cached.creator,
+            songs: cached.songs || [],
+            songsCount: (cached.songs || []).length,
+            isShared: true
+          }
+        });
+      }
+    }
+
+    return res.status(404).json({ error: 'Shared playlist not found' });
+  } catch (err) {
+    console.error('[Get Shared Playlist Error]:', err.message);
+    res.status(500).json({ error: 'Failed to retrieve shared playlist: ' + err.message });
+  }
+});
+
+// Increment Save Count for a Shared Playlist
+router.post('/shared-playlist/:playlistId/save-count', async (req, res) => {
+  try {
+    const rawId = (req.params.playlistId || '').trim();
+    if (rawId) {
+      await SharedPlaylist.updateOne({ shareId: rawId }, { $inc: { savesCount: 1 } });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false });
   }
 });
 

@@ -48,6 +48,8 @@ import artistRoutes from './routes/artist.js';
 import featureFlagsRouter from './routes/featureFlags.js';
 import voiceAgentRouter, { handleTranscribeEndpoint } from './routes/voiceAgent.js';
 import musicValidationRouter from './routes/musicValidation.js';
+import roomsRouter from './routes/rooms.js';
+import { collaborativeRoomService } from './services/collaborativeRoomService.js';
 import musicValidationService from './services/musicValidationService.js';
 import chatBuddyLearningRouter from './routes/chatBuddyLearning.js';
 import { chatBuddyLearningService } from './services/chatBuddyLearningService.js';
@@ -225,6 +227,7 @@ const io = new Server(server, {
 });
 
 app.set('io', io);
+collaborativeRoomService.setIO(io);
 
 io.engine.on('connection_error', (err) => {
   console.warn('[Socket.io] Engine connection notice:', err.req?.url, err.code, err.message);
@@ -378,18 +381,6 @@ app.route(['/api/admin/live-users-config', '/api/live-users-config'])
 // Health check endpoints for Render & API monitors
 app.get('/', (req, res) => {
   res.send('AfterHours API is running');
-});
-
-// GET /api/rooms - Active Listening Rooms listing
-app.get(['/api/rooms', '/rooms'], (req, res) => {
-  const roomsList = Array.from(listeningRooms.values()).map(r => ({
-    id: r.id,
-    name: r.name,
-    hostUsername: r.hostUsername,
-    currentSong: r.currentSong,
-    participantCount: r.participants ? r.participants.size : 0
-  }));
-  res.json({ success: true, rooms: roomsList });
 });
 
 // Dedicated liveness endpoint (HTTP 200 process liveness, zero DB overhead, no sensitive data)
@@ -556,7 +547,7 @@ io.on('connection', (socket) => {
   });
 
   // --- Listening Rooms Handlers ---
-  socket.on('join_listening_room', ({ roomId, user }) => {
+  socket.on('join_listening_room', async ({ roomId, user }) => {
     try {
       if (!roomId) return;
       socket.join(`room_${roomId}`);
@@ -582,20 +573,119 @@ io.on('connection', (socket) => {
         avatar: user?.avatarUrl || ''
       });
 
+      // Also sync persistent collaborative room & room playlists
+      let persistentRoom = null;
+      try {
+        persistentRoom = await collaborativeRoomService.joinRoom(roomId, user);
+      } catch (err) {}
+
       socket.emit('listening_room_state', {
         id: room.id,
-        name: room.name,
+        roomId: room.id,
+        name: persistentRoom?.name || room.name,
+        code: persistentRoom?.code || '',
         hostUsername: room.hostUsername,
-        currentSong: room.currentSong,
+        currentSong: persistentRoom?.currentSong || room.currentSong,
         isPlaying: room.isPlaying,
         seekTime: room.seekTime,
         queue: room.queue,
+        playlists: persistentRoom?.playlists || [],
+        members: persistentRoom?.members || [],
         participants: Array.from(room.participants.values())
       });
 
       io.to(`room_${roomId}`).emit('listening_room_participants', Array.from(room.participants.values()));
     } catch (e) {
       console.warn('[Listening Room Join Error]:', e.message);
+    }
+  });
+
+  // Explicit collaborative room socket join/leave
+  socket.on('room:join', async ({ roomId, user }) => {
+    try {
+      if (!roomId) return;
+      socket.join(`room_${roomId}`);
+      const persistentRoom = await collaborativeRoomService.joinRoom(roomId, user);
+      if (persistentRoom) {
+        socket.emit('room:state', persistentRoom);
+        io.to(`room_${roomId}`).emit('room:members:updated', {
+          roomId,
+          members: persistentRoom.members
+        });
+      }
+    } catch (e) {
+      console.warn('[room:join Error]:', e.message);
+    }
+  });
+
+  socket.on('room:leave', ({ roomId }) => {
+    try {
+      if (!roomId) return;
+      socket.leave(`room_${roomId}`);
+    } catch (e) {}
+  });
+
+  // Collaborative room playlist socket actions
+  socket.on('room:playlist:add_song', async ({ roomId, playlistId, song, user }, callback) => {
+    try {
+      if (!roomId || !playlistId || !song) {
+        if (typeof callback === 'function') callback({ success: false, error: 'Missing parameters' });
+        return;
+      }
+      const result = await collaborativeRoomService.addSongToPlaylist(roomId, playlistId, song, user);
+      if (result.alreadyExists) {
+        if (typeof callback === 'function') callback({ success: false, alreadyExists: true, message: 'Song is already in this room playlist' });
+        return;
+      }
+      io.to(`room_${roomId}`).emit('room:playlist:updated', {
+        roomId,
+        playlists: result.room.playlists,
+        type: 'song_added',
+        playlistId,
+        song: result.song
+      });
+      if (typeof callback === 'function') callback({ success: true, song: result.song, playlist: result.playlist });
+    } catch (err) {
+      if (typeof callback === 'function') callback({ success: false, error: err.message });
+    }
+  });
+
+  socket.on('room:playlist:remove_song', async ({ roomId, playlistId, songId }, callback) => {
+    try {
+      if (!roomId || !playlistId || !songId) {
+        if (typeof callback === 'function') callback({ success: false, error: 'Missing parameters' });
+        return;
+      }
+      const result = await collaborativeRoomService.removeSongFromPlaylist(roomId, playlistId, songId);
+      io.to(`room_${roomId}`).emit('room:playlist:updated', {
+        roomId,
+        playlists: result.room.playlists,
+        type: 'song_removed',
+        playlistId,
+        songId
+      });
+      if (typeof callback === 'function') callback({ success: true, playlist: result.playlist });
+    } catch (err) {
+      if (typeof callback === 'function') callback({ success: false, error: err.message });
+    }
+  });
+
+  socket.on('room:playlist:create', async ({ roomId, name, description, user }, callback) => {
+    try {
+      if (!roomId || !name) {
+        if (typeof callback === 'function') callback({ success: false, error: 'Missing room ID or playlist name' });
+        return;
+      }
+      const result = await collaborativeRoomService.createPlaylist(roomId, { name, description, user });
+      io.to(`room_${roomId}`).emit('room:playlist:updated', {
+        roomId,
+        playlists: result.room.playlists,
+        type: 'playlist_created',
+        playlist: result.playlist
+      });
+      if (typeof callback === 'function') callback({ success: true, playlist: result.playlist, playlists: result.room.playlists });
+    } catch (err) {
+      if (typeof callback === 'function') callback({ success: false, error: err.message });
     }
   });
 
@@ -1247,6 +1337,9 @@ app.use(['/api/offline', '/offline'], offlineRoutes);
 
 // Mount Profile & Social Features (Public Profiles, Follows, Collaborative Playlists)
 app.use(['/api/user', '/user'], profileRoutes);
+
+// Mount Collaborative Rooms & Room Playlists
+app.use(['/api/rooms', '/rooms'], roomsRouter);
 
 // Mount Social Listening Activity Feed
 app.use(['/api/activity', '/activity'], activityRoutes);

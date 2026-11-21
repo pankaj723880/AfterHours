@@ -28,6 +28,8 @@ export default function PlayerSettingsModal({
   onToggleDataSaver = () => {},
   isAutoPipEnabled = true,
   onToggleAutoPip = () => {},
+  isContinuousListening = true,
+  onToggleContinuousListening = () => {},
   isAdmin = false,
   cmsConfig = null
 }) {

@@ -778,6 +778,7 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove, c
   const holdTimerRef = useRef(null);
   const startPosRef = useRef({ x: 0, y: 0 });
   const didDragRef = useRef(false);
+  const isDraggingRef = useRef(false);
 
   const clearHoldTimer = () => {
     if (holdTimerRef.current) {
@@ -790,12 +791,14 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove, c
     if (e.target.closest('button')) return;
 
     didDragRef.current = false;
+    isDraggingRef.current = false;
     startPosRef.current = { x: e.clientX, y: e.clientY };
 
     clearHoldTimer();
     holdTimerRef.current = setTimeout(() => {
       setIsHolding(true);
       didDragRef.current = true;
+      isDraggingRef.current = true;
       try {
         if (navigator.vibrate) navigator.vibrate(35);
       } catch (err) {}
@@ -815,6 +818,7 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove, c
   const handlePointerUp = () => {
     clearHoldTimer();
     setIsHolding(false);
+    isDraggingRef.current = false;
   };
 
   const handleClick = (e) => {
@@ -836,22 +840,37 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove, c
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
+      onDragStart={() => {
+        setIsHolding(true);
+        didDragRef.current = true;
+        isDraggingRef.current = true;
+      }}
+      onDragEnd={() => {
+        setIsHolding(false);
+        isDraggingRef.current = false;
+        clearHoldTimer();
+      }}
       layout="position"
       transition={{
-        layout: { type: "spring", stiffness: 350, damping: 30, mass: 0.8 },
-        scale: { duration: 0.18, ease: "easeOut" }
+        layout: { type: "spring", stiffness: 450, damping: 32, mass: 0.6 },
+        scale: { duration: 0.15, ease: "easeOut" }
       }}
       whileDrag={{
-        scale: 1.03,
+        scale: 1.025,
         zIndex: 60,
-        boxShadow: "0 25px 40px -5px rgba(0, 0, 0, 0.8), 0 0 25px rgba(var(--accent-rgb,245,158,11),0.4)",
-        backgroundColor: "rgba(24, 24, 27, 0.95)",
+        boxShadow: "0 20px 35px -5px rgba(0, 0, 0, 0.8), 0 0 25px rgba(var(--accent-rgb,245,158,11),0.4)",
+        backgroundColor: "rgba(24, 24, 27, 0.98)",
         borderColor: "rgba(var(--accent-rgb,245,158,11),0.7)",
         cursor: "grabbing"
       }}
-      className={`group flex items-center gap-3.5 p-3.5 rounded-2xl cursor-pointer select-none relative transition-all duration-300 border backdrop-blur-xl ${
+      style={{
+        touchAction: isHolding ? 'none' : 'pan-y',
+        transform: 'translateZ(0)',
+        willChange: 'transform'
+      }}
+      className={`group flex items-center gap-2.5 sm:gap-3.5 p-2.5 sm:p-3.5 rounded-2xl cursor-pointer select-none relative transition-all duration-200 border backdrop-blur-xl ${
         isHolding
-          ? 'bg-amber-500/20 border-amber-500/60 shadow-[0_0_25px_rgba(var(--accent-rgb,245,158,11),0.3)] scale-[1.02]'
+          ? 'bg-amber-500/20 border-amber-500/60 shadow-[0_0_25px_rgba(var(--accent-rgb,245,158,11),0.3)] scale-[1.02] touch-none z-50'
           : isCurrent
           ? 'bg-gradient-to-r from-amber-500/20 via-orange-500/10 to-neutral-900/60 border-amber-500/60 shadow-[0_0_25px_rgba(var(--accent-rgb,245,158,11),0.2)]'
           : 'bg-neutral-900/40 hover:bg-neutral-800/60 border-neutral-800/80 hover:border-amber-500/40 hover:shadow-[0_8px_30px_rgba(0,0,0,0.6)] hover:-translate-y-0.5'
@@ -862,9 +881,14 @@ const QueueItem = React.memo(({ track, isCurrent, isPlaying, onPlay, onRemove, c
         onPointerDown={(e) => {
           e.stopPropagation();
           didDragRef.current = true;
+          isDraggingRef.current = true;
+          setIsHolding(true);
+          try {
+            if (navigator.vibrate) navigator.vibrate(30);
+          } catch (_) {}
           dragControls.start(e);
         }}
-        className="touch-none p-2 -ml-1 text-neutral-500 hover:text-amber-400 group-hover:text-amber-300 transition-colors cursor-grab active:cursor-grabbing shrink-0"
+        className="touch-none p-1.5 sm:p-2 -ml-1 text-neutral-500 hover:text-amber-400 group-hover:text-amber-300 transition-colors cursor-grab active:cursor-grabbing shrink-0"
         title="Slide grip to rearrange"
       >
         <Icon name="grip" className="w-4 h-4 sm:w-5 sm:h-5 pointer-events-none" />
@@ -2190,6 +2214,69 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
   });
   const [selectedPlaylistForView, setSelectedPlaylistForView] = useState(null);
+  const [isSharedPlaylistLoading, setIsSharedPlaylistLoading] = useState(false);
+  const [sharedPlaylistError, setSharedPlaylistError] = useState(null);
+
+  // Deep-link shared playlist loader (?playlist=<id>)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const sharedPlaylistId = params.get('playlist');
+    if (!sharedPlaylistId) return;
+
+    let isSubscribed = true;
+
+    const loadSharedPlaylist = async () => {
+      // 1. First check if it already exists in the user's local playlists
+      const localMatch = playlists.find(p => String(p.id) === String(sharedPlaylistId) || String(p.name) === String(sharedPlaylistId));
+      if (localMatch) {
+        setSelectedPlaylistForView(localMatch);
+        setActiveTab('playlists');
+        return;
+      }
+
+      // 2. Fetch from public backend endpoint
+      setIsSharedPlaylistLoading(true);
+      setSharedPlaylistError(null);
+      try {
+        const res = await fetch(getApiUrl(`/api/user/shared-playlist/${encodeURIComponent(sharedPlaylistId)}`));
+        if (!isSubscribed) return;
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.playlist) {
+            const fetchedPl = {
+              id: data.playlist.id,
+              name: data.playlist.name,
+              songs: sanitizeList(data.playlist.songs || []),
+              creator: data.playlist.creator || null,
+              isShared: true
+            };
+            setSelectedPlaylistForView(fetchedPl);
+            setActiveTab('playlists');
+          } else {
+            setSharedPlaylistError('Playlist data is unavailable or empty.');
+          }
+        } else {
+          setSharedPlaylistError('Unable to find this shared playlist. It may have been removed or renamed.');
+        }
+      } catch (err) {
+        if (!isSubscribed) return;
+        console.warn('[Shared Playlist Fetch Error]:', err.message);
+        setSharedPlaylistError('Failed to load shared playlist due to network connection.');
+      } finally {
+        if (isSubscribed) {
+          setIsSharedPlaylistLoading(false);
+        }
+      }
+    };
+
+    loadSharedPlaylist();
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, []); // Run on mount / page load
   const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
   const [selectedSongForPlaylist, setSelectedSongForPlaylist] = useState(null);
   const [newPlaylistName, setNewPlaylistName] = useState('');
@@ -2567,12 +2654,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       return [];
     }
   });
+  const queueRef = useRef(queue);
 
   useEffect(() => {
+    queueRef.current = queue;
     try {
       localStorage.setItem('afterhours_queue', JSON.stringify(queue));
     } catch (e) {}
   }, [queue]);
+
+  const lastEndedTrackIdRef = useRef(null);
+  const lastEndedTimestampRef = useRef(0);
 
   const [showQueuePanel, setShowQueuePanel] = useState(false);
   const showQueuePanelRef = useRef(false);
@@ -2634,6 +2726,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
   });
   const [isListeningRoomsOpen, setIsListeningRoomsOpen] = useState(false);
+  const [activeRoom, setActiveRoom] = useState(null);
+  const [roomPlaylists, setRoomPlaylists] = useState([]);
+  const [selectedPlaylistCategory, setSelectedPlaylistCategory] = useState('personal'); // 'personal' | 'room'
+  const [selectedRoomPlaylistForSong, setSelectedRoomPlaylistForSong] = useState(null);
   const [similarSongsTrack, setSimilarSongsTrack] = useState(null);
   const currentSuggestionsRef = useRef([]);
 
@@ -4404,7 +4500,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             audio.currentTime = 0;
             audio.play().catch(() => {});
           } else {
-            handleNextSongRef.current?.();
+            handleTrackEndedRef.current?.();
           }
         };
 
@@ -4684,7 +4780,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   };
 }, [activeTab, currentSong, stationsMap, authToken, showToast, BACKEND_URL, user]);
 
-  const handleNextSong = useCallback(() => {
+  const handleNextSong = useCallback(async () => {
     // Log skip or completed listen signal for AI recommendations and listening insights
     if (trackPlaybackStartTimeRef.current && currentSongRef.current && !hasLoggedCompletionRef.current) {
       // Use genuine active listened seconds (ignoring paused time / sleep / background freeze)
@@ -4748,11 +4844,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
     }
 
-    const effectiveQueue = (queue && queue.length > 0)
-      ? queue
-      : (trendingSongs && trendingSongs.length > 0 ? trendingSongs : TRENDING_SONGS);
-    if (!effectiveQueue || effectiveQueue.length === 0) return;
-
     if (isRepeat === 'one') {
       if (playerRef.current && typeof playerRef.current.seekTo === 'function') {
         playerRef.current.seekTo(0, true);
@@ -4782,7 +4873,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         playSong(nextShuffleTrack);
         return;
       }
-      const pool = (queue && queue.length > 0) ? queue : (smartQueue && smartQueue.length > 0 ? smartQueue : (trendingSongs || []));
+      const pool = (queueRef.current && queueRef.current.length > 0) ? queueRef.current : (smartQueueRef.current && smartQueueRef.current.length > 0 ? smartQueueRef.current : (trendingSongs || []));
       if (pool.length > 0) {
         const randomIndex = Math.floor(Math.random() * pool.length);
         playSong(pool[randomIndex]);
@@ -4790,57 +4881,116 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
     }
 
-    const currentId = currentSong?.id || currentSong?.videoId;
+    const currentId = currentSongRef.current?.id || currentSongRef.current?.videoId || currentSong?.id || currentSong?.videoId;
+    const currentQ = queueRef.current || [];
+    const isAutoplay = isContinuousListeningRef.current;
 
-    // Spotify-Style 3-Tier Queue Priority:
-    // Tier 1 & 2: User-added queue (Play Next and Manual Queue items)
-    if (queue && queue.length > 0) {
-      const currentIndex = queue.findIndex(s => (s.id || s.videoId) === currentId);
-      let nextIndex = currentIndex !== -1 ? currentIndex + 1 : 0;
-
-      if (nextIndex < queue.length) {
-        const nextTrack = queue[nextIndex];
-        playSong(nextTrack);
-        // Pre-warm background recommendations if remaining queue is small
-        if (queue.length - nextIndex <= 2) {
-          prefetchSmartQueue(nextTrack).catch(() => {});
-        }
-        return;
+    // 1. Remove played track from queue automatically on track advance / completion
+    let remainingQueue = [...currentQ];
+    if (currentId) {
+      const finishedIndex = remainingQueue.findIndex(s => (s.id || s.videoId) === currentId);
+      if (finishedIndex !== -1) {
+        remainingQueue.splice(finishedIndex, 1);
+        setQueue(remainingQueue);
+        queueRef.current = remainingQueue;
       }
     }
 
-    // Tier 3: Smart Queue (Continuous Listening with 5 similar + 5 discovery recommendations)
-    if (isContinuousListeningRef.current) {
-      const smartCandidates = (smartQueue && smartQueue.length > 0)
-        ? smartQueue
+    // 2. Queue Priority First: If queue still has items, play the next item in queue
+    if (remainingQueue.length > 0) {
+      const nextTrack = remainingQueue[0];
+      playSong(nextTrack);
+      if (remainingQueue.length <= 2) {
+        prefetchSmartQueue(nextTrack).catch(() => {});
+      }
+      return;
+    }
+
+    // Queue is now empty
+    // 3. Autoplay ON vs OFF Behavior When Queue Becomes Empty:
+    if (isAutoplay) {
+      const currentSmartQ = smartQueueRef.current || [];
+      const smartCandidates = currentSmartQ.length > 0
+        ? currentSmartQ
         : (currentSuggestionsRef.current || []);
 
       const nextSmartTrack = smartCandidates.find(s => {
         const sid = s.id || s.videoId;
-        if (!sid || sid === currentId) return false;
-        if (queue.some(q => (q.id || q.videoId) === sid)) return false;
-        return true;
+        return sid && sid !== currentId;
       });
 
       if (nextSmartTrack) {
-        // Dequeue from smartQueue state to advance
-        setSmartQueue(prev => prev.filter(s => (s.id || s.videoId) !== (nextSmartTrack.id || nextSmartTrack.videoId)));
+        // Remove played track from autoplayList (smartQueue) and advance
+        const nextList = smartCandidates.filter(s => (s.id || s.videoId) !== (nextSmartTrack.id || nextSmartTrack.videoId));
+        setSmartQueue(nextList);
+        smartQueueRef.current = nextList;
+        currentSuggestionsRef.current = nextList;
+
         playSong(nextSmartTrack);
 
-        // If smartQueue is getting depleted, prefetch fresh recommendations for this new track
-        if (smartCandidates.length <= 3) {
+        if (nextList.length <= 3) {
           prefetchSmartQueue(nextSmartTrack, true).catch(() => {});
         }
         return;
+      }
+
+      // If autoplayList is also empty, fetch similar songs for the last played track and start playing them
+      const baseForRecs = currentSongRef.current || currentSong;
+      if (baseForRecs) {
+        try {
+          const recData = await smartQueueService.fetchRecommendations(baseForRecs, { forceRefresh: true });
+          const recItems = recData.items || [];
+          const deduplicated = smartQueueService.deduplicateAgainstContext(recItems, {
+            currentSong: baseForRecs,
+            manualQueue: [],
+            history: playbackHistoryStackRef.current
+          });
+
+          if (deduplicated.length > 0) {
+            const firstTrack = deduplicated[0];
+            const remainingTracks = deduplicated.slice(1);
+            setSmartQueue(remainingTracks);
+            smartQueueRef.current = remainingTracks;
+            currentSuggestionsRef.current = remainingTracks;
+            playSong(firstTrack);
+            return;
+          }
+        } catch (fetchErr) {
+          console.warn('[SmartQueue] Autoplay fetch failed:', fetchErr);
+        }
+      }
+    } else {
+      // When isAutoplay is OFF:
+      // Fetch similar songs based on the current/last played track and automatically play the next similar track
+      // (keeping Hindi songs by well-known artists as the default when no other language is specified)
+      const baseForRecs = currentSongRef.current || currentSong;
+      const trackPayload = {
+        id: baseForRecs?.id || baseForRecs?.videoId || '',
+        title: baseForRecs?.title || '',
+        artist: baseForRecs?.artist || baseForRecs?.channel || 'Arijit Singh',
+        genre: baseForRecs?.genre || 'hindi'
+      };
+
+      try {
+        const recData = await smartQueueService.fetchRecommendations(trackPayload, { forceRefresh: true });
+        const recItems = recData.items || [];
+        const validSimilar = recItems.filter(s => {
+          const sid = s.id || s.videoId;
+          return sid && sid !== currentId;
+        });
+
+        if (validSimilar.length > 0) {
+          const nextTrack = validSimilar[0];
+          playSong(nextTrack);
+          return;
+        }
+      } catch (err) {
+        console.warn('[Player] Similar songs fetch failed when autoplay off:', err);
       }
     }
 
     // Repeat 'all' support
     if (isRepeat === 'all') {
-      if (queue && queue.length > 0) {
-        playSong(queue[0]);
-        return;
-      }
       if (playbackHistoryStackRef.current.length > 0) {
         const oldestTrack = playbackHistoryStackRef.current[playbackHistoryStackRef.current.length - 1];
         if (oldestTrack) {
@@ -4866,6 +5016,25 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   useEffect(() => {
     handleNextSongRef.current = handleNextSong;
   }, [handleNextSong]);
+
+  const handleTrackEnded = useCallback(() => {
+    const activeSong = currentSongRef.current;
+    const activeId = activeSong?.id || activeSong?.videoId || 'unknown';
+    const now = Date.now();
+
+    // Prevent duplicate onEnded triggers within 1500ms for the same track
+    if (lastEndedTrackIdRef.current === activeId && now - lastEndedTimestampRef.current < 1500) {
+      return;
+    }
+    lastEndedTrackIdRef.current = activeId;
+    lastEndedTimestampRef.current = now;
+
+    handleNextSongRef.current?.();
+  }, []);
+  const handleTrackEndedRef = useRef(handleTrackEnded);
+  useEffect(() => {
+    handleTrackEndedRef.current = handleTrackEnded;
+  }, [handleTrackEnded]);
 
   // Preload next track metadata / image / stream cache at 80% mark or when queue is low
   useEffect(() => {
@@ -5099,6 +5268,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     } catch (_) {}
   }, []);
 
+  const toggleLikeRef = useRef(null);
+
   // Sync global playback flag to window for background visibility event interceptor
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -5198,12 +5369,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     // Optional like/favorite action for supported lock-screens / browsers
     safeSetAction('like', () => {
       if (currentSong) {
-        toggleLike(currentSong);
+        toggleLikeRef.current?.(currentSong);
       }
     });
 
     syncMediaSessionPositionState(currentTimeRef.current, durationRef.current, isPlaying ? 1.0 : 0.0);
-  }, [currentSong, isPlaying, handlePrevSong, handleNextSong, handleSeek, updateMediaSessionImmediate, syncMediaSessionPositionState, startPwaAudioWakeLock, stopPwaAudioWakeLock, toggleLike]);
+  }, [currentSong, isPlaying, handlePrevSong, handleNextSong, handleSeek, updateMediaSessionImmediate, syncMediaSessionPositionState, startPwaAudioWakeLock, stopPwaAudioWakeLock]);
 
   // Periodic MediaSession live progress / seekbar sync: every 1s during active playback
   // Ensures Android 13+ MediaStyle live progress / squiggly seekbar and timestamps stay accurate
@@ -5303,11 +5474,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   // Periodic mediaSession sync is removed to optimize performance
   // Let the browser infer playback position while playing
-
-  const queueRef = useRef(queue);
-  useEffect(() => {
-    queueRef.current = queue;
-  }, [queue]);
 
   const ytContainerRef = useRef(null);
   const fallbackAttemptedRef = useRef({});
@@ -5557,7 +5723,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 if (p && typeof p.catch === 'function') p.catch(() => {});
               } catch (e) {}
             } else {
-              handleNextSongRef.current?.();
+              handleTrackEndedRef.current?.();
             }
           }
         },
@@ -5959,7 +6125,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             audio.currentTime = 0;
             audio.play().catch(() => {});
           } else {
-            handleNextSongRef.current?.();
+            handleTrackEndedRef.current?.();
           }
         };
 
@@ -6943,7 +7109,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     return likedSongs.some(s => s.id === songId || (s.videoId && s.videoId === songId) || (song.videoId && s.id === song.videoId));
   }, [likedSongs]);
 
-  const toggleLike = (song) => {
+  const toggleLike = useCallback((song) => {
     if (!song) return;
     if (!user) { openAuthModal(); return; }
     const songId = song.id || song.videoId;
@@ -7001,7 +7167,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         ? prev.filter(s => s.id !== songId && (!s.videoId || s.videoId !== songId) && (!song.videoId || s.id !== song.videoId)) 
         : [normalizedSong, ...prev];
     });
-  };
+  }, [user, authToken, BACKEND_URL, activeTab, showToast, openAuthModal]);
+
+  useEffect(() => {
+    toggleLikeRef.current = toggleLike;
+  }, [toggleLike]);
 
   const handleAddToPlaylistClick = (song, e) => {
     e?.stopPropagation();
@@ -7113,6 +7283,64 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     setSelectedSongForPlaylist(null);
   };
 
+  const handleAddSongToRoomPlaylist = (targetRoomId, targetPlaylistId, song) => {
+    const songToAdd = song || selectedSongForPlaylist;
+    if (!songToAdd || !targetRoomId || !targetPlaylistId) return;
+
+    const formattedTrack = {
+      ...songToAdd,
+      id: songToAdd.id || songToAdd.videoId,
+      videoId: songToAdd.videoId || songToAdd.id
+    };
+
+    // Optimistic local update of room playlists
+    setRoomPlaylists(prev => (prev || []).map(pl => {
+      if (pl.id === targetPlaylistId) {
+        const exists = (pl.songs || []).some(s => (s.id || s.videoId) === (formattedTrack.id || formattedTrack.videoId));
+        if (!exists) {
+          return { ...pl, songs: [...(pl.songs || []), formattedTrack] };
+        }
+      }
+      return pl;
+    }));
+
+    // Emit over socket for instant real-time broadcast
+    if (socket) {
+      socket.emit('room:playlist:add_song', {
+        roomId: targetRoomId,
+        playlistId: targetPlaylistId,
+        song: formattedTrack,
+        user
+      }, (resp) => {
+        if (resp?.alreadyExists) {
+          showToast('Track already in room playlist');
+        } else if (resp?.success) {
+          showToast(`Added to Room Playlist: "${resp.playlist?.name || 'Playlist'}"`);
+        }
+      });
+    }
+
+    // Call REST endpoint for durable persistence
+    fetch(`/api/rooms/${encodeURIComponent(targetRoomId)}/playlists/${encodeURIComponent(targetPlaylistId)}/songs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ song: formattedTrack, user })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data?.alreadyExists) {
+          showToast('Track already in room playlist');
+        } else if (data?.success && data?.playlists) {
+          setRoomPlaylists(data.playlists);
+          showToast(`Added to Room Playlist`);
+        }
+      })
+      .catch(() => {});
+
+    setIsPlaylistModalOpen(false);
+    setSelectedSongForPlaylist(null);
+  };
+
   const handleRemoveSongFromPlaylist = (playlistId, trackId) => {
     if (!playlistId || !trackId) return;
     const targetSongId = trackId;
@@ -7212,6 +7440,97 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       openDeletePlaylistModal(targetPl);
     }
   };
+
+  const handleSaveSharedPlaylistToLibrary = useCallback((sharedPl) => {
+    if (!sharedPl) return;
+    const targetName = sharedPl.name || 'Shared Playlist';
+    const songsToSave = Array.isArray(sharedPl.songs) ? sanitizeList(sharedPl.songs) : [];
+
+    // Check if user already has a playlist with the exact same name or ID
+    const alreadySaved = playlists.some(p => p.id === sharedPl.id || p.name.toLowerCase() === targetName.toLowerCase());
+
+    const playlistEntry = {
+      id: sharedPl.id || `pl_${Date.now()}`,
+      name: alreadySaved ? `${targetName} (Saved)` : targetName,
+      songs: songsToSave,
+      isShared: false
+    };
+
+    const updatedPlaylists = [...playlists, playlistEntry];
+    setPlaylists(updatedPlaylists);
+
+    try {
+      if (user) {
+        localStorage.setItem('playlists', JSON.stringify(updatedPlaylists));
+      } else {
+        localStorage.setItem('guest_playlists', JSON.stringify(updatedPlaylists));
+      }
+    } catch (_) {}
+
+    // Update active view to reflect saved local copy
+    setSelectedPlaylistForView(playlistEntry);
+
+    // Notify backend save-count endpoint non-blockingly
+    try {
+      if (sharedPl.id) {
+        fetch(getApiUrl(`/api/user/shared-playlist/${encodeURIComponent(sharedPl.id)}/save-count`), {
+          method: 'POST'
+        }).catch(() => {});
+      }
+    } catch (_) {}
+
+    showToast(`Saved "${playlistEntry.name}" (${songsToSave.length} tracks) to your Library!`);
+  }, [playlists, user, showToast]);
+
+  const handleSharePlaylist = useCallback(async (playlist) => {
+    if (!playlist) return;
+    const plId = playlist.id || `pl_${Date.now()}`;
+    const plName = playlist.name || 'Loopra Playlist';
+    const songsList = Array.isArray(playlist.songs) ? playlist.songs : [];
+
+    // Ensure playlist is published to shared backend registry so deep link always resolves
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
+      fetch(getApiUrl('/api/user/playlist/share'), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          id: plId,
+          name: plName,
+          songs: songsList
+        })
+      }).catch(err => console.warn('[Share publish warning]:', err));
+    } catch (_) {}
+
+    const shareUrl = `${window.location.origin}?playlist=${encodeURIComponent(plId)}`;
+    const shareTitle = `${plName} - Loopra Playlist`;
+    const shareText = `Check out the "${plName}" playlist on Loopra with ${songsList.length} tracks!`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: shareTitle,
+          text: shareText,
+          url: shareUrl
+        });
+      } catch (_) {
+        // Fallback to clipboard if share was aborted or failed
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(shareUrl);
+          showToast("Playlist link copied to clipboard!");
+        }
+      }
+    } else {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+        showToast("Playlist link copied to clipboard!");
+      } else {
+        showToast(`Share URL: ${shareUrl}`);
+      }
+    }
+  }, [authToken, showToast]);
 
   const handleRenamePlaylist = (playlistId) => {
     if (!playlistId) return;
@@ -7492,6 +7811,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   };
 
   const initialSearchExecutedRef = useRef(false);
+  const initialRoomCheckedRef = useRef(false);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -7499,6 +7819,35 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     if (!initialSearchExecutedRef.current && q) {
       initialSearchExecutedRef.current = true;
       fetchYouTubeMusic(q);
+    }
+
+    // Auto-join room via URL share link e.g. ?room=room_123 or ?roomCode=XYZ
+    const roomParam = (params.get('room') || params.get('roomCode') || '').trim();
+    if (!initialRoomCheckedRef.current && roomParam) {
+      initialRoomCheckedRef.current = true;
+      setIsListeningRoomsOpen(true);
+      fetch(`/api/rooms/${encodeURIComponent(roomParam)}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data?.success && data?.room) {
+            setActiveRoom(data.room);
+            setRoomPlaylists(data.room.playlists || []);
+            socket?.emit('join_listening_room', { roomId: data.room.roomId, user });
+            socket?.emit('room:join', { roomId: data.room.roomId, user });
+            showToast?.(`Joined Collaborative Room "${data.room.name}"`);
+          } else {
+            socket?.emit('join_listening_room', { roomId: roomParam, user });
+            socket?.emit('room:join', { roomId: roomParam, user });
+          }
+        })
+        .catch(() => {
+          socket?.emit('join_listening_room', { roomId: roomParam, user });
+          socket?.emit('room:join', { roomId: roomParam, user });
+        });
     }
   }, []);
 
@@ -9897,6 +10246,25 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
         {activeTab === 'playlists' && (
           <div key={`page-playlists-${selectedPlaylistForView?.id || 'list'}`} className={`page-transition w-full px-2 sm:px-4 md:px-8 space-y-6 relative z-10 ${USE_V2_PLAYLISTS_UI ? 'pb-32' : ''}`}>
+            {isSharedPlaylistLoading && (
+              <div className="flex items-center justify-center py-16 gap-3 text-amber-400">
+                <span className="w-5 h-5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                <span className="text-sm font-semibold">Loading shared playlist...</span>
+              </div>
+            )}
+
+            {sharedPlaylistError && (
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-center justify-between gap-3 text-xs">
+                <span>{sharedPlaylistError}</span>
+                <button
+                  onClick={() => setSharedPlaylistError(null)}
+                  className="px-3 py-1 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 font-bold"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+
             {!selectedPlaylistForView ? (
               USE_V2_PLAYLISTS_UI ? (
                 /* ========================================================================= */
@@ -10152,54 +10520,98 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       <Icon name="skipPrev" className="w-4 h-4 rotate-180" />
                     </button>
                     <div>
-                      <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">{selectedPlaylistForView.name}</h2>
-                      <p className="text-xs text-neutral-400">{selectedPlaylistForView.songs.length} tracks</p>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">{selectedPlaylistForView.name}</h2>
+                        {selectedPlaylistForView.isShared && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-medium">
+                            Shared Playlist
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-neutral-400 mt-0.5">
+                        <span>{selectedPlaylistForView.songs.length} tracks</span>
+                        {selectedPlaylistForView.creator?.displayName && (
+                          <>
+                            <span>•</span>
+                            <span className="text-neutral-400">Created by <span className="text-amber-400/90 font-medium">@{selectedPlaylistForView.creator.displayName || selectedPlaylistForView.creator.username}</span></span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Action Buttons: Rename, Delete, Share */}
+                  {/* Action Buttons: Play All, Save to Library (if shared/external), Rename, Delete, Share */}
                   <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-                    <button
-                      type="button"
-                      onClick={() => handleRenamePlaylist(selectedPlaylistForView.id)}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/60 text-xs font-semibold transition active:scale-95 cursor-pointer"
-                      title="Rename Playlist"
-                      aria-label="Rename Playlist"
-                    >
-                      <Icon name="edit" className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                      <span>Rename</span>
-                    </button>
+                    {/* Play All Tracks in Playlist */}
+                    {selectedPlaylistForView.songs && selectedPlaylistForView.songs.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const firstTrack = selectedPlaylistForView.songs[0];
+                          if (firstTrack) {
+                            playSong(firstTrack);
+                            // Queue the rest of the playlist
+                            const rest = selectedPlaylistForView.songs.slice(1);
+                            if (rest.length > 0) {
+                              setQueue(rest);
+                            }
+                            showToast(`Playing "${selectedPlaylistForView.name}"`);
+                          }
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs shadow-md shadow-amber-500/20 transition active:scale-95 cursor-pointer"
+                        title="Play All"
+                        aria-label="Play All"
+                      >
+                        <Icon name="play" className="w-3.5 h-3.5 fill-current" />
+                        <span>Play All</span>
+                      </button>
+                    )}
 
-                    <button
-                      type="button"
-                      onClick={() => handleDeletePlaylist(selectedPlaylistForView.id)}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800/80 hover:bg-red-500/20 text-neutral-200 hover:text-red-300 border border-neutral-700/60 hover:border-red-500/40 text-xs font-semibold transition active:scale-95 cursor-pointer"
-                      title="Delete Playlist"
-                      aria-label="Delete Playlist"
-                    >
-                      <Icon name="trash" className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                      <span>Delete</span>
-                    </button>
+                    {/* Save to Library (Rendered if this is a Shared / external playlist not yet in user's library) */}
+                    {(!playlists.some(p => p.id === selectedPlaylistForView.id) || selectedPlaylistForView.isShared) && (
+                      <button
+                        type="button"
+                        onClick={() => handleSaveSharedPlaylistToLibrary(selectedPlaylistForView)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-500/20 border border-emerald-400/30 transition active:scale-95 cursor-pointer"
+                        title="Save Playlist to Library"
+                        aria-label="Save Playlist to Library"
+                      >
+                        <Icon name="plus" className="w-3.5 h-3.5" />
+                        <span>Save to Library</span>
+                      </button>
+                    )}
+
+                    {/* Only show Rename and Delete if it's the user's own local playlist */}
+                    {playlists.some(p => p.id === selectedPlaylistForView.id) && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleRenamePlaylist(selectedPlaylistForView.id)}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/60 text-xs font-semibold transition active:scale-95 cursor-pointer"
+                          title="Rename Playlist"
+                          aria-label="Rename Playlist"
+                        >
+                          <Icon name="edit" className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <span>Rename</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePlaylist(selectedPlaylistForView.id)}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800/80 hover:bg-red-500/20 text-neutral-200 hover:text-red-300 border border-neutral-700/60 hover:border-red-500/40 text-xs font-semibold transition active:scale-95 cursor-pointer"
+                          title="Delete Playlist"
+                          aria-label="Delete Playlist"
+                        >
+                          <Icon name="trash" className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                          <span>Delete</span>
+                        </button>
+                      </>
+                    )}
 
                     {/* Share Playlist Button */}
                     <button
                       type="button"
-                      onClick={() => {
-                        const shareUrl = `${window.location.origin}?playlist=${encodeURIComponent(selectedPlaylistForView.id || selectedPlaylistForView.name)}`;
-                        const shareTitle = `${selectedPlaylistForView.name} - Loopra Playlist`;
-                        const shareText = `Check out the "${selectedPlaylistForView.name}" playlist on Loopra with ${selectedPlaylistForView.songs.length} tracks!`;
-
-                        if (navigator.share) {
-                          navigator.share({
-                            title: shareTitle,
-                            text: shareText,
-                            url: shareUrl
-                          }).catch(() => {});
-                        } else {
-                          navigator.clipboard?.writeText(shareUrl);
-                          showToast("Playlist link copied to clipboard!");
-                        }
-                      }}
+                      onClick={() => handleSharePlaylist(selectedPlaylistForView)}
                       className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition shadow-sm cursor-pointer active:scale-95"
                       title="Share Playlist"
                       aria-label="Share Playlist"
@@ -10533,6 +10945,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         isPlaying={isPlaying}
         onPlaySong={playSong}
         showToast={showToast}
+        activeRoom={activeRoom}
+        setActiveRoom={setActiveRoom}
+        roomPlaylists={roomPlaylists}
+        setRoomPlaylists={setRoomPlaylists}
+        onOpenAddToPlaylist={(track) => handleAddToPlaylistClick(track || currentSong)}
       />
 
       <SimilarSongsModal
@@ -10833,7 +11250,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       <MobileBottomNav 
         activeTab={activeTab}
         isProfileOpen={isProfileOpen}
-        isAiOpen={activeAssistantPanel === 'ai'}
         onToggleAi={() => setActiveAssistantPanel(prev => prev === 'ai' ? null : 'ai')}
         onNavigate={(tab) => {
           setIsProfileOpen(false);
@@ -11196,35 +11612,38 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           {/* Up Next Column (Full on Mobile when 'queue' tab is active; 50% on Desktop) */}
           <div className={`${mobileQueueTab === 'queue' ? 'flex' : 'hidden'} md:flex w-full md:w-1/2 flex-col bg-neutral-900/30 backdrop-blur-3xl overflow-y-auto hide-scrollbar pb-32 flex-1 md:flex-initial`}>
             <div className="p-4 sm:p-6 md:p-12 mt-2 md:mt-0">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-4 mb-4 sm:mb-6">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                   <button
                     onClick={() => setMobileQueueTab('player')}
-                    className="md:hidden p-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium border border-neutral-700/60"
+                    className="md:hidden p-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium border border-neutral-700/60 shrink-0"
                     title="Back to Now Playing"
                   >
                     ←
                   </button>
-                  <h3 className="text-xl sm:text-2xl font-display font-bold text-white flex items-center gap-2.5">
-                    <Icon name="list" className="w-6 h-6 text-amber-500" />
-                    Up Next
+                  <h3 className="text-lg sm:text-2xl font-display font-bold text-white flex items-center gap-2 sm:gap-2.5 truncate">
+                    <Icon name="list" className="w-5 h-5 sm:w-6 sm:h-6 text-amber-500 shrink-0" />
+                    <span>Up Next</span>
                   </h3>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-amber-400/80 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full hidden sm:inline-flex items-center gap-1.5 font-medium">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 justify-end">
+                  <span className="text-[11px] text-amber-400/80 bg-amber-500/10 border border-amber-500/20 px-2 sm:px-2.5 py-1 rounded-full hidden sm:inline-flex items-center gap-1.5 font-medium whitespace-nowrap">
                     <Icon name="grip" className="w-3.5 h-3.5" />
-                    Tap & hold to slide
+                    <span>Tap & hold to slide</span>
                   </span>
-                  <span className="text-xs font-medium bg-neutral-800 text-neutral-400 px-3 py-1 rounded-full">{queue.length} tracks</span>
-                                    {queue.length > 0 && (
+                  <span className="text-[11px] sm:text-xs font-medium bg-neutral-800 text-neutral-400 px-2.5 sm:px-3 py-1 rounded-full whitespace-nowrap">
+                    {queue.length} <span className="hidden xs:inline">tracks</span><span className="xs:hidden">songs</span>
+                  </span>
+                  {queue.length > 0 && (
                     <button
                       onClick={handleSaveQueueAsPlaylist}
-                      className="text-xs text-amber-300 hover:text-amber-200 px-3 py-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition cursor-pointer flex items-center gap-1 font-medium"
+                      className="text-[11px] sm:text-xs text-amber-300 hover:text-amber-200 px-2.5 sm:px-3 py-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition cursor-pointer flex items-center gap-1 font-medium whitespace-nowrap active:scale-95"
                       title="Save Queue as Playlist"
                       aria-label="Save Queue as Playlist"
                     >
-                      <Icon name="plus" className="w-3.5 h-3.5" />
-                      <span>Save Playlist</span>
+                      <Icon name="plus" className="w-3.5 h-3.5 shrink-0" />
+                      <span className="hidden sm:inline">Save Playlist</span>
+                      <span className="sm:hidden">Save</span>
                     </button>
                   )}
                   {queue.length > 0 && (
@@ -11235,7 +11654,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                           showToast("Playback queue cleared");
                         }
                       }}
-                      className="text-xs text-neutral-400 hover:text-red-400 px-2.5 py-1 rounded-full bg-neutral-800/90 hover:bg-neutral-800 border border-neutral-700/60 transition cursor-pointer"
+                      className="text-[11px] sm:text-xs text-neutral-400 hover:text-red-400 px-2 sm:px-2.5 py-1 rounded-full bg-neutral-800/90 hover:bg-neutral-800 border border-neutral-700/60 transition cursor-pointer whitespace-nowrap active:scale-95"
                       title="Clear Queue"
                       aria-label="Clear Queue"
                     >

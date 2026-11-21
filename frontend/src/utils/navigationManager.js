@@ -59,7 +59,13 @@ export function parseRoute(pathname = '/', search = '') {
   const searchParams = new URLSearchParams(search || '');
   const q = (searchParams.get('q') || '').trim();
   const id = (searchParams.get('id') || '').trim();
+  const playlistParam = (searchParams.get('playlist') || '').trim();
   const view = (searchParams.get('view') || '').trim();
+
+  if (playlistParam) {
+    const p = `/?playlist=${encodeURIComponent(playlistParam)}`;
+    return { tab: 'playlists', path: p, params: { playlist: playlistParam, id: playlistParam } };
+  }
 
   if (cleanPath === '/admin') {
     return { tab: 'admin', path: '/admin', params: {} };
@@ -131,6 +137,9 @@ export function areEntriesEqual(a, b) {
   const aId = a.params?.id || '';
   const bId = b.params?.id || '';
   if (aId !== bId) return false;
+  const aPl = a.params?.playlist || '';
+  const bPl = b.params?.playlist || '';
+  if (aPl !== bPl) return false;
   const aSub = a.params?.subView || '';
   const bSub = b.params?.subView || '';
   if (aSub !== bSub) return false;
