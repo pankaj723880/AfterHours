@@ -11,7 +11,9 @@ const shortsSamples = [
   { title: 'Tum Hi Ho yt shorts trending', channel: 'Shorts Factory' },
   { title: 'Viral song youtube shorts', channel: 'YT Official' },
   { title: 'Chaleya viralshort edit', channel: 'Dance King' },
-  { title: 'Best Hook Step | Shorts', channel: 'Choreography' }
+  { title: 'Best Hook Step | Shorts', channel: 'Choreography' },
+  { title: 'Viral song reels', channel: 'Reels Hub' },
+  { title: 'Trending IG Reel Audio', channel: 'Reel King' }
 ];
 
 for (const sample of shortsSamples) {
@@ -24,6 +26,8 @@ const ringtoneAndEditSamples = [
   { title: 'Tum Hi Ho Ringtone download', channel: 'Ringtone Hub' },
   { title: 'Kesariya phone ringtone', channel: 'Best Ringtones' },
   { title: 'Mobile ringtone 2024 instrumental', channel: 'Sound lab' },
+  { title: 'Love ringtone romantic', channel: 'Ringtone World' },
+  { title: 'New ringtone 2026', channel: 'Ringtones Pro' },
   { title: 'Jawan BGM caller tune', channel: 'Caller Tunes HD' },
   { title: 'Sad Song Whatsapp Status full screen', channel: 'Status King' },
   { title: 'Status video 4k status', channel: 'Heartbreak Status' },
@@ -33,10 +37,12 @@ const ringtoneAndEditSamples = [
   { title: 'Top 10 song ideas for wedding', channel: 'Event Planners' },
   { title: 'Anniversary special song track', channel: 'Wedding Bells' },
   { title: 'Chaleya Karaoke with lyrics', channel: 'Sing Along' },
+  { title: 'Kal Ho Naa Ho Karoake version', channel: 'Sing Karaoke' },
   { title: 'Kal Ho Naa Ho instrumental only piano', channel: 'Piano Beats' },
   { title: 'Traditional Bhat Geet', channel: 'Folk Channel' },
   { title: 'Shaadi Banni Geet', channel: 'Desi Traditions' },
-  { title: 'Lover Slowed + Reverb Edit', channel: 'Vibe Edits' }
+  { title: 'Lover Slowed + Reverb Edit', channel: 'Vibe Edits' },
+  { title: 'Beach vibes sunset track', channel: 'Relax Vibes' }
 ];
 
 for (const sample of ringtoneAndEditSamples) {

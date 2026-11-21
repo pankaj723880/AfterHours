@@ -419,57 +419,125 @@ export const PlayerProvider = ({ children }) => {
     if (!currentTrack || typeof window === 'undefined' || !('mediaSession' in navigator)) return;
 
     try {
-      const artworkSrc = currentTrack.thumbnail || currentTrack.image || '/loopra-logo.png';
-      const formattedArtwork = artworkSrc.startsWith('http') || artworkSrc.startsWith('blob:')
+      const artworkSrc = currentTrack.coverArt || currentTrack.albumArt || currentTrack.image || currentTrack.thumbnail || '/loopra-logo.png';
+      const formattedArtwork = artworkSrc.startsWith('http') || artworkSrc.startsWith('blob:') || artworkSrc.startsWith('data:')
         ? artworkSrc
         : `${window.location.origin}${artworkSrc.startsWith('/') ? '' : '/'}${artworkSrc}`;
+
+      const mimeType = formattedArtwork.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
 
       navigator.mediaSession.metadata = new MediaMetadata({
         title: currentTrack.title || 'Unknown Track',
         artist: currentTrack.artist || currentTrack.channel || 'Loopra Artist',
-        album: currentTrack.album || 'Loopra Music',
+        album: currentTrack.album || 'Loopra',
         artwork: [
-          {
-            src: formattedArtwork,
-            sizes: '512x512',
-            type: 'image/jpeg'
-          }
+          { src: formattedArtwork, sizes: '96x96', type: mimeType },
+          { src: formattedArtwork, sizes: '192x192', type: mimeType },
+          { src: formattedArtwork, sizes: '256x256', type: mimeType },
+          { src: formattedArtwork, sizes: '512x512', type: mimeType }
         ]
       });
 
       navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
 
+      const syncPosition = () => {
+        if (typeof navigator.mediaSession.setPositionState === 'function' && audioRef.current) {
+          const duration = audioRef.current.duration;
+          const curTime = audioRef.current.currentTime;
+          if (duration > 0 && isFinite(duration) && isFinite(curTime)) {
+            try {
+              navigator.mediaSession.setPositionState({
+                duration: Math.max(0, duration),
+                playbackRate: audioRef.current.playbackRate || 1.0,
+                position: Math.min(duration, Math.max(0, curTime))
+              });
+            } catch (_) {}
+          }
+        }
+      };
+
+      syncPosition();
+
+      const safeSetAction = (action, handler) => {
+        try {
+          navigator.mediaSession.setActionHandler(action, handler);
+        } catch (_) {}
+      };
+
       // Bind playback handlers to OS media notification controls
-      navigator.mediaSession.setActionHandler('play', () => {
+      safeSetAction('play', () => {
         initAudioContext();
         audioRef.current.play().catch(handlePlaybackError);
         setIsPlaying(true);
         if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+        syncPosition();
       });
 
-      navigator.mediaSession.setActionHandler('pause', () => {
+      safeSetAction('pause', () => {
         audioRef.current.pause();
         setIsPlaying(false);
         if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+        syncPosition();
       });
 
-      navigator.mediaSession.setActionHandler('previoustrack', () => {
+      safeSetAction('previoustrack', () => {
         handlePrevious?.();
       });
 
-      navigator.mediaSession.setActionHandler('nexttrack', () => {
+      safeSetAction('nexttrack', () => {
         handleNext?.();
       });
 
-      navigator.mediaSession.setActionHandler('seekto', (details) => {
-        if (details.seekTime !== undefined && audioRef.current) {
+      safeSetAction('seekto', (details) => {
+        if (details.seekTime !== undefined && audioRef.current && !isNaN(details.seekTime)) {
           audioRef.current.currentTime = details.seekTime;
+          syncPosition();
+        }
+      });
+
+      safeSetAction('seekbackward', (details) => {
+        if (audioRef.current) {
+          const skip = details?.seekOffset || 10;
+          audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime - skip);
+          syncPosition();
+        }
+      });
+
+      safeSetAction('seekforward', (details) => {
+        if (audioRef.current) {
+          const skip = details?.seekOffset || 10;
+          const dur = audioRef.current.duration || 999999;
+          audioRef.current.currentTime = Math.min(dur, audioRef.current.currentTime + skip);
+          syncPosition();
         }
       });
     } catch (err) {
       console.warn('[PlayerContext] MediaSession initialization error:', err);
     }
   }, [currentTrack, isPlaying, handleNext, handlePrevious, handlePlaybackError]);
+
+  // Periodic MediaSession position state sync during active playback in PlayerContext
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('mediaSession' in navigator) || !isPlaying || !currentTrack) return;
+
+    const intervalId = setInterval(() => {
+      if (typeof navigator.mediaSession.setPositionState === 'function' && audioRef.current) {
+        const duration = audioRef.current.duration;
+        const curTime = audioRef.current.currentTime;
+        if (duration > 0 && isFinite(duration) && isFinite(curTime)) {
+          try {
+            navigator.mediaSession.setPositionState({
+              duration: Math.max(0, duration),
+              playbackRate: audioRef.current.playbackRate || 1.0,
+              position: Math.min(duration, Math.max(0, curTime))
+            });
+          } catch (_) {}
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [isPlaying, currentTrack]);
 
   return (
     <PlayerContext.Provider

@@ -47,65 +47,71 @@ export const STRICT_BLACKLIST_REGEXES = STRICT_BLACKLIST_WORDS.map(word => {
 });
 
 // Strict Track Sanitizer: Patterns for Shorts, ringtones, edits, dance/fitness clips, and junk
-export const SHORTS_TAGS_AND_KEYWORDS = [
-  /#shorts?\b/i,
-  /\b(?:yt\s*shorts?|youtube\s*shorts?|viralshorts?|shorts)\b/i,
-  /\bshort\s+(?:video|clip|edit|ver|version)\b/i
+export const normalizeTextForFiltering = (str = '') => {
+  if (!str || typeof str !== 'string') return '';
+  return str
+    .toLowerCase()
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, ' ')
+    .replace(/[^a-z0-9#\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+export const STRICT_TEXT_BLOCKLIST = [
+  'shorts', 'short', '#shorts', 'yt shorts', 'youtube shorts', 'viralshort', 'reels', 'ig reel',
+  'ringtone', 'ringtones', 'mobile ringtone', 'phone ringtone', 'love ringtone', 'new ringtone', 'caller tune',
+  'whatsapp status', 'status video', 'edit', 'voice comparison', 'vs', 'song ideas',
+  'dance cover', 'dance performance', 'couple dance', 'zumba', 'fitness dance', 'dancer',
+  'karaoke', 'karoake', 'instrumental only', 'bhat geet', 'banni geet', 'beach', 'anniversary'
 ];
 
-export const RINGTONE_AND_EDIT_PATTERNS = [
-  /\b(?:phone\s+|mobile\s+)?ringtones?\b/i,
-  /\bcaller\s*tunes?\b/i,
-  /\bwhatsapp\s+status\b/i,
-  /\bstatus\s+videos?\b/i,
-  /\big\s+reels?\b/i,
-  /\breels?\b/i,
-  /\bedits?\b/i,
-  /\bvoice\s+comparison\b/i,
-  /\bvs\b/i,
-  /\bsong\s+ideas?\b/i,
-  /\banniversary\b/i,
-  /\bbeach\b/i,
-  /\bkaraoke\b/i,
-  /\binstrumental\s+only\b/i,
-  /\bbhat\s+geet\b/i,
-  /\bbanni\s+geet\b/i
-];
-
-export const DANCE_FITNESS_CLIP_PATTERNS = [
-  /\bdance\s+cover\b/i,
-  /\bdance\s+performance\b/i,
-  /\bcouple\s+dance\b/i,
-  /\bzumba\b/i,
-  /\bfitness\s+dance\b/i,
-  /\bdancers?\b/i,
-  /\bringtonix\b/i,
+export const SPAM_CHANNEL_HANDLES = [
+  /\brington(?:e|es|ix)\b/i,
   /\bsayyed\s+ismail\b/i,
+  /\bzumba\b/i,
+  /\bdancers?\b/i,
+  /\bkar(?:a|o)ake\b/i,
   /\bfact\s+boy\b/i,
-  /\bcinemix\b/i
+  /\bcinemix\b/i,
+  /\bstatus\b/i,
+  /\bedits?\b/i
 ];
+
+export const STRICT_BLOCKLIST_REGEXES = STRICT_TEXT_BLOCKLIST.map(kw => {
+  const isHash = kw.startsWith('#');
+  const cleanKw = kw.replace(/^#/, '');
+  const escaped = cleanKw.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&').replace(/\s+/g, '\\s+');
+  if (isHash) {
+    return new RegExp(`(?:#|\\b)${escaped}\\b`, 'i');
+  }
+  return new RegExp(`\\b${escaped}\\b`, 'i');
+});
+
+export const SHORTS_TAGS_AND_KEYWORDS = STRICT_BLOCKLIST_REGEXES;
+export const RINGTONE_AND_EDIT_PATTERNS = STRICT_BLOCKLIST_REGEXES;
+export const DANCE_FITNESS_CLIP_PATTERNS = SPAM_CHANNEL_HANDLES;
 
 /**
  * Strict Track Sanitizer:
  * Validates whether a track is a clean genuine music track and NOT:
- * - Shorts (#shorts, #short, yt shorts, youtube shorts, viralshort, shorts)
- * - Ringtones & edits (ringtone, phone ringtone, mobile ringtone, caller tune, whatsapp status, status video, ig reel, reels, edit, voice comparison, vs, song ideas, anniversary, beach, karaoke, instrumental only, bhat geet, banni geet)
- * - Dance / fitness / clip channels or titles (dance cover, dance performance, couple dance, zumba, fitness dance, dancer, ringtonix, sayyed ismail, fact boy, cinemix, karaoke)
+ * - Shorts (shorts, short, #shorts, yt shorts, youtube shorts, viralshort, reels, ig reel)
+ * - Ringtones & edits (ringtone, ringtones, mobile ringtone, phone ringtone, love ringtone, new ringtone, caller tune, whatsapp status, status video, edit, voice comparison, vs, song ideas, anniversary, beach, karaoke, karoake, instrumental only, bhat geet, banni geet)
+ * - Dance / fitness / clip channels or titles (dance cover, dance performance, couple dance, zumba, fitness dance, dancer, ringtonix, sayyed ismail, fact boy, cinemix, karaoke, karoake, generic status/edit handles)
  * - Short-form duration tracks (durationSec > 0 && durationSec <= 75)
  */
 export function isCleanMusicTrack(track) {
   if (!track) return false;
 
-  const title = (
+  const rawTitle = (
     track.title ||
     track.snippet?.title ||
     track.name ||
     ''
   ).trim();
 
-  if (!title) return false;
+  if (!rawTitle) return false;
 
-  const channel = (
+  const rawChannel = (
     track.channel ||
     track.artist ||
     track.author?.name ||
@@ -113,30 +119,33 @@ export function isCleanMusicTrack(track) {
     ''
   ).trim();
 
-  const desc = (
+  const rawDesc = (
     track.description ||
     track.snippet?.description ||
     ''
   ).trim();
 
-  const metadata = `${title} ${channel} ${desc}`;
+  const rawTags = Array.isArray(track.tags)
+    ? track.tags.join(' ')
+    : (Array.isArray(track.snippet?.tags) ? track.snippet.tags.join(' ') : '');
 
-  // 1. Shorts tags or keywords
-  for (const regex of SHORTS_TAGS_AND_KEYWORDS) {
-    if (regex.test(metadata)) return false;
+  // 1. Normalized text check (lowercased, emojis/punctuation stripped, spaces collapsed)
+  const normTitle = normalizeTextForFiltering(rawTitle);
+  const normChannel = normalizeTextForFiltering(rawChannel);
+  const normDesc = normalizeTextForFiltering(rawDesc);
+  const normTags = normalizeTextForFiltering(rawTags);
+  const combinedNorm = `${normTitle} ${normChannel} ${normDesc} ${normTags}`.trim();
+
+  for (const regex of STRICT_BLOCKLIST_REGEXES) {
+    if (regex.test(combinedNorm)) return false;
   }
 
-  // 2. Ringtones and edits
-  for (const regex of RINGTONE_AND_EDIT_PATTERNS) {
-    if (regex.test(metadata)) return false;
+  // 2. Creator / channel spam check (ringtonix, sayyed ismail, zumba, dancer, karaoke, fact boy, cinemix, status, edit handles)
+  for (const channelRegex of SPAM_CHANNEL_HANDLES) {
+    if (channelRegex.test(rawChannel) || channelRegex.test(normChannel)) return false;
   }
 
-  // 3. Dance / fitness / clip channels or titles
-  for (const regex of DANCE_FITNESS_CLIP_PATTERNS) {
-    if (regex.test(metadata)) return false;
-  }
-
-  // 4. Short-form duration check (durationSec > 0 && durationSec <= 75)
+  // 3. Short-form duration check (durationSec > 0 && durationSec <= 75)
   let durationSec = null;
   const rawDuration = track.durationSec !== undefined
     ? track.durationSec

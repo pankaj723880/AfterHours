@@ -511,6 +511,46 @@ export const sanitizeTrackMetadata = (rawTitle = '', rawArtist = '') => {
   return { title, artist };
 };
 
+/**
+ * Returns clean, high-resolution square artwork for MediaMetadata.
+ * Ensures multi-resolution entries (96x96 up to 512x512) and avoids wide/distorted banners.
+ */
+export const getCleanMediaSessionArtwork = (track) => {
+  if (!track) {
+    return [{ src: `${window.location.origin}/loopra-logo.png`, sizes: '512x512', type: 'image/png' }];
+  }
+
+  // Priority: explicit high-res square cover -> album art -> thumbnail -> image
+  const rawCandidate = track.coverArt || track.albumArt || track.image || track.thumbnail || '/loopra-logo.png';
+  let cleanUrl = typeof rawCandidate === 'string' && rawCandidate.trim() ? rawCandidate.trim() : '/loopra-logo.png';
+
+  // If YouTube thumbnail, prefer mqdefault or hqdefault/maxresdefault cleanly formatted
+  if (cleanUrl.includes('ytimg.com') || cleanUrl.includes('youtube.com')) {
+    const ytMatch = cleanUrl.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})\//) || cleanUrl.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+    if (ytMatch && ytMatch[1]) {
+      const vidId = ytMatch[1];
+      // Use clean HQ thumbnail
+      cleanUrl = `https://i.ytimg.com/vi/${vidId}/hqdefault.jpg`;
+    }
+  }
+
+  const absoluteUrl = cleanUrl.startsWith('http') || cleanUrl.startsWith('blob:') || cleanUrl.startsWith('data:')
+    ? cleanUrl
+    : `${window.location.origin}${cleanUrl.startsWith('/') ? '' : '/'}${cleanUrl}`;
+
+  const isPng = absoluteUrl.toLowerCase().endsWith('.png');
+  const mimeType = isPng ? 'image/png' : 'image/jpeg';
+
+  return [
+    { src: absoluteUrl, sizes: '96x96', type: mimeType },
+    { src: absoluteUrl, sizes: '128x128', type: mimeType },
+    { src: absoluteUrl, sizes: '192x192', type: mimeType },
+    { src: absoluteUrl, sizes: '256x256', type: mimeType },
+    { src: absoluteUrl, sizes: '384x384', type: mimeType },
+    { src: absoluteUrl, sizes: '512x512', type: mimeType }
+  ];
+};
+
 const handleImageLoad = (e) => {
   const target = e.currentTarget || e.target;
   if (!target) return;
@@ -1876,8 +1916,17 @@ export default function App() {
         };
       }).filter(Boolean);
       // Strictly enforce centralized single-song and content-filter validation
-      const singleSongCleaned = filterSingleSongs(cleaned);
-      return singleSongCleaned.length >= 3 ? singleSongCleaned : fallback;
+      const singleSongCleaned = filterSingleSongs(cleaned).filter(t => isCleanMusicTrack(t));
+      // Deduplicate using TrackDeduplicator to ensure zero duplicate cards from local storage
+      const dedup = new TrackDeduplicator();
+      const uniqueCleaned = [];
+      for (const t of singleSongCleaned) {
+        if (!dedup.isDuplicate(t)) {
+          dedup.add(t);
+          uniqueCleaned.push(t);
+        }
+      }
+      return uniqueCleaned.length >= 3 ? uniqueCleaned : fallback;
     } catch (e) {
       return fallback;
     }
@@ -1906,9 +1955,11 @@ export default function App() {
   const uniqueTrendingSongs = React.useMemo(() => {
     const raw = (trendingSongs && trendingSongs.length > 0) ? trendingSongs : TRENDING_SONGS;
     const validated = filterSingleSongs(raw).filter(t => isCleanMusicTrack(t));
-    const candidateList = validated.length > 0 ? validated : TRENDING_SONGS;
+    const cleanFallbacks = filterSingleSongs(TRENDING_SONGS).filter(t => isCleanMusicTrack(t));
+    const candidateList = validated.length > 0 ? validated : cleanFallbacks;
     const dedup = new TrackDeduplicator();
     return candidateList.filter(t => {
+      if (!isCleanMusicTrack(t)) return false;
       const cleanThumb = getCleanThumbnail(t);
       if (!cleanThumb || !isThumbnailUrlFormatValid(cleanThumb)) return false;
       const key = getCanonicalSongKey(t);
@@ -1922,9 +1973,11 @@ export default function App() {
   const uniquePopularAlbums = React.useMemo(() => {
     const raw = (popularAlbums && popularAlbums.length > 0) ? popularAlbums : POPULAR_ALBUMS;
     const validated = filterSingleSongs(raw).filter(t => isCleanMusicTrack(t));
-    const candidateList = validated.length > 0 ? validated : POPULAR_ALBUMS;
+    const cleanFallbacks = filterSingleSongs(POPULAR_ALBUMS).filter(t => isCleanMusicTrack(t));
+    const candidateList = validated.length > 0 ? validated : cleanFallbacks;
     const dedup = new TrackDeduplicator();
     return candidateList.filter(t => {
+      if (!isCleanMusicTrack(t)) return false;
       const cleanThumb = getCleanThumbnail(t);
       if (!cleanThumb || !isThumbnailUrlFormatValid(cleanThumb)) return false;
       const key = getCanonicalSongKey(t);
@@ -1938,9 +1991,11 @@ export default function App() {
   const uniquePopularRadio = React.useMemo(() => {
     const raw = (popularRadio && popularRadio.length > 0) ? popularRadio : POPULAR_RADIO;
     const validated = filterSingleSongs(raw).filter(t => isCleanMusicTrack(t));
-    const candidateList = validated.length > 0 ? validated : POPULAR_RADIO;
+    const cleanFallbacks = filterSingleSongs(POPULAR_RADIO).filter(t => isCleanMusicTrack(t));
+    const candidateList = validated.length > 0 ? validated : cleanFallbacks;
     const dedup = new TrackDeduplicator();
     return candidateList.filter(t => {
+      if (!isCleanMusicTrack(t)) return false;
       const cleanThumb = getCleanThumbnail(t);
       if (!cleanThumb || !isThumbnailUrlFormatValid(cleanThumb)) return false;
       const key = getCanonicalSongKey(t);
@@ -1958,12 +2013,17 @@ export default function App() {
         let collected = [];
         let pageToken = null;
         let attempts = 0;
-        const maxAttempts = options.maxAttempts || 5;
+        const maxAttempts = options.maxAttempts || 6;
         const dedup = new TrackDeduplicator();
+
+        // Extra query variants if initial batch runs low on clean candidates
+        const fallbackQueries = options.fallbackQueries || [];
+        let queryIndex = 0;
+        let currentQuery = query;
 
         while (collected.length < targetLimit && attempts < maxAttempts) {
           attempts++;
-          const res = await fetchFromBackend(query, {
+          const res = await fetchFromBackend(currentQuery, {
             limit: 25,
             pageToken: pageToken || undefined
           });
@@ -1988,6 +2048,7 @@ export default function App() {
             // Strictly filter for individual single songs and clean music tracks only
             const singleSongs = filterSingleSongs(mapped).filter(t => isCleanMusicTrack(t));
             for (const s of singleSongs) {
+              if (!isCleanMusicTrack(s)) continue;
               if (!dedup.isDuplicate(s)) {
                 dedup.add(s);
                 collected.push(s);
@@ -1996,7 +2057,13 @@ export default function App() {
             }
 
             pageToken = res.nextPageToken || null;
-            if (!pageToken && collected.length >= targetLimit) break;
+            if (!pageToken && collected.length < targetLimit && queryIndex < fallbackQueries.length) {
+              currentQuery = fallbackQueries[queryIndex++];
+              pageToken = null;
+            }
+          } else if (queryIndex < fallbackQueries.length) {
+            currentQuery = fallbackQueries[queryIndex++];
+            pageToken = null;
           } else {
             break;
           }
@@ -2004,8 +2071,9 @@ export default function App() {
 
         // Only replace state if we have a rich, valid list of at least 3 tracks
         if (collected.length >= 3) {
-          setState(collected.slice(0, targetLimit));
-          try { localStorage.setItem(storageKey, JSON.stringify(collected.slice(0, targetLimit))); } catch (e) {}
+          const finalTracks = collected.slice(0, targetLimit);
+          setState(finalTracks);
+          try { localStorage.setItem(storageKey, JSON.stringify(finalTracks)); } catch (e) {}
         }
       } catch (e) {
         // Fallback: If network timed out or failed, populate from cached localStorage
@@ -2028,14 +2096,44 @@ export default function App() {
 
     // Stagger section fetches to eliminate concurrent YouTube scraping / 429 rate limit
     // Hardened with negative search keywords avoiding Shorts, ringtones, status, dance, karaoke, and edits
-    fetchDynamicSection("latest trending hindi hit songs official music video -shorts -#shorts -ringtone -status -dance -karaoke -edit", setTrendingSongs, 'afterhours_trending');
+    fetchDynamicSection(
+      "latest trending hindi hit songs official music video -shorts -#shorts -ringtone -karaoke -dance -status -edit",
+      setTrendingSongs,
+      'afterhours_trending',
+      {
+        fallbackQueries: [
+          "top bollywood songs official video -shorts -#shorts -ringtone -karaoke -dance -status -edit",
+          "arijit singh shreya ghoshal official video -shorts -#shorts -ringtone -karaoke -dance -status -edit"
+        ]
+      }
+    );
 
     const albumsTimer = setTimeout(() => {
-      fetchDynamicSection("latest hit bollywood single songs official video -shorts -#shorts -ringtone -status -dance -karaoke -edit", setPopularAlbums, 'afterhours_albums');
+      fetchDynamicSection(
+        "latest hit bollywood single songs official video -shorts -#shorts -ringtone -karaoke -dance -status -edit",
+        setPopularAlbums,
+        'afterhours_albums',
+        {
+          fallbackQueries: [
+            "popular bollywood movie soundtrack official songs -shorts -#shorts -ringtone -karaoke -dance -status -edit",
+            "pritam vishal mishra official songs -shorts -#shorts -ringtone -karaoke -dance -status -edit"
+          ]
+        }
+      );
     }, 1200);
 
     const radioTimer = setTimeout(() => {
-      fetchDynamicSection("bollywood acoustic unplugged official single songs -shorts -#shorts -ringtone -status -dance -karaoke -edit", setPopularRadio, 'afterhours_radio');
+      fetchDynamicSection(
+        "bollywood acoustic unplugged official single songs -shorts -#shorts -ringtone -karaoke -dance -status -edit",
+        setPopularRadio,
+        'afterhours_radio',
+        {
+          fallbackQueries: [
+            "hindi lofi acoustic official single audio -shorts -#shorts -ringtone -karaoke -dance -status -edit",
+            "arijit singh live acoustic official video -shorts -#shorts -ringtone -karaoke -dance -status -edit"
+          ]
+        }
+      );
     }, 2400);
 
     return () => {
@@ -4941,6 +5039,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
   };
 
+  // Helper: Safely synchronize mediaSession positionState with bounds checking
+  const syncMediaSessionPositionState = useCallback((pos, dur, rate = 1.0) => {
+    if (typeof window === 'undefined' || !('mediaSession' in navigator)) return;
+    if (typeof navigator.mediaSession.setPositionState !== 'function') return;
+    const duration = typeof dur === 'number' && !isNaN(dur) ? dur : (durationRef.current || 0);
+    const position = typeof pos === 'number' && !isNaN(pos) ? pos : (currentTimeRef.current || 0);
+    if (duration > 0 && isFinite(duration) && isFinite(position)) {
+      try {
+        navigator.mediaSession.setPositionState({
+          duration: Math.max(0, duration),
+          playbackRate: typeof rate === 'number' && rate > 0 ? rate : 1.0,
+          position: Math.min(Math.max(0, duration), Math.max(0, position))
+        });
+      } catch (_) {}
+    }
+  }, []);
+
   // Helper: Synchronous & robust MediaSession updater to ensure immediate notification bar / lock-screen sync
   const updateMediaSessionImmediate = useCallback((track, playingState) => {
     if (typeof window === 'undefined' || !('mediaSession' in navigator) || !track) return;
@@ -4949,38 +5064,22 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         track.title || 'Unknown Track',
         track.artist || track.channel || cmsConfig?.branding?.siteName || "Loopra Artist"
       );
-      const rawArtwork = track.thumbnail || track.image || '/loopra-logo.png';
-      const artworkUrl = typeof rawArtwork === 'string' && rawArtwork.trim() ? rawArtwork.trim() : '/loopra-logo.png';
-      const absoluteArtworkUrl = artworkUrl.startsWith('http') || artworkUrl.startsWith('blob:')
-        ? artworkUrl
-        : `${window.location.origin}${artworkUrl.startsWith('/') ? '' : '/'}${artworkUrl}`;
+      const cleanArtworkList = getCleanMediaSessionArtwork(track);
 
       navigator.mediaSession.metadata = new MediaMetadata({
         title: cleanTitle,
         artist: cleanArtist,
-        album: track.album || "Loopra Music",
-        artwork: [
-          { src: absoluteArtworkUrl, sizes: '96x96', type: 'image/jpeg' },
-          { src: absoluteArtworkUrl, sizes: '256x256', type: 'image/jpeg' },
-          { src: absoluteArtworkUrl, sizes: '512x512', type: 'image/jpeg' }
-        ]
+        album: track.album || "Loopra",
+        artwork: cleanArtworkList
       });
 
       navigator.mediaSession.playbackState = playingState ? 'playing' : 'paused';
 
-      if (typeof navigator.mediaSession.setPositionState === 'function' && durationRef.current > 0) {
-        try {
-          navigator.mediaSession.setPositionState({
-            duration: Math.max(0, durationRef.current || 0),
-            playbackRate: 1.0,
-            position: Math.min(durationRef.current || 0, Math.max(0, currentTimeRef.current || 0))
-          });
-        } catch (_) {}
-      }
+      syncMediaSessionPositionState(currentTimeRef.current, durationRef.current, 1.0);
     } catch (err) {
       console.warn('[MediaSession] Error updating immediate metadata:', err);
     }
-  }, [cmsConfig]);
+  }, [cmsConfig, syncMediaSessionPositionState]);
 
   // PWA & Standalone Web Audio Keep-Alive for OS Audio Focus Lock (Clean silent audio element preferred to avoid Web Audio buffer underruns & crackling)
   const startPwaAudioWakeLock = useCallback(() => {
@@ -5009,72 +5108,126 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   // MediaSession API Integration & Page Visibility lifecycle for background playback (Desktop & Android)
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'mediaSession' in navigator && currentSong) {
-      updateMediaSessionImmediate(currentSong, isPlaying);
+    if (typeof window === 'undefined' || !('mediaSession' in navigator) || !currentSong) return;
 
+    updateMediaSessionImmediate(currentSong, isPlaying);
+
+    const safeSetAction = (action, handler) => {
       try {
-        // Bind playback handlers to OS media notification controls
-        navigator.mediaSession.setActionHandler('play', () => {
-          isUserPausedRef.current = false;
-          userIntentPlayingRef.current = true;
-          startPwaAudioWakeLock();
-          if (silentAudioRef.current) {
-            try { silentAudioRef.current.volume = 0.01; } catch (_) {}
-            silentAudioRef.current.play().catch(() => {});
-          }
-          try {
-            const p = playerRef.current?.playVideo?.();
-            if (p && typeof p.catch === 'function') p.catch(() => {});
-          } catch (e) {}
-          setIsPlaying(true);
-          if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
-        });
+        navigator.mediaSession.setActionHandler(action, handler);
+      } catch (_) {}
+    };
 
-        navigator.mediaSession.setActionHandler('pause', () => {
-          isUserPausedRef.current = true;
-          userIntentPlayingRef.current = false;
-          stopPwaAudioWakeLock();
-          if (autoResumeTimerRef.current) {
-            clearTimeout(autoResumeTimerRef.current);
-            autoResumeTimerRef.current = null;
-          }
-          if (isPlayerReadyRef.current || playerRef.current?.isOffline || playerRef.current?.isRadio) {
+    // Standard playback actions
+    safeSetAction('play', () => {
+      isUserPausedRef.current = false;
+      userIntentPlayingRef.current = true;
+      startPwaAudioWakeLock();
+      if (silentAudioRef.current) {
+        try { silentAudioRef.current.volume = 0.01; } catch (_) {}
+        silentAudioRef.current.play().catch(() => {});
+      }
+      try {
+        const p = playerRef.current?.playVideo?.();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } catch (e) {}
+      setIsPlaying(true);
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+      syncMediaSessionPositionState(currentTimeRef.current, durationRef.current, 1.0);
+    });
+
+    safeSetAction('pause', () => {
+      isUserPausedRef.current = true;
+      userIntentPlayingRef.current = false;
+      stopPwaAudioWakeLock();
+      if (autoResumeTimerRef.current) {
+        clearTimeout(autoResumeTimerRef.current);
+        autoResumeTimerRef.current = null;
+      }
+      if (isPlayerReadyRef.current || playerRef.current?.isOffline || playerRef.current?.isRadio) {
         playerRef.current?.pauseVideo?.();
       }
-          if (silentAudioRef.current) silentAudioRef.current.pause();
-          setIsPlaying(false);
-          if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
-        });
+      if (silentAudioRef.current) silentAudioRef.current.pause();
+      setIsPlaying(false);
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+      syncMediaSessionPositionState(currentTimeRef.current, durationRef.current, 0.0);
+    });
 
-        navigator.mediaSession.setActionHandler('previoustrack', () => {
-          handlePrevSong?.();
-        });
+    safeSetAction('previoustrack', () => {
+      handlePrevSong?.();
+    });
 
-        navigator.mediaSession.setActionHandler('nexttrack', () => {
-          handleNextSong?.();
-        });
+    safeSetAction('nexttrack', () => {
+      handleNextSong?.();
+    });
 
-        navigator.mediaSession.setActionHandler('seekto', (details) => {
-          if (details.seekTime !== undefined) {
-            handleSeek(details.seekTime);
-          }
-        });
-
-        // Background playback support: update positionState for lockscreen scrubber
-        if (typeof navigator.mediaSession.setPositionState === 'function' && durationRef.current > 0) {
-          try {
-            navigator.mediaSession.setPositionState({
-              duration: Math.max(0, durationRef.current || 0),
-              playbackRate: 1.0,
-              position: Math.min(durationRef.current || 0, Math.max(0, currentTimeRef.current || 0))
-            });
-          } catch (_) {}
-        }
-      } catch (handlerErr) {
-        console.warn('[MediaSession] Error registering handlers:', handlerErr);
+    safeSetAction('seekto', (details) => {
+      if (details.seekTime !== undefined && !isNaN(details.seekTime)) {
+        handleSeek(details.seekTime);
+        syncMediaSessionPositionState(details.seekTime, durationRef.current, isPlaying ? 1.0 : 0.0);
       }
+    });
+
+    safeSetAction('seekbackward', (details) => {
+      const skipTime = details?.seekOffset || 10;
+      const cur = currentTimeRef.current || 0;
+      const target = Math.max(0, cur - skipTime);
+      handleSeek(target);
+      syncMediaSessionPositionState(target, durationRef.current, isPlaying ? 1.0 : 0.0);
+    });
+
+    safeSetAction('seekforward', (details) => {
+      const skipTime = details?.seekOffset || 10;
+      const cur = currentTimeRef.current || 0;
+      const dur = durationRef.current || 999999;
+      const target = Math.min(dur, cur + skipTime);
+      handleSeek(target);
+      syncMediaSessionPositionState(target, durationRef.current, isPlaying ? 1.0 : 0.0);
+    });
+
+    safeSetAction('stop', () => {
+      isUserPausedRef.current = true;
+      userIntentPlayingRef.current = false;
+      stopPwaAudioWakeLock();
+      playerRef.current?.pauseVideo?.();
+      if (silentAudioRef.current) silentAudioRef.current.pause();
+      setIsPlaying(false);
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
+    });
+
+    // Optional like/favorite action for supported lock-screens / browsers
+    safeSetAction('like', () => {
+      if (currentSong) {
+        toggleLike(currentSong);
+      }
+    });
+
+    syncMediaSessionPositionState(currentTimeRef.current, durationRef.current, isPlaying ? 1.0 : 0.0);
+  }, [currentSong, isPlaying, handlePrevSong, handleNextSong, handleSeek, updateMediaSessionImmediate, syncMediaSessionPositionState, startPwaAudioWakeLock, stopPwaAudioWakeLock, toggleLike]);
+
+  // Periodic MediaSession live progress / seekbar sync: every 1s during active playback
+  // Ensures Android 13+ MediaStyle live progress / squiggly seekbar and timestamps stay accurate
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('mediaSession' in navigator) || !isPlaying || !currentSong) {
+      return;
     }
-  }, [currentSong, isPlaying, handlePrevSong, handleNextSong, handleSeek, updateMediaSessionImmediate, startPwaAudioWakeLock, stopPwaAudioWakeLock]);
+
+    const intervalId = setInterval(() => {
+      try {
+        let cur = currentTimeRef.current || 0;
+        if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
+          const directCur = playerRef.current.getCurrentTime();
+          if (typeof directCur === 'number' && !isNaN(directCur) && directCur >= 0) {
+            cur = directCur;
+            currentTimeRef.current = directCur;
+          }
+        }
+        syncMediaSessionPositionState(cur, durationRef.current, 1.0);
+      } catch (_) {}
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [isPlaying, currentSong, syncMediaSessionPositionState]);
 
   // Page Visibility lifecycle: YouTube IFrame Anti-Suspend & Auto Picture-in-Picture on Minimize / Pagehide
   useEffect(() => {
@@ -5126,15 +5279,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         }
       } else {
         // When tab becomes visible again, refresh positionState on mediaSession
-        if ('mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function' && durationRef.current > 0) {
-          try {
-            navigator.mediaSession.setPositionState({
-              duration: Math.max(0, durationRef.current || 0),
-              playbackRate: 1.0,
-              position: Math.min(durationRef.current || 0, Math.max(0, currentTimeRef.current || 0))
-            });
-          } catch (_) {}
-        }
+        syncMediaSessionPositionState(currentTimeRef.current, durationRef.current, isPlayingRef.current ? 1.0 : 0.0);
       }
     };
 
@@ -5154,7 +5299,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       document.removeEventListener('visibilitychange', handlePageVisibilityChange);
       window.removeEventListener('pagehide', handlePageHide);
     };
-  }, [isAutoPipEnabled]);
+  }, [isAutoPipEnabled, syncMediaSessionPositionState]);
 
   // Periodic mediaSession sync is removed to optimize performance
   // Let the browser infer playback position while playing
