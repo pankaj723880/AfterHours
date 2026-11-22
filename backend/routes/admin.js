@@ -15,6 +15,7 @@ import { ADMIN_MANAGED_ENTITIES, EXCLUDED_INTERNAL_ENTITIES } from '../config/ad
 import { executeGeminiOperation, sanitizeLogMessage, invalidateGeminiKeyCache } from '../services/geminiKeyManager.js';
 import { encryptApiKey, decryptApiKey, maskApiKey } from '../utils/keyEncryption.js';
 import { testKeyHealth, invalidateKeyPoolCache, getEnvironmentFallbackKeys } from '../services/keyResolverService.js';
+import { getQuotaReport, resetKeyQuota, setKeyQuotaLimit } from '../services/youtubeQuotaTracker.js';
 import { 
   isGitHubConfigured, 
   verifyGitHubConnection, 
@@ -964,6 +965,74 @@ const maskKey = (key = '') => {
 // ==========================================
 // 13. Dynamic Multi-Key Pool Management (AES-256 Encrypted Storage & Telemetry)
 // ==========================================
+
+// GET /api/admin/keys/quota - Detailed per-key quota & usage telemetry breakdown
+router.get('/keys/quota', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const report = await getQuotaReport();
+    res.json(report);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve key quota report: ' + err.message });
+  }
+});
+
+// POST /api/admin/keys/quota/reset - Reset quota tracking for one or all keys
+router.post('/keys/quota/reset', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { maskedKey } = req.body || {};
+    await resetKeyQuota(maskedKey || null);
+
+    await AuditLog.create({
+      adminId: (req.user._id || req.user.id || req.user.userId)?.toString(),
+      adminUsername: req.user.username,
+      action: 'API_KEY_QUOTA_RESET',
+      details: { maskedKey: maskedKey || 'ALL' },
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    const report = await getQuotaReport();
+    res.json({
+      success: true,
+      message: maskedKey ? `Quota reset for key ${maskedKey}` : 'All key quotas reset successfully',
+      report
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to reset quota: ' + err.message });
+  }
+});
+
+// PATCH /api/admin/keys/quota/limit - Configure total daily quota limit for a key
+router.patch('/keys/quota/limit', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { maskedKey, totalQuota } = req.body || {};
+    if (!maskedKey || !totalQuota) {
+      return res.status(400).json({ error: 'maskedKey and totalQuota are required' });
+    }
+
+    const updated = setKeyQuotaLimit(maskedKey, totalQuota);
+    if (!updated) {
+      return res.status(404).json({ error: 'Key not found in quota tracker' });
+    }
+
+    await AuditLog.create({
+      adminId: (req.user._id || req.user.id || req.user.userId)?.toString(),
+      adminUsername: req.user.username,
+      action: 'API_KEY_QUOTA_LIMIT_UPDATE',
+      details: { maskedKey, totalQuota },
+      ip: getClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.json({
+      success: true,
+      message: `Quota limit updated to ${totalQuota} units`,
+      key: updated
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update quota limit: ' + err.message });
+  }
+});
 
 // GET /api/admin/keys - List all keys (strictly masked for security, with full health telemetry)
 router.get('/keys', authenticateToken, requireAdmin, async (req, res) => {

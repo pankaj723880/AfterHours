@@ -18,6 +18,11 @@ const moodAffinitySchema = new mongoose.Schema({
   score: { type: Number, default: 0 }
 }, { _id: false });
 
+const languageAffinitySchema = new mongoose.Schema({
+  name: { type: String, required: true, trim: true },
+  score: { type: Number, default: 0 }
+}, { _id: false });
+
 const recentTrackSchema = new mongoose.Schema({
   trackId: { type: String, required: true },
   title: { type: String, required: true },
@@ -31,9 +36,14 @@ const userMusicPreferenceSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true,
-    unique: true,
+    sparse: true,
     index: true
+  },
+  guestId: {
+    type: String,
+    sparse: true,
+    index: true,
+    trim: true
   },
   topArtists: {
     type: [artistAffinitySchema],
@@ -45,6 +55,10 @@ const userMusicPreferenceSchema = new mongoose.Schema({
   },
   topMoods: {
     type: [moodAffinitySchema],
+    default: []
+  },
+  preferredLanguages: {
+    type: [languageAffinitySchema],
     default: []
   },
   favouriteTrackIds: {
@@ -89,5 +103,6 @@ const userMusicPreferenceSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-export default mongoose.model('UserMusicPreference', userMusicPreferenceSchema);
+userMusicPreferenceSchema.index({ userId: 1, guestId: 1 });
 
+export default mongoose.model('UserMusicPreference', userMusicPreferenceSchema);

@@ -90,6 +90,69 @@ export const STRICT_TEXT_BLOCKLIST = [
   'karaoke', 'karoake', 'instrumental only', 'bhat geet', 'banni geet', 'beach', 'anniversary'
 ];
 
+export const URL_METADATA_SHORTS_REGEX = /(?:#shorts|\/shorts\/|\bshorts\b|\breels?\b|\bringtones?\b|\bwhatsapp\s+status\b|\bstatus\s+video\b)/i;
+
+/**
+ * Parses duration from various formats into integer seconds.
+ * Supports:
+ * - Number (seconds)
+ * - Object: durationSec, durationSeconds, durationMs, seconds, duration
+ * - String: PT#M#S, PT#H#M#S, HH:MM:SS, MM:SS, or numeric string
+ * Returns null if missing, invalid, NaN, or non-positive.
+ */
+export function parseDurationToSeconds(input) {
+  if (input === null || input === undefined) return null;
+
+  if (typeof input === 'number') {
+    if (isNaN(input) || !isFinite(input) || input <= 0) return null;
+    return Math.round(input);
+  }
+
+  if (typeof input === 'object') {
+    if (input.durationSec !== undefined) return parseDurationToSeconds(input.durationSec);
+    if (input.durationSeconds !== undefined) return parseDurationToSeconds(input.durationSeconds);
+    if (input.durationMs !== undefined && typeof input.durationMs === 'number') {
+      return parseDurationToSeconds(Math.round(input.durationMs / 1000));
+    }
+    if (input.seconds !== undefined) return parseDurationToSeconds(input.seconds);
+    if (input.duration !== undefined) return parseDurationToSeconds(input.duration);
+    return null;
+  }
+
+  if (typeof input === 'string') {
+    const s = input.trim();
+    if (!s) return null;
+
+    if (s.startsWith('PT')) {
+      const h = (s.match(/(\d+)H/) || [])[1] || 0;
+      const m = (s.match(/(\d+)M/) || [])[1] || 0;
+      const sec = (s.match(/(\d+)S/) || [])[1] || 0;
+      const total = parseInt(h, 10) * 3600 + parseInt(m, 10) * 60 + parseInt(sec, 10);
+      return !isNaN(total) && total > 0 ? total : null;
+    }
+
+    if (s.includes(':')) {
+      const parts = s.split(':').map(p => parseInt(p, 10));
+      if (parts.some(p => isNaN(p))) return null;
+      if (parts.length === 3) {
+        const total = parts[0] * 3600 + parts[1] * 60 + parts[2];
+        return total > 0 ? total : null;
+      }
+      if (parts.length === 2) {
+        const total = parts[0] * 60 + parts[1];
+        return total > 0 ? total : null;
+      }
+      return null;
+    }
+
+    const num = Number(s);
+    if (!isNaN(num) && isFinite(num) && num > 0) return Math.round(num);
+    return null;
+  }
+
+  return null;
+}
+
 export const SPAM_CHANNEL_HANDLES = [
   /\brington(?:e|es|ix)\b/i,
   /\bsayyed\s+ismail\b/i,
@@ -127,6 +190,9 @@ export const DANCE_FITNESS_CLIP_PATTERNS = SPAM_CHANNEL_HANDLES;
 export function isCleanMusicTrack(track) {
   if (!track) return false;
 
+  // Radio streams bypass short-duration rejection
+  const isRadio = track.isRadio === true || track.isLive === true;
+
   const rawTitle = (
     track.title ||
     track.snippet?.title ||
@@ -154,6 +220,20 @@ export function isCleanMusicTrack(track) {
     ? track.tags.join(' ')
     : (Array.isArray(track.snippet?.tags) ? track.snippet.tags.join(' ') : '');
 
+  const rawUrl = (
+    track.url ||
+    track.link ||
+    track.videoUrl ||
+    ''
+  ).trim();
+
+  const rawThumb = (
+    track.thumbnail ||
+    track.image ||
+    (typeof track.snippet?.thumbnails?.high?.url === 'string' ? track.snippet.thumbnails.high.url : '') ||
+    ''
+  ).trim();
+
   // 1. Normalized text check (lowercased, emojis/punctuation stripped, spaces collapsed)
   const normTitle = normalizeTextForFiltering(rawTitle);
   const normChannel = normalizeTextForFiltering(rawChannel);
@@ -162,45 +242,47 @@ export function isCleanMusicTrack(track) {
   const combinedNorm = `${normTitle} ${normChannel} ${normDesc} ${normTags}`.trim();
 
   for (const regex of STRICT_BLOCKLIST_REGEXES) {
-    if (regex.test(combinedNorm)) return false;
+    if (regex.test(combinedNorm)) {
+      if (typeof console !== 'undefined' && console.debug) {
+        console.debug(`[songFilter:strip] Blocked keyword in metadata (${regex}): "${rawTitle}"`);
+      }
+      return false;
+    }
   }
 
   // 2. Creator / channel spam check (ringtonix, sayyed ismail, zumba, dancer, karaoke, fact boy, cinemix, status, edit handles)
   for (const channelRegex of SPAM_CHANNEL_HANDLES) {
-    if (channelRegex.test(rawChannel) || channelRegex.test(normChannel)) return false;
-  }
-
-  // 3. Short-form duration check (durationSec > 0 && durationSec <= 75)
-  let durationSec = null;
-  const rawDuration = track.durationSec !== undefined
-    ? track.durationSec
-    : (track.duration?.seconds !== undefined
-        ? track.duration.seconds
-        : (track.seconds !== undefined
-            ? track.seconds
-            : (track.duration !== undefined ? track.duration : null)));
-
-  if (typeof rawDuration === 'number' && !isNaN(rawDuration)) {
-    durationSec = rawDuration;
-  } else if (typeof rawDuration === 'string') {
-    const str = rawDuration.trim();
-    if (str.startsWith('PT')) {
-      const h = (str.match(/(\d+)H/) || [])[1] || 0;
-      const m = (str.match(/(\d+)M/) || [])[1] || 0;
-      const s = (str.match(/(\d+)S/) || [])[1] || 0;
-      durationSec = parseInt(h, 10) * 3600 + parseInt(m, 10) * 60 + parseInt(s, 10);
-    } else {
-      const parts = str.split(':').map(p => parseInt(p, 10) || 0);
-      if (parts.length === 3) {
-        durationSec = parts[0] * 3600 + parts[1] * 60 + parts[2];
-      } else if (parts.length === 2) {
-        durationSec = parts[0] * 60 + parts[1];
+    if (channelRegex.test(rawChannel) || channelRegex.test(normChannel)) {
+      if (typeof console !== 'undefined' && console.debug) {
+        console.debug(`[songFilter:strip] Blocked spam channel (${channelRegex}): "${rawChannel}" - "${rawTitle}"`);
       }
+      return false;
     }
   }
 
-  if (durationSec !== null && durationSec > 0 && durationSec <= 75) {
+  // 2b. URL / Link / Thumbnail metadata shorts pattern check
+  if (rawUrl && URL_METADATA_SHORTS_REGEX.test(rawUrl)) {
+    if (typeof console !== 'undefined' && console.debug) {
+      console.debug(`[songFilter:strip] Blocked shorts URL: "${rawUrl}" for track "${rawTitle}"`);
+    }
     return false;
+  }
+  if (rawThumb && URL_METADATA_SHORTS_REGEX.test(rawThumb)) {
+    if (typeof console !== 'undefined' && console.debug) {
+      console.debug(`[songFilter:strip] Blocked shorts thumbnail: "${rawThumb}" for track "${rawTitle}"`);
+    }
+    return false;
+  }
+
+  // 3. Strict Duration Check (< 75s, or explicit <= 0 / NaN / missing)
+  if (!isRadio) {
+    const durationSec = parseDurationToSeconds(track);
+    if (durationSec !== null && durationSec < 75) {
+      if (typeof console !== 'undefined' && console.debug) {
+        console.debug(`[songFilter:strip] Duration under 75s (${durationSec}s < 75s): "${rawTitle}"`);
+      }
+      return false;
+    }
   }
 
   return true;
@@ -228,7 +310,7 @@ export const NON_MUSIC_DISQUALIFIERS = [
   // Videos using music only as background
   /\b(with\s+background\s+music|background\s+music\s+for\s+(?:gaming|study|vlog)|bgm\s+for\s+vlogs?)\b/i,
   // AI-generated junk & synthetic voices
-  /\b(ai\s+generated|ai\s+cover|ai\s+song|ai\s+music|ai\s+version|suno(?:\.ai)?|udio(?:\.ai)?|voicify|deepfake\s+music)\b/i,
+  /\b(ai\s+generated|ai\s+cover|ai\s+song|ai\s+music|ai\s+version|suno\.ai|suno\s+ai|udio(?:\.ai)?|voicify|deepfake\s+music)\b/i,
   // Foreign drama clips & status edits
   /\b(kdrama\s+edit|k-drama|c-drama|drama\s+scene|chinese\s+drama|pakistani\s+drama|whatsapp\s+status\s+video|shorts\s+video|status\s+video|reel\s+edit)\b/i
 ];
@@ -274,17 +356,13 @@ export function isSingleSong(track) {
     ''
   ).toLowerCase();
 
-  // 1. Duration validation
-  if (typeof track.duration === 'number' && track.duration > 0) {
-    if (track.duration > 900) return false; // > 15 mins
-  }
-  if (typeof track.duration === 'string') {
-    const colons = (track.duration.match(/:/g) || []).length;
-    if (colons >= 2) return false; // >= 1 hour
-    if (colons === 1) {
-      const parts = track.duration.split(':').map(p => parseInt(p, 10) || 0);
-      if (parts[0] >= 15) return false; // >= 15 minutes
-    }
+  // 1. Duration validation (< 75 seconds or > 15 minutes)
+  const isRadio = track.isRadio === true || track.isLive === true;
+  const checkDurationSec = parseDurationToSeconds(track);
+
+  if (!isRadio && checkDurationSec !== null) {
+    if (checkDurationSec < 75) return false;
+    if (checkDurationSec > 900) return false;
   }
 
   // 2. Pattern Matching against exclusion regexes
@@ -372,6 +450,9 @@ export function normalizeTrack(raw) {
     raw.snippet?.thumbnails?.default?.url ||
     `https://i.ytimg.com/vi/${trimmedId}/hqdefault.jpg`;
 
+  const durSec = parseDurationToSeconds(raw);
+  const formattedDur = durSec ? `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}` : (typeof raw.duration === 'string' ? raw.duration : '3:30');
+
   return {
     id: trimmedId,
     videoId: trimmedId,
@@ -380,9 +461,30 @@ export function normalizeTrack(raw) {
     channel: raw.channel || raw.snippet?.channelTitle || artist || 'Loopra Channel',
     thumbnail,
     image: thumbnail,
-    duration: raw.duration,
+    duration: formattedDur,
+    durationSec: durSec || undefined,
     query: `${title} ${artist}`.trim()
   };
+}
+
+/**
+ * Single Unified Gate: Validates whether a candidate track is an authentic, clean music track
+ * and NOT a short (< 75s), ringtone, status clip, or non-single compilation.
+ */
+export function isValidMusicTrack(track) {
+  if (!track) return false;
+  return isCleanMusicTrack(track) && isSingleSong(track);
+}
+
+/**
+ * Sanitizes and validates a candidate track. Returns normalized track object if valid,
+ * or null if rejected.
+ */
+export function sanitizeTrack(raw) {
+  const norm = normalizeTrack(raw);
+  if (!norm || !isValidYouTubeId(norm.id)) return null;
+  if (!isValidMusicTrack(norm)) return null;
+  return norm;
 }
 
 /**
@@ -413,8 +515,11 @@ export function filterSingleSongs(tracks = []) {
 }
 
 export default {
+  parseDurationToSeconds,
   isSingleSong,
   isCleanMusicTrack,
+  isValidMusicTrack,
+  sanitizeTrack,
   isValidYouTubeId,
   normalizeTrack,
   filterSingleSongs

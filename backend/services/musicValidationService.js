@@ -254,17 +254,17 @@ class MusicValidationService {
       notes.push('Category ID omitted or unprovided');
     }
 
-    // Duration Check (Typical song duration: 90s to 600s)
+    // Duration Check (Strict minimum 75s; standard 90s to 600s)
     if (durationSec !== null) {
-      if (durationSec >= 90 && durationSec <= 480) {
+      if (durationSec < 75) { // < 75s strictly prohibited
+        score = 0.0;
+        notes.push(`Duration under 75s strictly prohibited (${durationSec}s)`);
+      } else if (durationSec >= 90 && durationSec <= 480) {
         score += 0.15;
         notes.push(`Standard song duration: ${durationSec}s`);
       } else if (durationSec > 900) { // > 15 minutes
         score -= 0.50;
         notes.push(`Duration exceeds 15 minutes (${durationSec}s)`);
-      } else if (durationSec <= 75) { // <= 75s (Shorts/ringtone clips/teasers)
-        score -= 0.60;
-        notes.push(`Duration under 75s (${durationSec}s)`);
       }
     }
 
@@ -643,10 +643,13 @@ Return strictly a JSON object with:
 
     // Strict Eligibility Rule:
     // A video is eligible for playback IF AND ONLY IF:
+    // 0. Layer 1 duration is >= 75s (or not flagged as under 75s)
     // 1. Layer 2 has no disqualifiers
     // 2. Layer 3 AI classifier confirms isMusic === true
     // 3. Layer 3 confidence >= 0.70 (High confidence music)
-    const isEligible = layer2.negativeSignals.length === 0 &&
+    const isDurationDisqualified = layer1.durationSec !== null && layer1.durationSec < 75;
+    const isEligible = !isDurationDisqualified &&
+                       layer2.negativeSignals.length === 0 &&
                        layer3.isMusic === true &&
                        layer3.confidence >= 0.70;
 

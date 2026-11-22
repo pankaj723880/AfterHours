@@ -5,6 +5,7 @@
 // Tier 3: Context-aware Smart Queue (5 similar + 5 discovery)
 import { getApiUrl } from '../utils/apiUrl';
 import { getCleanThumbnail, isThumbnailUrlFormatValid } from '../utils/thumbnailValidator';
+import { isValidMusicTrack } from './songFilter';
 
 const smartQueueCache = new Map();
 
@@ -82,6 +83,7 @@ export const smartQueueService = {
       for (const item of (rawList || [])) {
         const id = this.getTrackId(item);
         if (!id || seenIds.has(id.toLowerCase())) continue;
+        if (!isValidMusicTrack(item)) continue;
 
         const itemTitleClean = String(item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         if (currentTitleClean.length >= 4 && itemTitleClean === currentTitleClean) continue;

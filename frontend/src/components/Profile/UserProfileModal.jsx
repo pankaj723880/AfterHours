@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Camera, Upload, Loader2, Check, X, AlertCircle, Trash2 } from 'lucide-react';
+import { Camera, Upload, Loader2, Check, X, AlertCircle, Trash2, Sliders } from 'lucide-react';
 import { getApiUrl } from '../../utils/apiUrl';
 import UserAvatar from '../Common/UserAvatar';
 import { USE_V2_PROFILE_MODAL } from '../../constants/featureFlags';
@@ -27,7 +27,8 @@ export default function UserProfileModal({
   onClose,
   currentUser,
   onUserUpdated,
-  showToast
+  showToast,
+  onOpenSettings
 }) {
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
@@ -311,20 +312,37 @@ export default function UserProfileModal({
           className="w-full max-w-md bg-zinc-900/90 backdrop-blur-2xl border border-white/10 rounded-3xl overflow-hidden shadow-[0_25px_60px_rgba(0,0,0,0.9)] flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Top Bar with Clean Close Button */}
+          {/* Top Bar with Clean Settings & Close Buttons */}
           <div className="relative px-6 pt-5 pb-2 flex items-center justify-between border-b border-white/[0.06]">
             <span className="text-[11px] font-bold uppercase tracking-widest text-amber-400/90 font-mono">
               Loopra Music Identity
             </span>
-            <button
-              type="button"
-              onClick={() => { clearPreview(); onClose(); }}
-              className="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white transition-all active:scale-95 cursor-pointer"
-              aria-label="Close Profile"
-              title="Close"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1.5">
+              {typeof onOpenSettings === 'function' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearPreview();
+                    onOpenSettings();
+                  }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 text-neutral-300 hover:text-amber-400 text-xs font-medium transition-all active:scale-95 cursor-pointer border border-white/10"
+                  aria-label="Audio & Player Settings"
+                  title="Audio & Player Settings"
+                >
+                  <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="hidden sm:inline">Settings</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => { clearPreview(); onClose(); }}
+                className="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white transition-all active:scale-95 cursor-pointer"
+                aria-label="Close Profile"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           {/* Modal Body */}
@@ -677,6 +695,20 @@ export default function UserProfileModal({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {typeof onOpenSettings === 'function' && (
+              <button
+                type="button"
+                onClick={() => {
+                  clearPreview();
+                  onOpenSettings();
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-amber-400 hover:text-amber-300 text-xs font-semibold border border-neutral-700 transition cursor-pointer"
+                title="Audio & Player Settings"
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Settings</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {

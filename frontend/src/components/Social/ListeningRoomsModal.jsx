@@ -1,8 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Users, Plus, Trash2, Play, Music, Share2, Copy, Check, 
-  ExternalLink, Sparkles, Radio, Disc, Volume2, Shield
+  Sparkles, Radio, Disc, Volume2, Shield, Heart, Flame,
+  ThumbsUp, MessageSquare, Send, ChevronDown, ChevronUp,
+  RefreshCw, Lock, Globe, LogOut, ArrowUpDown, Award, Crown,
+  UserCheck, UserMinus, UserX
 } from 'lucide-react';
+import { getApiUrl } from '../../utils/apiUrl';
+
+const QUICK_REACTIONS = ['🔥', '❤️', '🕺', '😭'];
 
 export default function ListeningRoomsModal({
   isOpen,
@@ -11,29 +17,59 @@ export default function ListeningRoomsModal({
   user,
   currentSong,
   isPlaying,
+  currentTimeRef,
   onPlaySong,
+  onSeek,
   showToast,
   activeRoom,
   setActiveRoom,
+  joinedRooms,
+  setJoinedRooms,
   roomPlaylists,
   setRoomPlaylists,
+  userPlaylists,
+  setPlaylists,
+  isRoomPlaybackSyncEnabled,
+  setIsRoomPlaybackSyncEnabled,
   onOpenAddToPlaylist
 }) {
   const [rooms, setRooms] = useState([]);
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomDesc, setNewRoomDesc] = useState('');
+  const [newRoomIsPublic, setNewRoomIsPublic] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [participants, setParticipants] = useState([]);
-  const [roomQueue, setRoomQueue] = useState([]);
   const [copiedLink, setCopiedLink] = useState(false);
   const [isCreatingPlaylist, setIsCreatingPlaylist] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
   const [joinCodeInput, setJoinCodeInput] = useState('');
+  
+  // Upgrades State
+  const [activeTab, setActiveTab] = useState('playlists'); // 'playlists' | 'activity' | 'members'
+  const [sortByVotes, setSortByVotes] = useState(true);
+  const [activities, setActivities] = useState([]);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [floatingReactions, setFloatingReactions] = useState([]);
+  const [unreadActivityCount, setUnreadActivityCount] = useState(0);
 
-  // Fetch active rooms from backend
+  const currentUserId = user?._id?.toString?.() || user?.userId || 'guest';
+  const currentUsername = user?.username || 'Listener';
+
+  // Find user's member role in current active room
+  const currentMember = (participants || []).find(m => 
+    (m.userId && m.userId === currentUserId) || 
+    (m.username && m.username === currentUsername)
+  );
+  const userRole = currentMember?.role || (activeRoom?.createdBy?.userId === currentUserId ? 'host' : 'listener');
+  const isHost = userRole === 'host';
+  const isCoHost = userRole === 'co-host' || isHost;
+
+  // Refresh public rooms from backend
   const refreshRooms = () => {
-    fetch('/api/rooms')
+    fetch(getApiUrl('/api/rooms'))
       .then(res => res.json())
       .then(data => {
         if (data && data.rooms) setRooms(data.rooms);
@@ -57,35 +93,69 @@ export default function ListeningRoomsModal({
     }
   }, [roomPlaylists, selectedPlaylistId]);
 
+  // Initial load of room details when activeRoom changes
+  useEffect(() => {
+    if (!activeRoom) return;
+    setParticipants(activeRoom.members || []);
+    setActivities(activeRoom.activities || []);
+    setChatMessages(activeRoom.chatMessages || []);
+  }, [activeRoom]);
+
+  // Socket event listeners for collaborative features
   useEffect(() => {
     if (!socket) return;
 
     const handleRoomState = (state) => {
       if (state) {
         if (setActiveRoom) setActiveRoom(state);
-        setParticipants(state.participants || state.members || []);
-        setRoomQueue(state.queue || []);
-        if (setRoomPlaylists) {
-          setRoomPlaylists(state.playlists || []);
-        }
-        if (state.currentSong && onPlaySong && (!currentSong || (currentSong.id !== state.currentSong.id && currentSong.videoId !== state.currentSong.videoId))) {
-          onPlaySong(state.currentSong);
+        setParticipants(state.members || []);
+        if (state.activities) setActivities(state.activities);
+        if (state.chatMessages) setChatMessages(state.chatMessages);
+        if (setRoomPlaylists && state.playlists) {
+          setRoomPlaylists(state.playlists);
         }
       }
     };
 
-    const handleParticipants = (parts) => {
-      setParticipants(parts || []);
-    };
-
-    const handlePlayback = (data) => {
-      if (data?.currentSong && onPlaySong) {
-        onPlaySong(data.currentSong);
+    const handleMembersUpdated = (data) => {
+      if (data?.members) {
+        setParticipants(data.members);
       }
     };
 
-    const handleQueue = (q) => {
-      setRoomQueue(q || []);
+    const handleMemberKicked = (data) => {
+      if (data?.userId === currentUserId) {
+        if (showToast) showToast('You were removed from this room by the host', 'error');
+        handleLeave();
+      }
+    };
+
+    const handleActivitiesUpdated = (data) => {
+      if (data?.activities) {
+        setActivities(data.activities);
+        if (activeTab !== 'activity') {
+          setUnreadActivityCount(prev => prev + 1);
+        }
+      }
+    };
+
+    const handleChatMessage = (data) => {
+      if (data?.message) {
+        setChatMessages(prev => [...prev.slice(-99), data.message]);
+      }
+    };
+
+    const handleReaction = (data) => {
+      if (data?.emoji) {
+        const id = data.id || `react_${Date.now()}_${Math.random()}`;
+        setFloatingReactions(prev => [
+          ...prev, 
+          { id, emoji: data.emoji, user: data.user, left: Math.floor(Math.random() * 70) + 15 }
+        ]);
+        setTimeout(() => {
+          setFloatingReactions(prev => prev.filter(r => r.id !== id));
+        }, 3200);
+      }
     };
 
     const handlePlaylistUpdated = (data) => {
@@ -93,109 +163,159 @@ export default function ListeningRoomsModal({
         setRoomPlaylists(data.playlists);
       }
       if (data?.type === 'song_added' && showToast) {
-        showToast(`🎶 Track added: "${data?.song?.title || 'New Song'}"`);
+        showToast(`🎶 Added: "${data?.song?.title || 'New Song'}"`);
       } else if (data?.type === 'song_removed' && showToast) {
         showToast('Track removed from room playlist');
       } else if (data?.type === 'playlist_created' && showToast) {
         showToast(`📁 Created room playlist: "${data?.playlist?.name}"`);
+      } else if (data?.type === 'song_voted' && showToast) {
+        // quiet vote feedback
       }
     };
 
-    socket.on('listening_room_state', handleRoomState);
-    socket.on('listening_room_participants', handleParticipants);
-    socket.on('room_playback_updated', handlePlayback);
-    socket.on('room_queue_updated', handleQueue);
+    const handleInviteUpdated = (data) => {
+      if (data?.code && activeRoom) {
+        setActiveRoom(prev => prev ? { ...prev, code: data.code } : prev);
+        if (showToast) showToast(`🔑 Invite code refreshed: ${data.code}`);
+      }
+    };
+
+    const handlePrivacyUpdated = (data) => {
+      if (typeof data?.isPublic === 'boolean' && activeRoom) {
+        setActiveRoom(prev => prev ? { ...prev, isPublic: data.isPublic } : prev);
+        if (showToast) showToast(`Room is now ${data.isPublic ? 'Public' : 'Invite-Only'}`);
+      }
+    };
+
+    const handleStatusUpdated = (data) => {
+      if (data?.status === 'archived') {
+        if (showToast) showToast('This room was archived by the host', 'warning');
+        handleLeave();
+      } else if (data?.status === 'deleted') {
+        if (showToast) showToast('This room was deleted by the host', 'error');
+        handleLeave();
+      }
+    };
+
+    const handleRoomError = (err) => {
+      const errMsg = err?.error || 'Room not found or invalid room code';
+      if (showToast) showToast(errMsg, 'error');
+    };
+
+    socket.on('room:state', handleRoomState);
+    socket.on('room:members:updated', handleMembersUpdated);
+    socket.on('room:member:kicked', handleMemberKicked);
+    socket.on('room:activities:updated', handleActivitiesUpdated);
+    socket.on('room:chat:message', handleChatMessage);
+    socket.on('room:reaction', handleReaction);
     socket.on('room:playlist:updated', handlePlaylistUpdated);
+    socket.on('room:invite:updated', handleInviteUpdated);
+    socket.on('room:privacy:updated', handlePrivacyUpdated);
+    socket.on('room:status:updated', handleStatusUpdated);
+    socket.on('room:error', handleRoomError);
+    socket.on('listening_room_error', handleRoomError);
 
     return () => {
-      socket.off('listening_room_state', handleRoomState);
-      socket.off('listening_room_participants', handleParticipants);
-      socket.off('room_playback_updated', handlePlayback);
-      socket.off('room_queue_updated', handleQueue);
+      socket.off('room:state', handleRoomState);
+      socket.off('room:members:updated', handleMembersUpdated);
+      socket.off('room:member:kicked', handleMemberKicked);
+      socket.off('room:activities:updated', handleActivitiesUpdated);
+      socket.off('room:chat:message', handleChatMessage);
+      socket.off('room:reaction', handleReaction);
       socket.off('room:playlist:updated', handlePlaylistUpdated);
+      socket.off('room:invite:updated', handleInviteUpdated);
+      socket.off('room:privacy:updated', handlePrivacyUpdated);
+      socket.off('room:status:updated', handleStatusUpdated);
+      socket.off('room:error', handleRoomError);
+      socket.off('listening_room_error', handleRoomError);
     };
-  }, [socket, onPlaySong, setActiveRoom, setRoomPlaylists, currentSong, showToast]);
+  }, [socket, activeRoom, currentUserId, activeTab, setRoomPlaylists, setActiveRoom, showToast]);
 
   if (!isOpen) return null;
 
+  // 1. Join Room
   const handleJoin = async (roomIdOrCode) => {
     if (!roomIdOrCode) return;
     const target = roomIdOrCode.trim();
-    if (!socket) {
-      if (showToast) showToast('Connecting to room server...');
-      return;
-    }
+    if (!target) return;
 
     try {
-      // First hit REST to ensure persistent member registration
-      const res = await fetch(`/api/rooms/${encodeURIComponent(target)}/join`, {
+      const res = await fetch(getApiUrl(`/api/rooms/${encodeURIComponent(target)}/join`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user })
       });
       const data = await res.json();
-      if (data.success && data.room) {
+      if (res.ok && data.success && data.room) {
         if (setActiveRoom) setActiveRoom(data.room);
         if (setRoomPlaylists) setRoomPlaylists(data.room.playlists || []);
-        socket.emit('join_listening_room', { roomId: data.room.roomId, user });
-        socket.emit('room:join', { roomId: data.room.roomId, user });
+        setParticipants(data.room.members || []);
+        setActivities(data.room.activities || []);
+        setChatMessages(data.room.chatMessages || []);
+        socket?.emit('join_listening_room', { roomId: data.room.roomId, user });
+        socket?.emit('room:join', { roomId: data.room.roomId, user });
         if (showToast) showToast(`Joined "${data.room.name}"`);
         setJoinCodeInput('');
         return;
+      } else {
+        const errorMsg = data?.error || 'Room not found or invalid room code';
+        if (showToast) showToast(errorMsg, 'error');
+        return;
       }
-    } catch (e) {}
-
-    // Fallback directly to socket
-    socket.emit('join_listening_room', { roomId: target, user });
-    socket.emit('room:join', { roomId: target, user });
-    if (showToast) showToast('Joined Listening Room');
-    setJoinCodeInput('');
+    } catch (e) {
+      if (showToast) showToast('Room not found or network error', 'error');
+    }
   };
 
+  // 2. Leave Room
   const handleLeave = () => {
-    if (socket && activeRoom) {
+    if (activeRoom) {
       const rId = activeRoom.roomId || activeRoom.id;
-      socket.emit('leave_listening_room', { roomId: rId });
-      socket.emit('room:leave', { roomId: rId });
+      socket?.emit('leave_listening_room', { roomId: rId });
+      socket?.emit('room:leave', { roomId: rId, user });
     }
     if (setActiveRoom) setActiveRoom(null);
     if (setRoomPlaylists) setRoomPlaylists([]);
     setParticipants([]);
-    setRoomQueue([]);
+    setActivities([]);
+    setChatMessages([]);
     if (showToast) showToast('Left Listening Room');
   };
 
+  // 3. Create Room
   const handleCreate = async (e) => {
     e.preventDefault();
     const name = newRoomName.trim() || `${user?.displayName || user?.username || 'Host'}'s Lounge`;
     try {
-      const res = await fetch('/api/rooms', {
+      const res = await fetch(getApiUrl('/api/rooms'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
           description: newRoomDesc.trim(),
           user,
-          isPublic: true
+          isPublic: newRoomIsPublic
         })
       });
       const data = await res.json();
       if (data.success && data.room) {
         if (setActiveRoom) setActiveRoom(data.room);
         if (setRoomPlaylists) setRoomPlaylists(data.room.playlists || []);
+        setParticipants(data.room.members || []);
+        setActivities(data.room.activities || []);
         socket?.emit('join_listening_room', { roomId: data.room.roomId, user });
         socket?.emit('room:join', { roomId: data.room.roomId, user });
         if (showToast) showToast(`Created Room "${data.room.name}"`);
       }
     } catch (err) {
-      const roomId = `room_${Date.now()}`;
-      handleJoin(roomId);
+      if (showToast) showToast('Could not create room, please try again', 'error');
     }
     setIsCreating(false);
     setNewRoomName('');
     setNewRoomDesc('');
   };
 
+  // 4. Share Invite Link / Code
   const handleCopyLink = () => {
     if (!activeRoom) return;
     const rId = activeRoom.roomId || activeRoom.id;
@@ -210,26 +330,193 @@ export default function ListeningRoomsModal({
           if (showToast) showToast('📋 Room link copied to clipboard!');
         })
         .catch(() => {
-          if (showToast) showToast(`Share code: ${activeRoom.code || rId}`);
+          if (showToast) showToast(`Invite code: ${activeRoom.code || rId}`);
         });
     } else {
-      if (showToast) showToast(`Share code: ${activeRoom.code || rId}`);
+      if (showToast) showToast(`Invite code: ${activeRoom.code || rId}`);
     }
   };
 
-  const handleSyncToRoom = () => {
+  // 5. Host/Co-Host Broadcasts Active Playback to All Room Listeners
+  const handleBroadcastSync = () => {
+    if (!isCoHost) {
+      if (showToast) showToast('Only Host or Co-Host can broadcast playback sync');
+      return;
+    }
     if (socket && activeRoom && currentSong) {
       const rId = activeRoom.roomId || activeRoom.id;
-      socket.emit('room_playback_sync', {
+      const currentPos = currentTimeRef?.current || 0;
+      socket.emit('room:playback:sync', {
         roomId: rId,
         currentSong,
         isPlaying,
-        seekTime: 0
+        seekTime: currentPos,
+        user
       });
-      if (showToast) showToast('Broadcasted current song to all room members');
+      if (showToast) showToast('📡 Broadcasted current playback to all listeners');
     }
   };
 
+  // 6. Upvote Song
+  const handleVoteSong = (songId) => {
+    if (!activeRoom || !selectedPlaylistId || !songId) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+    
+    if (socket) {
+      socket.emit('room:playlist:vote', {
+        roomId: rId,
+        playlistId: selectedPlaylistId,
+        songId,
+        userId: currentUserId
+      });
+    } else {
+      fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/playlists/${encodeURIComponent(selectedPlaylistId)}/songs/${encodeURIComponent(songId)}/vote`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId })
+      }).catch(() => {});
+    }
+  };
+
+  // 7. Emoji Quick Reaction
+  const handleSendReaction = (emoji) => {
+    if (!activeRoom || !socket) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+    socket.emit('room:reaction', {
+      roomId: rId,
+      emoji,
+      user
+    });
+  };
+
+  // 8. Mini Chat Send
+  const handleSendChatMessage = (e) => {
+    e.preventDefault();
+    if (!chatInput.trim() || !activeRoom) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+    const text = chatInput.trim();
+
+    if (socket) {
+      socket.emit('room:chat:send', { roomId: rId, text, user });
+    } else {
+      fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/chat`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, user })
+      }).catch(() => {});
+    }
+    setChatInput('');
+  };
+
+  // 9. Fork Room Playlist to Personal Playlists ("Save Copy to My Playlists")
+  const handleForkPlaylist = (roomPl) => {
+    if (!roomPl || !Array.isArray(roomPl.songs) || roomPl.songs.length === 0) {
+      if (showToast) showToast('Playlist is empty, nothing to save', 'warning');
+      return;
+    }
+
+    const clonedSongs = roomPl.songs.map(s => ({ ...s }));
+    const newPersonalPl = {
+      id: Date.now().toString(),
+      name: `${roomPl.name} (from Room)`,
+      songs: clonedSongs
+    };
+
+    if (setPlaylists) {
+      setPlaylists(prev => {
+        const next = [...(prev || []), newPersonalPl];
+        try {
+          if (user) {
+            localStorage.setItem('playlists', JSON.stringify(next));
+          } else {
+            localStorage.setItem('guest_playlists', JSON.stringify(next));
+          }
+        } catch (_) {}
+        return next;
+      });
+      if (showToast) {
+        showToast(`💾 Saved copy of "${roomPl.name}" (${clonedSongs.length} tracks) to your personal playlists!`);
+      }
+    }
+  };
+
+  // 10. Member Role Management & Kick
+  const handleChangeRole = (targetUserId, newRole) => {
+    if (!isHost || !activeRoom) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+    if (socket) {
+      socket.emit('room:member:role', { roomId: rId, targetUserId, role: newRole, user });
+    } else {
+      fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/members/${encodeURIComponent(targetUserId)}/role`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: newRole, requesterUser: user })
+      }).catch(() => {});
+    }
+  };
+
+  const handleKickMember = (targetUserId) => {
+    if (!isCoHost || !activeRoom) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+    if (socket) {
+      socket.emit('room:member:kick', { roomId: rId, targetUserId, user });
+    } else {
+      fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/members/${encodeURIComponent(targetUserId)}`), {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requesterUser: user })
+      }).catch(() => {});
+    }
+  };
+
+  // 11. Room Privacy, Invite Code & Archive Controls
+  const handleTogglePrivacy = () => {
+    if (!isHost || !activeRoom) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+    const nextPublic = !activeRoom.isPublic;
+    if (socket) {
+      socket.emit('room:privacy:update', { roomId: rId, isPublic: nextPublic, user });
+    } else {
+      fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/privacy`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isPublic: nextPublic, requesterUser: user })
+      }).catch(() => {});
+    }
+  };
+
+  const handleRegenerateInviteCode = () => {
+    if (!isHost || !activeRoom) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+    if (socket) {
+      socket.emit('room:invite:regenerate', { roomId: rId, user });
+    } else {
+      fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/invite/regenerate`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requesterUser: user })
+      }).catch(() => {});
+    }
+  };
+
+  const handleArchiveOrDeleteRoom = (action = 'archive') => {
+    if (!isHost || !activeRoom) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+    if (confirm(`Are you sure you want to ${action} this room?`)) {
+      fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/archive`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, requesterUser: user })
+      })
+      .then(() => {
+        handleLeave();
+        refreshRooms();
+      })
+      .catch(() => {});
+    }
+  };
+
+  // 12. Create / Remove Room Playlists
   const handleCreateRoomPlaylist = (e) => {
     e.preventDefault();
     if (!newPlaylistName.trim() || !activeRoom) return;
@@ -247,7 +534,7 @@ export default function ListeningRoomsModal({
         }
       });
     } else {
-      fetch(`/api/rooms/${encodeURIComponent(rId)}/playlists`, {
+      fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/playlists`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: pName, user })
@@ -269,7 +556,7 @@ export default function ListeningRoomsModal({
         songId
       });
     } else {
-      fetch(`/api/rooms/${encodeURIComponent(rId)}/playlists/${encodeURIComponent(playlistId)}/songs/${encodeURIComponent(songId)}`, {
+      fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/playlists/${encodeURIComponent(playlistId)}/songs/${encodeURIComponent(songId)}`), {
         method: 'DELETE'
       }).catch(() => {});
     }
@@ -277,29 +564,57 @@ export default function ListeningRoomsModal({
 
   const activeSelectedPlaylist = (roomPlaylists || []).find(p => p.id === selectedPlaylistId) || (roomPlaylists && roomPlaylists[0]);
 
+  // Sort playlist tracks by vote count if requested
+  const displayedSongs = activeSelectedPlaylist?.songs ? [...activeSelectedPlaylist.songs].sort((a, b) => {
+    if (sortByVotes) {
+      const vA = (a.votes && a.votes.length) || 0;
+      const vB = (b.votes && b.votes.length) || 0;
+      if (vB !== vA) return vB - vA;
+    }
+    return 0;
+  }) : [];
+
   return (
     <div
-      className="fixed inset-0 z-[10000] bg-neutral-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-fadeIn"
+      className="fixed inset-0 z-[10000] bg-neutral-950/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-fadeIn"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="w-full max-w-2xl bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+        className="w-full max-w-3xl bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh] relative"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
+        {/* Floating live emoji reactions layer */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden z-50">
+          {floatingReactions.map(r => (
+            <div
+              key={r.id}
+              className="absolute bottom-16 animate-floatUp text-3xl select-none flex flex-col items-center"
+              style={{ left: `${r.left}%` }}
+            >
+              <span>{r.emoji}</span>
+              {r.user?.displayName && (
+                <span className="text-[9px] font-medium bg-black/60 text-amber-300 px-1.5 py-0.5 rounded-full mt-0.5">
+                  {r.user.displayName}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Modal Header */}
         <div className="p-4 sm:p-5 bg-neutral-900/90 border-b border-neutral-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
               <Radio className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-base text-white">Collaborative Listening Rooms</h3>
                 <span className="text-[10px] font-mono uppercase bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/20 font-semibold">
-                  Live Sync
+                  Live Rooms
                 </span>
               </div>
-              <p className="text-xs text-neutral-400">Collaborate on playlists and listen together in real-time</p>
+              <p className="text-xs text-neutral-400">Sync playback, upvote songs, react with live emojis & collaborate</p>
             </div>
           </div>
           <button
@@ -311,261 +626,625 @@ export default function ListeningRoomsModal({
           </button>
         </div>
 
-        {/* Content */}
+        {/* Modal Body */}
         <div className="p-4 sm:p-5 overflow-y-auto space-y-5 flex-1">
           {activeRoom ? (
-            /* Inside Active Room */
-            <div className="space-y-5">
-              {/* Active Room Hero Card */}
+            /* INSIDE ACTIVE ROOM */
+            <div className="space-y-4">
+              {/* Room Hero Banner */}
               <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-500/15 via-neutral-900 to-neutral-950 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
+                <div className="space-y-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[10px] font-mono uppercase text-amber-400 tracking-wider font-bold">
-                      Connected Room
+                      Active Room
                     </span>
                     {activeRoom.code && (
-                      <span className="text-[10px] font-mono bg-neutral-800 text-amber-300 px-2 py-0.5 rounded-md border border-neutral-700">
+                      <span className="text-[10px] font-mono bg-neutral-800 text-amber-300 px-2 py-0.5 rounded-md border border-neutral-700 flex items-center gap-1">
                         Code: {activeRoom.code}
                       </span>
                     )}
+                    <span className={`text-[10px] px-2 py-0.5 rounded-md font-semibold flex items-center gap-1 ${
+                      activeRoom.isPublic ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                    }`}>
+                      {activeRoom.isPublic ? <Globe className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                      <span>{activeRoom.isPublic ? 'Public' : 'Invite-Only'}</span>
+                    </span>
+                    <span className="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded-md uppercase font-mono">
+                      Your Role: {userRole}
+                    </span>
                   </div>
-                  <h4 className="text-lg font-bold text-white">{activeRoom.name}</h4>
-                  <p className="text-xs text-neutral-300">
-                    Host: <span className="text-amber-400 font-medium">{activeRoom.hostUsername || activeRoom.createdBy?.displayName || 'Host'}</span>
+                  <h4 className="text-lg font-bold text-white truncate">{activeRoom.name}</h4>
+                  <p className="text-xs text-neutral-300 truncate">
+                    Host: <span className="text-amber-400 font-medium">{activeRoom.createdBy?.displayName || 'Host'}</span>
                     {' • '}
                     <span>{participants.length} live members</span>
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
                   <button
                     onClick={handleCopyLink}
                     className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-neutral-950 text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-amber-500/10"
                     title="Copy shareable room link"
                   >
                     {copiedLink ? <Check className="w-4 h-4 text-emerald-950" /> : <Share2 className="w-4 h-4" />}
-                    <span>{copiedLink ? 'Copied Link!' : 'Invite Friends'}</span>
+                    <span>{copiedLink ? 'Copied Link!' : 'Invite'}</span>
                   </button>
                   <button
                     onClick={handleLeave}
-                    className="px-3 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-xs font-semibold transition"
+                    className="px-3 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-xs font-semibold transition flex items-center gap-1"
                   >
-                    Leave
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Leave</span>
                   </button>
                 </div>
               </div>
 
-              {/* Sync Controls */}
-              {currentSong && (
-                <div className="p-3 bg-neutral-950/80 border border-neutral-800 rounded-2xl flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0 text-amber-400">
-                      <Disc className="w-4 h-4 animate-spin" style={{ animationDuration: '4s' }} />
-                    </div>
-                    <div className="truncate">
-                      <p className="text-[10px] text-neutral-400 uppercase font-mono">Your Playing Track</p>
-                      <p className="text-xs font-semibold text-white truncate">{currentSong.title}</p>
-                    </div>
-                  </div>
+              {/* 1. Synchronized Listen-Along Mode Toggle & Controls */}
+              <div className="p-3.5 rounded-2xl bg-neutral-950/80 border border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
                   <button
-                    onClick={handleSyncToRoom}
-                    className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-xs shrink-0 transition"
+                    onClick={() => {
+                      const next = !isRoomPlaybackSyncEnabled;
+                      setIsRoomPlaybackSyncEnabled(next);
+                      if (showToast) {
+                        showToast(next ? '🎧 Listen Together enabled! Your player is now synced.' : 'Independent listening enabled');
+                      }
+                    }}
+                    className={`relative w-11 h-6 rounded-full transition-colors p-0.5 shrink-0 ${
+                      isRoomPlaybackSyncEnabled ? 'bg-amber-500' : 'bg-neutral-700'
+                    }`}
+                    title="Toggle Synchronized Listen-Along"
                   >
-                    Sync to Room
-                  </button>
-                </div>
-              )}
-
-              {/* Live Listeners Badges */}
-              <div>
-                <h5 className="text-xs font-bold text-neutral-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-                  <Users className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Room Listeners ({participants.length})</span>
-                </h5>
-                <div className="flex flex-wrap gap-2">
-                  {participants.map((p, idx) => (
                     <div
-                      key={p.socketId || p.userId || idx}
-                      className="px-3 py-1 rounded-full bg-neutral-950 border border-neutral-800 text-xs text-neutral-200 flex items-center gap-2 shadow-sm"
-                    >
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="font-medium">{p.displayName || p.username}</span>
-                      {p.role === 'owner' && (
-                        <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-mono">Host</span>
+                      className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                        isRoomPlaybackSyncEnabled ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-white">Listen Together / Sync Playback</span>
+                      {isRoomPlaybackSyncEnabled && (
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                       )}
                     </div>
-                  ))}
+                    <p className="text-[11px] text-neutral-400">
+                      {isRoomPlaybackSyncEnabled 
+                        ? 'Active: Your player auto-syncs with room host/co-host playback'
+                        : 'Off: You can browse and listen independently'}
+                    </p>
+                  </div>
                 </div>
+
+                {isCoHost && (
+                  <button
+                    onClick={handleBroadcastSync}
+                    disabled={!currentSong}
+                    className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition flex items-center gap-1.5 disabled:opacity-40 self-end sm:self-auto"
+                    title="Broadcast your current playing song & timestamp to room"
+                  >
+                    <Radio className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Broadcast My Playback</span>
+                  </button>
+                )}
               </div>
 
-              {/* COLLABORATIVE ROOM PLAYLISTS SECTION */}
-              <div className="p-4 rounded-2xl bg-neutral-950/70 border border-neutral-800 space-y-4">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <h5 className="text-sm font-bold text-white flex items-center gap-2">
-                      <Music className="w-4 h-4 text-amber-400" />
-                      <span>Collaborative Playlists</span>
-                    </h5>
-                    <p className="text-[11px] text-neutral-400">Playlists shared & editable live by all members</p>
+              {/* Quick Floating Emoji Reactions Bar */}
+              <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-neutral-950/60 border border-neutral-800/80">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider pl-1">Reactions:</span>
+                  <div className="flex items-center gap-1.5">
+                    {QUICK_REACTIONS.map(emoji => (
+                      <button
+                        key={emoji}
+                        onClick={() => handleSendReaction(emoji)}
+                        className="text-lg p-1.5 rounded-lg hover:bg-neutral-800 hover:scale-125 active:scale-95 transition cursor-pointer"
+                        title={`Send ${emoji}`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
                   </div>
-                  <button
-                    onClick={() => setIsCreatingPlaylist(!isCreatingPlaylist)}
-                    className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-xs font-medium transition flex items-center gap-1.5"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>New Room Playlist</span>
-                  </button>
                 </div>
 
-                {/* Playlist Creation Form */}
-                {isCreatingPlaylist && (
-                  <form onSubmit={handleCreateRoomPlaylist} className="p-3 bg-neutral-900 rounded-xl border border-neutral-700/60 flex items-center gap-2">
+                {/* Collapsible Mini Chat Toggle */}
+                <button
+                  onClick={() => setIsChatOpen(!isChatOpen)}
+                  className="px-3 py-1 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-medium flex items-center gap-1.5 transition"
+                >
+                  <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Room Chat</span>
+                  {chatMessages.length > 0 && (
+                    <span className="text-[10px] font-mono bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded-full">
+                      {chatMessages.length}
+                    </span>
+                  )}
+                  {isChatOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+
+              {/* Collapsible Mini Room Chat Box */}
+              {isChatOpen && (
+                <div className="p-3 rounded-2xl bg-neutral-950/90 border border-amber-500/30 space-y-2.5 animate-fadeIn">
+                  <div className="flex items-center justify-between text-xs text-neutral-400 font-semibold border-b border-neutral-800 pb-2">
+                    <span className="flex items-center gap-1.5">
+                      <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Live Room Chat</span>
+                    </span>
+                    <span className="text-[10px] font-mono text-neutral-500">{chatMessages.length} messages</span>
+                  </div>
+
+                  <div className="max-h-40 overflow-y-auto space-y-2 pr-1 text-xs scrollbar-thin">
+                    {chatMessages.length === 0 ? (
+                      <p className="text-center text-neutral-500 py-3 text-[11px]">No messages yet. Say hello!</p>
+                    ) : (
+                      chatMessages.map(m => (
+                        <div key={m.id} className="p-2 rounded-xl bg-neutral-900/80 border border-neutral-800">
+                          <div className="flex items-center justify-between text-[10px] text-neutral-400 mb-0.5">
+                            <span className="font-bold text-amber-400">{m.user?.displayName || 'Listener'}</span>
+                            <span className="text-neutral-500 font-mono">
+                              {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          <p className="text-neutral-200 text-xs break-words">{m.text}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <form onSubmit={handleSendChatMessage} className="flex items-center gap-2 pt-1">
                     <input
                       type="text"
-                      placeholder="Room playlist name..."
-                      value={newPlaylistName}
-                      onChange={(e) => setNewPlaylistName(e.target.value)}
-                      className="flex-1 px-3 py-2 bg-neutral-950 border border-neutral-700 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500"
-                      maxLength={60}
-                      autoFocus
+                      placeholder="Type a message to the room..."
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      className="flex-1 px-3 py-1.5 bg-neutral-900 border border-neutral-700/80 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500"
+                      maxLength={200}
                     />
                     <button
                       type="submit"
-                      disabled={!newPlaylistName.trim()}
-                      className="px-3 py-2 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs rounded-xl transition disabled:opacity-50"
+                      disabled={!chatInput.trim()}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs rounded-xl transition disabled:opacity-40"
                     >
-                      Create
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsCreatingPlaylist(false)}
-                      className="px-2.5 py-2 text-neutral-400 hover:text-white text-xs transition"
-                    >
-                      Cancel
+                      <Send className="w-3.5 h-3.5" />
                     </button>
                   </form>
-                )}
+                </div>
+              )}
 
-                {/* Playlist Selector Tabs */}
-                {(!roomPlaylists || roomPlaylists.length === 0) ? (
-                  <div className="text-center py-6 border border-dashed border-neutral-800 rounded-xl text-xs text-neutral-500">
-                    <p>No room playlists yet. Click "New Room Playlist" to create one!</p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
-                      {roomPlaylists.map(pl => {
-                        const isSelected = activeSelectedPlaylist?.id === pl.id;
-                        return (
-                          <button
-                            key={pl.id}
-                            onClick={() => setSelectedPlaylistId(pl.id)}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition flex items-center gap-2 ${
-                              isSelected
-                                ? 'bg-amber-500 text-neutral-950 font-bold shadow-md shadow-amber-500/20'
-                                : 'bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white hover:border-neutral-700'
-                            }`}
-                          >
-                            <span>{pl.name}</span>
-                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isSelected ? 'bg-black/20 text-neutral-950' : 'bg-neutral-800 text-neutral-400'}`}>
-                              {pl.songs ? pl.songs.length : 0}
-                            </span>
-                          </button>
-                        );
-                      })}
+              {/* Navigation Tabs (Playlists / Activity Feed / Members) */}
+              <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
+                <button
+                  onClick={() => setActiveTab('playlists')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 ${
+                    activeTab === 'playlists'
+                      ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
+                      : 'bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  <Music className="w-3.5 h-3.5" />
+                  <span>Playlists</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20">
+                    {roomPlaylists?.length || 0}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('activity');
+                    setUnreadActivityCount(0);
+                  }}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 relative ${
+                    activeTab === 'activity'
+                      ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
+                      : 'bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Activity Feed</span>
+                  {unreadActivityCount > 0 && (
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping absolute -top-0.5 -right-0.5" />
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('members')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 ${
+                    activeTab === 'members'
+                      ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
+                      : 'bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Members</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20">
+                    {participants?.length || 0}
+                  </span>
+                </button>
+              </div>
+
+              {/* TAB 1: PLAYLISTS & UPVOTE QUEUE */}
+              {activeTab === 'playlists' && (
+                <div className="p-4 rounded-2xl bg-neutral-950/70 border border-neutral-800 space-y-4">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div>
+                      <h5 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Music className="w-4 h-4 text-amber-400" />
+                        <span>Room Playlists & Upvote Queue</span>
+                      </h5>
+                      <p className="text-[11px] text-neutral-400">Upvoted tracks live-rank higher in the collaborative queue</p>
                     </div>
 
-                    {/* Active Playlist Songs View */}
-                    {activeSelectedPlaylist && (
-                      <div className="space-y-3 pt-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-white">{activeSelectedPlaylist.name}</span>
-                            <span className="text-neutral-500">• {activeSelectedPlaylist.songs?.length || 0} tracks</span>
-                          </div>
-                          {activeSelectedPlaylist.songs?.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setSortByVotes(!sortByVotes)}
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-medium border transition flex items-center gap-1 ${
+                          sortByVotes
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                            : 'bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-white'
+                        }`}
+                        title="Sort songs by upvotes"
+                      >
+                        <ArrowUpDown className="w-3 h-3" />
+                        <span>{sortByVotes ? 'Ranked by Upvotes' : 'Default Order'}</span>
+                      </button>
+
+                      <button
+                        onClick={() => setIsCreatingPlaylist(!isCreatingPlaylist)}
+                        className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-xs font-medium transition flex items-center gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>New Room Playlist</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Playlist Creation Form */}
+                  {isCreatingPlaylist && (
+                    <form onSubmit={handleCreateRoomPlaylist} className="p-3 bg-neutral-900 rounded-xl border border-neutral-700/60 flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Room playlist name..."
+                        value={newPlaylistName}
+                        onChange={(e) => setNewPlaylistName(e.target.value)}
+                        className="flex-1 px-3 py-2 bg-neutral-950 border border-neutral-700 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500"
+                        maxLength={60}
+                        autoFocus
+                      />
+                      <button
+                        type="submit"
+                        disabled={!newPlaylistName.trim()}
+                        className="px-3 py-2 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs rounded-xl transition disabled:opacity-50"
+                      >
+                        Create
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsCreatingPlaylist(false)}
+                        className="px-2.5 py-2 text-neutral-400 hover:text-white text-xs transition"
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  )}
+
+                  {/* Playlist Selector Tabs */}
+                  {(!roomPlaylists || roomPlaylists.length === 0) ? (
+                    <div className="text-center py-6 border border-dashed border-neutral-800 rounded-xl text-xs text-neutral-500">
+                      <p>No room playlists yet. Click "New Room Playlist" to create one!</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                        {roomPlaylists.map(pl => {
+                          const isSelected = activeSelectedPlaylist?.id === pl.id;
+                          return (
                             <button
-                              onClick={() => {
-                                if (onPlaySong && activeSelectedPlaylist.songs[0]) {
-                                  onPlaySong(activeSelectedPlaylist.songs[0]);
-                                  if (showToast) showToast(`Playing room playlist: ${activeSelectedPlaylist.name}`);
-                                }
-                              }}
-                              className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 font-semibold text-[11px] transition"
+                              key={pl.id}
+                              onClick={() => setSelectedPlaylistId(pl.id)}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition flex items-center gap-2 ${
+                                isSelected
+                                  ? 'bg-amber-500 text-neutral-950 font-bold shadow-md shadow-amber-500/20'
+                                  : 'bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white hover:border-neutral-700'
+                              }`}
                             >
-                              <Play className="w-3 h-3 fill-emerald-400" />
-                              <span>Play All</span>
+                              <span>{pl.name}</span>
+                              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isSelected ? 'bg-black/20 text-neutral-950' : 'bg-neutral-800 text-neutral-400'}`}>
+                                {pl.songs ? pl.songs.length : 0}
+                              </span>
                             </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Active Playlist Header & Actions */}
+                      {activeSelectedPlaylist && (
+                        <div className="space-y-3 pt-2">
+                          <div className="flex items-center justify-between text-xs flex-wrap gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-white">{activeSelectedPlaylist.name}</span>
+                              <span className="text-neutral-500">• {activeSelectedPlaylist.songs?.length || 0} tracks</span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              {/* Save Copy to My Playlists (Fork Button) */}
+                              <button
+                                onClick={() => handleForkPlaylist(activeSelectedPlaylist)}
+                                className="px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 flex items-center gap-1 font-semibold text-[11px] transition"
+                                title="Copy all songs from this room playlist to your personal library"
+                              >
+                                <Copy className="w-3 h-3 text-amber-400" />
+                                <span>Save Copy to My Playlists</span>
+                              </button>
+
+                              {activeSelectedPlaylist.songs?.length > 0 && (
+                                <button
+                                  onClick={() => {
+                                    if (onPlaySong && displayedSongs[0]) {
+                                      onPlaySong(displayedSongs[0]);
+                                      if (showToast) showToast(`Playing: ${activeSelectedPlaylist.name}`);
+                                    }
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 font-semibold text-[11px] transition"
+                                >
+                                  <Play className="w-3 h-3 fill-emerald-400" />
+                                  <span>Play Top</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Song List */}
+                          {(!displayedSongs || displayedSongs.length === 0) ? (
+                            <div className="text-center py-6 bg-neutral-900/60 rounded-xl border border-neutral-800 text-xs text-neutral-500">
+                              <p>This room playlist is empty.</p>
+                              <p className="mt-1 text-neutral-400">
+                                Use the <span className="text-amber-400 font-medium">"Add to Playlist"</span> button on any song to add it here live!
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                              {displayedSongs.map((song, i) => {
+                                const songKey = song.id || song.videoId || i;
+                                const votes = song.votes || [];
+                                const hasVoted = votes.includes(String(currentUserId));
+                                const voteCount = votes.length;
+
+                                return (
+                                  <div
+                                    key={songKey}
+                                    className="p-2.5 rounded-xl bg-neutral-900/80 border border-neutral-800/80 hover:border-amber-500/30 flex items-center justify-between gap-3 group transition"
+                                  >
+                                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                      {/* Upvote Button with Live Counter */}
+                                      <button
+                                        onClick={() => handleVoteSong(song.id || song.videoId)}
+                                        className={`px-2 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition ${
+                                          hasVoted 
+                                            ? 'bg-amber-500 text-neutral-950 shadow-sm shadow-amber-500/20' 
+                                            : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-amber-300'
+                                        }`}
+                                        title={hasVoted ? 'Remove your upvote' : 'Upvote this track'}
+                                      >
+                                        <ThumbsUp className={`w-3.5 h-3.5 ${hasVoted ? 'fill-neutral-950' : ''}`} />
+                                        <span>{voteCount}</span>
+                                      </button>
+
+                                      {song.thumbnail ? (
+                                        <img
+                                          src={song.thumbnail}
+                                          alt={song.title}
+                                          className="w-9 h-9 rounded-lg object-cover shrink-0"
+                                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                        />
+                                      ) : (
+                                        <div className="w-9 h-9 rounded-lg bg-neutral-800 flex items-center justify-center shrink-0 text-neutral-500">
+                                          <Music className="w-4 h-4" />
+                                        </div>
+                                      )}
+
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-xs font-medium text-white truncate">{song.title}</p>
+                                        <div className="flex items-center gap-1.5 text-[11px] text-neutral-400 truncate">
+                                          <span className="truncate">{song.artist || song.channel}</span>
+                                          {song.addedBy?.displayName && (
+                                            <span className="text-[10px] font-medium bg-neutral-800 text-amber-300 px-1.5 py-0.2 rounded shrink-0">
+                                              Added by {song.addedBy.displayName}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <button
+                                        onClick={() => onPlaySong && onPlaySong(song)}
+                                        className="p-1.5 rounded-lg bg-neutral-800 hover:bg-amber-500 hover:text-neutral-950 text-neutral-300 transition"
+                                        title="Play track"
+                                      >
+                                        <Play className="w-3.5 h-3.5 fill-current" />
+                                      </button>
+                                      {isCoHost && (
+                                        <button
+                                          onClick={() => handleRemoveTrackFromRoomPlaylist(activeSelectedPlaylist.id, song.id || song.videoId)}
+                                          className="p-1.5 rounded-lg bg-neutral-800 hover:bg-rose-500/20 hover:text-rose-400 text-neutral-500 transition opacity-0 group-hover:opacity-100"
+                                          title="Remove from room playlist"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           )}
                         </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
 
-                        {/* Song List */}
-                        {(!activeSelectedPlaylist.songs || activeSelectedPlaylist.songs.length === 0) ? (
-                          <div className="text-center py-6 bg-neutral-900/60 rounded-xl border border-neutral-800 text-xs text-neutral-500">
-                            <p>This room playlist is empty.</p>
-                            <p className="mt-1 text-neutral-400">
-                              Use the <span className="text-amber-400 font-medium">"Add to Playlist"</span> button on any song to add it here live!
-                            </p>
+              {/* TAB 2: LIVE ACTIVITY FEED */}
+              {activeTab === 'activity' && (
+                <div className="p-4 rounded-2xl bg-neutral-950/70 border border-neutral-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h5 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Live Activity Feed</span>
+                    </h5>
+                    <span className="text-[10px] text-neutral-500 font-mono">{activities.length} events</span>
+                  </div>
+
+                  {activities.length === 0 ? (
+                    <p className="text-center text-xs text-neutral-500 py-6">No recent activity logged in this room yet.</p>
+                  ) : (
+                    <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                      {activities.map((act, idx) => (
+                        <div key={act.id || idx} className="p-2.5 rounded-xl bg-neutral-900/70 border border-neutral-800/80 flex items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                            <p className="text-neutral-200 truncate">{act.text}</p>
                           </div>
-                        ) : (
-                          <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                            {activeSelectedPlaylist.songs.map((song, i) => (
-                              <div
-                                key={song.id || song.videoId || i}
-                                className="p-2.5 rounded-xl bg-neutral-900/80 border border-neutral-800/80 hover:border-amber-500/30 flex items-center justify-between gap-3 group transition"
-                              >
-                                <div className="flex items-center gap-2.5 min-w-0">
-                                  {song.thumbnail ? (
-                                    <img
-                                      src={song.thumbnail}
-                                      alt={song.title}
-                                      className="w-9 h-9 rounded-lg object-cover shrink-0"
-                                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                                    />
-                                  ) : (
-                                    <div className="w-9 h-9 rounded-lg bg-neutral-800 flex items-center justify-center shrink-0 text-neutral-500">
-                                      <Music className="w-4 h-4" />
-                                    </div>
-                                  )}
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-medium text-white truncate">{song.title}</p>
-                                    <p className="text-[11px] text-neutral-400 truncate">
-                                      {song.artist || song.channel}
-                                      {song.addedBy?.displayName && (
-                                        <span className="text-neutral-500 ml-1.5">• added by {song.addedBy.displayName}</span>
-                                      )}
-                                    </p>
-                                  </div>
-                                </div>
+                          <span className="text-[10px] text-neutral-500 font-mono shrink-0">
+                            {new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <button
-                                    onClick={() => onPlaySong && onPlaySong(song)}
-                                    className="p-1.5 rounded-lg bg-neutral-800 hover:bg-amber-500 hover:text-neutral-950 text-neutral-300 transition"
-                                    title="Play track"
-                                  >
-                                    <Play className="w-3.5 h-3.5 fill-current" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleRemoveTrackFromRoomPlaylist(activeSelectedPlaylist.id, song.id || song.videoId)}
-                                    className="p-1.5 rounded-lg bg-neutral-800 hover:bg-rose-500/20 hover:text-rose-400 text-neutral-500 transition opacity-0 group-hover:opacity-100"
-                                    title="Remove from room playlist"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
+              {/* TAB 3: MEMBER ROLES & PRIVACY MANAGEMENT */}
+              {activeTab === 'members' && (
+                <div className="p-4 rounded-2xl bg-neutral-950/70 border border-neutral-800 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h5 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                      <Users className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Room Members & Roles</span>
+                    </h5>
+                    <span className="text-xs text-neutral-400">{participants.length} connected</span>
+                  </div>
+
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                    {participants.map(m => {
+                      const isTargetHost = m.role === 'host';
+                      const isTargetCoHost = m.role === 'co-host';
+
+                      return (
+                        <div
+                          key={m.userId || m.username}
+                          className="p-2.5 rounded-xl bg-neutral-900/80 border border-neutral-800 flex items-center justify-between gap-3"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-bold text-white">{m.displayName || m.username}</span>
+                                {isTargetHost ? (
+                                  <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-mono font-bold flex items-center gap-0.5">
+                                    <Crown className="w-2.5 h-2.5" /> Host
+                                  </span>
+                                ) : isTargetCoHost ? (
+                                  <span className="text-[9px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.2 rounded font-mono font-bold">
+                                    Co-Host
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] bg-neutral-800 text-neutral-400 px-1.5 py-0.2 rounded font-mono">
+                                    Listener
+                                  </span>
+                                )}
                               </div>
-                            ))}
+                              <span className="text-[10px] text-neutral-500">
+                                Joined {new Date(m.joinedAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
                           </div>
-                        )}
+
+                          {/* Host Controls */}
+                          {isHost && m.userId !== currentUserId && (
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {isTargetCoHost ? (
+                                <button
+                                  onClick={() => handleChangeRole(m.userId, 'listener')}
+                                  className="px-2 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[10px] rounded-lg transition"
+                                  title="Demote to Listener"
+                                >
+                                  Demote
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleChangeRole(m.userId, 'co-host')}
+                                  className="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[10px] rounded-lg transition"
+                                  title="Promote to Co-Host"
+                                >
+                                  Promote
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleKickMember(m.userId)}
+                                className="p-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 transition"
+                                title="Remove member from room"
+                              >
+                                <UserX className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Host Room Settings Section */}
+                  {isHost && (
+                    <div className="mt-4 pt-3 border-t border-neutral-800 space-y-3">
+                      <h6 className="text-xs font-bold text-neutral-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <Shield className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Host Room Settings</span>
+                      </h6>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={handleTogglePrivacy}
+                          className="px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-amber-500/40 text-neutral-200 text-xs font-semibold flex items-center gap-1.5 transition"
+                        >
+                          {activeRoom.isPublic ? <Lock className="w-3.5 h-3.5 text-purple-400" /> : <Globe className="w-3.5 h-3.5 text-emerald-400" />}
+                          <span>Change to {activeRoom.isPublic ? 'Invite-Only' : 'Public'}</span>
+                        </button>
+
+                        <button
+                          onClick={handleRegenerateInviteCode}
+                          className="px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-amber-500/40 text-neutral-200 text-xs font-semibold flex items-center gap-1.5 transition"
+                          title="Revoke existing code and issue a fresh 6-char code"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Regenerate Invite Code</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleArchiveOrDeleteRoom('archive')}
+                          className="px-3 py-1.5 rounded-xl bg-neutral-900 border border-amber-500/30 hover:bg-amber-500/10 text-amber-300 text-xs font-semibold transition"
+                        >
+                          Archive Room
+                        </button>
+
+                        <button
+                          onClick={() => handleArchiveOrDeleteRoom('delete')}
+                          className="px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold transition"
+                        >
+                          Delete Room
+                        </button>
                       </div>
-                    )}
-                  </>
-                )}
-              </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
-            /* Room Browser & Creation */
+            /* ROOM BROWSER & CREATION SCREEN */
             <div className="space-y-5">
               {/* Join via Code / Link Input */}
               <div className="p-3.5 rounded-2xl bg-neutral-950/80 border border-neutral-800 flex items-center gap-2">
@@ -607,7 +1286,7 @@ export default function ListeningRoomsModal({
 
               {/* Creation Form */}
               {isCreating && (
-                <form onSubmit={handleCreate} className="p-4 bg-neutral-950 border border-neutral-800 rounded-2xl space-y-3">
+                <form onSubmit={handleCreate} className="p-4 bg-neutral-950 border border-neutral-800 rounded-2xl space-y-3 animate-fadeIn">
                   <h5 className="text-xs font-bold text-white uppercase tracking-wider">New Collaborative Room</h5>
                   <input
                     type="text"
@@ -626,6 +1305,17 @@ export default function ListeningRoomsModal({
                     className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500"
                     maxLength={100}
                   />
+                  <div className="flex items-center gap-3 pt-1">
+                    <label className="text-xs text-neutral-300 flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newRoomIsPublic}
+                        onChange={(e) => setNewRoomIsPublic(e.target.checked)}
+                        className="rounded border-neutral-700 text-amber-500 focus:ring-0"
+                      />
+                      <span>Make Room Public (visible in directory)</span>
+                    </label>
+                  </div>
                   <button
                     type="submit"
                     className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs rounded-xl transition shadow-lg shadow-amber-500/10"
@@ -659,7 +1349,7 @@ export default function ListeningRoomsModal({
                           )}
                         </div>
                         <p className="text-[11px] text-neutral-400 mt-0.5">
-                          Host: {r.hostUsername || r.createdBy?.displayName || 'Host'}
+                          Host: {r.createdBy?.displayName || 'Host'}
                         </p>
                         {r.description && (
                           <p className="text-[11px] text-neutral-500 mt-1 line-clamp-1">{r.description}</p>
@@ -669,7 +1359,7 @@ export default function ListeningRoomsModal({
                       <div className="flex items-center justify-between pt-2 border-t border-neutral-800/60">
                         <span className="text-[10px] text-neutral-500 flex items-center gap-1">
                           <Users className="w-3 h-3" />
-                          <span>{r.memberCount || r.participantCount || 1} members</span>
+                          <span>{r.memberCount || 1} members</span>
                         </span>
                         <button
                           onClick={() => handleJoin(r.roomId || r.id)}

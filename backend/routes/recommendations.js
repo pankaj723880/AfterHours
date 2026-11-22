@@ -1,13 +1,14 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import { recommendationEngine } from '../services/recommendationEngine.js';
 import { listeningEventService } from '../services/listeningEventService.js';
+import { personalizedFeedService } from '../services/personalizedFeedService.js';
 import UserMusicPreference from '../models/UserMusicPreference.js';
 import { catalogService } from '../services/catalogService.js';
 import { TrackDeduplicator, getCanonicalSongKey, cleanSongTitle } from '../services/recommendationHistoryService.js';
 import { getCleanTrackThumbnail, isValidThumbnailUrlFormat, filterTracksWithValidThumbnailsSync } from '../services/thumbnailValidationService.js';
-import { isSingleSong, verifySingleSong } from '../services/songFilter.js';
+import { isSingleSong, verifySingleSong, isValidMusicTrack } from '../services/songFilter.js';
 
 const router = express.Router();
 
@@ -28,6 +29,29 @@ function parseExclusions(req) {
 
   return { excludedIds, excludedKeys };
 }
+
+/**
+ * 0. GET /api/recommendations/home-feed
+ * Serves a personalized home feed tailored to the user/guest while minimizing YouTube quota.
+ */
+router.get('/home-feed', optionalAuth, async (req, res) => {
+  try {
+    const userId = req.user?._id || req.user?.userId || req.user?.id || null;
+    const guestId = (req.query.guestId || req.headers['x-guest-id'] || '').toString().trim() || null;
+    const limit = Math.max(4, Math.min(30, parseInt(req.query.limit, 10) || 12));
+
+    const feed = await personalizedFeedService.getPersonalizedHomeFeed({
+      userId,
+      guestId,
+      limit
+    });
+
+    res.json(feed);
+  } catch (err) {
+    console.error('[Recommendations Home-Feed Error]:', err.message);
+    res.status(500).json({ error: 'Failed to generate personalized home feed: ' + err.message });
+  }
+});
 
 /**
  * 1. GET /api/recommendations/personalized
@@ -170,18 +194,20 @@ router.get('/discover', async (req, res) => {
  */
 const handleListeningEvent = async (req, res) => {
   try {
-    const userId = req.user?._id || req.user?.userId || req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized: Authentication required' });
+    const userId = req.user?._id || req.user?.userId || req.user?.id || null;
+    const guestId = (req.body?.guestId || req.query?.guestId || req.headers['x-guest-id'] || '').toString().trim() || null;
+
+    if (!userId && !guestId) {
+      return res.status(400).json({ error: 'User ID or Guest ID is required' });
     }
 
-    const { trackId, title, artist, channel, thumbnail, eventType, duration, listenedDuration, completionPercent, source, playSessionId } = req.body || {};
+    const { trackId, title, artist, channel, thumbnail, eventType, duration, listenedDuration, completionPercent, source, playSessionId, language } = req.body || {};
 
     if (!trackId || !title) {
       return res.status(400).json({ error: 'trackId and title are required' });
     }
 
-    const result = await listeningEventService.recordEvent(userId, {
+    const result = await listeningEventService.recordEvent({ userId, guestId }, {
       trackId,
       title,
       artist,
@@ -192,11 +218,13 @@ const handleListeningEvent = async (req, res) => {
       listenedDuration,
       completionPercent,
       source,
-      playSessionId
+      playSessionId,
+      guestId,
+      language
     });
 
     const io = req.app_io || req.app?.get('io');
-    if (io && result.recorded) {
+    if (io && result.recorded && userId) {
       try {
         io.to(`user_${userId.toString()}`).emit('listening_stats_updated', {
           userId: userId.toString(),
@@ -217,7 +245,7 @@ const handleListeningEvent = async (req, res) => {
   }
 };
 
-router.post('/listening-events', authenticateToken, handleListeningEvent);
+router.post('/listening-events', optionalAuth, handleListeningEvent);
 
 /**
  * 5. POST /api/recommendations/refresh
@@ -534,8 +562,8 @@ router.get('/similar', async (req, res) => {
       const candidateTitle = (track.title || '').toLowerCase();
       const currentTitleLower = (cleanTitle || title).toLowerCase();
 
-      // Ensure track passes single song verification (permanently bans compilations, mashups, jukeboxes, full albums)
-      if (!isSingleSong(track)) return false;
+      // Ensure track passes single song and clean music verification (rejects shorts < 75s, compilations, mashups, jukeboxes, full albums)
+      if (!isValidMusicTrack(track)) return false;
 
       // Title exact or normalized match
       if (candidateTitle === currentTitleLower) return false;

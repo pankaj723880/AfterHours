@@ -15,25 +15,35 @@ class OfflineEligibilityService {
     this.listeners = new Set();
     this.batchTimeout = null;
     this.backendUrl = '';
+    this.downloadsEnabled = true;
   }
 
   setBackendUrl(url) {
     this.backendUrl = (url || '').trim().replace(/\/+$/, '');
   }
 
+  setDownloadsEnabled(enabled) {
+    this.downloadsEnabled = Boolean(enabled);
+  }
+
   isEligible(trackId) {
+    if (!this.downloadsEnabled) return false;
     if (!trackId) return false;
     const entry = this.cache.get(trackId);
     return Boolean(entry && entry.eligible === true);
   }
 
   getLicense(trackId) {
+    if (!this.downloadsEnabled) return null;
     if (!trackId) return null;
     const entry = this.cache.get(trackId);
     return entry?.license || null;
   }
 
   getReason(trackId) {
+    if (!this.downloadsEnabled) {
+      return 'Offline downloads are currently disabled by administrator.';
+    }
     if (!trackId) return 'No licensing verification performed.';
     const entry = this.cache.get(trackId);
     return entry?.reason || 'Licensing verification pending or unavailable.';
@@ -84,6 +94,19 @@ class OfflineEligibilityService {
     const idsToFetch = Array.from(this.pendingIds).slice(0, 100);
     idsToFetch.forEach(id => this.pendingIds.delete(id));
 
+    if (!this.downloadsEnabled) {
+      idsToFetch.forEach(id => {
+        this.cache.set(id, {
+          eligible: false,
+          license: null,
+          reason: 'Offline downloads are disabled by administrator.',
+          checkedAt: Date.now()
+        });
+      });
+      this.notifyListeners();
+      return;
+    }
+
     try {
       const url = `${this.backendUrl}/api/offline/eligibility/batch`;
       const res = await fetch(url, {
@@ -92,7 +115,22 @@ class OfflineEligibilityService {
         body: JSON.stringify({ trackIds: idsToFetch })
       });
 
-      if (!res.ok) throw new Error(`Eligibility check failed with status ${res.status}`);
+      if (!res.ok) {
+        if (res.status === 403) {
+          // Administrator has disabled offline downloads
+          this.downloadsEnabled = false;
+          idsToFetch.forEach(id => {
+            this.cache.set(id, {
+              eligible: false,
+              license: null,
+              reason: 'Offline downloads are disabled by administrator.',
+              checkedAt: Date.now()
+            });
+          });
+          return;
+        }
+        throw new Error(`Eligibility check failed with status ${res.status}`);
+      }
 
       const data = await res.json();
       if (data && Array.isArray(data.results)) {
@@ -128,6 +166,14 @@ class OfflineEligibilityService {
    */
   async checkTrack(trackId) {
     if (!trackId) return { eligible: false, license: null };
+    if (!this.downloadsEnabled) {
+      return {
+        eligible: false,
+        license: null,
+        reason: 'Offline downloads are disabled by administrator.',
+        checkedAt: Date.now()
+      };
+    }
     if (this.cache.has(trackId)) {
       return this.cache.get(trackId);
     }
@@ -141,6 +187,18 @@ class OfflineEligibilityService {
           eligible: Boolean(data.offlineEligible),
           license: data.license || null,
           reason: data.reason || '',
+          checkedAt: Date.now()
+        };
+        this.cache.set(trackId, entry);
+        this.notifyListeners();
+        return entry;
+      }
+      if (res.status === 403) {
+        this.downloadsEnabled = false;
+        const entry = {
+          eligible: false,
+          license: null,
+          reason: 'Offline downloads are disabled by administrator.',
           checkedAt: Date.now()
         };
         this.cache.set(trackId, entry);

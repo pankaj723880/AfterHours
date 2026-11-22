@@ -12,6 +12,7 @@ import {
 } from '../../services/voiceTaskEngine';
 import { chatBuddyLearningClient } from '../../services/chatBuddyLearningService';
 import { chatBuddyClient } from '../../services/chatBuddyClient';
+import { isValidMusicTrack } from '../../services/songFilter';
 import { Volume2, VolumeX, ChevronDown, ChevronUp, MessageSquare, X, Play, Pause, SkipForward, SkipBack } from 'lucide-react';
 
 const STORAGE_KEY_DESKTOP = 'loopra_ai_chat_dims_desktop';
@@ -729,17 +730,21 @@ export default function LoopraAiCompanion({
           const q = directAction.query || '';
           try {
             const cleanUrl = (backendUrl || '').replace(/\/+$/, '');
-            const res = await fetch(`${cleanUrl}/api/youtube/search?q=${encodeURIComponent(q)}&limit=1`);
+            const res = await fetch(`${cleanUrl}/api/youtube/search?q=${encodeURIComponent(q)}&limit=5`);
             if (res.ok) {
               const data = await res.json();
-              const item = data.items?.[0];
-              if (item) {
+              const items = Array.isArray(data.items) ? data.items : [];
+              const validItem = items.find(i => {
+                const vid = i.id?.videoId || i.id;
+                return vid && isValidMusicTrack({ id: vid, title: i.snippet?.title, channel: i.snippet?.channelTitle, duration: i.duration, durationSec: i.durationSec });
+              });
+              if (validItem) {
                 actionTrack = {
-                  id: item.id?.videoId || item.id,
-                  videoId: item.id?.videoId || item.id,
-                  title: item.snippet?.title || q,
-                  artist: item.snippet?.channelTitle || 'Artist',
-                  thumbnail: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.medium?.url || ''
+                  id: validItem.id?.videoId || validItem.id,
+                  videoId: validItem.id?.videoId || validItem.id,
+                  title: validItem.snippet?.title || q,
+                  artist: validItem.snippet?.channelTitle || 'Artist',
+                  thumbnail: validItem.snippet?.thumbnails?.high?.url || validItem.snippet?.thumbnails?.medium?.url || ''
                 };
                 if (onPlayTrack) onPlayTrack(actionTrack);
               }
@@ -847,17 +852,21 @@ export default function LoopraAiCompanion({
           const q = params.query || text;
           try {
             const cleanUrl = (backendUrl || '').replace(/\/+$/, '');
-            const res = await fetch(`${cleanUrl}/api/youtube/search?q=${encodeURIComponent(q)}&limit=1`);
+            const res = await fetch(`${cleanUrl}/api/youtube/search?q=${encodeURIComponent(q)}&limit=5`);
             if (res.ok) {
               const data = await res.json();
-              const item = data.items?.[0];
-              if (item) {
+              const items = Array.isArray(data.items) ? data.items : [];
+              const validItem = items.find(i => {
+                const vid = i.id?.videoId || i.id;
+                return vid && isValidMusicTrack({ id: vid, title: i.snippet?.title, channel: i.snippet?.channelTitle, duration: i.duration, durationSec: i.durationSec });
+              });
+              if (validItem) {
                 const track = {
-                  id: item.id?.videoId || item.id,
-                  videoId: item.id?.videoId || item.id,
-                  title: item.snippet?.title || q,
-                  artist: item.snippet?.channelTitle || 'Artist',
-                  thumbnail: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.medium?.url || ''
+                  id: validItem.id?.videoId || validItem.id,
+                  videoId: validItem.id?.videoId || validItem.id,
+                  title: validItem.snippet?.title || q,
+                  artist: validItem.snippet?.channelTitle || 'Artist',
+                  thumbnail: validItem.snippet?.thumbnails?.high?.url || validItem.snippet?.thumbnails?.medium?.url || ''
                 };
                 if (onPlayTrack) onPlayTrack(track);
                 if (showToast) showToast(`Now playing: ${track.title}`);

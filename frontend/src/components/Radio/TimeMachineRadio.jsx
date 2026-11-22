@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { USE_COMPACT_TIMEMACHINE_V2 } from '../../constants/featureFlags';
+import { isValidMusicTrack } from '../../services/songFilter';
 
 // Built-in default eras if CMS config is empty
 const DEFAULT_ERAS = [
@@ -120,18 +121,22 @@ export default function TimeMachineRadio({
       const data = await res.json();
       const items = Array.isArray(data?.items) ? data.items : [];
 
-      const parsedTracks = items.map((item) => {
-        const videoId = item.id?.videoId || item.id;
-        return {
-          id: videoId,
-          videoId,
-          title: decodeHtml(item.snippet?.title || 'Unknown Title'),
-          artist: decodeHtml(item.snippet?.channelTitle || item.snippet?.artist || era.title),
-          albumArt: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.medium?.url || era.artwork,
-          decade: era.decade,
-          eraTitle: era.title
-        };
-      });
+      const parsedTracks = items
+        .map((item) => {
+          const videoId = item.id?.videoId || item.id;
+          return {
+            id: videoId,
+            videoId,
+            title: decodeHtml(item.snippet?.title || 'Unknown Title'),
+            artist: decodeHtml(item.snippet?.channelTitle || item.snippet?.artist || era.title),
+            albumArt: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.medium?.url || era.artwork,
+            decade: era.decade,
+            eraTitle: era.title,
+            duration: item.duration,
+            durationSec: item.durationSec
+          };
+        })
+        .filter(t => t.id && isValidMusicTrack(t));
 
       setTracks(parsedTracks);
     } catch (err) {

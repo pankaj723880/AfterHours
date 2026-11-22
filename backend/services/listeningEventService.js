@@ -3,6 +3,7 @@ import UserListeningEvent from '../models/UserListeningEvent.js';
 import UserMusicPreference from '../models/UserMusicPreference.js';
 import User from '../models/User.js';
 import { analyticsService } from './analyticsService.js';
+import { personalizedFeedService, detectTrackLanguage, parseDurationSec } from './personalizedFeedService.js';
 
 // Cache recent events in-memory to discard rapid frontend debounce/re-render duplicates (3 seconds window)
 const recentEventsCache = new Map();
@@ -79,13 +80,10 @@ export function getWeekStartInTimezone(timezone = 'UTC') {
 
 export const listeningEventService = {
   /**
-   * Records a user listening event with deduplication and state updates.
-   * Delegates to centralized analyticsService.
+   * Records a user or guest listening event with deduplication and state updates.
+   * Delegates to analyticsService for authenticated users and updates listening profiles for all.
    */
-  async recordEvent(userId, eventData) {
-    if (!userId) {
-      throw new Error('Authenticated user ID is required to record listening event');
-    }
+  async recordEvent(userIdentifier, eventData) {
     const {
       trackId,
       title,
@@ -97,10 +95,31 @@ export const listeningEventService = {
       listenedDuration = 0,
       completionPercent = 0,
       source = 'player',
-      playSessionId
+      playSessionId,
+      guestId = null,
+      language = null
     } = eventData || {};
 
-    const dedupeKey = `${userId}_${trackId}_${eventType}_${listenedDuration}`;
+    let userId = null;
+    let effectiveGuestId = guestId;
+
+    if (userIdentifier && typeof userIdentifier === 'object') {
+      userId = userIdentifier.userId || userIdentifier._id || null;
+      effectiveGuestId = userIdentifier.guestId || effectiveGuestId;
+    } else if (typeof userIdentifier === 'string') {
+      if (mongoose.Types.ObjectId.isValid(userIdentifier) && userIdentifier.length === 24) {
+        userId = userIdentifier;
+      } else {
+        effectiveGuestId = userIdentifier;
+      }
+    }
+
+    if (!userId && !effectiveGuestId) {
+      return { recorded: false, skipped: true, reason: 'No user or guest identifier' };
+    }
+
+    const dedupeIdentifier = userId ? userId.toString() : effectiveGuestId;
+    const dedupeKey = `${dedupeIdentifier}_${trackId}_${eventType}_${listenedDuration}`;
     const now = Date.now();
     const lastTime = recentEventsCache.get(dedupeKey);
     if (lastTime && (now - lastTime < DEDUPE_WINDOW_MS)) {
@@ -108,33 +127,84 @@ export const listeningEventService = {
     }
     recentEventsCache.set(dedupeKey, now);
 
-    return analyticsService.recordPlaybackEvent(userId, {
-      sessionId: playSessionId,
-      trackId,
-      songTitle: title,
-      artistName: artist || channel,
-      artworkUrl: thumbnail,
-      eventType,
-      durationSeconds: duration,
-      listenedDurationSeconds: listenedDuration,
-      completionPercent,
-      source
+    // Upsert into shared CachedSong collection asynchronously (quota preservation)
+    setImmediate(async () => {
+      try {
+        await personalizedFeedService.upsertSong({
+          videoId: trackId,
+          title,
+          artist: artist || channel,
+          channel: channel || artist,
+          thumbnail,
+          durationSec: duration,
+          language: language || detectTrackLanguage(title, artist)
+        });
+      } catch (_) {}
     });
+
+    // Update UserMusicPreference for authenticated or guest user
+    setImmediate(async () => {
+      try {
+        await this.updateUserPreferences({ userId, guestId: effectiveGuestId }, {
+          trackId,
+          title,
+          artist: artist || channel,
+          thumbnail,
+          eventType,
+          completionPercent,
+          language
+        });
+      } catch (_) {}
+    });
+
+    // If authenticated user, record in analytics service
+    if (userId) {
+      return analyticsService.recordPlaybackEvent(userId, {
+        sessionId: playSessionId,
+        trackId,
+        songTitle: title,
+        artistName: artist || channel,
+        artworkUrl: thumbnail,
+        eventType,
+        durationSeconds: duration,
+        listenedDurationSeconds: listenedDuration,
+        completionPercent,
+        source
+      });
+    }
+
+    return {
+      recorded: true,
+      guest: true,
+      trackId,
+      eventType
+    };
   },
+
   /**
-   * Updates UserMusicPreference based on newly received event.
+   * Updates UserMusicPreference based on newly received event (supporting both userId and guestId).
    */
-  async updateUserPreferences(userId, event) {
+  async updateUserPreferences(identifier, event) {
     try {
       if (!mongoose.connection || mongoose.connection.readyState !== 1) {
         return;
       }
-      let pref = await UserMusicPreference.findOne({ userId });
-      if (!pref) {
-        pref = new UserMusicPreference({ userId });
+
+      const query = {};
+      if (identifier?.userId) {
+        query.userId = identifier.userId;
+      } else if (identifier?.guestId) {
+        query.guestId = identifier.guestId;
+      } else {
+        return;
       }
 
-      const { trackId, title, artist, eventType, completionPercent } = event;
+      let pref = await UserMusicPreference.findOne(query);
+      if (!pref) {
+        pref = new UserMusicPreference(query);
+      }
+
+      const { trackId, title, artist, eventType, completionPercent, language } = event;
       const cleanArtist = (artist || '').trim();
 
       // Track artist affinity
@@ -164,6 +234,21 @@ export const listeningEventService = {
         // Sort top artists descending by affinity score and keep top 25
         pref.topArtists.sort((a, b) => b.score - a.score);
         pref.topArtists = pref.topArtists.slice(0, 25);
+      }
+
+      // Track language affinity
+      const trackLang = language || detectTrackLanguage(title, cleanArtist);
+      if (trackLang) {
+        if (!pref.preferredLanguages) pref.preferredLanguages = [];
+        const existingLang = pref.preferredLanguages.find(l => l.name.toLowerCase() === trackLang.toLowerCase());
+        const langDelta = eventType === 'like' ? 3 : (eventType === 'completed' ? 2 : 1);
+        if (existingLang) {
+          existingLang.score += langDelta;
+        } else {
+          pref.preferredLanguages.push({ name: trackLang, score: langDelta });
+        }
+        pref.preferredLanguages.sort((a, b) => b.score - a.score);
+        pref.preferredLanguages = pref.preferredLanguages.slice(0, 5);
       }
 
       // Track counts
@@ -197,7 +282,7 @@ export const listeningEventService = {
         filteredRecent.unshift({
           trackId,
           title,
-          artist,
+          artist: cleanArtist,
           thumbnail: event.thumbnail,
           listenedAt: new Date(),
           completed: completionPercent >= 50 || eventType === 'completed'

@@ -35,6 +35,12 @@ export function buildPath(tab, params = {}) {
     }
     return '/playlists';
   }
+  if (tab === 'rooms') {
+    if (params?.room || params?.roomCode) {
+      return `/?room=${encodeURIComponent(params.room || params.roomCode)}`;
+    }
+    return '/rooms';
+  }
   if (tab === 'downloads') {
     if (params?.subView === 'explore' || params?.offlineSubView === 'explore') {
       return '/downloads/explore';
@@ -61,6 +67,11 @@ export function parseRoute(pathname = '/', search = '') {
   const id = (searchParams.get('id') || '').trim();
   const playlistParam = (searchParams.get('playlist') || '').trim();
   const view = (searchParams.get('view') || '').trim();
+
+  const roomParam = (searchParams.get('room') || searchParams.get('roomCode') || '').trim();
+  if (roomParam) {
+    return { tab: 'rooms', path: `/?room=${encodeURIComponent(roomParam)}`, params: { room: roomParam, roomCode: roomParam } };
+  }
 
   if (playlistParam) {
     const p = `/?playlist=${encodeURIComponent(playlistParam)}`;
@@ -114,7 +125,10 @@ export function parseRoute(pathname = '/', search = '') {
   if (cleanPath === '/truck') {
     return { tab: 'truck', path: '/truck', params: {} };
   }
-  const knownTabs = ['barber', 'truck', 'pauwa', 'saloon', 'theka', 'mood', 'timemachine', 'activity', 'library', 'history', 'swipe', 'relax', 'dj-club'];
+  if (cleanPath === '/rooms' || cleanPath === '/listening-rooms') {
+    return { tab: 'rooms', path: '/rooms', params: {} };
+  }
+  const knownTabs = ['barber', 'truck', 'pauwa', 'saloon', 'theka', 'mood', 'timemachine', 'activity', 'library', 'history', 'swipe', 'relax', 'dj-club', 'rooms'];
   const stripped = cleanPath.replace(/^\//, '');
   if (knownTabs.includes(stripped)) {
     return { tab: stripped, path: `/${stripped}`, params: {} };

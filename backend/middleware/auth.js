@@ -62,3 +62,24 @@ export const requireAdmin = (req, res, next) => {
   }
   next();
 };
+
+export const optionalAuth = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+  if (!token) {
+    req.user = null;
+    return next();
+  }
+  const decoded = verifyToken(token);
+  if (!decoded || !decoded.userId) {
+    req.user = null;
+    return next();
+  }
+  try {
+    const user = await User.findById(decoded.userId).select('-password').maxTimeMS(4000);
+    req.user = user || null;
+  } catch (_) {
+    req.user = null;
+  }
+  next();
+};

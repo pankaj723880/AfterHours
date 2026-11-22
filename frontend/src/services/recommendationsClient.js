@@ -79,23 +79,70 @@ export const recommendationsClient = {
   },
 
   /**
+   * Fetches personalized home feed (Trending Songs, Popular Albums, Popular Radio)
+   * tailored to the user's or guest's listening history while minimizing YouTube quota.
+   */
+  async getHomeFeed(backendUrl, token = null, guestId = null, limit = 12) {
+    const base = (backendUrl || '').replace(/\/+$/, '');
+    let url = `${base}/api/recommendations/home-feed?limit=${limit}`;
+    if (guestId) {
+      url += `&guestId=${encodeURIComponent(guestId)}`;
+    }
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    if (guestId) {
+      headers['X-Guest-ID'] = guestId;
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const res = await fetch(url, { method: 'GET', headers, signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (_) {
+      return null;
+    }
+  },
+
+  /**
    * Sends a listening event to the backend with timeout protection.
+   * Supports both authenticated users and guest users with guestId.
    */
   async logListeningEvent(backendUrl, token, eventData) {
-    if (!token || !eventData?.trackId || !eventData?.title) return;
+    if (!eventData?.trackId || !eventData?.title) return;
 
     const base = (backendUrl || '').replace(/\/+$/, '');
     const url = `${base}/api/listening-events`;
     try {
+      let guestId = eventData?.guestId || null;
+      if (!guestId && typeof window !== 'undefined') {
+        guestId = localStorage.getItem('afterhours_session_id') || null;
+      }
+
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      if (guestId) {
+        headers['X-Guest-ID'] = guestId;
+      }
+
+      const payload = {
+        ...eventData,
+        guestId: guestId || eventData?.guestId
+      };
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
       await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(eventData),
+        headers,
+        body: JSON.stringify(payload),
         signal: controller.signal,
         keepalive: true
       });

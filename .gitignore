@@ -67,3 +67,6 @@ loopra-apk/
 \
 
 .snapshots/
+
+backend/.storage/
+.storage/

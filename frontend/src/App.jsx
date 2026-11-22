@@ -13,6 +13,7 @@ const StudioLoungeAtmosphere = lazy(() => import('./components/Player/StudioLoun
 const OfflineLibraryView = lazy(() => import('./components/Offline/OfflineLibraryView'));
 const OfflineEligibleExploreView = lazy(() => import('./components/Offline/OfflineEligibleExploreView'));
 const ListeningRoomsModal = lazy(() => import('./components/Social/ListeningRoomsModal'));
+const ListeningRoomsView = lazy(() => import('./components/Social/ListeningRoomsView'));
 const SimilarSongsModal = lazy(() => import('./components/Recommendations/SimilarSongsModal'));
 const LyricsModal = lazy(() => import('./components/Player/LyricsModal'));
 const SleepTimerModal = lazy(() => import('./components/Player/SleepTimerModal'));
@@ -106,7 +107,7 @@ import { voiceControlService } from './services/voiceControlService';
 import { useVoiceRollout } from './hooks/useVoiceRollout';
 import { useServerKeepAlive } from './hooks/useServerKeepAlive';
 import shuffleService from './services/shuffleService';
-import { filterSingleSongs, isSingleSong, isCleanMusicTrack } from './services/songFilter';
+import { filterSingleSongs, isSingleSong, isCleanMusicTrack, isValidMusicTrack, sanitizeTrack, parseDurationToSeconds } from './services/songFilter';
 import { curateSwipeDeck, filterStrictSoloTracks } from './services/swipeCurationService';
 const RatingPopupModal = lazy(() => import('./components/Rating/RatingPopupModal'));
 import HomepageReviewsSection from './components/Rating/HomepageReviewsSection';
@@ -340,7 +341,8 @@ const Icon = ({ name, className = "w-5 h-5", ...props }) => {
     settings: <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" fill="currentColor" />,
     sliders: <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" fill="currentColor" />,
     messageSquare: <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" fill="currentColor" />,
-    chat: <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" fill="currentColor" />
+    chat: <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" fill="currentColor" />,
+    users: <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" fill="currentColor" />
   };
   return (
     <svg className={className} viewBox="0 0 24 24" {...props}>
@@ -7728,16 +7730,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         const fetchedTracks = data.items.map(item => {
           const vid = item.id?.videoId || (typeof item.id === 'string' ? item.id : null) || item.videoId;
           const { title, artist } = sanitizeTrackMetadata(item.snippet?.title || 'Untitled', item.snippet?.channelTitle || 'Unknown Artist');
+          const durSec = parseDurationToSeconds(item);
+          const formattedDur = durSec ? `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}` : (typeof item.duration === 'string' ? item.duration : '3:45');
           return {
             id: vid,
             videoId: vid,
             title,
             channel: artist,
             artist,
-            duration: '3:45',
+            duration: formattedDur,
+            durationSec: durSec || undefined,
             thumbnail: getCleanThumbnail(item, vid),
           };
-        }).filter(t => t.id && typeof t.id === 'string' && t.id.length >= 5);
+        }).filter(t => t.id && typeof t.id === 'string' && t.id.length >= 5 && isValidMusicTrack(t));
 
         // Deduplicate using stable YouTube ID
         const seen = new Set();
@@ -7856,16 +7861,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       const fetchedTracks = rawItems.map(item => {
         const vid = item.id?.videoId || (typeof item.id === 'string' ? item.id : null) || item.videoId;
         const { title, artist } = sanitizeTrackMetadata(item.snippet?.title || 'Untitled', item.snippet?.channelTitle || 'Unknown Artist');
+        const durSec = parseDurationToSeconds(item);
+        const formattedDur = durSec ? `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}` : (typeof item.duration === 'string' ? item.duration : '3:45');
         return {
           id: vid,
           videoId: vid,
           title,
           channel: artist,
           artist,
-          duration: '3:45',
+          duration: formattedDur,
+          durationSec: durSec || undefined,
           thumbnail: getCleanThumbnail(item, vid),
         };
-      }).filter(t => t.id && typeof t.id === 'string' && t.id.length >= 5);
+      }).filter(t => t.id && typeof t.id === 'string' && t.id.length >= 5 && isValidMusicTrack(t));
 
       const nextToken = data.nextPageToken || null;
 
@@ -7937,8 +7945,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const roomParam = (params.get('room') || params.get('roomCode') || '').trim();
     if (!initialRoomCheckedRef.current && roomParam) {
       initialRoomCheckedRef.current = true;
+      setActiveTab('rooms');
       setIsListeningRoomsOpen(true);
-      fetch(`/api/rooms/${encodeURIComponent(roomParam)}/join`, {
+      fetch(getApiUrl(`/api/rooms/${encodeURIComponent(roomParam)}/join`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user })
@@ -8563,6 +8572,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       <span>My Profile</span>
                     </button>
 
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setIsPlayerSettingsOpen(true);
+                        setIsAccountMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800/80 transition cursor-pointer text-left"
+                    >
+                      <Icon name="settings" className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>Settings</span>
+                    </button>
+
                     {isAdmin && (
                       <button
                         type="button"
@@ -8602,6 +8624,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </div>
             ) : (
               <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsPlayerSettingsOpen(true)}
+                  className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-full sm:rounded-2xl bg-neutral-800/80 hover:bg-neutral-700/80 text-neutral-300 hover:text-white border border-neutral-700/60 flex items-center gap-1.5 text-xs font-semibold shadow-sm active:scale-95 transition cursor-pointer shrink-0"
+                  title="Settings"
+                  aria-label="Settings"
+                >
+                  <Icon name="settings" className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span className="hidden sm:inline">Settings</span>
+                </button>
+
                 {/* Mobile login button opening auth modal */}
                 <button
                   type="button"
@@ -8692,6 +8725,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     ...(!isStandaloneApp && !window.LoopraAndroid ? [{ id: 'downloads', label: 'Downloaded Songs', icon: 'download', group: 'collection' }] : []),
                     { id: 'history', label: 'Listening History', icon: 'history', group: 'collection' },
                     { id: 'playlists', label: 'Playlists', icon: 'list', group: 'collection' },
+                    { id: 'rooms', label: 'Rooms', icon: 'users', badge: 'Live', group: 'collection' },
                     { id: 'stats', label: 'Recap & Stats', icon: 'sparkles', group: 'collection' }
                   ];
 
@@ -8699,7 +8733,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     if (['home', 'dj-club', 'chat', 'ai-chat', 'discover', 'radio'].includes(id)) return 'main';
                     if (['mood', 'timemachine', 'activity', 'swipe'].includes(id)) return 'discovery';
                     if (['barber', 'truck', 'pauwa'].includes(id)) return 'stations';
-                    if (['library', 'downloads', 'history', 'playlists', 'stats'].includes(id)) return 'collection';
+                    if (['library', 'downloads', 'history', 'playlists', 'rooms', 'stats'].includes(id)) return 'collection';
                     return rawGroup || 'main';
                   };
 
@@ -8757,7 +8791,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     navMap.set(st.id, st);
                   });
 
-                  const bottomNavIds = new Set(['home', 'discover', 'library', 'liked', 'playlists', 'radio', 'indian-radio']);
+                  const bottomNavIds = new Set(['home', 'discover', 'library', 'liked', 'playlists', 'rooms', 'radio', 'indian-radio']);
                   const allItems = Array.from(navMap.values()).filter(item => {
                     if (!item || item.enabled === false || disabledIds.has(item.id)) return false;
                     // Remove Loopra AI Chat from sidebar
@@ -9056,6 +9090,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 ...(!isStandaloneApp && !window.LoopraAndroid ? [{ id: 'downloads', label: 'Downloaded Songs', icon: 'download', group: 'collection' }] : []),
                 { id: 'history', label: 'Listening History', icon: 'history', group: 'collection' },
                 { id: 'playlists', label: 'Playlists', icon: 'list', group: 'collection' },
+                { id: 'rooms', label: 'Rooms', icon: 'users', badge: 'Live', group: 'collection' },
                 { id: 'stats', label: 'Recap & Stats', icon: 'sparkles', group: 'collection' }
               ];
 
@@ -9063,7 +9098,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 if (['home', 'dj-club', 'chat', 'ai-chat', 'discover', 'radio'].includes(id)) return 'main';
                 if (['mood', 'timemachine', 'activity', 'swipe'].includes(id)) return 'discovery';
                 if (['barber', 'truck', 'pauwa'].includes(id)) return 'stations';
-                if (['library', 'downloads', 'history', 'playlists', 'stats'].includes(id)) return 'collection';
+                if (['library', 'downloads', 'history', 'playlists', 'rooms', 'stats'].includes(id)) return 'collection';
                 return rawGroup || 'main';
               };
 
@@ -9128,7 +9163,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               });
 
               // Destinations present in the mobile lower navbar (MobileBottomNav)
-              const bottomNavIds = new Set(['home', 'discover', 'library', 'liked', 'playlists', 'radio', 'indian-radio']);
+              const bottomNavIds = new Set(['home', 'discover', 'library', 'liked', 'playlists', 'rooms', 'radio', 'indian-radio']);
               const allItems = Array.from(navMap.values()).filter(item => {
                 if (!item || item.enabled === false || disabledIds.has(item.id)) return false;
                 // Remove Loopra AI Chat from sidebar
@@ -10840,6 +10875,29 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           </div>
         )}
 
+        {activeTab === 'rooms' && (
+          <div key="page-rooms" className="page-transition w-full px-2 sm:px-4 md:px-8 space-y-6 relative z-10 pb-32">
+            <ListeningRoomsView
+              socket={socket}
+              user={user}
+              currentSong={currentSong}
+              isPlaying={isPlaying}
+              currentTimeRef={currentTimeRef}
+              onPlaySong={playSong}
+              onSeek={handleSeek}
+              showToast={showToast}
+              activeRoom={activeRoom}
+              setActiveRoom={setActiveRoom}
+              roomPlaylists={roomPlaylists}
+              setRoomPlaylists={setRoomPlaylists}
+              userPlaylists={playlists}
+              setPlaylists={setPlaylists}
+              onOpenAddToPlaylist={(track) => handleAddToPlaylistClick(track || currentSong)}
+              onBackToHome={() => handleStationSelect('home')}
+            />
+          </div>
+        )}
+
         {activeTab === 'downloads' && (
           cmsConfig?.featureControls?.offlineDownloadsEnabled === false ? (
             <div key="downloads-disabled" className="page-transition flex-1 w-full px-4 md:px-8 py-16 flex flex-col items-center justify-center text-center">
@@ -11254,27 +11312,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               className="flex items-center gap-2.5 min-w-0 flex-1 select-none"
               title="Expand Now Playing"
             >
-              <div className="relative shrink-0">
-                <img 
-                  src={getCleanThumbnail(currentSong)} 
-                  alt={currentSong.title || ""} 
-                  className="rounded-xl object-cover shrink-0 shadow-md w-12 h-12 border border-amber-500/30" 
-                  onError={(e) => handleImageError(e, currentSong.title, currentSong.id)} 
-                />
-                {isPlaying && (
-                  <div className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-gradient-to-tr from-amber-500 to-orange-500 text-neutral-950 flex items-center justify-center text-[8px] font-bold animate-spin-slow shadow-md border border-neutral-950">
-                    💿
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <h4 className="font-bold text-xs text-white truncate leading-tight">{currentSong.title}</h4>
-                <p className="text-[10px] text-amber-400 truncate mt-0.5 select-none">{currentSong.channel || currentSong.artist}</p>
-              </div>
-            </div>
-
-            {/* Right: Touch Playback Controls */}
-            <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
               {/* Extra controls revealed horizontally when isMiniPlayerExpanded is true */}
               {isMiniPlayerExpanded && (
                 <>
@@ -11606,16 +11643,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     aria-label="Share Track"
                   >
                     <Icon name="share" className="w-3.5 h-3.5 text-amber-400" />
-                  </button>
-
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setIsPlayerSettingsOpen(true); }}
-                    className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer"
-                    title="Audio & Player Settings (Crossfade, Sleep Timer, Gapless)"
-                    aria-label="Audio & Player Settings"
-                  >
-                    <Icon name="sliders" className="w-3.5 h-3.5 text-amber-400" />
-                    <span className="hidden sm:inline">Settings</span>
                   </button>
                 </div>
 
@@ -12396,7 +12423,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             return merged;
           });
         }} 
-        showToast={showToast} 
+        showToast={showToast}
+        onOpenSettings={() => {
+          setIsProfileOpen(false);
+          setIsPlayerSettingsOpen(true);
+        }}
       />
 
       {/* Loopra AI Floating Music Companion */}
@@ -12429,7 +12460,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           }
           const validDestinations = [
             'home', 'discover', 'swipe', 'for-you', 'library', 'history',
-            'playlists', 'activity', 'dj-club', 'downloads', 'downloads_explore',
+            'playlists', 'rooms', 'activity', 'dj-club', 'downloads', 'downloads_explore',
             'radio', 'indian-radio', 'mood', 'timemachine', 'barber', 'truck', 'pauwa',
             'artist', 'admin', 'apk', 'download'
           ];
@@ -12616,7 +12647,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           }
           const validDestinations = [
             'home', 'discover', 'swipe', 'for-you', 'library', 'history',
-            'playlists', 'activity', 'dj-club', 'downloads', 'downloads_explore',
+            'playlists', 'rooms', 'activity', 'dj-club', 'downloads', 'downloads_explore',
             'radio', 'indian-radio', 'mood', 'timemachine', 'barber', 'truck', 'pauwa',
             'artist', 'admin', 'apk', 'download'
           ];

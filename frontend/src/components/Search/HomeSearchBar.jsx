@@ -7,6 +7,7 @@ import {
   removeRecentSearch,
   clearAllRecentSearches
 } from '../../services/searchHistoryService';
+import { isValidMusicTrack } from '../../services/songFilter';
 
 const SUGGESTIONS = [
   'Arijit Singh',
@@ -115,20 +116,23 @@ export default function HomeSearchBar({
         if (currentReqId !== requestIdRef.current) return;
 
         const rawItems = Array.isArray(data?.items) ? data.items : [];
-        const formatted = rawItems.slice(0, 10).map((item) => {
-          const videoId = item.id?.videoId || item.id;
-          return {
-            id: videoId,
-            title: decodeHtml(item.snippet?.title || 'Untitled Track'),
-            channel: decodeHtml(item.snippet?.channelTitle || 'Unknown Artist'),
-            thumbnail:
-              item.snippet?.thumbnails?.medium?.url ||
-              item.snippet?.thumbnails?.default?.url ||
-              item.snippet?.thumbnails?.high?.url ||
-              `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
-            rawItem: item
-          };
-        });
+        const formatted = rawItems
+          .map((item) => {
+            const videoId = item.id?.videoId || item.id;
+            return {
+              id: videoId,
+              title: decodeHtml(item.snippet?.title || 'Untitled Track'),
+              channel: decodeHtml(item.snippet?.channelTitle || 'Unknown Artist'),
+              thumbnail:
+                item.snippet?.thumbnails?.medium?.url ||
+                item.snippet?.thumbnails?.default?.url ||
+                item.snippet?.thumbnails?.high?.url ||
+                `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+              rawItem: item
+            };
+          })
+          .filter(t => t.id && isValidMusicTrack(t))
+          .slice(0, 10);
 
         // Store in LRU cache
         autocompleteCache.set(cacheKey, formatted);
