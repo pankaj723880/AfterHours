@@ -153,7 +153,20 @@ if (import.meta.env.DEV && 'serviceWorker' in navigator) {
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
-      .then((reg) => console.log('Service Worker Registered!', reg))
+      .then((reg) => {
+        console.log('Service Worker Registered!', reg);
+        // Actively check for updates on each app open
+        reg.update().catch(() => {});
+      })
       .catch((err) => console.warn('Service Worker Registration notice:', err?.message || err));
+  });
+
+  // Automatically refresh when a new service worker version takes over
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshing) {
+      refreshing = true;
+      window.location.reload();
+    }
   });
 }
