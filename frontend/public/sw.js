@@ -54,8 +54,10 @@ self.addEventListener('fetch', (event) => {
 
   // 1. Bypass API, WebSocket, audio streams, browser extensions, and Android Digital Asset Links
   // Ensure background audio keep-alives, Range requests, and media streams are NEVER intercepted or dropped
+  // IMPORTANT: Bypass /version.json so update checks and release manifests are ALWAYS fresh from network
   if (
     url.pathname.startsWith('/api') ||
+    url.pathname.endsWith('version.json') ||
     url.pathname.startsWith('/socket.io') ||
     url.pathname.startsWith('/.well-known/') ||
     url.origin.includes('youtube.com') ||

@@ -1319,8 +1319,9 @@ app.get(['/api/app-version', '/api/version'], (req, res) => {
     res.json({
       versionName: '2.1',
       versionCode: 21,
-      downloadUrl: 'https://loopra1.vercel.app/Loopra.apk',
-      directApkUrl: 'https://loopra1.vercel.app/Loopra.apk',
+      downloadUrl: 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
+      directApkUrl: 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
+      externalApkUrl: 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
       releaseNotes: 'Official Loopra release',
       releaseDate: new Date().toISOString(),
       minSdkVersion: 24,

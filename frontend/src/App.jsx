@@ -37,7 +37,7 @@ import CmsHeroBanner from './components/Common/CmsHeroBanner';
 import CmsMaintenanceOverlay from './components/Common/CmsMaintenanceOverlay';
 import CmsCuratedCollectionsRow from './components/Common/CmsCuratedCollectionsRow';
 import AppUpdateModal from './components/Common/AppUpdateModal';
-import { triggerApkDownload, checkForAppUpdate, fetchPublishedAppVersion, getInstalledAppVersion } from './services/appUpdateService';
+import { triggerApkDownload, checkForAppUpdate, fetchPublishedAppVersion, getInstalledAppVersion, getDirectApkDownloadUrl } from './services/appUpdateService';
 import { getCachedCmsConfig, fetchPublicCmsConfig, applyThemeToDom, normalizeCmsConfig, resolvePlatformConfig } from './services/cmsClient';
 import { offlineEligibilityService } from './services/offlineEligibilityService';
 import { offlineStorageService } from './services/offlineStorageService';
@@ -1138,7 +1138,7 @@ const POPULAR_ARTISTS = [
   {
     "name": "Mohit Chauhan",
     "role": "Artist",
-    "image": "https://yt3.ggpht.com/iHlTfXwk3wCV5hwHWFJXZeNSSwHWU1KqvdkH3mP0eStfxHiiLL7QA7qAmKDpPJDW_z-NuxMrzaA=s88-c-k-c0x00ffffff-no-rj-mo"
+    "image": "https://yt3.ggpht.com/ytc/AIdro_li2lsmbfskQRf4VjFrJ0-qXRPjVmorZu8DsI4fRBBm4Wc=s88-c-k-c0x00ffffff-no-rj-mo"
   },
   {
     "name": "Shaan",
@@ -1148,7 +1148,7 @@ const POPULAR_ARTISTS = [
   {
     "name": "KK",
     "role": "Artist",
-    "image": "https://yt3.ggpht.com/4XC6r7BS8SiH0RRyXnaXaDzl1Iv7PeFxEVv0khdfaarlR0kKQFysVU3VdMfWQSczstia9w2mv38=s88-c-k-c0x00ffffff-no-rj-mo"
+    "image": "https://ui-avatars.com/api/?name=KK&background=181818&color=f59e0b&size=300"
   },
   {
     "name": "Armaan Malik",
@@ -2280,6 +2280,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
   const [selectedSongForPlaylist, setSelectedSongForPlaylist] = useState(null);
   const [newPlaylistName, setNewPlaylistName] = useState('');
+  const [isCreatePlaylistModalOpen, setIsCreatePlaylistModalOpen] = useState(false);
+  const [createModalPlaylistName, setCreateModalPlaylistName] = useState('');
   const [playlistMenuOpenId, setPlaylistMenuOpenId] = useState(null);
   const [renameModalPlaylist, setRenameModalPlaylist] = useState(null);
   const [renameModalName, setRenameModalName] = useState('');
@@ -4469,8 +4471,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           setIsPlaying(true);
           setIsAutoplayBlocked(false);
           isInitialMountRef.current = false;
+          updateMediaSessionImmediate(currentSong, true);
         };
-        audio.onpause = () => setIsPlaying(false);
+        audio.onpause = () => {
+          setIsPlaying(false);
+          updateMediaSessionImmediate(currentSong, false);
+        };
         audio.onerror = (e) => {
           console.warn('[OfflinePlay] Audio element error:', e);
           setIsPlaying(false);
@@ -5227,24 +5233,41 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   // Helper: Synchronous & robust MediaSession updater to ensure immediate notification bar / lock-screen sync
   const updateMediaSessionImmediate = useCallback((track, playingState) => {
-    if (typeof window === 'undefined' || !('mediaSession' in navigator) || !track) return;
+    if (typeof window === 'undefined' || !track) return;
     try {
       const { title: cleanTitle, artist: cleanArtist } = sanitizeTrackMetadata(
         track.title || 'Unknown Track',
         track.artist || track.channel || cmsConfig?.branding?.siteName || "Loopra Artist"
       );
-      const cleanArtworkList = getCleanMediaSessionArtwork(track);
 
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: cleanTitle,
-        artist: cleanArtist,
-        album: track.album || "Loopra",
-        artwork: cleanArtworkList
-      });
+      // 1. Android Native Background Audio Service / System Notification bridge sync
+      if (window.LoopraAndroid) {
+        try {
+          if (typeof window.LoopraAndroid.updateTrackInfo === 'function') {
+            window.LoopraAndroid.updateTrackInfo(cleanTitle, cleanArtist, Boolean(playingState));
+          } else if (typeof window.LoopraAndroid.setPlaybackState === 'function') {
+            window.LoopraAndroid.setPlaybackState(Boolean(playingState));
+          }
+        } catch (e) {
+          console.warn('[LoopraAndroid] Bridge sync error:', e);
+        }
+      }
 
-      navigator.mediaSession.playbackState = playingState ? 'playing' : 'paused';
+      // 2. Standard Web MediaSession API (Notification shade, lock screen, media control center)
+      if ('mediaSession' in navigator) {
+        const cleanArtworkList = getCleanMediaSessionArtwork(track);
 
-      syncMediaSessionPositionState(currentTimeRef.current, durationRef.current, 1.0);
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: cleanTitle,
+          artist: cleanArtist,
+          album: track.album || "Loopra",
+          artwork: cleanArtworkList
+        });
+
+        navigator.mediaSession.playbackState = playingState ? 'playing' : 'paused';
+
+        syncMediaSessionPositionState(currentTimeRef.current, durationRef.current, playingState ? 1.0 : 0.0);
+      }
     } catch (err) {
       console.warn('[MediaSession] Error updating immediate metadata:', err);
     }
@@ -5372,6 +5395,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         toggleLikeRef.current?.(currentSong);
       }
     });
+
+    // Ensure notification bar displays playbackState accurately on playback change
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+    }
 
     syncMediaSessionPositionState(currentTimeRef.current, durationRef.current, isPlaying ? 1.0 : 0.0);
   }, [currentSong, isPlaying, handlePrevSong, handleNextSong, handleSeek, updateMediaSessionImmediate, syncMediaSessionPositionState, startPwaAudioWakeLock, stopPwaAudioWakeLock]);
@@ -5630,7 +5658,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 e.target.setPlaybackQuality(sessionQuality);
               }
             } catch (_) {}
+
+            // Immediate OS notification shade & media player sync
+            updateMediaSessionImmediate(currentSongRef.current, true);
           } else if (e.data === 2) { // Paused
+            // Immediate OS notification shade & media player sync on pause
+            updateMediaSessionImmediate(currentSongRef.current, false);
+
             // Background Auto-Resume Guard: If paused while user intent or React isPlaying is true (i.e. not an explicit user pause), immediately auto-resume
             const isPlayingIntent = isPlayingRef.current || userIntentPlayingRef.current;
             if (isPlayingIntent && !isUserPausedRef.current && !isInitialMountRef.current && currentSongRef.current) {
@@ -5884,9 +5918,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         setIsPlaying(true);
         setIsAutoplayBlocked(false);
         isInitialMountRef.current = false;
+        updateMediaSessionImmediate(currentSong, true);
       };
       radioAudio.onpause = () => {
         setIsPlaying(false);
+        updateMediaSessionImmediate(currentSong, false);
       };
       radioAudio.onwaiting = () => {
         // Stream buffering
@@ -6070,8 +6106,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           setIsPlaying(true);
           setIsAutoplayBlocked(false);
           isInitialMountRef.current = false;
+          updateMediaSessionImmediate(currentSong, true);
         };
-        audio.onpause = () => setIsPlaying(false);
+        audio.onpause = () => {
+          setIsPlaying(false);
+          updateMediaSessionImmediate(currentSong, false);
+        };
         audio.onerror = (e) => {
           console.warn('[OfflinePlay] Audio element playback error:', e);
           setIsPlaying(false);
@@ -6445,7 +6485,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }, 40);
   }, [activeTab]);
 
-  const handleDownloadApk = useCallback(async () => {
+  const handleDownloadApk = useCallback(async (e) => {
+    if (e && typeof e.stopPropagation === 'function') {
+      e.stopPropagation();
+    }
     try {
       const isAndroid = Boolean(isStandaloneApp || (typeof window !== 'undefined' && window.LoopraAndroid));
       if (isAndroid) {
@@ -6454,24 +6497,34 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         const installed = getInstalledAppVersion();
 
         if (manifest) {
-          const isHigher = (manifest.versionCode && installed.versionCode)
-            ? manifest.versionCode > installed.versionCode
-            : Boolean(manifest.versionName && installed.versionName && manifest.versionName !== installed.versionName);
+          const semverDiff = compareVersions(manifest.versionName, installed.versionName);
+          const isHigher = semverDiff > 0 || (semverDiff === 0 && manifest.versionCode > installed.versionCode);
           if (!isHigher && installed.isNative) {
             showToast(`Loopra is already up to date (v${installed.versionName}).`, 'success');
             return;
           }
-          triggerApkDownload(manifest.downloadUrl || manifest.directApkUrl || '/Loopra.apk', manifest);
-          showToast(`Downloading Loopra update (v${manifest.versionName})...`, 'success');
+          const triggered = triggerApkDownload(getDirectApkDownloadUrl(manifest), manifest);
+          if (triggered) {
+            showToast(`Downloading Loopra update (v${manifest.versionName})...`, 'success');
+          } else {
+            showToast('Unable to start update download. Please try again.', 'error');
+          }
           return;
         }
       }
 
-      triggerApkDownload(publishedVersionInfo?.directApkUrl || '/Loopra.apk', publishedVersionInfo);
-      showToast('Downloading Loopra Android APK...', 'success');
+      // Web Browser Environment: Directly initiate real APK file download via dedicated direct URL
+      const targetManifest = publishedVersionInfo || await fetchPublishedAppVersion(BACKEND_URL);
+      const apkUrl = getDirectApkDownloadUrl(targetManifest);
+      const triggered = triggerApkDownload(apkUrl, targetManifest);
+      if (triggered) {
+        showToast('Downloading Loopra Android APK...', 'success');
+      } else {
+        showToast('Unable to initiate APK download. File path not accessible.', 'error');
+      }
     } catch (err) {
-      console.warn('[handleDownloadApk] Download notice:', err.message);
-      showToast('Opening download link...', 'info');
+      console.warn('[handleDownloadApk] Download error:', err);
+      showToast('Download failed. Please check your network connection.', 'error');
     }
   }, [showToast, isStandaloneApp, publishedVersionInfo]);
 
@@ -6512,6 +6565,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     // 1. Dismiss any open modal, drawer, or dialog first
     if (showAuthModal) {
       closeAuthModal(false);
+      return;
+    }
+    if (isCreatePlaylistModalOpen) {
+      setIsCreatePlaylistModalOpen(false);
+      setCreateModalPlaylistName('');
       return;
     }
     if (renameModalPlaylist) {
@@ -6950,6 +7008,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         (videoModalSong && !isPipActive) ||
         isCanvasOpen ||
         showAuthModal ||
+        isCreatePlaylistModalOpen ||
         renameModalPlaylist ||
         deleteModalPlaylist ||
         activeAssistantPanel ||
@@ -7373,6 +7432,59 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       } catch (e) {}
       showToast(`Removed from "${targetName}"`);
     }
+  };
+
+  const openCreatePlaylistModal = () => {
+    setCreateModalPlaylistName('');
+    setIsCreatePlaylistModalOpen(true);
+    setPlaylistMenuOpenId(null);
+  };
+
+  const handleSaveCreatePlaylist = (e) => {
+    if (e) e.preventDefault();
+    const trimmed = (createModalPlaylistName || '').trim();
+    if (!trimmed) return;
+
+    const newPlaylist = {
+      id: Date.now().toString(),
+      name: trimmed,
+      songs: []
+    };
+    const updatedPlaylists = [...playlists, newPlaylist];
+    setPlaylists(updatedPlaylists);
+    try {
+      if (user) {
+        localStorage.setItem('playlists', JSON.stringify(updatedPlaylists));
+      } else {
+        localStorage.setItem('guest_playlists', JSON.stringify(updatedPlaylists));
+      }
+    } catch (err) {}
+
+    if (authToken) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+        fetch(getApiUrl('/api/activity/log'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({
+            type: 'playlist_create',
+            playlist: {
+              id: newPlaylist.id,
+              name: newPlaylist.name
+            }
+          }),
+          signal: controller.signal
+        }).then(() => clearTimeout(timeoutId)).catch(() => clearTimeout(timeoutId));
+      } catch (_) {}
+    }
+
+    showToast(`Created playlist "${trimmed}"`);
+    setCreateModalPlaylistName('');
+    setIsCreatePlaylistModalOpen(false);
   };
 
   const openRenamePlaylistModal = (playlist) => {
@@ -8814,15 +8926,27 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   </button>
                 )}
 
-                {/* 2. Download APK Button directly downloading Loopra.apk across Web & Android App */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleDownloadApk();
-                    if (isMobileScreen && isSidebarOpen) setIsSidebarOpen(false);
+                {/* 2. Download APK Action directly downloading Loopra.apk across Web & Android App */}
+                <a
+                  href={getDirectApkDownloadUrl(publishedVersionInfo)}
+                  download="Loopra.apk"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isStandaloneApp || (typeof window !== 'undefined' && window.LoopraAndroid)) {
+                      e.preventDefault();
+                      handleDownloadApk(e);
+                    } else {
+                      showToast('Downloading Loopra Android APK...', 'success');
+                    }
+                    if (isMobileScreen && isSidebarOpen) {
+                      setTimeout(() => setIsSidebarOpen(false), 200);
+                    }
                   }}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer text-left"
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer text-left no-underline select-none"
                   title="Download Latest Android APK"
+                  aria-label="Download Latest Android APK"
                 >
                   <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
                   {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
@@ -8833,7 +8957,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       </span>
                     </span>
                   )}
-                </button>
+                </a>
 
                 {/* 3. Logged-in User Profile Card & 4. Logout / Sign In Button */}
                 {user ? (
@@ -9158,15 +9282,27 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 </button>
               )}
 
-              {/* 2. Download APK Button directly downloading Loopra.apk across Web & Android App */}
-              <button
-                type="button"
-                onClick={() => {
-                  handleDownloadApk();
-                  if (isMobileScreen && isSidebarOpen) setIsSidebarOpen(false);
+              {/* 2. Download APK Action directly downloading Loopra.apk across Web & Android App */}
+              <a
+                href={getDirectApkDownloadUrl(publishedVersionInfo)}
+                download="Loopra.apk"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isStandaloneApp || (typeof window !== 'undefined' && window.LoopraAndroid)) {
+                    e.preventDefault();
+                    handleDownloadApk(e);
+                  } else {
+                    showToast('Downloading Loopra Android APK...', 'success');
+                  }
+                  if (isMobileScreen && isSidebarOpen) {
+                    setTimeout(() => setIsSidebarOpen(false), 200);
+                  }
                 }}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer text-left"
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/20 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs shadow-md transition-all active:scale-95 cursor-pointer text-left no-underline select-none"
                 title="Download Latest Android APK"
+                aria-label="Download Latest Android APK"
               >
                 <Icon name="download" className="w-4 h-4 text-amber-400 shrink-0" />
                 {(!isSidebarCollapsed || isSidebarOpen || isMobileScreen) && (
@@ -9177,7 +9313,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     </span>
                   </span>
                 )}
-              </button>
+              </a>
 
               {/* 3. Logged-in User Profile Card & 4. Logout / Sign In Button */}
               {user ? (
@@ -10284,17 +10420,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
                     <button
                       type="button"
-                      onClick={() => {
-                        const name = window.prompt("Enter new playlist name:");
-                        if (name && name.trim()) {
-                          const newPlaylist = {
-                            id: Date.now().toString(),
-                            name: name.trim(),
-                            songs: []
-                          };
-                          setPlaylists([...playlists, newPlaylist]);
-                        }
-                      }}
+                      onClick={openCreatePlaylistModal}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-neutral-950 font-bold text-xs shadow-lg shadow-amber-500/20 active:scale-95 transition cursor-pointer"
                     >
                       <Icon name="plus" className="w-3.5 h-3.5" />
@@ -10322,17 +10448,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4 mt-2">
                     {/* Create Playlist Action Card */}
                     <div 
-                      onClick={() => {
-                        const name = window.prompt("Enter new playlist name:");
-                        if (name && name.trim()) {
-                          const newPlaylist = {
-                            id: Date.now().toString(),
-                            name: name.trim(),
-                            songs: []
-                          };
-                          setPlaylists([...playlists, newPlaylist]);
-                        }
-                      }}
+                      onClick={openCreatePlaylistModal}
                       className="p-4 rounded-2xl border border-dashed border-amber-500/35 bg-gradient-to-br from-amber-500/10 via-neutral-900/40 to-neutral-950/80 hover:border-amber-400 hover:bg-amber-500/15 active:scale-[0.98] cursor-pointer flex flex-col items-center justify-center gap-2.5 transition-all group text-center aspect-square shadow-lg backdrop-blur-md"
                     >
                       <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/30 text-amber-400 group-hover:scale-110 flex items-center justify-center transition shadow-[0_0_15px_rgba(245,158,11,0.2)]">
@@ -10438,17 +10554,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-6">
                     <div 
-                      onClick={() => {
-                        const name = window.prompt("Enter new playlist name:");
-                        if (name && name.trim()) {
-                          const newPlaylist = {
-                            id: Date.now().toString(),
-                            name: name.trim(),
-                            songs: []
-                          };
-                          setPlaylists([...playlists, newPlaylist]);
-                        }
-                      }}
+                      onClick={openCreatePlaylistModal}
                       className="p-4 rounded-2xl border border-dashed border-neutral-700 bg-neutral-900/30 hover:bg-neutral-800/50 active:scale-[0.98] cursor-pointer flex flex-col items-center justify-center gap-3 transition group text-center aspect-square"
                     >
                       <div className="w-16 h-16 rounded-2xl bg-neutral-800/50 group-hover:bg-amber-500/20 text-neutral-500 group-hover:text-amber-500 flex items-center justify-center transition">
@@ -12021,6 +12127,64 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   className="flex-1 bg-neutral-950 border border-neutral-800 rounded-2xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
                 />
                 <button data-voice-confirm="true" type="submit" disabled={!newPlaylistName.trim()} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 active:scale-95 hover:shadow-amber-500/20 text-white font-medium tracking-wide text-sm rounded-2xl transition disabled:opacity-50 disabled:cursor-not-allowed">
+                  Create
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Sleek Dark-Themed Create Playlist Modal */}
+      {isCreatePlaylistModalOpen && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-neutral-950/80 backdrop-blur-md" onClick={() => { setIsCreatePlaylistModalOpen(false); setCreateModalPlaylistName(''); }}></div>
+          <div className="bg-neutral-900 border border-amber-500/30 rounded-2xl w-full max-w-sm relative z-10 p-6 shadow-2xl animate-scaleIn">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
+                  <Icon name="plus" className="w-4 h-4" />
+                </div>
+                <h2 className="text-lg font-bold text-white">New Playlist</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setIsCreatePlaylistModalOpen(false); setCreateModalPlaylistName(''); }}
+                className="p-1 rounded-xl text-neutral-400 hover:text-white hover:bg-neutral-800 transition"
+              >
+                <Icon name="close" className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCreatePlaylist}>
+              <label className="text-xs font-semibold text-neutral-400 block mb-2">Playlist Name</label>
+              <input
+                type="text"
+                autoFocus
+                value={createModalPlaylistName}
+                onChange={(e) => setCreateModalPlaylistName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setIsCreatePlaylistModalOpen(false);
+                    setCreateModalPlaylistName('');
+                  }
+                }}
+                placeholder="Enter playlist name..."
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500/60 transition mb-5"
+              />
+              <div className="flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => { setIsCreatePlaylistModalOpen(false); setCreateModalPlaylistName(''); }}
+                  className="px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-semibold transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!createModalPlaylistName.trim()}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-neutral-950 text-xs font-bold transition shadow-md shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                >
                   Create
                 </button>
               </div>

@@ -449,53 +449,6 @@ export default function ArtistProfileView({
           >
             <Shuffle className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
           </button>
-
-          {/* Follow / Unfollow Button */}
-          <button
-            onClick={handleToggleFollow}
-            disabled={followLoading}
-            className={`px-5 py-2.5 sm:px-6 sm:py-3 rounded-full text-xs sm:text-sm font-bold tracking-wide transition-all shadow-md active:scale-95 cursor-pointer flex items-center gap-2 ${
-              isFollowing
-                ? 'bg-amber-500 text-neutral-950 hover:bg-amber-400 border border-amber-400'
-                : 'bg-neutral-900/90 hover:bg-neutral-800 text-neutral-200 hover:text-white border border-amber-500/40'
-            }`}
-          >
-            {isFollowing ? (
-              <>
-                <UserCheck className="w-4 h-4" />
-                <span>Following</span>
-              </>
-            ) : (
-              <>
-                <UserPlus className="w-4 h-4 text-amber-400" />
-                <span>Follow</span>
-              </>
-            )}
-          </button>
-
-          {/* Share Profile */}
-          <button
-            onClick={handleCopyLink}
-            className="p-3 sm:p-3.5 rounded-full bg-neutral-900/90 hover:bg-neutral-800 active:scale-95 border border-neutral-800 text-neutral-400 hover:text-white transition shadow-md cursor-pointer"
-            title="Copy profile link"
-            aria-label="Share profile link"
-          >
-            <Share2 className="w-4 h-4" />
-          </button>
-
-          {/* Official Channel Link */}
-          {artist.channelUrl && (
-            <a
-              href={artist.channelUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-3 sm:p-3.5 rounded-full bg-neutral-900/90 hover:bg-neutral-800 active:scale-95 border border-neutral-800 text-neutral-400 hover:text-red-400 transition shadow-md cursor-pointer"
-              title="Official YouTube Channel"
-              aria-label="Official YouTube Channel"
-            >
-              <ExternalLink className="w-4 h-4" />
-            </a>
-          )}
         </div>
       </div>
 
@@ -506,9 +459,16 @@ export default function ArtistProfileView({
             <h2 className="text-xl sm:text-2xl font-black font-display text-white tracking-tight">
               Popular Tracks
             </h2>
-            <span className="text-xs font-mono text-neutral-500 px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-800">
-              {songs.length} loaded
-            </span>
+            {isLoading ? (
+              <span className="text-xs font-mono text-amber-400 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center gap-1.5">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span>Loading tracks...</span>
+              </span>
+            ) : (
+              <span className="text-xs font-mono text-neutral-400 px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-800">
+                {songs.length} loaded
+              </span>
+            )}
           </div>
 
           <span className="text-xs text-neutral-500 hidden sm:inline">
@@ -661,9 +621,11 @@ export default function ArtistProfileView({
               )}
             </button>
           ) : (
-            <p className="text-xs font-mono text-neutral-500 pt-2">
-              ✓ All available popular songs for {artist.name} are loaded.
-            </p>
+            !isLoading && songs.length > 0 && (
+              <p className="text-xs font-mono text-neutral-500 pt-2">
+                ✓ All available popular songs for {artist.name} are loaded.
+              </p>
+            )
           )}
         </div>
       </section>
@@ -819,18 +781,6 @@ export default function ArtistProfileView({
                   {formatNumber(artist.monthlyListeners)} monthly listeners on streaming platforms
                 </p>
               </div>
-
-              {artist.channelUrl && (
-                <a
-                  href={artist.channelUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white text-xs font-semibold border border-neutral-700 transition"
-                >
-                  <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Official YouTube</span>
-                </a>
-              )}
             </div>
 
             <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed max-w-3xl">

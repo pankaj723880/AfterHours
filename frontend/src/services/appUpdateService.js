@@ -4,17 +4,29 @@ const MANIFEST_CACHE_KEY = 'loopra_app_version_manifest';
 const DISMISSED_UPDATE_SESSION_KEY = 'loopra_dismissed_update_version';
 
 /**
- * Parses semantic versions like "v2.1", "2.1", "v3.0.1" into comparable [major, minor, patch] arrays.
+ * Current built-in client version for Web / PWA / Browser environments.
+ * When a new build or deploy is released, bumping this version or the published
+ * version in /version.json ensures clients detect newer versions reliably.
+ */
+export const CURRENT_CLIENT_VERSION = '2.1';
+export const CURRENT_CLIENT_VERSION_CODE = 21;
+
+/**
+ * Parses semantic versions like "v2.1", "2.1", "v3.0.1", "2.1.0" into comparable [major, minor, patch] arrays of numbers.
  */
 export function parseSemanticVersion(ver) {
   if (!ver) return [0, 0, 0];
   const cleaned = String(ver).trim().replace(/^v/i, '');
-  const parts = cleaned.split('.').map(n => parseInt(n, 10) || 0);
-  while (parts.length < 3) parts.push(0);
-  return parts;
+  const segments = cleaned.split('.').map(seg => {
+    const parsed = parseInt(seg, 10);
+    return isNaN(parsed) ? 0 : parsed;
+  });
+  while (segments.length < 3) segments.push(0);
+  return segments.slice(0, 3);
 }
 
 /**
+ * Compares two semantic version strings numerically:
  * Returns:
  *  1 if verA > verB
  * -1 if verA < verB
@@ -80,7 +92,25 @@ export function getInstalledAppVersion() {
   } catch (_) {}
 
   const isAndroid = isRunningInAndroidApp();
-  return { versionName: null, versionCode: 0, isNative: isAndroid };
+  
+  // 3. For Web browser or PWA standalone installations:
+  // Use client build version, falling back to stored version in localStorage
+  let clientVersionName = CURRENT_CLIENT_VERSION;
+  let clientVersionCode = CURRENT_CLIENT_VERSION_CODE;
+  try {
+    const stored = localStorage.getItem('loopra_installed_version');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (parsed?.versionName) clientVersionName = parsed.versionName;
+      if (parsed?.versionCode) clientVersionCode = Number(parsed.versionCode);
+    }
+  } catch (_) {}
+
+  return {
+    versionName: clientVersionName,
+    versionCode: clientVersionCode,
+    isNative: isAndroid
+  };
 }
 
 /**
@@ -100,7 +130,9 @@ export async function fetchPublishedAppVersion(backendUrl = '') {
 
   for (const url of endpoints) {
     try {
-      const res = await fetch(url, {
+      // Bust any HTTP or intermediary proxy cache with no-store and unique timestamp query
+      const bustUrl = `${url}${url.includes('?') ? '&' : '?'}_t=${Date.now()}`;
+      const res = await fetch(bustUrl, {
         headers: { 'Accept': 'application/json' },
         cache: 'no-store'
       });
@@ -110,10 +142,12 @@ export async function fetchPublishedAppVersion(backendUrl = '') {
           const normalized = {
             versionName: manifest.versionName || manifest.version || '2.1',
             versionCode: manifest.versionCode || 21,
-            downloadUrl: manifest.directApkUrl || manifest.downloadUrl || 'https://loopra1.vercel.app/Loopra.apk',
-            directApkUrl: manifest.directApkUrl || '/Loopra.apk',
+            downloadUrl: manifest.directApkUrl || manifest.downloadUrl || 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
+            directApkUrl: manifest.directApkUrl || 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
+            externalApkUrl: manifest.externalApkUrl || 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
             releaseNotes: manifest.releaseNotes || 'New features and improvements for Loopra Android.',
             releaseDate: manifest.releaseDate || new Date().toISOString(),
+            fileSize: manifest.fileSize || 5744624,
             sha256: manifest.sha256 || ''
           };
           try {
@@ -133,32 +167,56 @@ export async function fetchPublishedAppVersion(backendUrl = '') {
     if (cached) return JSON.parse(cached);
   } catch (_) {}
 
-  return null;
+  // Safe default fallback if network and cache both fail
+  return {
+    versionName: '2.1',
+    versionCode: 21,
+    downloadUrl: 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
+    directApkUrl: 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
+    externalApkUrl: 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
+    releaseNotes: 'Official Loopra release',
+    releaseDate: new Date().toISOString(),
+    fileSize: 5744624,
+    sha256: ''
+  };
+}
+
+export const DEFAULT_DIRECT_APK_URL =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_APK_DOWNLOAD_URL)
+    ? import.meta.env.VITE_APK_DOWNLOAD_URL
+    : 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk';
+
+/**
+ * Resolves the direct, non-intercepted download URL for the Loopra APK.
+ * Prioritizes VITE_APK_DOWNLOAD_URL, then manifest.externalApkUrl / manifest.directApkUrl
+ * (if not matching the intercepted app domain), falling back to the verified GitHub raw release URL.
+ */
+export function getDirectApkDownloadUrl(manifest = null) {
+  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_APK_DOWNLOAD_URL) {
+    return import.meta.env.VITE_APK_DOWNLOAD_URL;
+  }
+  if (manifest?.externalApkUrl) {
+    return manifest.externalApkUrl;
+  }
+  if (manifest?.directApkUrl && !manifest.directApkUrl.includes('loopra1.vercel.app') && !manifest.directApkUrl.startsWith('/')) {
+    return manifest.directApkUrl;
+  }
+  return DEFAULT_DIRECT_APK_URL;
 }
 
 /**
  * Initiates APK download.
- * Opens the direct APK download URL (https://loopra1.vercel.app/Loopra.apk?v=<versionCode>)
- * in Google Chrome (or default external browser) so that Chrome handles the APK download normally.
- * Does not invoke background APK downloading, FileProvider, or PackageInstaller.
+ * In a web browser environment, triggers download via direct external APK URL so Android
+ * App Links does not intercept the click to launch the installed Loopra app.
+ * In native Android WebView, invokes LoopraAndroid bridge methods.
  */
 export function triggerApkDownload(downloadUrl, manifest = null) {
   const publishedCode = manifest?.versionCode || 21;
-  const rawTargetUrl = downloadUrl || manifest?.directApkUrl || manifest?.downloadUrl || 'https://loopra1.vercel.app/Loopra.apk';
-
-  // Ensure targetUrl points to https://loopra1.vercel.app/Loopra.apk?v=<versionCode>
-  let browserUrl = rawTargetUrl;
-  try {
-    const urlObj = new URL(browserUrl, typeof window !== 'undefined' ? (window.location?.origin || 'https://loopra1.vercel.app') : 'https://loopra1.vercel.app');
-    urlObj.searchParams.set('v', String(publishedCode));
-    browserUrl = urlObj.toString();
-  } catch (_) {
-    const sep = browserUrl.includes('?') ? '&' : '?';
-    browserUrl += `${sep}v=${encodeURIComponent(publishedCode)}`;
-  }
+  const directUrl = downloadUrl || getDirectApkDownloadUrl(manifest);
 
   // 1. If running inside native Android WebView with LoopraAndroid bridge:
   if (typeof window !== 'undefined' && window.LoopraAndroid) {
+    const rawTargetUrl = manifest?.directApkUrl || manifest?.downloadUrl || directUrl;
     if (typeof window.LoopraAndroid.downloadAndInstallApk === 'function') {
       try {
         const expectedSha = manifest?.sha256 || '';
@@ -171,7 +229,7 @@ export function triggerApkDownload(downloadUrl, manifest = null) {
     }
     if (typeof window.LoopraAndroid.openInBrowser === 'function') {
       try {
-        window.LoopraAndroid.openInBrowser(browserUrl);
+        window.LoopraAndroid.openInBrowser(directUrl);
         return true;
       } catch (err) {
         console.warn('[appUpdateService] LoopraAndroid.openInBrowser failed:', err.message);
@@ -179,7 +237,7 @@ export function triggerApkDownload(downloadUrl, manifest = null) {
     }
     if (typeof window.LoopraAndroid.downloadApk === 'function') {
       try {
-        window.LoopraAndroid.downloadApk(browserUrl);
+        window.LoopraAndroid.downloadApk(directUrl);
         return true;
       } catch (err) {
         console.warn('[appUpdateService] LoopraAndroid.downloadApk failed:', err.message);
@@ -187,29 +245,39 @@ export function triggerApkDownload(downloadUrl, manifest = null) {
     }
   }
 
-  // 2. Open directly in external browser / Google Chrome tab
+  // 2. Browser Environment: Trigger direct, clean file download without launching installed app
   if (typeof window !== 'undefined') {
-    try {
-      const opened = window.open(browserUrl, '_blank', 'noopener,noreferrer');
-      if (opened) return true;
-    } catch (_) {}
+    // If URL points to the same origin / loopra1.vercel.app, replace with non-intercepted external direct URL
+    const targetDownloadUrl = (directUrl.includes('loopra1.vercel.app') || directUrl.startsWith('/'))
+      ? getDirectApkDownloadUrl(manifest)
+      : directUrl;
 
     try {
       if (typeof document !== 'undefined') {
         const link = document.createElement('a');
-        link.href = browserUrl;
+        link.href = targetDownloadUrl;
+        link.download = 'Loopra.apk';
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
-        link.download = 'Loopra.apk';
+        link.style.display = 'none';
         document.body.appendChild(link);
         link.click();
-        document.body.removeChild(link);
+        setTimeout(() => {
+          try { document.body.removeChild(link); } catch (_) {}
+        }, 300);
         return true;
       }
+    } catch (e) {
+      console.warn('[appUpdateService] Anchor download attempt failed:', e);
+    }
+
+    try {
+      const opened = window.open(targetDownloadUrl, '_blank', 'noopener,noreferrer');
+      if (opened) return true;
     } catch (_) {}
 
     if (window.location) {
-      window.location.href = browserUrl;
+      window.location.assign(targetDownloadUrl);
       return true;
     }
   }
@@ -219,13 +287,10 @@ export function triggerApkDownload(downloadUrl, manifest = null) {
 
 /**
  * Checks whether an update prompt should be shown.
+ * Works seamlessly across native Android WebView container, standalone PWA,
+ * and standard web browser clients.
  */
 export async function checkForAppUpdate(backendUrl = '') {
-  // Only check updates when running inside native Android app container or standalone mode
-  if (!isRunningInAndroidApp()) {
-    return { shouldPrompt: false, reason: 'NOT_ANDROID_APP' };
-  }
-
   const installed = getInstalledAppVersion();
   const published = await fetchPublishedAppVersion(backendUrl);
 
@@ -239,21 +304,30 @@ export async function checkForAppUpdate(backendUrl = '') {
   }
 
   // Check if this release was dismissed during the current session
+  // If a newer version is published than the dismissed one, allow the popup to re-appear
   try {
     const dismissedVer = sessionStorage.getItem(DISMISSED_UPDATE_SESSION_KEY);
-    if (dismissedVer && dismissedVer === published.versionName) {
-      return { shouldPrompt: false, reason: 'DISMISSED_IN_SESSION', published, installed };
+    if (dismissedVer) {
+      // If the published version is newer than the dismissed version, clear session lock
+      const isNewerThanDismissed = compareVersions(published.versionName, dismissedVer) > 0;
+      if (!isNewerThanDismissed) {
+        return { shouldPrompt: false, reason: 'DISMISSED_IN_SESSION', published, installed };
+      }
     }
   } catch (_) {}
 
-  // Integer versionCode comparison is authoritative:
-  // An update is required if published.versionCode > installed.versionCode.
-  // Fall back to semantic version comparison only if versionCode is absent.
+  // Primary check: Semantic version comparison (major.minor.patch) segment-by-segment
+  // Secondary check: Integer versionCode comparison
   let hasNewerVersion = false;
-  if (published.versionCode && installed.versionCode) {
+  if (published.versionName && installed.versionName) {
+    const semverDiff = compareVersions(published.versionName, installed.versionName);
+    if (semverDiff > 0) {
+      hasNewerVersion = true;
+    } else if (semverDiff === 0 && published.versionCode && installed.versionCode) {
+      hasNewerVersion = published.versionCode > installed.versionCode;
+    }
+  } else if (published.versionCode && installed.versionCode) {
     hasNewerVersion = published.versionCode > installed.versionCode;
-  } else if (published.versionName && installed.versionName) {
-    hasNewerVersion = compareVersions(published.versionName, installed.versionName) > 0;
   }
 
   if (hasNewerVersion) {

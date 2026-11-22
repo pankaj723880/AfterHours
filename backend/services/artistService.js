@@ -195,7 +195,7 @@ export const POPULAR_ARTISTS_DATA = {
     role: 'Legendary Rock & Playback Singer',
     verified: true,
     monthlyListeners: 19800000,
-    image: 'https://yt3.ggpht.com/ytc/AIdro_kxV6a0zmy5XJAZ61ALwhzYKPoExUe2bIAqhdrkIaoiahs=s800-c-k-c0x00ffffff-no-rj-mo',
+    image: 'https://ui-avatars.com/api/?name=KK&background=181818&color=f59e0b&size=800',
     headerImage: 'https://images.unsplash.com/photo-1465847899084-d164df4dedc6?w=1600&auto=format&fit=crop&q=80',
     bio: 'Krishnakumar Kunnath, affectionately known as KK, was a phenomenal Indian singer whose passionate, high-energy vocals and poignant ballads defined the soundtrack of love, heartbreak, and friendship for a whole generation.',
     genres: ['Pop Rock', 'Bollywood Romance', 'College Anthems', 'Indipop'],
@@ -208,11 +208,11 @@ export const POPULAR_ARTISTS_DATA = {
     role: 'Singer-Songwriter & Playback Artist',
     verified: true,
     monthlyListeners: 18500000,
-    image: 'https://yt3.ggpht.com/cI3RMhRcDJQg73GEBVYxW6rLZwIq_n5qZyE8IhUM6zJF5WOVpYPyEN2avZMF-2TDtCIFr9qogW4=s800-c-k-c0x00ffffff-no-rj-mo',
+    image: 'https://yt3.ggpht.com/ytc/AIdro_li2lsmbfskQRf4VjFrJ0-qXRPjVmorZu8DsI4fRBBm4Wc=s800-c-k-c0x00ffffff-no-rj-mo',
     headerImage: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=1600&auto=format&fit=crop&q=80',
     bio: 'Mohit Chauhan is a two-time Filmfare Award-winning Indian singer, formerly frontman of the Silk Route band. His earthy, rustic mountain timbre and soulful introspective vocals were the iconic musical voice of films like Rockstar.',
     genres: ['Folk Fusion', 'Sufi', 'Acoustic Rock', 'Mountain Ballads'],
-    channelUrl: 'https://www.youtube.com/topic/mohit-chauhan',
+    channelUrl: 'https://www.youtube.com/@MohitChauhanOfficial',
     related: ['Lucky Ali', 'KK', 'A.R. Rahman', 'Pritam', 'Arijit Singh']
   },
   'darshan-raval': {
@@ -451,37 +451,52 @@ export async function getArtistSongs(artistName = '', { pageToken = null, limit 
     })));
   }
 
-  // Perform search on YouTube using yt-search
-  const queryStr = `${cleanName} hit songs official audio`;
-  try {
-    const fetchPage = Math.floor(pageOffset / 10) + 1;
-    const searchRes = await ytSearch({ query: queryStr, page: fetchPage });
-    let incoming = searchRes?.videos || [];
+  // Perform search on YouTube using yt-search with multiple intelligent queries
+  // 1. Clean primary search name without parenthetical additions (e.g. "KK" instead of "KK (Krishnakumar Kunnath)")
+  const simplifiedName = cleanName.replace(/\s*\([^)]*\)/g, '').trim() || cleanName;
+  const queriesToRun = [];
 
-    if (incoming.length === 0 && searchRes?.all) {
-      incoming = searchRes.all.filter(v => v.videoId || v.type === 'video');
-    }
+  const fetchPage = Math.floor(pageOffset / 10) + 1;
+  if (fetchPage === 1) {
+    queriesToRun.push(`${simplifiedName} hit songs`);
+    queriesToRun.push(`${simplifiedName} audio song`);
+    queriesToRun.push(`${simplifiedName} songs hindi`);
+  } else {
+    queriesToRun.push(`${simplifiedName} hit songs`);
+    queriesToRun.push(`${simplifiedName} popular songs`);
+  }
 
-    const filtered = filterSingleSongs(incoming);
-    const usable = filtered.length > 0 ? filtered : incoming;
+  for (const queryStr of queriesToRun) {
+    if (candidateTracks.length >= pageOffset + limit + 5) break;
+    try {
+      const searchRes = await ytSearch({ query: queryStr, page: fetchPage });
+      let incoming = searchRes?.videos || [];
 
-    for (const v of usable) {
-      const vid = v.videoId || v.id;
-      if (vid && !candidateTracks.some(c => c.id === vid)) {
-        candidateTracks.push({
-          id: vid,
-          videoId: vid,
-          title: decodeHtml(v.title || '').replace(/\s*\|\s*Official.*$/i, '').replace(/\s*\(Official.*\)/i, '').trim(),
-          artist: cleanName,
-          channel: decodeHtml(v.author?.name || cleanName),
-          thumbnail: v.thumbnail || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
-          duration: v.timestamp || '3:45',
-          views: v.views || 8500000
-        });
+      if (incoming.length === 0 && searchRes?.all) {
+        incoming = searchRes.all.filter(v => v.videoId || v.type === 'video');
       }
+
+      const filtered = filterSingleSongs(incoming);
+      const usable = filtered.length > 0 ? filtered : incoming;
+
+      for (const v of usable) {
+        const vid = v.videoId || v.id;
+        if (vid && !candidateTracks.some(c => c.id === vid)) {
+          candidateTracks.push({
+            id: vid,
+            videoId: vid,
+            title: decodeHtml(v.title || '').replace(/\s*\|\s*Official.*$/i, '').replace(/\s*\(Official.*\)/i, '').trim(),
+            artist: cleanName,
+            channel: decodeHtml(v.author?.name || cleanName),
+            thumbnail: v.thumbnail || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+            duration: v.timestamp || '3:45',
+            views: v.views || 8500000
+          });
+        }
+      }
+    } catch (err) {
+      console.warn(`[ArtistService] ytSearch error for query "${queryStr}":`, err.message);
     }
-  } catch (err) {
-    console.warn(`[ArtistService] ytSearch error for ${cleanName}:`, err.message);
   }
 
   // Filter out any invalid thumbnails

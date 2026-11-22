@@ -1,5 +1,6 @@
 import React from 'react';
 import { Download, Smartphone, ShieldCheck, CheckCircle2, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { getDirectApkDownloadUrl } from '../../services/appUpdateService';
 
 export default function AndroidApkDownloadSection({ onBack = null }) {
   return (
@@ -41,9 +42,16 @@ export default function AndroidApkDownloadSection({ onBack = null }) {
 
           <div className="flex flex-col items-center md:items-end gap-2 w-full md:w-auto shrink-0">
             <a
-              href="/Loopra.apk"
+              href={getDirectApkDownloadUrl()}
               download="Loopra.apk"
-              className="w-full md:w-auto inline-flex items-center justify-center gap-2.5 px-7 py-3.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-neutral-950 font-bold text-sm sm:text-base shadow-xl shadow-amber-500/25 active:scale-95 transition cursor-pointer"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+              className="w-full md:w-auto inline-flex items-center justify-center gap-2.5 px-7 py-3.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-neutral-950 font-bold text-sm sm:text-base shadow-xl shadow-amber-500/25 active:scale-95 transition cursor-pointer select-none no-underline"
+              title="Download Loopra Android APK"
+              aria-label="Download Loopra Android APK"
             >
               <Download className="w-5 h-5 text-neutral-950" />
               <span>Download APK</span>

@@ -1,8 +1,9 @@
 {
   "versionName": "2.1",
   "versionCode": 21,
-  "downloadUrl": "https://loopra1.vercel.app/Loopra.apk",
-  "directApkUrl": "https://loopra1.vercel.app/Loopra.apk",
+  "downloadUrl": "https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk",
+  "directApkUrl": "https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk",
+  "externalApkUrl": "https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk",
   "releaseNotes": "Official release with native background audio, PIP mode, and direct APK download.",
   "releaseDate": "2026-11-19T23:37:00.000Z",
   "minSdkVersion": 24,
