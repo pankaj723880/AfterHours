@@ -56,6 +56,7 @@ import musicValidationService from './services/musicValidationService.js';
 import chatBuddyLearningRouter from './routes/chatBuddyLearning.js';
 import { chatBuddyLearningService } from './services/chatBuddyLearningService.js';
 import { geminiLiveBridge } from './services/geminiLiveBridge.js';
+import uiConfigRoutes from './routes/uiConfig.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1077,21 +1078,55 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Live emoji quick reactions (ephemeral floating emojis)
-  socket.on('room:reaction', ({ roomId, emoji, user }) => {
+  // Live emoji quick reactions (ephemeral floating emojis & activity feed)
+  const handleIncomingReaction = async ({ roomId, emoji, user, senderName, role, timestamp }, callback) => {
     try {
       if (!roomId || !emoji) return;
-      io.to(`room_${roomId}`).emit('room:reaction', {
+      const finalSenderName = senderName || user?.displayName || user?.username || 'Listener';
+      const finalRole = role || (user?.role ? user.role.toUpperCase() : 'LISTENER');
+      const finalTimestamp = timestamp ? new Date(timestamp) : new Date();
+      const reactId = `react_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+      const reactionPayload = {
         roomId,
         emoji,
+        senderName: finalSenderName,
+        role: finalRole,
         user: {
-          displayName: user?.displayName || user?.username || 'Listener',
+          userId: user?._id?.toString?.() || user?.userId || 'guest',
+          displayName: finalSenderName,
+          username: user?.username || finalSenderName,
+          role: finalRole,
           avatar: user?.avatarUrl || ''
         },
-        id: `react_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
+        timestamp: finalTimestamp,
+        id: reactId
+      };
+
+      // 1. Broadcast real-time floating reaction event to all connected room members
+      io.to(`room_${roomId}`).emit('room:reaction', reactionPayload);
+
+      // 2. Persist reaction event into the room's live activity feed and broadcast update
+      const rec = await collaborativeRoomService.recordReaction(roomId, {
+        emoji,
+        user: reactionPayload.user,
+        role: finalRole
       });
-    } catch (e) {}
-  });
+      if (rec && rec.activities) {
+        io.to(`room_${roomId}`).emit('room:activities:updated', {
+          roomId,
+          activities: rec.activities
+        });
+      }
+
+      if (typeof callback === 'function') callback({ success: true, reaction: reactionPayload });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  };
+
+  socket.on('room:reaction', handleIncomingReaction);
+  socket.on('room:react', handleIncomingReaction);
 
   // Live mini chat messages
   socket.on('room:chat:send', async ({ roomId, text, user, clientId, messageId }, callback) => {
@@ -1214,6 +1249,29 @@ io.on('connection', (socket) => {
         activities: result.room.activities
       });
       if (typeof callback === 'function') callback({ success: true, song: result.song, playlist: result.playlist });
+    } catch (err) {
+      if (typeof callback === 'function') callback({ success: false, error: err.message });
+    }
+  });
+
+  socket.on('room:playlist:delete', async ({ roomId, playlistId, user }, callback) => {
+    try {
+      if (!roomId || !playlistId) {
+        if (typeof callback === 'function') callback({ success: false, error: 'Missing roomId or playlistId' });
+        return;
+      }
+      const result = await collaborativeRoomService.deletePlaylist(roomId, playlistId, user);
+      io.to("room_" + roomId).emit('room:playlist:updated', {
+        roomId,
+        playlists: result.playlists,
+        type: 'playlist_deleted',
+        playlistId
+      });
+      io.to("room_" + roomId).emit('room:activities:updated', {
+        roomId,
+        activities: result.room.activities
+      });
+      if (typeof callback === 'function') callback({ success: true, playlistId, playlists: result.playlists });
     } catch (err) {
       if (typeof callback === 'function') callback({ success: false, error: err.message });
     }
@@ -1883,6 +1941,8 @@ app.use(['/api/reviews', '/reviews'], reviewsRoutes);
 
 // Mount Public CMS Routes & App Version Manifest
 app.use(['/api/cms', '/cms'], cmsRoutes);
+// Mount UI Element Visibility Configuration (Public GET /api/ui-config, Admin PATCH /api/admin/ui-config)
+app.use(['/api/ui-config', '/ui-config', '/api/admin/ui-config'], uiConfigRoutes);
 app.get(['/api/app-version', '/api/version'], (req, res) => {
   try {
     res.set('Cache-Control', 'no-cache, no-store, must-revalidate');

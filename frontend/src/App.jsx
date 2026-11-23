@@ -105,6 +105,7 @@ const AndroidApkDownloadSection = lazy(() => import('./components/Common/Android
 const ArtistProfileView = lazy(() => import('./components/Artist/ArtistProfileView'));
 import { voiceControlService } from './services/voiceControlService';
 import { useVoiceRollout } from './hooks/useVoiceRollout';
+import { useUiConfig } from './context/UiConfigContext';
 import { useServerKeepAlive } from './hooks/useServerKeepAlive';
 import shuffleService from './services/shuffleService';
 import { filterSingleSongs, isSingleSong, isCleanMusicTrack, isValidMusicTrack, sanitizeTrack, parseDurationToSeconds } from './services/songFilter';
@@ -119,6 +120,12 @@ import {
   getCleanThumbnail,
   invalidateVideoIdClient
 } from './utils/thumbnailValidator';
+import {
+  getTabAuthToken,
+  getTabAuthUser,
+  setTabAuthSession,
+  clearTabAuthSession
+} from './utils/storage';
 
 import { io } from 'socket.io-client';
 import { BACKEND_URL, getApiUrl } from './utils/apiUrl';
@@ -127,21 +134,29 @@ export { BACKEND_URL, getApiUrl };
 offlineEligibilityService.setBackendUrl(BACKEND_URL);
 
 const getInitialAuthToken = () => {
-  if (typeof window === 'undefined') return '';
-  return localStorage.getItem('afterhours_token') || '';
+  return getTabAuthToken();
 };
 
 const getOrCreateSessionId = () => {
   if (typeof window === 'undefined') return 'sid_ssr';
-  let sid = localStorage.getItem('afterhours_session_id');
-  if (!sid) {
+  let sid = null;
+  try {
+    sid = sessionStorage.getItem('afterhours_session_id');
+    if (!sid) {
+      sid = localStorage.getItem('afterhours_session_id');
+    }
+    if (!sid) {
+      sid = 'sid_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now().toString(36);
+      localStorage.setItem('afterhours_session_id', sid);
+    }
+    sessionStorage.setItem('afterhours_session_id', sid);
+  } catch (_) {
     sid = 'sid_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now().toString(36);
-    localStorage.setItem('afterhours_session_id', sid);
   }
   return sid;
 };
 
-const socket = io(BACKEND_URL || (typeof window !== 'undefined' ? window.location.origin : ''), {
+export const socket = io(BACKEND_URL || (typeof window !== 'undefined' ? window.location.origin : ''), {
   auth: {
     sessionId: getOrCreateSessionId(),
     token: getInitialAuthToken()
@@ -1628,9 +1643,9 @@ export default function App() {
   const [isAppInitialized, setIsAppInitialized] = useState(false);
   const [showSplashScreen, setShowSplashScreen] = useState(true);
 
-  // Auth State
-  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('afterhours_user') || 'null'));
-  const [authToken, setAuthToken] = useState(() => localStorage.getItem('afterhours_token') || '');
+  // Auth State (Tab-isolated: reads sessionStorage first so Tab 1 never gets clobbered by Tab 2)
+  const [user, setUser] = useState(() => getTabAuthUser());
+  const [authToken, setAuthToken] = useState(() => getTabAuthToken());
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isLoginMode, setIsLoginMode] = useState(true);
   const [authForm, setAuthForm] = useState({ username: '', password: '' });
@@ -1650,6 +1665,7 @@ export default function App() {
   }, []);
 
   // Synchronize voice control access on auth & rollout changes
+  const { isVisible: isUiVisible } = useUiConfig();
   const { canAccessVoice } = useVoiceRollout(user, cmsConfig);
   const [isVoiceControlAllowed, setIsVoiceControlAllowed] = useState(() => {
     return voiceControlService.getAccessState().allowed;
@@ -2212,16 +2228,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
 
   const [likedSongs, setLikedSongs] = useState(() => {
-    const u = JSON.parse(localStorage.getItem('afterhours_user') || 'null');
+    const u = getTabAuthUser();
     return sanitizeList(u ? JSON.parse(localStorage.getItem('liked_songs') || '[]') : []);
   });
   const [history, setHistory] = useState(() => {
-    const u = JSON.parse(localStorage.getItem('afterhours_user') || 'null');
+    const u = getTabAuthUser();
     return sanitizeList(u ? JSON.parse(localStorage.getItem('history_songs') || '[]') : []);
   });
   const [playlists, setPlaylists] = useState(() => {
     try {
-      const u = JSON.parse(localStorage.getItem('afterhours_user') || 'null');
+      const u = getTabAuthUser();
       const saved = u ? localStorage.getItem('playlists') : (localStorage.getItem('guest_playlists') || localStorage.getItem('playlists'));
       return sanitizeList(saved ? JSON.parse(saved) : []);
     } catch (e) {
@@ -2796,7 +2812,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   // Per-User Persisted AI Seeded Tracks Pool (100+ tracks by category & genre)
   const [aiSeededTracks, setAiSeededTracks] = useState(() => {
     try {
-      const u = JSON.parse(localStorage.getItem('afterhours_user') || 'null');
+      const u = getTabAuthUser();
       const uKey = u?._id || u?.id || 'guest';
       const stored = localStorage.getItem(`loopra_ai_seeded_tracks_${uKey}`) || localStorage.getItem('loopra_ai_seeded_tracks_common');
       return stored ? JSON.parse(stored) : [];
@@ -3073,7 +3089,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   useEffect(() => {
     // 1. Fetch live user account state from server on mount / reconnect to prevent stale roles
     const syncCurrentUserState = async () => {
-      const curToken = localStorage.getItem('afterhours_token');
+      const curToken = authToken || getTabAuthToken();
       if (!curToken || isSyncingUserStateRef.current) return;
       isSyncingUserStateRef.current = true;
       try {
@@ -3084,7 +3100,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           const data = await res.json();
           if (data?.user) {
             setUser(prev => {
-              if (!prev) return data.user;
+              if (!prev) {
+                setTabAuthSession(curToken, data.user);
+                return data.user;
+              }
               // If core authorization details are unchanged, return prev to preserve object reference
               const isUnchanged = prev._id === data.user._id &&
                 prev.role === data.user.role &&
@@ -3095,7 +3114,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               if (isUnchanged) return prev;
 
               const merged = { ...prev, ...data.user };
-              localStorage.setItem('afterhours_user', JSON.stringify(merged));
+              setTabAuthSession(curToken, merged);
               if (prev.role === 'admin' && merged.role !== 'admin' && activeTabRef.current === 'admin') {
                 setActiveTab('home');
                 window.history.pushState(null, '', '/');
@@ -3122,7 +3141,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         const newRole = data.role;
         const updated = { ...currentUser, role: newRole, status: data.status || currentUser.status };
         setUser(updated);
-        localStorage.setItem('afterhours_user', JSON.stringify(updated));
+        setTabAuthSession(authToken || getTabAuthToken(), updated);
 
         if (newRole !== 'admin') {
           if (activeTabRef.current === 'admin') {
@@ -3140,7 +3159,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       setUser(prev => {
         if (!prev) return prev;
         const updated = { ...prev, role: 'user' };
-        localStorage.setItem('afterhours_user', JSON.stringify(updated));
+        setTabAuthSession(authToken || getTabAuthToken(), updated);
         return updated;
       });
       if (activeTabRef.current === 'admin') {
@@ -3162,9 +3181,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             avatarUrl: data.avatarUrl !== undefined ? data.avatarUrl : prev.avatarUrl,
             displayName: data.displayName || prev.displayName
           };
-          try {
-            localStorage.setItem('afterhours_user', JSON.stringify(updated));
-          } catch (_) {}
+          setTabAuthSession(authToken || getTabAuthToken(), updated);
           return updated;
         });
       }
@@ -3297,9 +3314,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               ) {
                 return prev;
               }
-              return { ...(prev || {}), ...data.user };
+              const updated = { ...(prev || {}), ...data.user };
+              setTabAuthSession(authToken, updated);
+              return updated;
             });
-            localStorage.setItem('afterhours_user', JSON.stringify(data.user));
+            setTabAuthSession(authToken, data.user);
           }
         })
         .catch(() => {});
@@ -3326,7 +3345,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           .then(data => {
             if (data && data.token) {
               setAuthToken(data.token);
-              localStorage.setItem('afterhours_token', data.token);
               if (data.user) {
                 setUser(prev => {
                   if (
@@ -3340,8 +3358,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   }
                   return data.user;
                 });
-                localStorage.setItem('afterhours_user', JSON.stringify(data.user));
               }
+              setTabAuthSession(data.token, data.user || user);
             }
           })
           .catch(() => {});
@@ -3779,7 +3797,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const id = user?.userId || user?._id;
     if (user && !id) {
       setUser(null);
-      localStorage.removeItem('afterhours_user');
+      clearTabAuthSession();
       return;
     }
     if (!user || !id) return;
@@ -3900,12 +3918,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         status: data.user.status || 'active'
       };
       setUser(loggedInUser);
-      localStorage.setItem('afterhours_user', JSON.stringify(loggedInUser));
-
       if (data.token) {
         setAuthToken(data.token);
-        localStorage.setItem('afterhours_token', data.token);
       }
+      setTabAuthSession(data.token || authToken, loggedInUser);
       closeAuthModal(true);
 
       const userLiked = data.user.likedSongs || [];
@@ -4099,12 +4115,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         status: (data.user && data.user.status) || 'active'
       };
       setUser(loggedInUser);
-      localStorage.setItem('afterhours_user', JSON.stringify(loggedInUser));
-
       if (data.token) {
         setAuthToken(data.token);
-        localStorage.setItem('afterhours_token', data.token);
       }
+      setTabAuthSession(data.token || authToken, loggedInUser);
       closeAuthModal(true);
 
       if (isLoginMode && data.user) {
@@ -4177,8 +4191,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     setUser(null);
     setAuthToken('');
     setIsAccountMenuOpen(false);
-    localStorage.removeItem('afterhours_token');
-    localStorage.removeItem('afterhours_user');
+    clearTabAuthSession();
     localStorage.removeItem('liked_songs');
     localStorage.removeItem('history_songs');
     localStorage.removeItem('playlists');
@@ -4187,10 +4200,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     localStorage.removeItem('afterhours_current_time');
     localStorage.removeItem('afterhours_duration');
     try {
-      sessionStorage.removeItem('afterhours_user');
-      sessionStorage.removeItem('afterhours_token');
-      sessionStorage.removeItem('loopra_user');
-      sessionStorage.removeItem('loopra_token');
       sessionStorage.removeItem('loopra_home_curated_cache');
       localStorage.removeItem('loopra_curated_cache');
       localStorage.removeItem('loopra_cached_recs');
@@ -4491,9 +4500,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           adjustedSeek += elapsedSec;
         }
 
+        // If this is a fresh Listen Together trigger with basePositionSec === 0 and scheduled startAtServerTime,
+        // it must start from 0:00 across all users—EVEN IF that exact same song was already playing!
+        const isFreshTriggerFromZero = data.basePositionSec === 0 && Boolean(data.startAtServerTime);
+
         if (curId !== targetId) {
           playSong(targetTrack);
-          // Apply current timestamp seek so user starts right at live position, NEVER 0:00
+          // Apply current timestamp seek so user starts right at live position, NEVER 0:00 (for mid-session/late joins)
           if (adjustedSeek > 0.05) {
             setTimeout(() => {
               handleSeek(adjustedSeek);
@@ -4502,6 +4515,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               handleSeek(adjustedSeek + 0.15);
             }, 700);
           }
+        } else if (isFreshTriggerFromZero) {
+          // Same song re-triggered via Listen Together: immediately rewind to 0:00
+          handleSeek(0);
         } else {
           // Tight ~30-40ms Drift Correction: Seek if drift exceeds 35ms (0.035s)
           const curTime = currentTimeRef.current || 0;
@@ -4529,7 +4545,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
     socket.on('connect', () => {
       setIsLiveCountStale(false);
-      const curToken = localStorage.getItem('afterhours_token');
+      const curToken = getTabAuthToken();
       if (curToken) {
         socket.emit('authenticate', { token: curToken, sessionId: getOrCreateSessionId() });
       }
@@ -7384,7 +7400,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       try {
         setAuthLoading(true);
         setAuthToken(token);
-        localStorage.setItem('afterhours_token', token);
 
         const res = await fetch(getApiUrl('/api/auth/me'), {
           headers: { Authorization: `Bearer ${token}` }
@@ -7401,7 +7416,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             status: u.status || 'active'
           };
           setUser(loggedInUser);
-          localStorage.setItem('afterhours_user', JSON.stringify(loggedInUser));
+          setTabAuthSession(token, loggedInUser);
 
           const userLiked = u.likedSongs || [];
           setLikedSongs(sanitizeList(userLiked));
@@ -9076,9 +9091,30 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     navMap.set(st.id, st);
                   });
 
+                  const navUiKeyMap = {
+                    home: 'nav.home',
+                    'dj-club': 'nav.djClub',
+                    discover: 'nav.discover',
+                    radio: 'nav.radio',
+                    'indian-radio': 'nav.radio',
+                    mood: 'nav.mood',
+                    timemachine: 'nav.timemachine',
+                    activity: 'nav.activity',
+                    swipe: 'nav.swipe',
+                    library: 'nav.liked',
+                    downloads: 'nav.downloads',
+                    history: 'nav.history',
+                    playlists: 'nav.playlists',
+                    rooms: 'nav.rooms',
+                    stats: 'nav.stats'
+                  };
+
                   const bottomNavIds = new Set(['home', 'discover', 'library', 'liked', 'playlists', 'rooms', 'radio', 'indian-radio']);
                   const allItems = Array.from(navMap.values()).filter(item => {
                     if (!item || item.enabled === false || disabledIds.has(item.id)) return false;
+                    // Check Admin UI Visibility configuration
+                    const uiKey = navUiKeyMap[item.id];
+                    if (uiKey && !isUiVisible(uiKey)) return false;
                     // Remove Loopra AI Chat from sidebar
                     if (item.id === 'chat' || item.id === 'ai-chat') return false;
                     if (isMobileScreen && bottomNavIds.has(item.id)) return false;
@@ -9447,10 +9483,31 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 navMap.set(st.id, st);
               });
 
+              const navUiKeyMap = {
+                home: 'nav.home',
+                'dj-club': 'nav.djClub',
+                discover: 'nav.discover',
+                radio: 'nav.radio',
+                'indian-radio': 'nav.radio',
+                mood: 'nav.mood',
+                timemachine: 'nav.timemachine',
+                activity: 'nav.activity',
+                swipe: 'nav.swipe',
+                library: 'nav.liked',
+                downloads: 'nav.downloads',
+                history: 'nav.history',
+                playlists: 'nav.playlists',
+                rooms: 'nav.rooms',
+                stats: 'nav.stats'
+              };
+
               // Destinations present in the mobile lower navbar (MobileBottomNav)
               const bottomNavIds = new Set(['home', 'discover', 'library', 'liked', 'playlists', 'rooms', 'radio', 'indian-radio']);
               const allItems = Array.from(navMap.values()).filter(item => {
                 if (!item || item.enabled === false || disabledIds.has(item.id)) return false;
+                // Check Admin UI Visibility configuration
+                const uiKey = navUiKeyMap[item.id];
+                if (uiKey && !isUiVisible(uiKey)) return false;
                 // Remove Loopra AI Chat from sidebar
                 if (item.id === 'chat' || item.id === 'ai-chat') return false;
                 // Restriction applies ONLY to phone/mobile mode: do not show lower navbar destinations in mobile sidebar
@@ -9992,18 +10049,20 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                             <Icon name="skipNext" className="w-4 h-4 text-neutral-300" />
                           </button>
 
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenExpandedPlayer('player');
-                            }}
-                            className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full bg-neutral-900/90 hover:bg-neutral-800 active:scale-95 text-neutral-200 hover:text-white font-medium text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-1.5 shadow-md cursor-pointer shrink-0"
-                            title="Open Expanded Now Playing"
-                            aria-label="Open Expanded Now Playing"
-                          >
-                            <Icon name="expand" className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
-                            <span>Now Playing</span>
-                          </button>
+                          {isUiVisible('btn.expandPlayer') && (
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenExpandedPlayer('player');
+                              }}
+                              className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full bg-neutral-900/90 hover:bg-neutral-800 active:scale-95 text-neutral-200 hover:text-white font-medium text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-1.5 shadow-md cursor-pointer shrink-0"
+                              title="Open Expanded Now Playing"
+                              aria-label="Open Expanded Now Playing"
+                            >
+                              <Icon name="expand" className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                              <span>Now Playing</span>
+                            </button>
+                          )}
                         </div>
 
                         {/* Centered Queue Pill */}
@@ -10048,18 +10107,20 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                             <Icon name="skipNext" className="w-4 h-4 text-neutral-300" />
                           </button>
 
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenExpandedPlayer('player');
-                            }}
-                            className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full bg-neutral-900/90 hover:bg-neutral-800 active:scale-95 text-neutral-200 hover:text-white font-medium text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-1.5 shadow-md cursor-pointer shrink-0"
-                            title="Open Expanded Now Playing"
-                            aria-label="Open Expanded Now Playing"
-                          >
-                            <Icon name="expand" className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
-                            <span>Now Playing</span>
-                          </button>
+                          {isUiVisible('btn.expandPlayer') && (
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenExpandedPlayer('player');
+                              }}
+                              className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full bg-neutral-900/90 hover:bg-neutral-800 active:scale-95 text-neutral-200 hover:text-white font-medium text-xs sm:text-sm border border-neutral-700/80 transition flex items-center justify-center gap-1.5 shadow-md cursor-pointer shrink-0"
+                              title="Open Expanded Now Playing"
+                              aria-label="Open Expanded Now Playing"
+                            >
+                              <Icon name="expand" className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                              <span>Now Playing</span>
+                            </button>
+                          )}
                         </div>
 
                         {/* Centered Queue Pill */}
@@ -10083,21 +10144,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             </div>
 
             {/* Gemini AI-Powered Personalized Recommendations Lounge */}
-            <PersonalizedRecommendationsSection
-              backendUrl={BACKEND_URL}
-              authToken={authToken}
-              user={user}
-              onPlayTrack={(track) => {
-                playSong(track);
-              }}
-              onOpenAuth={openAuthModal}
-              onToggleLike={toggleLike}
-              isLiked={isSongLiked}
-              onAddToPlaylist={handleAddToPlaylistClick}
-              showToast={showToast}
-              onTracksRendered={handlePersonalizedTracksRendered}
-              onArtistClick={handleArtistClick}
-            />
+            {isUiVisible('section.aiForYou') && (
+              <PersonalizedRecommendationsSection
+                backendUrl={BACKEND_URL}
+                authToken={authToken}
+                user={user}
+                onPlayTrack={(track) => {
+                  playSong(track);
+                }}
+                onOpenAuth={openAuthModal}
+                onToggleLike={toggleLike}
+                isLiked={isSongLiked}
+                onAddToPlaylist={handleAddToPlaylistClick}
+                showToast={showToast}
+                onTracksRendered={handlePersonalizedTracksRendered}
+                onArtistClick={handleArtistClick}
+              />
+            )}
 
             {/* Dynamic Homepage Sections from CMS Configuration */}
             {(() => {
@@ -10113,6 +10176,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
               const sortedSections = [...sections]
                 .filter(s => s && s.enabled !== false)
+                .filter(s => {
+                  if (s.id === 'trending' && !isUiVisible('section.trendingOnLoopra')) return false;
+                  if (s.id === 'albums' && !isUiVisible('section.popularAlbums')) return false;
+                  if (s.id === 'artists' && !isUiVisible('section.popularArtists')) return false;
+                  if (s.id === 'radio' && !isUiVisible('section.popularRadio')) return false;
+                  return true;
+                })
                 .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
 
               return sortedSections.map(sec => {
@@ -10588,6 +10658,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
         {activeTab === 'history' && (
           <div key="page-history" className="page-transition w-full px-2 sm:px-4 md:px-8 space-y-6 relative z-10">
+            {!isUiVisible('section.recentlyPlayed') ? (
+              <div className="py-16 text-center text-neutral-500 text-xs">
+                Listening history section is temporarily hidden by administrator.
+              </div>
+            ) : (
+            <>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-2xl font-display font-extrabold tracking-tight text-white">Listening History</h2>
@@ -10696,6 +10772,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                   Load More History ({history.length - historyPageLimit} remaining)
                 </button>
               </div>
+            )}
+            </>
             )}
           </div>
         )}
@@ -11685,17 +11763,19 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               )}
 
               {/* Designated Fullscreen Player Open Button */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleOpenExpandedPlayer('player');
-                }}
-                className="p-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-amber-400 border border-neutral-700/60 transition shrink-0 cursor-pointer flex items-center justify-center active:scale-90 min-w-[48px] min-h-[48px] touch-manipulation"
-                title="Open Fullscreen Player"
-                aria-label="Open Fullscreen Player"
-              >
-                <Icon name="expand" className="w-4 h-4 shrink-0 text-amber-400" />
-              </button>
+              {isUiVisible('btn.expandPlayer') && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenExpandedPlayer('player');
+                  }}
+                  className="p-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-amber-400 border border-neutral-700/60 transition shrink-0 cursor-pointer flex items-center justify-center active:scale-90 min-w-[48px] min-h-[48px] touch-manipulation"
+                  title="Open Fullscreen Player"
+                  aria-label="Open Fullscreen Player"
+                >
+                  <Icon name="expand" className="w-4 h-4 shrink-0 text-amber-400" />
+                </button>
+              )}
             </div>
           </div>
         </footer>
@@ -11789,24 +11869,28 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 {/* Initial Viewport: Main music player controls */}
                 <div className="w-full flex flex-col items-center justify-between py-1 sm:py-2 min-h-[calc(100vh-4rem)] md:min-h-[calc(100vh-2rem)] shrink-0">
                 {/* 1. 3D Illuminated Virtual Turntable Section */}
-                <div className="w-full flex items-center justify-center shrink min-h-0 pt-1 pb-1">
-                  <Turntable3D 
-                    currentSong={currentSong} 
-                    isPlaying={isPlaying} 
-                    onTogglePlay={togglePlayPause} 
-                    size="responsive"
-                  />
-                </div>
+                {isUiVisible('btn.turntable3D') && (
+                  <div className="w-full flex items-center justify-center shrink min-h-0 pt-1 pb-1">
+                    <Turntable3D 
+                      currentSong={currentSong} 
+                      isPlaying={isPlaying} 
+                      onTogglePlay={togglePlayPause} 
+                      size="responsive"
+                    />
+                  </div>
+                )}
 
                 {/* 2. Animated Audio Spectrum Visualizer Section (Directly below vinyl, separated layout) */}
-                <div className="w-full flex items-center justify-center shrink-0 mb-4 sm:mb-5">
-                  <AudioSpectrumVisualizer 
-                    isPlaying={isPlaying} 
-                    barCount={28}
-                    height={24}
-                    className="w-full max-w-[200px] sm:max-w-xs" 
-                  />
-                </div>
+                {isUiVisible('btn.spectrumVisualizer') && (
+                  <div className="w-full flex items-center justify-center shrink-0 mb-4 sm:mb-5">
+                    <AudioSpectrumVisualizer 
+                      isPlaying={isPlaying} 
+                      barCount={28}
+                      height={24}
+                      className="w-full max-w-[200px] sm:max-w-xs" 
+                    />
+                  </div>
+                )}
 
                 {/* 3. Song Information Section (Title & Artist with guaranteed 16-24px vertical spacing) */}
                 <div className="w-full text-center space-y-1 shrink-0 px-2 mb-2">
@@ -11863,28 +11947,30 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       </button>
 
                       {/* 3. Video / Music Mode Toggle */}
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (videoModalSong) {
-                            handleCloseVideo();
-                          } else {
-                            handleOpenVideo(currentSong, e);
-                          }
-                        }} 
-                        className={`flex-1 min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-3 py-2 rounded-2xl border transition-all duration-200 flex items-center justify-center gap-1.5 text-xs font-semibold shadow-md active:scale-95 cursor-pointer select-none ${
-                          hasVid
-                            ? videoModalSong
-                              ? 'bg-amber-500 text-neutral-950 border-amber-400 shadow-[0_0_20px_rgba(var(--accent-rgb,245,158,11),0.4)]'
-                              : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-300 hover:text-amber-200 shadow-[0_0_15px_rgba(var(--accent-rgb,245,158,11),0.15)]'
-                            : 'bg-neutral-800/40 border-neutral-800 text-neutral-500 cursor-not-allowed opacity-60'
-                        }`}
-                        title={hasVid ? (videoModalSong ? "Switch to Music Mode" : "Watch Video") : "Video Unavailable"}
-                        aria-label={hasVid ? (videoModalSong ? "Switch to Music Mode" : "Watch Video") : "Video Unavailable"}
-                      >
-                        <Icon name={videoModalSong ? "music" : "video"} className={`w-4 h-4 shrink-0 ${hasVid ? (videoModalSong ? 'text-neutral-950' : 'text-amber-400') : 'text-neutral-500'}`} />
-                        <span className="truncate">{videoModalSong ? "Music Mode" : "Video Mode"}</span>
-                      </button>
+                      {isUiVisible('btn.cinematicVideo') && (
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (videoModalSong) {
+                              handleCloseVideo();
+                            } else {
+                              handleOpenVideo(currentSong, e);
+                            }
+                          }} 
+                          className={`flex-1 min-h-[40px] sm:min-h-[44px] px-2.5 sm:px-3 py-2 rounded-2xl border transition-all duration-200 flex items-center justify-center gap-1.5 text-xs font-semibold shadow-md active:scale-95 cursor-pointer select-none ${
+                            hasVid
+                              ? videoModalSong
+                                ? 'bg-amber-500 text-neutral-950 border-amber-400 shadow-[0_0_20px_rgba(var(--accent-rgb,245,158,11),0.4)]'
+                                : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-300 hover:text-amber-200 shadow-[0_0_15px_rgba(var(--accent-rgb,245,158,11),0.15)]'
+                              : 'bg-neutral-800/40 border-neutral-800 text-neutral-500 cursor-not-allowed opacity-60'
+                          }`}
+                          title={hasVid ? (videoModalSong ? "Switch to Music Mode" : "Watch Video") : "Video Unavailable"}
+                          aria-label={hasVid ? (videoModalSong ? "Switch to Music Mode" : "Watch Video") : "Video Unavailable"}
+                        >
+                          <Icon name={videoModalSong ? "music" : "video"} className={`w-4 h-4 shrink-0 ${hasVid ? (videoModalSong ? 'text-neutral-950' : 'text-amber-400') : 'text-neutral-500'}`} />
+                          <span className="truncate">{videoModalSong ? "Music Mode" : "Video Mode"}</span>
+                        </button>
+                      )}
 
                       {/* Offline Download button */}
                       <DownloadTrackButton track={currentSong} variant="icon" showToast={showToast} />
@@ -11904,32 +11990,36 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     <span className="hidden sm:inline">Canvas</span>
                   </button>
 
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setIsLyricsOpen(true); }}
-                    className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer"
-                    title="Synchronized Lyrics"
-                    aria-label="Synchronized Lyrics"
-                  >
-                    <Icon name="mic" className="w-3.5 h-3.5 text-amber-400" />
-                    <span className="hidden sm:inline">Lyrics</span>
-                  </button>
+                  {isUiVisible('btn.lyrics') && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setIsLyricsOpen(true); }}
+                      className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 border border-neutral-700/70 text-neutral-300 hover:text-amber-400 transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer"
+                      title="Synchronized Lyrics"
+                      aria-label="Synchronized Lyrics"
+                    >
+                      <Icon name="mic" className="w-3.5 h-3.5 text-amber-400" />
+                      <span className="hidden sm:inline">Lyrics</span>
+                    </button>
+                  )}
 
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setIsSleepTimerOpen(true); }}
-                    className={`relative p-2 sm:px-2.5 sm:py-1.5 rounded-xl border transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer ${
-                      sleepTimerRemaining ? 'bg-amber-500/20 border-amber-500/60 text-amber-300' : 'bg-neutral-800/80 hover:bg-neutral-700/80 border-neutral-700/70 text-neutral-300 hover:text-amber-400'
-                    }`}
-                    title={sleepTimerRemaining ? `Timer active: ${Math.ceil(sleepTimerRemaining / 60)}m left` : "Set Sleep Timer"}
-                    aria-label="Set Sleep Timer"
-                  >
-                    <Icon name="timer" className="w-3.5 h-3.5 text-amber-400" />
-                    <span className="hidden sm:inline">
-                      {sleepTimerRemaining ? `${Math.ceil(sleepTimerRemaining / 60)}m` : 'Timer'}
-                    </span>
-                    {sleepTimerRemaining && (
-                      <span className="sm:hidden absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                    )}
-                  </button>
+                  {isUiVisible('btn.sleepTimer') && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setIsSleepTimerOpen(true); }}
+                      className={`relative p-2 sm:px-2.5 sm:py-1.5 rounded-xl border transition flex items-center gap-1 text-xs font-semibold shadow-sm active:scale-95 cursor-pointer ${
+                        sleepTimerRemaining ? 'bg-amber-500/20 border-amber-500/60 text-amber-300' : 'bg-neutral-800/80 hover:bg-neutral-700/80 border-neutral-700/70 text-neutral-300 hover:text-amber-400'
+                      }`}
+                      title={sleepTimerRemaining ? `Timer active: ${Math.ceil(sleepTimerRemaining / 60)}m left` : "Set Sleep Timer"}
+                      aria-label="Set Sleep Timer"
+                    >
+                      <Icon name="timer" className="w-3.5 h-3.5 text-amber-400" />
+                      <span className="hidden sm:inline">
+                        {sleepTimerRemaining ? `${Math.ceil(sleepTimerRemaining / 60)}m` : 'Timer'}
+                      </span>
+                      {sleepTimerRemaining && (
+                        <span className="sm:hidden absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                      )}
+                    </button>
+                  )}
 
                   <button
                     onClick={(e) => { e.stopPropagation(); handleCyclePlaybackSpeed(); }}
@@ -12207,91 +12297,93 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </Reorder.Group>
 
               {/* Autoplay & Smart Recommendations Section (Continuous Listening) */}
-              <div className="mt-8 pt-6 border-t border-neutral-800/80">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                      Smart Queue & Autoplay
-                    </h4>
-                    <p className="text-[11px] text-neutral-400">Up next based on current listening vibe</p>
+              {isUiVisible('btn.smartQueue') && (
+                <div className="mt-8 pt-6 border-t border-neutral-800/80">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                        Smart Queue & Autoplay
+                      </h4>
+                      <p className="text-[11px] text-neutral-400">Up next based on current listening vibe</p>
+                    </div>
+                    <button
+                      onClick={toggleContinuousListening}
+                      className={`px-3 py-1 rounded-full text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 ${
+                        isContinuousListening
+                          ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                          : 'bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-neutral-200'
+                      }`}
+                      title="Toggle Continuous Autoplay"
+                    >
+                      <span>{isContinuousListening ? 'Autoplay ON' : 'Autoplay OFF'}</span>
+                    </button>
                   </div>
-                  <button
-                    onClick={toggleContinuousListening}
-                    className={`px-3 py-1 rounded-full text-xs font-semibold border transition cursor-pointer flex items-center gap-1.5 ${
-                      isContinuousListening
-                        ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
-                        : 'bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-neutral-200'
-                    }`}
-                    title="Toggle Continuous Autoplay"
-                  >
-                    <span>{isContinuousListening ? 'Autoplay ON' : 'Autoplay OFF'}</span>
-                  </button>
-                </div>
 
-                {isContinuousListening ? (
-                  smartQueue.length > 0 ? (
-                    <div className="space-y-2">
-                      {smartQueue.slice(0, 10).map((track, idx) => (
-                        <div
-                          key={track.id || track.videoId || idx}
-                          onClick={() => playSong(track)}
-                          className="group flex items-center justify-between gap-3 p-2.5 rounded-2xl bg-neutral-900/40 hover:bg-neutral-800/60 border border-neutral-800/60 hover:border-amber-500/30 transition cursor-pointer"
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="relative w-10 h-10 rounded-xl overflow-hidden shrink-0 shadow-sm">
-                              <img
-                                src={getCleanThumbnail(track)}
-                                alt={track.title}
-                                className="w-full h-full object-cover"
-                                onError={(e) => handleImageError(e, track.title, track.id)}
-                              />
-                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
-                                <Icon name="play" className="w-4 h-4 text-amber-400" />
+                  {isContinuousListening ? (
+                    smartQueue.length > 0 ? (
+                      <div className="space-y-2">
+                        {smartQueue.slice(0, 10).map((track, idx) => (
+                          <div
+                            key={track.id || track.videoId || idx}
+                            onClick={() => playSong(track)}
+                            className="group flex items-center justify-between gap-3 p-2.5 rounded-2xl bg-neutral-900/40 hover:bg-neutral-800/60 border border-neutral-800/60 hover:border-amber-500/30 transition cursor-pointer"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="relative w-10 h-10 rounded-xl overflow-hidden shrink-0 shadow-sm">
+                                <img
+                                  src={getCleanThumbnail(track)}
+                                  alt={track.title}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => handleImageError(e, track.title, track.id)}
+                                />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                                  <Icon name="play" className="w-4 h-4 text-amber-400" />
+                                </div>
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <h5 className="font-medium text-xs text-white group-hover:text-amber-300 transition truncate">
+                                    {track.title}
+                                  </h5>
+                                  {track._recommendationType === 'discover' && (
+                                    <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0 font-medium">Discover</span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-neutral-400 truncate">{track.artist || track.channel}</p>
                               </div>
                             </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <h5 className="font-medium text-xs text-white group-hover:text-amber-300 transition truncate">
-                                  {track.title}
-                                </h5>
-                                {track._recommendationType === 'discover' && (
-                                  <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0 font-medium">Discover</span>
-                                )}
-                              </div>
-                              <p className="text-[11px] text-neutral-400 truncate">{track.artist || track.channel}</p>
+                            <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                onClick={(e) => playNext(track, e)}
+                                className="p-1.5 rounded-lg text-neutral-400 hover:text-amber-400 hover:bg-neutral-800 transition"
+                                title="Play Next"
+                              >
+                                <Icon name="skipNext" className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={(e) => addToQueue(track, e)}
+                                className="p-1.5 rounded-lg text-neutral-400 hover:text-amber-400 hover:bg-neutral-800 transition"
+                                title="Add to Queue"
+                              >
+                                <Icon name="plus" className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              onClick={(e) => playNext(track, e)}
-                              className="p-1.5 rounded-lg text-neutral-400 hover:text-amber-400 hover:bg-neutral-800 transition"
-                              title="Play Next"
-                            >
-                              <Icon name="skipNext" className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={(e) => addToQueue(track, e)}
-                              className="p-1.5 rounded-lg text-neutral-400 hover:text-amber-400 hover:bg-neutral-800 transition"
-                              title="Add to Queue"
-                            >
-                              <Icon name="plus" className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="py-4 text-center text-xs text-neutral-500">
+                        Generating tailored smart recommendations...
+                      </div>
+                    )
                   ) : (
-                    <div className="py-4 text-center text-xs text-neutral-500">
-                      Generating tailored smart recommendations...
+                    <div className="py-4 text-center text-xs text-neutral-500 bg-neutral-900/30 rounded-xl border border-neutral-800/50">
+                      Continuous listening is disabled. Enable Autoplay above to keep the music flowing.
                     </div>
-                  )
-                ) : (
-                  <div className="py-4 text-center text-xs text-neutral-500 bg-neutral-900/30 rounded-xl border border-neutral-800/50">
-                    Continuous listening is disabled. Enable Autoplay above to keep the music flowing.
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -1,9 +1,10 @@
 import React, { Component } from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App.jsx';
+import App, { socket } from './App.jsx';
 import './index.css';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { BACKEND_URL } from './utils/apiUrl';
+import { UiConfigProvider } from './context/UiConfigContext';
 
 // Immediate non-blocking app-boot wake-up ping for Render cold-starts
 if (typeof window !== 'undefined' && typeof fetch === 'function') {
@@ -129,7 +130,9 @@ class RootErrorBoundary extends Component {
 ReactDOM.createRoot(document.getElementById('root')).render(
   <RootErrorBoundary>
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-      <App />
+      <UiConfigProvider socket={socket}>
+        <App />
+      </UiConfigProvider>
     </GoogleOAuthProvider>
   </RootErrorBoundary>
 );

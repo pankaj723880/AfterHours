@@ -545,7 +545,16 @@ export default function AdminOverview({ metrics, health, onNavigate, token, back
       </div>
 
       {/* Quick Navigation Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <button 
+          onClick={() => onNavigate('ui_visibility')}
+          className="p-4 rounded-xl bg-neutral-900/40 border border-neutral-800 hover:border-amber-500/40 text-left transition group cursor-pointer"
+        >
+          <Sliders className="w-5 h-5 text-amber-400 mb-2 group-hover:scale-110 transition-transform" />
+          <div className="text-sm font-bold text-white group-hover:text-amber-400 transition">UI Controls</div>
+          <div className="text-[11px] text-neutral-400">Toggle buttons, cards & nav</div>
+        </button>
+
         <button
           onClick={() => onNavigate('traffic')}
           className="p-4 rounded-xl bg-neutral-900/40 border border-neutral-800 hover:border-emerald-500/40 text-left transition group cursor-pointer"

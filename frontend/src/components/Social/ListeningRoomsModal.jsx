@@ -7,6 +7,7 @@ import {
   UserCheck, UserMinus, UserX
 } from 'lucide-react';
 import { getApiUrl } from '../../utils/apiUrl';
+import { useUiConfig } from '../../context/UiConfigContext';
 
 const QUICK_REACTIONS = ['🔥', '❤️', '🕺', '😭'];
 
@@ -35,6 +36,7 @@ export default function ListeningRoomsModal({
   onToggleLike,
   isLiked
 }) {
+  const { isVisible: isUiVisible } = useUiConfig();
   const [rooms, setRooms] = useState([]);
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomDesc, setNewRoomDesc] = useState('');
@@ -165,13 +167,38 @@ export default function ListeningRoomsModal({
     const handleReaction = (data) => {
       if (data?.emoji) {
         const id = data.id || `react_${Date.now()}_${Math.random()}`;
+        const sender = data.senderName || data.user?.displayName || data.user?.username || 'Listener';
+        const role = (data.role || data.user?.role || 'LISTENER').toUpperCase();
+        const timestamp = data.timestamp ? new Date(data.timestamp) : new Date();
+
+        // 1. Floating reaction animation
         setFloatingReactions(prev => [
           ...prev, 
-          { id, emoji: data.emoji, user: data.user, left: Math.floor(Math.random() * 70) + 15 }
+          { 
+            id, 
+            emoji: data.emoji, 
+            user: { displayName: sender, role }, 
+            senderName: sender,
+            role,
+            left: Math.floor(Math.random() * 60) + 20 
+          }
         ]);
         setTimeout(() => {
           setFloatingReactions(prev => prev.filter(r => r.id !== id));
         }, 3200);
+
+        // 2. Append reaction event into Live Activity feed state
+        setActivities(prev => [
+          {
+            id: `act_${id}`,
+            type: 'reaction',
+            emoji: data.emoji,
+            text: `${sender} reacted with ${data.emoji}`,
+            user: { displayName: sender, role },
+            timestamp
+          },
+          ...(prev || []).slice(0, 49)
+        ]);
       }
     };
 
@@ -469,13 +496,60 @@ export default function ListeningRoomsModal({
 
   // 7. Emoji Quick Reaction
   const handleSendReaction = (emoji) => {
-    if (!activeRoom || !socket) return;
+    if (!activeRoom || !emoji) return;
     const rId = activeRoom.roomId || activeRoom.id;
-    socket.emit('room:reaction', {
+    const senderName = user?.displayName || user?.username || 'You';
+    const role = (isHost ? 'HOST' : isCoHost ? 'CO-HOST' : 'LISTENER').toUpperCase();
+    const timestamp = new Date();
+
+    const payload = {
       roomId: rId,
       emoji,
-      user
-    });
+      senderName,
+      role,
+      user: {
+        userId: currentUserId,
+        displayName: senderName,
+        username: user?.username || senderName,
+        role,
+        avatar: user?.avatarUrl || ''
+      },
+      timestamp
+    };
+
+    // Optimistically render reaction immediately on active room screen
+    const localId = `react_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    setFloatingReactions(prev => [
+      ...prev,
+      {
+        id: localId,
+        emoji,
+        senderName: 'You',
+        role,
+        user: { displayName: 'You', role },
+        left: Math.floor(Math.random() * 60) + 20
+      }
+    ]);
+    setTimeout(() => {
+      setFloatingReactions(prev => prev.filter(r => r.id !== localId));
+    }, 3200);
+
+    // Optimistically add to Live Activity feed
+    setActivities(prev => [
+      {
+        id: `act_${localId}`,
+        type: 'reaction',
+        emoji,
+        text: `You reacted with ${emoji}`,
+        user: { displayName: 'You', role },
+        timestamp
+      },
+      ...(prev || []).slice(0, 49)
+    ]);
+
+    if (socket) {
+      socket.emit('room:reaction', payload);
+    }
   };
 
   // 8. Mini Chat Send with Strict Deduplication & Double-Submission Guards
@@ -754,13 +828,20 @@ export default function ListeningRoomsModal({
           {floatingReactions.map(r => (
             <div
               key={r.id}
-              className="absolute bottom-16 animate-floatUp text-3xl select-none flex flex-col items-center"
+              className="absolute bottom-20 animate-floatUp select-none flex flex-col items-center drop-shadow-xl"
               style={{ left: `${r.left}%` }}
             >
-              <span>{r.emoji}</span>
-              {r.user?.displayName && (
-                <span className="text-[9px] font-medium bg-black/60 text-amber-300 px-1.5 py-0.5 rounded-full mt-0.5">
-                  {r.user.displayName}
+              <span className="text-4xl filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.8)]">{r.emoji}</span>
+              {(r.senderName || r.user?.displayName) && (
+                <span className="text-[10px] font-bold bg-neutral-950/90 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full mt-1 shadow-lg backdrop-blur-md flex items-center gap-1">
+                  <span>{r.senderName || r.user?.displayName}</span>
+                  {r.role && (
+                    <span className={`text-[8px] px-1 py-0.2 rounded font-mono font-black ${
+                      r.role === 'HOST' ? 'bg-amber-500/30 text-amber-200' : 'bg-neutral-800 text-neutral-300'
+                    }`}>
+                      {r.role}
+                    </span>
+                  )}
                 </span>
               )}
             </div>
@@ -847,87 +928,95 @@ export default function ListeningRoomsModal({
               </div>
 
               {/* 1. Synchronized Listen-Along Mode Toggle & Controls */}
-              <div className="p-3.5 rounded-2xl bg-neutral-950/80 border border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => {
-                      const next = !isRoomPlaybackSyncEnabled;
-                      setIsRoomPlaybackSyncEnabled(next);
-                      if (showToast) {
-                        showToast(next ? '🎧 Listen Together enabled! Your player is now synced.' : 'Independent listening enabled');
-                      }
-                    }}
-                    className={`relative w-11 h-6 rounded-full transition-colors p-0.5 shrink-0 ${
-                      isRoomPlaybackSyncEnabled ? 'bg-amber-500' : 'bg-neutral-700'
-                    }`}
-                    title="Toggle Synchronized Listen-Along"
-                  >
-                    <div
-                      className={`w-5 h-5 rounded-full bg-white transition-transform ${
-                        isRoomPlaybackSyncEnabled ? 'translate-x-5' : 'translate-x-0'
+              {isUiVisible('btn.listenTogether') && (
+                <div className="p-3.5 rounded-2xl bg-neutral-950/80 border border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => {
+                        const next = !isRoomPlaybackSyncEnabled;
+                        setIsRoomPlaybackSyncEnabled(next);
+                        if (showToast) {
+                          showToast(next ? '🎧 Listen Together enabled! Your player is now synced.' : 'Independent listening enabled');
+                        }
+                      }}
+                      className={`relative w-11 h-6 rounded-full transition-colors p-0.5 shrink-0 ${
+                        isRoomPlaybackSyncEnabled ? 'bg-amber-500' : 'bg-neutral-700'
                       }`}
-                    />
-                  </button>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-white">Listen Together / Sync Playback</span>
-                      {isRoomPlaybackSyncEnabled && (
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      )}
+                      title="Toggle Synchronized Listen-Along"
+                    >
+                      <div
+                        className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                          isRoomPlaybackSyncEnabled ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-white">Listen Together / Sync Playback</span>
+                        {isRoomPlaybackSyncEnabled && (
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        )}
+                      </div>
+                      <p className="text-[11px] text-neutral-400">
+                        {isRoomPlaybackSyncEnabled 
+                          ? 'Active: Your player auto-syncs with room host/co-host playback'
+                          : 'Off: You can browse and listen independently'}
+                      </p>
                     </div>
-                    <p className="text-[11px] text-neutral-400">
-                      {isRoomPlaybackSyncEnabled 
-                        ? 'Active: Your player auto-syncs with room host/co-host playback'
-                        : 'Off: You can browse and listen independently'}
-                    </p>
                   </div>
-                </div>
 
-                {isCoHost && (
-                  <button
-                    onClick={handleBroadcastSync}
-                    disabled={!currentSong}
-                    className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition flex items-center gap-1.5 disabled:opacity-40 self-end sm:self-auto"
-                    title="Broadcast your current playing song & timestamp to room"
-                  >
-                    <Radio className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Broadcast My Playback</span>
-                  </button>
-                )}
-              </div>
+                  {isCoHost && isUiVisible('btn.broadcast') && (
+                    <button
+                      onClick={handleBroadcastSync}
+                      disabled={!currentSong}
+                      className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition flex items-center gap-1.5 disabled:opacity-40 self-end sm:self-auto"
+                      title="Broadcast your current playing song & timestamp to room"
+                    >
+                      <Radio className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Broadcast My Playback</span>
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* Quick Floating Emoji Reactions Bar */}
               <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-neutral-950/60 border border-neutral-800/80">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider pl-1">Reactions:</span>
-                  <div className="flex items-center gap-1.5">
-                    {QUICK_REACTIONS.map(emoji => (
-                      <button
-                        key={emoji}
-                        onClick={() => handleSendReaction(emoji)}
-                        className="text-lg p-1.5 rounded-lg hover:bg-neutral-800 hover:scale-125 active:scale-95 transition cursor-pointer"
-                        title={`Send ${emoji}`}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
+                  {isUiVisible('btn.roomReactions') && (
+                    <>
+                      <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider pl-1">Reactions:</span>
+                      <div className="flex items-center gap-1.5">
+                        {QUICK_REACTIONS.map(emoji => (
+                          <button
+                            key={emoji}
+                            onClick={() => handleSendReaction(emoji)}
+                            className="text-lg p-1.5 rounded-lg hover:bg-neutral-800 hover:scale-125 active:scale-95 transition cursor-pointer"
+                            title={`Send ${emoji}`}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Collapsible Mini Chat Toggle */}
-                <button
-                  onClick={() => setIsChatOpen(!isChatOpen)}
-                  className="px-3 py-1 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-medium flex items-center gap-1.5 transition"
-                >
-                  <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Room Chat</span>
-                  {chatMessages.length > 0 && (
-                    <span className="text-[10px] font-mono bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded-full">
-                      {chatMessages.length}
-                    </span>
-                  )}
-                  {isChatOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                </button>
+                {isUiVisible('btn.roomChat') && (
+                  <button
+                    onClick={() => setIsChatOpen(!isChatOpen)}
+                    className="px-3 py-1 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-medium flex items-center gap-1.5 transition"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Room Chat</span>
+                    {chatMessages.length > 0 && (
+                      <span className="text-[10px] font-mono bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded-full">
+                        {chatMessages.length}
+                      </span>
+                    )}
+                    {isChatOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
+                )}
               </div>
 
               {/* Collapsible Mini Room Chat Box */}

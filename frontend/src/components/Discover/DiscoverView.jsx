@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { USE_V2_DISCOVER_UI } from '../../constants/featureFlags';
+import { useUiConfig } from '../../context/UiConfigContext';
 import HomeSearchBar from '../Search/HomeSearchBar';
 import DownloadTrackButton from '../Offline/DownloadTrackButton';
 import {
@@ -72,6 +73,7 @@ export default function DiscoverView({
   onNavigate,
   onArtistClick
 }) {
+  const { isVisible: isUiVisible } = useUiConfig();
   const [selectedChip, setSelectedChip] = useState(null);
   const searchInputRef = useRef(null);
 
@@ -133,29 +135,31 @@ export default function DiscoverView({
           </div>
 
           {/* Thin, horizontally scrollable popular search pill-strip */}
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-2 -mx-1 px-1">
-            <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
-              <Flame className="w-3 h-3 text-amber-400" />
-              <span>Trending:</span>
-            </span>
-            {POPULAR_SEARCH_CHIPS.map((chip, idx) => {
-              const isSelected = selectedChip === chip.label;
-              return (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleChipClick(chip)}
-                  className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-150 cursor-pointer active:scale-95 shrink-0 select-none ${
-                    isSelected
-                      ? 'bg-amber-400 text-neutral-950 font-bold shadow-sm shadow-amber-500/20'
-                      : 'bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 hover:border-amber-400/30'
-                  }`}
-                >
-                  <span>{chip.label}</span>
-                </button>
-              );
-            })}
-          </div>
+          {isUiVisible('section.trendingChips') && (
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-2 -mx-1 px-1">
+              <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+                <Flame className="w-3 h-3 text-amber-400" />
+                <span>Trending:</span>
+              </span>
+              {POPULAR_SEARCH_CHIPS.map((chip, idx) => {
+                const isSelected = selectedChip === chip.label;
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleChipClick(chip)}
+                    className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-150 cursor-pointer active:scale-95 shrink-0 select-none ${
+                      isSelected
+                        ? 'bg-amber-400 text-neutral-950 font-bold shadow-sm shadow-amber-500/20'
+                        : 'bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 hover:border-amber-400/30'
+                    }`}
+                  >
+                    <span>{chip.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </section>
       ) : (
         /* ========================================================================= */
@@ -227,37 +231,39 @@ export default function DiscoverView({
           {/* =========================================================================
               SECTION 2: POPULAR SEARCHES (Horizontal Scrollable Chips)
               ========================================================================= */}
-          <section aria-label="Popular Searches" className="space-y-2.5 relative z-10">
-            <div className="flex items-center justify-between px-1">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-neutral-400 uppercase tracking-wider">
-                <Flame className="w-3.5 h-3.5 text-amber-500" />
-                <span>Popular Searches</span>
+          {isUiVisible('section.trendingChips') && (
+            <section aria-label="Popular Searches" className="space-y-2.5 relative z-10">
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-neutral-400 uppercase tracking-wider">
+                  <Flame className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Popular Searches</span>
+                </div>
+                <span className="text-[11px] text-neutral-500">Quick Picks</span>
               </div>
-              <span className="text-[11px] text-neutral-500">Quick Picks</span>
-            </div>
 
-            {/* Scrollable chip container with touch inertia */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none -mx-3 px-3 sm:mx-0 sm:px-0">
-              {POPULAR_SEARCH_CHIPS.map((chip, idx) => {
-                const isSelected = selectedChip === chip.label;
-                return (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => handleChipClick(chip)}
-                    className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer active:scale-95 shrink-0 min-h-[44px] select-none ${
-                      isSelected
-                        ? 'bg-amber-500 text-neutral-950 font-bold shadow-md shadow-amber-500/20'
-                        : 'bg-neutral-900/90 hover:bg-neutral-850 text-neutral-300 hover:text-white border border-neutral-800 hover:border-amber-500/40 shadow-sm'
-                    }`}
-                  >
-                    <Search className={`w-3.5 h-3.5 ${isSelected ? 'text-neutral-950' : 'text-amber-400'}`} />
-                    <span>{chip.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+              {/* Scrollable chip container with touch inertia */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none -mx-3 px-3 sm:mx-0 sm:px-0">
+                {POPULAR_SEARCH_CHIPS.map((chip, idx) => {
+                  const isSelected = selectedChip === chip.label;
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleChipClick(chip)}
+                      className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer active:scale-95 shrink-0 min-h-[44px] select-none ${
+                        isSelected
+                          ? 'bg-amber-500 text-neutral-950 font-bold shadow-md shadow-amber-500/20'
+                          : 'bg-neutral-900/90 hover:bg-neutral-850 text-neutral-300 hover:text-white border border-neutral-800 hover:border-amber-500/40 shadow-sm'
+                      }`}
+                    >
+                      <Search className={`w-3.5 h-3.5 ${isSelected ? 'text-neutral-950' : 'text-amber-400'}`} />
+                      <span>{chip.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
         </>
       )}
 
@@ -591,7 +597,7 @@ export default function DiscoverView({
       {!hasSearched && searchResults.length === 0 && !isLoading && (
         <div className="space-y-6 sm:space-y-8 pt-2">
           {/* Trending Hits Carousel */}
-          {displayTrendingSongs && displayTrendingSongs.length > 0 && (
+          {isUiVisible('section.trendingOnLoopra') && displayTrendingSongs && displayTrendingSongs.length > 0 && (
             <section aria-label="Trending Hits" className="space-y-3">
               <div className="flex items-center justify-between px-1">
                 <div className="flex items-center gap-2">
@@ -666,7 +672,7 @@ export default function DiscoverView({
           )}
 
           {/* Popular Albums Carousel */}
-          {displayPopularAlbums && displayPopularAlbums.length > 0 && (
+          {isUiVisible('section.popularAlbums') && displayPopularAlbums && displayPopularAlbums.length > 0 && (
             <section aria-label="Popular Albums" className="space-y-3">
               <div className="flex items-center justify-between px-1">
                 <div className="flex items-center gap-2">

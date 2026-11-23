@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { getApiUrl } from '../../utils/apiUrl';
 import { isValidMusicTrack, parseDurationToSeconds, sanitizeTrack } from '../../services/songFilter';
+import { useUiConfig } from '../../context/UiConfigContext';
 
 const QUICK_REACTIONS = ['🔥', '❤️', '🕺', '😭'];
 
@@ -39,6 +40,7 @@ export default function ListeningRoomsView({
   isLiked,
   onAddToQueue
 }) {
+  const { isVisible: isUiVisible } = useUiConfig();
   const [rooms, setRooms] = useState([]);
   const [leftRooms, setLeftRooms] = useState([]);
   const [archivedRooms, setArchivedRooms] = useState([]);
@@ -1830,15 +1832,17 @@ export default function ListeningRoomsView({
 
             {/* Header Right Actions: Invite Button + Three-Dot (⋮) Menu */}
             <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={handleCopyLink}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs shadow-lg shadow-amber-500/20 active:scale-95 transition cursor-pointer"
-                title="Copy Share Link"
-              >
-                {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
-                <span>{copiedLink ? 'Copied!' : 'Invite'}</span>
-              </button>
+              {isUiVisible('btn.inviteRoom') && (
+                <button
+                  type="button"
+                  onClick={handleCopyLink}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs shadow-lg shadow-amber-500/20 active:scale-95 transition cursor-pointer"
+                  title="Copy Share Link"
+                >
+                  {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
+                  <span>{copiedLink ? 'Copied!' : 'Invite'}</span>
+                </button>
+              )}
 
               {/* Three-Dot (⋮) Overflow Menu */}
               <div className="relative" data-dropdown>
@@ -1899,26 +1903,28 @@ export default function ListeningRoomsView({
                           <span>Generate New Code</span>
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsRoomMenuOpen(false);
-                            handleToggleArchive(activeRoom.roomId || activeRoom.id, !(activeRoom.isArchived || activeRoom.status === 'archived'));
-                          }}
-                          className="w-full text-left px-3.5 py-2 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800/80 transition flex items-center gap-2 cursor-pointer"
-                        >
-                          {activeRoom.isArchived || activeRoom.status === 'archived' ? (
-                            <>
-                              <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
-                              <span>Restore Room</span>
-                            </>
-                          ) : (
-                            <>
-                              <Archive className="w-3.5 h-3.5 text-amber-400" />
-                              <span>Archive Room</span>
-                            </>
-                          )}
-                        </button>
+                        {isUiVisible('btn.archiveRoom') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsRoomMenuOpen(false);
+                              handleToggleArchive(activeRoom.roomId || activeRoom.id, !(activeRoom.isArchived || activeRoom.status === 'archived'));
+                            }}
+                            className="w-full text-left px-3.5 py-2 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800/80 transition flex items-center gap-2 cursor-pointer"
+                          >
+                            {activeRoom.isArchived || activeRoom.status === 'archived' ? (
+                              <>
+                                <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>Restore Room</span>
+                              </>
+                            ) : (
+                              <>
+                                <Archive className="w-3.5 h-3.5 text-amber-400" />
+                                <span>Archive Room</span>
+                              </>
+                            )}
+                          </button>
+                        )}
                       </>
                     )}
 
@@ -1999,134 +2005,142 @@ export default function ListeningRoomsView({
           </div>
 
           {/* Minimal Listen Together Card With Three-Dot (⋮) Menu */}
-          <div className="p-3 sm:p-3.5 rounded-2xl bg-neutral-900/90 border border-neutral-800 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <button
-                onClick={() => {
-                  const next = !isRoomPlaybackSyncEnabled;
-                  if (typeof setIsRoomPlaybackSyncEnabled === 'function') {
-                    setIsRoomPlaybackSyncEnabled(next);
-                  }
-                  if (showToast) {
-                    showToast(next ? '🎧 Listen Together enabled! Your player is now synced.' : 'Independent listening enabled');
-                  }
-                }}
-                className={`relative w-11 h-6 rounded-full transition-colors p-0.5 shrink-0 cursor-pointer ${
-                  isRoomPlaybackSyncEnabled ? 'bg-amber-500' : 'bg-neutral-700'
-                }`}
-                title="Toggle Synchronized Listen-Along"
-              >
-                <div
-                  className={`w-5 h-5 rounded-full bg-white transition-transform ${
-                    isRoomPlaybackSyncEnabled ? 'translate-x-5' : 'translate-x-0'
+          {isUiVisible('btn.listenTogether') && (
+            <div className="p-3 sm:p-3.5 rounded-2xl bg-neutral-900/90 border border-neutral-800 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <button
+                  onClick={() => {
+                    const next = !isRoomPlaybackSyncEnabled;
+                    if (typeof setIsRoomPlaybackSyncEnabled === 'function') {
+                      setIsRoomPlaybackSyncEnabled(next);
+                    }
+                    if (showToast) {
+                      showToast(next ? '🎧 Listen Together enabled! Your player is now synced.' : 'Independent listening enabled');
+                    }
+                  }}
+                  className={`relative w-11 h-6 rounded-full transition-colors p-0.5 shrink-0 cursor-pointer ${
+                    isRoomPlaybackSyncEnabled ? 'bg-amber-500' : 'bg-neutral-700'
                   }`}
-                />
-              </button>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs sm:text-sm font-bold text-white truncate">Listen Together (Sync Playback)</span>
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${isRoomPlaybackSyncEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-500'}`} />
+                  title="Toggle Synchronized Listen-Along"
+                >
+                  <div
+                    className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                      isRoomPlaybackSyncEnabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs sm:text-sm font-bold text-white truncate">Listen Together (Sync Playback)</span>
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${isRoomPlaybackSyncEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-500'}`} />
+                  </div>
+                  <p className="text-[11px] text-neutral-400 truncate">
+                    {isRoomPlaybackSyncEnabled 
+                      ? 'Active: Auto-syncs with host audio & seek' 
+                      : 'Off: Listen independently to any song'}
+                  </p>
                 </div>
-                <p className="text-[11px] text-neutral-400 truncate">
-                  {isRoomPlaybackSyncEnabled 
-                    ? 'Active: Auto-syncs with host audio & seek' 
-                    : 'Off: Listen independently to any song'}
-                </p>
+              </div>
+
+              {/* Right: Three-Dot (⋮) Menu for Listen Together Tools & Reactions */}
+              <div className="relative shrink-0" data-dropdown>
+                <button
+                  type="button"
+                  onClick={() => setIsListenTogetherMenuOpen(prev => !prev)}
+                  className={`p-2 rounded-xl border transition cursor-pointer active:scale-95 ${
+                    isListenTogetherMenuOpen
+                      ? 'bg-neutral-700 text-white border-neutral-600'
+                      : 'bg-neutral-800/80 hover:bg-neutral-700/80 text-neutral-300 hover:text-white border-neutral-700/50'
+                  }`}
+                  title="Playback Sync Tools & Reactions"
+                  aria-label="Playback Sync Menu"
+                >
+                  <MoreVertical className="w-4 h-4" />
+                </button>
+
+                {isListenTogetherMenuOpen && (
+                  <div className="absolute right-0 top-full mt-1.5 w-60 rounded-2xl bg-neutral-900 border border-neutral-700/90 shadow-2xl py-2 z-50 animate-fadeIn backdrop-blur-xl space-y-2">
+                    <div className="px-3 pb-1.5 border-b border-neutral-800">
+                      <span className="text-[10px] uppercase font-mono tracking-wider text-neutral-400 font-bold block mb-1.5">
+                        Sync Actions
+                      </span>
+                      <div className="space-y-1">
+                        {isUiVisible('btn.syncLive') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsListenTogetherMenuOpen(false);
+                              handleSyncToLivePlayback();
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold text-emerald-300 hover:bg-emerald-500/15 transition flex items-center gap-2 cursor-pointer"
+                            title="Sync player to room's live playback timestamp"
+                          >
+                            <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                            <span>Sync Live Playback</span>
+                          </button>
+                        )}
+
+                        {isCoHost && isUiVisible('btn.broadcast') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsListenTogetherMenuOpen(false);
+                              handleBroadcastSync();
+                            }}
+                            disabled={!currentSong}
+                            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold text-amber-300 hover:bg-amber-500/15 transition flex items-center gap-2 cursor-pointer disabled:opacity-40"
+                            title="Broadcast your current playing song & timestamp to room"
+                          >
+                            <Radio className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Broadcast My Playback</span>
+                          </button>
+                        )}
+
+                        {isUiVisible('btn.roomChat') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsListenTogetherMenuOpen(false);
+                              setIsChatOpen(prev => !prev);
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2 cursor-pointer"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+                            <span>{isChatOpen ? 'Close Room Chat' : 'Open Room Chat'}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Quick Reactions inside menu */}
+                    {isUiVisible('btn.roomReactions') && (
+                      <div className="px-3 pt-0.5">
+                        <span className="text-[10px] uppercase font-mono tracking-wider text-neutral-400 font-bold block mb-1.5">
+                          Quick Reactions
+                        </span>
+                        <div className="grid grid-cols-4 gap-1">
+                          {QUICK_REACTIONS.map(emoji => (
+                            <button
+                              key={emoji}
+                              type="button"
+                              onClick={() => {
+                                handleSendReaction(emoji);
+                                setIsListenTogetherMenuOpen(false);
+                              }}
+                              className="text-lg p-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 hover:scale-110 active:scale-95 transition flex items-center justify-center cursor-pointer"
+                              title={`Send ${emoji}`}
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
-
-            {/* Right: Three-Dot (⋮) Menu for Listen Together Tools & Reactions */}
-            <div className="relative shrink-0" data-dropdown>
-              <button
-                type="button"
-                onClick={() => setIsListenTogetherMenuOpen(prev => !prev)}
-                className={`p-2 rounded-xl border transition cursor-pointer active:scale-95 ${
-                  isListenTogetherMenuOpen
-                    ? 'bg-neutral-700 text-white border-neutral-600'
-                    : 'bg-neutral-800/80 hover:bg-neutral-700/80 text-neutral-300 hover:text-white border-neutral-700/50'
-                }`}
-                title="Playback Sync Tools & Reactions"
-                aria-label="Playback Sync Menu"
-              >
-                <MoreVertical className="w-4 h-4" />
-              </button>
-
-              {isListenTogetherMenuOpen && (
-                <div className="absolute right-0 top-full mt-1.5 w-60 rounded-2xl bg-neutral-900 border border-neutral-700/90 shadow-2xl py-2 z-50 animate-fadeIn backdrop-blur-xl space-y-2">
-                  <div className="px-3 pb-1.5 border-b border-neutral-800">
-                    <span className="text-[10px] uppercase font-mono tracking-wider text-neutral-400 font-bold block mb-1.5">
-                      Sync Actions
-                    </span>
-                    <div className="space-y-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsListenTogetherMenuOpen(false);
-                          handleSyncToLivePlayback();
-                        }}
-                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold text-emerald-300 hover:bg-emerald-500/15 transition flex items-center gap-2 cursor-pointer"
-                        title="Sync player to room's live playback timestamp"
-                      >
-                        <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                        <span>Sync Live Playback</span>
-                      </button>
-
-                      {isCoHost && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsListenTogetherMenuOpen(false);
-                            handleBroadcastSync();
-                          }}
-                          disabled={!currentSong}
-                          className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold text-amber-300 hover:bg-amber-500/15 transition flex items-center gap-2 cursor-pointer disabled:opacity-40"
-                          title="Broadcast your current playing song & timestamp to room"
-                        >
-                          <Radio className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Broadcast My Playback</span>
-                        </button>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsListenTogetherMenuOpen(false);
-                          setIsChatOpen(prev => !prev);
-                        }}
-                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2 cursor-pointer"
-                      >
-                        <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
-                        <span>{isChatOpen ? 'Close Room Chat' : 'Open Room Chat'}</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Quick Reactions inside menu */}
-                  <div className="px-3 pt-0.5">
-                    <span className="text-[10px] uppercase font-mono tracking-wider text-neutral-400 font-bold block mb-1.5">
-                      Quick Reactions
-                    </span>
-                    <div className="grid grid-cols-4 gap-1">
-                      {QUICK_REACTIONS.map(emoji => (
-                        <button
-                          key={emoji}
-                          type="button"
-                          onClick={() => {
-                            handleSendReaction(emoji);
-                            setIsListenTogetherMenuOpen(false);
-                          }}
-                          className="text-lg p-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 hover:scale-110 active:scale-95 transition flex items-center justify-center cursor-pointer"
-                          title={`Send ${emoji}`}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+          )}
 
           {/* Synchronized Playback Request & Ready-Check Banner */}
           {activePlaybackRequest && (
@@ -2242,54 +2256,60 @@ export default function ListeningRoomsView({
 
           {/* Navigation Sub-Tabs: Playlists, Activity Feed, Members */}
           <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-neutral-900/80 border border-neutral-800/80">
-            <button
-              type="button"
-              onClick={() => setActiveTab('playlists')}
-              className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                activeTab === 'playlists'
-                  ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
-                  : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
-              }`}
-            >
-              <Music className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">Room Playlists ({(roomPlaylists || []).length})</span>
-            </button>
+            {isUiVisible('card.roomPlaylists') && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('playlists')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  activeTab === 'playlists'
+                    ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
+                    : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
+                }`}
+              >
+                <Music className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Room Playlists ({(roomPlaylists || []).length})</span>
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('activity');
-                setUnreadActivityCount(0);
-              }}
-              className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer relative ${
-                activeTab === 'activity'
-                  ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
-                  : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
-              }`}
-            >
-              <Radio className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">Live Activity</span>
-              {unreadActivityCount > 0 && (
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping ml-0.5" />
-              )}
-            </button>
+            {isUiVisible('card.liveActivity') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('activity');
+                  setUnreadActivityCount(0);
+                }}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer relative ${
+                  activeTab === 'activity'
+                    ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
+                    : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
+                }`}
+              >
+                <Radio className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Live Activity</span>
+                {unreadActivityCount > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping ml-0.5" />
+                )}
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('members')}
-              className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                activeTab === 'members'
-                  ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
-                  : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">Members ({participants.length})</span>
-            </button>
+            {isUiVisible('card.roomMembers') && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('members')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  activeTab === 'members'
+                    ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
+                    : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Members ({participants.length})</span>
+              </button>
+            )}
           </div>
 
           {/* TAB 1: COLLABORATIVE PLAYLISTS */}
-          {activeTab === 'playlists' && (
+          {activeTab === 'playlists' && isUiVisible('card.roomPlaylists') && (
             <div className="space-y-4">
               {/* Clean Playlist Toolbar */}
               <div className="flex items-center justify-between gap-2.5 flex-wrap">
@@ -2311,24 +2331,28 @@ export default function ListeningRoomsView({
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => setIsImportModalOpen(true)}
-                    className="px-3 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-bold text-xs border border-purple-500/40 transition flex items-center gap-1.5 cursor-pointer active:scale-95"
-                    title="Import one of your personal playlists into this room"
-                  >
-                    <FolderPlus className="w-3.5 h-3.5" />
-                    <span>Import My Playlist</span>
-                  </button>
+                  {isUiVisible('btn.importPlaylist') && (
+                    <button
+                      type="button"
+                      onClick={() => setIsImportModalOpen(true)}
+                      className="px-3 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-bold text-xs border border-purple-500/40 transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                      title="Import one of your personal playlists into this room"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5" />
+                      <span>Import My Playlist</span>
+                    </button>
+                  )}
 
-                  <button
-                    type="button"
-                    onClick={() => setIsCreatingPlaylist(!isCreatingPlaylist)}
-                    className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs border border-amber-500/40 transition flex items-center gap-1 cursor-pointer active:scale-95"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>{isCreatingPlaylist ? 'Cancel' : '+ New Room Playlist'}</span>
-                  </button>
+                  {isUiVisible('btn.newRoomPlaylist') && (
+                    <button
+                      type="button"
+                      onClick={() => setIsCreatingPlaylist(!isCreatingPlaylist)}
+                      className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs border border-amber-500/40 transition flex items-center gap-1 cursor-pointer active:scale-95"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>{isCreatingPlaylist ? 'Cancel' : '+ New Room Playlist'}</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -2390,15 +2414,17 @@ export default function ListeningRoomsView({
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleForkPlaylist(activeSelectedPlaylist)}
-                        className="px-2.5 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 flex items-center gap-1.5 font-semibold text-[11px] transition cursor-pointer active:scale-95"
-                        title="Copy all songs from this room playlist to your personal library"
-                      >
-                        <Copy className="w-3 h-3 text-amber-400" />
-                        <span>Save to My Library</span>
-                      </button>
+                      {isUiVisible('btn.saveToLibrary') && (
+                        <button
+                          type="button"
+                          onClick={() => handleForkPlaylist(activeSelectedPlaylist)}
+                          className="px-2.5 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 flex items-center gap-1.5 font-semibold text-[11px] transition cursor-pointer active:scale-95"
+                          title="Copy all songs from this room playlist to your personal library"
+                        >
+                          <Copy className="w-3 h-3 text-amber-400" />
+                          <span>Save to My Library</span>
+                        </button>
+                      )}
 
                       {activeSelectedPlaylist.songs?.length > 0 && (
                         <button
@@ -2698,7 +2724,7 @@ export default function ListeningRoomsView({
           )}
 
           {/* TAB 2: LIVE ACTIVITY FEED */}
-          {activeTab === 'activity' && (
+          {activeTab === 'activity' && isUiVisible('card.liveActivity') && (
             <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 space-y-3">
               <div className="flex items-center justify-between">
                 <h5 className="font-bold text-white text-xs uppercase tracking-wider">Live Activity Log</h5>
@@ -2728,7 +2754,7 @@ export default function ListeningRoomsView({
           )}
 
           {/* TAB 3: MEMBERS & ROLES */}
-          {activeTab === 'members' && (
+          {activeTab === 'members' && isUiVisible('card.roomMembers') && (
             <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 space-y-4">
               {/* Host Section: Pending Join Requests */}
               {isHost && (
@@ -2884,23 +2910,25 @@ export default function ListeningRoomsView({
                 <div className="pt-3 border-t border-neutral-800 flex items-center justify-between flex-wrap gap-2">
                   <span className="text-xs text-neutral-400">Host Room Controls:</span>
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleToggleArchive(activeRoom.roomId || activeRoom.id, !(activeRoom.isArchived || activeRoom.status === 'archived'))}
-                      className="px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
-                      title={activeRoom.isArchived || activeRoom.status === 'archived' ? 'Restore Room to Active' : 'Archive Room'}
-                    >
-                      {activeRoom.isArchived || activeRoom.status === 'archived' ? (
-                        <>
-                          <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>Restore Room</span>
-                        </>
-                      ) : (
-                        <>
-                          <Archive className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Archive Room</span>
-                        </>
-                      )}
-                    </button>
+                    {isUiVisible('btn.archiveRoom') && (
+                      <button
+                        onClick={() => handleToggleArchive(activeRoom.roomId || activeRoom.id, !(activeRoom.isArchived || activeRoom.status === 'archived'))}
+                        className="px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
+                        title={activeRoom.isArchived || activeRoom.status === 'archived' ? 'Restore Room to Active' : 'Archive Room'}
+                      >
+                        {activeRoom.isArchived || activeRoom.status === 'archived' ? (
+                          <>
+                            <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Restore Room</span>
+                          </>
+                        ) : (
+                          <>
+                            <Archive className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Archive Room</span>
+                          </>
+                        )}
+                      </button>
+                    )}
 
                     <button
                       onClick={() => setRoomToDelete(activeRoom)}

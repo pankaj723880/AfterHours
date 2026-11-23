@@ -118,3 +118,101 @@ export const formatTime = (secs) => {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 };
 
+/**
+ * Tab-Isolated Auth Session Storage Helpers
+ *
+ * Prevents multi-tab session overwrites (e.g. logging into Account B in Tab 2
+ * does NOT overwrite Tab 1's active Account A session upon page refresh).
+ *
+ * sessionStorage is isolated per browser tab. We use sessionStorage as the primary
+ * source of truth for the tab's active session, falling back to localStorage if
+ * opened in a fresh tab that has no sessionStorage initialized yet.
+ */
+const AUTH_TOKEN_KEY = 'afterhours_token';
+const AUTH_USER_KEY = 'afterhours_user';
+
+export const getTabAuthToken = () => {
+  if (typeof window === 'undefined') return '';
+  try {
+    const sessionToken = sessionStorage.getItem(AUTH_TOKEN_KEY);
+    if (sessionToken !== null && sessionToken !== undefined) {
+      return sessionToken;
+    }
+    // Fallback: If this tab hasn't established its own session yet, copy from localStorage
+    const localToken = localStorage.getItem(AUTH_TOKEN_KEY) || '';
+    if (localToken) {
+      try { sessionStorage.setItem(AUTH_TOKEN_KEY, localToken); } catch (_) {}
+    }
+    return localToken;
+  } catch (_) {
+    try { return localStorage.getItem(AUTH_TOKEN_KEY) || ''; } catch (_) { return ''; }
+  }
+};
+
+export const getTabAuthUser = () => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const sessionUser = sessionStorage.getItem(AUTH_USER_KEY);
+    if (sessionUser !== null && sessionUser !== undefined) {
+      return sessionUser ? JSON.parse(sessionUser) : null;
+    }
+    // Fallback: Copy from localStorage into this tab's sessionStorage
+    const localUserRaw = localStorage.getItem(AUTH_USER_KEY);
+    if (localUserRaw) {
+      try { sessionStorage.setItem(AUTH_USER_KEY, localUserRaw); } catch (_) {}
+      return JSON.parse(localUserRaw);
+    }
+    return null;
+  } catch (_) {
+    try {
+      const fallback = localStorage.getItem(AUTH_USER_KEY);
+      return fallback ? JSON.parse(fallback) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+};
+
+export const setTabAuthSession = (token, userObj) => {
+  if (typeof window === 'undefined') return;
+  // Always update this tab's isolated sessionStorage first
+  try {
+    if (token) {
+      sessionStorage.setItem(AUTH_TOKEN_KEY, token);
+    } else {
+      sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    }
+    if (userObj) {
+      sessionStorage.setItem(AUTH_USER_KEY, JSON.stringify(userObj));
+    } else {
+      sessionStorage.removeItem(AUTH_USER_KEY);
+    }
+  } catch (_) {}
+
+  // Also update localStorage for default persistence (new tabs, app restarts, native WebView),
+  // but existing tabs won't be clobbered because they read their own sessionStorage first.
+  try {
+    if (token) {
+      localStorage.setItem(AUTH_TOKEN_KEY, token);
+    }
+    if (userObj) {
+      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(userObj));
+    }
+  } catch (_) {}
+};
+
+export const clearTabAuthSession = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    sessionStorage.removeItem(AUTH_USER_KEY);
+    sessionStorage.removeItem('loopra_token');
+    sessionStorage.removeItem('loopra_user');
+  } catch (_) {}
+  try {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_USER_KEY);
+  } catch (_) {}
+};
+
+

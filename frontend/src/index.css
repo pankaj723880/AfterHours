@@ -6,8 +6,32 @@
   --animate-scaleIn: scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   --animate-fadeIn: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   --animate-slideUp: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-floatUp: floatUp 2.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   --animate-pageTransition: pageTransitionEnter 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+
+  @keyframes floatUp {
+    0% {
+      opacity: 0;
+      transform: translateY(12px) scale(0.65);
+    }
+    15% {
+      opacity: 1;
+      transform: translateY(-8px) scale(1.18);
+    }
+    30% {
+      opacity: 1;
+      transform: translateY(-24px) scale(1);
+    }
+    75% {
+      opacity: 0.95;
+      transform: translateY(-80px) scale(0.98);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-130px) scale(0.85);
+    }
+  }
 
   @keyframes pageTransitionEnter {
     0% {

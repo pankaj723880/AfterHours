@@ -61,6 +61,7 @@ import AiLearningIntelligence from './AiLearningIntelligence';
 import VoiceControlManagement from './VoiceControlManagement';
 import AiLiveCodePatcher from './AiLiveCodePatcher';
 import ApiKeyManagement from './ApiKeyManagement';
+import UiVisibilityControls from './UiVisibilityControls';
 import { safeParseJsonResponse } from '../../utils/errorHandler';
 import { DEFAULT_CMS_CONFIG, getCachedCmsConfig, normalizeCmsConfig, applyThemeToDom, resolvePlatformConfig } from '../../services/cmsClient';
 import { BACKEND_URL } from '../../utils/apiUrl';
@@ -451,6 +452,7 @@ export default function AdminDashboard({
   // OPERATIONS & ADMINISTRATION
   const operationsNavItems = [
     { id: 'overview', label: 'Overview & Telemetry', icon: LayoutDashboard },
+    { id: 'ui_visibility', label: 'UI Visibility Controls', icon: Sliders, badge: 'Live' },
     { id: 'live_patcher', label: 'Live Code Patcher', icon: Zap, badge: 'HMR' },
     { id: 'api_keys', label: 'API Keys Pool', icon: Key, badge: 'Active' },
     { id: 'voice_control', label: 'Loopra AI / Voice', icon: Mic },
@@ -944,6 +946,13 @@ export default function AdminDashboard({
               token={token}
               backendUrl={cleanBackendUrl}
               onOpenAuth={onOpenAuth}
+            />
+          )}
+
+          {activeSubTab === 'ui_visibility' && (
+            <UiVisibilityControls
+              authToken={token}
+              showToast={showToast}
             />
           )}
 

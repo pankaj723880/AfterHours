@@ -1,17 +1,11 @@
 import React from 'react';
 import { Home, Compass, Heart, ListMusic, Radio, Users } from 'lucide-react';
+import { useUiConfig } from '../../context/UiConfigContext';
 
 /**
  * MobileBottomNav component for Loopra
  * Provides persistent bottom navigation on mobile devices (< md).
- * 
- * Order of destinations:
- * 1. Home (house icon) -> 'home'
- * 2. Discover (compass icon) -> 'discover'
- * 3. Liked (heart icon) -> 'library'
- * 4. Playlists (list-music icon) -> 'playlists'
- * 5. Rooms (users icon) -> 'rooms'
- * 6. Radio (radio icon) -> 'radio' (Indian Live Radio)
+ * Respects global Admin UI Visibility configuration.
  */
 export default function MobileBottomNav({
   activeTab,
@@ -22,11 +16,13 @@ export default function MobileBottomNav({
   user,
   isVisible = true,
 }) {
+  const { isVisible: isUiVisible } = useUiConfig();
   if (!isVisible) return null;
 
-  const navItems = [
+  const rawNavItems = [
     {
       id: 'home',
+      uiKey: 'nav.home',
       label: 'Home',
       icon: Home,
       isActive: activeTab === 'home' && !isProfileOpen,
@@ -37,6 +33,7 @@ export default function MobileBottomNav({
     },
     {
       id: 'discover',
+      uiKey: 'nav.discover',
       label: 'Discover',
       icon: Compass,
       isActive: activeTab === 'discover' && !isProfileOpen,
@@ -47,6 +44,7 @@ export default function MobileBottomNav({
     },
     {
       id: 'liked',
+      uiKey: 'nav.liked',
       label: 'Liked',
       icon: Heart,
       isActive: activeTab === 'library' && !isProfileOpen,
@@ -57,6 +55,7 @@ export default function MobileBottomNav({
     },
     {
       id: 'playlists',
+      uiKey: 'nav.playlists',
       label: 'Playlists',
       icon: ListMusic,
       isActive: activeTab === 'playlists' && !isProfileOpen,
@@ -71,6 +70,7 @@ export default function MobileBottomNav({
     },
     {
       id: 'rooms',
+      uiKey: 'nav.rooms',
       label: 'Rooms',
       icon: Users,
       isActive: activeTab === 'rooms' && !isProfileOpen,
@@ -81,6 +81,7 @@ export default function MobileBottomNav({
     },
     {
       id: 'radio',
+      uiKey: 'nav.radio',
       label: 'Radio',
       icon: Radio,
       isActive: (activeTab === 'radio' || activeTab === 'indian-radio') && !isProfileOpen,
@@ -91,6 +92,10 @@ export default function MobileBottomNav({
     },
   ];
 
+  // Filter items dynamically based on Admin UI Visibility settings
+  const navItems = rawNavItems.filter(item => isUiVisible(item.uiKey));
+  if (navItems.length === 0) return null;
+
   return (
     <nav
       role="navigation"
@@ -98,7 +103,10 @@ export default function MobileBottomNav({
       style={{ paddingBottom: 'max(var(--safe-area-bottom, 0px), env(safe-area-inset-bottom, 0px), 8px)' }}
       className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-neutral-950/95 backdrop-blur-xl border-t border-neutral-800/80 px-1 select-none shadow-[0_-4px_20px_rgba(0,0,0,0.5)]"
     >
-      <div className="grid grid-cols-6 h-14 max-w-md mx-auto items-stretch">
+      <div 
+        className="h-14 max-w-md mx-auto items-stretch grid"
+        style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}
+      >
         {navItems.map((item) => {
           const IconComponent = item.icon;
           const active = item.isActive;

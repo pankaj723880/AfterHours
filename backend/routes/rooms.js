@@ -269,6 +269,35 @@ router.post('/:roomId/playlists/:playlistId/songs', optionalAuth, async (req, re
   }
 });
 
+// DELETE /api/rooms/:roomId/playlists/:playlistId - Delete an entire room playlist
+router.delete("/:roomId/playlists/:playlistId", optionalAuth, async (req, res) => {
+  try {
+    const result = await collaborativeRoomService.deletePlaylist(
+      req.params.roomId,
+      req.params.playlistId,
+      req.user
+    );
+
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`room_${result.room.roomId}`).emit("room:playlist:updated", {
+        roomId: result.room.roomId,
+        playlists: result.playlists,
+        type: "playlist_deleted",
+        playlistId: req.params.playlistId
+      });
+      io.to(`room_${result.room.roomId}`).emit("room:activities:updated", {
+        roomId: result.room.roomId,
+        activities: result.room.activities
+      });
+    }
+
+    res.json({ success: true, playlistId: req.params.playlistId, playlists: result.playlists });
+  } catch (err) {
+    res.status(500).json({ success: false, error: "Failed to delete room playlist: " + err.message });
+  }
+});
+
 // DELETE /api/rooms/:roomId/playlists/:playlistId/songs/:songId - Remove song
 router.delete('/:roomId/playlists/:playlistId/songs/:songId', optionalAuth, async (req, res) => {
   try {

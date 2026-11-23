@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Camera, Upload, Loader2, Check, X, AlertCircle, Trash2, Sliders } from 'lucide-react';
 import { getApiUrl } from '../../utils/apiUrl';
+import { getTabAuthToken, setTabAuthSession } from '../../utils/storage';
 import UserAvatar from '../Common/UserAvatar';
 import { USE_V2_PROFILE_MODAL } from '../../constants/featureFlags';
 
@@ -26,6 +27,7 @@ export default function UserProfileModal({
   isOpen,
   onClose,
   currentUser,
+  authToken,
   onUserUpdated,
   showToast,
   onOpenSettings
@@ -39,6 +41,8 @@ export default function UserProfileModal({
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'dna' | 'edit'
   const [musicDna, setMusicDna] = useState(null);
   const [isLoadingDna, setIsLoadingDna] = useState(false);
+
+  const activeToken = authToken || getTabAuthToken();
 
   // Image upload states
   const [selectedFile, setSelectedFile] = useState(null);
@@ -75,7 +79,7 @@ export default function UserProfileModal({
     }
 
     // Always fetch canonical profile details from server on modal open
-    const token = localStorage.getItem('afterhours_token');
+    const token = activeToken;
     fetch(getApiUrl(`/api/user/profile/${currentUser.username}`), {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       cache: 'no-store'
@@ -164,7 +168,7 @@ export default function UserProfileModal({
       reader.readAsDataURL(selectedFile);
       const dataUrl = await base64Promise;
 
-      const token = localStorage.getItem('afterhours_token');
+      const token = activeToken;
       const res = await fetch(getApiUrl('/api/user/profile/avatar'), {
         method: 'POST',
         headers: {
@@ -185,10 +189,9 @@ export default function UserProfileModal({
       if (showToast) showToast('Profile photo updated successfully!', 'success');
       if (onUserUpdated) onUserUpdated(data.user);
 
-      // Persist in localStorage so it reflects immediately after reload
+      // Persist in tab session
       try {
-        const stored = JSON.parse(localStorage.getItem('afterhours_user') || '{}');
-        localStorage.setItem('afterhours_user', JSON.stringify({ ...stored, ...data.user }));
+        setTabAuthSession(token, { ...(currentUser || {}), ...data.user });
       } catch (_) {}
     } catch (err) {
       console.error('[Avatar Upload Error]:', err);
@@ -210,7 +213,7 @@ export default function UserProfileModal({
 
     setIsUploadingAvatar(true);
     try {
-      const token = localStorage.getItem('afterhours_token');
+      const token = activeToken;
       const res = await fetch(getApiUrl('/api/user/profile/avatar'), {
         method: 'DELETE',
         headers: {
@@ -223,8 +226,7 @@ export default function UserProfileModal({
         if (showToast) showToast('Profile photo removed');
         if (onUserUpdated) onUserUpdated(data.user);
         try {
-          const stored = JSON.parse(localStorage.getItem('afterhours_user') || '{}');
-          localStorage.setItem('afterhours_user', JSON.stringify({ ...stored, avatarUrl: '' }));
+          setTabAuthSession(token, { ...(currentUser || {}), avatarUrl: '' });
         } catch (_) {}
       }
     } catch (e) {
@@ -237,7 +239,7 @@ export default function UserProfileModal({
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     setIsSaving(true);
-    const token = localStorage.getItem('afterhours_token');
+    const token = activeToken;
 
     try {
       const res = await fetch(getApiUrl('/api/user/profile'), {
@@ -260,8 +262,7 @@ export default function UserProfileModal({
         if (showToast) showToast('Profile saved successfully!');
         if (onUserUpdated) onUserUpdated(data.user);
         try {
-          const stored = JSON.parse(localStorage.getItem('afterhours_user') || '{}');
-          localStorage.setItem('afterhours_user', JSON.stringify({ ...stored, ...data.user }));
+          setTabAuthSession(token, { ...(currentUser || {}), ...data.user });
         } catch (_) {}
         setActiveTab('overview');
       } else {
@@ -625,7 +626,7 @@ export default function UserProfileModal({
                       onClick={() => {
                         toggleGenre(genre);
                         // Auto-persist genre selection to server seamlessly
-                        const token = localStorage.getItem('afterhours_token');
+                        const token = activeToken;
                         const updated = isSelected 
                           ? favoriteGenres.filter(g => g !== genre)
                           : (favoriteGenres.length < 5 ? [...favoriteGenres, genre] : favoriteGenres);

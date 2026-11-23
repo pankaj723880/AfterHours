@@ -5,6 +5,7 @@ class CollaborativeRoomService {
   constructor() {
     // In-memory cache for ultra-fast sync & fallback if MongoDB is briefly unavailable
     this.roomsCache = new Map();
+    this.deletedRoomIds = new Set();
     this.io = null;
   }
 
@@ -33,6 +34,7 @@ class CollaborativeRoomService {
     if (!key) return null;
     
     // Check in-memory first
+    if (this.deletedRoomIds.has(key)) return null;
     if (this.roomsCache.has(key)) {
       const cached = this.roomsCache.get(key);
       if (cached && cached.status !== 'deleted' && (includeArchived || cached.status !== 'archived')) {
@@ -45,7 +47,7 @@ class CollaborativeRoomService {
         room.roomId === key ||
         (room._id && String(room._id) === key)
       );
-      if (matches && room.status !== 'deleted' && (includeArchived || room.status !== 'archived')) {
+      if (matches && room.status !== 'deleted' && !this.deletedRoomIds.has(room.roomId) && (includeArchived || room.status !== 'archived')) {
         return room;
       }
     }
@@ -137,7 +139,7 @@ class CollaborativeRoomService {
     } catch (e) {
       console.warn('[CollaborativeRoomService] listRooms DB error, using cache:', e.message);
       for (const r of this.roomsCache.values()) {
-        if (r.isPublic !== false && r.status === 'active') {
+        if (r.isPublic !== false && r.status === 'active' && !this.deletedRoomIds.has(r.roomId)) {
           list.push(this.formatRoomSummary(r));
         }
       }
@@ -623,6 +625,64 @@ class CollaborativeRoomService {
     return { playlist, room };
   }
 
+  async deletePlaylist(roomId, playlistId, user = null) {
+    const room = await this.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+    this.normalizeRoomState(room);
+
+    const playlist = room.playlists.find(p => p.id === playlistId);
+    if (!playlist) throw new Error('Playlist not found');
+
+    const requesterId = user?._id?.toString?.() || user?.userId;
+    const isCreator = Boolean(
+      (room.createdBy?.userId && requesterId && room.createdBy.userId === requesterId) ||
+      (room.createdBy?.username && user?.username && room.createdBy.username === user.username)
+    );
+    const requester = room.members.find(m => m.userId === requesterId || m.username === user?.username);
+    const role = this.normalizeRole(requester?.role);
+    const isHostOrCoHost = isCreator || role === 'host' || role === 'co-host';
+    const isPlaylistOwner = Boolean(
+      playlist.createdBy?.userId && requesterId && String(playlist.createdBy.userId) === String(requesterId)
+    );
+
+    if (!isHostOrCoHost && !isPlaylistOwner) {
+      throw new Error('Only the room Host, Co-Host, or the playlist creator can delete this playlist');
+    }
+
+    const removedPlaylistName = playlist.name || 'Untitled playlist';
+    room.playlists = room.playlists.filter(p => p.id !== playlistId);
+    room.lastActiveAt = new Date();
+
+    const uName = user?.displayName || user?.username || 'A member';
+    room.activities.unshift({
+      id: "act_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6),
+      type: 'playlist_deleted',
+      text: uName + ' deleted playlist "' + removedPlaylistName + '"',
+      user: { displayName: uName },
+      timestamp: new Date()
+    });
+    if (room.activities.length > 50) room.activities.pop();
+
+    this.roomsCache.set(room.roomId, room);
+
+    try {
+      await CollaborativeRoom.updateOne(
+        { roomId: room.roomId },
+        {
+          $set: {
+            playlists: room.playlists,
+            activities: room.activities,
+            lastActiveAt: new Date()
+          }
+        }
+      );
+    } catch (e) {
+      console.warn('[CollaborativeRoomService] deletePlaylist DB error:', e.message);
+    }
+
+    return { success: true, playlistId, playlists: room.playlists, room };
+  }
+
   async toggleSongVote(roomId, playlistId, songId, userId) {
     const room = await this.getRoom(roomId);
     if (!room) throw new Error('Room not found');
@@ -1006,6 +1066,53 @@ class CollaborativeRoomService {
     };
   }
 
+  async recordReaction(roomId, { emoji, user, role }) {
+    const room = await this.getRoom(roomId);
+    if (!room) return null;
+    this.normalizeRoomState(room);
+
+    const displayName = user?.displayName || user?.username || 'Listener';
+    const finalRole = (role || 'listener').toUpperCase();
+    const actId = `act_react_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+    const activityItem = {
+      id: actId,
+      type: 'reaction',
+      emoji,
+      text: `${displayName} reacted with ${emoji}`,
+      user: {
+        userId: user?._id?.toString?.() || user?.userId || 'guest',
+        displayName,
+        username: user?.username || displayName,
+        role: finalRole,
+        avatar: user?.avatarUrl || ''
+      },
+      timestamp: new Date()
+    };
+
+    room.activities.unshift(activityItem);
+    if (room.activities.length > 50) room.activities.pop();
+
+    room.lastActiveAt = new Date();
+    this.roomsCache.set(room.roomId, room);
+
+    try {
+      await CollaborativeRoom.updateOne(
+        { roomId: room.roomId },
+        {
+          $set: {
+            activities: room.activities,
+            lastActiveAt: new Date()
+          }
+        }
+      );
+    } catch (e) {
+      console.warn('[CollaborativeRoomService] recordReaction DB warning:', e.message);
+    }
+
+    return { activityItem, activities: room.activities, room };
+  }
+
   async regenerateInviteCode(roomId, requesterUser) {
     const room = await this.getRoom(roomId);
     if (!room) throw new Error('Room not found');
@@ -1158,7 +1265,7 @@ class CollaborativeRoomService {
 
   async deleteRoomPermanently(roomId, requesterUser) {
     const room = await this.getRoom(roomId);
-    if (!room) throw new Error('Room not found');
+    if (!room) return { deleted: true, roomId };
     this.normalizeRoomState(room);
 
     const requesterId = requesterUser?._id?.toString?.() || requesterUser?.userId;
@@ -1172,15 +1279,25 @@ class CollaborativeRoomService {
       throw new Error('Only the room Host can permanently delete this room');
     }
 
-    this.roomsCache.delete(room.roomId);
+    const rId = room.roomId || roomId;
+    this.deletedRoomIds.add(String(rId));
+    if (room.code) this.deletedRoomIds.add(String(room.code).toUpperCase());
+    if (room._id) this.deletedRoomIds.add(String(room._id));
+
+    this.roomsCache.delete(rId);
+    if (room.code) this.roomsCache.delete(room.code);
+    if (room._id) this.roomsCache.delete(String(room._id));
 
     try {
-      await CollaborativeRoom.deleteOne({ roomId: room.roomId });
+      const orConditions = [{ roomId: rId }];
+      if (room.code) orConditions.push({ code: String(room.code).toUpperCase() });
+      if (room._id) orConditions.push({ _id: room._id });
+      await CollaborativeRoom.deleteMany({ $or: orConditions });
     } catch (e) {
       console.warn('[CollaborativeRoomService] deleteRoomPermanently DB error:', e.message);
     }
 
-    return { deleted: true, roomId: room.roomId };
+    return { deleted: true, roomId: rId };
   }
 
   // Remove a room from a user's Left Rooms list (or permanently delete if host)
