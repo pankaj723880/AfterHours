@@ -130,18 +130,22 @@ export const formatTime = (secs) => {
  */
 const AUTH_TOKEN_KEY = 'afterhours_token';
 const AUTH_USER_KEY = 'afterhours_user';
+const SESSION_INITIALIZED_KEY = 'loopra_tab_initialized';
 
 export const getTabAuthToken = () => {
   if (typeof window === 'undefined') return '';
   try {
-    const sessionToken = sessionStorage.getItem(AUTH_TOKEN_KEY);
-    if (sessionToken !== null && sessionToken !== undefined) {
-      return sessionToken;
+    const isTabInitialized = sessionStorage.getItem(SESSION_INITIALIZED_KEY);
+    if (isTabInitialized) {
+      // Tab has already established its session state (logged in or logged out)
+      return sessionStorage.getItem(AUTH_TOKEN_KEY) || '';
     }
-    // Fallback: If this tab hasn't established its own session yet, copy from localStorage
+
+    // Fresh tab: copy from localStorage ONLY on first hydration
+    sessionStorage.setItem(SESSION_INITIALIZED_KEY, 'true');
     const localToken = localStorage.getItem(AUTH_TOKEN_KEY) || '';
     if (localToken) {
-      try { sessionStorage.setItem(AUTH_TOKEN_KEY, localToken); } catch (_) {}
+      sessionStorage.setItem(AUTH_TOKEN_KEY, localToken);
     }
     return localToken;
   } catch (_) {
@@ -152,14 +156,17 @@ export const getTabAuthToken = () => {
 export const getTabAuthUser = () => {
   if (typeof window === 'undefined') return null;
   try {
-    const sessionUser = sessionStorage.getItem(AUTH_USER_KEY);
-    if (sessionUser !== null && sessionUser !== undefined) {
+    const isTabInitialized = sessionStorage.getItem(SESSION_INITIALIZED_KEY);
+    if (isTabInitialized) {
+      const sessionUser = sessionStorage.getItem(AUTH_USER_KEY);
       return sessionUser ? JSON.parse(sessionUser) : null;
     }
-    // Fallback: Copy from localStorage into this tab's sessionStorage
+
+    // Fresh tab: copy from localStorage ONLY on first hydration
+    sessionStorage.setItem(SESSION_INITIALIZED_KEY, 'true');
     const localUserRaw = localStorage.getItem(AUTH_USER_KEY);
     if (localUserRaw) {
-      try { sessionStorage.setItem(AUTH_USER_KEY, localUserRaw); } catch (_) {}
+      sessionStorage.setItem(AUTH_USER_KEY, localUserRaw);
       return JSON.parse(localUserRaw);
     }
     return null;
@@ -177,6 +184,7 @@ export const setTabAuthSession = (token, userObj) => {
   if (typeof window === 'undefined') return;
   // Always update this tab's isolated sessionStorage first
   try {
+    sessionStorage.setItem(SESSION_INITIALIZED_KEY, 'true');
     if (token) {
       sessionStorage.setItem(AUTH_TOKEN_KEY, token);
     } else {
@@ -204,6 +212,7 @@ export const setTabAuthSession = (token, userObj) => {
 export const clearTabAuthSession = () => {
   if (typeof window === 'undefined') return;
   try {
+    sessionStorage.setItem(SESSION_INITIALIZED_KEY, 'true');
     sessionStorage.removeItem(AUTH_TOKEN_KEY);
     sessionStorage.removeItem(AUTH_USER_KEY);
     sessionStorage.removeItem('loopra_token');

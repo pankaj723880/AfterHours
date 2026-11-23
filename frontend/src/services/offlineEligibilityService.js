@@ -109,9 +109,13 @@ class OfflineEligibilityService {
 
     try {
       const url = `${this.backendUrl}/api/offline/eligibility/batch`;
+      const token = typeof window !== 'undefined' ? (sessionStorage.getItem('afterhours_token') || localStorage.getItem('afterhours_token') || '') : '';
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ trackIds: idsToFetch })
       });
 
@@ -180,7 +184,10 @@ class OfflineEligibilityService {
 
     try {
       const url = `${this.backendUrl}/api/offline/eligibility/${encodeURIComponent(trackId)}`;
-      const res = await fetch(url);
+      const token = typeof window !== 'undefined' ? (sessionStorage.getItem('afterhours_token') || localStorage.getItem('afterhours_token') || '') : '';
+      const headers = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(url, { headers });
       if (res.ok) {
         const data = await res.json();
         const entry = {

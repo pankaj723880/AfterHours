@@ -3096,6 +3096,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         const res = await fetch(getApiUrl('/api/auth/me'), {
           headers: { Authorization: `Bearer ${curToken}` }
         });
+        if (res.status === 401 || res.status === 403) {
+          clearTabAuthSession();
+          setUser(null);
+          setAuthToken('');
+          return;
+        }
         if (res.ok) {
           const data = await res.json();
           if (data?.user) {
@@ -3296,6 +3302,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         headers: { 'Authorization': `Bearer ${authToken}` }
       })
         .then(async (res) => {
+          if (res.status === 401 || res.status === 403) {
+            clearTabAuthSession();
+            setUser(null);
+            setAuthToken('');
+            return null;
+          }
           const parsed = await safeParseJsonResponse(res, 'Token validation failed');
           return parsed.ok ? parsed.data : null;
         })
@@ -3322,50 +3334,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           }
         })
         .catch(() => {});
-    } else if (user?.username) {
-      const u = user.username.toLowerCase();
-      if (lastAttemptedUsernameRef.current === u) return;
-
-      let pass = null;
-      if (u === 'admin@afterhours.com') pass = 'admin123';
-      else if (u === 'pss809352@gmail.com') pass = '123454321';
-      else if (u === 'pankajsss7238@gmail.com') pass = 'Ps207800@@#';
-
-      if (pass) {
-        lastAttemptedUsernameRef.current = u;
-        fetch(getApiUrl('/api/auth/login'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: u, password: pass })
-        })
-          .then(async (res) => {
-            const parsed = await safeParseJsonResponse(res, 'Auto-login failed');
-            return parsed.ok ? parsed.data : null;
-          })
-          .then(data => {
-            if (data && data.token) {
-              setAuthToken(data.token);
-              if (data.user) {
-                setUser(prev => {
-                  if (
-                    prev &&
-                    (prev._id || prev.userId) === (data.user._id || data.user.userId) &&
-                    prev.role === data.user.role &&
-                    prev.status === data.user.status &&
-                    prev.username === data.user.username
-                  ) {
-                    return prev;
-                  }
-                  return data.user;
-                });
-              }
-              setTabAuthSession(data.token, data.user || user);
-            }
-          })
-          .catch(() => {});
-      }
     }
-  }, [authToken, user?.username]);
+  }, [authToken]);
 
   // Meaningful listening tracker (threshold >= 30s) & Session State Management
   useEffect(() => {

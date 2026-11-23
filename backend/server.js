@@ -304,6 +304,10 @@ mongoose.connection.on('connected', () => {
   seedDefaultLicensedTracks();
   liveUsersService.init({ io, metricsService });
   learningEngineService.init();
+  // Ensure any stale/test rooms like "Devil" are thoroughly purged on startup
+  collaborativeRoomService.purgeRoomsByName('devil').catch(err => {
+    console.warn('[CollaborativeRoomService] Startup purge error:', err.message);
+  });
 });
 
 mongoose.connection.on('error', (err) => {
@@ -686,11 +690,24 @@ io.on('connection', (socket) => {
       if (res && res.room) {
         io.to(`room_${roomId}`).emit('room:members:updated', {
           roomId,
-          members: res.members
+          members: res.members,
+          createdBy: res.room.createdBy
         });
         io.to(`room_${roomId}`).emit('room:activities:updated', {
           roomId,
           activities: res.room.activities
+        });
+        io.to(`room_${roomId}`).emit('room:host:changed', {
+          roomId,
+          createdBy: res.room.createdBy,
+          hostUserId: res.room.createdBy?.userId
+        });
+        // Notify all sockets that the rooms directory / membership has updated
+        io.emit('room:updated', {
+          roomId,
+          status: res.room.status,
+          memberCount: res.members.length,
+          createdBy: res.room.createdBy
         });
       }
     } catch (e) {}

@@ -1821,6 +1821,50 @@ class CollaborativeRoomService {
       room
     };
   }
+
+  // Purge any room matching name/title completely (e.g. "Devil") from DB and cache
+  async purgeRoomsByName(namePattern) {
+    if (!namePattern) return { purgedCount: 0 };
+    const regex = new RegExp(namePattern, 'i');
+
+    const purgedIds = [];
+
+    // Purge from cache
+    for (const [key, r] of this.roomsCache.entries()) {
+      if (r && r.name && regex.test(r.name)) {
+        const rId = r.roomId || r.id;
+        purgedIds.push(String(rId));
+        this.deletedRoomIds.add(String(rId));
+        if (r.code) this.deletedRoomIds.add(String(r.code).toUpperCase());
+        if (r._id) this.deletedRoomIds.add(String(r._id));
+        this.roomsCache.delete(key);
+      }
+    }
+
+    // Purge from MongoDB
+    try {
+      const matchingRooms = await CollaborativeRoom.find({ name: regex }).lean();
+      for (const r of matchingRooms) {
+        const rId = r.roomId || r._id?.toString?.();
+        if (rId) {
+          purgedIds.push(String(rId));
+          this.deletedRoomIds.add(String(rId));
+          if (r.code) this.deletedRoomIds.add(String(r.code).toUpperCase());
+          if (r._id) this.deletedRoomIds.add(String(r._id));
+          this.roomsCache.delete(r.roomId);
+          if (r.code) this.roomsCache.delete(r.code);
+          if (r._id) this.roomsCache.delete(String(r._id));
+        }
+      }
+
+      const res = await CollaborativeRoom.deleteMany({ name: regex });
+      console.log(`[CollaborativeRoomService] Purged ${res.deletedCount || matchingRooms.length} room(s) matching pattern "${namePattern}"`);
+      return { purgedCount: res.deletedCount || matchingRooms.length, purgedIds };
+    } catch (e) {
+      console.warn('[CollaborativeRoomService] purgeRoomsByName DB error:', e.message);
+      return { purgedCount: purgedIds.length, purgedIds };
+    }
+  }
 }
 
 export const collaborativeRoomService = new CollaborativeRoomService();

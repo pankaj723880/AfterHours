@@ -8,6 +8,7 @@ import {
   Archive, RotateCcw, AlertTriangle, MoreVertical, ListPlus
 } from 'lucide-react';
 import { getApiUrl } from '../../utils/apiUrl';
+import { getTabAuthToken } from '../../utils/storage';
 import { isValidMusicTrack, parseDurationToSeconds, sanitizeTrack } from '../../services/songFilter';
 import { useUiConfig } from '../../context/UiConfigContext';
 
@@ -96,7 +97,7 @@ export default function ListeningRoomsView({
 
   const currentUserId = user?._id?.toString?.() || user?.userId || null;
   const currentUsername = user?.username || user?.displayName || 'Listener';
-  const token = authToken || (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
+  const token = authToken || getTabAuthToken() || null;
 
   const authHeaders = {
     'Content-Type': 'application/json',
@@ -158,9 +159,10 @@ export default function ListeningRoomsView({
 
   // Refresh rooms from backend
   const refreshRooms = () => {
-    if (!token && !user) {
+    if (!token) {
       setRooms([]);
       setLeftRooms([]);
+      setArchivedRooms([]);
       setIsLoadingRooms(false);
       return;
     }
@@ -243,7 +245,11 @@ export default function ListeningRoomsView({
       if (data?.members) {
         setParticipants(data.members);
         if (activeRoom && setActiveRoom) {
-          setActiveRoom(prev => prev ? { ...prev, members: data.members } : prev);
+          setActiveRoom(prev => prev ? { 
+            ...prev, 
+            members: data.members, 
+            ...(data.createdBy ? { createdBy: data.createdBy } : {}) 
+          } : prev);
         }
       }
     };
@@ -1748,6 +1754,8 @@ export default function ListeningRoomsView({
     const rId = r.roomId || r.id;
     // Strictly exclude deleted
     if (r.status === 'deleted' || r.isDeleted) return false;
+    // Exclude any purged or deleted test rooms matching "Devil"
+    if (r.name && String(r.name).trim().toLowerCase() === 'devil') return false;
     // Strictly exclude archived
     if (r.status === 'archived' || r.isArchived) return false;
     // Strictly exclude if current user has left this room

@@ -7,6 +7,7 @@ import {
   UserCheck, UserMinus, UserX
 } from 'lucide-react';
 import { getApiUrl } from '../../utils/apiUrl';
+import { getTabAuthToken } from '../../utils/storage';
 import { useUiConfig } from '../../context/UiConfigContext';
 
 const QUICK_REACTIONS = ['🔥', '❤️', '🕺', '😭'];
@@ -62,6 +63,11 @@ export default function ListeningRoomsModal({
 
   const currentUserId = user?._id?.toString?.() || user?.userId || 'guest';
   const currentUsername = user?.username || 'Listener';
+  const token = getTabAuthToken() || null;
+  const authHeaders = {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+  };
 
   // Find user's member role in current active room
   const currentMember = (participants || []).find(m => 
@@ -74,7 +80,11 @@ export default function ListeningRoomsModal({
 
   // Refresh public rooms from backend
   const refreshRooms = () => {
-    fetch(getApiUrl('/api/rooms'))
+    if (!token) {
+      setRooms([]);
+      return;
+    }
+    fetch(getApiUrl('/api/rooms'), { headers: authHeaders })
       .then(res => res.json())
       .then(data => {
         if (data && data.rooms) setRooms(data.rooms);
@@ -286,7 +296,7 @@ export default function ListeningRoomsModal({
     try {
       const res = await fetch(getApiUrl(`/api/rooms/${encodeURIComponent(target)}/join`), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({ user })
       });
       const data = await res.json();

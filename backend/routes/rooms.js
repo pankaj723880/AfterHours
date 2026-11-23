@@ -173,11 +173,23 @@ router.post('/:roomId/leave', optionalAuth, async (req, res) => {
     if (io && result.room) {
       io.to(`room_${result.room.roomId}`).emit('room:members:updated', {
         roomId: result.room.roomId,
-        members: result.members
+        members: result.members,
+        createdBy: result.room.createdBy
       });
       io.to(`room_${result.room.roomId}`).emit('room:activities:updated', {
         roomId: result.room.roomId,
         activities: result.room.activities
+      });
+      io.to(`room_${result.room.roomId}`).emit('room:host:changed', {
+        roomId: result.room.roomId,
+        createdBy: result.room.createdBy,
+        hostUserId: result.room.createdBy?.userId
+      });
+      io.emit('room:updated', {
+        roomId: result.room.roomId,
+        status: result.room.status,
+        memberCount: result.members.length,
+        createdBy: result.room.createdBy
       });
     }
 
@@ -566,6 +578,27 @@ router.delete('/:roomId/left', authenticateToken, async (req, res) => {
     res.json({ success: true, ...result });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to delete left room: ' + err.message });
+  }
+});
+
+// POST /api/rooms/purge - Admin / cleanup endpoint to purge rooms by name pattern (e.g. "Devil")
+router.post('/purge', authenticateToken, async (req, res) => {
+  try {
+    const { namePattern } = req.body;
+    if (!namePattern) {
+      return res.status(400).json({ success: false, error: 'namePattern is required' });
+    }
+    const result = await collaborativeRoomService.purgeRoomsByName(namePattern);
+    const io = req.app.get('io');
+    if (io && result.purgedIds?.length > 0) {
+      for (const pId of result.purgedIds) {
+        io.to(`room_${pId}`).emit('room:deleted', { roomId: pId, deleted: true });
+        io.emit('room:deleted', { roomId: pId, deleted: true });
+      }
+    }
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to purge rooms: ' + err.message });
   }
 });
 
