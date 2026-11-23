@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { RELAX_CATEGORIES, RELAX_SOUNDS } from '../../constants/relaxSounds';
 import { relaxAudioEngine } from '../../services/relaxAudioEngine';
+import { getTabAuthToken } from '../../utils/storage';
 
 export default function CmsRelaxManager() {
   const [sounds, setSounds] = useState([...RELAX_SOUNDS]);
@@ -73,7 +74,7 @@ export default function CmsRelaxManager() {
     if (!openverseQuery.trim()) return;
     setIsSearching(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = getTabAuthToken();
       const res = await fetch(`/api/admin/relax/search-openverse?q=${encodeURIComponent(openverseQuery)}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });

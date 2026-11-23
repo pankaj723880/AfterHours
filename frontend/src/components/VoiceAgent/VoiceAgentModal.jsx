@@ -29,6 +29,7 @@ import {
   extractNamedPlaylistTarget,
   transliterateDevanagariToLatin
 } from '../../utils/multiStepVoiceExecutor';
+import { getTabAuthToken } from '../../utils/storage';
 
 export default function VoiceAgentModal({
   user,
@@ -1423,7 +1424,7 @@ export default function VoiceAgentModal({
 
     try {
       const cleanUrl = (backendUrl || '').replace(/\/+$/, '');
-      const authToken = token || (typeof localStorage !== 'undefined' ? localStorage.getItem('token') : '') || '';
+      const authToken = token || getTabAuthToken() || '';
       const headers = { 'Content-Type': 'application/json' };
       if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
 

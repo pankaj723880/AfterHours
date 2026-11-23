@@ -152,10 +152,11 @@ class CollaborativeRoomService {
     const uid = String(userIdOrGuestId).trim();
     const list = [];
     try {
-      // A user should only see active rooms where they are currently in the members list.
-      // If a user left the room (even if they were the creator), they should not see it anymore.
+      // A user should only see active rooms where they are currently in the members list
+      // and haven't deleted/hidden it.
       const dbRooms = await CollaborativeRoom.find({
         status: { $nin: ['deleted', 'archived'] },
+        deletedForUsers: { $ne: uid },
         'members.userId': uid
       })
         .sort({ updatedAt: -1 })
@@ -171,8 +172,9 @@ class CollaborativeRoomService {
       console.warn('[CollaborativeRoomService] listUserRooms DB error, using cache:', e.message);
       for (const r of this.roomsCache.values()) {
         if (r.status !== 'deleted' && r.status !== 'archived') {
+          const isDeletedForUser = Array.isArray(r.deletedForUsers) && r.deletedForUsers.includes(uid);
           const isMember = (r.members || []).some(m => String(m.userId) === uid);
-          if (isMember) {
+          if (isMember && !isDeletedForUser) {
             list.push(this.formatRoomSummary(r));
           }
         }
@@ -188,6 +190,7 @@ class CollaborativeRoomService {
     try {
       const dbRooms = await CollaborativeRoom.find({
         status: { $nin: ['deleted', 'archived'] },
+        deletedForUsers: { $ne: uid },
         'leftMembers.userId': uid,
         'members.userId': { $ne: uid }
       })
@@ -207,9 +210,10 @@ class CollaborativeRoomService {
       console.warn('[CollaborativeRoomService] listLeftRooms DB error, using cache:', e.message);
       for (const r of this.roomsCache.values()) {
         if (r.status !== 'deleted' && r.status !== 'archived') {
+          const isDeletedForUser = Array.isArray(r.deletedForUsers) && r.deletedForUsers.includes(uid);
           const isLeft = (r.leftMembers || []).some(lm => String(lm.userId) === uid);
           const isCurrentMember = (r.members || []).some(m => String(m.userId) === uid);
-          if (isLeft && !isCurrentMember) {
+          if (isLeft && !isCurrentMember && !isDeletedForUser) {
             const summary = this.formatRoomSummary(r);
             summary.leftAt = (r.leftMembers || []).find(lm => String(lm.userId) === uid)?.leftAt || r.updatedAt;
             summary.hasPendingRequest = (r.joinRequests || []).some(jr => String(jr.userId) === uid);
@@ -228,6 +232,7 @@ class CollaborativeRoomService {
     try {
       const dbRooms = await CollaborativeRoom.find({
         status: 'archived',
+        deletedForUsers: { $ne: uid },
         $or: [
           { 'createdBy.userId': uid },
           { 'members.userId': uid }
@@ -246,9 +251,10 @@ class CollaborativeRoomService {
       console.warn('[CollaborativeRoomService] listArchivedRooms DB error, using cache:', e.message);
       for (const r of this.roomsCache.values()) {
         if (r.status === 'archived') {
+          const isDeletedForUser = Array.isArray(r.deletedForUsers) && r.deletedForUsers.includes(uid);
           const isCreator = r.createdBy?.userId === uid;
           const isMember = (r.members || []).some(m => String(m.userId) === uid);
-          if (isCreator || isMember) {
+          if ((isCreator || isMember) && !isDeletedForUser) {
             list.push(this.formatRoomSummary(r));
           }
         }
@@ -1317,8 +1323,19 @@ class CollaborativeRoomService {
       return this.deleteRoomPermanently(roomId, requesterUser);
     }
 
-    // Otherwise, simply purge the user's leftMembers and joinRequests records from the room
+    // Otherwise, mark room as deleted/hidden for this specific user so it never re-appears in active/joined/left rooms
     const uidStr = String(requesterId).trim();
+    if (!Array.isArray(room.deletedForUsers)) {
+      room.deletedForUsers = [];
+    }
+    if (uidStr && !room.deletedForUsers.includes(uidStr)) {
+      room.deletedForUsers.push(uidStr);
+    }
+
+    // Also purge from members, leftMembers, and joinRequests
+    if (Array.isArray(room.members)) {
+      room.members = room.members.filter(m => String(m.userId) !== uidStr);
+    }
     if (Array.isArray(room.leftMembers)) {
       room.leftMembers = room.leftMembers.filter(lm => String(lm.userId) !== uidStr);
     }
@@ -1334,9 +1351,13 @@ class CollaborativeRoomService {
         { roomId: room.roomId },
         {
           $set: {
+            members: room.members,
             leftMembers: room.leftMembers,
             joinRequests: room.joinRequests,
             lastActiveAt: new Date()
+          },
+          $addToSet: {
+            deletedForUsers: uidStr
           }
         }
       );

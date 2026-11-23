@@ -13,23 +13,23 @@
   @keyframes floatUp {
     0% {
       opacity: 0;
-      transform: translateY(12px) scale(0.65);
+      transform: translate3d(0, 12px, 0) scale(0.65);
     }
     15% {
       opacity: 1;
-      transform: translateY(-8px) scale(1.18);
+      transform: translate3d(0, -8px, 0) scale(1.18);
     }
     30% {
       opacity: 1;
-      transform: translateY(-24px) scale(1);
+      transform: translate3d(0, -24px, 0) scale(1);
     }
     75% {
       opacity: 0.95;
-      transform: translateY(-80px) scale(0.98);
+      transform: translate3d(0, -80px, 0) scale(0.98);
     }
     100% {
       opacity: 0;
-      transform: translateY(-130px) scale(0.85);
+      transform: translate3d(0, -130px, 0) scale(0.85);
     }
   }
 

@@ -23,11 +23,15 @@ router.get('/', authenticateToken, async (req, res) => {
         collaborativeRoomService.listUserRooms(userId, 50)
       ]);
       const roomMap = new Map();
+      const uidStr = String(userId || '').trim();
       for (const r of [...userRooms, ...publicRooms]) {
         const id = r.roomId || r.id;
-        // Strictly exclude archived, deleted, or left rooms from active rooms feed
+        // Strictly exclude archived, deleted, or rooms deleted for this user from active rooms feed
         if (id && !roomMap.has(id)) {
           if (r.status === 'active' && !r.isArchived) {
+            if (Array.isArray(r.deletedForUsers) && uidStr && r.deletedForUsers.includes(uidStr)) {
+              continue;
+            }
             roomMap.set(id, r);
           }
         }
@@ -85,8 +89,12 @@ router.get('/lookup/:code', authenticateToken, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Room not found or invalid room code' });
     }
     const userId = getAuthenticatedUserId(req);
-    const isMember = (room.members || []).some(m => String(m.userId) === String(userId));
-    const isHost = (String(room.createdBy?.userId || '') === String(userId));
+    const uidStr = String(userId || '').trim();
+    if (Array.isArray(room.deletedForUsers) && uidStr && room.deletedForUsers.includes(uidStr)) {
+      return res.status(404).json({ success: false, error: 'Room not found or has been deleted' });
+    }
+    const isMember = (room.members || []).some(m => String(m.userId) === uidStr);
+    const isHost = (String(room.createdBy?.userId || '') === uidStr);
 
     res.json({
       success: true,
@@ -564,15 +572,22 @@ router.delete('/:roomId/left', authenticateToken, async (req, res) => {
     const result = await collaborativeRoomService.deleteLeftRoomForUser(req.params.roomId, req.user);
 
     const io = req.app.get('io');
-    if (io && result.deleted) {
-      io.to(`room_${req.params.roomId}`).emit('room:deleted', {
-        roomId: req.params.roomId,
-        deleted: true
-      });
-      io.emit('room:deleted', {
-        roomId: req.params.roomId,
-        deleted: true
-      });
+    if (io) {
+      if (result.deleted) {
+        io.to(`room_${req.params.roomId}`).emit('room:deleted', {
+          roomId: req.params.roomId,
+          deleted: true
+        });
+        io.emit('room:deleted', {
+          roomId: req.params.roomId,
+          deleted: true
+        });
+      } else {
+        io.to(`room_${req.params.roomId}`).emit('room:member:removed', {
+          roomId: req.params.roomId,
+          userId: req.user?._id?.toString?.() || req.user?.userId
+        });
+      }
     }
 
     res.json({ success: true, ...result });

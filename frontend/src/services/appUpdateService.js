@@ -4,12 +4,12 @@ const MANIFEST_CACHE_KEY = 'loopra_app_version_manifest';
 const DISMISSED_UPDATE_SESSION_KEY = 'loopra_dismissed_update_version';
 
 /**
- * Current built-in client version for Web / PWA / Browser environments.
- * When a new build or deploy is released, bumping this version or the published
- * version in /version.json ensures clients detect newer versions reliably.
+ * Built-in client version and build metadata stamped during Vite build.
  */
-export const CURRENT_CLIENT_VERSION = '2.1.0';
-export const CURRENT_CLIENT_VERSION_CODE = 21;
+export const CURRENT_CLIENT_VERSION = (typeof __APP_VERSION__ !== 'undefined' && __APP_VERSION__) ? __APP_VERSION__ : '2.2';
+export const CURRENT_CLIENT_VERSION_CODE = (typeof __APP_VERSION_CODE__ !== 'undefined' && __APP_VERSION_CODE__) ? Number(__APP_VERSION_CODE__) : 22;
+export const CURRENT_CLIENT_BUILD_ID = (typeof __APP_BUILD_ID__ !== 'undefined' && __APP_BUILD_ID__) ? __APP_BUILD_ID__ : '';
+export const CURRENT_CLIENT_BUILD_TIMESTAMP = (typeof __APP_BUILD_TIMESTAMP__ !== 'undefined' && __APP_BUILD_TIMESTAMP__) ? Number(__APP_BUILD_TIMESTAMP__) : 0;
 
 /**
  * Parses semantic versions like "v2.1", "2.1", "v3.0.1", "2.1.0" into comparable [major, minor, patch] arrays of numbers.
@@ -43,12 +43,36 @@ export function compareVersions(verA, verB) {
 }
 
 /**
- * Determines whether the user is running inside the native Android APK/TWA container.
+ * Determines whether the user is running inside the native Android APK/Capacitor/TWA container.
+ * Specifically checks for native Android environment via Capacitor or custom native bridge:
+ * - window.Capacitor?.isNativePlatform() === true
+ * - window.Capacitor?.getPlatform() === 'android'
+ * - window.LoopraAndroid bridge
+ * - User agent containing 'LoopraNativeAndroid' or 'Capacitor' on Android
  */
 export function isRunningInAndroidApp() {
   if (typeof window === 'undefined') return false;
+
+  // 1. Capacitor global checks (standard Capacitor runtime)
+  if (window.Capacitor) {
+    if (typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()) {
+      if (typeof window.Capacitor.getPlatform === 'function') {
+        return window.Capacitor.getPlatform() === 'android';
+      }
+      return true;
+    }
+  }
+
+  // 2. Custom native Android bridge
   if (window.LoopraAndroid) return true;
-  if (navigator?.userAgent && navigator.userAgent.includes('LoopraNativeAndroid')) return true;
+
+  // 3. User agent check for native Android app container
+  if (navigator?.userAgent) {
+    if (navigator.userAgent.includes('LoopraNativeAndroid')) return true;
+    if (navigator.userAgent.includes('Capacitor') && /android/i.test(navigator.userAgent)) return true;
+  }
+
+  // Standard web browser (desktop, mobile web, iOS web, or web-hosted Vercel)
   return false;
 }
 
@@ -111,18 +135,25 @@ export function getInstalledAppVersion() {
   // 3. For Web browser or PWA standalone installations:
   let clientVersionName = CURRENT_CLIENT_VERSION;
   let clientVersionCode = CURRENT_CLIENT_VERSION_CODE;
+  let clientBuildId = CURRENT_CLIENT_BUILD_ID;
+  let clientBuildTimestamp = CURRENT_CLIENT_BUILD_TIMESTAMP;
+
   try {
     const stored = localStorage.getItem('loopra_installed_version');
     if (stored) {
       const parsed = JSON.parse(stored);
       if (parsed?.versionName) clientVersionName = parsed.versionName;
       if (parsed?.versionCode) clientVersionCode = Number(parsed.versionCode);
+      if (parsed?.buildId) clientBuildId = parsed.buildId;
+      if (parsed?.buildTimestamp) clientBuildTimestamp = Number(parsed.buildTimestamp);
     }
   } catch (_) {}
 
   return {
     versionName: clientVersionName,
     versionCode: clientVersionCode || CURRENT_CLIENT_VERSION_CODE,
+    buildId: clientBuildId,
+    buildTimestamp: clientBuildTimestamp,
     isNative,
     isPwa
   };
@@ -154,15 +185,20 @@ export async function fetchPublishedAppVersion(backendUrl = '') {
       if (res.ok) {
         const manifest = await res.json();
         if (manifest && (manifest.versionName || manifest.version)) {
-          const rawVersionName = manifest.versionName || manifest.version || '2.1.0';
+          const rawVersionName = manifest.versionName || manifest.version || '2.2';
           const normalized = {
+            version: String(rawVersionName).trim(),
             versionName: String(rawVersionName).trim(),
-            versionCode: Number(manifest.versionCode) || 21,
+            versionCode: Number(manifest.versionCode) || 22,
+            buildId: manifest.buildId || '',
+            buildTimestamp: Number(manifest.buildTimestamp) || (manifest.buildDate ? new Date(manifest.buildDate).getTime() : 0),
+            buildDate: manifest.buildDate || manifest.releaseDate || new Date().toISOString(),
             downloadUrl: manifest.directApkUrl || manifest.downloadUrl || 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
             directApkUrl: manifest.directApkUrl || 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
             externalApkUrl: manifest.externalApkUrl || 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
-            releaseNotes: manifest.releaseNotes || 'New features, performance enhancements, and bug fixes for Loopra.',
-            releaseDate: manifest.releaseDate || new Date().toISOString(),
+            releaseNotes: manifest.whatsNew || manifest.releaseNotes || 'New features, performance enhancements, and bug fixes for Loopra.',
+            whatsNew: manifest.whatsNew || manifest.releaseNotes || 'New features, performance enhancements, and bug fixes for Loopra.',
+            releaseDate: manifest.releaseDate || manifest.buildDate || new Date().toISOString(),
             fileSize: manifest.fileSize || 5744624,
             sha256: manifest.sha256 || ''
           };
@@ -185,12 +221,16 @@ export async function fetchPublishedAppVersion(backendUrl = '') {
 
   // Safe default fallback if network and cache both fail
   return {
-    versionName: '2.1.0',
-    versionCode: 21,
+    version: '2.2',
+    versionName: '2.2',
+    versionCode: 22,
+    buildId: '',
+    buildTimestamp: 0,
     downloadUrl: 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
     directApkUrl: 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
     externalApkUrl: 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
     releaseNotes: 'Official Loopra release',
+    whatsNew: 'Official Loopra release',
     releaseDate: new Date().toISOString(),
     fileSize: 5744624,
     sha256: ''
@@ -298,14 +338,16 @@ export function triggerApkDownload(downloadUrl, manifest = null) {
 /**
  * Clears Web/PWA application caches (excluding offline media cache) and reloads cleanly.
  */
-export async function clearAppCachesAndReload(newVersionName = null) {
+export async function clearAppCachesAndReload(newVersionName = null, newBuildId = null) {
   if (typeof window === 'undefined') return;
 
   try {
-    if (newVersionName) {
+    if (newVersionName || newBuildId) {
       localStorage.setItem('loopra_installed_version', JSON.stringify({
-        versionName: newVersionName,
+        versionName: newVersionName || CURRENT_CLIENT_VERSION,
         versionCode: CURRENT_CLIENT_VERSION_CODE,
+        buildId: newBuildId || '',
+        buildTimestamp: Date.now(),
         updatedAt: new Date().toISOString()
       }));
     }
@@ -335,15 +377,29 @@ export async function clearAppCachesAndReload(newVersionName = null) {
   } catch (err) {
     console.warn('[appUpdateService] Cache clearing error:', err);
   } finally {
-    // Force a fresh reload from server
-    window.location.reload();
+    // Force a fresh reload from server with cache-busting query to break HTTP cache
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('_v', Date.now().toString());
+      window.location.replace(url.toString());
+    } catch (_) {
+      window.location.reload();
+    }
   }
 }
 
 /**
  * Checks whether an update prompt should be shown.
- * Works seamlessly across native Android WebView container, standalone PWA,
- * and standard web browser clients.
+ *
+ * Rules:
+ * 1. ONLY runs and prompts on Native Android App (Capacitor or native container):
+ *    - Never prompt on standard web browser clients (e.g. desktop/mobile Chrome/Safari on loopra1.vercel.app).
+ * 2. Compares:
+ *    - Version codes: published.versionCode > installed.versionCode
+ *    - Semantic version: compareVersions(published.versionName, installed.versionName) > 0
+ *    - If semver & version codes are equal: checks published.buildTimestamp > installed.buildTimestamp
+ *      or different non-empty buildIds with newer timestamp.
+ *    - NEVER triggers when installed build/version is identical to published.
  */
 export async function checkForAppUpdate(backendUrl = '') {
   // Check for test mode triggered via URL query (?testUpdate=true or ?forceUpdate=true)
@@ -354,18 +410,28 @@ export async function checkForAppUpdate(backendUrl = '') {
         const installed = getInstalledAppVersion();
         return {
           shouldPrompt: true,
-          installedVersion: installed.versionName || '2.1.0',
-          installedVersionCode: installed.versionCode || 21,
-          latestVersion: '2.2.0',
-          latestVersionCode: 22,
+          installedVersion: installed.versionName || '2.2',
+          installedVersionCode: installed.versionCode || 22,
+          installedBuildId: installed.buildId || '',
+          latestVersion: '2.3',
+          latestVersionCode: 23,
+          latestBuildId: 'test_build_' + Date.now(),
           downloadUrl: getDirectApkDownloadUrl(),
           releaseNotes: 'Test update prompt triggered successfully. Audio pipeline optimized and real-time sync updated.',
-          manifest: { versionName: '2.2.0', versionCode: 22 },
-          isNative: installed.isNative,
-          isPwa: installed.isPwa
+          whatsNew: 'Test update prompt triggered successfully. Audio pipeline optimized and real-time sync updated.',
+          manifest: { versionName: '2.3', versionCode: 23 },
+          isNative: true,
+          isPwa: false
         };
       }
     } catch (_) {}
+  }
+
+  // RESTRICTION: Updates are strictly for Native Android App / Capacitor container only.
+  // Standard web browsers (desktop web, mobile web) should NEVER show the update modal or download prompt.
+  const isNative = isRunningInAndroidApp();
+  if (!isNative) {
+    return { shouldPrompt: false, reason: 'WEB_CLIENT_UPDATES_DISABLED' };
   }
 
   const installed = getInstalledAppVersion();
@@ -375,30 +441,68 @@ export async function checkForAppUpdate(backendUrl = '') {
     return { shouldPrompt: false, reason: 'MANIFEST_UNAVAILABLE' };
   }
 
-  // Check if this release was dismissed during the current session
+  // Dismissal check: If dismissed in this session and published version/build hasn't changed, suppress prompt
   try {
-    const dismissedVer = sessionStorage.getItem(DISMISSED_UPDATE_SESSION_KEY);
-    if (dismissedVer) {
-      // If the published version is newer than the dismissed version, allow the popup to re-appear
-      const isNewerThanDismissed = compareVersions(published.versionName, dismissedVer) > 0;
+    const dismissedKey = sessionStorage.getItem(DISMISSED_UPDATE_SESSION_KEY);
+    if (dismissedKey) {
+      const isNewerThanDismissed = published.buildId
+        ? (dismissedKey !== published.buildId && dismissedKey !== published.versionName)
+        : (compareVersions(published.versionName, dismissedKey) > 0);
       if (!isNewerThanDismissed) {
         return { shouldPrompt: false, reason: 'DISMISSED_IN_SESSION', published, installed };
       }
     }
   } catch (_) {}
 
-  // Primary check: Semantic version comparison (major.minor.patch) segment-by-segment
-  // Secondary check: Integer versionCode comparison
   let hasNewerVersion = false;
-  if (published.versionName && installed.versionName) {
+
+  // --- Native Android APK evaluation ---
+  const pCode = Number(published.versionCode) || 0;
+  const iCode = Number(installed.versionCode) || 0;
+
+  if (pCode > 0 && iCode > 0) {
+    if (pCode > iCode) {
+      hasNewerVersion = true;
+    } else if (pCode < iCode) {
+      hasNewerVersion = false;
+    } else {
+      // pCode === iCode: compare semver and build timestamp/buildId to prevent false prompts on identical builds
+      const semverDiff = (published.versionName && installed.versionName)
+        ? compareVersions(published.versionName, installed.versionName)
+        : 0;
+      if (semverDiff > 0) {
+        hasNewerVersion = true;
+      } else if (semverDiff === 0) {
+        const pubBuildId = String(published.buildId || '').trim();
+        const instBuildId = String(installed.buildId || '').trim();
+        const pubTs = Number(published.buildTimestamp) || 0;
+        const instTs = Number(installed.buildTimestamp) || 0;
+        if (pubBuildId && instBuildId && pubBuildId !== instBuildId && pubTs > 0 && instTs > 0) {
+          hasNewerVersion = pubTs > instTs;
+        } else {
+          hasNewerVersion = false;
+        }
+      } else {
+        hasNewerVersion = false;
+      }
+    }
+  } else if (published.versionName && installed.versionName) {
     const semverDiff = compareVersions(published.versionName, installed.versionName);
     if (semverDiff > 0) {
       hasNewerVersion = true;
-    } else if (semverDiff === 0 && published.versionCode && installed.versionCode) {
-      hasNewerVersion = published.versionCode > installed.versionCode;
+    } else if (semverDiff === 0) {
+      const pubBuildId = String(published.buildId || '').trim();
+      const instBuildId = String(installed.buildId || '').trim();
+      const pubTs = Number(published.buildTimestamp) || 0;
+      const instTs = Number(installed.buildTimestamp) || 0;
+      if (pubBuildId && instBuildId && pubBuildId !== instBuildId && pubTs > 0 && instTs > 0) {
+        hasNewerVersion = pubTs > instTs;
+      } else {
+        hasNewerVersion = false;
+      }
+    } else {
+      hasNewerVersion = false;
     }
-  } else if (published.versionCode && installed.versionCode) {
-    hasNewerVersion = published.versionCode > installed.versionCode;
   }
 
   if (hasNewerVersion) {
@@ -406,10 +510,15 @@ export async function checkForAppUpdate(backendUrl = '') {
       shouldPrompt: true,
       installedVersion: installed.versionName,
       installedVersionCode: installed.versionCode,
+      installedBuildId: installed.buildId,
+      installedBuildTimestamp: installed.buildTimestamp,
       latestVersion: published.versionName,
       latestVersionCode: published.versionCode,
+      latestBuildId: published.buildId,
+      latestBuildTimestamp: published.buildTimestamp,
       downloadUrl: published.downloadUrl,
-      releaseNotes: published.releaseNotes,
+      releaseNotes: published.whatsNew || published.releaseNotes,
+      whatsNew: published.whatsNew || published.releaseNotes,
       manifest: published,
       isNative: installed.isNative,
       isPwa: installed.isPwa
@@ -422,9 +531,9 @@ export async function checkForAppUpdate(backendUrl = '') {
 /**
  * Records user dismissal for the current session.
  */
-export function dismissUpdateForSession(versionName) {
+export function dismissUpdateForSession(versionName, buildId = '') {
   try {
-    sessionStorage.setItem(DISMISSED_UPDATE_SESSION_KEY, versionName || 'dismissed');
+    sessionStorage.setItem(DISMISSED_UPDATE_SESSION_KEY, buildId || versionName || 'dismissed');
   } catch (_) {}
 }
 

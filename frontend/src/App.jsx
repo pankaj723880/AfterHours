@@ -38,7 +38,7 @@ import CmsHeroBanner from './components/Common/CmsHeroBanner';
 import CmsMaintenanceOverlay from './components/Common/CmsMaintenanceOverlay';
 import CmsCuratedCollectionsRow from './components/Common/CmsCuratedCollectionsRow';
 import AppUpdateModal from './components/Common/AppUpdateModal';
-import { triggerApkDownload, checkForAppUpdate, fetchPublishedAppVersion, getInstalledAppVersion, getDirectApkDownloadUrl } from './services/appUpdateService';
+import { triggerApkDownload, checkForAppUpdate, fetchPublishedAppVersion, getInstalledAppVersion, getDirectApkDownloadUrl, isRunningInAndroidApp } from './services/appUpdateService';
 import { getCachedCmsConfig, fetchPublicCmsConfig, applyThemeToDom, normalizeCmsConfig, resolvePlatformConfig } from './services/cmsClient';
 import { offlineEligibilityService } from './services/offlineEligibilityService';
 import { offlineStorageService } from './services/offlineStorageService';
@@ -143,13 +143,9 @@ const getOrCreateSessionId = () => {
   try {
     sid = sessionStorage.getItem('afterhours_session_id');
     if (!sid) {
-      sid = localStorage.getItem('afterhours_session_id');
-    }
-    if (!sid) {
       sid = 'sid_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now().toString(36);
-      localStorage.setItem('afterhours_session_id', sid);
+      sessionStorage.setItem('afterhours_session_id', sid);
     }
-    sessionStorage.setItem('afterhours_session_id', sid);
   } catch (_) {
     sid = 'sid_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now().toString(36);
   }
@@ -1792,23 +1788,42 @@ export default function App() {
       })
       .catch(() => {});
 
-    // Automatic In-App Android APK Update Detection (with bridge settlement delay)
-    const updateCheckTimer = setTimeout(() => {
+    // Automatic In-App Android APK Update Detection (Native Android app only)
+    const runUpdateCheck = () => {
+      if (!isMounted) return;
+      if (!isRunningInAndroidApp()) return;
       checkForAppUpdate(BACKEND_URL)
         .then((updateResult) => {
           if (!isMounted) return;
-          if (updateResult && updateResult.shouldPrompt) {
+          if (updateResult && updateResult.shouldPrompt && isRunningInAndroidApp()) {
             setPendingAppUpdate(updateResult);
           }
         })
         .catch((err) => {
           console.warn('[App] Update check notice:', err?.message);
         });
-    }, 1200);
+    };
+
+    const updateCheckTimer = setTimeout(runUpdateCheck, 1200);
+
+    // Periodic check every 15 minutes while native Android app remains open
+    const periodicCheckInterval = setInterval(runUpdateCheck, 15 * 60 * 1000);
+
+    // Listen for foreground resume from Android native container
+    const handleAppForegroundResume = () => {
+      runUpdateCheck();
+    };
+
+    window.addEventListener('loopra-app-resume', handleAppForegroundResume);
+    window.addEventListener('focus', handleAppForegroundResume);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) handleAppForegroundResume();
+    });
 
     // Listen for native Android container update signals
     const handleNativeUpdateAvailable = (event) => {
       if (!isMounted || !event?.detail) return;
+      if (!isRunningInAndroidApp()) return;
       const detail = event.detail;
 
       // Authoritative integer versionCode check: only prompt if published versionCode > installed versionCode
@@ -1822,10 +1837,11 @@ export default function App() {
         shouldPrompt: true,
         installedVersion: detail.installedVersion || '1',
         installedVersionCode: iCode,
-        latestVersion: detail.latestVersion || '2.1',
+        latestVersion: detail.latestVersion || '2.2',
         latestVersionCode: pCode,
         downloadUrl: detail.downloadUrl,
-        manifest: detail
+        manifest: detail,
+        isNative: true
       });
     };
     window.addEventListener('loopra-native-update-available', handleNativeUpdateAvailable);
@@ -1834,6 +1850,9 @@ export default function App() {
       isMounted = false;
       clearTimeout(initTimer);
       clearTimeout(updateCheckTimer);
+      clearInterval(periodicCheckInterval);
+      window.removeEventListener('loopra-app-resume', handleAppForegroundResume);
+      window.removeEventListener('focus', handleAppForegroundResume);
       socket.off('cms_config_updated', handleConfigUpdate);
       window.removeEventListener('loopra-native-update-available', handleNativeUpdateAvailable);
     };
@@ -11383,11 +11402,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 if (!updatedUser) return;
                 setUser(prev => {
                   const merged = { ...(prev || {}), ...updatedUser };
-                  try {
-                    localStorage.setItem('afterhours_user', JSON.stringify(merged));
-                  } catch (e) {
-                    console.warn('[LocalStorage] Could not persist updated user:', e);
-                  }
+                  setTabAuthSession(authToken || getTabAuthToken(), merged);
                   return merged;
                 });
               }}
@@ -12794,9 +12809,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         onUserUpdated={(updated) => {
           setUser(prev => {
             const merged = { ...(prev || {}), ...updated };
-            try {
-              localStorage.setItem('afterhours_user', JSON.stringify(merged));
-            } catch (_) {}
+            setTabAuthSession(authToken || getTabAuthToken(), merged);
             return merged;
           });
         }} 

@@ -1,4 +1,5 @@
 import { BACKEND_URL } from '../utils/apiUrl.js';
+import { getTabAuthToken } from '../utils/storage.js';
 
 const CACHE_STORAGE_KEY = 'loopra_voice_control_access_state';
 
@@ -95,7 +96,7 @@ export const voiceControlService = {
 
     try {
       const headers = {};
-      const activeToken = token || localStorage.getItem('loopra_auth_token') || localStorage.getItem('token');
+      const activeToken = token || getTabAuthToken();
       if (activeToken) {
         headers['Authorization'] = `Bearer ${activeToken}`;
       }

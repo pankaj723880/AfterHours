@@ -34,17 +34,26 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
   if (!updateInfo) return null;
 
   const {
-    installedVersion = '2.1.0',
-    latestVersion = '2.2.0',
+    installedVersion = '2.2',
+    latestVersion = '2.2',
+    installedBuildId,
+    latestBuildId,
     downloadUrl,
     releaseNotes,
+    whatsNew,
     manifest,
     isNative: isNativeProp
   } = updateInfo;
 
   const isNative = isNativeProp ?? isRunningInAndroidApp();
+
+  // Strict safety check: Never display update modal in non-native web browser environments
+  if (!isNative) {
+    return null;
+  }
   const publishedCode = manifest?.versionCode || 22;
   const directApkUrl = manifest?.directApkUrl || `https://loopra1.vercel.app/Loopra.apk?v=${publishedCode}`;
+  const displayNotes = whatsNew || releaseNotes || manifest?.whatsNew || manifest?.releaseNotes || 'Latest stability, performance enhancements, and bug fixes for Loopra.';
 
   const handleAction = async () => {
     if (isNative) {
@@ -75,8 +84,8 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
           showToast('Applying update...', 'info');
         }
         setTimeout(async () => {
-          await clearAppCachesAndReload(latestVersion);
-        }, 500);
+          await clearAppCachesAndReload(latestVersion, latestBuildId);
+        }, 400);
       } catch (err) {
         window.location.reload();
       }
@@ -84,7 +93,7 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
   };
 
   const handleDismiss = () => {
-    dismissUpdateForSession(latestVersion);
+    dismissUpdateForSession(latestVersion, latestBuildId);
     onClose();
   };
 
@@ -148,13 +157,19 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
               <span className="text-[10px] uppercase font-bold tracking-wider block text-amber-400">Latest</span>
               <span className="font-mono font-bold text-amber-300">v{String(latestVersion).replace(/^v/i, '')}</span>
             </div>
+
+            {!isNative && installedBuildId && latestBuildId && installedBuildId !== latestBuildId && (
+              <div className="ml-auto px-2 py-1 rounded-lg bg-neutral-800/60 border border-neutral-700/50 text-[10px] font-mono text-neutral-400">
+                <span>Update</span>
+              </div>
+            )}
           </div>
 
           {/* Release Notes */}
-          {releaseNotes && (
+          {displayNotes && (
             <div className="p-2.5 rounded-xl bg-black/40 border border-neutral-800 text-[11px] text-neutral-400 leading-snug">
               <span className="font-bold text-neutral-300 block mb-0.5">What's New:</span>
-              <span className="line-clamp-2">{releaseNotes}</span>
+              <span className="line-clamp-2">{displayNotes}</span>
             </div>
           )}
 

@@ -8,6 +8,8 @@
  * are marked as eligible.
  */
 
+import { getTabAuthToken } from '../utils/storage.js';
+
 class OfflineEligibilityService {
   constructor() {
     this.cache = new Map(); // trackId -> { eligible: boolean, license: object|null, reason: string, checkedAt: number }
@@ -109,7 +111,7 @@ class OfflineEligibilityService {
 
     try {
       const url = `${this.backendUrl}/api/offline/eligibility/batch`;
-      const token = typeof window !== 'undefined' ? (sessionStorage.getItem('afterhours_token') || localStorage.getItem('afterhours_token') || '') : '';
+      const token = getTabAuthToken();
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -184,7 +186,7 @@ class OfflineEligibilityService {
 
     try {
       const url = `${this.backendUrl}/api/offline/eligibility/${encodeURIComponent(trackId)}`;
-      const token = typeof window !== 'undefined' ? (sessionStorage.getItem('afterhours_token') || localStorage.getItem('afterhours_token') || '') : '';
+      const token = getTabAuthToken();
       const headers = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch(url, { headers });

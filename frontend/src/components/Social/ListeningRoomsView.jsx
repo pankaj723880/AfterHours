@@ -13,6 +13,24 @@ import { isValidMusicTrack, parseDurationToSeconds, sanitizeTrack } from '../../
 import { useUiConfig } from '../../context/UiConfigContext';
 
 const QUICK_REACTIONS = ['🔥', '❤️', '🕺', '😭'];
+const STORAGE_KEY_DELETED_ROOMS = 'afterhours_deleted_room_ids';
+
+const loadDeletedRoomIds = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_DELETED_ROOMS);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+const persistDeletedRoomIds = (ids) => {
+  try {
+    localStorage.setItem(STORAGE_KEY_DELETED_ROOMS, JSON.stringify(ids));
+  } catch (e) {}
+};
 
 export default function ListeningRoomsView({
   socket,
@@ -42,6 +60,7 @@ export default function ListeningRoomsView({
   onAddToQueue
 }) {
   const { isVisible: isUiVisible } = useUiConfig();
+  const [deletedRoomIds, setDeletedRoomIds] = useState(loadDeletedRoomIds);
   const [rooms, setRooms] = useState([]);
   const [leftRooms, setLeftRooms] = useState([]);
   const [archivedRooms, setArchivedRooms] = useState([]);
@@ -49,6 +68,9 @@ export default function ListeningRoomsView({
   const [filterTab, setFilterTab] = useState('all'); // 'all' | 'created' | 'joined' | 'left' | 'archived'
   const [roomToDelete, setRoomToDelete] = useState(null); // Host confirmation modal for room permanent deletion
   const [isDeletingRoom, setIsDeletingRoom] = useState(false);
+  const [playlistToDelete, setPlaylistToDelete] = useState(null); // Playlist deletion confirmation modal
+  const [isDeletingPlaylist, setIsDeletingPlaylist] = useState(false);
+  const inFlightJoinRef = useRef(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomDesc, setNewRoomDesc] = useState('');
   const [newRoomIsPublic, setNewRoomIsPublic] = useState(true);
@@ -168,13 +190,19 @@ export default function ListeningRoomsView({
     }
 
     setIsLoadingRooms(true);
+    const currentDeleted = loadDeletedRoomIds();
     
     // Fetch active user rooms
     fetch(getApiUrl('/api/rooms'), { headers: authHeaders })
       .then(res => res.json())
       .then(data => {
         if (data && data.rooms) {
-          setRooms(data.rooms);
+          const valid = (data.rooms || []).filter(r => {
+            const id = r.roomId || r.id;
+            const code = r.code;
+            return !r.isDeleted && r.status !== 'deleted' && !currentDeleted.includes(id) && (!code || !currentDeleted.includes(code));
+          });
+          setRooms(valid);
         }
       })
       .catch(() => {})
@@ -185,8 +213,13 @@ export default function ListeningRoomsView({
       .then(res => res.json())
       .then(data => {
         if (data && data.rooms) {
-          setLeftRooms(data.rooms);
-          const pendingIds = data.rooms.filter(r => r.hasPendingRequest).map(r => r.roomId || r.id);
+          const valid = (data.rooms || []).filter(r => {
+            const id = r.roomId || r.id;
+            const code = r.code;
+            return !r.isDeleted && r.status !== 'deleted' && !currentDeleted.includes(id) && (!code || !currentDeleted.includes(code));
+          });
+          setLeftRooms(valid);
+          const pendingIds = valid.filter(r => r.hasPendingRequest).map(r => r.roomId || r.id);
           setPendingRejoinRoomIds(prev => Array.from(new Set([...prev, ...pendingIds])));
         }
       })
@@ -197,7 +230,12 @@ export default function ListeningRoomsView({
       .then(res => res.json())
       .then(data => {
         if (data && data.rooms) {
-          setArchivedRooms(data.rooms);
+          const valid = (data.rooms || []).filter(r => {
+            const id = r.roomId || r.id;
+            const code = r.code;
+            return !r.isDeleted && r.status !== 'deleted' && !currentDeleted.includes(id) && (!code || !currentDeleted.includes(code));
+          });
+          setArchivedRooms(valid);
         }
       })
       .catch(() => {});
@@ -334,13 +372,18 @@ export default function ListeningRoomsView({
     const handleReaction = (data) => {
       if (data?.emoji) {
         const id = data.id || `react_${Date.now()}_${Math.random()}`;
-        setFloatingReactions(prev => [
-          ...prev, 
-          { id, emoji: data.emoji, user: data.user, left: Math.floor(Math.random() * 70) + 15 }
-        ]);
+        setFloatingReactions(prev => {
+          const next = [...prev.slice(-14), {
+            id,
+            emoji: data.emoji,
+            user: data.user,
+            left: Math.floor(Math.random() * 70) + 15
+          }];
+          return next;
+        });
         setTimeout(() => {
           setFloatingReactions(prev => prev.filter(r => r.id !== id));
-        }, 3200);
+        }, 2800);
       }
     };
 
@@ -419,6 +462,11 @@ export default function ListeningRoomsView({
     const handleRoomDeleted = (data) => {
       const targetId = data?.roomId || data?.id;
       if (targetId) {
+        setDeletedRoomIds(prev => {
+          const next = Array.from(new Set([...(prev || []), targetId]));
+          persistDeletedRoomIds(next);
+          return next;
+        });
         setRooms(prev => (prev || []).filter(r => (r.roomId || r.id) !== targetId));
         setLeftRooms(prev => (prev || []).filter(lr => (lr.roomId || lr.id) !== targetId));
         setArchivedRooms(prev => (prev || []).filter(ar => (ar.roomId || ar.id) !== targetId));
@@ -528,45 +576,56 @@ export default function ListeningRoomsView({
   // Helper to open room preview / details page cleanly without auto-joining
   const handleOpenRoomPreview = async (roomItem) => {
     if (!roomItem) return;
+    const rId = roomItem.roomId || roomItem.id;
+    const code = roomItem.code;
+    const currentDeleted = loadDeletedRoomIds();
 
-    // If user is already host or member, immediately open room workspace directly!
-    if (isUserMemberOrHost(roomItem)) {
-      setSearchPreviewRoom(null);
-      setSelectedPreviewRoom(null);
-      setPreviewLeftRoom(null);
-      // If we already have the room details, open it directly without extra network requests
-      if (roomItem.playlists || roomItem.members) {
-        if (setActiveRoom) setActiveRoom(roomItem);
-        if (setRoomPlaylists) setRoomPlaylists(roomItem.playlists || []);
-        setParticipants(getUniqueMembers(roomItem.members || []));
-        setActivities(roomItem.activities || []);
-        setChatMessages(roomItem.chatMessages || []);
-        socket?.emit('join_listening_room', { roomId: roomItem.roomId || roomItem.id, user });
-        socket?.emit('room:join', { roomId: roomItem.roomId || roomItem.id, user });
-      }
-      handleJoin(roomItem.code || roomItem.roomId || roomItem.id);
+    if (
+      roomItem.isDeleted || 
+      roomItem.status === 'deleted' || 
+      (rId && currentDeleted.includes(rId)) || 
+      (code && currentDeleted.includes(code))
+    ) {
+      if (showToast) showToast('This room has been removed or deleted', 'warning');
       return;
     }
 
-    const rId = roomItem.roomId || roomItem.id;
+    // Helper: directly open room workspace when user is already a participant
+    const openRoomDirectly = (targetRoom) => {
+      setSearchPreviewRoom(null);
+      setSelectedPreviewRoom(null);
+      setPreviewLeftRoom(null);
+      if (setActiveRoom) setActiveRoom(targetRoom);
+      if (setRoomPlaylists) setRoomPlaylists(targetRoom.playlists || []);
+      setParticipants(getUniqueMembers(targetRoom.members || []));
+      setActivities(targetRoom.activities || []);
+      setChatMessages(targetRoom.chatMessages || []);
+      const rId = targetRoom.roomId || targetRoom.id;
+      socket?.emit('join_listening_room', { roomId: rId, user });
+      socket?.emit('room:join', { roomId: rId, user });
+    };
+
+    // If user is already host or member, immediately open room workspace directly!
+    if (isUserMemberOrHost(roomItem)) {
+      openRoomDirectly(roomItem);
+      return;
+    }
+
     // Set immediate preview from summary
     setSelectedPreviewRoom(roomItem);
 
     // Try fetching fresh preview & member details from lookup
-    const code = roomItem.code || rId;
-    if (code) {
+    const lookupCode = code || rId;
+    if (lookupCode) {
       try {
-        const res = await fetch(getApiUrl(`/api/rooms/lookup/${encodeURIComponent(code)}`), {
+        const res = await fetch(getApiUrl(`/api/rooms/lookup/${encodeURIComponent(lookupCode)}`), {
           headers: authHeaders
         });
         const data = await res.json();
         if (res.ok && data?.success && data?.preview) {
           // If fresh lookup shows user is already member/host, open room directly!
           if (data.preview.isMember || data.preview.isHost) {
-            setSelectedPreviewRoom(null);
-            setSearchPreviewRoom(null);
-            setPreviewLeftRoom(null);
-            handleJoin(data.preview.code || data.preview.roomId || rId);
+            openRoomDirectly({ ...roomItem, ...data.preview });
             return;
           }
           setSelectedPreviewRoom(prev => ({
@@ -605,7 +664,14 @@ export default function ListeningRoomsView({
           setPreviewLeftRoom(null);
           setJoinCodeInput('');
           if (showToast) showToast(`Opening "${data.preview.name}"`);
-          handleJoin(data.preview.code || data.preview.roomId || cleanCode);
+          if (setActiveRoom) setActiveRoom(data.preview);
+          if (setRoomPlaylists) setRoomPlaylists(data.preview.playlists || []);
+          setParticipants(getUniqueMembers(data.preview.members || []));
+          setActivities(data.preview.activities || []);
+          setChatMessages(data.preview.chatMessages || []);
+          const rId = data.preview.roomId || data.preview.id;
+          socket?.emit('join_listening_room', { roomId: rId, user });
+          socket?.emit('room:join', { roomId: rId, user });
           return;
         }
 
@@ -634,8 +700,15 @@ export default function ListeningRoomsView({
     const target = roomIdOrCode.trim();
     if (!target) return;
 
-    if (isJoiningRoom) return;
+    const currentDeleted = loadDeletedRoomIds();
+    if (currentDeleted.includes(target)) {
+      if (showToast) showToast('This room has been removed or deleted', 'warning');
+      return;
+    }
+
+    if (isJoiningRoom || inFlightJoinRef.current) return;
     setIsJoiningRoom(true);
+    inFlightJoinRef.current = true;
 
     try {
       const res = await fetch(getApiUrl('/api/rooms/join'), {
@@ -669,6 +742,7 @@ export default function ListeningRoomsView({
       if (showToast) showToast('Room not found or network error', 'error');
     } finally {
       setIsJoiningRoom(false);
+      inFlightJoinRef.current = false;
     }
   };
 
@@ -1555,6 +1629,13 @@ export default function ListeningRoomsView({
     }
 
     // Optimistically remove from all room collections immediately
+    const toDeleteIds = [rId, roomToDelete.code].filter(Boolean);
+    setDeletedRoomIds(prev => {
+      const next = Array.from(new Set([...(prev || []), ...toDeleteIds]));
+      persistDeletedRoomIds(next);
+      return next;
+    });
+
     setRooms(prev => (prev || []).filter(r => (r.roomId || r.id) !== rId));
     setLeftRooms(prev => (prev || []).filter(lr => (lr.roomId || lr.id) !== rId));
     setArchivedRooms(prev => (prev || []).filter(ar => (ar.roomId || ar.id) !== rId));
@@ -1746,14 +1827,76 @@ export default function ListeningRoomsView({
     }
   };
 
+  // Delete an entire room playlist
+  const handleDeleteRoomPlaylist = (playlist) => {
+    if (!activeRoom || !playlist) return;
+    if (!isHost && !isCoHost) {
+      if (showToast) showToast('Only the host or co-hosts can delete room playlists', 'warning');
+      return;
+    }
+    setPlaylistToDelete(playlist);
+  };
+
+  const handleConfirmDeleteRoomPlaylist = async () => {
+    if (!activeRoom || !playlistToDelete || isDeletingPlaylist) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+    const pId = playlistToDelete.id;
+    setIsDeletingPlaylist(true);
+
+    // Optimistic local state update
+    if (setRoomPlaylists) {
+      setRoomPlaylists(prev => (prev || []).filter(p => p.id !== pId));
+    }
+    if (selectedPlaylistId === pId) {
+      setDetailedPlaylistView(false);
+      setSelectedPlaylistId(null);
+    }
+
+    try {
+      if (socket) {
+        socket.emit('room:playlist:delete', { roomId: rId, playlistId: pId, user }, (res) => {
+          setIsDeletingPlaylist(false);
+          setPlaylistToDelete(null);
+          if (res?.success) {
+            if (showToast) showToast(`Deleted room playlist "${playlistToDelete.name}"`);
+          } else {
+            if (showToast) showToast(res?.error || 'Failed to delete room playlist', 'error');
+          }
+        });
+      } else {
+        const res = await fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/playlists/${encodeURIComponent(pId)}`), {
+          method: 'DELETE',
+          headers: authHeaders,
+          body: JSON.stringify({ user })
+        });
+        const data = await res.json();
+        setIsDeletingPlaylist(false);
+        setPlaylistToDelete(null);
+        if (res.ok && data?.success) {
+          if (showToast) showToast(`Deleted room playlist "${playlistToDelete.name}"`);
+        } else {
+          if (showToast) showToast(data?.error || 'Failed to delete room playlist', 'error');
+        }
+      }
+    } catch (e) {
+      setIsDeletingPlaylist(false);
+      setPlaylistToDelete(null);
+      if (showToast) showToast('Network error deleting playlist', 'error');
+    }
+  };
+
   const activeSelectedPlaylist = (roomPlaylists || []).find(p => p.id === selectedPlaylistId) || (roomPlaylists && roomPlaylists[0]);
 
   // Filter active rooms: strictly exclude any room that is archived, left by current user, or deleted
   const activeValidRooms = rooms.filter(r => {
     if (!r) return false;
     const rId = r.roomId || r.id;
-    // Strictly exclude deleted
+    const code = r.code;
+    const currentDeleted = deletedRoomIds || [];
+    // Strictly exclude deleted locally or on server
     if (r.status === 'deleted' || r.isDeleted) return false;
+    if (rId && currentDeleted.includes(rId)) return false;
+    if (code && currentDeleted.includes(code)) return false;
     // Exclude any purged or deleted test rooms matching "Devil"
     if (r.name && String(r.name).trim().toLowerCase() === 'devil') return false;
     // Strictly exclude archived
@@ -1773,7 +1916,11 @@ export default function ListeningRoomsView({
       return r.createdBy?.userId === currentUserId;
     }
     if (filterTab === 'joined') {
-      return r.createdBy?.userId !== currentUserId;
+      const isCreator = r.createdBy?.userId === currentUserId;
+      if (isCreator) return false;
+      // Strictly must be an actual active member of the room!
+      const isMember = Array.isArray(r.members) && r.members.some(m => String(m.userId || '').trim() === String(currentUserId || '').trim());
+      return Boolean(isMember || r.isMember);
     }
     return true;
   });
@@ -1785,8 +1932,11 @@ export default function ListeningRoomsView({
         {floatingReactions.map(r => (
           <div
             key={r.id}
-            className="absolute bottom-24 animate-floatUp text-3xl select-none flex flex-col items-center"
-            style={{ left: `${r.left}%` }}
+            className="absolute bottom-24 animate-floatUp text-3xl select-none flex flex-col items-center will-change-transform"
+            style={{
+              left: `${r.left}%`,
+              transform: 'translate3d(0, 0, 0)'
+            }}
           >
             <span>{r.emoji}</span>
             {r.user?.displayName && (
@@ -2422,6 +2572,18 @@ export default function ListeningRoomsView({
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
+                      {(isHost || isCoHost) && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRoomPlaylist(activeSelectedPlaylist)}
+                          className="px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center gap-1.5 font-semibold text-[11px] transition cursor-pointer active:scale-95"
+                          title="Delete this room playlist"
+                        >
+                          <Trash2 className="w-3 h-3 text-rose-400" />
+                          <span>Delete Playlist</span>
+                        </button>
+                      )}
+
                       {isUiVisible('btn.saveToLibrary') && (
                         <button
                           type="button"
@@ -2666,6 +2828,20 @@ export default function ListeningRoomsView({
                           </span>
 
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {(isHost || isCoHost) && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteRoomPlaylist(pl);
+                                }}
+                                className="p-1 rounded-lg bg-neutral-800/90 hover:bg-rose-500/20 text-neutral-400 hover:text-rose-400 border border-neutral-700/60 transition"
+                                title="Delete Room Playlist"
+                                aria-label="Delete Room Playlist"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={(e) => {
@@ -3110,9 +3286,23 @@ export default function ListeningRoomsView({
             {[
               { id: 'all', label: 'All Rooms', count: activeValidRooms.length },
               { id: 'created', label: 'Created by You', count: activeValidRooms.filter(r => r.createdBy?.userId === currentUserId).length },
-              { id: 'joined', label: 'Joined Rooms', count: activeValidRooms.filter(r => r.createdBy?.userId !== currentUserId).length },
-              { id: 'left', label: 'Left Rooms', count: leftRooms.filter(lr => lr.status !== 'deleted' && !lr.isDeleted && lr.status !== 'archived' && !lr.isArchived).length },
-              { id: 'archived', label: 'Archived Rooms', count: archivedRooms.filter(ar => ar.status !== 'deleted' && !ar.isDeleted).length }
+              { id: 'joined', label: 'Joined Rooms', count: activeValidRooms.filter(r => {
+                if (r.createdBy?.userId === currentUserId) return false;
+                const isMember = Array.isArray(r.members) && r.members.some(m => String(m.userId || '').trim() === String(currentUserId || '').trim());
+                return Boolean(isMember || r.isMember);
+              }).length },
+              { id: 'left', label: 'Left Rooms', count: leftRooms.filter(lr => {
+                const id = lr.roomId || lr.id;
+                const code = lr.code;
+                const currentDeleted = deletedRoomIds || [];
+                return lr.status !== 'deleted' && !lr.isDeleted && lr.status !== 'archived' && !lr.isArchived && !currentDeleted.includes(id) && (!code || !currentDeleted.includes(code));
+              }).length },
+              { id: 'archived', label: 'Archived Rooms', count: archivedRooms.filter(ar => {
+                const id = ar.roomId || ar.id;
+                const code = ar.code;
+                const currentDeleted = deletedRoomIds || [];
+                return ar.status !== 'deleted' && !ar.isDeleted && !currentDeleted.includes(id) && (!code || !currentDeleted.includes(code));
+              }).length }
             ].map(chip => (
               <button
                 key={chip.id}
@@ -3143,13 +3333,28 @@ export default function ListeningRoomsView({
               <div className="p-3.5 rounded-2xl bg-neutral-900/60 border border-neutral-800 text-xs text-neutral-400 flex items-center justify-between">
                 <span>Rooms archived by their Host. Archived rooms are frozen until restored.</span>
                 <span className="font-mono text-[11px] text-amber-400 font-bold">
-                  {archivedRooms.filter(ar => ar.status !== 'deleted' && !ar.isDeleted).length} archived room
-                  {archivedRooms.filter(ar => ar.status !== 'deleted' && !ar.isDeleted).length === 1 ? '' : 's'}
+                  {archivedRooms.filter(ar => {
+                    const id = ar.roomId || ar.id;
+                    const code = ar.code;
+                    const currentDeleted = deletedRoomIds || [];
+                    return ar.status !== 'deleted' && !ar.isDeleted && !currentDeleted.includes(id) && (!code || !currentDeleted.includes(code));
+                  }).length} archived room
+                  {archivedRooms.filter(ar => {
+                    const id = ar.roomId || ar.id;
+                    const code = ar.code;
+                    const currentDeleted = deletedRoomIds || [];
+                    return ar.status !== 'deleted' && !ar.isDeleted && !currentDeleted.includes(id) && (!code || !currentDeleted.includes(code));
+                  }).length === 1 ? '' : 's'}
                 </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4 mt-2">
-                {archivedRooms.filter(r => r.status !== 'deleted' && !r.isDeleted).map(r => {
+                {archivedRooms.filter(r => {
+                  const id = r.roomId || r.id;
+                  const code = r.code;
+                  const currentDeleted = deletedRoomIds || [];
+                  return r.status !== 'deleted' && !r.isDeleted && !currentDeleted.includes(id) && (!code || !currentDeleted.includes(code));
+                }).map(r => {
                   const rId = r.roomId || r.id;
                   const isCreator = r.createdBy?.userId === currentUserId;
 
@@ -3214,7 +3419,12 @@ export default function ListeningRoomsView({
                 })}
               </div>
 
-              {archivedRooms.filter(r => r.status !== 'deleted' && !r.isDeleted).length === 0 && (
+              {archivedRooms.filter(r => {
+                const id = r.roomId || r.id;
+                const code = r.code;
+                const currentDeleted = deletedRoomIds || [];
+                return r.status !== 'deleted' && !r.isDeleted && !currentDeleted.includes(id) && (!code || !currentDeleted.includes(code));
+              }).length === 0 && (
                 <div className="text-center py-12 text-neutral-500 text-xs border border-dashed border-neutral-800 rounded-2xl space-y-2">
                   <Archive className="w-10 h-10 text-neutral-600 mx-auto" />
                   <p className="font-medium text-neutral-400 text-sm">No archived rooms</p>
@@ -3228,13 +3438,28 @@ export default function ListeningRoomsView({
               <div className="p-3.5 rounded-2xl bg-neutral-900/60 border border-neutral-800 text-xs text-neutral-400 flex items-center justify-between">
                 <span>Rooms you previously left. Re-join requires Host approval.</span>
                 <span className="font-mono text-[11px] text-amber-400 font-bold">
-                  {leftRooms.filter(lr => lr.status !== 'deleted' && !lr.isDeleted && lr.status !== 'archived' && !lr.isArchived).length} left room
-                  {leftRooms.filter(lr => lr.status !== 'deleted' && !lr.isDeleted && lr.status !== 'archived' && !lr.isArchived).length === 1 ? '' : 's'}
+                  {leftRooms.filter(lr => {
+                    const id = lr.roomId || lr.id;
+                    const code = lr.code;
+                    const currentDeleted = deletedRoomIds || [];
+                    return lr.status !== 'deleted' && !lr.isDeleted && lr.status !== 'archived' && !lr.isArchived && !currentDeleted.includes(id) && (!code || !currentDeleted.includes(code));
+                  }).length} left room
+                  {leftRooms.filter(lr => {
+                    const id = lr.roomId || lr.id;
+                    const code = lr.code;
+                    const currentDeleted = deletedRoomIds || [];
+                    return lr.status !== 'deleted' && !lr.isDeleted && lr.status !== 'archived' && !lr.isArchived && !currentDeleted.includes(id) && (!code || !currentDeleted.includes(code));
+                  }).length === 1 ? '' : 's'}
                 </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4 mt-2">
-                {leftRooms.filter(r => r.status !== 'deleted' && !r.isDeleted && r.status !== 'archived' && !r.isArchived).map(r => {
+                {leftRooms.filter(r => {
+                  const id = r.roomId || r.id;
+                  const code = r.code;
+                  const currentDeleted = deletedRoomIds || [];
+                  return r.status !== 'deleted' && !r.isDeleted && r.status !== 'archived' && !r.isArchived && !currentDeleted.includes(id) && (!code || !currentDeleted.includes(code));
+                }).map(r => {
                   const rId = r.roomId || r.id;
                   const isPending = pendingRejoinRoomIds.includes(rId) || r.hasPendingRequest;
 
@@ -3305,7 +3530,12 @@ export default function ListeningRoomsView({
                 })}
               </div>
 
-              {leftRooms.filter(r => r.status !== 'deleted' && !r.isDeleted && r.status !== 'archived' && !r.isArchived).length === 0 && (
+              {leftRooms.filter(r => {
+                const id = r.roomId || r.id;
+                const code = r.code;
+                const currentDeleted = deletedRoomIds || [];
+                return r.status !== 'deleted' && !r.isDeleted && r.status !== 'archived' && !r.isArchived && !currentDeleted.includes(id) && (!code || !currentDeleted.includes(code));
+              }).length === 0 && (
                 <div className="text-center py-12 text-neutral-500 text-xs border border-dashed border-neutral-800 rounded-2xl space-y-2">
                   <LogOut className="w-10 h-10 text-neutral-600 mx-auto" />
                   <p className="font-medium text-neutral-400 text-sm">No left rooms</p>
@@ -3781,6 +4011,45 @@ export default function ListeningRoomsView({
                   );
                 })()}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Delete Playlist Confirmation */}
+      {playlistToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="w-full max-w-sm bg-neutral-900 border border-neutral-700/80 rounded-2xl shadow-2xl p-5 space-y-4 animate-scaleUp">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-white text-sm sm:text-base">Delete Room Playlist</h4>
+                <p className="text-[11px] text-neutral-400">This action cannot be undone</p>
+              </div>
+            </div>
+            <p className="text-xs text-neutral-300">
+              Are you sure you want to delete <strong className="text-white">"{playlistToDelete.name}"</strong>? All tracks in this room playlist will be removed for all listeners.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-800">
+              <button
+                type="button"
+                disabled={isDeletingPlaylist}
+                onClick={() => setPlaylistToDelete(null)}
+                className="px-3.5 py-2 text-xs font-semibold text-neutral-400 hover:text-white transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingPlaylist}
+                onClick={handleConfirmDeleteRoomPlaylist}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5 shadow-lg shadow-rose-600/30 cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingPlaylist ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>{isDeletingPlaylist ? 'Deleting...' : 'Delete Playlist'}</span>
+              </button>
             </div>
           </div>
         </div>

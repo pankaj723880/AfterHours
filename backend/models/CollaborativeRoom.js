@@ -45,7 +45,8 @@ const leftMemberSchema = new mongoose.Schema({
   userId: { type: String, required: true },
   name: { type: String, default: 'Listener' },
   email: { type: String, default: '' },
-  leftAt: { type: Date, default: Date.now }
+  leftAt: { type: Date, default: Date.now },
+  isDeleted: { type: Boolean, default: false }
 }, { _id: false });
 
 const joinRequestSchema = new mongoose.Schema({
@@ -150,6 +151,11 @@ const collaborativeRoomSchema = new mongoose.Schema({
     type: String,
     enum: ['active', 'archived', 'deleted'],
     default: 'active'
+  },
+  deletedForUsers: {
+    type: [String],
+    default: [],
+    index: true
   },
   isArchived: {
     type: Boolean,
