@@ -17,7 +17,22 @@ router.get('/', authenticateToken, async (req, res) => {
     if (req.query.scope === 'my') {
       rooms = await collaborativeRoomService.listUserRooms(userId, 50);
     } else {
-      rooms = await collaborativeRoomService.listRooms(50);
+      // Return active public rooms combined with user's joined/created active rooms, deduplicated by roomId
+      const [publicRooms, userRooms] = await Promise.all([
+        collaborativeRoomService.listRooms(50),
+        collaborativeRoomService.listUserRooms(userId, 50)
+      ]);
+      const roomMap = new Map();
+      for (const r of [...userRooms, ...publicRooms]) {
+        const id = r.roomId || r.id;
+        // Strictly exclude archived, deleted, or left rooms from active rooms feed
+        if (id && !roomMap.has(id)) {
+          if (r.status === 'active' && !r.isArchived) {
+            roomMap.set(id, r);
+          }
+        }
+      }
+      rooms = Array.from(roomMap.values());
     }
     res.json({ success: true, rooms });
   } catch (err) {
@@ -65,13 +80,13 @@ router.get('/lookup/:code', authenticateToken, async (req, res) => {
     if (!code) {
       return res.status(400).json({ success: false, error: 'Room code or ID is required' });
     }
-    const room = await collaborativeRoomService.getRoom(code);
+    const room = await collaborativeRoomService.getRoom(code, { includeArchived: true });
     if (!room) {
       return res.status(404).json({ success: false, error: 'Room not found or invalid room code' });
     }
     const userId = getAuthenticatedUserId(req);
     const isMember = (room.members || []).some(m => String(m.userId) === String(userId));
-    const isHost = (room.createdBy?.userId === userId);
+    const isHost = (String(room.createdBy?.userId || '') === String(userId));
 
     res.json({
       success: true,
@@ -85,6 +100,8 @@ router.get('/lookup/:code', authenticateToken, async (req, res) => {
         memberCount: (room.members || []).length,
         playlistsCount: (room.playlists || []).length,
         isPublic: room.isPublic !== false,
+        status: room.status || 'active',
+        isArchived: Boolean(room.isArchived || room.status === 'archived'),
         isMember,
         isHost
       }
@@ -110,10 +127,10 @@ router.post('/', authenticateToken, async (req, res) => {
   }
 });
 
-// POST /api/rooms/join - Join a room by roomCode or roomId (strictly requires authenticated user)
+// POST /api/rooms/join - Join a room by roomCode, roomId, or MongoDB _id (strictly requires authenticated user)
 router.post('/join', authenticateToken, async (req, res) => {
   try {
-    const roomCode = (req.body?.roomCode || req.body?.code || req.body?.roomId || '').toString().trim();
+    const roomCode = (req.body?.roomCode || req.body?.code || req.body?.roomId || req.body?.id || '').toString().trim();
     if (!roomCode) {
       return res.status(400).json({ ok: false, success: false, error: 'Room code or Room ID is required' });
     }
@@ -336,9 +353,9 @@ router.post('/:roomId/playlists/:playlistId/songs/:songId/vote', optionalAuth, a
 // POST /api/rooms/:roomId/chat - Send chat message
 router.post('/:roomId/chat', optionalAuth, async (req, res) => {
   try {
-    const { text } = req.body;
+    const { text, clientId, messageId } = req.body;
     const user = req.user || req.body?.user;
-    const result = await collaborativeRoomService.addChatMessage(req.params.roomId, { text, user });
+    const result = await collaborativeRoomService.addChatMessage(req.params.roomId, { text, user, clientId, messageId });
 
     const io = req.app.get('io');
     if (io && result.room) {

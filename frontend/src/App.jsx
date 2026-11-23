@@ -2748,12 +2748,30 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   });
   const [isListeningRoomsOpen, setIsListeningRoomsOpen] = useState(false);
   const [activeRoom, setActiveRoom] = useState(null);
+  useEffect(() => {
+    activeRoomSessionRef.current = activeRoom;
+  }, [activeRoom]);
   const [roomPlaylists, setRoomPlaylists] = useState([]);
-  const [isRoomPlaybackSyncEnabled, setIsRoomPlaybackSyncEnabled] = useState(false);
+  const [isRoomPlaybackSyncEnabled, setIsRoomPlaybackSyncEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('loopra_listen_together_enabled') === 'true';
+    } catch (_) {
+      return false;
+    }
+  });
   const isRoomPlaybackSyncEnabledRef = useRef(false);
   useEffect(() => {
     isRoomPlaybackSyncEnabledRef.current = isRoomPlaybackSyncEnabled;
+    try {
+      localStorage.setItem('loopra_listen_together_enabled', isRoomPlaybackSyncEnabled ? 'true' : 'false');
+    } catch (_) {}
   }, [isRoomPlaybackSyncEnabled]);
+
+  // High-precision server clock offset (NTP algorithm) and drift correction refs
+  const serverClockOffsetRef = useRef(0);
+  const activeRoomSessionRef = useRef(null);
+  const playbackScheduledTimerRef = useRef(null);
+  const lastSyncCorrectionTimeRef = useRef(0);
   const [selectedPlaylistCategory, setSelectedPlaylistCategory] = useState('personal'); // 'personal' | 'room'
   const [selectedRoomPlaylistForSong, setSelectedRoomPlaylistForSong] = useState(null);
   const [similarSongsTrack, setSimilarSongsTrack] = useState(null);
@@ -4367,8 +4385,83 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
     socket.on('active_users', handleActiveUsersUpdate);
 
+    // NTP Clock Synchronization: compute accurate serverClockOffset & RTT
+    const syncServerClock = () => {
+      if (!socket || !socket.connected) return;
+      const t0 = Date.now();
+      socket.emit('room:time:ping', { clientSendTime: t0 }, (res) => {
+        if (!res) return;
+        const t3 = Date.now();
+        const t1 = res.serverReceiveTime || res.serverTransmitTime;
+        const t2 = res.serverTransmitTime || res.serverReceiveTime;
+        const rtt = Math.max(0, (t3 - t0) - (t2 - t1));
+        // offset = ((t1 - t0) + (t2 - t3)) / 2
+        const computedOffset = Math.round(((t1 - t0) + (t2 - t3)) / 2);
+        serverClockOffsetRef.current = computedOffset;
+      });
+    };
+
+    // Run NTP sync on connect and every 15 seconds
+    syncServerClock();
+    const clockSyncInterval = setInterval(syncServerClock, 15000);
+
+    // Active Server Warm-Up & Keep-Alive Ping while Room / Listen Together is active
+    const keepServerWarmInterval = setInterval(() => {
+      // Open-app execution only
+      if (document.hidden) return;
+      if (isRoomPlaybackSyncEnabledRef.current || activeRoomSessionRef.current) {
+        fetch(getApiUrl('/api/health'), { method: 'GET', keepalive: true }).catch(() => {});
+      }
+    }, 25000);
+
+    const handleRoomPlaybackPrepareEvent = (data) => {
+      if (!isRoomPlaybackSyncEnabledRef.current || !data) return;
+      // Enforce open-app-only execution
+      if (document.hidden) return;
+
+      const prep = data.prepareState;
+      const targetTrack = prep?.track;
+      if (!targetTrack) return;
+
+      const rId = data.roomId || activeRoomSessionRef.current?.roomId || activeRoomSessionRef.current?.id;
+      const targetId = targetTrack.id || targetTrack.videoId;
+      const curId = currentSong?.id || currentSong?.videoId;
+
+      // Load/buffer track in paused state
+      if (curId !== targetId) {
+        playSong(targetTrack);
+        setTimeout(() => {
+          playerRef.current?.pauseVideo?.();
+          setIsPlaying(false);
+          if (typeof prep.basePositionSec === 'number' && prep.basePositionSec > 0) {
+            handleSeek(prep.basePositionSec);
+          }
+        }, 150);
+      } else {
+        playerRef.current?.pauseVideo?.();
+        setIsPlaying(false);
+        if (typeof prep.basePositionSec === 'number') {
+          handleSeek(prep.basePositionSec);
+        }
+      }
+
+      // Notify server and room members that this client has preloaded & buffered
+      if (socket && rId && prep.requestId) {
+        const curUser = user || { userId: getOrCreateSessionId() };
+        socket.emit('room:playback:buffered', {
+          roomId: rId,
+          requestId: prep.requestId,
+          userId: curUser._id || curUser.userId || curUser.id || getOrCreateSessionId(),
+          user: curUser
+        });
+      }
+    };
+
     const handleRoomPlaybackSyncEvent = (data) => {
       if (!isRoomPlaybackSyncEnabledRef.current || !data) return;
+      // Enforce open-app-only execution
+      if (document.hidden) return;
+
       const targetTrack = data.currentSong || data.track;
       if (targetTrack) {
         const curId = currentSong?.id || currentSong?.videoId;
@@ -4377,32 +4470,51 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           ? data.basePositionSec 
           : (typeof data.seekTime === 'number' ? data.seekTime : 0);
 
-        const refTimestamp = data.startedAt || data.timestamp;
+        // Compute authoritative server-corrected elapsed time
+        const serverNow = Date.now() + (serverClockOffsetRef.current || 0);
+        const refTimestamp = data.startAtServerTime || data.startedAt || data.timestamp;
+
         if (data.isPlaying && refTimestamp) {
-          const elapsedSec = Math.max(0, (Date.now() - refTimestamp) / 1000);
+          // If startAtServerTime is scheduled in the near future (e.g. +200ms)
+          if (data.startAtServerTime && data.startAtServerTime > serverNow) {
+            const delayMs = Math.max(0, data.startAtServerTime - serverNow);
+            if (playbackScheduledTimerRef.current) clearTimeout(playbackScheduledTimerRef.current);
+            playbackScheduledTimerRef.current = setTimeout(() => {
+              if (document.hidden) return;
+              playerRef.current?.playVideo?.();
+              setIsPlaying(true);
+            }, delayMs);
+            return;
+          }
+
+          const elapsedSec = Math.max(0, (serverNow - refTimestamp) / 1000);
           adjustedSeek += elapsedSec;
         }
 
         if (curId !== targetId) {
           playSong(targetTrack);
           // Apply current timestamp seek so user starts right at live position, NEVER 0:00
-          if (adjustedSeek > 0.5) {
+          if (adjustedSeek > 0.05) {
             setTimeout(() => {
               handleSeek(adjustedSeek);
-            }, 600);
+            }, 300);
             setTimeout(() => {
-              handleSeek(adjustedSeek + 0.3);
-            }, 1200);
+              handleSeek(adjustedSeek + 0.15);
+            }, 700);
           }
         } else {
-          // Adjust seek if drifted > 2.0 seconds
+          // Tight ~30-40ms Drift Correction: Seek if drift exceeds 35ms (0.035s)
           const curTime = currentTimeRef.current || 0;
-          if (Math.abs(curTime - adjustedSeek) > 2.0) {
+          const drift = Math.abs(curTime - adjustedSeek);
+          const nowMs = Date.now();
+          if (drift > 0.035 && nowMs - (lastSyncCorrectionTimeRef.current || 0) > 800) {
+            lastSyncCorrectionTimeRef.current = nowMs;
             handleSeek(adjustedSeek);
           }
         }
 
         if (data.isPlaying === false) {
+          if (playbackScheduledTimerRef.current) clearTimeout(playbackScheduledTimerRef.current);
           playerRef.current?.pauseVideo?.();
           setIsPlaying(false);
         } else if (data.isPlaying === true && !isPlaying) {
@@ -4413,6 +4525,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     };
     socket.on('room:playback:sync', handleRoomPlaybackSyncEvent);
     socket.on('room:playback:start', handleRoomPlaybackSyncEvent);
+    socket.on('room:playback:prepare', handleRoomPlaybackPrepareEvent);
 
     socket.on('connect', () => {
       setIsLiveCountStale(false);
@@ -4428,9 +4541,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
     return () => {
       clearInterval(clockInterval);
+      clearInterval(clockSyncInterval);
+      clearInterval(keepServerWarmInterval);
+      if (playbackScheduledTimerRef.current) clearTimeout(playbackScheduledTimerRef.current);
       socket.off('active_users', handleActiveUsersUpdate);
       socket.off('room:playback:sync', handleRoomPlaybackSyncEvent);
       socket.off('room:playback:start', handleRoomPlaybackSyncEvent);
+      socket.off('room:playback:prepare', handleRoomPlaybackPrepareEvent);
       socket.off('connect');
       socket.off('disconnect');
     };
@@ -11068,6 +11185,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               onBackToHome={() => handleStationSelect('home')}
               onToggleLike={toggleLike}
               isLiked={isSongLiked}
+              onAddToQueue={(track) => addToQueue(track)}
             />
           </div>
         )}

@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import CollaborativeRoom from '../models/CollaborativeRoom.js';
 
 class CollaborativeRoomService {
@@ -26,7 +27,7 @@ class CollaborativeRoomService {
     return 'listener';
   }
 
-  async getRoom(roomIdOrCode) {
+  async getRoom(roomIdOrCode, { includeArchived = true } = {}) {
     if (!roomIdOrCode) return null;
     const key = String(roomIdOrCode).trim();
     if (!key) return null;
@@ -34,21 +35,38 @@ class CollaborativeRoomService {
     // Check in-memory first
     if (this.roomsCache.has(key)) {
       const cached = this.roomsCache.get(key);
-      if (cached && cached.status !== 'deleted' && cached.status !== 'archived') {
+      if (cached && cached.status !== 'deleted' && (includeArchived || cached.status !== 'archived')) {
         return cached;
       }
     }
     for (const room of this.roomsCache.values()) {
-      if ((room.code === key.toUpperCase() || room.roomId === key) && room.status !== 'deleted' && room.status !== 'archived') {
+      const matches = (
+        room.code === key.toUpperCase() ||
+        room.roomId === key ||
+        (room._id && String(room._id) === key)
+      );
+      if (matches && room.status !== 'deleted' && (includeArchived || room.status !== 'archived')) {
         return room;
       }
     }
 
-    // Check DB strictly for active rooms
+    // Check DB: match by roomId, uppercase code, or MongoDB _id
     try {
+      const orConditions = [
+        { roomId: key },
+        { code: key.toUpperCase() }
+      ];
+      if (mongoose.Types.ObjectId.isValid(key)) {
+        orConditions.push({ _id: key });
+      }
+
+      const statusQuery = includeArchived
+        ? { status: { $ne: 'deleted' } }
+        : { status: 'active' };
+
       const room = await CollaborativeRoom.findOne({
-        $or: [{ roomId: key }, { code: key.toUpperCase() }],
-        status: 'active'
+        $or: orConditions,
+        ...statusQuery
       }).lean();
       if (room) {
         this.normalizeRoomState(room);
@@ -105,7 +123,7 @@ class CollaborativeRoomService {
     try {
       const dbRooms = await CollaborativeRoom.find({
         isPublic: true,
-        status: { $ne: 'deleted' }
+        status: 'active'
       })
         .sort({ updatedAt: -1 })
         .limit(limit)
@@ -119,7 +137,7 @@ class CollaborativeRoomService {
     } catch (e) {
       console.warn('[CollaborativeRoomService] listRooms DB error, using cache:', e.message);
       for (const r of this.roomsCache.values()) {
-        if (r.isPublic !== false && r.status !== 'deleted') {
+        if (r.isPublic !== false && r.status === 'active') {
           list.push(this.formatRoomSummary(r));
         }
       }
@@ -167,7 +185,7 @@ class CollaborativeRoomService {
     const list = [];
     try {
       const dbRooms = await CollaborativeRoom.find({
-        status: { $ne: 'deleted' },
+        status: { $nin: ['deleted', 'archived'] },
         'leftMembers.userId': uid,
         'members.userId': { $ne: uid }
       })
@@ -186,7 +204,7 @@ class CollaborativeRoomService {
     } catch (e) {
       console.warn('[CollaborativeRoomService] listLeftRooms DB error, using cache:', e.message);
       for (const r of this.roomsCache.values()) {
-        if (r.status !== 'deleted') {
+        if (r.status !== 'deleted' && r.status !== 'archived') {
           const isLeft = (r.leftMembers || []).some(lm => String(lm.userId) === uid);
           const isCurrentMember = (r.members || []).some(m => String(m.userId) === uid);
           if (isLeft && !isCurrentMember) {
@@ -329,7 +347,7 @@ class CollaborativeRoomService {
   }
 
   async joinRoom(roomIdOrCode, user) {
-    let room = await this.getRoom(roomIdOrCode);
+    let room = await this.getRoom(roomIdOrCode, { includeArchived: true });
     if (!room) return null;
 
     this.normalizeRoomState(room);
@@ -341,13 +359,23 @@ class CollaborativeRoomService {
     const uName = user?.username || 'Listener';
     const dName = user?.displayName || uName;
 
-    // Strict deduplication by userId
-    const existingMember = room.members.find(m => String(m.userId) === String(uId));
+    // Strict deduplication by userId - prevent duplicate records & counts
+    const cleanUid = String(uId).trim();
+    const existingMember = room.members.find(m => String(m.userId).trim() === cleanUid);
+    const isCreator = String(room.createdBy?.userId || '').trim() === cleanUid;
+
+    // If the room was archived and the host joins/re-opens it, reactivate the room
+    if (room.status === 'archived' && isCreator) {
+      room.status = 'active';
+      room.isArchived = false;
+      room.archivedAt = null;
+      room.archivedBy = null;
+    }
+
     let isNewJoin = false;
     if (!existingMember) {
-      const isCreator = room.createdBy?.userId === uId;
       room.members.push({
-        userId: uId,
+        userId: cleanUid,
         username: uName,
         displayName: dName,
         email: user?.email || '',
@@ -366,11 +394,11 @@ class CollaborativeRoomService {
 
     // Also remove from leftMembers if present
     if (Array.isArray(room.leftMembers)) {
-      room.leftMembers = room.leftMembers.filter(lm => String(lm.userId) !== String(uId));
+      room.leftMembers = room.leftMembers.filter(lm => String(lm.userId).trim() !== cleanUid);
     }
     // Clean joinRequests for this user
     if (Array.isArray(room.joinRequests)) {
-      room.joinRequests = room.joinRequests.filter(jr => String(jr.userId) !== String(uId));
+      room.joinRequests = room.joinRequests.filter(jr => String(jr.userId).trim() !== cleanUid);
     }
 
     this.normalizeRoomState(room);
@@ -394,6 +422,10 @@ class CollaborativeRoomService {
         { roomId: room.roomId },
         { 
           $set: { 
+            status: room.status,
+            isArchived: Boolean(room.isArchived),
+            archivedAt: room.archivedAt,
+            archivedBy: room.archivedBy,
             members: room.members, 
             leftMembers: room.leftMembers,
             joinRequests: room.joinRequests,
@@ -882,7 +914,7 @@ class CollaborativeRoomService {
     return { members: room.members, leftMembers: room.leftMembers, room };
   }
 
-  async addChatMessage(roomId, { text, user }) {
+  async addChatMessage(roomId, { text, user, clientId, messageId }) {
     const room = await this.getRoom(roomId);
     if (!room) throw new Error('Room not found');
     this.normalizeRoomState(room);
@@ -890,8 +922,19 @@ class CollaborativeRoomService {
     const cleanText = String(text || '').trim().slice(0, 300);
     if (!cleanText) throw new Error('Message cannot be empty');
 
+    const canonicalId = messageId || clientId || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+    // Deduplication check: if message with this canonicalId or clientId already exists in recent chat, return it
+    const existing = (room.chatMessages || []).find(m => 
+      m.id === canonicalId || (clientId && m.clientId === clientId)
+    );
+    if (existing) {
+      return { message: existing, chatMessages: room.chatMessages, room };
+    }
+
     const message = {
-      id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: canonicalId,
+      clientId: clientId || canonicalId,
       text: cleanText,
       user: {
         userId: user?._id?.toString?.() || user?.userId || 'guest',
@@ -1436,7 +1479,48 @@ class CollaborativeRoomService {
 
     return { rejectedUserId: tUid, joinRequests: room.joinRequests, room };
   }
-  // Active Playback Session Management (Listen Together Ready-Check & Mid-Playback Sync)
+  // Active Playback Session Management (Listen Together Ready-Check, Pre-Buffer & Mid-Playback Sync)
+  async preparePlayback(roomId, { requestId, track, basePositionSec, initiatorId, initiatorName }) {
+    const room = await this.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+    this.normalizeRoomState(room);
+
+    const reqId = requestId || `prep_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const prepareState = {
+      requestId: reqId,
+      track,
+      basePositionSec: typeof basePositionSec === 'number' ? basePositionSec : 0,
+      initiatorId: String(initiatorId || ''),
+      initiatorName: initiatorName || 'A listener',
+      preparedAt: Date.now(),
+      readyUsers: [String(initiatorId || '')]
+    };
+
+    room.activePlaybackPrepare = prepareState;
+    this.roomsCache.set(room.roomId, room);
+
+    return { prepareState, room };
+  }
+
+  async markPlaybackBuffered(roomId, { requestId, userId }) {
+    const room = await this.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+    this.normalizeRoomState(room);
+
+    const prep = room.activePlaybackPrepare;
+    if (!prep || prep.requestId !== requestId) {
+      return { prepareState: null, room };
+    }
+
+    const uIdStr = String(userId || '');
+    if (!prep.readyUsers.includes(uIdStr)) {
+      prep.readyUsers.push(uIdStr);
+    }
+
+    this.roomsCache.set(room.roomId, room);
+    return { prepareState: prep, room };
+  }
+
   async createPlaybackRequest(roomId, { requestId, track, initiatorId, initiatorName }) {
     const room = await this.getRoom(roomId);
     if (!room) throw new Error('Room not found');

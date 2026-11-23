@@ -921,15 +921,94 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Precise server clock synchronization (NTP-style ping/pong for tight ~30-40ms Listen Together sync)
+  socket.on('room:time:ping', ({ clientSendTime }, callback) => {
+    const serverReceiveTime = Date.now();
+    const serverTransmitTime = Date.now();
+    if (typeof callback === 'function') {
+      callback({
+        clientSendTime,
+        serverReceiveTime,
+        serverTransmitTime
+      });
+    } else {
+      socket.emit('room:time:pong', {
+        clientSendTime,
+        serverReceiveTime,
+        serverTransmitTime
+      });
+    }
+  });
+
+  // Collaborative room playback: Pre-buffer track before synchronous start
+  socket.on('room:playback:prepare', async ({ roomId, requestId, track, basePositionSec, initiatorId, initiatorName, user }, callback) => {
+    try {
+      if (!roomId || !track) {
+        if (typeof callback === 'function') callback({ success: false, error: 'Missing room or track' });
+        return;
+      }
+      const actualInitiatorId = initiatorId || user?._id?.toString?.() || user?.userId || socket.id;
+      const actualInitiatorName = initiatorName || user?.displayName || user?.username || 'A listener';
+
+      const res = await collaborativeRoomService.preparePlayback(roomId, {
+        requestId,
+        track,
+        basePositionSec: typeof basePositionSec === 'number' ? basePositionSec : 0,
+        initiatorId: actualInitiatorId,
+        initiatorName: actualInitiatorName
+      });
+
+      // Broadcast prepare command to all synced room members to load/buffer paused
+      io.to(`room_${roomId}`).emit('room:playback:prepare', {
+        roomId,
+        prepareState: res.prepareState,
+        serverTime: Date.now()
+      });
+
+      if (typeof callback === 'function') callback({ success: true, prepareState: res.prepareState, serverTime: Date.now() });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  });
+
+  // Collaborative room playback: Client reports track buffered and ready in paused state
+  socket.on('room:playback:buffered', async ({ roomId, requestId, userId, user }, callback) => {
+    try {
+      if (!roomId || !requestId) {
+        if (typeof callback === 'function') callback({ success: false, error: 'Missing parameters' });
+        return;
+      }
+      const actualUserId = userId || user?._id?.toString?.() || user?.userId || socket.id;
+      const res = await collaborativeRoomService.markPlaybackBuffered(roomId, {
+        requestId,
+        userId: actualUserId
+      });
+
+      io.to(`room_${roomId}`).emit('room:playback:buffered', {
+        roomId,
+        requestId,
+        userId: actualUserId,
+        readyUsers: res.prepareState?.readyUsers || [actualUserId]
+      });
+
+      if (typeof callback === 'function') callback({ success: true, prepareState: res.prepareState });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  });
+
   // Collaborative room playback: Start synchronized playback session
-  socket.on('room:playback:start', async ({ roomId, track, basePositionSec, startedAt, isPlaying, user }, callback) => {
+  socket.on('room:playback:start', async ({ roomId, track, basePositionSec, startedAt, startAtServerTime, isPlaying, user }, callback) => {
     try {
       if (!roomId || !track) {
         if (typeof callback === 'function') callback({ success: false, error: 'Missing room or track' });
         return;
       }
       const now = Date.now();
-      const finalStartedAt = typeof startedAt === 'number' ? startedAt : now;
+      // If startAtServerTime was provided, use it as the synchronized reference point
+      const finalStartedAt = typeof startAtServerTime === 'number' 
+        ? startAtServerTime 
+        : (typeof startedAt === 'number' ? startedAt : now);
       const finalBasePos = typeof basePositionSec === 'number' ? basePositionSec : 0;
       const finalIsPlaying = isPlaying !== undefined ? Boolean(isPlaying) : true;
 
@@ -947,12 +1026,14 @@ io.on('connection', (socket) => {
         track: res.playbackSession.track,
         basePositionSec: res.playbackSession.basePositionSec,
         startedAt: res.playbackSession.startedAt,
+        startAtServerTime: finalStartedAt,
         isPlaying: res.playbackSession.isPlaying,
         updatedAt: res.playbackSession.updatedAt,
-        sender: user?.displayName || user?.username || 'Host'
+        serverNow: Date.now(),
+        sender: user?.displayName || user?.username || 'Member'
       });
 
-      if (typeof callback === 'function') callback({ success: true, playbackSession: res.playbackSession });
+      if (typeof callback === 'function') callback({ success: true, playbackSession: res.playbackSession, serverNow: Date.now() });
     } catch (e) {
       if (typeof callback === 'function') callback({ success: false, error: e.message });
     }
@@ -1013,13 +1094,13 @@ io.on('connection', (socket) => {
   });
 
   // Live mini chat messages
-  socket.on('room:chat:send', async ({ roomId, text, user }, callback) => {
+  socket.on('room:chat:send', async ({ roomId, text, user, clientId, messageId }, callback) => {
     try {
       if (!roomId || !text) {
         if (typeof callback === 'function') callback({ success: false, error: 'Missing text or roomId' });
         return;
       }
-      const res = await collaborativeRoomService.addChatMessage(roomId, { text, user });
+      const res = await collaborativeRoomService.addChatMessage(roomId, { text, user, clientId, messageId });
       io.to(`room_${roomId}`).emit('room:chat:message', {
         roomId,
         message: res.message

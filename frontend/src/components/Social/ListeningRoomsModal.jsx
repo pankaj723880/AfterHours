@@ -46,6 +46,7 @@ export default function ListeningRoomsModal({
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
   const [joinCodeInput, setJoinCodeInput] = useState('');
+  const [selectedPreviewRoom, setSelectedPreviewRoom] = useState(null); // Preview state before explicit join
   
   // Upgrades State
   const [activeTab, setActiveTab] = useState('playlists'); // 'playlists' | 'activity' | 'members'
@@ -143,7 +144,21 @@ export default function ListeningRoomsModal({
 
     const handleChatMessage = (data) => {
       if (data?.message) {
-        setChatMessages(prev => [...prev.slice(-99), data.message]);
+        const msg = data.message;
+        const msgId = msg.id || msg.clientId;
+        setChatMessages(prev => {
+          const list = prev || [];
+          const existingIndex = list.findIndex(m => 
+            (msgId && (m.id === msgId || m.clientId === msgId)) ||
+            (msg.clientId && (m.clientId === msg.clientId || m.id === msg.clientId))
+          );
+          if (existingIndex > -1) {
+            const updated = [...list];
+            updated[existingIndex] = { ...updated[existingIndex], ...msg };
+            return updated.slice(-100);
+          }
+          return [...list.slice(-99), msg];
+        });
       }
     };
 
@@ -463,23 +478,100 @@ export default function ListeningRoomsModal({
     });
   };
 
-  // 8. Mini Chat Send
+  // 8. Mini Chat Send with Strict Deduplication & Double-Submission Guards
+  const [isSendingChatMessage, setIsSendingChatMessage] = useState(false);
+  const isSendingChatMessageRef = useRef(false);
+
   const handleSendChatMessage = (e) => {
-    e.preventDefault();
-    if (!chatInput.trim() || !activeRoom) return;
-    const rId = activeRoom.roomId || activeRoom.id;
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
     const text = chatInput.trim();
+    if (!text || !activeRoom) return;
+
+    if (isSendingChatMessageRef.current) return;
+    isSendingChatMessageRef.current = true;
+    setIsSendingChatMessage(true);
+
+    const rId = activeRoom.roomId || activeRoom.id;
+    const clientId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const optimisticMessage = {
+      id: clientId,
+      clientId,
+      text,
+      user: {
+        userId: currentUserId,
+        username: user?.username || 'Listener',
+        displayName: user?.displayName || user?.username || 'Listener',
+        avatar: user?.avatarUrl || ''
+      },
+      timestamp: new Date()
+    };
+
+    setChatInput('');
+
+    setChatMessages(prev => {
+      const list = prev || [];
+      const exists = list.some(m => m.id === clientId || m.clientId === clientId);
+      if (exists) return list;
+      return [...list.slice(-99), optimisticMessage];
+    });
+
+    const releaseLock = () => {
+      setTimeout(() => {
+        isSendingChatMessageRef.current = false;
+        setIsSendingChatMessage(false);
+      }, 250);
+    };
 
     if (socket) {
-      socket.emit('room:chat:send', { roomId: rId, text, user });
+      socket.emit('room:chat:send', { roomId: rId, text, clientId, messageId: clientId, user }, (res) => {
+        releaseLock();
+        if (res && res.success && res.message) {
+          const serverMsg = res.message;
+          setChatMessages(prev => {
+            const list = prev || [];
+            const idx = list.findIndex(m => m.id === clientId || m.clientId === clientId);
+            if (idx > -1) {
+              const updated = [...list];
+              updated[idx] = { ...updated[idx], ...serverMsg };
+              return updated.slice(-100);
+            }
+            if (!list.some(m => m.id === serverMsg.id)) {
+              return [...list.slice(-99), serverMsg];
+            }
+            return list;
+          });
+        }
+      });
     } else {
       fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/chat`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, user })
-      }).catch(() => {});
+        body: JSON.stringify({ text, clientId, messageId: clientId, user })
+      })
+        .then(res => res.json())
+        .then(data => {
+          releaseLock();
+          if (data && data.success && data.message) {
+            const serverMsg = data.message;
+            setChatMessages(prev => {
+              const list = prev || [];
+              const idx = list.findIndex(m => m.id === clientId || m.clientId === clientId);
+              if (idx > -1) {
+                const updated = [...list];
+                updated[idx] = { ...updated[idx], ...serverMsg };
+                return updated.slice(-100);
+              }
+              if (!list.some(m => m.id === serverMsg.id)) {
+                return [...list.slice(-99), serverMsg];
+              }
+              return list;
+            });
+          }
+        })
+        .catch(() => {
+          releaseLock();
+        });
     }
-    setChatInput('');
   };
 
   // 9. Fork Room Playlist to Personal Playlists ("Save Copy to My Playlists")
@@ -878,7 +970,7 @@ export default function ListeningRoomsModal({
                     />
                     <button
                       type="submit"
-                      disabled={!chatInput.trim()}
+                      disabled={!chatInput.trim() || isSendingChatMessage}
                       className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs rounded-xl transition disabled:opacity-40"
                     >
                       <Send className="w-3.5 h-3.5" />
@@ -1454,16 +1546,87 @@ export default function ListeningRoomsModal({
                           <span>{r.memberCount || 1} members</span>
                         </span>
                         <button
-                          onClick={() => handleJoin(r.roomId || r.id)}
+                          onClick={() => setSelectedPreviewRoom(r)}
                           className="px-3 py-1 rounded-xl bg-amber-500/10 hover:bg-amber-500 hover:text-neutral-950 text-amber-300 text-xs font-semibold border border-amber-500/30 transition"
                         >
-                          Join Room
+                          Preview Room
                         </button>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Room Details & Preview Sub-Modal with Explicit Join button */}
+          {selectedPreviewRoom && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+              <div 
+                className="w-full max-w-sm bg-neutral-900 border border-neutral-700/80 rounded-2xl p-5 shadow-2xl space-y-4 animate-scaleUp"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Radio className="w-4 h-4 text-amber-400" />
+                    <h3 className="font-bold text-sm text-white">{selectedPreviewRoom.name}</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPreviewRoom(null)}
+                    className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="p-3 rounded-xl bg-neutral-950/80 border border-neutral-800 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-neutral-400">Host:</span>
+                    <span className="text-white font-bold">{selectedPreviewRoom.createdBy?.displayName || selectedPreviewRoom.createdBy?.username || 'Host'}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-neutral-400">Active Listeners:</span>
+                    <span className="text-emerald-400 font-mono font-semibold">{selectedPreviewRoom.memberCount || 1} online</span>
+                  </div>
+                  {selectedPreviewRoom.code && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-neutral-400">Room Code:</span>
+                      <span className="text-amber-400 font-mono font-bold">{selectedPreviewRoom.code}</span>
+                    </div>
+                  )}
+                  {selectedPreviewRoom.description && (
+                    <p className="text-[11px] text-neutral-400 pt-1 border-t border-neutral-800/80">
+                      {selectedPreviewRoom.description}
+                    </p>
+                  )}
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-[11px] text-neutral-400">
+                  Preview mode does not join or count you as an active member until you click Join Room.
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-800">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPreviewRoom(null)}
+                    className="px-3 py-1.5 text-xs text-neutral-400 hover:text-white"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = selectedPreviewRoom.code || selectedPreviewRoom.roomId || selectedPreviewRoom.id;
+                      setSelectedPreviewRoom(null);
+                      handleJoin(target);
+                    }}
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 transition active:scale-95"
+                  >
+                    Join Room
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
