@@ -64,9 +64,30 @@ class CollaborativeRoomService {
   normalizeRoomState(r) {
     if (!r) return;
     if (!Array.isArray(r.members)) r.members = [];
-    r.members.forEach(m => {
-      m.role = this.normalizeRole(m.role);
-    });
+    
+    // Strict Deduplication: One User = At Most One Member Record by userId
+    const seenUserIds = new Set();
+    const dedupedMembers = [];
+    for (const m of r.members) {
+      if (!m) continue;
+      const uid = String(m.userId || '').trim();
+      if (!uid) continue;
+      if (!seenUserIds.has(uid)) {
+        seenUserIds.add(uid);
+        m.role = this.normalizeRole(m.role);
+        dedupedMembers.push(m);
+      } else {
+        // Merge latest active timestamp or details if seen
+        const existing = dedupedMembers.find(dm => String(dm.userId) === uid);
+        if (existing && m.lastActiveAt && (!existing.lastActiveAt || new Date(m.lastActiveAt) > new Date(existing.lastActiveAt))) {
+          existing.lastActiveAt = m.lastActiveAt;
+        }
+      }
+    }
+    r.members = dedupedMembers;
+
+    if (!Array.isArray(r.leftMembers)) r.leftMembers = [];
+    if (!Array.isArray(r.joinRequests)) r.joinRequests = [];
     if (!Array.isArray(r.playlists)) r.playlists = [];
     r.playlists.forEach(pl => {
       if (!Array.isArray(pl.songs)) pl.songs = [];
@@ -111,8 +132,82 @@ class CollaborativeRoomService {
     const uid = String(userIdOrGuestId).trim();
     const list = [];
     try {
+      // A user should only see active rooms where they are currently in the members list.
+      // If a user left the room (even if they were the creator), they should not see it anymore.
+      const dbRooms = await CollaborativeRoom.find({
+        status: { $nin: ['deleted', 'archived'] },
+        'members.userId': uid
+      })
+        .sort({ updatedAt: -1 })
+        .limit(limit)
+        .lean();
+
+      for (const r of dbRooms) {
+        this.normalizeRoomState(r);
+        this.roomsCache.set(r.roomId, r);
+        list.push(this.formatRoomSummary(r));
+      }
+    } catch (e) {
+      console.warn('[CollaborativeRoomService] listUserRooms DB error, using cache:', e.message);
+      for (const r of this.roomsCache.values()) {
+        if (r.status !== 'deleted' && r.status !== 'archived') {
+          const isMember = (r.members || []).some(m => String(m.userId) === uid);
+          if (isMember) {
+            list.push(this.formatRoomSummary(r));
+          }
+        }
+      }
+    }
+    return list;
+  }
+
+  async listLeftRooms(userIdOrGuestId, limit = 50) {
+    if (!userIdOrGuestId) return [];
+    const uid = String(userIdOrGuestId).trim();
+    const list = [];
+    try {
       const dbRooms = await CollaborativeRoom.find({
         status: { $ne: 'deleted' },
+        'leftMembers.userId': uid,
+        'members.userId': { $ne: uid }
+      })
+        .sort({ updatedAt: -1 })
+        .limit(limit)
+        .lean();
+
+      for (const r of dbRooms) {
+        this.normalizeRoomState(r);
+        this.roomsCache.set(r.roomId, r);
+        const summary = this.formatRoomSummary(r);
+        summary.leftAt = (r.leftMembers || []).find(lm => String(lm.userId) === uid)?.leftAt || r.updatedAt;
+        summary.hasPendingRequest = (r.joinRequests || []).some(jr => String(jr.userId) === uid);
+        list.push(summary);
+      }
+    } catch (e) {
+      console.warn('[CollaborativeRoomService] listLeftRooms DB error, using cache:', e.message);
+      for (const r of this.roomsCache.values()) {
+        if (r.status !== 'deleted') {
+          const isLeft = (r.leftMembers || []).some(lm => String(lm.userId) === uid);
+          const isCurrentMember = (r.members || []).some(m => String(m.userId) === uid);
+          if (isLeft && !isCurrentMember) {
+            const summary = this.formatRoomSummary(r);
+            summary.leftAt = (r.leftMembers || []).find(lm => String(lm.userId) === uid)?.leftAt || r.updatedAt;
+            summary.hasPendingRequest = (r.joinRequests || []).some(jr => String(jr.userId) === uid);
+            list.push(summary);
+          }
+        }
+      }
+    }
+    return list;
+  }
+
+  async listArchivedRooms(userIdOrGuestId, limit = 50) {
+    if (!userIdOrGuestId) return [];
+    const uid = String(userIdOrGuestId).trim();
+    const list = [];
+    try {
+      const dbRooms = await CollaborativeRoom.find({
+        status: 'archived',
         $or: [
           { 'createdBy.userId': uid },
           { 'members.userId': uid }
@@ -128,11 +223,11 @@ class CollaborativeRoomService {
         list.push(this.formatRoomSummary(r));
       }
     } catch (e) {
-      console.warn('[CollaborativeRoomService] listUserRooms DB error, using cache:', e.message);
+      console.warn('[CollaborativeRoomService] listArchivedRooms DB error, using cache:', e.message);
       for (const r of this.roomsCache.values()) {
-        if (r.status !== 'deleted') {
+        if (r.status === 'archived') {
           const isCreator = r.createdBy?.userId === uid;
-          const isMember = (r.members || []).some(m => m.userId === uid);
+          const isMember = (r.members || []).some(m => String(m.userId) === uid);
           if (isCreator || isMember) {
             list.push(this.formatRoomSummary(r));
           }
@@ -156,15 +251,22 @@ class CollaborativeRoomService {
       isPlaying: Boolean(r.isPlaying),
       isPublic: r.isPublic !== false,
       status: r.status || 'active',
+      isArchived: Boolean(r.isArchived || r.status === 'archived'),
+      archivedAt: r.archivedAt || null,
+      archivedBy: r.archivedBy || null,
       updatedAt: r.updatedAt || r.lastActiveAt
     };
   }
 
   async createRoom({ name, description = '', user = null, isPublic = true }) {
+    const uid = user?._id?.toString?.() || user?.userId;
+    if (!uid) {
+      throw new Error('Authentication required: You must be logged in to create a room');
+    }
     const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const code = this.generateCode(6);
     const creatorInfo = {
-      userId: user?._id?.toString?.() || user?.userId || `guest_${Date.now()}`,
+      userId: uid,
       username: user?.username || 'Host',
       displayName: user?.displayName || user?.username || 'Host'
     };
@@ -189,6 +291,7 @@ class CollaborativeRoomService {
         userId: creatorInfo.userId,
         username: creatorInfo.username,
         displayName: creatorInfo.displayName,
+        email: user?.email || '',
         avatar: user?.avatarUrl || '',
         role: 'host',
         joinedAt: new Date(),
@@ -231,11 +334,15 @@ class CollaborativeRoomService {
 
     this.normalizeRoomState(room);
 
-    const uId = user?._id?.toString?.() || user?.userId || `guest_${Date.now()}`;
+    const uId = user?._id?.toString?.() || user?.userId;
+    if (!uId) {
+      throw new Error('Authentication required: You must be logged in to join a room');
+    }
     const uName = user?.username || 'Listener';
     const dName = user?.displayName || uName;
 
-    const existingMember = room.members.find(m => m.userId === uId || (m.username === uName && uName !== 'Listener'));
+    // Strict deduplication by userId
+    const existingMember = room.members.find(m => String(m.userId) === String(uId));
     let isNewJoin = false;
     if (!existingMember) {
       const isCreator = room.createdBy?.userId === uId;
@@ -243,6 +350,7 @@ class CollaborativeRoomService {
         userId: uId,
         username: uName,
         displayName: dName,
+        email: user?.email || '',
         avatar: user?.avatarUrl || '',
         role: isCreator ? 'host' : 'listener',
         joinedAt: new Date(),
@@ -252,8 +360,20 @@ class CollaborativeRoomService {
     } else {
       existingMember.lastActiveAt = new Date();
       existingMember.displayName = dName;
+      if (user?.email) existingMember.email = user.email;
       if (user?.avatarUrl) existingMember.avatar = user.avatarUrl;
     }
+
+    // Also remove from leftMembers if present
+    if (Array.isArray(room.leftMembers)) {
+      room.leftMembers = room.leftMembers.filter(lm => String(lm.userId) !== String(uId));
+    }
+    // Clean joinRequests for this user
+    if (Array.isArray(room.joinRequests)) {
+      room.joinRequests = room.joinRequests.filter(jr => String(jr.userId) !== String(uId));
+    }
+
+    this.normalizeRoomState(room);
 
     if (isNewJoin) {
       room.activities.unshift({
@@ -275,6 +395,8 @@ class CollaborativeRoomService {
         { 
           $set: { 
             members: room.members, 
+            leftMembers: room.leftMembers,
+            joinRequests: room.joinRequests,
             activities: room.activities,
             lastActiveAt: new Date() 
           }
@@ -633,20 +755,106 @@ class CollaborativeRoomService {
     if (!room) return null;
     this.normalizeRoomState(room);
 
-    const uId = user?._id?.toString?.() || user?.userId || (typeof user === 'string' ? user : null);
-    const uName = user?.username || (typeof user === 'string' ? user : null);
-    const member = room.members.find(m => (uId && String(m.userId) === String(uId)) || (uName && String(m.username) === String(uName)));
+    // Collect all candidate identifiers for the leaving user
+    const candidateIds = new Set();
+    const addCandidate = (val) => {
+      if (val !== undefined && val !== null && String(val).trim()) {
+        candidateIds.add(String(val).trim());
+      }
+    };
 
-    if (member) {
-      room.members = room.members.filter(m => m !== member && String(m.userId) !== String(uId));
+    if (typeof user === 'string') {
+      addCandidate(user);
+    } else if (user && typeof user === 'object') {
+      addCandidate(user._id);
+      addCandidate(user.userId);
+      addCandidate(user.id);
+      addCandidate(user.guestId);
+      addCandidate(user.username);
+      addCandidate(user.email);
+    }
+
+    const isMatch = (m) => {
+      if (!m) return false;
+      return (
+        candidateIds.has(String(m.userId || '').trim()) ||
+        candidateIds.has(String(m.username || '').trim()) ||
+        (m.email && candidateIds.has(String(m.email).trim()))
+      );
+    };
+
+    const member = room.members.find(isMatch);
+    const prevMemberCount = room.members.length;
+
+    // Filter out from room.members
+    room.members = room.members.filter(m => !isMatch(m));
+
+    if (member || room.members.length < prevMemberCount) {
+      const leaverName = member?.displayName || member?.username || user?.displayName || user?.username || 'A listener';
       room.activities.unshift({
         id: `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         type: 'member_left',
-        text: `${member.displayName || member.username} left the room`,
-        user: { userId: member.userId, username: member.username, displayName: member.displayName || member.username },
+        text: `${leaverName} left the room`,
+        user: { 
+          userId: member?.userId || user?.userId || 'unknown', 
+          username: member?.username || user?.username || 'Listener', 
+          displayName: leaverName 
+        },
         timestamp: new Date()
       });
       if (room.activities.length > 50) room.activities.pop();
+    }
+
+    // Check if the leaving user was the host/creator
+    const wasHost = (
+      (room.createdBy?.userId && candidateIds.has(String(room.createdBy.userId).trim())) ||
+      (room.createdBy?.username && candidateIds.has(String(room.createdBy.username).trim())) ||
+      (member && (member.role === 'host' || member.role === 'owner'))
+    );
+
+    if (wasHost) {
+      if (room.members.length === 0) {
+        // No members left in the room; archive it so it no longer shows up
+        room.status = 'archived';
+      } else {
+        // Transfer host role to the first remaining member
+        const nextHost = room.members[0];
+        nextHost.role = 'host';
+        room.createdBy = {
+          userId: nextHost.userId,
+          username: nextHost.username,
+          displayName: nextHost.displayName || nextHost.username
+        };
+        room.activities.unshift({
+          id: `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          type: 'role_changed',
+          text: `${nextHost.displayName || nextHost.username} is now the room host`,
+          user: { userId: nextHost.userId, username: nextHost.username, displayName: nextHost.displayName || nextHost.username },
+          timestamp: new Date()
+        });
+        if (room.activities.length > 50) room.activities.pop();
+      }
+    }
+
+    // Add leaving user to leftMembers
+    const leavingUserId = member?.userId || user?.userId || user?._id?.toString?.() || (typeof user === 'string' ? user : 'guest');
+    const leavingUserName = member?.displayName || member?.username || user?.displayName || user?.username || 'Listener';
+    const leavingEmail = member?.email || user?.email || '';
+
+    if (leavingUserId) {
+      if (!Array.isArray(room.leftMembers)) room.leftMembers = [];
+      // Remove any duplicate previous leftMember entry for this user
+      room.leftMembers = room.leftMembers.filter(lm => String(lm.userId) !== String(leavingUserId));
+      room.leftMembers.push({
+        userId: String(leavingUserId),
+        name: leavingUserName,
+        email: leavingEmail,
+        leftAt: new Date()
+      });
+      // Also remove any stale joinRequests from this user when they leave
+      if (Array.isArray(room.joinRequests)) {
+        room.joinRequests = room.joinRequests.filter(jr => String(jr.userId) !== String(leavingUserId));
+      }
     }
 
     room.lastActiveAt = new Date();
@@ -658,6 +866,10 @@ class CollaborativeRoomService {
         { 
           $set: { 
             members: room.members, 
+            leftMembers: room.leftMembers,
+            joinRequests: room.joinRequests,
+            createdBy: room.createdBy,
+            status: room.status,
             activities: room.activities,
             lastActiveAt: new Date() 
           } 
@@ -667,7 +879,7 @@ class CollaborativeRoomService {
       console.warn('[CollaborativeRoomService] leaveRoom DB update warning:', e.message);
     }
 
-    return { members: room.members, room };
+    return { members: room.members, leftMembers: room.leftMembers, room };
   }
 
   async addChatMessage(roomId, { text, user }) {
@@ -834,6 +1046,147 @@ class CollaborativeRoomService {
     return { isPublic: room.isPublic, room };
   }
 
+  async toggleArchiveRoom(roomId, shouldArchive = true, requesterUser) {
+    const room = await this.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+    this.normalizeRoomState(room);
+
+    const requesterId = requesterUser?._id?.toString?.() || requesterUser?.userId;
+    const isCreator = Boolean(
+      (room.createdBy?.userId && requesterId && room.createdBy.userId === requesterId) ||
+      (room.createdBy?.username && requesterUser?.username && room.createdBy.username === requesterUser.username)
+    );
+    const requester = room.members.find(m => m.userId === requesterId || m.username === requesterUser?.username);
+    const isHost = isCreator || (requester && this.normalizeRole(requester.role) === 'host');
+    if (!isHost) {
+      throw new Error('Only the room Host can archive or restore this room');
+    }
+
+    const isArchived = Boolean(shouldArchive);
+    room.isArchived = isArchived;
+    room.status = isArchived ? 'archived' : 'active';
+    room.archivedAt = isArchived ? new Date() : null;
+    room.archivedBy = isArchived ? {
+      userId: requesterId || 'unknown',
+      username: requesterUser?.username || 'Host',
+      displayName: requesterUser?.displayName || requesterUser?.username || 'Host'
+    } : null;
+    room.lastActiveAt = new Date();
+
+    room.activities.unshift({
+      id: `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      type: isArchived ? 'room_archived' : 'room_restored',
+      text: isArchived 
+        ? `${room.archivedBy.displayName} archived the room` 
+        : `${requesterUser?.displayName || requesterUser?.username || 'Host'} restored the room to active`,
+      user: { userId: requesterId, username: requesterUser?.username, displayName: requesterUser?.displayName || requesterUser?.username },
+      timestamp: new Date()
+    });
+    if (room.activities.length > 50) room.activities.pop();
+
+    this.roomsCache.set(room.roomId, room);
+
+    try {
+      await CollaborativeRoom.updateOne(
+        { roomId: room.roomId },
+        { 
+          $set: { 
+            status: room.status,
+            isArchived: room.isArchived,
+            archivedAt: room.archivedAt,
+            archivedBy: room.archivedBy,
+            activities: room.activities,
+            lastActiveAt: new Date() 
+          } 
+        }
+      );
+    } catch (e) {
+      console.warn('[CollaborativeRoomService] toggleArchiveRoom DB error:', e.message);
+    }
+
+    return { 
+      isArchived: room.isArchived, 
+      status: room.status, 
+      archivedAt: room.archivedAt, 
+      archivedBy: room.archivedBy, 
+      room 
+    };
+  }
+
+  async deleteRoomPermanently(roomId, requesterUser) {
+    const room = await this.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+    this.normalizeRoomState(room);
+
+    const requesterId = requesterUser?._id?.toString?.() || requesterUser?.userId;
+    const isCreator = Boolean(
+      (room.createdBy?.userId && requesterId && room.createdBy.userId === requesterId) ||
+      (room.createdBy?.username && requesterUser?.username && room.createdBy.username === requesterUser.username)
+    );
+    const requester = room.members.find(m => m.userId === requesterId || m.username === requesterUser?.username);
+    const isHost = isCreator || (requester && this.normalizeRole(requester.role) === 'host');
+    if (!isHost) {
+      throw new Error('Only the room Host can permanently delete this room');
+    }
+
+    this.roomsCache.delete(room.roomId);
+
+    try {
+      await CollaborativeRoom.deleteOne({ roomId: room.roomId });
+    } catch (e) {
+      console.warn('[CollaborativeRoomService] deleteRoomPermanently DB error:', e.message);
+    }
+
+    return { deleted: true, roomId: room.roomId };
+  }
+
+  // Remove a room from a user's Left Rooms list (or permanently delete if host)
+  async deleteLeftRoomForUser(roomId, requesterUser) {
+    const room = await this.getRoom(roomId);
+    if (!room) return { success: true, removed: true, roomId };
+    this.normalizeRoomState(room);
+
+    const requesterId = requesterUser?._id?.toString?.() || requesterUser?.userId;
+    const isCreator = Boolean(
+      (room.createdBy?.userId && requesterId && room.createdBy.userId === requesterId) ||
+      (room.createdBy?.username && requesterUser?.username && room.createdBy.username === requesterUser.username)
+    );
+
+    // If the requester is the host/creator, permanently delete the entire room
+    if (isCreator) {
+      return this.deleteRoomPermanently(roomId, requesterUser);
+    }
+
+    // Otherwise, simply purge the user's leftMembers and joinRequests records from the room
+    const uidStr = String(requesterId).trim();
+    if (Array.isArray(room.leftMembers)) {
+      room.leftMembers = room.leftMembers.filter(lm => String(lm.userId) !== uidStr);
+    }
+    if (Array.isArray(room.joinRequests)) {
+      room.joinRequests = room.joinRequests.filter(jr => String(jr.userId) !== uidStr);
+    }
+
+    room.lastActiveAt = new Date();
+    this.roomsCache.set(room.roomId, room);
+
+    try {
+      await CollaborativeRoom.updateOne(
+        { roomId: room.roomId },
+        {
+          $set: {
+            leftMembers: room.leftMembers,
+            joinRequests: room.joinRequests,
+            lastActiveAt: new Date()
+          }
+        }
+      );
+    } catch (e) {
+      console.warn('[CollaborativeRoomService] deleteLeftRoomForUser DB error:', e.message);
+    }
+
+    return { success: true, removed: true, roomId: room.roomId, deletedPermanently: false };
+  }
+
   async archiveOrDeleteRoom(roomId, action = 'archive', requesterUser) {
     const room = await this.getRoom(roomId);
     if (!room) throw new Error('Room not found');
@@ -898,6 +1251,374 @@ class CollaborativeRoomService {
     }
 
     return { playlist, room };
+  }
+
+  // --- Re-Join Request & Host Approval / Rejection ---
+
+  async requestToJoin(roomId, user) {
+    const room = await this.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+    this.normalizeRoomState(room);
+
+    const uid = String(user?._id?.toString?.() || user?.userId || user?.id || (typeof user === 'string' ? user : '')).trim();
+    if (!uid) throw new Error('Valid user identifier is required');
+
+    const name = String(user?.displayName || user?.name || user?.username || 'Listener').trim();
+    const email = String(user?.email || '').trim();
+
+    // Check if user is already a member
+    const alreadyMember = room.members.some(m => String(m.userId) === uid);
+    if (alreadyMember) {
+      return { status: 'already_member', room, request: null };
+    }
+
+    // Add or update in joinRequests
+    if (!Array.isArray(room.joinRequests)) room.joinRequests = [];
+    room.joinRequests = room.joinRequests.filter(jr => String(jr.userId) !== uid);
+    const newRequest = {
+      userId: uid,
+      name,
+      email,
+      requestedAt: new Date()
+    };
+    room.joinRequests.push(newRequest);
+
+    room.activities.unshift({
+      id: `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      type: 'join_requested',
+      text: `${name} requested to re-join the room`,
+      user: { userId: uid, username: name, displayName: name },
+      timestamp: new Date()
+    });
+    if (room.activities.length > 50) room.activities.pop();
+
+    room.lastActiveAt = new Date();
+    this.roomsCache.set(room.roomId, room);
+
+    try {
+      await CollaborativeRoom.updateOne(
+        { roomId: room.roomId },
+        {
+          $set: {
+            joinRequests: room.joinRequests,
+            activities: room.activities,
+            lastActiveAt: new Date()
+          }
+        }
+      );
+    } catch (e) {
+      console.warn('[CollaborativeRoomService] requestToJoin DB update warning:', e.message);
+    }
+
+    return { status: 'pending', request: newRequest, room, hostUserId: room.createdBy?.userId };
+  }
+
+  async approveJoinRequest(roomId, targetUserId, requesterUser) {
+    const room = await this.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+    this.normalizeRoomState(room);
+
+    // Verify requester is Host
+    const requesterId = requesterUser?._id?.toString?.() || requesterUser?.userId;
+    const isCreator = Boolean(
+      (room.createdBy?.userId && requesterId && room.createdBy.userId === requesterId) ||
+      (room.createdBy?.username && requesterUser?.username && room.createdBy.username === requesterUser.username)
+    );
+    const requester = room.members.find(m => m.userId === requesterId || m.username === requesterUser?.username);
+    const isHost = isCreator || (requester && this.normalizeRole(requester.role) === 'host');
+    if (!isHost) {
+      throw new Error('Only the room Host can approve join requests');
+    }
+
+    const tUid = String(targetUserId).trim();
+    const reqIndex = room.joinRequests.findIndex(jr => String(jr.userId) === tUid);
+    const joinReq = reqIndex !== -1 ? room.joinRequests[reqIndex] : null;
+
+    // Remove from joinRequests
+    room.joinRequests = room.joinRequests.filter(jr => String(jr.userId) !== tUid);
+
+    // Remove from leftMembers
+    if (Array.isArray(room.leftMembers)) {
+      room.leftMembers = room.leftMembers.filter(lm => String(lm.userId) !== tUid);
+    }
+
+    // Add back to members if not already there
+    let member = room.members.find(m => String(m.userId) === tUid);
+    if (!member) {
+      member = {
+        userId: tUid,
+        username: joinReq?.name || 'Listener',
+        displayName: joinReq?.name || 'Listener',
+        email: joinReq?.email || '',
+        avatar: '',
+        role: 'listener',
+        joinedAt: new Date(),
+        lastActiveAt: new Date()
+      };
+      room.members.push(member);
+    }
+
+    const approvedName = joinReq?.name || member?.displayName || member?.username || 'Listener';
+    room.activities.unshift({
+      id: `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      type: 'member_joined',
+      text: `${approvedName} was approved to rejoin by the Host`,
+      user: { userId: tUid, username: approvedName, displayName: approvedName },
+      timestamp: new Date()
+    });
+    if (room.activities.length > 50) room.activities.pop();
+
+    room.lastActiveAt = new Date();
+    this.roomsCache.set(room.roomId, room);
+
+    try {
+      await CollaborativeRoom.updateOne(
+        { roomId: room.roomId },
+        {
+          $set: {
+            members: room.members,
+            leftMembers: room.leftMembers,
+            joinRequests: room.joinRequests,
+            activities: room.activities,
+            lastActiveAt: new Date()
+          }
+        }
+      );
+    } catch (e) {
+      console.warn('[CollaborativeRoomService] approveJoinRequest DB update warning:', e.message);
+    }
+
+    return { 
+      approvedUserId: tUid, 
+      member, 
+      members: room.members, 
+      joinRequests: room.joinRequests, 
+      room 
+    };
+  }
+
+  async rejectJoinRequest(roomId, targetUserId, requesterUser) {
+    const room = await this.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+    this.normalizeRoomState(room);
+
+    // Verify requester is Host
+    const requesterId = requesterUser?._id?.toString?.() || requesterUser?.userId;
+    const isCreator = Boolean(
+      (room.createdBy?.userId && requesterId && room.createdBy.userId === requesterId) ||
+      (room.createdBy?.username && requesterUser?.username && room.createdBy.username === requesterUser.username)
+    );
+    const requester = room.members.find(m => m.userId === requesterId || m.username === requesterUser?.username);
+    const isHost = isCreator || (requester && this.normalizeRole(requester.role) === 'host');
+    if (!isHost) {
+      throw new Error('Only the room Host can reject join requests');
+    }
+
+    const tUid = String(targetUserId).trim();
+    room.joinRequests = (room.joinRequests || []).filter(jr => String(jr.userId) !== tUid);
+
+    room.lastActiveAt = new Date();
+    this.roomsCache.set(room.roomId, room);
+
+    try {
+      await CollaborativeRoom.updateOne(
+        { roomId: room.roomId },
+        {
+          $set: {
+            joinRequests: room.joinRequests,
+            lastActiveAt: new Date()
+          }
+        }
+      );
+    } catch (e) {
+      console.warn('[CollaborativeRoomService] rejectJoinRequest DB update warning:', e.message);
+    }
+
+    return { rejectedUserId: tUid, joinRequests: room.joinRequests, room };
+  }
+  // Active Playback Session Management (Listen Together Ready-Check & Mid-Playback Sync)
+  async createPlaybackRequest(roomId, { requestId, track, initiatorId, initiatorName }) {
+    const room = await this.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+    this.normalizeRoomState(room);
+
+    const reqId = requestId || `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const newRequest = {
+      requestId: reqId,
+      track,
+      initiatorId: String(initiatorId || ''),
+      initiatorName: initiatorName || 'A listener',
+      createdAt: Date.now(),
+      readyUsers: [String(initiatorId || '')], // Initiator is ready by default
+      declinedUsers: []
+    };
+
+    room.activePlaybackRequest = newRequest;
+    this.roomsCache.set(room.roomId, room);
+
+    return { request: newRequest, room };
+  }
+
+  async respondPlaybackRequest(roomId, { requestId, userId, response }) {
+    const room = await this.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+    this.normalizeRoomState(room);
+
+    const activeReq = room.activePlaybackRequest;
+    if (!activeReq || activeReq.requestId !== requestId) {
+      return { request: null, room };
+    }
+
+    const uIdStr = String(userId || '');
+    if (response === 'okay' || response === 'ready' || response === true) {
+      if (!activeReq.readyUsers.includes(uIdStr)) {
+        activeReq.readyUsers.push(uIdStr);
+      }
+      activeReq.declinedUsers = activeReq.declinedUsers.filter(id => id !== uIdStr);
+    } else if (response === 'decline' || response === false) {
+      if (!activeReq.declinedUsers.includes(uIdStr)) {
+        activeReq.declinedUsers.push(uIdStr);
+      }
+      activeReq.readyUsers = activeReq.readyUsers.filter(id => id !== uIdStr);
+    }
+
+    this.roomsCache.set(room.roomId, room);
+    return { request: activeReq, room };
+  }
+
+  async startPlaybackSession(roomId, { track, basePositionSec, startedAt, isPlaying, user }) {
+    const room = await this.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+    this.normalizeRoomState(room);
+
+    const now = Date.now();
+    const finalStartedAt = typeof startedAt === 'number' ? startedAt : now;
+    const finalBasePos = typeof basePositionSec === 'number' && !isNaN(basePositionSec) ? Number(basePositionSec) : 0;
+    const finalIsPlaying = isPlaying !== undefined ? Boolean(isPlaying) : true;
+
+    room.currentSong = track || room.currentSong;
+    room.seekTime = finalBasePos;
+    room.isPlaying = finalIsPlaying;
+    room.playbackUpdatedAt = new Date(finalStartedAt);
+    room.lastActiveAt = new Date();
+
+    // Store live session data for precise current-timestamp calculation on late join / late accept
+    room.playbackSession = {
+      track: room.currentSong,
+      basePositionSec: finalBasePos,
+      startedAt: finalStartedAt,
+      isPlaying: finalIsPlaying,
+      updatedAt: now,
+      updatedBy: user?.displayName || user?.username || 'Host'
+    };
+
+    // Clear active playback request once session starts
+    room.activePlaybackRequest = null;
+    this.roomsCache.set(room.roomId, room);
+
+    try {
+      await CollaborativeRoom.updateOne(
+        { roomId: room.roomId },
+        {
+          $set: {
+            currentSong: room.currentSong,
+            isPlaying: room.isPlaying,
+            seekTime: room.seekTime,
+            playbackUpdatedAt: new Date(finalStartedAt),
+            playbackSession: room.playbackSession,
+            lastActiveAt: new Date()
+          }
+        }
+      );
+    } catch (e) {
+      console.warn('[CollaborativeRoomService] startPlaybackSession DB warning:', e.message);
+    }
+
+    return {
+      playbackSession: room.playbackSession,
+      room
+    };
+  }
+
+  async getCurrentPlaybackState(roomId) {
+    const room = await this.getRoom(roomId);
+    if (!room) return null;
+    this.normalizeRoomState(room);
+
+    const session = room.playbackSession || {
+      track: room.currentSong,
+      basePositionSec: room.seekTime || 0,
+      startedAt: room.playbackUpdatedAt ? new Date(room.playbackUpdatedAt).getTime() : Date.now(),
+      isPlaying: Boolean(room.isPlaying),
+      updatedAt: Date.now()
+    };
+
+    // Calculate live position taking elapsed playback time into account
+    let currentPositionSec = typeof session.basePositionSec === 'number' ? session.basePositionSec : 0;
+    if (session.isPlaying && session.startedAt) {
+      const now = Date.now();
+      const elapsedSec = Math.max(0, (now - session.startedAt) / 1000);
+      currentPositionSec += elapsedSec;
+    }
+
+    return {
+      track: session.track,
+      basePositionSec: session.basePositionSec,
+      currentPositionSec: Math.max(0, currentPositionSec),
+      startedAt: session.startedAt,
+      isPlaying: session.isPlaying,
+      updatedAt: session.updatedAt || Date.now(),
+      activePlaybackRequest: room.activePlaybackRequest || null
+    };
+  }
+
+  async updatePlaybackSession(roomId, { isPlaying, seekTime, user }) {
+    const room = await this.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+    this.normalizeRoomState(room);
+
+    const now = Date.now();
+    const curPos = typeof seekTime === 'number' && !isNaN(seekTime)
+      ? Number(seekTime)
+      : (room.playbackSession?.basePositionSec || room.seekTime || 0);
+
+    const nextIsPlaying = isPlaying !== undefined ? Boolean(isPlaying) : (room.playbackSession?.isPlaying ?? room.isPlaying);
+
+    room.seekTime = curPos;
+    room.isPlaying = nextIsPlaying;
+    room.playbackUpdatedAt = new Date(now);
+    room.lastActiveAt = new Date(now);
+
+    room.playbackSession = {
+      track: room.currentSong,
+      basePositionSec: curPos,
+      startedAt: now,
+      isPlaying: nextIsPlaying,
+      updatedAt: now,
+      updatedBy: user?.displayName || user?.username || 'Member'
+    };
+
+    this.roomsCache.set(room.roomId, room);
+
+    try {
+      await CollaborativeRoom.updateOne(
+        { roomId: room.roomId },
+        {
+          $set: {
+            isPlaying: room.isPlaying,
+            seekTime: room.seekTime,
+            playbackUpdatedAt: new Date(now),
+            playbackSession: room.playbackSession,
+            lastActiveAt: new Date(now)
+          }
+        }
+      );
+    } catch (e) {}
+
+    return {
+      playbackSession: room.playbackSession,
+      room
+    };
   }
 }
 

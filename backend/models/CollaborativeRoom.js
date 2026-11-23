@@ -34,10 +34,25 @@ const roomMemberSchema = new mongoose.Schema({
   userId: { type: String, default: '' },
   username: { type: String, default: 'Listener' },
   displayName: { type: String, default: '' },
+  email: { type: String, default: '' },
   avatar: { type: String, default: '' },
   role: { type: String, enum: ['host', 'co-host', 'listener', 'owner', 'admin', 'member'], default: 'listener' },
   joinedAt: { type: Date, default: Date.now },
   lastActiveAt: { type: Date, default: Date.now }
+}, { _id: false });
+
+const leftMemberSchema = new mongoose.Schema({
+  userId: { type: String, required: true },
+  name: { type: String, default: 'Listener' },
+  email: { type: String, default: '' },
+  leftAt: { type: Date, default: Date.now }
+}, { _id: false });
+
+const joinRequestSchema = new mongoose.Schema({
+  userId: { type: String, required: true },
+  name: { type: String, default: 'Listener' },
+  email: { type: String, default: '' },
+  requestedAt: { type: Date, default: Date.now }
 }, { _id: false });
 
 const roomActivitySchema = new mongoose.Schema({
@@ -99,6 +114,14 @@ const collaborativeRoomSchema = new mongoose.Schema({
     type: [roomMemberSchema],
     default: []
   },
+  leftMembers: {
+    type: [leftMemberSchema],
+    default: []
+  },
+  joinRequests: {
+    type: [joinRequestSchema],
+    default: []
+  },
   playlists: {
     type: [roomPlaylistSchema],
     default: []
@@ -127,6 +150,20 @@ const collaborativeRoomSchema = new mongoose.Schema({
     type: String,
     enum: ['active', 'archived', 'deleted'],
     default: 'active'
+  },
+  isArchived: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  archivedAt: {
+    type: Date,
+    default: null
+  },
+  archivedBy: {
+    userId: { type: String, default: '' },
+    username: { type: String, default: '' },
+    displayName: { type: String, default: '' }
   },
   activities: {
     type: [roomActivitySchema],

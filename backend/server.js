@@ -557,6 +557,13 @@ io.on('connection', (socket) => {
         return;
       }
 
+      const uid = user?._id?.toString?.() || user?.userId;
+      if (!uid) {
+        if (typeof callback === 'function') callback({ success: false, error: 'Login required: You must be signed in to join a room' });
+        socket.emit('listening_room_error', { roomId, error: 'Login required: Please sign in' });
+        return;
+      }
+
       // Check persistent collaborative room in DB first (strictly deny non-existent/inactive rooms)
       let persistentRoom = null;
       try {
@@ -589,9 +596,17 @@ io.on('connection', (socket) => {
         };
         listeningRooms.set(activeRoomId, room);
       }
+
+      // Deduplicate participants map by userId: remove old socket id for same user if reconnecting
+      for (const [sId, p] of room.participants.entries()) {
+        if (p.userId && String(p.userId) === String(uid)) {
+          room.participants.delete(sId);
+        }
+      }
+
       room.participants.set(socket.id, {
         socketId: socket.id,
-        userId: user?._id || user?.userId || null,
+        userId: uid,
         username: user?.username || 'Listener',
         displayName: user?.displayName || user?.username || 'Listener',
         avatar: user?.avatarUrl || ''
@@ -628,6 +643,12 @@ io.on('connection', (socket) => {
       if (!roomId) {
         if (typeof callback === 'function') callback({ success: false, error: 'Room ID required' });
         socket.emit('room:error', { error: 'Room ID required' });
+        return;
+      }
+      const uid = user?._id?.toString?.() || user?.userId;
+      if (!uid) {
+        if (typeof callback === 'function') callback({ success: false, error: 'Login required: You must be signed in to join a room' });
+        socket.emit('room:error', { roomId, error: 'Login required: Please sign in' });
         return;
       }
       const persistentRoom = await collaborativeRoomService.joinRoom(roomId, user);
@@ -674,6 +695,129 @@ io.on('connection', (socket) => {
     } catch (e) {}
   });
 
+  // Re-join Request & Host Approval via Socket
+  socket.on('room:join:request', async ({ roomId, user }, callback) => {
+    try {
+      if (!roomId) return;
+      const res = await collaborativeRoomService.requestToJoin(roomId, user);
+      if (res && res.room) {
+        io.to(`room_${roomId}`).emit('room:join:request', {
+          roomId,
+          request: res.request,
+          joinRequests: res.room.joinRequests
+        });
+        io.to(`room_${roomId}`).emit('room:activities:updated', {
+          roomId,
+          activities: res.room.activities
+        });
+      }
+      if (typeof callback === 'function') callback({ success: true, ...res });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  });
+
+  socket.on('room:join:approve', async ({ roomId, targetUserId, user }, callback) => {
+    try {
+      if (!roomId || !targetUserId) return;
+      const res = await collaborativeRoomService.approveJoinRequest(roomId, targetUserId, user);
+      if (res && res.room) {
+        io.to(`room_${roomId}`).emit('room:join:approved', {
+          roomId,
+          userId: res.approvedUserId,
+          member: res.member,
+          members: res.members,
+          joinRequests: res.joinRequests
+        });
+        io.to(`room_${roomId}`).emit('room:members:updated', {
+          roomId,
+          members: res.members
+        });
+        io.to(`room_${roomId}`).emit('room:activities:updated', {
+          roomId,
+          activities: res.room.activities
+        });
+        io.emit('room:join:approved', {
+          roomId,
+          userId: res.approvedUserId,
+          room: res.room
+        });
+      }
+      if (typeof callback === 'function') callback({ success: true, ...res });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  });
+
+  socket.on('room:join:reject', async ({ roomId, targetUserId, user }, callback) => {
+    try {
+      if (!roomId || !targetUserId) return;
+      const res = await collaborativeRoomService.rejectJoinRequest(roomId, targetUserId, user);
+      if (res && res.room) {
+        io.to(`room_${roomId}`).emit('room:join:rejected', {
+          roomId,
+          userId: res.rejectedUserId,
+          joinRequests: res.joinRequests
+        });
+        io.emit('room:join:rejected', {
+          roomId,
+          userId: res.rejectedUserId
+        });
+      }
+      if (typeof callback === 'function') callback({ success: true, ...res });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  });
+
+  // Room Archive & Delete socket events
+  socket.on('room:archive', async ({ roomId, shouldArchive, user }, callback) => {
+    try {
+      if (!roomId) return;
+      const isArchived = shouldArchive !== false;
+      const res = await collaborativeRoomService.toggleArchiveRoom(roomId, isArchived, user);
+      if (res && res.room) {
+        io.to(`room_${roomId}`).emit('room:archived', {
+          roomId,
+          isArchived: res.isArchived,
+          status: res.status,
+          archivedAt: res.archivedAt,
+          archivedBy: res.archivedBy
+        });
+        io.to(`room_${roomId}`).emit('room:activities:updated', {
+          roomId,
+          activities: res.room.activities
+        });
+        io.emit('room:status:updated', {
+          roomId,
+          isArchived: res.isArchived,
+          status: res.status
+        });
+      }
+      if (typeof callback === 'function') callback({ success: true, ...res });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  });
+
+  socket.on('room:delete', async ({ roomId, user }, callback) => {
+    try {
+      if (!roomId) return;
+      const res = await collaborativeRoomService.deleteRoomPermanently(roomId, user);
+      io.to(`room_${roomId}`).emit('room:deleted', {
+        roomId,
+        deleted: true
+      });
+      io.emit('room:deleted', {
+        roomId,
+        deleted: true
+      });
+      if (typeof callback === 'function') callback({ success: true, ...res });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  });
+
   // Collaborative room playback sync (Upgraded Listen-Along sync)
   socket.on('room:playback:sync', async ({ roomId, currentSong, isPlaying, seekTime, user }, callback) => {
     try {
@@ -684,6 +828,23 @@ io.on('connection', (socket) => {
         seekTime,
         user
       });
+      // Also update playback session state for accurate mid-song sync
+      if (currentSong) {
+        await collaborativeRoomService.startPlaybackSession(roomId, {
+          track: currentSong,
+          basePositionSec: typeof seekTime === 'number' ? seekTime : 0,
+          startedAt: Date.now(),
+          isPlaying: isPlaying !== undefined ? Boolean(isPlaying) : true,
+          user
+        });
+      } else {
+        await collaborativeRoomService.updatePlaybackSession(roomId, {
+          isPlaying,
+          seekTime,
+          user
+        });
+      }
+
       // Broadcast to room members (timestamp for elapsed time adjustment)
       socket.to(`room_${roomId}`).emit('room:playback:sync', {
         roomId,
@@ -694,6 +855,118 @@ io.on('connection', (socket) => {
         sender: user?.displayName || user?.username || 'Host'
       });
       if (typeof callback === 'function') callback({ success: true, ...res });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  });
+
+  // Collaborative room playback: Request to play song together (Ready-Check flow)
+  socket.on('room:playback:request', async ({ roomId, requestId, track, initiatorId, initiatorName, user }, callback) => {
+    try {
+      if (!roomId || !track) {
+        if (typeof callback === 'function') callback({ success: false, error: 'Missing room or track' });
+        return;
+      }
+      const actualInitiatorId = initiatorId || user?._id?.toString?.() || user?.userId || socket.id;
+      const actualInitiatorName = initiatorName || user?.displayName || user?.username || 'A listener';
+
+      const res = await collaborativeRoomService.createPlaybackRequest(roomId, {
+        requestId,
+        track,
+        initiatorId: actualInitiatorId,
+        initiatorName: actualInitiatorName
+      });
+
+      // Broadcast to all active members in the room
+      io.to(`room_${roomId}`).emit('room:playback:request', {
+        roomId,
+        request: res.request
+      });
+
+      if (typeof callback === 'function') callback({ success: true, request: res.request });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  });
+
+  // Collaborative room playback: Respond to play request ('okay' / 'decline')
+  socket.on('room:playback:respond', async ({ roomId, requestId, userId, response, user }, callback) => {
+    try {
+      if (!roomId || !requestId) {
+        if (typeof callback === 'function') callback({ success: false, error: 'Missing parameters' });
+        return;
+      }
+      const actualUserId = userId || user?._id?.toString?.() || user?.userId || socket.id;
+      const res = await collaborativeRoomService.respondPlaybackRequest(roomId, {
+        requestId,
+        userId: actualUserId,
+        response
+      });
+
+      if (res && res.request) {
+        io.to(`room_${roomId}`).emit('room:playback:response', {
+          roomId,
+          requestId,
+          userId: actualUserId,
+          response,
+          readyUsers: res.request.readyUsers,
+          declinedUsers: res.request.declinedUsers,
+          responderName: user?.displayName || user?.username || 'Listener'
+        });
+      }
+
+      if (typeof callback === 'function') callback({ success: true, request: res.request });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  });
+
+  // Collaborative room playback: Start synchronized playback session
+  socket.on('room:playback:start', async ({ roomId, track, basePositionSec, startedAt, isPlaying, user }, callback) => {
+    try {
+      if (!roomId || !track) {
+        if (typeof callback === 'function') callback({ success: false, error: 'Missing room or track' });
+        return;
+      }
+      const now = Date.now();
+      const finalStartedAt = typeof startedAt === 'number' ? startedAt : now;
+      const finalBasePos = typeof basePositionSec === 'number' ? basePositionSec : 0;
+      const finalIsPlaying = isPlaying !== undefined ? Boolean(isPlaying) : true;
+
+      const res = await collaborativeRoomService.startPlaybackSession(roomId, {
+        track,
+        basePositionSec: finalBasePos,
+        startedAt: finalStartedAt,
+        isPlaying: finalIsPlaying,
+        user
+      });
+
+      // Broadcast to the whole room so all ready members sync, and late members know current state
+      io.to(`room_${roomId}`).emit('room:playback:start', {
+        roomId,
+        track: res.playbackSession.track,
+        basePositionSec: res.playbackSession.basePositionSec,
+        startedAt: res.playbackSession.startedAt,
+        isPlaying: res.playbackSession.isPlaying,
+        updatedAt: res.playbackSession.updatedAt,
+        sender: user?.displayName || user?.username || 'Host'
+      });
+
+      if (typeof callback === 'function') callback({ success: true, playbackSession: res.playbackSession });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  });
+
+  // Collaborative room playback: Query current live playback state (for Late Acceptors & new joiners)
+  socket.on('room:playback:getState', async ({ roomId }, callback) => {
+    try {
+      if (!roomId) {
+        if (typeof callback === 'function') callback({ success: false, error: 'Missing roomId' });
+        return;
+      }
+      const state = await collaborativeRoomService.getCurrentPlaybackState(roomId);
+      if (typeof callback === 'function') callback({ success: true, state });
     } catch (e) {
       if (typeof callback === 'function') callback({ success: false, error: e.message });
     }
@@ -1848,6 +2121,14 @@ export const normalizeMusicSearchQuery = (rawQuery = '') => {
     return 'Arijit Singh top bollywood hindi songs official';
   }
 
+  // If query is an artist or song name followed by generic words like "hits", "hit songs", "top songs", "best songs"
+  // (e.g., "Arijit Singh hits" -> "Arijit Singh songs official"), normalize so YouTube returns rich individual tracks
+  // rather than multi-hour jukebox compilations
+  const strippedHits = clean.replace(/\b(?:latest\s+hits|greatest\s+hits|all\s+hits|super\s*hits?|hit\s+songs?|hits|top\s+songs?|best\s+songs?)\b/gi, '').trim();
+  if (strippedHits && strippedHits !== clean && strippedHits.length >= 3) {
+    return `${strippedHits} songs official`;
+  }
+
   return clean;
 };
 
@@ -1901,11 +2182,12 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
       const keyInfo = eligibleKeyRecords[i];
       const apiKey = keyInfo.key;
       try {
-        const upstreamLimit = Math.min(Math.max(limit * 2, 25), 50);
+        // Use single search.list call with maxResults=50 (YouTube API v3 per-request maximum)
+        // to maximize candidate tracks for filtering in 1 call (100 quota units)
         const params = {
           part: 'snippet',
           type: 'video',
-          maxResults: upstreamLimit,
+          maxResults: 50,
           q: queryStr,
           key: apiKey
         };
@@ -2056,13 +2338,11 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
     }
 
     // Top up the pool if needed until we have enough tracks for this page
-    let fetchPage = Math.floor(cachedPool.videos.length / 15) + 1;
-    while (cachedPool.videos.length < pageOffset + limit && fetchPage <= 2) {
+    let fetchPage = Math.floor(cachedPool.videos.length / 20) + 1;
+    while (cachedPool.videos.length < pageOffset + limit && fetchPage <= 3) {
       try {
         const searchPromise = ytSearch({
-          query: (queryStr.includes('-shorts') || queryStr.includes('-#shorts'))
-            ? queryStr
-            : `${queryStr} -shorts -#shorts -ringtone -status -dance -karaoke -edit`,
+          query: queryStr,
           page: fetchPage
         });
         const timeoutPromise = new Promise((_, reject) =>

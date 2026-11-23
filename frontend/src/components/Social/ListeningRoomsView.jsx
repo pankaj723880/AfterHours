@@ -4,7 +4,8 @@ import {
   Sparkles, Radio, Disc, Volume2, Shield, Heart, Flame,
   ThumbsUp, MessageSquare, Send, ChevronDown, ChevronUp,
   RefreshCw, Lock, Globe, LogOut, ArrowUpDown, Award, Crown,
-  UserCheck, UserMinus, UserX, ArrowLeft, FolderPlus, X
+  UserCheck, UserMinus, UserX, ArrowLeft, FolderPlus, X,
+  Archive, RotateCcw, AlertTriangle
 } from 'lucide-react';
 import { getApiUrl } from '../../utils/apiUrl';
 import { isValidMusicTrack, parseDurationToSeconds, sanitizeTrack } from '../../services/songFilter';
@@ -14,6 +15,8 @@ const QUICK_REACTIONS = ['🔥', '❤️', '🕺', '😭'];
 export default function ListeningRoomsView({
   socket,
   user,
+  authToken,
+  onOpenAuth,
   currentSong,
   isPlaying,
   currentTimeRef,
@@ -36,13 +39,22 @@ export default function ListeningRoomsView({
   isLiked
 }) {
   const [rooms, setRooms] = useState([]);
+  const [leftRooms, setLeftRooms] = useState([]);
+  const [archivedRooms, setArchivedRooms] = useState([]);
   const [isLoadingRooms, setIsLoadingRooms] = useState(false);
-  const [filterTab, setFilterTab] = useState('all'); // 'all' | 'created' | 'joined'
+  const [filterTab, setFilterTab] = useState('all'); // 'all' | 'created' | 'joined' | 'left' | 'archived'
+  const [roomToDelete, setRoomToDelete] = useState(null); // Host confirmation modal for room permanent deletion
+  const [isDeletingRoom, setIsDeletingRoom] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomDesc, setNewRoomDesc] = useState('');
   const [newRoomIsPublic, setNewRoomIsPublic] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [participants, setParticipants] = useState([]);
+  const [joinRequests, setJoinRequests] = useState([]);
+  const [pendingRejoinRoomIds, setPendingRejoinRoomIds] = useState([]);
+  const [previewLeftRoom, setPreviewLeftRoom] = useState(null); // Restricted/preview state for room in Left Rooms
+  const [searchPreviewRoom, setSearchPreviewRoom] = useState(null); // Preview card for searched room code (never auto-joins)
+  const [isSearchingCode, setIsSearchingCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [isCreatingPlaylist, setIsCreatingPlaylist] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
@@ -66,13 +78,40 @@ export default function ListeningRoomsView({
   const [floatingReactions, setFloatingReactions] = useState([]);
   const [unreadActivityCount, setUnreadActivityCount] = useState(0);
 
-  const currentUserId = user?._id?.toString?.() || user?.userId || (typeof window !== 'undefined' ? localStorage.getItem('afterhours_session_id') : '') || 'guest';
-  const currentUsername = user?.username || 'Listener';
+  // Synchronized Playback Request & Ready-Check state
+  const [activePlaybackRequest, setActivePlaybackRequest] = useState(null);
+  const [hasRespondedToRequest, setHasRespondedToRequest] = useState(false);
+  const [livePlaybackSession, setLivePlaybackSession] = useState(null);
+
+  const currentUserId = user?._id?.toString?.() || user?.userId || null;
+  const currentUsername = user?.username || user?.displayName || 'Listener';
+  const token = authToken || (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
+
+  const authHeaders = {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+  };
+
+  // Helper to deduplicate members by userId
+  const getUniqueMembers = (mList) => {
+    if (!Array.isArray(mList)) return [];
+    const seen = new Set();
+    const result = [];
+    for (const m of mList) {
+      if (!m) continue;
+      const uid = String(m.userId || '').trim();
+      if (!uid) continue;
+      if (!seen.has(uid)) {
+        seen.add(uid);
+        result.push(m);
+      }
+    }
+    return result;
+  };
 
   // Find user's member role in current active room
   const currentMember = (participants || []).find(m => 
-    (m.userId && m.userId === currentUserId) || 
-    (m.username && m.username === currentUsername)
+    m.userId && currentUserId && String(m.userId) === String(currentUserId)
   );
   const userRole = currentMember?.role || (activeRoom?.createdBy?.userId === currentUserId ? 'host' : 'listener');
   const isHost = userRole === 'host';
@@ -80,11 +119,17 @@ export default function ListeningRoomsView({
 
   // Refresh rooms from backend
   const refreshRooms = () => {
+    if (!token && !user) {
+      setRooms([]);
+      setLeftRooms([]);
+      setIsLoadingRooms(false);
+      return;
+    }
+
     setIsLoadingRooms(true);
-    const guestId = typeof window !== 'undefined' ? localStorage.getItem('afterhours_session_id') : '';
-    const myParam = currentUserId ? `?userId=${encodeURIComponent(currentUserId)}&guestId=${encodeURIComponent(guestId)}` : '';
     
-    fetch(getApiUrl(`/api/rooms${myParam}`))
+    // Fetch active user rooms
+    fetch(getApiUrl('/api/rooms'), { headers: authHeaders })
       .then(res => res.json())
       .then(data => {
         if (data && data.rooms) {
@@ -93,11 +138,33 @@ export default function ListeningRoomsView({
       })
       .catch(() => {})
       .finally(() => setIsLoadingRooms(false));
+
+    // Fetch left rooms for Left Rooms tab
+    fetch(getApiUrl('/api/rooms/left'), { headers: authHeaders })
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.rooms) {
+          setLeftRooms(data.rooms);
+          const pendingIds = data.rooms.filter(r => r.hasPendingRequest).map(r => r.roomId || r.id);
+          setPendingRejoinRoomIds(prev => Array.from(new Set([...prev, ...pendingIds])));
+        }
+      })
+      .catch(() => {});
+
+    // Fetch archived rooms for Archived Rooms tab
+    fetch(getApiUrl('/api/rooms/archived'), { headers: authHeaders })
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.rooms) {
+          setArchivedRooms(data.rooms);
+        }
+      })
+      .catch(() => {});
   };
 
   useEffect(() => {
     refreshRooms();
-  }, [currentUserId]);
+  }, [currentUserId, token]);
 
   // Keep selected playlist active or select first
   useEffect(() => {
@@ -114,6 +181,7 @@ export default function ListeningRoomsView({
   useEffect(() => {
     if (!activeRoom) return;
     setParticipants(activeRoom.members || []);
+    setJoinRequests(activeRoom.joinRequests || []);
     setActivities(activeRoom.activities || []);
     setChatMessages(activeRoom.chatMessages || []);
   }, [activeRoom]);
@@ -127,6 +195,7 @@ export default function ListeningRoomsView({
       if (setActiveRoom) setActiveRoom(data);
       if (setRoomPlaylists && data.playlists) setRoomPlaylists(data.playlists);
       if (data.members) setParticipants(data.members);
+      if (data.joinRequests) setJoinRequests(data.joinRequests);
       if (data.activities) setActivities(data.activities);
       if (data.chatMessages) setChatMessages(data.chatMessages);
     };
@@ -137,6 +206,46 @@ export default function ListeningRoomsView({
         if (activeRoom && setActiveRoom) {
           setActiveRoom(prev => prev ? { ...prev, members: data.members } : prev);
         }
+      }
+    };
+
+    const handleJoinRequest = (data) => {
+      if (data?.joinRequests) {
+        setJoinRequests(data.joinRequests);
+      } else if (data?.request) {
+        setJoinRequests(prev => [...(prev || []).filter(r => r.userId !== data.request.userId), data.request]);
+      }
+      if (showToast && data?.request) {
+        showToast(`🔔 Re-join request from ${data.request.name || 'a listener'}`);
+      }
+    };
+
+    const handleJoinApproved = (data) => {
+      if (data?.userId === currentUserId) {
+        // Current user was approved! Remove from pending and move to active room
+        setPendingRejoinRoomIds(prev => prev.filter(id => id !== data.roomId));
+        if (showToast) showToast('🎉 Your request to re-join the room was approved!', 'success');
+        refreshRooms();
+        if (previewLeftRoom && (previewLeftRoom.roomId === data.roomId || previewLeftRoom.id === data.roomId)) {
+          setPreviewLeftRoom(null);
+          handleJoin(data.roomId);
+        }
+      }
+      if (data?.joinRequests) {
+        setJoinRequests(data.joinRequests);
+      }
+      if (data?.members) {
+        setParticipants(data.members);
+      }
+    };
+
+    const handleJoinRejected = (data) => {
+      if (data?.userId === currentUserId) {
+        setPendingRejoinRoomIds(prev => prev.filter(id => id !== data.roomId));
+        if (showToast) showToast('❌ Your request to re-join the room was declined.', 'warning');
+      }
+      if (data?.joinRequests) {
+        setJoinRequests(data.joinRequests);
       }
     };
 
@@ -203,11 +312,32 @@ export default function ListeningRoomsView({
     };
 
     const handleStatusUpdated = (data) => {
-      if (data?.status === 'archived') {
-        if (showToast) showToast('This room was archived by the host', 'warning');
-        handleLeave();
-      } else if (data?.status === 'deleted') {
-        if (showToast) showToast('This room was deleted by the host', 'error');
+      refreshRooms();
+      if (activeRoom && (activeRoom.roomId === data?.roomId || activeRoom.id === data?.roomId)) {
+        if (data?.status === 'archived' || data?.isArchived) {
+          if (showToast) showToast('This room was archived by the host', 'warning');
+          handleLeave();
+        } else if (data?.status === 'deleted') {
+          if (showToast) showToast('This room was deleted by the host', 'error');
+          handleLeave();
+        }
+      }
+    };
+
+    const handleRoomArchived = (data) => {
+      refreshRooms();
+      if (activeRoom && (activeRoom.roomId === data?.roomId || activeRoom.id === data?.roomId)) {
+        if (data?.isArchived || data?.status === 'archived') {
+          if (showToast) showToast('This room was archived by the host', 'warning');
+          handleLeave();
+        }
+      }
+    };
+
+    const handleRoomDeleted = (data) => {
+      refreshRooms();
+      if (activeRoom && (activeRoom.roomId === data?.roomId || activeRoom.id === data?.roomId)) {
+        if (showToast) showToast('This room was permanently deleted by the host', 'error');
         handleLeave();
       }
     };
@@ -217,8 +347,45 @@ export default function ListeningRoomsView({
       if (showToast) showToast(errMsg, 'error');
     };
 
+    const handleRoomPlaybackRequest = (data) => {
+      if (data?.request) {
+        setActivePlaybackRequest(data.request);
+        setHasRespondedToRequest(false);
+        const reqSong = data.request.track;
+        if (showToast) {
+          showToast(`🎵 ${data.request.initiatorName || 'Host'} wants to play "${reqSong?.title || 'a song'}" together!`);
+        }
+      }
+    };
+
+    const handleRoomPlaybackResponse = (data) => {
+      if (data?.requestId && activePlaybackRequest && activePlaybackRequest.requestId === data.requestId) {
+        setActivePlaybackRequest(prev => prev ? {
+          ...prev,
+          readyUsers: data.readyUsers || prev.readyUsers,
+          declinedUsers: data.declinedUsers || prev.declinedUsers
+        } : prev);
+      }
+    };
+
+    const handleRoomPlaybackStart = (data) => {
+      setActivePlaybackRequest(null);
+      setHasRespondedToRequest(false);
+      if (data?.track) {
+        setLivePlaybackSession({
+          track: data.track,
+          basePositionSec: typeof data.basePositionSec === 'number' ? data.basePositionSec : 0,
+          startedAt: data.startedAt || Date.now(),
+          isPlaying: data.isPlaying !== undefined ? Boolean(data.isPlaying) : true
+        });
+      }
+    };
+
     socket.on('room:state', handleRoomState);
     socket.on('room:members:updated', handleMembersUpdated);
+    socket.on('room:join:request', handleJoinRequest);
+    socket.on('room:join:approved', handleJoinApproved);
+    socket.on('room:join:rejected', handleJoinRejected);
     socket.on('room:member:kicked', handleMemberKicked);
     socket.on('room:activities:updated', handleActivitiesUpdated);
     socket.on('room:chat:message', handleChatMessage);
@@ -227,12 +394,20 @@ export default function ListeningRoomsView({
     socket.on('room:invite:updated', handleInviteUpdated);
     socket.on('room:privacy:updated', handlePrivacyUpdated);
     socket.on('room:status:updated', handleStatusUpdated);
+    socket.on('room:archived', handleRoomArchived);
+    socket.on('room:deleted', handleRoomDeleted);
     socket.on('room:error', handleRoomError);
     socket.on('listening_room_error', handleRoomError);
+    socket.on('room:playback:request', handleRoomPlaybackRequest);
+    socket.on('room:playback:response', handleRoomPlaybackResponse);
+    socket.on('room:playback:start', handleRoomPlaybackStart);
 
     return () => {
       socket.off('room:state', handleRoomState);
       socket.off('room:members:updated', handleMembersUpdated);
+      socket.off('room:join:request', handleJoinRequest);
+      socket.off('room:join:approved', handleJoinApproved);
+      socket.off('room:join:rejected', handleJoinRejected);
       socket.off('room:member:kicked', handleMemberKicked);
       socket.off('room:activities:updated', handleActivitiesUpdated);
       socket.off('room:chat:message', handleChatMessage);
@@ -241,13 +416,56 @@ export default function ListeningRoomsView({
       socket.off('room:invite:updated', handleInviteUpdated);
       socket.off('room:privacy:updated', handlePrivacyUpdated);
       socket.off('room:status:updated', handleStatusUpdated);
+      socket.off('room:archived', handleRoomArchived);
+      socket.off('room:deleted', handleRoomDeleted);
       socket.off('room:error', handleRoomError);
       socket.off('listening_room_error', handleRoomError);
+      socket.off('room:playback:request', handleRoomPlaybackRequest);
+      socket.off('room:playback:response', handleRoomPlaybackResponse);
+      socket.off('room:playback:start', handleRoomPlaybackStart);
     };
   }, [socket, activeRoom, currentUserId, activeTab, setRoomPlaylists, setActiveRoom, showToast]);
 
-  // 1. Join Room
+  // 1. Search Room Code / ID -> Returns Room Preview Card (Never auto-joins)
+  const handleLookupCode = async (codeToSearch) => {
+    if (!user) {
+      if (showToast) showToast('Please sign in to search and join Collaborative Rooms', 'warning');
+      if (onOpenAuth) onOpenAuth();
+      return;
+    }
+
+    const cleanCode = (codeToSearch || joinCodeInput || '').trim();
+    if (!cleanCode) return;
+
+    setIsSearchingCode(true);
+    setSearchPreviewRoom(null);
+
+    try {
+      const res = await fetch(getApiUrl(`/api/rooms/lookup/${encodeURIComponent(cleanCode)}`), {
+        headers: authHeaders
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.preview) {
+        setSearchPreviewRoom(data.preview);
+        if (showToast) showToast(`Found room "${data.preview.name}"`);
+      } else {
+        if (showToast) showToast(data?.error || 'Room not found or invalid room code', 'error');
+      }
+    } catch (e) {
+      if (showToast) showToast('Network error searching for room', 'error');
+    } finally {
+      setIsSearchingCode(false);
+    }
+  };
+
+  // 2. Join Room (Explicit click on Join button)
   const handleJoin = async (roomIdOrCode) => {
+    if (!user) {
+      if (showToast) showToast('Please sign in to join Collaborative Rooms', 'warning');
+      if (onOpenAuth) onOpenAuth();
+      return;
+    }
+
     if (!roomIdOrCode) return;
     const target = roomIdOrCode.trim();
     if (!target) return;
@@ -255,20 +473,22 @@ export default function ListeningRoomsView({
     try {
       const res = await fetch(getApiUrl('/api/rooms/join'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomCode: target, user })
+        headers: authHeaders,
+        body: JSON.stringify({ roomCode: target })
       });
       const data = await res.json();
       if (res.ok && data.success && data.room) {
         if (setActiveRoom) setActiveRoom(data.room);
         if (setRoomPlaylists) setRoomPlaylists(data.room.playlists || []);
-        setParticipants(data.room.members || []);
+        const uniqueMembers = getUniqueMembers(data.room.members || []);
+        setParticipants(uniqueMembers);
         setActivities(data.room.activities || []);
         setChatMessages(data.room.chatMessages || []);
         socket?.emit('join_listening_room', { roomId: data.room.roomId, user });
         socket?.emit('room:join', { roomId: data.room.roomId, user });
         if (showToast) showToast(`Joined "${data.room.name}"`);
         setJoinCodeInput('');
+        setSearchPreviewRoom(null);
         refreshRooms();
         return;
       } else {
@@ -283,16 +503,37 @@ export default function ListeningRoomsView({
 
   // 2. Leave Room
   const handleLeave = () => {
+    // Immediately clear ?room= or ?roomCode= query parameters from URL so auto-join doesn't re-trigger
+    if (typeof window !== 'undefined' && window.history && window.location) {
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('room') || url.searchParams.has('roomCode')) {
+          url.searchParams.delete('room');
+          url.searchParams.delete('roomCode');
+          window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : '') + (url.hash || ''));
+        }
+      } catch (e) {}
+    }
+
     if (activeRoom) {
       const rId = activeRoom.roomId || activeRoom.id;
+      // Optimistically remove from local rooms list
+      setRooms(prev => (prev || []).filter(r => (r.roomId || r.id) !== rId));
+
       socket?.emit('leave_listening_room', { roomId: rId });
       socket?.emit('room:leave', { roomId: rId, user });
-      // Call REST fallback to ensure server persistence
+      // Call REST fallback with auth headers to ensure server persistence
       fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/leave`), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user, userId: currentUserId })
-      }).catch(() => {});
+        headers: authHeaders,
+        body: JSON.stringify({ user, userId: currentUserId, guestId: currentUserId })
+      }).then(res => {
+        if (!res.ok) {
+          console.warn('[ListeningRooms] Failed to leave room on server:', res.status);
+        }
+      }).catch(err => {
+        console.warn('[ListeningRooms] Network error leaving room:', err.message);
+      });
     }
     if (setActiveRoom) setActiveRoom(null);
     if (setRoomPlaylists) setRoomPlaylists([]);
@@ -303,18 +544,133 @@ export default function ListeningRoomsView({
     refreshRooms();
   };
 
+  // 3. Re-Join Request Flow from Left Rooms
+  const handleRequestToJoin = async (targetRoom) => {
+    if (!targetRoom) return;
+    const rId = targetRoom.roomId || targetRoom.id;
+    setPendingRejoinRoomIds(prev => Array.from(new Set([...prev, rId])));
+
+    if (socket) {
+      socket.emit('room:join:request', { roomId: rId, user }, (res) => {
+        if (res && res.success) {
+          if (res.status === 'already_member') {
+            handleJoin(rId);
+          } else {
+            if (showToast) showToast('Join request sent to Host! Waiting for approval.');
+          }
+        } else {
+          if (showToast) showToast(res?.error || 'Failed to send join request', 'error');
+        }
+      });
+    }
+
+    try {
+      const res = await fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/join-request`), {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ user, userId: currentUserId, guestId: currentUserId })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (data.status === 'already_member') {
+          handleJoin(rId);
+        } else if (!socket) {
+          if (showToast) showToast('Join request sent to Host! Waiting for approval.');
+        }
+      } else if (!socket) {
+        if (showToast) showToast(data?.error || 'Failed to send join request', 'error');
+      }
+    } catch (e) {
+      if (!socket && showToast) showToast('Network error sending request', 'error');
+    }
+  };
+
+  // Host Approval Controls
+  const handleApproveJoinRequest = async (targetUserId) => {
+    if (!activeRoom || !isHost || !targetUserId) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+
+    if (socket) {
+      socket.emit('room:join:approve', { roomId: rId, targetUserId, user }, (res) => {
+        if (res && res.success) {
+          setJoinRequests(res.joinRequests || []);
+          if (res.members) setParticipants(res.members);
+          if (showToast) showToast('Member approved and added to room!');
+        } else {
+          if (showToast) showToast(res?.error || 'Failed to approve request', 'error');
+        }
+      });
+    } else {
+      try {
+        const res = await fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/join-requests/approve`), {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({ targetUserId, user })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setJoinRequests(data.joinRequests || []);
+          if (data.members) setParticipants(data.members);
+          if (showToast) showToast('Member approved and added to room!');
+        } else {
+          if (showToast) showToast(data?.error || 'Failed to approve request', 'error');
+        }
+      } catch (e) {
+        if (showToast) showToast('Network error approving member', 'error');
+      }
+    }
+  };
+
+  const handleRejectJoinRequest = async (targetUserId) => {
+    if (!activeRoom || !isHost || !targetUserId) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+
+    if (socket) {
+      socket.emit('room:join:reject', { roomId: rId, targetUserId, user }, (res) => {
+        if (res && res.success) {
+          setJoinRequests(res.joinRequests || []);
+          if (showToast) showToast('Join request rejected');
+        } else {
+          if (showToast) showToast(res?.error || 'Failed to reject request', 'error');
+        }
+      });
+    } else {
+      try {
+        const res = await fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/join-requests/reject`), {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({ targetUserId, user })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setJoinRequests(data.joinRequests || []);
+          if (showToast) showToast('Join request rejected');
+        } else {
+          if (showToast) showToast(data?.error || 'Failed to reject request', 'error');
+        }
+      } catch (e) {
+        if (showToast) showToast('Network error rejecting request', 'error');
+      }
+    }
+  };
+
   // 3. Create Room
   const handleCreate = async (e) => {
     e.preventDefault();
+    if (!user) {
+      if (showToast) showToast('Please sign in to create a room', 'warning');
+      if (onOpenAuth) onOpenAuth();
+      return;
+    }
+
     const name = newRoomName.trim() || `${user?.displayName || user?.username || 'Host'}'s Lounge`;
     try {
       const res = await fetch(getApiUrl('/api/rooms'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({
           name,
           description: newRoomDesc.trim(),
-          user,
           isPublic: newRoomIsPublic
         })
       });
@@ -322,12 +678,15 @@ export default function ListeningRoomsView({
       if ((res.status === 201 || res.status === 200) && data.success && data.room) {
         if (setActiveRoom) setActiveRoom(data.room);
         if (setRoomPlaylists) setRoomPlaylists(data.room.playlists || []);
-        setParticipants(data.room.members || []);
+        const uniqueMembers = getUniqueMembers(data.room.members || []);
+        setParticipants(uniqueMembers);
         setActivities(data.room.activities || []);
         socket?.emit('join_listening_room', { roomId: data.room.roomId, user });
         socket?.emit('room:join', { roomId: data.room.roomId, user });
         if (showToast) showToast(`Created Room "${data.room.name}"`);
         refreshRooms();
+      } else {
+        if (showToast) showToast(data?.error || 'Could not create room', 'error');
       }
     } catch (err) {
       if (showToast) showToast('Could not create room, please try again', 'error');
@@ -356,6 +715,187 @@ export default function ListeningRoomsView({
         });
     } else {
       if (showToast) showToast(`Room Code: ${rCode}`);
+    }
+  };
+
+  // Handler when user clicks a song to play in Room View
+  const handleRoomSongClick = (song) => {
+    if (!song) return;
+    const durSec = parseDurationToSeconds ? parseDurationToSeconds(song) : (song.durationSec || 0);
+
+    // If Listen Together is ON, trigger the Request & "Okay" ready-check flow
+    if (isRoomPlaybackSyncEnabled && activeRoom) {
+      const rId = activeRoom.roomId || activeRoom.id;
+      const reqId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const reqPayload = {
+        roomId: rId,
+        requestId: reqId,
+        track: song,
+        initiatorId: currentUserId,
+        initiatorName: user?.displayName || user?.username || 'Host',
+        user
+      };
+
+      // Set local active request immediately for initiator
+      setActivePlaybackRequest({
+        requestId: reqId,
+        track: song,
+        initiatorId: String(currentUserId || ''),
+        initiatorName: user?.displayName || user?.username || 'You',
+        createdAt: Date.now(),
+        readyUsers: [String(currentUserId || '')],
+        declinedUsers: []
+      });
+      setHasRespondedToRequest(true);
+
+      if (socket) {
+        socket.emit('room:playback:request', reqPayload);
+      }
+      if (showToast) {
+        showToast(`Sent Listen Together request for "${song.title}"`);
+      }
+    } else {
+      // Listen Together is OFF: play independently without disrupting anyone
+      if (onPlaySong) onPlaySong(song);
+    }
+  };
+
+  // Accept / "Okay" Listen Together Request
+  const handleAcceptPlaybackRequest = () => {
+    if (!activePlaybackRequest || !activeRoom) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+    setHasRespondedToRequest(true);
+
+    if (socket) {
+      socket.emit('room:playback:respond', {
+        roomId: rId,
+        requestId: activePlaybackRequest.requestId,
+        userId: currentUserId,
+        response: 'okay',
+        user
+      });
+    }
+
+    // If initiator, or all ready, initiator can also trigger start
+    const isInitiator = String(activePlaybackRequest.initiatorId) === String(currentUserId);
+    if (isInitiator) {
+      handleTriggerStartPlayback(activePlaybackRequest.track);
+    } else {
+      if (showToast) showToast('Ready to listen together! Waiting for playback to start...');
+    }
+  };
+
+  // Decline Listen Together Request
+  const handleDeclinePlaybackRequest = () => {
+    if (!activePlaybackRequest || !activeRoom) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+    setHasRespondedToRequest(true);
+    setActivePlaybackRequest(null);
+
+    if (socket) {
+      socket.emit('room:playback:respond', {
+        roomId: rId,
+        requestId: activePlaybackRequest.requestId,
+        userId: currentUserId,
+        response: 'decline',
+        user
+      });
+    }
+    if (showToast) showToast('Declined synchronized song. Enjoying independent playback.');
+  };
+
+  // Initiator triggers playback start once ready check is confirmed
+  const handleTriggerStartPlayback = (trackToStart) => {
+    if (!activeRoom) return;
+    const song = trackToStart || activePlaybackRequest?.track;
+    if (!song) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+    const now = Date.now();
+
+    // Start local player
+    if (onPlaySong) onPlaySong(song);
+
+    const startPayload = {
+      roomId: rId,
+      track: song,
+      basePositionSec: 0,
+      startedAt: now,
+      isPlaying: true,
+      user
+    };
+
+    if (socket) {
+      socket.emit('room:playback:start', startPayload);
+    }
+
+    setActivePlaybackRequest(null);
+    setHasRespondedToRequest(false);
+  };
+
+  // Late-Accept / Mid-Playback Joiner Sync (Crucial: NEVER restart from 0:00)
+  const handleSyncToLivePlayback = async () => {
+    if (!activeRoom) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+
+    // Turn Listen Together ON if currently OFF
+    if (!isRoomPlaybackSyncEnabled && typeof setIsRoomPlaybackSyncEnabled === 'function') {
+      setIsRoomPlaybackSyncEnabled(true);
+    }
+
+    const applyLiveState = (liveState) => {
+      if (!liveState || !liveState.track) {
+        if (showToast) showToast('No live track is currently playing in this room', 'warning');
+        return;
+      }
+
+      const song = liveState.track;
+      let targetPositionSec = typeof liveState.basePositionSec === 'number' ? liveState.basePositionSec : 0;
+      if (liveState.isPlaying && liveState.startedAt) {
+        const elapsed = Math.max(0, (Date.now() - liveState.startedAt) / 1000);
+        targetPositionSec += elapsed;
+      }
+
+      if (onPlaySong) onPlaySong(song);
+      if (targetPositionSec > 0.5 && onSeek) {
+        setTimeout(() => {
+          onSeek(targetPositionSec);
+        }, 600);
+        setTimeout(() => {
+          onSeek(targetPositionSec + 0.3);
+        }, 1200);
+      }
+      if (showToast) {
+        const mins = Math.floor(targetPositionSec / 60);
+        const secs = Math.floor(targetPositionSec % 60);
+        const timeStr = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        showToast(`Synced live to "${song.title}" at ${timeStr}`);
+      }
+    };
+
+    if (socket) {
+      socket.emit('room:playback:getState', { roomId: rId }, (res) => {
+        if (res && res.success && res.state) {
+          applyLiveState(res.state);
+        } else {
+          // Fallback to REST
+          fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/playback-state`))
+            .then(r => r.json())
+            .then(data => {
+              if (data && data.success && data.playbackState) {
+                applyLiveState(data.playbackState);
+              }
+            })
+            .catch(() => {});
+        }
+      });
+    } else {
+      try {
+        const res = await fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/playback-state`));
+        const data = await res.json();
+        if (res.ok && data.success && data.playbackState) {
+          applyLiveState(data.playbackState);
+        }
+      } catch (e) {}
     }
   };
 
@@ -683,24 +1223,113 @@ export default function ListeningRoomsView({
     }
   };
 
-  // 14. Archive or delete room
+  // 14. Archive or restore room
+  const handleToggleArchive = async (targetRoomId, shouldArchive = true) => {
+    const rId = targetRoomId || activeRoom?.roomId || activeRoom?.id;
+    if (!rId) return;
+
+    if (socket) {
+      socket.emit('room:archive', { roomId: rId, shouldArchive, user }, (res) => {
+        if (res && res.success) {
+          if (showToast) showToast(shouldArchive ? 'Room archived' : 'Room restored to active');
+          refreshRooms();
+          if (activeRoom && (activeRoom.roomId === rId || activeRoom.id === rId)) {
+            setActiveRoom(prev => prev ? { ...prev, isArchived: shouldArchive, status: shouldArchive ? 'archived' : 'active' } : prev);
+          }
+        } else {
+          if (showToast) showToast(res?.error || 'Failed to archive/restore room', 'error');
+        }
+      });
+    }
+
+    try {
+      const res = await fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/archive`), {
+        method: 'PATCH',
+        headers: authHeaders,
+        body: JSON.stringify({ isArchived: shouldArchive })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (!socket && showToast) showToast(shouldArchive ? 'Room archived' : 'Room restored to active');
+        refreshRooms();
+        if (activeRoom && (activeRoom.roomId === rId || activeRoom.id === rId)) {
+          setActiveRoom(prev => prev ? { ...prev, isArchived: shouldArchive, status: shouldArchive ? 'archived' : 'active' } : prev);
+        }
+      } else if (!socket) {
+        if (showToast) showToast(data?.error || 'Failed to archive/restore room', 'error');
+      }
+    } catch (e) {
+      if (!socket && showToast) showToast('Network error archiving room', 'error');
+    }
+  };
+
+  // 15. Permanently delete room (Strictly authorized Host only or deleting left room)
+  const handleConfirmDeleteRoom = async () => {
+    if (!roomToDelete) return;
+    const rId = roomToDelete.roomId || roomToDelete.id;
+    const isFromLeftRooms = roomToDelete._isLeftRoom || filterTab === 'left';
+    setIsDeletingRoom(true);
+
+    // Clean URL query param if active
+    if (typeof window !== 'undefined' && window.history && window.location) {
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.get('room') === rId || url.searchParams.get('roomCode') === roomToDelete.code) {
+          url.searchParams.delete('room');
+          url.searchParams.delete('roomCode');
+          window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : '') + (url.hash || ''));
+        }
+      } catch (e) {}
+    }
+
+    if (socket) {
+      socket.emit('room:delete', { roomId: rId, user });
+    }
+
+    try {
+      // If deleting from Left Rooms, call the dedicated left room deletion endpoint (or general DELETE if host)
+      const deleteEndpoint = isFromLeftRooms 
+        ? `/api/rooms/${encodeURIComponent(rId)}/left` 
+        : `/api/rooms/${encodeURIComponent(rId)}`;
+        
+      const res = await fetch(getApiUrl(deleteEndpoint), {
+        method: 'DELETE',
+        headers: authHeaders
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (showToast) {
+          showToast(isFromLeftRooms ? `Removed "${roomToDelete.name}" from Left Rooms` : `Room "${roomToDelete.name}" permanently deleted`);
+        }
+        if (activeRoom && (activeRoom.roomId === rId || activeRoom.id === rId)) {
+          setActiveRoom(null);
+          setParticipants([]);
+          setActivities([]);
+          setChatMessages([]);
+        }
+        // Optimistically update leftRooms state immediately
+        setLeftRooms(prev => prev.filter(lr => (lr.roomId || lr.id) !== rId));
+        refreshRooms();
+      } else {
+        if (showToast) showToast(data?.error || 'Failed to delete room', 'error');
+      }
+    } catch (e) {
+      if (showToast) showToast('Network error deleting room', 'error');
+    } finally {
+      setIsDeletingRoom(false);
+      setRoomToDelete(null);
+    }
+  };
+
+  // Legacy helper
   const handleArchiveOrDeleteRoom = (action) => {
     if (!activeRoom || !isHost) return;
     const rId = activeRoom.roomId || activeRoom.id;
-
-    if (socket) {
-      socket.emit('room:archive', {
-        roomId: rId,
-        action,
-        user
-      });
-    } else {
-      fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/archive`), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, user })
-      }).catch(() => {});
+    if (action === 'delete') {
+      setRoomToDelete(activeRoom);
+      return;
     }
+    handleToggleArchive(rId, action === 'archive');
   };
 
   const handleCreateRoomPlaylist = (e) => {
@@ -925,6 +1554,31 @@ export default function ListeningRoomsView({
                 <span>{copiedLink ? 'Copied!' : 'Invite'}</span>
               </button>
 
+              {isHost && (
+                <button
+                  type="button"
+                  onClick={() => handleToggleArchive(activeRoom.roomId || activeRoom.id, !(activeRoom.isArchived || activeRoom.status === 'archived'))}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl border text-xs font-bold transition active:scale-95 cursor-pointer ${
+                    activeRoom.isArchived || activeRoom.status === 'archived'
+                      ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-500/40 text-emerald-300'
+                      : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/35 text-amber-300'
+                  }`}
+                  title={activeRoom.isArchived || activeRoom.status === 'archived' ? 'Restore room to active' : 'Archive this room'}
+                >
+                  {activeRoom.isArchived || activeRoom.status === 'archived' ? (
+                    <>
+                      <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Restore</span>
+                    </>
+                  ) : (
+                    <>
+                      <Archive className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Archive</span>
+                    </>
+                  )}
+                </button>
+              )}
+
               <button
                 onClick={handleLeave}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 font-bold text-xs transition active:scale-95 cursor-pointer"
@@ -1019,6 +1673,16 @@ export default function ListeningRoomsView({
             </div>
 
             <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+              {/* Sync Live Button for Mid-Playback / Late Joiners */}
+              <button
+                onClick={handleSyncToLivePlayback}
+                className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition flex items-center gap-1.5 active:scale-95 cursor-pointer shadow-sm"
+                title="Sync player to room's live playback timestamp"
+              >
+                <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                <span>Sync Live</span>
+              </button>
+
               {isCoHost && (
                 <button
                   onClick={handleBroadcastSync}
@@ -1096,6 +1760,69 @@ export default function ListeningRoomsView({
                       {emoji}
                     </button>
                   ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Synchronized Playback Request & Ready-Check Banner */}
+          {activePlaybackRequest && (
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/80 via-neutral-900/90 to-purple-950/80 border border-amber-500/50 shadow-xl shadow-amber-500/10 space-y-3 animate-fadeIn">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/40 shrink-0">
+                    <Music className="w-5 h-5 animate-bounce" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                        Listen Together Request
+                      </span>
+                      <span className="text-[11px] text-neutral-400 font-mono">
+                        Ready: {activePlaybackRequest.readyUsers?.length || 1} / {participants.length || 1}
+                      </span>
+                    </div>
+                    <h4 className="text-white font-bold text-sm mt-0.5">
+                      <span className="text-amber-400 font-extrabold">{activePlaybackRequest.initiatorName || 'Host'}</span> wants to play "{activePlaybackRequest.track?.title}" together!
+                    </h4>
+                  </div>
+                </div>
+
+                {/* Actions: Okay vs Decline */}
+                <div className="flex items-center gap-2">
+                  {String(activePlaybackRequest.initiatorId) === String(currentUserId) ? (
+                    <button
+                      type="button"
+                      onClick={() => handleTriggerStartPlayback(activePlaybackRequest.track)}
+                      className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 font-bold text-xs rounded-xl shadow-md transition active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Start Now ({activePlaybackRequest.readyUsers?.length || 1} Ready)</span>
+                    </button>
+                  ) : hasRespondedToRequest ? (
+                    <span className="text-xs font-semibold text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/30 flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5" />
+                      <span>You're Ready</span>
+                    </span>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleAcceptPlaybackRequest}
+                        className="px-4 py-2 bg-amber-500 hover:bg-amber-400 active:scale-95 text-neutral-950 font-bold text-xs rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Okay</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDeclinePlaybackRequest}
+                        className="px-3.5 py-2 bg-neutral-800 hover:bg-neutral-700 active:scale-95 text-neutral-300 font-semibold text-xs rounded-xl border border-neutral-700 transition cursor-pointer"
+                      >
+                        Decline
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -1306,9 +2033,8 @@ export default function ListeningRoomsView({
                         <button
                           onClick={() => {
                             const s = activeSelectedPlaylist.songs[0];
-                            if (s && onPlaySong) {
-                              onPlaySong(s);
-                              if (showToast) showToast(`Playing room playlist "${activeSelectedPlaylist.name}"`);
+                            if (s) {
+                              handleRoomSongClick(s);
                             }
                           }}
                           className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/20"
@@ -1352,7 +2078,7 @@ export default function ListeningRoomsView({
                                   }}
                                 />
                                 <button
-                                  onClick={() => onPlaySong && onPlaySong(song)}
+                                  onClick={() => handleRoomSongClick(song)}
                                   className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition cursor-pointer"
                                   aria-label={`Play ${song.title}`}
                                 >
@@ -1501,9 +2227,8 @@ export default function ListeningRoomsView({
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (pl.songs[0] && onPlaySong) {
-                                    onPlaySong(pl.songs[0]);
-                                    if (showToast) showToast(`Playing room playlist "${pl.name}"`);
+                                  if (pl.songs[0]) {
+                                    handleRoomSongClick(pl.songs[0]);
                                   }
                                 }}
                                 className="p-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 transition"
@@ -1583,6 +2308,64 @@ export default function ListeningRoomsView({
           {/* TAB 3: MEMBERS & ROLES */}
           {activeTab === 'members' && (
             <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 space-y-4">
+              {/* Host Section: Pending Join Requests */}
+              {isHost && (
+                <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-amber-400" />
+                      <h5 className="font-bold text-white text-xs uppercase tracking-wider">
+                        Re-Join Requests
+                      </h5>
+                    </div>
+                    <span className="text-[10px] font-bold text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/30">
+                      {joinRequests.length} pending
+                    </span>
+                  </div>
+
+                  {joinRequests.length === 0 ? (
+                    <p className="text-[11px] text-neutral-400 italic">No pending re-join requests at this time.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {joinRequests.map(req => (
+                        <div 
+                          key={req.userId}
+                          className="p-2.5 rounded-xl bg-neutral-950/80 border border-neutral-800 flex items-center justify-between gap-2.5"
+                        >
+                          <div className="min-w-0">
+                            <span className="font-bold text-xs text-white block truncate">{req.name}</span>
+                            <span className="text-[10px] text-neutral-400 font-mono block truncate">
+                              {req.email ? req.email : `User ID: ${req.userId.slice(0, 10)}...`}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleApproveJoinRequest(req.userId)}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold text-[11px] flex items-center gap-1 shadow-md shadow-emerald-500/20 active:scale-95 transition cursor-pointer"
+                              title="Approve Member Re-join"
+                            >
+                              <UserCheck className="w-3 h-3" />
+                              <span>Approve</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRejectJoinRequest(req.userId)}
+                              className="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 font-semibold text-[11px] flex items-center gap-1 active:scale-95 transition cursor-pointer"
+                              title="Reject Request"
+                            >
+                              <UserX className="w-3 h-3" />
+                              <span>Reject</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex items-center justify-between">
                 <h5 className="font-bold text-white text-xs uppercase tracking-wider">Active Room Listeners</h5>
                 <span className="text-[10px] text-neutral-400">{participants.length} connected</span>
@@ -1680,17 +2463,30 @@ export default function ListeningRoomsView({
                   <span className="text-xs text-neutral-400">Host Room Controls:</span>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => handleArchiveOrDeleteRoom('archive')}
-                      className="px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-semibold transition"
+                      onClick={() => handleToggleArchive(activeRoom.roomId || activeRoom.id, !(activeRoom.isArchived || activeRoom.status === 'archived'))}
+                      className="px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
+                      title={activeRoom.isArchived || activeRoom.status === 'archived' ? 'Restore Room to Active' : 'Archive Room'}
                     >
-                      Archive Room
+                      {activeRoom.isArchived || activeRoom.status === 'archived' ? (
+                        <>
+                          <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Restore Room</span>
+                        </>
+                      ) : (
+                        <>
+                          <Archive className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Archive Room</span>
+                        </>
+                      )}
                     </button>
 
                     <button
-                      onClick={() => handleArchiveOrDeleteRoom('delete')}
-                      className="px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold transition"
+                      onClick={() => setRoomToDelete(activeRoom)}
+                      className="px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
+                      title="Permanently Delete Room"
                     >
-                      Delete Room
+                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Delete Room</span>
                     </button>
                   </div>
                 </div>
@@ -1724,27 +2520,85 @@ export default function ListeningRoomsView({
             </div>
           </div>
 
-          {/* Quick Join Bar */}
-          <div className="p-3.5 rounded-2xl bg-neutral-900/90 border border-neutral-800 flex items-center gap-2">
-            <input
-              type="text"
-              placeholder="Enter room code (e.g. SFSGRP) or room ID to join..."
-              value={joinCodeInput}
-              onChange={(e) => setJoinCodeInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && joinCodeInput.trim()) {
-                  handleJoin(joinCodeInput.trim());
-                }
-              }}
-              className="flex-1 px-3 py-2 bg-neutral-950 border border-neutral-700/80 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500 uppercase font-mono tracking-wider"
-            />
-            <button
-              onClick={() => handleJoin(joinCodeInput.trim())}
-              disabled={!joinCodeInput.trim()}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 active:scale-95 text-neutral-950 font-bold text-xs rounded-xl transition disabled:opacity-40 cursor-pointer shadow-md shadow-amber-500/20"
-            >
-              Join Room
-            </button>
+          {/* Quick Search & Preview Bar (Never auto-joins) */}
+          <div className="space-y-3">
+            <div className="p-3.5 rounded-2xl bg-neutral-900/90 border border-neutral-800 flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Enter room code (e.g. SFSGRP) or room ID to preview..."
+                value={joinCodeInput}
+                onChange={(e) => {
+                  setJoinCodeInput(e.target.value);
+                  if (searchPreviewRoom) setSearchPreviewRoom(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && joinCodeInput.trim()) {
+                    handleLookupCode(joinCodeInput.trim());
+                  }
+                }}
+                className="flex-1 px-3 py-2 bg-neutral-950 border border-neutral-700/80 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500 uppercase font-mono tracking-wider"
+              />
+              <button
+                type="button"
+                onClick={() => handleLookupCode(joinCodeInput.trim())}
+                disabled={!joinCodeInput.trim() || isSearchingCode}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 active:scale-95 text-neutral-950 font-bold text-xs rounded-xl transition disabled:opacity-40 cursor-pointer shadow-md shadow-amber-500/20 flex items-center gap-1.5"
+              >
+                {isSearchingCode ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Searching...</span>
+                  </>
+                ) : (
+                  <span>Search Room</span>
+                )}
+              </button>
+            </div>
+
+            {/* Room Preview Card (Rendered upon searching, with explicit Join / Open button) */}
+            {searchPreviewRoom && (
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-neutral-900 via-neutral-900 to-amber-950/30 border border-amber-500/40 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-scaleUp">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0 shadow-md">
+                    <Radio className="w-6 h-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-sm text-white truncate">{searchPreviewRoom.name}</h4>
+                      {searchPreviewRoom.code && (
+                        <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                          {searchPreviewRoom.code}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-neutral-400">
+                      <span>Host: <strong className="text-white">{searchPreviewRoom.createdBy?.displayName || searchPreviewRoom.createdBy?.username || 'Host'}</strong></span>
+                      <span>•</span>
+                      <span className="text-emerald-400 font-mono font-medium">{searchPreviewRoom.memberCount || 1} online</span>
+                      <span>•</span>
+                      <span>{searchPreviewRoom.playlistsCount || 0} playlists</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => setSearchPreviewRoom(null)}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold text-neutral-400 hover:text-white transition cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleJoin(searchPreviewRoom.code || searchPreviewRoom.roomId || searchPreviewRoom.id)}
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 active:scale-95 transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <span>{searchPreviewRoom.isMember ? 'Open Room' : 'Join Room'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Create Room Form (Expandable) */}
@@ -1791,100 +2645,298 @@ export default function ListeningRoomsView({
             </form>
           )}
 
-          {/* Filter Chips Strip (Matching Your Playlists: All Rooms, Created by You, Joined Rooms) */}
+          {/* Filter Chips Strip (Matching Your Playlists: All Rooms, Created by You, Joined Rooms, Left Rooms, Archived Rooms) */}
           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
             {[
-              { id: 'all', label: 'All Rooms' },
-              { id: 'created', label: 'Created by You' },
-              { id: 'joined', label: 'Joined Rooms' }
+              { id: 'all', label: 'All Rooms', count: rooms.length },
+              { id: 'created', label: 'Created by You', count: rooms.filter(r => r.createdBy?.userId === currentUserId).length },
+              { id: 'joined', label: 'Joined Rooms', count: rooms.filter(r => r.createdBy?.userId !== currentUserId).length },
+              { id: 'left', label: 'Left Rooms', count: leftRooms.length },
+              { id: 'archived', label: 'Archived Rooms', count: archivedRooms.length }
             ].map(chip => (
               <button
                 key={chip.id}
                 type="button"
                 onClick={() => setFilterTab(chip.id)}
-                className={`text-xs px-3 py-1 rounded-full whitespace-nowrap cursor-pointer transition select-none ${
+                className={`text-xs px-3 py-1 rounded-full whitespace-nowrap cursor-pointer transition select-none flex items-center gap-1.5 ${
                   filterTab === chip.id
                     ? 'bg-amber-400 text-neutral-950 font-bold shadow-md shadow-amber-500/20'
                     : 'bg-white/5 hover:bg-white/10 text-neutral-300 border border-white/10'
                 }`}
               >
-                {chip.label}
+                <span>{chip.label}</span>
+                {chip.count !== undefined && (
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                    filterTab === chip.id ? 'bg-neutral-950/20 text-neutral-900 font-bold' : 'bg-white/10 text-neutral-400'
+                  }`}>
+                    {chip.count}
+                  </span>
+                )}
               </button>
             ))}
           </div>
 
-          {/* Rooms Grid (Matching Your Playlists visual cards grid) */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4 mt-2">
-            {/* Create Room Action Card */}
-            <div 
-              onClick={() => setIsCreating(true)}
-              className="p-4 rounded-2xl border border-dashed border-amber-500/35 bg-gradient-to-br from-amber-500/10 via-neutral-900/40 to-neutral-950/80 hover:border-amber-400 hover:bg-amber-500/15 active:scale-[0.98] cursor-pointer flex flex-col items-center justify-center gap-2.5 transition-all group text-center aspect-square shadow-lg backdrop-blur-md"
-            >
-              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/30 text-amber-400 group-hover:scale-110 flex items-center justify-center transition shadow-[0_0_15px_rgba(245,158,11,0.2)]">
-                <Plus className="w-6 h-6" />
+          {/* Rooms Grid */}
+          {filterTab === 'archived' ? (
+            /* ARCHIVED ROOMS SECTION */
+            <div className="space-y-4">
+              <div className="p-3.5 rounded-2xl bg-neutral-900/60 border border-neutral-800 text-xs text-neutral-400 flex items-center justify-between">
+                <span>Rooms archived by their Host. Archived rooms are frozen until restored.</span>
+                <span className="font-mono text-[11px] text-amber-400 font-bold">{archivedRooms.length} archived room{archivedRooms.length === 1 ? '' : 's'}</span>
               </div>
-              <div>
-                <h3 className="font-black text-white text-xs sm:text-sm truncate w-full group-hover:text-amber-300 transition">
-                  Create Room
-                </h3>
-                <p className="text-[10px] text-amber-400/80 font-medium mt-0.5">Start collaborative room</p>
-              </div>
-            </div>
 
-            {/* Room Cards */}
-            {filteredRooms.map(r => {
-              const rId = r.roomId || r.id;
-              const isCreator = r.createdBy?.userId === currentUserId;
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4 mt-2">
+                {archivedRooms.map(r => {
+                  const rId = r.roomId || r.id;
+                  const isCreator = r.createdBy?.userId === currentUserId;
 
-              return (
-                <div
-                  key={rId}
-                  onClick={() => handleJoin(rId)}
-                  className="group relative p-3 sm:p-4 rounded-2xl bg-neutral-900/80 hover:bg-neutral-800/90 border border-neutral-800 hover:border-amber-500/40 transition-all flex flex-col justify-between aspect-square cursor-pointer shadow-lg hover:shadow-amber-500/10 active:scale-[0.98]"
-                >
-                  {/* Top Badges */}
-                  <div className="flex items-center justify-between gap-1.5 w-full">
-                    {r.code ? (
-                      <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
-                        {r.code}
-                      </span>
-                    ) : <span />}
+                  return (
+                    <div
+                      key={rId}
+                      className="group relative p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800/90 hover:border-amber-500/30 transition flex flex-col justify-between shadow-lg"
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20 flex items-center gap-1">
+                            <Archive className="w-3 h-3" />
+                            <span>Archived</span>
+                          </span>
+                          {r.code && (
+                            <span className="text-[10px] font-mono text-neutral-400 bg-neutral-800 px-1.5 py-0.5 rounded">
+                              {r.code}
+                            </span>
+                          )}
+                        </div>
 
-                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      <span>{r.memberCount || 1} online</span>
-                    </span>
-                  </div>
+                        <div>
+                          <h3 className="font-bold text-white text-sm truncate">{r.name}</h3>
+                          <p className="text-[11px] text-neutral-400 truncate mt-0.5">
+                            Host: <span className="text-neutral-300 font-medium">{r.createdBy?.displayName || r.createdBy?.username || 'Host'}</span>
+                          </p>
+                          {r.description && (
+                            <p className="text-[11px] text-neutral-500 line-clamp-2 mt-1">{r.description}</p>
+                          )}
+                        </div>
+                      </div>
 
-                  {/* Icon & Details */}
-                  <div className="my-auto text-center space-y-1">
-                    <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center group-hover:scale-105 transition shadow-md">
-                      <Radio className="w-6 h-6" />
+                      <div className="pt-3 border-t border-neutral-800 mt-3 flex items-center justify-between gap-2">
+                        {isCreator ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleArchive(rId, false)}
+                              className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                              title="Restore Room to Active"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Restore</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setRoomToDelete(r)}
+                              className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                              title="Permanently Delete Room"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Delete</span>
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-[11px] text-neutral-500 italic">Archived by Host</span>
+                        )}
+                      </div>
                     </div>
-                    <h3 className="font-extrabold text-white text-xs sm:text-sm truncate w-full group-hover:text-amber-300 transition pt-1">
-                      {r.name}
-                    </h3>
-                    <p className="text-[10px] text-neutral-400 truncate">
-                      {isCreator ? 'Created by You' : `Host: ${r.createdBy?.displayName || 'Host'}`}
-                    </p>
-                  </div>
+                  );
+                })}
+              </div>
 
-                  {/* Bottom Stats */}
-                  <div className="pt-2 border-t border-neutral-800/80 flex items-center justify-between text-[10px] text-neutral-400">
-                    <span className="flex items-center gap-1">
-                      <Music className="w-3 h-3 text-amber-400/80" />
-                      <span>{r.playlistsCount || 0} playlists</span>
-                    </span>
-                    <span className="font-semibold text-amber-400 group-hover:underline">
-                      Open Room →
-                    </span>
-                  </div>
+              {archivedRooms.length === 0 && (
+                <div className="text-center py-12 text-neutral-500 text-xs border border-dashed border-neutral-800 rounded-2xl space-y-2">
+                  <Archive className="w-10 h-10 text-neutral-600 mx-auto" />
+                  <p className="font-medium text-neutral-400 text-sm">No archived rooms</p>
+                  <p className="text-neutral-500">Rooms you archive will appear here so you can restore them anytime.</p>
                 </div>
-              );
-            })}
-          </div>
+              )}
+            </div>
+          ) : filterTab === 'left' ? (
+            /* LEFT ROOMS SECTION */
+            <div className="space-y-4">
+              <div className="p-3.5 rounded-2xl bg-neutral-900/60 border border-neutral-800 text-xs text-neutral-400 flex items-center justify-between">
+                <span>Rooms you previously left. Re-join requires Host approval.</span>
+                <span className="font-mono text-[11px] text-amber-400 font-bold">{leftRooms.length} left room{leftRooms.length === 1 ? '' : 's'}</span>
+              </div>
 
-          {filteredRooms.length === 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4 mt-2">
+                {leftRooms.map(r => {
+                  const rId = r.roomId || r.id;
+                  const isPending = pendingRejoinRoomIds.includes(rId) || r.hasPendingRequest;
+
+                  return (
+                    <div
+                      key={rId}
+                      className="group relative p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 hover:border-neutral-700 transition flex flex-col justify-between shadow-lg"
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-mono text-neutral-500 bg-neutral-800 px-2 py-0.5 rounded-md">
+                            Left {r.leftAt ? new Date(r.leftAt).toLocaleDateString() : 'Previously'}
+                          </span>
+                          {r.code && (
+                            <span className="text-[10px] font-mono text-amber-400/80 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                              {r.code}
+                            </span>
+                          )}
+                        </div>
+
+                        <div>
+                          <h3 className="font-bold text-white text-sm truncate">{r.name}</h3>
+                          <p className="text-[11px] text-neutral-400 truncate mt-0.5">
+                            Host: <span className="text-neutral-300 font-medium">{r.createdBy?.displayName || r.createdBy?.username || 'Host'}</span>
+                          </p>
+                          {r.description && (
+                            <p className="text-[11px] text-neutral-500 line-clamp-2 mt-1">{r.description}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="pt-3 border-t border-neutral-800 mt-3 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewLeftRoom(r)}
+                            className="px-2.5 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-xs font-semibold transition cursor-pointer"
+                          >
+                            Preview
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setRoomToDelete({ ...r, _isLeftRoom: true })}
+                            className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold transition flex items-center gap-1 cursor-pointer active:scale-95"
+                            title={r.createdBy?.userId === currentUserId ? 'Permanently Delete Left Room' : 'Remove from Left Rooms'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={isPending}
+                          onClick={() => handleRequestToJoin(r)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-md ${
+                            isPending 
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 cursor-not-allowed'
+                              : 'bg-amber-500 hover:bg-amber-400 text-neutral-950 active:scale-95 cursor-pointer shadow-amber-500/20'
+                          }`}
+                        >
+                          <Shield className="w-3.5 h-3.5" />
+                          <span>{isPending ? 'Pending' : 'Request to Join'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {leftRooms.length === 0 && (
+                <div className="text-center py-12 text-neutral-500 text-xs border border-dashed border-neutral-800 rounded-2xl space-y-2">
+                  <LogOut className="w-10 h-10 text-neutral-600 mx-auto" />
+                  <p className="font-medium text-neutral-400 text-sm">No left rooms</p>
+                  <p className="text-neutral-500">Rooms you leave will appear here if you ever wish to request to re-join.</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* ACTIVE ROOMS GRID (Matching Your Playlists visual cards grid) */
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4 mt-2">
+              {/* Create Room Action Card */}
+              <div 
+                onClick={() => setIsCreating(true)}
+                className="p-4 rounded-2xl border border-dashed border-amber-500/35 bg-gradient-to-br from-amber-500/10 via-neutral-900/40 to-neutral-950/80 hover:border-amber-400 hover:bg-amber-500/15 active:scale-[0.98] cursor-pointer flex flex-col items-center justify-center gap-2.5 transition-all group text-center aspect-square shadow-lg backdrop-blur-md"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/30 text-amber-400 group-hover:scale-110 flex items-center justify-center transition shadow-[0_0_15px_rgba(245,158,11,0.2)]">
+                  <Plus className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-black text-white text-xs sm:text-sm truncate w-full group-hover:text-amber-300 transition">
+                    Create Room
+                  </h3>
+                  <p className="text-[10px] text-amber-400/80 font-medium mt-0.5">Start collaborative room</p>
+                </div>
+              </div>
+
+              {/* Room Cards */}
+              {filteredRooms.map(r => {
+                const rId = r.roomId || r.id;
+                const isCreator = r.createdBy?.userId === currentUserId;
+
+                return (
+                  <div
+                    key={rId}
+                    onClick={() => handleJoin(rId)}
+                    className="group relative p-3 sm:p-4 rounded-2xl bg-neutral-900/80 hover:bg-neutral-800/90 border border-neutral-800 hover:border-amber-500/40 transition-all flex flex-col justify-between aspect-square cursor-pointer shadow-lg hover:shadow-amber-500/10 active:scale-[0.98]"
+                  >
+                    {/* Top Badges & Actions */}
+                    <div className="flex items-center justify-between gap-1.5 w-full">
+                      {r.code ? (
+                        <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                          {r.code}
+                        </span>
+                      ) : <span />}
+
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          <span>{r.memberCount || 1} online</span>
+                        </span>
+
+                        {isCreator && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleArchive(rId, true);
+                            }}
+                            className="p-1 rounded-lg bg-neutral-800/90 hover:bg-amber-500/20 hover:text-amber-400 text-neutral-400 border border-neutral-700/80 transition cursor-pointer active:scale-95"
+                            title="Archive Room"
+                          >
+                            <Archive className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Icon & Details */}
+                    <div className="my-auto text-center space-y-1">
+                      <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center group-hover:scale-105 transition shadow-md">
+                        <Radio className="w-6 h-6" />
+                      </div>
+                      <h3 className="font-extrabold text-white text-xs sm:text-sm truncate w-full group-hover:text-amber-300 transition pt-1">
+                        {r.name}
+                      </h3>
+                      <p className="text-[10px] text-neutral-400 truncate">
+                        {isCreator ? 'Created by You' : `Host: ${r.createdBy?.displayName || 'Host'}`}
+                      </p>
+                    </div>
+
+                    {/* Bottom Stats */}
+                    <div className="pt-2 border-t border-neutral-800/80 flex items-center justify-between text-[10px] text-neutral-400">
+                      <span className="flex items-center gap-1">
+                        <Music className="w-3 h-3 text-amber-400/80" />
+                        <span>{r.playlistsCount || 0} playlists</span>
+                      </span>
+                      <span className="font-semibold text-amber-400 group-hover:underline">
+                        Open Room →
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {filterTab !== 'left' && filteredRooms.length === 0 && (
             <div className="text-center py-12 text-neutral-500 text-xs border border-dashed border-neutral-800 rounded-2xl space-y-2">
               <Radio className="w-10 h-10 text-neutral-600 mx-auto" />
               <p className="font-medium text-neutral-400 text-sm">No rooms found in this tab</p>
@@ -2023,6 +3075,196 @@ export default function ListeningRoomsView({
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Preview Left Room (Restricted / Preview State) */}
+      {previewLeftRoom && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div 
+            className="w-full max-w-md bg-neutral-900 border border-neutral-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-scaleUp"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-4 border-b border-neutral-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30">
+                  <Radio className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white">Room Preview</h3>
+                  <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20">
+                    Restricted Mode
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewLeftRoom(null)}
+                className="p-1.5 rounded-xl text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-4">
+              <div>
+                <h2 className="text-lg font-black text-white">{previewLeftRoom.name}</h2>
+                {previewLeftRoom.code && (
+                  <span className="text-xs font-mono text-neutral-400 mt-0.5 inline-block">
+                    Code: <strong className="text-amber-400">{previewLeftRoom.code}</strong>
+                  </span>
+                )}
+                {previewLeftRoom.description && (
+                  <p className="text-xs text-neutral-400 mt-2 p-2.5 rounded-xl bg-neutral-950/60 border border-neutral-800">
+                    {previewLeftRoom.description}
+                  </p>
+                )}
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-neutral-950/80 border border-neutral-800 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-neutral-400">Host:</span>
+                  <span className="text-white font-bold">{previewLeftRoom.createdBy?.displayName || previewLeftRoom.createdBy?.username || 'Host'}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-neutral-400">Active Listeners:</span>
+                  <span className="text-emerald-400 font-mono font-semibold">{previewLeftRoom.memberCount || 1} online</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-neutral-400">Room Playlists:</span>
+                  <span className="text-neutral-300 font-mono">{previewLeftRoom.playlistsCount || 0} playlists</span>
+                </div>
+                {previewLeftRoom.leftAt && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-neutral-400">Left On:</span>
+                    <span className="text-neutral-400 font-mono">{new Date(previewLeftRoom.leftAt).toLocaleDateString()}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300/90 flex items-start gap-2">
+                <Shield className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <span>
+                  You left this room previously. Live listening and playlist management are locked until the room Host approves your re-join request.
+                </span>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-neutral-800 bg-neutral-950/60 flex items-center justify-between gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  const target = { ...previewLeftRoom, _isLeftRoom: true };
+                  setPreviewLeftRoom(null);
+                  setRoomToDelete(target);
+                }}
+                className="px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer active:scale-95"
+                title={previewLeftRoom.createdBy?.userId === currentUserId ? 'Permanently Delete Room' : 'Remove from Left Rooms'}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{previewLeftRoom.createdBy?.userId === currentUserId ? 'Delete Room' : 'Remove'}</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPreviewLeftRoom(null)}
+                  className="px-3.5 py-2 text-xs font-semibold text-neutral-400 hover:text-white transition cursor-pointer"
+                >
+                  Close
+                </button>
+
+                {(() => {
+                  const rId = previewLeftRoom.roomId || previewLeftRoom.id;
+                  const isPending = pendingRejoinRoomIds.includes(rId) || previewLeftRoom.hasPendingRequest;
+
+                  return (
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => {
+                        handleRequestToJoin(previewLeftRoom);
+                      }}
+                      className={`px-4 py-2 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-lg ${
+                        isPending
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 cursor-not-allowed'
+                          : 'bg-amber-500 hover:bg-amber-400 text-neutral-950 active:scale-95 cursor-pointer shadow-amber-500/25'
+                      }`}
+                    >
+                      <Shield className="w-3.5 h-3.5" />
+                      <span>{isPending ? 'Request Pending' : 'Request to Join'}</span>
+                    </button>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Confirm Permanent Room Deletion */}
+      {roomToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div 
+            className="w-full max-w-sm bg-neutral-900 border border-rose-500/40 rounded-2xl p-5 shadow-2xl space-y-4 animate-scaleUp"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/30">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-white">
+                  {roomToDelete._isLeftRoom || filterTab === 'left'
+                    ? (roomToDelete.createdBy?.userId === currentUserId ? 'Delete Left Room Permanently?' : 'Remove from Left Rooms?')
+                    : 'Delete Room Permanently?'}
+                </h3>
+                <p className="text-[11px] text-neutral-400">
+                  {roomToDelete.createdBy?.userId === currentUserId ? 'This room will be permanently destroyed.' : 'Removes this room from your Left Rooms list.'}
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-neutral-300">
+              {roomToDelete._isLeftRoom || filterTab === 'left' ? (
+                roomToDelete.createdBy?.userId === currentUserId ? (
+                  <>Are you sure you want to permanently delete <strong className="text-white">"{roomToDelete.name}"</strong>? Since you created this room, deleting it will remove all playlists and chat history for everyone.</>
+                ) : (
+                  <>Are you sure you want to remove <strong className="text-white">"{roomToDelete.name}"</strong> from your Left Rooms list? It will no longer show up here.</>
+                )
+              ) : (
+                <>Are you sure you want to delete <strong className="text-white">"{roomToDelete.name}"</strong>? All playlists, chat history, and active listener connections will be permanently removed.</>
+              )}
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-800">
+              <button
+                type="button"
+                disabled={isDeletingRoom}
+                onClick={() => setRoomToDelete(null)}
+                className="px-3.5 py-2 text-xs font-semibold text-neutral-400 hover:text-white transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingRoom}
+                onClick={handleConfirmDeleteRoom}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5 shadow-lg shadow-rose-600/30 cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingRoom ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>
+                  {isDeletingRoom
+                    ? 'Deleting...'
+                    : (roomToDelete._isLeftRoom || filterTab === 'left') && roomToDelete.createdBy?.userId !== currentUserId
+                      ? 'Remove Room'
+                      : 'Delete Permanently'}
+                </span>
+              </button>
             </div>
           </div>
         </div>

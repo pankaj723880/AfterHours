@@ -128,11 +128,67 @@ router.get('/my-dna', authenticateToken, async (req, res) => {
       eras,
       moods,
       strongSignals: profile?.signalsSummary?.strongSignals || [],
-      uncertainSignals: profile?.signalsSummary?.uncertainSignals || []
+      uncertainSignals: profile?.signalsSummary?.uncertainSignals || [],
+      aiSeededTracks: profile?.aiSeededTracks || [],
+      aiSeededMeta: profile?.aiSeededMeta || null
     });
   } catch (err) {
     console.error('[Learning My-DNA Error]:', err.message);
     res.status(500).json({ error: 'Failed to retrieve music DNA: ' + err.message });
+  }
+});
+
+/**
+ * 2c. POST /api/learning-intelligence/ai-seeds
+ * Single-request 100+ song AI seeding per user profile (by category & genre).
+ * Checks if user profile already has seeds for this category/genre; if not or if refresh requested,
+ * generates and persists 100+ valid music tracks (duration >= 75s) to the user's AI learning profile.
+ */
+router.post('/ai-seeds', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.userId || req.user.id;
+    const { category = '', genre = '', currentTrack = null, forceRefresh = false } = req.body || {};
+
+    const cleanCategory = String(category || '').trim().toLowerCase();
+    const cleanGenre = String(genre || currentTrack?.genre || '').trim().toLowerCase();
+
+    const result = await learningEngineService.seedUserProfileTracks({
+      userId,
+      category: cleanCategory,
+      genre: cleanGenre,
+      currentTrack,
+      forceRefresh: Boolean(forceRefresh)
+    });
+
+    res.json({
+      success: true,
+      cached: result.cached,
+      count: result.tracks.length,
+      tracks: result.tracks,
+      meta: result.meta
+    });
+  } catch (err) {
+    console.error('[Learning AI Seeds Error]:', err.message);
+    res.status(500).json({ error: 'Failed to seed profile tracks: ' + err.message, tracks: [] });
+  }
+});
+
+/**
+ * 2d. GET /api/learning-intelligence/ai-seeds
+ * Retrieves user's persisted AI seeded tracks from profile for immediate offline/fallback cycling.
+ */
+router.get('/ai-seeds', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.userId || req.user.id;
+    const result = await learningEngineService.getUserSeededTracks(userId);
+    res.json({
+      success: true,
+      count: result.tracks.length,
+      tracks: result.tracks,
+      meta: result.meta
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get seeded tracks: ' + err.message, tracks: [] });
   }
 });
 

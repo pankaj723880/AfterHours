@@ -375,7 +375,17 @@ export function isSingleSong(track) {
   // 2a. Strict Blacklist words filter on title & description
   for (const regex of STRICT_BLACKLIST_REGEXES) {
     if (regex.test(lowerTitle)) return false;
-    if (lowerDesc && regex.test(lowerDesc)) return false;
+  }
+  if (lowerDesc) {
+    const isSingleDuration = !isRadio && checkDurationSec !== null && checkDurationSec >= 75 && checkDurationSec <= 600;
+    for (const regex of STRICT_BLACKLIST_REGEXES) {
+      if (regex.test(lowerDesc)) {
+        if (isSingleDuration && (regex.source.includes('best\\s+of') || regex.source.includes('hits\\s+of') || regex.source.includes('latest\\s+hits') || regex.source.includes('collection'))) {
+          continue;
+        }
+        return false;
+      }
+    }
   }
 
   // 2b. Non-Music Disqualifiers (Challenges, Quizzes, Gaming, Vlogs, Tutorials, News, Background music)

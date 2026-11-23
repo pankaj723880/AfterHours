@@ -163,6 +163,29 @@ const userLearningProfileSchema = new mongoose.Schema({
     strongSignals: { type: [String], default: [] },
     weakSignals: { type: [String], default: [] },
     uncertainSignals: { type: [String], default: [] }
+  },
+  aiSeededTracks: {
+    type: [{
+      id: { type: String, required: true },
+      videoId: { type: String, default: '' },
+      title: { type: String, required: true },
+      artist: { type: String, default: '' },
+      channel: { type: String, default: '' },
+      thumbnail: { type: String, default: '' },
+      image: { type: String, default: '' },
+      duration: { type: String, default: '' },
+      durationSec: { type: Number, default: 0 },
+      genre: { type: String, default: '' },
+      category: { type: String, default: '' },
+      seededAt: { type: Date, default: Date.now }
+    }],
+    default: []
+  },
+  aiSeededMeta: {
+    lastCategory: { type: String, default: '' },
+    lastGenre: { type: String, default: '' },
+    lastSeededAt: { type: Date, default: null },
+    totalCount: { type: Number, default: 0 }
   }
 }, {
   timestamps: true,

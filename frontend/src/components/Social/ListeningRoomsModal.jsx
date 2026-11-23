@@ -271,16 +271,39 @@ export default function ListeningRoomsModal({
 
   // 2. Leave Room
   const handleLeave = () => {
+    // Immediately clear ?room= or ?roomCode= query parameters from URL so auto-join doesn't re-trigger
+    if (typeof window !== 'undefined' && window.history && window.location) {
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('room') || url.searchParams.has('roomCode')) {
+          url.searchParams.delete('room');
+          url.searchParams.delete('roomCode');
+          window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : '') + (url.hash || ''));
+        }
+      } catch (e) {}
+    }
+
     if (activeRoom) {
       const rId = activeRoom.roomId || activeRoom.id;
+      // Optimistically remove from local rooms list if setRooms is present
+      if (typeof setRooms === 'function') {
+        setRooms(prev => (prev || []).filter(r => (r.roomId || r.id) !== rId));
+      }
+
       socket?.emit('leave_listening_room', { roomId: rId });
       socket?.emit('room:leave', { roomId: rId, user });
       // Call REST fallback to ensure server persistence
       fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/leave`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user, userId: currentUserId })
-      }).catch(() => {});
+        body: JSON.stringify({ user, userId: currentUserId, guestId: currentUserId })
+      }).then(res => {
+        if (!res.ok) {
+          console.warn('[ListeningRooms] Failed to leave room on server:', res.status);
+        }
+      }).catch(err => {
+        console.warn('[ListeningRooms] Network error leaving room:', err.message);
+      });
     }
     if (setActiveRoom) setActiveRoom(null);
     if (setRoomPlaylists) setRoomPlaylists([]);
@@ -288,6 +311,9 @@ export default function ListeningRoomsModal({
     setActivities([]);
     setChatMessages([]);
     if (showToast) showToast('Left Listening Room');
+    if (typeof refreshRooms === 'function') {
+      refreshRooms();
+    }
   };
 
   // 3. Create Room

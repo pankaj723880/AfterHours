@@ -3,6 +3,10 @@ import UserBehaviorEvent from '../models/UserBehaviorEvent.js';
 import UserLearningProfile from '../models/UserLearningProfile.js';
 import LearningUpdateLog from '../models/LearningUpdateLog.js';
 import User from '../models/User.js';
+import CachedSong from '../models/CachedSong.js';
+import { catalogService } from './catalogService.js';
+import { isSingleSong, isValidMusicTrack, parseDurationToSeconds } from './songFilter.js';
+import { getCleanTrackThumbnail, isValidThumbnailUrlFormat } from './thumbnailValidationService.js';
 
 const MODEL_VERSION = '1.0.0-passive';
 const BATCH_INTERVAL_MS = 30 * 1000; // 30 seconds interval
@@ -1097,6 +1101,150 @@ class LearningEngineService {
         processed: e.processed,
         createdAt: e.createdAt
       }))
+    };
+  }
+  /**
+   * Seed at least 100 tracks per user profile by category & genre in a single request.
+   * Persists them directly on user's UserLearningProfile so they persist across sessions.
+   */
+  async seedUserProfileTracks({ userId, category = '', genre = '', currentTrack = null, forceRefresh = false }) {
+    if (!userId) throw new Error('userId is required');
+    const uObjId = new mongoose.Types.ObjectId(userId.toString());
+
+    let profile = await UserLearningProfile.findOne({ userId: uObjId });
+    if (!profile) {
+      profile = new UserLearningProfile({
+        userId: uObjId,
+        modelVersion: MODEL_VERSION,
+        confidenceScore: 0.1,
+        learningStatus: 'active'
+      });
+    }
+
+    const currentMeta = profile.aiSeededMeta || {};
+    const existingTracks = profile.aiSeededTracks || [];
+
+    // If already seeded with 100+ tracks for this category/genre, and not forcing refresh, return immediately
+    const isSameCategory = currentMeta.lastCategory && currentMeta.lastCategory === category;
+    const isSameGenre = currentMeta.lastGenre && currentMeta.lastGenre === genre;
+    if (!forceRefresh && existingTracks.length >= 100 && (isSameCategory || isSameGenre)) {
+      return {
+        cached: true,
+        tracks: existingTracks,
+        meta: currentMeta
+      };
+    }
+
+    // Generate at least 100 valid single tracks (duration >= 75s)
+    const seededMap = new Map();
+    const seenTitles = new Set();
+
+    const addTrack = (t) => {
+      if (!t) return;
+      const vid = String(t.id || t.videoId || '').trim();
+      if (!vid || seededMap.has(vid)) return;
+
+      const durSec = t.durationSec || parseDurationToSeconds(t);
+      if (durSec && durSec < 75) return; // Strict duration >= 75s
+
+      if (!isSingleSong(t) || !isValidMusicTrack(t)) return;
+
+      const titleClean = String(t.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (titleClean.length >= 6 && seenTitles.has(titleClean)) return;
+      if (titleClean.length >= 6) seenTitles.add(titleClean);
+
+      const thumb = getCleanTrackThumbnail(t.thumbnail || t.image, vid);
+      if (!isValidThumbnailUrlFormat(thumb)) return;
+
+      const durFormatted = t.duration || (durSec ? `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}` : '3:45');
+
+      seededMap.set(vid, {
+        id: vid,
+        videoId: vid,
+        title: t.title,
+        artist: t.artist || t.channel || 'Loopra Artist',
+        channel: t.channel || t.artist || 'Loopra Artist',
+        thumbnail: thumb,
+        image: thumb,
+        duration: durFormatted,
+        durationSec: durSec || 200,
+        genre: t.genre || genre || 'Bollywood',
+        category: category || 'General',
+        seededAt: new Date()
+      });
+    };
+
+    // 1. First priority: Pull matching tracks from CachedSong in DB
+    try {
+      if (mongoose.connection && mongoose.connection.readyState === 1) {
+        const queryFilter = { durationSec: { $gte: 75 } };
+        if (genre) {
+          queryFilter.$or = [
+            { genre: new RegExp(genre, 'i') },
+            { title: new RegExp(genre, 'i') },
+            { artist: new RegExp(genre, 'i') }
+          ];
+        }
+
+        const cachedMatches = await CachedSong.find(queryFilter).limit(120).lean().catch(() => []);
+        for (const t of cachedMatches) {
+          addTrack(t);
+        }
+      }
+    } catch (_) {}
+
+    // 2. Second priority: Curated collections and core catalog tracks
+    try {
+      const curated = await catalogService.getCuratedTracks().catch(() => []);
+      for (const t of curated) {
+        if (seededMap.size >= 120) break;
+        addTrack(t);
+      }
+    } catch (_) {}
+
+    // 3. Fallback: Core catalog tracks with duration check
+    if (seededMap.size < 100) {
+      try {
+        const fallbackMatches = await CachedSong.find({ durationSec: { $gte: 75 } }).limit(100).lean().catch(() => []);
+        for (const t of fallbackMatches) {
+          if (seededMap.size >= 120) break;
+          addTrack(t);
+        }
+      } catch (_) {}
+    }
+
+    const finalSeededTracks = Array.from(seededMap.values());
+    profile.aiSeededTracks = finalSeededTracks;
+    profile.aiSeededMeta = {
+      lastCategory: category,
+      lastGenre: genre,
+      lastSeededAt: new Date(),
+      totalCount: finalSeededTracks.length
+    };
+
+    try {
+      await profile.save();
+    } catch (saveErr) {
+      console.warn('[LearningEngineService] Profile seed save warning:', saveErr.message);
+    }
+
+    return {
+      cached: false,
+      tracks: finalSeededTracks,
+      meta: profile.aiSeededMeta
+    };
+  }
+
+  /**
+   * Retrieves seeded tracks for a user from profile
+   */
+  async getUserSeededTracks(userId) {
+    if (!userId) return { tracks: [], meta: null };
+    const uObjId = new mongoose.Types.ObjectId(userId.toString());
+    const profile = await UserLearningProfile.findOne({ userId: uObjId }).select('aiSeededTracks aiSeededMeta').lean();
+    return {
+      tracks: profile?.aiSeededTracks || [],
+      meta: profile?.aiSeededMeta || null
     };
   }
 }

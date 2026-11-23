@@ -528,13 +528,26 @@ export function verifySingleSong(track) {
         verificationStatus: 'rejected_multi_song'
       };
     }
-    if (lowerDesc && regex.test(lowerDesc)) {
-      return {
-        isValid: false,
-        reason: `Description contains blacklisted term (${regex})`,
-        songType: 'blacklisted_compilation',
-        verificationStatus: 'rejected_multi_song'
-      };
+  }
+
+  // 2a-desc. Check description for explicit multi-track compilation / jukebox indicators,
+  // without false-positive rejection of single songs whose descriptions mention "best of" or "hits"
+  if (lowerDesc) {
+    const isSingleDuration = !isRadio && checkDurationSec !== null && checkDurationSec >= 75 && checkDurationSec <= 600;
+    for (const regex of STRICT_BLACKLIST_REGEXES) {
+      if (regex.test(lowerDesc)) {
+        // If track duration is normal single song length (< 10 min) and title is not a compilation,
+        // do not reject solely because description has promotional words like "best of" or "hits of"
+        if (isSingleDuration && (regex.source.includes('best\\s+of') || regex.source.includes('hits\\s+of') || regex.source.includes('latest\\s+hits') || regex.source.includes('collection'))) {
+          continue;
+        }
+        return {
+          isValid: false,
+          reason: `Description contains blacklisted term (${regex})`,
+          songType: 'blacklisted_compilation',
+          verificationStatus: 'rejected_multi_song'
+        };
+      }
     }
   }
 

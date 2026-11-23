@@ -100,10 +100,10 @@ export default function HomeSearchBar({
       try {
         const cleanBase = (backendUrl || '').trim().replace(/\/+$/, '');
         const targetUrl = cleanBase
-          ? `${cleanBase}/api/youtube/search?q=${encodeURIComponent(trimmed)}&limit=10`
-          : `/api/youtube/search?q=${encodeURIComponent(trimmed)}&limit=10`;
+          ? `${cleanBase}/api/youtube/search?q=${encodeURIComponent(trimmed)}&limit=15`
+          : `/api/youtube/search?q=${encodeURIComponent(trimmed)}&limit=15`;
 
-        const res = await fetchWithRetry(targetUrl, { signal: controller.signal }, { maxRetries: 2, delays: [1500, 3000] });
+        const res = await fetchWithRetry(targetUrl, { signal: controller.signal }, { maxRetries: 1, delays: [1000] });
 
         // If another search started in the meantime, ignore this response
         if (currentReqId !== requestIdRef.current) return;
@@ -118,11 +118,12 @@ export default function HomeSearchBar({
         const rawItems = Array.isArray(data?.items) ? data.items : [];
         const formatted = rawItems
           .map((item) => {
-            const videoId = item.id?.videoId || item.id;
+            const videoId = item.id?.videoId || (typeof item.id === 'string' ? item.id : null) || item.videoId;
             return {
               id: videoId,
               title: decodeHtml(item.snippet?.title || 'Untitled Track'),
               channel: decodeHtml(item.snippet?.channelTitle || 'Unknown Artist'),
+              artist: decodeHtml(item.snippet?.channelTitle || 'Unknown Artist'),
               thumbnail:
                 item.snippet?.thumbnails?.medium?.url ||
                 item.snippet?.thumbnails?.default?.url ||
@@ -145,14 +146,14 @@ export default function HomeSearchBar({
         setSelectedIndex(-1);
       } catch (err) {
         if (err.name !== 'AbortError') {
-          console.warn('[Autocomplete Request Warning]:', err.message);
+          console.warn('[Autocomplete Request Notice]:', err.message);
         }
       } finally {
         if (currentReqId === requestIdRef.current) {
           setIsSearching(false);
         }
       }
-    }, 400);
+    }, 280);
 
     return () => {
       clearTimeout(timer);

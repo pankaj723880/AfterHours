@@ -2216,6 +2216,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }
   });
   const [selectedPlaylistForView, setSelectedPlaylistForView] = useState(null);
+  const selectedPlaylistForViewRef = useRef(null);
+  useEffect(() => {
+    selectedPlaylistForViewRef.current = selectedPlaylistForView;
+  }, [selectedPlaylistForView]);
   const [isSharedPlaylistLoading, setIsSharedPlaylistLoading] = useState(false);
   const [sharedPlaylistError, setSharedPlaylistError] = useState(null);
 
@@ -2757,6 +2761,33 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       localStorage.setItem('afterhours_smart_queue', JSON.stringify(smartQueue));
     } catch (e) {}
   }, [smartQueue]);
+
+  // Per-User Persisted AI Seeded Tracks Pool (100+ tracks by category & genre)
+  const [aiSeededTracks, setAiSeededTracks] = useState(() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('afterhours_user') || 'null');
+      const uKey = u?._id || u?.id || 'guest';
+      const stored = localStorage.getItem(`loopra_ai_seeded_tracks_${uKey}`) || localStorage.getItem('loopra_ai_seeded_tracks_common');
+      return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const aiSeededTracksRef = useRef(aiSeededTracks);
+  const aiSeededIndexRef = useRef(0);
+  const isSeedingAiTracksRef = useRef(false);
+  const lastSeededGenreKeyRef = useRef('');
+
+  useEffect(() => {
+    aiSeededTracksRef.current = aiSeededTracks;
+    try {
+      const uKey = user?._id || user?.id || 'guest';
+      if (aiSeededTracks && aiSeededTracks.length > 0) {
+        localStorage.setItem(`loopra_ai_seeded_tracks_${uKey}`, JSON.stringify(aiSeededTracks));
+        localStorage.setItem('loopra_ai_seeded_tracks_common', JSON.stringify(aiSeededTracks));
+      }
+    } catch (e) {}
+  }, [aiSeededTracks, user]);
 
   const isPrefetchingSmartQueueRef = useRef(false);
   const lastPrefetchedTrackIdRef = useRef(null);
@@ -4325,26 +4356,35 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
     const handleRoomPlaybackSyncEvent = (data) => {
       if (!isRoomPlaybackSyncEnabledRef.current || !data) return;
-      if (data.currentSong) {
+      const targetTrack = data.currentSong || data.track;
+      if (targetTrack) {
         const curId = currentSong?.id || currentSong?.videoId;
-        const targetId = data.currentSong?.id || data.currentSong?.videoId;
-        let adjustedSeek = typeof data.seekTime === 'number' ? data.seekTime : 0;
-        if (data.isPlaying && data.timestamp) {
-          const elapsedSec = Math.max(0, (Date.now() - data.timestamp) / 1000);
+        const targetId = targetTrack?.id || targetTrack?.videoId;
+        let adjustedSeek = typeof data.basePositionSec === 'number' 
+          ? data.basePositionSec 
+          : (typeof data.seekTime === 'number' ? data.seekTime : 0);
+
+        const refTimestamp = data.startedAt || data.timestamp;
+        if (data.isPlaying && refTimestamp) {
+          const elapsedSec = Math.max(0, (Date.now() - refTimestamp) / 1000);
           adjustedSeek += elapsedSec;
         }
 
         if (curId !== targetId) {
-          playSong(data.currentSong);
-          if (adjustedSeek > 1) {
+          playSong(targetTrack);
+          // Apply current timestamp seek so user starts right at live position, NEVER 0:00
+          if (adjustedSeek > 0.5) {
             setTimeout(() => {
               handleSeek(adjustedSeek);
-            }, 700);
+            }, 600);
+            setTimeout(() => {
+              handleSeek(adjustedSeek + 0.3);
+            }, 1200);
           }
         } else {
-          // Adjust seek if drifted > 2.5 seconds
+          // Adjust seek if drifted > 2.0 seconds
           const curTime = currentTimeRef.current || 0;
-          if (Math.abs(curTime - adjustedSeek) > 2.5) {
+          if (Math.abs(curTime - adjustedSeek) > 2.0) {
             handleSeek(adjustedSeek);
           }
         }
@@ -4359,6 +4399,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
     };
     socket.on('room:playback:sync', handleRoomPlaybackSyncEvent);
+    socket.on('room:playback:start', handleRoomPlaybackSyncEvent);
 
     socket.on('connect', () => {
       setIsLiveCountStale(false);
@@ -4376,6 +4417,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       clearInterval(clockInterval);
       socket.off('active_users', handleActiveUsersUpdate);
       socket.off('room:playback:sync', handleRoomPlaybackSyncEvent);
+      socket.off('room:playback:start', handleRoomPlaybackSyncEvent);
       socket.off('connect');
       socket.off('disconnect');
     };
@@ -4763,6 +4805,34 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       // Trigger background prefetch of Smart Queue recommendations for continuous listening
       if (song && !song.isRadio) {
         prefetchSmartQueue(song).catch(() => {});
+
+        // Single-request 100+ song AI seeding per user profile (by category & genre)
+        const currentGenre = song.genre || song.category || 'bollywood';
+        const currentCat = activeTab || 'player';
+        const genreKey = `${currentCat}_${currentGenre}`.toLowerCase();
+        const hasEnoughSeeds = aiSeededTracksRef.current && aiSeededTracksRef.current.length >= 100;
+        const isSameGenre = lastSeededGenreKeyRef.current === genreKey;
+
+        if ((!hasEnoughSeeds || !isSameGenre) && !isSeedingAiTracksRef.current) {
+          isSeedingAiTracksRef.current = true;
+          lastSeededGenreKeyRef.current = genreKey;
+          learningIntelligenceClient.seedUserTracks(BACKEND_URL, authToken, {
+            category: currentCat,
+            genre: currentGenre,
+            currentTrack: song,
+            forceRefresh: false
+          }).then(res => {
+            if (res?.success && Array.isArray(res.tracks) && res.tracks.length > 0) {
+              setAiSeededTracks(res.tracks);
+              aiSeededTracksRef.current = res.tracks;
+              aiSeededIndexRef.current = 0;
+            }
+          }).catch(err => {
+            console.warn('[AI Seeding] Notice on single-request seeding:', err?.message);
+          }).finally(() => {
+            isSeedingAiTracksRef.current = false;
+          });
+        }
       }
 
       if (authToken && song) {
@@ -4950,7 +5020,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
     }
 
-    // 2. Queue Priority First: If queue still has items, play the next item in queue
+    // =========================================================================
+    // EXACT NEXT-TRACK FALLBACK PRIORITY ORDER:
+    // 1) Manual Queue (songs manually added to queue by the user)
+    // 2) Smart Queue (when Autoplay is ON and smart queue items exist)
+    // 3) Current Opened Playlist (tracks from the playlist the user opened and played from)
+    // 4) User's Persisted AI Seeded Tracks (cycling through 100+ varied tracks, no repeating small loop)
+    // =========================================================================
+
+    // 1) MANUAL QUEUE PRIORITY
     if (remainingQueue.length > 0) {
       const nextTrack = remainingQueue[0];
       playSong(nextTrack);
@@ -4960,8 +5038,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       return;
     }
 
-    // Queue is now empty
-    // 3. Autoplay ON vs OFF Behavior When Queue Becomes Empty:
+    // 2) SMART QUEUE PRIORITY (When Autoplay is ON)
     if (isAutoplay) {
       const currentSmartQ = smartQueueRef.current || [];
       const smartCandidates = currentSmartQ.length > 0
@@ -4974,7 +5051,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       });
 
       if (nextSmartTrack) {
-        // Remove played track from autoplayList (smartQueue) and advance
         const nextList = smartCandidates.filter(s => (s.id || s.videoId) !== (nextSmartTrack.id || nextSmartTrack.videoId));
         setSmartQueue(nextList);
         smartQueueRef.current = nextList;
@@ -4988,7 +5064,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         return;
       }
 
-      // If autoplayList is also empty, fetch similar songs for the last played track and start playing them
+      // If smartQueue is temporarily empty, try quick smartQueue prefetch
       const baseForRecs = currentSongRef.current || currentSong;
       if (baseForRecs) {
         try {
@@ -5013,37 +5089,36 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           console.warn('[SmartQueue] Autoplay fetch failed:', fetchErr);
         }
       }
-    } else {
-      // When isAutoplay is OFF:
-      // Fetch similar songs based on the current/last played track and automatically play the next similar track
-      // (keeping Hindi songs by well-known artists as the default when no other language is specified)
-      const baseForRecs = currentSongRef.current || currentSong;
-      const trackPayload = {
-        id: baseForRecs?.id || baseForRecs?.videoId || '',
-        title: baseForRecs?.title || '',
-        artist: baseForRecs?.artist || baseForRecs?.channel || 'Arijit Singh',
-        genre: baseForRecs?.genre || 'hindi'
-      };
+    }
 
-      try {
-        const recData = await smartQueueService.fetchRecommendations(trackPayload, { forceRefresh: true });
-        const recItems = recData.items || [];
-        const validSimilar = recItems.filter(s => {
-          const sid = s.id || s.videoId;
-          return sid && sid !== currentId;
-        });
+    // 3) CURRENT OPENED PLAYLIST PRIORITY
+    const openedPlaylist = selectedPlaylistForViewRef.current;
+    if (openedPlaylist && Array.isArray(openedPlaylist.songs) && openedPlaylist.songs.length > 0) {
+      const playlistSongs = openedPlaylist.songs;
+      const curIndex = playlistSongs.findIndex(s => (s.id || s.videoId) === currentId);
 
-        if (validSimilar.length > 0) {
-          const nextTrack = validSimilar[0];
-          playSong(nextTrack);
+      if (curIndex !== -1 && curIndex + 1 < playlistSongs.length) {
+        const nextPlaylistTrack = playlistSongs[curIndex + 1];
+        if (nextPlaylistTrack) {
+          playSong(nextPlaylistTrack);
           return;
         }
-      } catch (err) {
-        console.warn('[Player] Similar songs fetch failed when autoplay off:', err);
+      } else if (curIndex !== -1 && curIndex + 1 >= playlistSongs.length && isRepeat === 'all') {
+        const loopTrack = playlistSongs[0];
+        if (loopTrack) {
+          playSong(loopTrack);
+          return;
+        }
+      } else if (curIndex === -1) {
+        const firstPlaylistTrack = playlistSongs.find(s => (s.id || s.videoId) !== currentId) || playlistSongs[0];
+        if (firstPlaylistTrack) {
+          playSong(firstPlaylistTrack);
+          return;
+        }
       }
     }
 
-    // Repeat 'all' support
+    // Repeat 'all' support from playback history if neither queue nor playlist loop handled it
     if (isRepeat === 'all') {
       if (playbackHistoryStackRef.current.length > 0) {
         const oldestTrack = playbackHistoryStackRef.current[playbackHistoryStackRef.current.length - 1];
@@ -5054,14 +5129,56 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
     }
 
-    // Continuous listening fallback to trending if continuous listening is on but smart queue was empty
+    // 4) USER'S PERSISTED AI SEEDED TRACKS (100+ tracks cycling pool)
+    const seededPool = aiSeededTracksRef.current || [];
+    if (seededPool.length > 0) {
+      const recentHistoryIds = new Set((playbackHistoryStackRef.current || []).map(s => s.id || s.videoId));
+      if (currentId) recentHistoryIds.add(currentId);
+
+      let chosenTrack = null;
+      const poolLen = seededPool.length;
+      let startIdx = aiSeededIndexRef.current || 0;
+
+      // Scan starting from aiSeededIndexRef to guarantee cycling across all 100+ songs
+      for (let i = 0; i < poolLen; i++) {
+        const checkIdx = (startIdx + i) % poolLen;
+        const candidate = seededPool[checkIdx];
+        const candId = candidate?.id || candidate?.videoId;
+        if (candId && !recentHistoryIds.has(candId)) {
+          chosenTrack = candidate;
+          aiSeededIndexRef.current = (checkIdx + 1) % poolLen;
+          break;
+        }
+      }
+
+      // If all tracks are in recent history, advance circular index and play next different song
+      if (!chosenTrack) {
+        for (let i = 0; i < poolLen; i++) {
+          const checkIdx = (startIdx + i) % poolLen;
+          const candidate = seededPool[checkIdx];
+          const candId = candidate?.id || candidate?.videoId;
+          if (candId && candId !== currentId) {
+            chosenTrack = candidate;
+            aiSeededIndexRef.current = (checkIdx + 1) % poolLen;
+            break;
+          }
+        }
+      }
+
+      if (chosenTrack) {
+        playSong(chosenTrack);
+        return;
+      }
+    }
+
+    // Continuous listening final fallback to trending songs if available
     if (isContinuousListeningRef.current && trendingSongs && trendingSongs.length > 0) {
       const nextFallback = trendingSongs.find(s => (s.id || s.videoId) !== currentId) || trendingSongs[0];
       playSong(nextFallback);
       return;
     }
 
-    // If continuous listening is disabled and queue ended, stop playback cleanly
+    // If continuous listening is disabled and all queues/playlists ended, stop playback cleanly
     setIsPlaying(false);
     try { playerRef.current?.pauseVideo?.(); } catch (e) {}
     showToast('Queue ended');
@@ -7763,9 +7880,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     // Give immediate visual loading feedback without blocking new searches
     setIsLoading(true);
     try {
-      const data = await fetchFromBackend(trimmedQuery + " official video original", {
-        limit: 10,
-        timeoutMs: 25000,
+      const data = await fetchFromBackend(trimmedQuery, {
+        limit: 25,
+        timeoutMs: 30000,
         signal: searchController.signal
       });
 
@@ -7895,8 +8012,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     setSearchLoadMoreError('');
 
     try {
-      const data = await fetchFromBackend(currentQuery + " official video original", {
-        limit: 10,
+      const data = await fetchFromBackend(currentQuery, {
+        limit: 15,
         pageToken: currentToken
       });
 
@@ -7987,34 +8104,26 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       fetchYouTubeMusic(q);
     }
 
-    // Auto-join room via URL share link e.g. ?room=room_123 or ?roomCode=XYZ
+    // Room URL share link e.g. ?room=room_123 or ?roomCode=XYZ (Preview & Navigate to Rooms)
     const roomParam = (params.get('room') || params.get('roomCode') || '').trim();
     if (!initialRoomCheckedRef.current && roomParam) {
       initialRoomCheckedRef.current = true;
-      setActiveTab('rooms');
-      setIsListeningRoomsOpen(true);
-      fetch(getApiUrl(`/api/rooms/${encodeURIComponent(roomParam)}/join`), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user })
-      })
-        .then(res => res.json())
-        .then(data => {
-          if (data?.success && data?.room) {
-            setActiveRoom(data.room);
-            setRoomPlaylists(data.room.playlists || []);
-            socket?.emit('join_listening_room', { roomId: data.room.roomId, user });
-            socket?.emit('room:join', { roomId: data.room.roomId, user });
-            showToast?.(`Joined Collaborative Room "${data.room.name}"`);
-          } else {
-            socket?.emit('join_listening_room', { roomId: roomParam, user });
-            socket?.emit('room:join', { roomId: roomParam, user });
-          }
-        })
-        .catch(() => {
-          socket?.emit('join_listening_room', { roomId: roomParam, user });
-          socket?.emit('room:join', { roomId: roomParam, user });
-        });
+      // Clean room parameter from URL so leaving room or reloading does not re-trigger
+      try {
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete('room');
+        cleanUrl.searchParams.delete('roomCode');
+        window.history.replaceState({}, document.title, cleanUrl.pathname + (cleanUrl.search ? cleanUrl.search : '') + (cleanUrl.hash || ''));
+      } catch (e) {}
+
+      // Prompt to log in if unauthenticated, or navigate to rooms
+      if (!user) {
+        showToast?.('Please sign in to view and join Collaborative Rooms', 'warning');
+        openAuthModal?.();
+      } else {
+        setActiveTab('rooms');
+        setIsListeningRoomsOpen(true);
+      }
     }
   }, []);
 
@@ -10926,6 +11035,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             <ListeningRoomsView
               socket={socket}
               user={user}
+              authToken={authToken}
+              onOpenAuth={openAuthModal}
               currentSong={currentSong}
               isPlaying={isPlaying}
               currentTimeRef={currentTimeRef}

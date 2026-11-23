@@ -125,6 +125,44 @@ export const learningIntelligenceClient = {
       throw new Error(err.error || `HTTP ${res.status}: Failed to delete user profile`);
     }
     return res.json();
+  },
+
+  /**
+   * Fetches persisted AI seeded tracks (100+ items) for the current user.
+   */
+  async getAiSeededTracks(backendUrl, token) {
+    if (!backendUrl) return { success: false, tracks: [] };
+    try {
+      const base = backendUrl.replace(/\/+$/, '');
+      const headers = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`${base}/api/learning-intelligence/ai-seeds`, { headers });
+      if (!res.ok) return { success: false, tracks: [] };
+      return await res.json();
+    } catch (e) {
+      return { success: false, tracks: [] };
+    }
+  },
+
+  /**
+   * Seeds 100+ tracks per user profile by category/genre in a single batch request.
+   */
+  async seedUserTracks(backendUrl, token, { category, genre, currentTrack, forceRefresh = false } = {}) {
+    if (!backendUrl) return { success: false, tracks: [] };
+    try {
+      const base = backendUrl.replace(/\/+$/, '');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`${base}/api/learning-intelligence/ai-seeds`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ category, genre, currentTrack, forceRefresh })
+      });
+      if (!res.ok) return { success: false, tracks: [] };
+      return await res.json();
+    } catch (e) {
+      return { success: false, tracks: [] };
+    }
   }
 };
 

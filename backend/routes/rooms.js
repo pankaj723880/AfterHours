@@ -1,20 +1,21 @@
 import express from 'express';
 import { collaborativeRoomService } from '../services/collaborativeRoomService.js';
-import { optionalAuth } from '../middleware/auth.js';
+import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// GET /api/rooms - List active and persistent collaborative rooms
-router.get('/', optionalAuth, async (req, res) => {
+// Helper to extract verified user ID from authenticated request
+const getAuthenticatedUserId = (req) => {
+  return req.user?._id?.toString?.() || req.user?.userId || null;
+};
+
+// GET /api/rooms - List active collaborative rooms (strict auth: require login)
+router.get('/', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user?._id?.toString?.() || req.user?.userId || req.query.userId || req.query.guestId;
+    const userId = getAuthenticatedUserId(req);
     let rooms = [];
     if (req.query.scope === 'my') {
-      if (userId) {
-        rooms = await collaborativeRoomService.listUserRooms(userId, 50);
-      } else {
-        rooms = [];
-      }
+      rooms = await collaborativeRoomService.listUserRooms(userId, 50);
     } else {
       rooms = await collaborativeRoomService.listRooms(50);
     }
@@ -24,13 +25,10 @@ router.get('/', optionalAuth, async (req, res) => {
   }
 });
 
-// GET /api/rooms/my - List rooms created or joined strictly by the current user or guest
-router.get('/my', optionalAuth, async (req, res) => {
+// GET /api/rooms/my - List rooms created or joined strictly by the authenticated user
+router.get('/my', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user?._id?.toString?.() || req.user?.userId || req.query.userId || req.query.guestId || req.headers['x-guest-id'] || req.headers['x-session-id'];
-    if (!userId) {
-      return res.json({ success: true, rooms: [] });
-    }
+    const userId = getAuthenticatedUserId(req);
     const rooms = await collaborativeRoomService.listUserRooms(userId, 50);
     res.json({ success: true, rooms });
   } catch (err) {
@@ -38,14 +36,72 @@ router.get('/my', optionalAuth, async (req, res) => {
   }
 });
 
-// POST /api/rooms - Create a collaborative room
-router.post('/', optionalAuth, async (req, res) => {
+// GET /api/rooms/left - List rooms previously left by the current authenticated user
+router.get('/left', authenticateToken, async (req, res) => {
+  try {
+    const userId = getAuthenticatedUserId(req);
+    const rooms = await collaborativeRoomService.listLeftRooms(userId, 50);
+    res.json({ success: true, rooms });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to list left rooms: ' + err.message });
+  }
+});
+
+// GET /api/rooms/archived - List archived rooms created or joined by the current authenticated user
+router.get('/archived', authenticateToken, async (req, res) => {
+  try {
+    const userId = getAuthenticatedUserId(req);
+    const rooms = await collaborativeRoomService.listArchivedRooms(userId, 50);
+    res.json({ success: true, rooms });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to list archived rooms: ' + err.message });
+  }
+});
+
+// GET /api/rooms/lookup/:code - Room preview lookup without joining (strictly returns preview info)
+router.get('/lookup/:code', authenticateToken, async (req, res) => {
+  try {
+    const code = (req.params.code || '').trim();
+    if (!code) {
+      return res.status(400).json({ success: false, error: 'Room code or ID is required' });
+    }
+    const room = await collaborativeRoomService.getRoom(code);
+    if (!room) {
+      return res.status(404).json({ success: false, error: 'Room not found or invalid room code' });
+    }
+    const userId = getAuthenticatedUserId(req);
+    const isMember = (room.members || []).some(m => String(m.userId) === String(userId));
+    const isHost = (room.createdBy?.userId === userId);
+
+    res.json({
+      success: true,
+      preview: {
+        roomId: room.roomId,
+        id: room.roomId,
+        code: room.code,
+        name: room.name,
+        description: room.description || '',
+        createdBy: room.createdBy,
+        memberCount: (room.members || []).length,
+        playlistsCount: (room.playlists || []).length,
+        isPublic: room.isPublic !== false,
+        isMember,
+        isHost
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to lookup room: ' + err.message });
+  }
+});
+
+// POST /api/rooms - Create a collaborative room (strictly requires authenticated user)
+router.post('/', authenticateToken, async (req, res) => {
   try {
     const { name, description, isPublic } = req.body;
     const room = await collaborativeRoomService.createRoom({
       name,
       description,
-      user: req.user || req.body?.user,
+      user: req.user,
       isPublic: isPublic !== false
     });
     res.status(201).json({ success: true, room });
@@ -54,15 +110,15 @@ router.post('/', optionalAuth, async (req, res) => {
   }
 });
 
-// POST /api/rooms/join - Join a room by roomCode or roomId
-router.post('/join', optionalAuth, async (req, res) => {
+// POST /api/rooms/join - Join a room by roomCode or roomId (strictly requires authenticated user)
+router.post('/join', authenticateToken, async (req, res) => {
   try {
     const roomCode = (req.body?.roomCode || req.body?.code || req.body?.roomId || '').toString().trim();
     if (!roomCode) {
       return res.status(400).json({ ok: false, success: false, error: 'Room code or Room ID is required' });
     }
 
-    const room = await collaborativeRoomService.joinRoom(roomCode, req.user || req.body?.user);
+    const room = await collaborativeRoomService.joinRoom(roomCode, req.user);
     if (!room) {
       return res.status(404).json({ ok: false, success: false, error: 'Room not found' });
     }
@@ -72,8 +128,8 @@ router.post('/join', optionalAuth, async (req, res) => {
   }
 });
 
-// GET /api/rooms/:roomId - Get full room details & playlists
-router.get('/:roomId', async (req, res) => {
+// GET /api/rooms/:roomId - Get full room details & playlists (strictly requires authentication)
+router.get('/:roomId', authenticateToken, async (req, res) => {
   try {
     const room = await collaborativeRoomService.getRoom(req.params.roomId);
     if (!room) {
@@ -85,7 +141,7 @@ router.get('/:roomId', async (req, res) => {
   }
 });
 
-// POST /api/rooms/:roomId/leave - Leave a room
+// POST /api/rooms/:roomId/leave - Leave a room (handles authenticated user or request body user)
 router.post('/:roomId/leave', optionalAuth, async (req, res) => {
   try {
     const user = req.user || req.body?.user || {
@@ -388,17 +444,111 @@ router.post('/:roomId/invite/regenerate', optionalAuth, async (req, res) => {
   }
 });
 
-// POST /api/rooms/:roomId/archive - Archive or delete room
-router.post('/:roomId/archive', optionalAuth, async (req, res) => {
+// PATCH /api/rooms/:roomId/archive - Archive or unarchive (restore) room
+router.patch('/:roomId/archive', authenticateToken, async (req, res) => {
   try {
-    const { action } = req.body;
-    const user = req.user || req.body?.user;
-    const result = await collaborativeRoomService.archiveOrDeleteRoom(req.params.roomId, action, user);
+    const shouldArchive = req.body?.isArchived !== false && req.body?.action !== 'restore' && req.body?.action !== 'unarchive';
+    const result = await collaborativeRoomService.toggleArchiveRoom(req.params.roomId, shouldArchive, req.user);
+
+    const io = req.app.get('io');
+    if (io && result.room) {
+      io.to(`room_${result.room.roomId}`).emit('room:archived', {
+        roomId: result.room.roomId,
+        isArchived: result.isArchived,
+        status: result.status,
+        archivedAt: result.archivedAt,
+        archivedBy: result.archivedBy
+      });
+      io.to(`room_${result.room.roomId}`).emit('room:activities:updated', {
+        roomId: result.room.roomId,
+        activities: result.room.activities
+      });
+      // Global broadcast so active room views can refresh lists
+      io.emit('room:status:updated', {
+        roomId: result.room.roomId,
+        isArchived: result.isArchived,
+        status: result.status
+      });
+    }
+
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to archive/restore room: ' + err.message });
+  }
+});
+
+// DELETE /api/rooms/:roomId - Permanently delete room (strictly authorized Host only)
+router.delete('/:roomId', authenticateToken, async (req, res) => {
+  try {
+    const result = await collaborativeRoomService.deleteRoomPermanently(req.params.roomId, req.user);
 
     const io = req.app.get('io');
     if (io) {
-      io.to(`room_${req.params.roomId}`).emit('room:archived', {
+      io.to(`room_${req.params.roomId}`).emit('room:deleted', {
         roomId: req.params.roomId,
+        deleted: true
+      });
+      io.emit('room:deleted', {
+        roomId: req.params.roomId,
+        deleted: true
+      });
+    }
+
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to delete room: ' + err.message });
+  }
+});
+
+// DELETE /api/rooms/:roomId/left - Direct deletion of left room (deletes room if host, or clears left membership)
+router.delete('/:roomId/left', authenticateToken, async (req, res) => {
+  try {
+    const result = await collaborativeRoomService.deleteLeftRoomForUser(req.params.roomId, req.user);
+
+    const io = req.app.get('io');
+    if (io && result.deleted) {
+      io.to(`room_${req.params.roomId}`).emit('room:deleted', {
+        roomId: req.params.roomId,
+        deleted: true
+      });
+      io.emit('room:deleted', {
+        roomId: req.params.roomId,
+        deleted: true
+      });
+    }
+
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to delete left room: ' + err.message });
+  }
+});
+
+// POST /api/rooms/:roomId/archive - Legacy support for archive/delete
+router.post('/:roomId/archive', authenticateToken, async (req, res) => {
+  try {
+    const { action } = req.body;
+    if (action === 'delete') {
+      const result = await collaborativeRoomService.deleteRoomPermanently(req.params.roomId, req.user);
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`room_${req.params.roomId}`).emit('room:deleted', { roomId: req.params.roomId, deleted: true });
+        io.emit('room:deleted', { roomId: req.params.roomId, deleted: true });
+      }
+      return res.json({ success: true, ...result });
+    }
+
+    const shouldArchive = action !== 'restore' && action !== 'unarchive';
+    const result = await collaborativeRoomService.toggleArchiveRoom(req.params.roomId, shouldArchive, req.user);
+    const io = req.app.get('io');
+    if (io && result.room) {
+      io.to(`room_${result.room.roomId}`).emit('room:archived', {
+        roomId: result.room.roomId,
+        isArchived: result.isArchived,
+        status: result.status
+      });
+      io.emit('room:status:updated', {
+        roomId: result.room.roomId,
+        isArchived: result.isArchived,
         status: result.status
       });
     }
@@ -406,6 +556,133 @@ router.post('/:roomId/archive', optionalAuth, async (req, res) => {
     res.json({ success: true, ...result });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to archive room: ' + err.message });
+  }
+});
+
+// POST /api/rooms/:roomId/join-request - Request to re-join room
+router.post('/:roomId/join-request', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+    const mergedUser = {
+      userId: user._id.toString(),
+      name: user.displayName || user.username || 'Listener',
+      email: user.email || ''
+    };
+
+    const result = await collaborativeRoomService.requestToJoin(req.params.roomId, mergedUser);
+    const io = req.app.get('io');
+    if (io && result.room) {
+      // Broadcast to room workspace (for the host) and host's specific notifications
+      io.to(`room_${result.room.roomId}`).emit('room:join:request', {
+        roomId: result.room.roomId,
+        request: result.request,
+        joinRequests: result.room.joinRequests
+      });
+      io.to(`room_${result.room.roomId}`).emit('room:activities:updated', {
+        roomId: result.room.roomId,
+        activities: result.room.activities
+      });
+    }
+
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to submit join request: ' + err.message });
+  }
+});
+
+// POST /api/rooms/:roomId/join-requests/approve - Host approves a re-join request
+router.post('/:roomId/join-requests/approve', authenticateToken, async (req, res) => {
+  try {
+    const { targetUserId } = req.body;
+    if (!targetUserId) {
+      return res.status(400).json({ success: false, error: 'targetUserId is required' });
+    }
+    const requester = req.user;
+    const result = await collaborativeRoomService.approveJoinRequest(req.params.roomId, targetUserId, requester);
+
+    const io = req.app.get('io');
+    if (io && result.room) {
+      io.to(`room_${result.room.roomId}`).emit('room:join:approved', {
+        roomId: result.room.roomId,
+        userId: result.approvedUserId,
+        member: result.member,
+        members: result.members,
+        joinRequests: result.joinRequests
+      });
+      io.to(`room_${result.room.roomId}`).emit('room:members:updated', {
+        roomId: result.room.roomId,
+        members: result.members
+      });
+      io.to(`room_${result.room.roomId}`).emit('room:activities:updated', {
+        roomId: result.room.roomId,
+        activities: result.room.activities
+      });
+      // Global broadcast so user's client outside the room socket room receives it
+      io.emit('room:join:approved', {
+        roomId: result.room.roomId,
+        userId: result.approvedUserId,
+        room: result.room
+      });
+    }
+
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to approve join request: ' + err.message });
+  }
+});
+
+// POST /api/rooms/:roomId/join-requests/reject - Host rejects a re-join request
+router.post('/:roomId/join-requests/reject', authenticateToken, async (req, res) => {
+  try {
+    const { targetUserId } = req.body;
+    if (!targetUserId) {
+      return res.status(400).json({ success: false, error: 'targetUserId is required' });
+    }
+    const requester = req.user;
+    const result = await collaborativeRoomService.rejectJoinRequest(req.params.roomId, targetUserId, requester);
+
+    const io = req.app.get('io');
+    if (io && result.room) {
+      io.to(`room_${result.room.roomId}`).emit('room:join:rejected', {
+        roomId: result.room.roomId,
+        userId: result.rejectedUserId,
+        joinRequests: result.joinRequests
+      });
+      io.emit('room:join:rejected', {
+        roomId: result.room.roomId,
+        userId: result.rejectedUserId
+      });
+    }
+
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to reject join request: ' + err.message });
+  }
+});
+
+// GET /api/rooms/:roomId/playback-state - Fetch current live room playback state (with elapsed timestamp)
+router.get('/:roomId/playback-state', optionalAuth, async (req, res) => {
+  try {
+    const state = await collaborativeRoomService.getCurrentPlaybackState(req.params.roomId);
+    if (!state) {
+      return res.status(404).json({ success: false, error: 'Room not found or no playback state' });
+    }
+    res.json({ success: true, playbackState: state });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to get playback state: ' + err.message });
+  }
+});
+
+// GET /api/rooms/:roomId/playback-state - Fetch current live room playback state (with elapsed timestamp)
+router.get('/:roomId/playback-state', optionalAuth, async (req, res) => {
+  try {
+    const state = await collaborativeRoomService.getCurrentPlaybackState(req.params.roomId);
+    if (!state) {
+      return res.status(404).json({ success: false, error: 'Room not found or no playback state' });
+    }
+    res.json({ success: true, playbackState: state });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to get playback state: ' + err.message });
   }
 });
 
