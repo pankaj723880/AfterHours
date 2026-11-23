@@ -2732,6 +2732,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [isListeningRoomsOpen, setIsListeningRoomsOpen] = useState(false);
   const [activeRoom, setActiveRoom] = useState(null);
   const [roomPlaylists, setRoomPlaylists] = useState([]);
+  const [isRoomPlaybackSyncEnabled, setIsRoomPlaybackSyncEnabled] = useState(false);
+  const isRoomPlaybackSyncEnabledRef = useRef(false);
+  useEffect(() => {
+    isRoomPlaybackSyncEnabledRef.current = isRoomPlaybackSyncEnabled;
+  }, [isRoomPlaybackSyncEnabled]);
   const [selectedPlaylistCategory, setSelectedPlaylistCategory] = useState('personal'); // 'personal' | 'room'
   const [selectedRoomPlaylistForSong, setSelectedRoomPlaylistForSong] = useState(null);
   const [similarSongsTrack, setSimilarSongsTrack] = useState(null);
@@ -4132,6 +4137,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     setHistory([]);
     setPlaylists([]);
     setQueue([]);
+    setActiveRoom(null);
+    setRoomPlaylists([]);
     setCurrentSong(null);
     setIsPlaying(false);
     if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
@@ -4315,6 +4322,44 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     };
 
     socket.on('active_users', handleActiveUsersUpdate);
+
+    const handleRoomPlaybackSyncEvent = (data) => {
+      if (!isRoomPlaybackSyncEnabledRef.current || !data) return;
+      if (data.currentSong) {
+        const curId = currentSong?.id || currentSong?.videoId;
+        const targetId = data.currentSong?.id || data.currentSong?.videoId;
+        let adjustedSeek = typeof data.seekTime === 'number' ? data.seekTime : 0;
+        if (data.isPlaying && data.timestamp) {
+          const elapsedSec = Math.max(0, (Date.now() - data.timestamp) / 1000);
+          adjustedSeek += elapsedSec;
+        }
+
+        if (curId !== targetId) {
+          playSong(data.currentSong);
+          if (adjustedSeek > 1) {
+            setTimeout(() => {
+              handleSeek(adjustedSeek);
+            }, 700);
+          }
+        } else {
+          // Adjust seek if drifted > 2.5 seconds
+          const curTime = currentTimeRef.current || 0;
+          if (Math.abs(curTime - adjustedSeek) > 2.5) {
+            handleSeek(adjustedSeek);
+          }
+        }
+
+        if (data.isPlaying === false) {
+          playerRef.current?.pauseVideo?.();
+          setIsPlaying(false);
+        } else if (data.isPlaying === true && !isPlaying) {
+          playerRef.current?.playVideo?.();
+          setIsPlaying(true);
+        }
+      }
+    };
+    socket.on('room:playback:sync', handleRoomPlaybackSyncEvent);
+
     socket.on('connect', () => {
       setIsLiveCountStale(false);
       const curToken = localStorage.getItem('afterhours_token');
@@ -4330,6 +4375,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     return () => {
       clearInterval(clockInterval);
       socket.off('active_users', handleActiveUsersUpdate);
+      socket.off('room:playback:sync', handleRoomPlaybackSyncEvent);
       socket.off('connect');
       socket.off('disconnect');
     };
@@ -10892,8 +10938,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               setRoomPlaylists={setRoomPlaylists}
               userPlaylists={playlists}
               setPlaylists={setPlaylists}
+              isRoomPlaybackSyncEnabled={isRoomPlaybackSyncEnabled}
+              setIsRoomPlaybackSyncEnabled={setIsRoomPlaybackSyncEnabled}
               onOpenAddToPlaylist={(track) => handleAddToPlaylistClick(track || currentSong)}
               onBackToHome={() => handleStationSelect('home')}
+              onToggleLike={toggleLike}
+              isLiked={isSongLiked}
             />
           </div>
         )}
@@ -11114,6 +11164,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         roomPlaylists={roomPlaylists}
         setRoomPlaylists={setRoomPlaylists}
         onOpenAddToPlaylist={(track) => handleAddToPlaylistClick(track || currentSong)}
+        onToggleLike={toggleLike}
+        isLiked={isSongLiked}
       />
 
       <SimilarSongsModal
@@ -11312,6 +11364,27 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               className="flex items-center gap-2.5 min-w-0 flex-1 select-none"
               title="Expand Now Playing"
             >
+              <div className="relative shrink-0">
+                <img 
+                  src={getCleanThumbnail(currentSong)} 
+                  alt={currentSong.title || ""} 
+                  className="rounded-xl object-cover shrink-0 shadow-md w-12 h-12 border border-amber-500/30" 
+                  onError={(e) => handleImageError(e, currentSong.title, currentSong.id)} 
+                />
+                {isPlaying && (
+                  <div className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-gradient-to-tr from-amber-500 to-orange-500 text-neutral-950 flex items-center justify-center text-[8px] font-bold animate-spin-slow shadow-md border border-neutral-950">
+                    💿
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <h4 className="font-bold text-xs text-white truncate leading-tight">{currentSong.title}</h4>
+                <p className="text-[10px] text-amber-400 truncate mt-0.5 select-none">{currentSong.channel || currentSong.artist}</p>
+              </div>
+            </div>
+
+            {/* Right: Touch Playback Controls */}
+            <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
               {/* Extra controls revealed horizontally when isMiniPlayerExpanded is true */}
               {isMiniPlayerExpanded && (
                 <>

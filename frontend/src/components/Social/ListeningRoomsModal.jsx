@@ -31,7 +31,9 @@ export default function ListeningRoomsModal({
   setPlaylists,
   isRoomPlaybackSyncEnabled,
   setIsRoomPlaybackSyncEnabled,
-  onOpenAddToPlaylist
+  onOpenAddToPlaylist,
+  onToggleLike,
+  isLiked
 }) {
   const [rooms, setRooms] = useState([]);
   const [newRoomName, setNewRoomName] = useState('');
@@ -273,6 +275,12 @@ export default function ListeningRoomsModal({
       const rId = activeRoom.roomId || activeRoom.id;
       socket?.emit('leave_listening_room', { roomId: rId });
       socket?.emit('room:leave', { roomId: rId, user });
+      // Call REST fallback to ensure server persistence
+      fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/leave`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user, userId: currentUserId })
+      }).catch(() => {});
     }
     if (setActiveRoom) setActiveRoom(null);
     if (setRoomPlaylists) setRoomPlaylists([]);
@@ -357,10 +365,35 @@ export default function ListeningRoomsModal({
     }
   };
 
-  // 6. Upvote Song
+  // 6. Upvote Song with Instant Optimistic State Update
   const handleVoteSong = (songId) => {
     if (!activeRoom || !selectedPlaylistId || !songId) return;
     const rId = activeRoom.roomId || activeRoom.id;
+    const uidStr = String(currentUserId);
+
+    let prevPlaylistsSnapshot = null;
+    if (setRoomPlaylists) {
+      setRoomPlaylists(prev => {
+        prevPlaylistsSnapshot = prev;
+        return (prev || []).map(pl => {
+          if (pl.id !== selectedPlaylistId) return pl;
+          return {
+            ...pl,
+            songs: (pl.songs || []).map(s => {
+              if (String(s.id || s.videoId) !== String(songId)) return s;
+              const currentVotes = Array.isArray(s.votes) ? [...s.votes] : [];
+              const idx = currentVotes.indexOf(uidStr);
+              if (idx > -1) {
+                currentVotes.splice(idx, 1);
+              } else {
+                currentVotes.push(uidStr);
+              }
+              return { ...s, votes: currentVotes };
+            })
+          };
+        });
+      });
+    }
     
     if (socket) {
       socket.emit('room:playlist:vote', {
@@ -368,13 +401,28 @@ export default function ListeningRoomsModal({
         playlistId: selectedPlaylistId,
         songId,
         userId: currentUserId
+      }, (res) => {
+        if (res && res.success === false && prevPlaylistsSnapshot && setRoomPlaylists) {
+          setRoomPlaylists(prevPlaylistsSnapshot);
+        }
       });
     } else {
       fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/playlists/${encodeURIComponent(selectedPlaylistId)}/songs/${encodeURIComponent(songId)}/vote`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUserId })
-      }).catch(() => {});
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (!data?.success && prevPlaylistsSnapshot && setRoomPlaylists) {
+            setRoomPlaylists(prevPlaylistsSnapshot);
+          }
+        })
+        .catch(() => {
+          if (prevPlaylistsSnapshot && setRoomPlaylists) {
+            setRoomPlaylists(prevPlaylistsSnapshot);
+          }
+        });
     }
   };
 
@@ -1010,6 +1058,7 @@ export default function ListeningRoomsModal({
                                 const votes = song.votes || [];
                                 const hasVoted = votes.includes(String(currentUserId));
                                 const voteCount = votes.length;
+                                const songLiked = typeof isLiked === 'function' ? isLiked(song) : false;
 
                                 return (
                                   <div
@@ -1058,6 +1107,23 @@ export default function ListeningRoomsModal({
                                     </div>
 
                                     <div className="flex items-center gap-1 shrink-0">
+                                      {/* Like / Favorite Button */}
+                                      {onToggleLike && (
+                                        <button
+                                          type="button"
+                                          onClick={() => onToggleLike(song)}
+                                          className={`p-1.5 rounded-lg border transition cursor-pointer active:scale-95 ${
+                                            songLiked
+                                              ? 'bg-pink-500/10 border-pink-500/30 text-pink-400'
+                                              : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-pink-400 border-neutral-700'
+                                          }`}
+                                          title={songLiked ? 'Remove from Favourites' : 'Add to Favourites'}
+                                          aria-label={songLiked ? 'Remove from Favourites' : 'Add to Favourites'}
+                                        >
+                                          <Heart className={`w-3.5 h-3.5 ${songLiked ? 'fill-current text-pink-500' : ''}`} />
+                                        </button>
+                                      )}
+
                                       <button
                                         onClick={() => onPlaySong && onPlaySong(song)}
                                         className="p-1.5 rounded-lg bg-neutral-800 hover:bg-amber-500 hover:text-neutral-950 text-neutral-300 transition"

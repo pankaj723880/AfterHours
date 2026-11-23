@@ -624,22 +624,26 @@ class CollaborativeRoomService {
     return { kickedUserId: targetUserId, members: room.members, room };
   }
 
+  async removeMember(roomId, targetUserId, requesterUser) {
+    return this.kickMember(roomId, targetUserId, requesterUser);
+  }
+
   async leaveRoom(roomId, user) {
     const room = await this.getRoom(roomId);
     if (!room) return null;
     this.normalizeRoomState(room);
 
-    const uId = user?._id?.toString?.() || user?.userId;
-    const uName = user?.username;
-    const member = room.members.find(m => (uId && m.userId === uId) || (uName && m.username === uName));
+    const uId = user?._id?.toString?.() || user?.userId || (typeof user === 'string' ? user : null);
+    const uName = user?.username || (typeof user === 'string' ? user : null);
+    const member = room.members.find(m => (uId && String(m.userId) === String(uId)) || (uName && String(m.username) === String(uName)));
 
     if (member) {
-      room.members = room.members.filter(m => m !== member);
+      room.members = room.members.filter(m => m !== member && String(m.userId) !== String(uId));
       room.activities.unshift({
         id: `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         type: 'member_left',
         text: `${member.displayName || member.username} left the room`,
-        user: { displayName: member.displayName || member.username },
+        user: { userId: member.userId, username: member.username, displayName: member.displayName || member.username },
         timestamp: new Date()
       });
       if (room.activities.length > 50) room.activities.pop();
@@ -659,7 +663,9 @@ class CollaborativeRoomService {
           } 
         }
       );
-    } catch (e) {}
+    } catch (e) {
+      console.warn('[CollaborativeRoomService] leaveRoom DB update warning:', e.message);
+    }
 
     return { members: room.members, room };
   }

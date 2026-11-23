@@ -8,7 +8,7 @@ const DISMISSED_UPDATE_SESSION_KEY = 'loopra_dismissed_update_version';
  * When a new build or deploy is released, bumping this version or the published
  * version in /version.json ensures clients detect newer versions reliably.
  */
-export const CURRENT_CLIENT_VERSION = '2.1';
+export const CURRENT_CLIENT_VERSION = '2.1.0';
 export const CURRENT_CLIENT_VERSION_CODE = 21;
 
 /**
@@ -53,14 +53,25 @@ export function isRunningInAndroidApp() {
 }
 
 /**
- * Retrieves the currently installed native Android app version:
- * 1. Checks native bridge `window.LoopraAndroid.getAppVersionName()`
- * 2. Does NOT return fake fallback 2.1/21 when detection fails.
+ * Determines whether the app is running in standalone PWA mode.
+ */
+export function isRunningInPwa() {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(display-mode: standalone)').matches ||
+    window.navigator?.standalone === true ||
+    document.referrer.includes('android-app://');
+}
+
+/**
+ * Retrieves the currently installed or active client version.
  */
 export function getInstalledAppVersion() {
   if (typeof window === 'undefined') {
-    return { versionName: null, versionCode: 0, isNative: false };
+    return { versionName: CURRENT_CLIENT_VERSION, versionCode: CURRENT_CLIENT_VERSION_CODE, isNative: false, isPwa: false };
   }
+
+  const isNative = isRunningInAndroidApp();
+  const isPwa = isRunningInPwa();
 
   // 1. Authoritative: Native bridge window.LoopraAndroid
   if (window.LoopraAndroid && typeof window.LoopraAndroid.getAppVersionName === 'function') {
@@ -69,8 +80,13 @@ export function getInstalledAppVersion() {
       const vCode = typeof window.LoopraAndroid.getAppVersionCode === 'function'
         ? Number(window.LoopraAndroid.getAppVersionCode())
         : 0;
-      if (vName && vCode > 0) {
-        return { versionName: vName, versionCode: vCode, isNative: true };
+      if (vName && (vCode > 0 || String(vName).trim().length > 0)) {
+        return {
+          versionName: String(vName).trim(),
+          versionCode: vCode || CURRENT_CLIENT_VERSION_CODE,
+          isNative: true,
+          isPwa: false
+        };
       }
     } catch (err) {
       console.warn('[appUpdateService] Native version read error:', err.message);
@@ -86,15 +102,13 @@ export function getInstalledAppVersion() {
       return {
         versionName: paramName || `v${paramCode}`,
         versionCode: paramCode,
-        isNative: true
+        isNative: true,
+        isPwa: false
       };
     }
   } catch (_) {}
 
-  const isAndroid = isRunningInAndroidApp();
-  
   // 3. For Web browser or PWA standalone installations:
-  // Use client build version, falling back to stored version in localStorage
   let clientVersionName = CURRENT_CLIENT_VERSION;
   let clientVersionCode = CURRENT_CLIENT_VERSION_CODE;
   try {
@@ -108,8 +122,9 @@ export function getInstalledAppVersion() {
 
   return {
     versionName: clientVersionName,
-    versionCode: clientVersionCode,
-    isNative: isAndroid
+    versionCode: clientVersionCode || CURRENT_CLIENT_VERSION_CODE,
+    isNative,
+    isPwa
   };
 }
 
@@ -130,7 +145,7 @@ export async function fetchPublishedAppVersion(backendUrl = '') {
 
   for (const url of endpoints) {
     try {
-      // Bust any HTTP or intermediary proxy cache with no-store and unique timestamp query
+      // Bust any HTTP, CDN or Service Worker cache with no-store and unique timestamp query
       const bustUrl = `${url}${url.includes('?') ? '&' : '?'}_t=${Date.now()}`;
       const res = await fetch(bustUrl, {
         headers: { 'Accept': 'application/json' },
@@ -139,13 +154,14 @@ export async function fetchPublishedAppVersion(backendUrl = '') {
       if (res.ok) {
         const manifest = await res.json();
         if (manifest && (manifest.versionName || manifest.version)) {
+          const rawVersionName = manifest.versionName || manifest.version || '2.1.0';
           const normalized = {
-            versionName: manifest.versionName || manifest.version || '2.1',
-            versionCode: manifest.versionCode || 21,
+            versionName: String(rawVersionName).trim(),
+            versionCode: Number(manifest.versionCode) || 21,
             downloadUrl: manifest.directApkUrl || manifest.downloadUrl || 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
             directApkUrl: manifest.directApkUrl || 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
             externalApkUrl: manifest.externalApkUrl || 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
-            releaseNotes: manifest.releaseNotes || 'New features and improvements for Loopra Android.',
+            releaseNotes: manifest.releaseNotes || 'New features, performance enhancements, and bug fixes for Loopra.',
             releaseDate: manifest.releaseDate || new Date().toISOString(),
             fileSize: manifest.fileSize || 5744624,
             sha256: manifest.sha256 || ''
@@ -169,7 +185,7 @@ export async function fetchPublishedAppVersion(backendUrl = '') {
 
   // Safe default fallback if network and cache both fail
   return {
-    versionName: '2.1',
+    versionName: '2.1.0',
     versionCode: 21,
     downloadUrl: 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
     directApkUrl: 'https://raw.githubusercontent.com/pankaj723880/AfterHours/main/frontend/public/Loopra.apk',
@@ -188,8 +204,6 @@ export const DEFAULT_DIRECT_APK_URL =
 
 /**
  * Resolves the direct, non-intercepted download URL for the Loopra APK.
- * Prioritizes VITE_APK_DOWNLOAD_URL, then manifest.externalApkUrl / manifest.directApkUrl
- * (if not matching the intercepted app domain), falling back to the verified GitHub raw release URL.
  */
 export function getDirectApkDownloadUrl(manifest = null) {
   if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_APK_DOWNLOAD_URL) {
@@ -205,10 +219,7 @@ export function getDirectApkDownloadUrl(manifest = null) {
 }
 
 /**
- * Initiates APK download.
- * In a web browser environment, triggers download via direct external APK URL so Android
- * App Links does not intercept the click to launch the installed Loopra app.
- * In native Android WebView, invokes LoopraAndroid bridge methods.
+ * Initiates APK download for Android users.
  */
 export function triggerApkDownload(downloadUrl, manifest = null) {
   const publishedCode = manifest?.versionCode || 21;
@@ -245,9 +256,8 @@ export function triggerApkDownload(downloadUrl, manifest = null) {
     }
   }
 
-  // 2. Browser Environment: Trigger direct, clean file download without launching installed app
+  // 2. Browser Environment: Trigger direct file download
   if (typeof window !== 'undefined') {
-    // If URL points to the same origin / loopra1.vercel.app, replace with non-intercepted external direct URL
     const targetDownloadUrl = (directUrl.includes('loopra1.vercel.app') || directUrl.startsWith('/'))
       ? getDirectApkDownloadUrl(manifest)
       : directUrl;
@@ -286,11 +296,78 @@ export function triggerApkDownload(downloadUrl, manifest = null) {
 }
 
 /**
+ * Clears Web/PWA application caches (excluding offline media cache) and reloads cleanly.
+ */
+export async function clearAppCachesAndReload(newVersionName = null) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    if (newVersionName) {
+      localStorage.setItem('loopra_installed_version', JSON.stringify({
+        versionName: newVersionName,
+        versionCode: CURRENT_CLIENT_VERSION_CODE,
+        updatedAt: new Date().toISOString()
+      }));
+    }
+
+    // Clear CacheStorage (preserving offline tracks)
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(
+        keys.map(key => {
+          if (key !== 'loopra-offline-songs') {
+            return caches.delete(key);
+          }
+          return Promise.resolve();
+        })
+      );
+    }
+
+    // Unregister or update Service Workers
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const reg of registrations) {
+        try {
+          await reg.update();
+        } catch (_) {}
+      }
+    }
+  } catch (err) {
+    console.warn('[appUpdateService] Cache clearing error:', err);
+  } finally {
+    // Force a fresh reload from server
+    window.location.reload();
+  }
+}
+
+/**
  * Checks whether an update prompt should be shown.
  * Works seamlessly across native Android WebView container, standalone PWA,
  * and standard web browser clients.
  */
 export async function checkForAppUpdate(backendUrl = '') {
+  // Check for test mode triggered via URL query (?testUpdate=true or ?forceUpdate=true)
+  if (typeof window !== 'undefined') {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('testUpdate') === 'true' || params.get('forceUpdate') === 'true') {
+        const installed = getInstalledAppVersion();
+        return {
+          shouldPrompt: true,
+          installedVersion: installed.versionName || '2.1.0',
+          installedVersionCode: installed.versionCode || 21,
+          latestVersion: '2.2.0',
+          latestVersionCode: 22,
+          downloadUrl: getDirectApkDownloadUrl(),
+          releaseNotes: 'Test update prompt triggered successfully. Audio pipeline optimized and real-time sync updated.',
+          manifest: { versionName: '2.2.0', versionCode: 22 },
+          isNative: installed.isNative,
+          isPwa: installed.isPwa
+        };
+      }
+    } catch (_) {}
+  }
+
   const installed = getInstalledAppVersion();
   const published = await fetchPublishedAppVersion(backendUrl);
 
@@ -298,17 +375,11 @@ export async function checkForAppUpdate(backendUrl = '') {
     return { shouldPrompt: false, reason: 'MANIFEST_UNAVAILABLE' };
   }
 
-  // If installed version detection failed completely, do NOT prompt false update
-  if (!installed.versionName || installed.versionCode === 0) {
-    return { shouldPrompt: false, reason: 'INSTALLED_VERSION_UNKNOWN', published, installed };
-  }
-
   // Check if this release was dismissed during the current session
-  // If a newer version is published than the dismissed one, allow the popup to re-appear
   try {
     const dismissedVer = sessionStorage.getItem(DISMISSED_UPDATE_SESSION_KEY);
     if (dismissedVer) {
-      // If the published version is newer than the dismissed version, clear session lock
+      // If the published version is newer than the dismissed version, allow the popup to re-appear
       const isNewerThanDismissed = compareVersions(published.versionName, dismissedVer) > 0;
       if (!isNewerThanDismissed) {
         return { shouldPrompt: false, reason: 'DISMISSED_IN_SESSION', published, installed };
@@ -339,7 +410,9 @@ export async function checkForAppUpdate(backendUrl = '') {
       latestVersionCode: published.versionCode,
       downloadUrl: published.downloadUrl,
       releaseNotes: published.releaseNotes,
-      manifest: published
+      manifest: published,
+      isNative: installed.isNative,
+      isPwa: installed.isPwa
     };
   }
 
@@ -353,4 +426,31 @@ export function dismissUpdateForSession(versionName) {
   try {
     sessionStorage.setItem(DISMISSED_UPDATE_SESSION_KEY, versionName || 'dismissed');
   } catch (_) {}
+}
+
+/**
+ * Expose testing and manual trigger helpers in browser console
+ */
+if (typeof window !== 'undefined') {
+  window.__testAppUpdate = (mockManifest = {}) => {
+    const installed = getInstalledAppVersion();
+    const mock = {
+      shouldPrompt: true,
+      installedVersion: installed.versionName || '2.1.0',
+      installedVersionCode: installed.versionCode || 21,
+      latestVersion: mockManifest.versionName || '2.2.0',
+      latestVersionCode: mockManifest.versionCode || 22,
+      downloadUrl: mockManifest.downloadUrl || getDirectApkDownloadUrl(),
+      releaseNotes: mockManifest.releaseNotes || 'Verification build: all features updated smoothly.',
+      manifest: {
+        versionName: mockManifest.versionName || '2.2.0',
+        versionCode: mockManifest.versionCode || 22,
+        ...mockManifest
+      },
+      isNative: installed.isNative,
+      isPwa: installed.isPwa
+    };
+    window.dispatchEvent(new CustomEvent('loopra-native-update-available', { detail: mock }));
+    return mock;
+  };
 }

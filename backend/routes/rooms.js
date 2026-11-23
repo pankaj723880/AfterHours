@@ -9,8 +9,12 @@ router.get('/', optionalAuth, async (req, res) => {
   try {
     const userId = req.user?._id?.toString?.() || req.user?.userId || req.query.userId || req.query.guestId;
     let rooms = [];
-    if (req.query.scope === 'my' && userId) {
-      rooms = await collaborativeRoomService.listUserRooms(userId, 50);
+    if (req.query.scope === 'my') {
+      if (userId) {
+        rooms = await collaborativeRoomService.listUserRooms(userId, 50);
+      } else {
+        rooms = [];
+      }
     } else {
       rooms = await collaborativeRoomService.listRooms(50);
     }
@@ -20,7 +24,7 @@ router.get('/', optionalAuth, async (req, res) => {
   }
 });
 
-// GET /api/rooms/my - List rooms created or joined by the current user or guest
+// GET /api/rooms/my - List rooms created or joined strictly by the current user or guest
 router.get('/my', optionalAuth, async (req, res) => {
   try {
     const userId = req.user?._id?.toString?.() || req.user?.userId || req.query.userId || req.query.guestId || req.headers['x-guest-id'] || req.headers['x-session-id'];
@@ -78,6 +82,35 @@ router.get('/:roomId', async (req, res) => {
     res.json({ success: true, room });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to retrieve room: ' + err.message });
+  }
+});
+
+// POST /api/rooms/:roomId/leave - Leave a room
+router.post('/:roomId/leave', optionalAuth, async (req, res) => {
+  try {
+    const user = req.user || req.body?.user || {
+      userId: req.body?.userId || req.headers['x-guest-id'] || req.headers['x-session-id']
+    };
+    const result = await collaborativeRoomService.leaveRoom(req.params.roomId, user);
+    if (!result) {
+      return res.status(404).json({ success: false, error: 'Room not found' });
+    }
+
+    const io = req.app.get('io');
+    if (io && result.room) {
+      io.to(`room_${result.room.roomId}`).emit('room:members:updated', {
+        roomId: result.room.roomId,
+        members: result.members
+      });
+      io.to(`room_${result.room.roomId}`).emit('room:activities:updated', {
+        roomId: result.room.roomId,
+        activities: result.room.activities
+      });
+    }
+
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to leave room: ' + err.message });
   }
 });
 

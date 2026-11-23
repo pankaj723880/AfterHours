@@ -31,7 +31,9 @@ export default function ListeningRoomsView({
   isRoomPlaybackSyncEnabled,
   setIsRoomPlaybackSyncEnabled,
   onOpenAddToPlaylist,
-  onBackToHome
+  onBackToHome,
+  onToggleLike,
+  isLiked
 }) {
   const [rooms, setRooms] = useState([]);
   const [isLoadingRooms, setIsLoadingRooms] = useState(false);
@@ -45,12 +47,14 @@ export default function ListeningRoomsView({
   const [isCreatingPlaylist, setIsCreatingPlaylist] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [selectedImportPlaylistId, setSelectedImportPlaylistId] = useState(null);
+  const [selectedImportPlaylistIds, setSelectedImportPlaylistIds] = useState([]);
   const [isImporting, setIsImporting] = useState(false);
   const [isUpdatingPrivacy, setIsUpdatingPrivacy] = useState(false);
   const [isRegeneratingCode, setIsRegeneratingCode] = useState(false);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
+  const [detailedPlaylistView, setDetailedPlaylistView] = useState(false);
   const [joinCodeInput, setJoinCodeInput] = useState('');
+  const [showRoomSettings, setShowRoomSettings] = useState(false);
   
   // Workspace tabs
   const [activeTab, setActiveTab] = useState('playlists'); // 'playlists' | 'activity' | 'members'
@@ -283,6 +287,12 @@ export default function ListeningRoomsView({
       const rId = activeRoom.roomId || activeRoom.id;
       socket?.emit('leave_listening_room', { roomId: rId });
       socket?.emit('room:leave', { roomId: rId, user });
+      // Call REST fallback to ensure server persistence
+      fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/leave`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user, userId: currentUserId })
+      }).catch(() => {});
     }
     if (setActiveRoom) setActiveRoom(null);
     if (setRoomPlaylists) setRoomPlaylists([]);
@@ -367,10 +377,36 @@ export default function ListeningRoomsView({
     }
   };
 
-  // 6. Upvote / Vote for track
+  // 6. Upvote / Vote for track with Instant Optimistic State Update
   const handleVoteTrack = (playlistId, songId) => {
     if (!activeRoom || !playlistId || !songId) return;
     const rId = activeRoom.roomId || activeRoom.id;
+    const uidStr = String(currentUserId);
+
+    // Save previous state for rollback on error
+    let prevPlaylistsSnapshot = null;
+    if (setRoomPlaylists) {
+      setRoomPlaylists(prev => {
+        prevPlaylistsSnapshot = prev;
+        return (prev || []).map(pl => {
+          if (pl.id !== playlistId) return pl;
+          return {
+            ...pl,
+            songs: (pl.songs || []).map(s => {
+              if (String(s.id || s.videoId) !== String(songId)) return s;
+              const currentVotes = Array.isArray(s.votes) ? [...s.votes] : [];
+              const idx = currentVotes.indexOf(uidStr);
+              if (idx > -1) {
+                currentVotes.splice(idx, 1);
+              } else {
+                currentVotes.push(uidStr);
+              }
+              return { ...s, votes: currentVotes };
+            })
+          };
+        });
+      });
+    }
 
     if (socket) {
       socket.emit('room:playlist:vote', {
@@ -378,35 +414,87 @@ export default function ListeningRoomsView({
         playlistId,
         songId,
         userId: currentUserId
+      }, (res) => {
+        if (res && res.success === false && prevPlaylistsSnapshot && setRoomPlaylists) {
+          setRoomPlaylists(prevPlaylistsSnapshot);
+        }
       });
     } else {
       fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/playlists/${encodeURIComponent(playlistId)}/songs/${encodeURIComponent(songId)}/vote`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUserId })
-      }).catch(() => {});
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (!data?.success && prevPlaylistsSnapshot && setRoomPlaylists) {
+            setRoomPlaylists(prevPlaylistsSnapshot);
+          }
+        })
+        .catch(() => {
+          if (prevPlaylistsSnapshot && setRoomPlaylists) {
+            setRoomPlaylists(prevPlaylistsSnapshot);
+          }
+        });
     }
   };
 
   // 7. Send Chat Message
   const handleSendChat = (e) => {
-    e.preventDefault();
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
     if (!chatInput.trim() || !activeRoom) return;
     const rId = activeRoom.roomId || activeRoom.id;
     const text = chatInput.trim();
+
+    // Optimistically show message immediately in sender's chat
+    const tempId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const optimisticMessage = {
+      id: tempId,
+      text,
+      user: {
+        userId: currentUserId,
+        username: user?.username || 'Listener',
+        displayName: user?.displayName || user?.username || 'Listener',
+        avatar: user?.avatarUrl || ''
+      },
+      timestamp: new Date()
+    };
+    setChatMessages(prev => {
+      const filtered = (prev || []).filter(m => m.id !== tempId);
+      return [...filtered.slice(-49), optimisticMessage];
+    });
 
     if (socket) {
       socket.emit('room:chat:send', {
         roomId: rId,
         text,
         user
+      }, (res) => {
+        if (res && res.success && res.message) {
+          setChatMessages(prev => {
+            const list = (prev || []).map(m => m.id === tempId ? res.message : m);
+            if (!list.some(m => m.id === res.message.id)) list.push(res.message);
+            return list.slice(-50);
+          });
+        }
       });
     } else {
       fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/chat`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, user })
-      }).catch(() => {});
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.success && data.message) {
+            setChatMessages(prev => {
+              const list = (prev || []).map(m => m.id === tempId ? data.message : m);
+              if (!list.some(m => m.id === data.message.id)) list.push(data.message);
+              return list.slice(-50);
+            });
+          }
+        })
+        .catch(() => {});
     }
     setChatInput('');
   };
@@ -432,10 +520,19 @@ export default function ListeningRoomsView({
     }
 
     const newForked = {
-      id: `pl_${Date.now()}_fork`,
+      id: `pl_${Date.now()}_fork_${Math.random().toString(36).substring(2, 6)}`,
       name: `${roomPl.name} (from ${activeRoom?.name || 'Room'})`,
       description: `Copied from collaborative room ${activeRoom?.name || ''} on ${new Date().toLocaleDateString()}`,
-      songs: [...roomPl.songs.map(s => ({ ...s, id: s.id || s.videoId, videoId: s.videoId || s.id }))],
+      songs: (roomPl.songs || []).map(s => ({
+        ...s,
+        id: String(s.id || s.videoId),
+        videoId: String(s.videoId || s.id),
+        title: s.title || 'Untitled Track',
+        artist: s.artist || s.channel || 'Unknown Artist',
+        thumbnail: s.thumbnail || '',
+        duration: s.duration || '',
+        durationSec: s.durationSec || 0
+      })),
       isCollaborativeCopy: true,
       roomSource: activeRoom?.name || 'Room'
     };
@@ -443,7 +540,14 @@ export default function ListeningRoomsView({
     if (setPlaylists) {
       setPlaylists(prev => {
         const next = [newForked, ...(prev || [])];
-        try { localStorage.setItem('afterhours_playlists', JSON.stringify(next)); } catch (e) {}
+        try {
+          if (user) {
+            localStorage.setItem('playlists', JSON.stringify(next));
+          } else {
+            localStorage.setItem('guest_playlists', JSON.stringify(next));
+            localStorage.setItem('playlists', JSON.stringify(next));
+          }
+        } catch (e) {}
         return next;
       });
       if (showToast) showToast(`Saved "${newForked.name}" to Your Playlists!`);
@@ -623,72 +727,97 @@ export default function ListeningRoomsView({
     setIsCreatingPlaylist(false);
   };
 
-  // Import Personal Playlist into Collaborative Room (with >= 75s duration and isValidMusicTrack gate)
-  const handleImportPersonalPlaylist = async (personalPl) => {
-    if (!personalPl || !activeRoom) return;
+  // Import Personal Playlists into Collaborative Room (Multi-Select, with >= 75s duration and isValidMusicTrack gate)
+  const handleImportPersonalPlaylists = async (selectedList) => {
+    if (!Array.isArray(selectedList) || selectedList.length === 0 || !activeRoom) return;
     const rId = activeRoom.roomId || activeRoom.id;
-    const rawSongs = Array.isArray(personalPl.songs) ? personalPl.songs : [];
-
-    // Filter strictly to valid music tracks >= 75 seconds
-    const validSongs = rawSongs
-      .map(s => sanitizeTrack ? sanitizeTrack(s) : s)
-      .filter(s => {
-        if (!s) return false;
-        const dur = parseDurationToSeconds ? parseDurationToSeconds(s) : (s.durationSec || s.durationSeconds || s.duration || 0);
-        return dur >= 75 && (!isValidMusicTrack || isValidMusicTrack(s));
-      });
-
-    if (validSongs.length === 0 && rawSongs.length > 0) {
-      if (showToast) showToast('No eligible full songs (>= 75s) in this playlist to import', 'warning');
-      return;
-    }
-
-    const playlistName = personalPl.name?.trim() || 'Imported Playlist';
-    const playlistDesc = personalPl.description || `Imported from ${user?.displayName || user?.username || 'user'}'s playlists`;
     setIsImporting(true);
 
-    if (socket) {
-      socket.emit('room:playlist:create', {
-        roomId: rId,
-        name: playlistName,
-        description: playlistDesc,
-        user,
-        songs: validSongs
-      }, (res) => {
-        setIsImporting(false);
-        setIsImportModalOpen(false);
-        if (res && res.success && res.playlist) {
-          setSelectedPlaylistId(res.playlist.id);
-          if (showToast) showToast(`✅ Imported "${playlistName}" (${validSongs.length} tracks)`);
-        } else {
-          if (showToast) showToast(res?.error || `Imported "${playlistName}" to room`);
-        }
-      });
-    } else {
+    let successCount = 0;
+    let totalImportedTracks = 0;
+
+    for (const personalPl of selectedList) {
+      const rawSongs = Array.isArray(personalPl.songs) ? personalPl.songs : [];
+
+      // Filter strictly to valid music tracks >= 75 seconds and deep-clone into independent room track objects
+      const validSongs = rawSongs
+        .map(s => (sanitizeTrack ? sanitizeTrack(s) : s))
+        .filter(s => {
+          if (!s) return false;
+          const dur = parseDurationToSeconds ? parseDurationToSeconds(s) : (s.durationSec || s.durationSeconds || s.duration || 0);
+          return dur >= 75 && (!isValidMusicTrack || isValidMusicTrack(s));
+        })
+        .map((s, idx) => ({
+          id: String(s.id || s.videoId || `track_${Date.now()}_${idx}`),
+          videoId: String(s.videoId || s.id || ''),
+          title: String(s.title || 'Untitled Track').slice(0, 150),
+          artist: String(s.artist || s.channel || 'Unknown Artist').slice(0, 100),
+          channel: String(s.channel || s.artist || 'Unknown Artist').slice(0, 100),
+          thumbnail: s.thumbnail || s.coverArt || '',
+          duration: s.duration || '',
+          durationSec: s.durationSec || 0,
+          addedBy: {
+            userId: currentUserId,
+            username: user?.username || 'Listener',
+            displayName: user?.displayName || user?.username || 'Listener'
+          },
+          votes: []
+        }));
+
+      const playlistName = personalPl.name?.trim() || 'Imported Playlist';
+      const playlistDesc = personalPl.description || `Imported from ${user?.displayName || user?.username || 'user'}'s playlists`;
+
       try {
-        const res = await fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/playlists`), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: playlistName,
-            description: playlistDesc,
-            user,
-            songs: validSongs
-          })
-        });
-        const data = await res.json();
-        if (res.ok && data.success && data.playlist) {
-          setSelectedPlaylistId(data.playlist.id);
-          if (showToast) showToast(`✅ Imported "${playlistName}" (${validSongs.length} tracks)`);
+        if (socket) {
+          await new Promise((resolve) => {
+            socket.emit('room:playlist:create', {
+              roomId: rId,
+              name: playlistName,
+              description: playlistDesc,
+              user,
+              songs: validSongs
+            }, (res) => {
+              if (res && res.success) {
+                successCount++;
+                totalImportedTracks += validSongs.length;
+                if (res.playlist?.id) setSelectedPlaylistId(res.playlist.id);
+              }
+              resolve();
+            });
+          });
         } else {
-          if (showToast) showToast(data?.error || 'Failed to import playlist', 'error');
+          const res = await fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/playlists`), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: playlistName,
+              description: playlistDesc,
+              user,
+              songs: validSongs
+            })
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            successCount++;
+            totalImportedTracks += validSongs.length;
+            if (data.playlist?.id) setSelectedPlaylistId(data.playlist.id);
+          }
         }
       } catch (err) {
-        if (showToast) showToast('Network error importing playlist', 'error');
-      } finally {
-        setIsImporting(false);
-        setIsImportModalOpen(false);
+        console.warn('Error importing playlist:', personalPl.name, err);
       }
+    }
+
+    setIsImporting(false);
+    setIsImportModalOpen(false);
+    setSelectedImportPlaylistIds([]);
+
+    if (successCount > 0) {
+      if (showToast) {
+        showToast(`✅ Imported ${successCount} playlist${successCount > 1 ? 's' : ''} (${totalImportedTracks} tracks) to room`);
+      }
+    } else {
+      if (showToast) showToast('Could not import selected playlists', 'error');
     }
   };
 
@@ -850,18 +979,20 @@ export default function ListeningRoomsView({
             </span>
           </div>
 
-          {/* Room Controls Strip: Listen Together & Roles */}
-          <div className="p-4 rounded-2xl bg-neutral-900/90 border border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          {/* Room Controls Strip: Listen Together & Secondary Tools */}
+          <div className="p-3 sm:p-4 rounded-2xl bg-neutral-900/90 border border-neutral-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => {
                   const next = !isRoomPlaybackSyncEnabled;
-                  setIsRoomPlaybackSyncEnabled(next);
+                  if (typeof setIsRoomPlaybackSyncEnabled === 'function') {
+                    setIsRoomPlaybackSyncEnabled(next);
+                  }
                   if (showToast) {
                     showToast(next ? '🎧 Listen Together enabled! Your player is now synced.' : 'Independent listening enabled');
                   }
                 }}
-                className={`relative w-11 h-6 rounded-full transition-colors p-0.5 shrink-0 ${
+                className={`relative w-11 h-6 rounded-full transition-colors p-0.5 shrink-0 cursor-pointer ${
                   isRoomPlaybackSyncEnabled ? 'bg-amber-500' : 'bg-neutral-700'
                 }`}
                 title="Toggle Synchronized Listen-Along"
@@ -881,89 +1012,94 @@ export default function ListeningRoomsView({
                 </div>
                 <p className="text-[11px] text-neutral-400">
                   {isRoomPlaybackSyncEnabled 
-                    ? 'Active: Your player auto-syncs with host audio & seek' 
-                    : 'Off: Browse & play independently'}
+                    ? 'Active: Auto-syncs with host audio & seek' 
+                    : 'Off: Listen independently to any song'}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+            <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
               {isCoHost && (
                 <button
                   onClick={handleBroadcastSync}
                   disabled={!currentSong}
-                  className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition flex items-center gap-1.5 disabled:opacity-40"
+                  className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold transition flex items-center gap-1.5 disabled:opacity-40 cursor-pointer"
                   title="Broadcast your current playing song & timestamp to room"
                 >
                   <Radio className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Broadcast My Playback</span>
+                  <span>Broadcast</span>
                 </button>
               )}
 
-              {isHost && (
-                <>
-                  <button
-                    onClick={handleTogglePrivacy}
-                    disabled={isUpdatingPrivacy}
-                    className="px-2.5 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium border border-neutral-700 flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer"
-                    title={`Click to switch to ${activeRoom.isPublic ? 'Invite-Only' : 'Public'}`}
-                  >
-                    {isUpdatingPrivacy ? (
-                      <RefreshCw className="w-3.5 h-3.5 text-neutral-400 animate-spin" />
-                    ) : activeRoom.isPublic ? (
-                      <Globe className="w-3.5 h-3.5 text-emerald-400" />
-                    ) : (
-                      <Lock className="w-3.5 h-3.5 text-purple-400" />
-                    )}
-                    <span className="font-semibold">{activeRoom.isPublic ? 'Public' : 'Invite-Only'}</span>
-                    <span className={`w-1.5 h-1.5 rounded-full ${activeRoom.isPublic ? 'bg-emerald-400' : 'bg-purple-400'}`} />
-                  </button>
-                  <button
-                    onClick={handleRegenerateCode}
-                    disabled={isRegeneratingCode}
-                    className="px-2.5 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs font-medium border border-neutral-700 flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer"
-                    title="Generate a new room code"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${isRegeneratingCode ? 'animate-spin' : ''}`} />
-                    <span className="font-semibold">{isRegeneratingCode ? 'Generating...' : 'New Code'}</span>
-                  </button>
-                </>
-              )}
+              <button
+                onClick={() => setShowRoomSettings(prev => !prev)}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 transition cursor-pointer ${
+                  showRoomSettings
+                    ? 'bg-neutral-700 text-white border-neutral-600'
+                    : 'bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 border-neutral-700'
+                }`}
+                title="Toggle Room Settings & Tools"
+              >
+                <span>Room Tools</span>
+                {showRoomSettings ? <ChevronUp className="w-3 h-3 text-neutral-400" /> : <ChevronDown className="w-3 h-3 text-neutral-400" />}
+              </button>
             </div>
           </div>
 
-          {/* Quick Floating Emoji Reactions Bar */}
-          <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-neutral-900/60 border border-neutral-800">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider pl-1">Live Reactions:</span>
-              <div className="flex items-center gap-1.5">
-                {QUICK_REACTIONS.map(emoji => (
-                  <button
-                    key={emoji}
-                    onClick={() => handleSendReaction(emoji)}
-                    className="text-lg p-1.5 rounded-lg hover:bg-neutral-800 hover:scale-125 active:scale-95 transition cursor-pointer"
-                    title={`Send ${emoji}`}
-                  >
-                    {emoji}
-                  </button>
-                ))}
+          {/* Collapsible Secondary Room Tools (Privacy, New Code, Reactions) */}
+          {showRoomSettings && (
+            <div className="p-3 rounded-2xl bg-neutral-950/90 border border-neutral-800/90 flex flex-wrap items-center justify-between gap-3 animate-fadeIn">
+              {/* Privacy & Code generation */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {isHost && (
+                  <>
+                    <button
+                      onClick={handleTogglePrivacy}
+                      disabled={isUpdatingPrivacy}
+                      className="px-2.5 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 text-xs font-medium border border-neutral-700/80 flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                      title={`Click to switch to ${activeRoom.isPublic ? 'Invite-Only' : 'Public'}`}
+                    >
+                      {isUpdatingPrivacy ? (
+                        <RefreshCw className="w-3.5 h-3.5 text-neutral-400 animate-spin" />
+                      ) : activeRoom.isPublic ? (
+                        <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <Lock className="w-3.5 h-3.5 text-purple-400" />
+                      )}
+                      <span className="font-semibold">{activeRoom.isPublic ? 'Public' : 'Invite-Only'}</span>
+                      <span className={`w-1.5 h-1.5 rounded-full ${activeRoom.isPublic ? 'bg-emerald-400' : 'bg-purple-400'}`} />
+                    </button>
+                    <button
+                      onClick={handleRegenerateCode}
+                      disabled={isRegeneratingCode}
+                      className="px-2.5 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-300 text-xs font-medium border border-neutral-700/80 flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                      title="Generate a new room code"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${isRegeneratingCode ? 'animate-spin' : ''}`} />
+                      <span className="font-semibold">{isRegeneratingCode ? 'Generating...' : 'New Code'}</span>
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Live Reactions Inside Tools */}
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">Reactions:</span>
+                <div className="flex items-center gap-1">
+                  {QUICK_REACTIONS.map(emoji => (
+                    <button
+                      key={emoji}
+                      onClick={() => handleSendReaction(emoji)}
+                      className="text-base p-1 rounded-lg hover:bg-neutral-800 hover:scale-125 active:scale-95 transition cursor-pointer"
+                      title={`Send ${emoji}`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-
-            <button
-              onClick={() => setIsChatOpen(!isChatOpen)}
-              className="px-3 py-1 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-medium flex items-center gap-1.5 transition"
-            >
-              <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
-              <span>Room Chat</span>
-              {chatMessages.length > 0 && (
-                <span className="text-[10px] bg-amber-500 text-neutral-950 px-1.5 py-0.2 rounded-full font-bold">
-                  {chatMessages.length}
-                </span>
-              )}
-              {isChatOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            </button>
-          </div>
+          )}
 
           {/* Collapsible Mini Room Chat Box */}
           {isChatOpen && (
@@ -1127,160 +1263,289 @@ export default function ListeningRoomsView({
                 </form>
               )}
 
-              {/* Playlist Selection Chips */}
-              {(!roomPlaylists || roomPlaylists.length === 0) ? (
-                <div className="text-center py-6 border border-dashed border-neutral-800 rounded-xl text-xs text-neutral-500">
-                  <p>No room playlists yet. Click "New Room Playlist" to create one!</p>
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
-                    {roomPlaylists.map(pl => (
+              {/* Visual Playlist Cards or Detailed Song List */}
+              {detailedPlaylistView && activeSelectedPlaylist ? (
+                /* DETAILED PLAYLIST TRACKS VIEW (Matching Personal Playlists drill-down) */
+                <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800/80 space-y-4 animate-fadeIn">
+                  <div className="flex items-center justify-between border-b border-neutral-800/80 pb-3 flex-wrap gap-2">
+                    <div className="flex items-center gap-3">
                       <button
-                        key={pl.id}
-                        onClick={() => setSelectedPlaylistId(pl.id)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
-                          (selectedPlaylistId === pl.id || (!selectedPlaylistId && pl === roomPlaylists[0]))
-                            ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
-                            : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white'
-                        }`}
+                        type="button"
+                        onClick={() => setDetailedPlaylistView(false)}
+                        className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer border border-neutral-700"
+                        title="Back to Room Playlists"
                       >
-                        <Disc className="w-3 h-3" />
-                        <span>{pl.name}</span>
-                        <span className="text-[10px] opacity-75 font-mono">({pl.songs ? pl.songs.length : 0})</span>
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                        <span>All Playlists</span>
                       </button>
-                    ))}
+
+                      <div>
+                        <h5 className="font-bold text-white text-sm sm:text-base flex items-center gap-2">
+                          <span>{activeSelectedPlaylist.name}</span>
+                          <span className="text-[10px] bg-neutral-800 text-amber-400 font-mono px-2 py-0.5 rounded-full border border-neutral-700/60 font-semibold">
+                            {activeSelectedPlaylist.songs?.length === 1 ? '1 Track' : `${activeSelectedPlaylist.songs?.length || 0} Tracks`}
+                          </span>
+                        </h5>
+                        {activeSelectedPlaylist.description && (
+                          <p className="text-xs text-neutral-400 mt-0.5">{activeSelectedPlaylist.description}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleForkPlaylist(activeSelectedPlaylist)}
+                        className="px-2.5 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 flex items-center gap-1.5 font-semibold text-[11px] transition cursor-pointer"
+                        title="Copy all songs from this room playlist to your personal library"
+                      >
+                        <Copy className="w-3 h-3 text-amber-400" />
+                        <span>Save to My Library</span>
+                      </button>
+
+                      {activeSelectedPlaylist.songs?.length > 0 && (
+                        <button
+                          onClick={() => {
+                            const s = activeSelectedPlaylist.songs[0];
+                            if (s && onPlaySong) {
+                              onPlaySong(s);
+                              if (showToast) showToast(`Playing room playlist "${activeSelectedPlaylist.name}"`);
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/20"
+                        >
+                          <Play className="w-3.5 h-3.5 fill-current" />
+                          <span>Play All</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Active Playlist Detail & Song List */}
-                  {activeSelectedPlaylist && (
-                    <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800/80 space-y-3">
-                      <div className="flex items-center justify-between border-b border-neutral-800/80 pb-3 flex-wrap gap-2">
-                        <div>
-                          <h5 className="font-bold text-white text-sm flex items-center gap-2">
-                            <span>{activeSelectedPlaylist.name}</span>
-                            <span className="text-[10px] bg-neutral-800 text-neutral-400 px-2 py-0.5 rounded-full">
-                              {activeSelectedPlaylist.songs?.length || 0} songs
-                            </span>
-                          </h5>
-                          {activeSelectedPlaylist.description && (
-                            <p className="text-xs text-neutral-400 mt-0.5">{activeSelectedPlaylist.description}</p>
-                          )}
-                        </div>
+                  {/* Songs List */}
+                  {(!activeSelectedPlaylist.songs || activeSelectedPlaylist.songs.length === 0) ? (
+                    <div className="text-center py-10 text-neutral-500 text-xs border border-dashed border-neutral-800 rounded-xl space-y-2">
+                      <Music className="w-8 h-8 text-neutral-600 mx-auto" />
+                      <p className="font-semibold text-neutral-300">This room playlist is empty</p>
+                      <p className="text-[11px] text-neutral-400 max-w-sm mx-auto">
+                        Add songs using the global <span className="text-amber-400 font-bold">"Add to Playlist"</span> menu on any song in Loopra and select the Room tab!
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1 scrollbar-thin">
+                      {(activeSelectedPlaylist.songs || []).map((song, idx) => {
+                        const voteCount = song.votes ? song.votes.length : 0;
+                        const hasVoted = song.votes && song.votes.includes(currentUserId);
+                        const songLiked = typeof isLiked === 'function' ? isLiked(song) : false;
 
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleForkPlaylist(activeSelectedPlaylist)}
-                            className="px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 flex items-center gap-1 font-semibold text-[11px] transition"
-                            title="Copy all songs from this room playlist to your personal library"
+                        return (
+                          <div
+                            key={song.id || song.videoId || idx}
+                            className="group p-2.5 rounded-xl bg-neutral-950/70 border border-neutral-800/80 hover:border-amber-500/40 flex items-center justify-between gap-3 transition"
                           >
-                            <Copy className="w-3 h-3 text-amber-400" />
-                            <span>Save Copy to My Playlists</span>
-                          </button>
+                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                              <div className="relative w-9 h-9 rounded-lg overflow-hidden bg-neutral-800 shrink-0">
+                                <img
+                                  src={song.thumbnail || `https://i.ytimg.com/vi/${song.id || song.videoId}/mqdefault.jpg`}
+                                  alt={song.title}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    e.target.src = 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100&auto=format&fit=crop&q=80';
+                                  }}
+                                />
+                                <button
+                                  onClick={() => onPlaySong && onPlaySong(song)}
+                                  className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition cursor-pointer"
+                                  aria-label={`Play ${song.title}`}
+                                >
+                                  <Play className="w-4 h-4 text-amber-400 fill-current" />
+                                </button>
+                              </div>
 
-                          {activeSelectedPlaylist.songs?.length > 0 && (
-                            <button
-                              onClick={() => {
-                                const s = activeSelectedPlaylist.songs[0];
-                                if (s && onPlaySong) {
-                                  onPlaySong(s);
-                                  if (showToast) showToast(`Playing room playlist "${activeSelectedPlaylist.name}"`);
-                                }
-                              }}
-                              className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-[11px] transition flex items-center gap-1"
-                            >
-                              <Play className="w-3 h-3 fill-current" />
-                              <span>Play All</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Songs List */}
-                      {(!activeSelectedPlaylist.songs || activeSelectedPlaylist.songs.length === 0) ? (
-                        <div className="text-center py-8 text-neutral-500 text-xs border border-dashed border-neutral-800 rounded-xl space-y-2">
-                          <Music className="w-8 h-8 text-neutral-600 mx-auto" />
-                          <p className="font-medium text-neutral-400">This room playlist is empty</p>
-                          <p className="text-[11px]">Use the global "Add to Playlist" on any song in Loopra and choose the Room tab!</p>
-                        </div>
-                      ) : (
-                        <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1 scrollbar-thin">
-                          {(activeSelectedPlaylist.songs || []).map((song, idx) => {
-                            const voteCount = song.votes ? song.votes.length : 0;
-                            const hasVoted = song.votes && song.votes.includes(currentUserId);
-
-                            return (
-                              <div
-                                key={song.id || song.videoId || idx}
-                                className="group p-2.5 rounded-xl bg-neutral-950/70 border border-neutral-800/80 hover:border-amber-500/40 flex items-center justify-between gap-3 transition"
-                              >
-                                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                  <div className="relative w-9 h-9 rounded-lg overflow-hidden bg-neutral-800 shrink-0">
-                                    <img
-                                      src={song.thumbnail || `https://i.ytimg.com/vi/${song.id || song.videoId}/mqdefault.jpg`}
-                                      alt={song.title}
-                                      className="w-full h-full object-cover"
-                                      onError={(e) => {
-                                        e.target.src = 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100&auto=format&fit=crop&q=80';
-                                      }}
-                                    />
-                                    <button
-                                      onClick={() => onPlaySong && onPlaySong(song)}
-                                      className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition cursor-pointer"
-                                      aria-label={`Play ${song.title}`}
-                                    >
-                                      <Play className="w-4 h-4 text-amber-400 fill-current" />
-                                    </button>
-                                  </div>
-
-                                  <div className="min-w-0 flex-1">
-                                    <h6 className="font-semibold text-xs text-white truncate">{song.title}</h6>
-                                    <div className="flex items-center gap-1.5 text-[10px] text-neutral-400">
-                                      <span className="truncate">{song.artist || song.channel || 'Loopra Artist'}</span>
-                                      {song.addedBy?.displayName && (
-                                        <>
-                                          <span>•</span>
-                                          <span className="text-amber-400/80 truncate">Added by {song.addedBy.displayName}</span>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-2 shrink-0">
-                                  {/* Upvote Pill */}
-                                  <button
-                                    onClick={() => handleVoteTrack(activeSelectedPlaylist.id, song.id || song.videoId)}
-                                    className={`px-2 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border cursor-pointer ${
-                                      hasVoted
-                                        ? 'bg-amber-500 text-neutral-950 border-amber-400'
-                                        : 'bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 border-neutral-700'
-                                    }`}
-                                    title="Upvote this song in room ranking"
-                                  >
-                                    <ThumbsUp className={`w-3 h-3 ${hasVoted ? 'fill-current' : ''}`} />
-                                    <span>{voteCount}</span>
-                                  </button>
-
-                                  {/* Remove Song (Host, Co-Host, or submitter) */}
-                                  {(isCoHost || song.addedBy?.userId === currentUserId) && (
-                                    <button
-                                      onClick={() => handleRemoveTrackFromRoomPlaylist(activeSelectedPlaylist.id, song.id || song.videoId)}
-                                      className="p-1.5 rounded-lg text-neutral-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
-                                      title="Remove from room playlist"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
+                              <div className="min-w-0 flex-1">
+                                <h6 className="font-semibold text-xs text-white truncate">{song.title}</h6>
+                                <div className="flex items-center gap-1.5 text-[10px] text-neutral-400">
+                                  <span className="truncate">{song.artist || song.channel || 'Loopra Artist'}</span>
+                                  {song.addedBy?.displayName && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="text-amber-400/80 truncate">Added by {song.addedBy.displayName}</span>
+                                    </>
                                   )}
                                 </div>
                               </div>
-                            );
-                          })}
-                        </div>
-                      )}
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              {/* Like / Favorite Button */}
+                              {onToggleLike && (
+                                <button
+                                  type="button"
+                                  onClick={() => onToggleLike(song)}
+                                  className={`p-1.5 rounded-lg border transition cursor-pointer active:scale-95 ${
+                                    songLiked
+                                      ? 'bg-pink-500/10 border-pink-500/30 text-pink-400'
+                                      : 'bg-neutral-800/80 hover:bg-neutral-700 text-neutral-400 hover:text-pink-400 border-neutral-700'
+                                  }`}
+                                  title={songLiked ? 'Remove from Favourites' : 'Add to Favourites'}
+                                  aria-label={songLiked ? 'Remove from Favourites' : 'Add to Favourites'}
+                                >
+                                  <Heart className={`w-3.5 h-3.5 ${songLiked ? 'fill-current text-pink-500' : ''}`} />
+                                </button>
+                              )}
+
+                              {/* Upvote Pill */}
+                              <button
+                                onClick={() => handleVoteTrack(activeSelectedPlaylist.id, song.id || song.videoId)}
+                                className={`px-2 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border cursor-pointer ${
+                                  hasVoted
+                                    ? 'bg-amber-500 text-neutral-950 border-amber-400'
+                                    : 'bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 border-neutral-700'
+                                }`}
+                                title="Upvote this song in room ranking"
+                              >
+                                <ThumbsUp className={`w-3 h-3 ${hasVoted ? 'fill-current' : ''}`} />
+                                <span>{voteCount}</span>
+                              </button>
+
+                              {/* Remove Song (Host, Co-Host, or submitter) */}
+                              {(isCoHost || song.addedBy?.userId === currentUserId) && (
+                                <button
+                                  onClick={() => handleRemoveTrackFromRoomPlaylist(activeSelectedPlaylist.id, song.id || song.videoId)}
+                                  className="p-1.5 rounded-lg text-neutral-500 hover:text-rose-400 hover:bg-rose-500/10 transition cursor-pointer"
+                                  title="Remove from room playlist"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
-                </>
+                </div>
+              ) : (
+                /* PLAYLIST CARD GRID (Matching Personal Playlists page) */
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4 mt-2">
+                  {/* Card 1: Create New Playlist Action Card */}
+                  <div
+                    onClick={() => setIsCreatingPlaylist(true)}
+                    className="p-4 rounded-2xl border border-dashed border-amber-500/35 bg-gradient-to-br from-amber-500/10 via-neutral-900/40 to-neutral-950/80 hover:border-amber-400 hover:bg-amber-500/15 active:scale-[0.98] cursor-pointer flex flex-col items-center justify-center gap-2.5 transition-all group text-center aspect-square shadow-lg backdrop-blur-md"
+                  >
+                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-amber-500/20 border border-amber-400/30 text-amber-400 group-hover:scale-110 flex items-center justify-center transition shadow-[0_0_15px_rgba(245,158,11,0.2)]">
+                      <Plus className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-black text-white text-xs sm:text-sm truncate w-full group-hover:text-amber-300 transition">
+                        New Playlist
+                      </h3>
+                      <p className="text-[10px] text-amber-400/80 font-mono mt-0.5">+ Shared List</p>
+                    </div>
+                  </div>
+
+                  {/* Card 2: Import My Playlists Action Card */}
+                  <div
+                    onClick={() => setIsImportModalOpen(true)}
+                    className="p-4 rounded-2xl border border-dashed border-purple-500/35 bg-gradient-to-br from-purple-500/10 via-neutral-900/40 to-neutral-950/80 hover:border-purple-400 hover:bg-purple-500/15 active:scale-[0.98] cursor-pointer flex flex-col items-center justify-center gap-2.5 transition-all group text-center aspect-square shadow-lg backdrop-blur-md"
+                  >
+                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-purple-500/20 border border-purple-400/30 text-purple-400 group-hover:scale-110 flex items-center justify-center transition shadow-[0_0_15px_rgba(168,85,247,0.2)]">
+                      <FolderPlus className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-black text-white text-xs sm:text-sm truncate w-full group-hover:text-purple-300 transition">
+                        Import Playlists
+                      </h3>
+                      <p className="text-[10px] text-purple-400/80 font-mono mt-0.5">Multi-Select</p>
+                    </div>
+                  </div>
+
+                  {/* Room Playlist Cards with Cassette Vinyl / Artwork Thumbnails */}
+                  {(roomPlaylists || []).map(pl => {
+                    const songThumbs = (pl.songs || [])
+                      .slice(0, 4)
+                      .map(s => s.thumbnail || (s.id || s.videoId ? `https://i.ytimg.com/vi/${s.id || s.videoId}/mqdefault.jpg` : null))
+                      .filter(Boolean);
+
+                    return (
+                      <div
+                        key={pl.id}
+                        onClick={() => {
+                          setSelectedPlaylistId(pl.id);
+                          setDetailedPlaylistView(true);
+                        }}
+                        className="relative p-3 rounded-2xl border border-white/5 hover:border-amber-500/40 bg-gradient-to-br from-neutral-900/90 via-[#121216] to-[#0c0c0e] active:scale-[0.98] cursor-pointer flex flex-col justify-between transition-all group aspect-square shadow-xl backdrop-blur-md overflow-hidden"
+                      >
+                        {/* Ambient glow on hover */}
+                        <div className="absolute inset-0 bg-amber-500/0 group-hover:bg-amber-500/5 transition-colors pointer-events-none" />
+
+                        {/* Top row: Track Count Micro-Pill & Quick Play/Fork */}
+                        <div className="flex items-center justify-between w-full relative z-10" onClick={(e) => e.stopPropagation()}>
+                          <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-neutral-800/90 text-amber-400 border border-neutral-700/60 font-semibold">
+                            {pl.songs?.length === 1 ? '1 Track' : !pl.songs?.length ? 'Empty' : `${pl.songs.length} Tracks`}
+                          </span>
+
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleForkPlaylist(pl);
+                              }}
+                              className="p-1 rounded-lg bg-neutral-800/90 hover:bg-amber-500/20 text-neutral-400 hover:text-amber-400 border border-neutral-700/60 transition"
+                              title="Save Copy to My Playlists"
+                              aria-label="Save Copy to My Playlists"
+                            >
+                              <Copy className="w-3 h-3" />
+                            </button>
+                            {pl.songs?.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (pl.songs[0] && onPlaySong) {
+                                    onPlaySong(pl.songs[0]);
+                                    if (showToast) showToast(`Playing room playlist "${pl.name}"`);
+                                  }
+                                }}
+                                className="p-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 transition"
+                                title="Play Playlist"
+                                aria-label="Play Playlist"
+                              >
+                                <Play className="w-3 h-3 fill-current" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Center Artwork Preview / Disc Icon */}
+                        <div className="relative z-10 w-full flex items-center justify-center my-auto">
+                          {songThumbs.length >= 4 ? (
+                            <div className="grid grid-cols-2 gap-1 w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden shadow-lg border border-white/10">
+                              {songThumbs.map((t, idx) => (
+                                <img key={idx} src={t} alt="" className="w-full h-full object-cover" />
+                              ))}
+                            </div>
+                          ) : songThumbs.length > 0 ? (
+                            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden shadow-lg border border-amber-500/20">
+                              <img src={songThumbs[0]} alt="" className="w-full h-full object-cover" />
+                            </div>
+                          ) : (
+                            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-neutral-800/80 border border-white/10 group-hover:border-amber-500/30 text-amber-400 flex items-center justify-center shadow-inner group-hover:scale-105 transition">
+                              <Disc className="w-6 h-6 sm:w-7 sm:h-7" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Bottom Label */}
+                        <div className="relative z-10 text-left pt-1">
+                          <h3 className="font-extrabold text-white text-xs sm:text-sm truncate w-full group-hover:text-amber-300 transition">
+                            {pl.name}
+                          </h3>
+                          <p className="text-[10px] text-zinc-400 truncate">Tap to open songs</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           )}
@@ -1629,7 +1894,7 @@ export default function ListeningRoomsView({
         </div>
       )}
 
-      {/* MODAL: Import Personal Playlist into Collaborative Room */}
+      {/* MODAL: Import Personal Playlist into Collaborative Room (Multi-Select) */}
       {isImportModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
           <div 
@@ -1644,15 +1909,15 @@ export default function ListeningRoomsView({
                 </div>
                 <div>
                   <h3 className="font-bold text-sm text-white">Import to "{activeRoom?.name || 'Room'}"</h3>
-                  <p className="text-[11px] text-neutral-400">Select one of your personal playlists to bring into this room</p>
+                  <p className="text-[11px] text-neutral-400">Select one or more personal playlists to import (≥ 75s songs)</p>
                 </div>
               </div>
               <button
                 onClick={() => {
                   setIsImportModalOpen(false);
-                  setSelectedImportPlaylistId(null);
+                  setSelectedImportPlaylistIds([]);
                 }}
-                className="p-1.5 rounded-xl text-neutral-400 hover:text-white hover:bg-neutral-800 transition"
+                className="p-1.5 rounded-xl text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
                 title="Close"
               >
                 <X className="w-4 h-4" />
@@ -1675,12 +1940,16 @@ export default function ListeningRoomsView({
                     const dur = parseDurationToSeconds ? parseDurationToSeconds(s) : (s.durationSec || s.durationSeconds || s.duration || 0);
                     return dur >= 75 && (!isValidMusicTrack || isValidMusicTrack(s));
                   });
-                  const isSelected = selectedImportPlaylistId === pl.id;
+                  const isSelected = selectedImportPlaylistIds.includes(pl.id);
 
                   return (
                     <div
                       key={pl.id}
-                      onClick={() => setSelectedImportPlaylistId(pl.id)}
+                      onClick={() => {
+                        setSelectedImportPlaylistIds(prev => 
+                          prev.includes(pl.id) ? prev.filter(id => id !== pl.id) : [...prev, pl.id]
+                        );
+                      }}
                       className={`p-3 rounded-xl border transition cursor-pointer flex items-center justify-between gap-3 ${
                         isSelected 
                           ? 'bg-purple-950/40 border-purple-500/80 shadow-md ring-1 ring-purple-500/40' 
@@ -1702,10 +1971,10 @@ export default function ListeningRoomsView({
                       </div>
 
                       <div className="shrink-0 flex items-center">
-                        <span className={`w-5 h-5 rounded-full border flex items-center justify-center ${
+                        <span className={`w-5 h-5 rounded-md border flex items-center justify-center transition ${
                           isSelected ? 'border-purple-400 bg-purple-500 text-white' : 'border-neutral-700 bg-neutral-900'
                         }`}>
-                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                          {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                         </span>
                       </div>
                     </div>
@@ -1717,25 +1986,27 @@ export default function ListeningRoomsView({
             {/* Modal Footer */}
             <div className="p-4 border-t border-neutral-800 bg-neutral-950/60 flex items-center justify-between gap-3">
               <span className="text-[11px] text-neutral-400 font-mono">
-                {selectedImportPlaylistId ? '1 playlist selected' : 'Pick a playlist to import'}
+                {selectedImportPlaylistIds.length > 0 
+                  ? `${selectedImportPlaylistIds.length} playlist${selectedImportPlaylistIds.length > 1 ? 's' : ''} selected` 
+                  : 'Select playlists to import'}
               </span>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => {
                     setIsImportModalOpen(false);
-                    setSelectedImportPlaylistId(null);
+                    setSelectedImportPlaylistIds([]);
                   }}
-                  className="px-3.5 py-2 text-xs font-semibold text-neutral-400 hover:text-white transition"
+                  className="px-3.5 py-2 text-xs font-semibold text-neutral-400 hover:text-white transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  disabled={!selectedImportPlaylistId || isImporting}
+                  disabled={selectedImportPlaylistIds.length === 0 || isImporting}
                   onClick={() => {
-                    const targetPl = (userPlaylists || []).find(p => p.id === selectedImportPlaylistId);
-                    if (targetPl) handleImportPersonalPlaylist(targetPl);
+                    const targets = (userPlaylists || []).filter(p => selectedImportPlaylistIds.includes(p.id));
+                    if (targets.length > 0) handleImportPersonalPlaylists(targets);
                   }}
                   className="px-4 py-2 bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5 disabled:opacity-40 cursor-pointer shadow-lg shadow-purple-600/25"
                 >
@@ -1747,7 +2018,7 @@ export default function ListeningRoomsView({
                   ) : (
                     <>
                       <FolderPlus className="w-3.5 h-3.5" />
-                      <span>Import into Room</span>
+                      <span>Import Selected ({selectedImportPlaylistIds.length})</span>
                     </>
                   )}
                 </button>

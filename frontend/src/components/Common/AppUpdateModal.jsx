@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Download, X, Sparkles, Smartphone, ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
-import { triggerApkDownload, dismissUpdateForSession } from '../../services/appUpdateService';
+import { Download, RefreshCw, X, Sparkles, Smartphone, ShieldCheck, Loader2, AlertCircle, Globe } from 'lucide-react';
+import { triggerApkDownload, dismissUpdateForSession, clearAppCachesAndReload, isRunningInAndroidApp } from '../../services/appUpdateService';
 
 export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
-  const [downloadStatus, setDownloadStatus] = useState(null); // null | 'downloading' | 'verifying' | 'ready_to_install' | 'permission_required' | 'installer_opened' | 'error'
+  const [downloadStatus, setDownloadStatus] = useState(null); // null | 'downloading' | 'verifying' | 'ready_to_install' | 'permission_required' | 'installer_opened' | 'reloading' | 'error'
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState('');
 
@@ -33,28 +33,53 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
 
   if (!updateInfo) return null;
 
-  const { installedVersion = '1', latestVersion = '2.1', downloadUrl, releaseNotes, manifest } = updateInfo;
+  const {
+    installedVersion = '2.1.0',
+    latestVersion = '2.2.0',
+    downloadUrl,
+    releaseNotes,
+    manifest,
+    isNative: isNativeProp
+  } = updateInfo;
 
-  const publishedCode = manifest?.versionCode || 21;
-  const directApkUrl = `https://loopra1.vercel.app/Loopra.apk?v=${publishedCode}`;
+  const isNative = isNativeProp ?? isRunningInAndroidApp();
+  const publishedCode = manifest?.versionCode || 22;
+  const directApkUrl = manifest?.directApkUrl || `https://loopra1.vercel.app/Loopra.apk?v=${publishedCode}`;
 
-  const handleDownload = () => {
-    try {
-      setDownloadStatus('downloading');
-      setDownloadProgress(100);
-      setStatusMessage('Opening in Chrome...');
-      triggerApkDownload(downloadUrl, manifest);
-      if (showToast) {
-        showToast('Opening APK download in Chrome...', 'success');
-      }
-      setTimeout(() => {
+  const handleAction = async () => {
+    if (isNative) {
+      try {
+        setDownloadStatus('downloading');
+        setDownloadProgress(100);
+        setStatusMessage('Opening in Chrome...');
+        triggerApkDownload(downloadUrl, manifest);
+        if (showToast) {
+          showToast('Opening APK download in Chrome...', 'success');
+        }
+        setTimeout(() => {
+          onClose();
+        }, 1500);
+      } catch (err) {
+        if (showToast) {
+          showToast('Opening download in Chrome...', 'info');
+        }
         onClose();
-      }, 1500);
-    } catch (err) {
-      if (showToast) {
-        showToast('Opening download in Chrome...', 'info');
       }
-      onClose();
+    } else {
+      // Web / PWA client: clear caches and reload
+      try {
+        setDownloadStatus('reloading');
+        setDownloadProgress(100);
+        setStatusMessage('Updating app and refreshing cache...');
+        if (showToast) {
+          showToast('Applying update...', 'info');
+        }
+        setTimeout(async () => {
+          await clearAppCachesAndReload(latestVersion);
+        }, 500);
+      } catch (err) {
+        window.location.reload();
+      }
     }
   };
 
@@ -64,7 +89,7 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in select-none">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md select-none">
       <div 
         className="w-full max-w-sm rounded-3xl bg-gradient-to-b from-neutral-900 to-neutral-950 border border-amber-500/30 shadow-2xl p-6 relative overflow-hidden text-left"
         style={{
@@ -78,7 +103,11 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
         {/* Header Icon + Close Button */}
         <div className="flex items-center justify-between mb-4 relative z-10">
           <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-inner">
-            <Smartphone className="w-6 h-6 text-amber-400" />
+            {isNative ? (
+              <Smartphone className="w-6 h-6 text-amber-400" />
+            ) : (
+              <Globe className="w-6 h-6 text-amber-400" />
+            )}
           </div>
           <button
             type="button"
@@ -98,24 +127,26 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
           </div>
 
           <h3 className="text-lg font-display font-extrabold text-white tracking-wide">
-            New Version Available
+            {isNative ? 'New APK Version Available' : 'New Build Available'}
           </h3>
           <p className="text-xs text-neutral-300 leading-relaxed">
-            A new version of Loopra is ready for installation.
+            {isNative
+              ? 'A newer version of Loopra Android is available for installation.'
+              : 'A newer build of Loopra is ready. Refresh now to get the latest features and fixes.'}
           </p>
 
           {/* Dynamic Version Badges */}
           <div className="flex items-center gap-2 pt-2 pb-1">
             <div className="px-3 py-1.5 rounded-xl bg-neutral-800/80 border border-neutral-700/60 text-neutral-400 text-xs">
-              <span className="text-[10px] uppercase font-bold tracking-wider block text-neutral-400">Installed</span>
-              <span className="font-mono font-bold text-white">v{installedVersion.replace(/^v/i, '')}</span>
+              <span className="text-[10px] uppercase font-bold tracking-wider block text-neutral-400">Current</span>
+              <span className="font-mono font-bold text-white">v{String(installedVersion).replace(/^v/i, '')}</span>
             </div>
 
             <div className="text-neutral-500 text-sm font-bold">→</div>
 
             <div className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/40 text-amber-400 text-xs">
               <span className="text-[10px] uppercase font-bold tracking-wider block text-amber-400">Latest</span>
-              <span className="font-mono font-bold text-amber-300">v{latestVersion.replace(/^v/i, '')}</span>
+              <span className="font-mono font-bold text-amber-300">v{String(latestVersion).replace(/^v/i, '')}</span>
             </div>
           </div>
 
@@ -127,12 +158,12 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
             </div>
           )}
 
-          {/* Progress / Status display if downloading or verifying */}
+          {/* Progress / Status display if downloading or reloading */}
           {downloadStatus && (
             <div className="p-3 rounded-2xl bg-neutral-950/80 border border-amber-500/30 space-y-2">
               <div className="flex items-center justify-between text-xs font-mono">
                 <span className="flex items-center gap-1.5 text-amber-300 font-semibold">
-                  {downloadStatus === 'downloading' || downloadStatus === 'verifying' ? (
+                  {downloadStatus === 'downloading' || downloadStatus === 'verifying' || downloadStatus === 'reloading' ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
                   ) : downloadStatus === 'error' ? (
                     <AlertCircle className="w-3.5 h-3.5 text-red-400" />
@@ -159,18 +190,20 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
                   <p className="text-[11px] text-neutral-300 truncate">
                     {statusMessage}
                   </p>
-                  <p className="text-[10px] text-neutral-400">
-                    If download does not begin automatically,{' '}
-                    <a
-                      href={directApkUrl}
-                      download="Loopra.apk"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-amber-400 hover:text-amber-300 underline font-semibold"
-                    >
-                      tap here to download directly
-                    </a>.
-                  </p>
+                  {isNative && (
+                    <p className="text-[10px] text-neutral-400">
+                      If download does not begin automatically,{' '}
+                      <a
+                        href={directApkUrl}
+                        download="Loopra.apk"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-amber-400 hover:text-amber-300 underline font-semibold"
+                      >
+                        tap here to download directly
+                      </a>.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -178,7 +211,7 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
 
           <div className="flex items-center gap-1.5 text-[10px] text-emerald-400/90 font-medium pt-1">
             <ShieldCheck className="w-3 h-3 text-emerald-400" />
-            <span>Official signed APK release</span>
+            <span>{isNative ? 'Official signed APK release' : 'Official production release'}</span>
           </div>
         </div>
 
@@ -187,7 +220,7 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
           <button
             type="button"
             onClick={handleDismiss}
-            disabled={downloadStatus === 'downloading' || downloadStatus === 'verifying'}
+            disabled={downloadStatus === 'downloading' || downloadStatus === 'verifying' || downloadStatus === 'reloading'}
             className="flex-1 py-2.5 px-4 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 disabled:opacity-50 text-neutral-300 hover:text-white font-semibold text-xs border border-neutral-700/60 active:scale-95 transition-all cursor-pointer text-center"
           >
             Not Now
@@ -195,19 +228,24 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
 
           <button
             type="button"
-            onClick={handleDownload}
-            disabled={downloadStatus === 'downloading' || downloadStatus === 'verifying'}
+            onClick={handleAction}
+            disabled={downloadStatus === 'downloading' || downloadStatus === 'verifying' || downloadStatus === 'reloading'}
             className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 disabled:opacity-50 text-neutral-950 font-bold text-xs shadow-lg shadow-amber-500/25 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center"
           >
-            {downloadStatus === 'downloading' || downloadStatus === 'verifying' ? (
+            {downloadStatus === 'downloading' || downloadStatus === 'verifying' || downloadStatus === 'reloading' ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-neutral-950" />
                 <span>Updating...</span>
               </>
-            ) : (
+            ) : isNative ? (
               <>
                 <Download className="w-3.5 h-3.5 text-neutral-950" />
                 <span>Download Update</span>
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 text-neutral-950" />
+                <span>Update Now</span>
               </>
             )}
           </button>
