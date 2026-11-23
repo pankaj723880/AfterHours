@@ -283,11 +283,9 @@ export const personalizedFeedService = {
 
     scoredTracks.sort((a, b) => b.score - a.score);
 
-    // Section 1: Trending Songs
-    let trending = scoredTracks.slice(0, limit);
-
-    // If candidate pool was insufficient (< 6 tracks), run a single fallback query and cache the results
-    if (trending.length < 6) {
+    // Section 1: Trending Songs (Expand pool to at least 24 items and shuffle)
+    let trendingPool = scoredTracks.slice(0, Math.max(limit * 2, 24));
+    if (trendingPool.length < 6) {
       try {
         const topArtist = topArtists[0] || 'Arijit Singh';
         const freshYouTubeTracks = await catalogService.fetchDynamicCandidates(
@@ -298,7 +296,7 @@ export const personalizedFeedService = {
           const res = await this.upsertSong(ytTrack);
           if (res) {
             const cleanThumb = getCleanTrackThumbnail(res.thumbnail, res.videoId);
-            trending.push({
+            trendingPool.push({
               id: res.videoId,
               videoId: res.videoId,
               title: res.title,
@@ -315,13 +313,27 @@ export const personalizedFeedService = {
       } catch (_) {}
     }
 
-    // Section 2: Popular Albums (Bollywood / Melodic / Soundtracks)
-    const albumsPool = scoredTracks.slice(limit, limit * 2);
-    const albums = albumsPool.length >= 4 ? albumsPool : scoredTracks.slice(0, limit);
+    // Shuffle helper (Fisher-Yates)
+    const shuffleArray = (arr) => {
+      const copy = [...arr];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    };
 
-    // Section 3: Popular Radio (Acoustic / Unplugged / Lofi)
-    const radioPool = scoredTracks.slice(limit * 2, limit * 3);
-    const radio = radioPool.length >= 4 ? radioPool : scoredTracks.slice(0, limit);
+    const trending = shuffleArray(trendingPool);
+
+    // Section 2: Popular Albums (Bollywood / Melodic / Soundtracks) - Expand & Shuffle
+    const albumsCandidates = scoredTracks.slice(limit, Math.max(limit * 3, 30));
+    const albumsPool = albumsCandidates.length >= 4 ? albumsCandidates : scoredTracks.slice(0, Math.max(limit * 2, 20));
+    const albums = shuffleArray(albumsPool);
+
+    // Section 3: Popular Radio (Acoustic / Unplugged / Lofi) - Expand & Shuffle
+    const radioCandidates = scoredTracks.slice(limit * 2, Math.max(limit * 4, 30));
+    const radioPool = radioCandidates.length >= 4 ? radioCandidates : scoredTracks.slice(0, Math.max(limit * 2, 20));
+    const radio = shuffleArray(radioPool);
 
     return {
       success: true,
@@ -329,7 +341,9 @@ export const personalizedFeedService = {
       hasPersonalization: Boolean(pref && (topArtists.length > 0 || (pref.recentTracks || []).length > 0)),
       trendingSongs: trending.slice(0, limit),
       popularAlbums: albums.slice(0, limit),
-      popularRadio: radio.slice(0, limit)
+      popularRadio: radio.slice(0, limit),
+      trendingPoolSize: trending.length,
+      popularAlbumsPoolSize: albums.length
     };
   }
 };

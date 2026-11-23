@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { recommendationsClient } from '../../services/recommendationsClient';
+import { learningIntelligenceClient } from '../../services/learningIntelligenceClient';
 import { TrackDeduplicator } from '../../utils/trackIdentity';
 import { getCleanThumbnail, isThumbnailUrlFormatValid } from '../../utils/thumbnailValidator';
 import { CURATED_STATION_TRACKS } from '../../constants/curatedPlaylists';
@@ -211,7 +212,28 @@ export default function PersonalizedRecommendationsSection({
           return sanitized.filter(t => isSingleSong(t));
         };
 
-        const madeForYou = deduplicator.filterUnique(filterValidSingles(rawData.madeForYou || [])).slice(0, 6);
+        let madeForYou = deduplicator.filterUnique(filterValidSingles(rawData.madeForYou || [])).slice(0, 6);
+
+        // Incorporate personalized 200+ AI Intelligence Homepage pool tracks if available
+        try {
+          const aiPoolRes = await learningIntelligenceClient.getAiHomepagePool(backendUrl, authToken, { forceRefresh: isRefresh, shuffle: true });
+          if (aiPoolRes?.success && Array.isArray(aiPoolRes.tracks) && aiPoolRes.tracks.length > 0) {
+            const validPoolSingles = filterValidSingles(aiPoolRes.tracks);
+            if (validPoolSingles.length > 0) {
+              const freshAiPicks = [];
+              for (const pt of validPoolSingles) {
+                if (!deduplicator.isDuplicate(pt)) {
+                  deduplicator.add(pt);
+                  freshAiPicks.push(pt);
+                  if (freshAiPicks.length >= 12) break;
+                }
+              }
+              if (freshAiPicks.length >= 4) {
+                madeForYou = freshAiPicks.slice(0, 6);
+              }
+            }
+          }
+        } catch (_) {}
 
         let becauseYouListenedTo = null;
         if (rawData.becauseYouListenedTo && typeof rawData.becauseYouListenedTo === 'object') {

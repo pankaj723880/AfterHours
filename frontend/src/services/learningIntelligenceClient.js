@@ -163,6 +163,28 @@ export const learningIntelligenceClient = {
     } catch (e) {
       return { success: false, tracks: [] };
     }
+  },
+
+  /**
+   * Fetches the personalized 200+ song AI Intelligence Homepage pool for the user.
+   * Shuffled on every call (Fisher-Yates) and evolved weekly on a 7-day cycle.
+   */
+  async getAiHomepagePool(backendUrl, token, { forceRefresh = false, shuffle = true } = {}) {
+    if (!backendUrl) return { success: false, tracks: [] };
+    try {
+      const base = backendUrl.replace(/\/+$/, '');
+      const headers = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const query = new URLSearchParams({
+        refresh: forceRefresh ? 'true' : 'false',
+        shuffle: shuffle ? 'true' : 'false'
+      });
+      const res = await fetch(`${base}/api/learning-intelligence/ai-homepage-pool?${query.toString()}`, { headers });
+      if (!res.ok) return { success: false, tracks: [] };
+      return await res.json();
+    } catch (e) {
+      return { success: false, tracks: [] };
+    }
   }
 };
 

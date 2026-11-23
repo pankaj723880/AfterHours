@@ -193,6 +193,26 @@ router.get('/ai-seeds', authenticateToken, async (req, res) => {
 });
 
 /**
+ * 2e. GET /api/learning-intelligence/ai-homepage-pool
+ * Retrieves user's personalized 200+ song AI Intelligence Homepage pool.
+ * Shuffled via Fisher-Yates on every load/refresh.
+ * Evolved weekly (7-day cycle) pruning unplayed tracks and topping up with newly discovered genres.
+ */
+router.get('/ai-homepage-pool', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.userId || req.user.id;
+    const forceRefresh = req.query.refresh === 'true';
+    const shuffle = req.query.shuffle !== 'false';
+
+    const result = await learningEngineService.getAiHomepagePool(userId, { forceRefresh, shuffle });
+    res.json(result);
+  } catch (err) {
+    console.error('[AI Homepage Pool Error]:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to retrieve AI homepage pool: ' + err.message, tracks: [] });
+  }
+});
+
+/**
  * 3. GET /api/learning-intelligence/admin/overview
  * Returns full intelligence overview, health, metrics, and trends (Admin only).
  */

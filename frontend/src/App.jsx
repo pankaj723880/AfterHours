@@ -1976,15 +1976,26 @@ export default function App() {
     setRenderedRecTrackKeys(new Set(dedup.getAllKeys()));
   }, []);
 
-  // Filter trending songs dynamically so no song rendered above in recommendations ever repeats below
-  // and strictly guarantee valid, usable thumbnails, single-song content, and clean music sanitization
+  // Fisher-Yates array shuffle helper
+  const shuffleArray = (arr) => {
+    if (!Array.isArray(arr)) return [];
+    const copy = [...arr];
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  };
+
+  // Filter trending songs dynamically so no song rendered above in recommendations ever repeats below,
+  // expand the candidate pool and shuffle on every load/refresh so positions change dynamically
   const uniqueTrendingSongs = React.useMemo(() => {
     const raw = (trendingSongs && trendingSongs.length > 0) ? trendingSongs : TRENDING_SONGS;
     const validated = filterSingleSongs(raw).filter(t => isCleanMusicTrack(t));
     const cleanFallbacks = filterSingleSongs(TRENDING_SONGS).filter(t => isCleanMusicTrack(t));
     const candidateList = validated.length > 0 ? validated : cleanFallbacks;
     const dedup = new TrackDeduplicator();
-    return candidateList.filter(t => {
+    const filtered = candidateList.filter(t => {
       if (!isCleanMusicTrack(t)) return false;
       const cleanThumb = getCleanThumbnail(t);
       if (!cleanThumb || !isThumbnailUrlFormatValid(cleanThumb)) return false;
@@ -1994,6 +2005,7 @@ export default function App() {
       dedup.add(t);
       return true;
     });
+    return shuffleArray(filtered);
   }, [trendingSongs, renderedRecTrackKeys]);
 
   const uniquePopularAlbums = React.useMemo(() => {
@@ -2002,7 +2014,7 @@ export default function App() {
     const cleanFallbacks = filterSingleSongs(POPULAR_ALBUMS).filter(t => isCleanMusicTrack(t));
     const candidateList = validated.length > 0 ? validated : cleanFallbacks;
     const dedup = new TrackDeduplicator();
-    return candidateList.filter(t => {
+    const filtered = candidateList.filter(t => {
       if (!isCleanMusicTrack(t)) return false;
       const cleanThumb = getCleanThumbnail(t);
       if (!cleanThumb || !isThumbnailUrlFormatValid(cleanThumb)) return false;
@@ -2012,6 +2024,7 @@ export default function App() {
       dedup.add(t);
       return true;
     });
+    return shuffleArray(filtered);
   }, [popularAlbums, renderedRecTrackKeys]);
 
   const uniquePopularRadio = React.useMemo(() => {

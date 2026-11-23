@@ -177,7 +177,9 @@ const userLearningProfileSchema = new mongoose.Schema({
       durationSec: { type: Number, default: 0 },
       genre: { type: String, default: '' },
       category: { type: String, default: '' },
-      seededAt: { type: Date, default: Date.now }
+      seededAt: { type: Date, default: Date.now },
+      playCount: { type: Number, default: 0 },
+      lastPlayedAt: { type: Date, default: null }
     }],
     default: []
   },
@@ -186,6 +188,31 @@ const userLearningProfileSchema = new mongoose.Schema({
     lastGenre: { type: String, default: '' },
     lastSeededAt: { type: Date, default: null },
     totalCount: { type: Number, default: 0 }
+  },
+  aiHomepagePool: {
+    type: [{
+      id: { type: String, required: true },
+      videoId: { type: String, default: '' },
+      title: { type: String, required: true },
+      artist: { type: String, default: '' },
+      channel: { type: String, default: '' },
+      thumbnail: { type: String, default: '' },
+      image: { type: String, default: '' },
+      duration: { type: String, default: '' },
+      durationSec: { type: Number, default: 0 },
+      genre: { type: String, default: '' },
+      category: { type: String, default: '' },
+      mood: { type: String, default: '' },
+      playCount: { type: Number, default: 0 },
+      lastPlayedAt: { type: Date, default: null },
+      addedAt: { type: Date, default: Date.now }
+    }],
+    default: []
+  },
+  aiHomepagePoolMeta: {
+    lastEvolvedAt: { type: Date, default: null },
+    totalCount: { type: Number, default: 0 },
+    cycleCount: { type: Number, default: 0 }
   }
 }, {
   timestamps: true,

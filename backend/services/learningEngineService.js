@@ -4,9 +4,10 @@ import UserLearningProfile from '../models/UserLearningProfile.js';
 import LearningUpdateLog from '../models/LearningUpdateLog.js';
 import User from '../models/User.js';
 import CachedSong from '../models/CachedSong.js';
-import { catalogService } from './catalogService.js';
+import { catalogService, CORE_CATALOG_TRACKS } from './catalogService.js';
 import { isSingleSong, isValidMusicTrack, parseDurationToSeconds } from './songFilter.js';
 import { getCleanTrackThumbnail, isValidThumbnailUrlFormat } from './thumbnailValidationService.js';
+import { CURATED_STATION_TRACKS } from '../constants/curatedPlaylists.js';
 
 const MODEL_VERSION = '1.0.0-passive';
 const BATCH_INTERVAL_MS = 30 * 1000; // 30 seconds interval
@@ -479,6 +480,25 @@ class LearningEngineService {
           playsCount += 1;
           if (artist) this._updateArtistAffinity(profile, artist, +1.0, true, false, false, false, createdAt);
           if (genre) this._updateGenreAffinity(profile, genre, +1.0, true, false, createdAt);
+
+          // Update play count and lastPlayedAt on track in aiHomepagePool & aiSeededTracks
+          const trackId = String(metadata.trackId || metadata.videoId || '').trim();
+          if (trackId) {
+            if (Array.isArray(profile.aiHomepagePool)) {
+              const poolTrack = profile.aiHomepagePool.find(t => String(t.id || t.videoId) === trackId);
+              if (poolTrack) {
+                poolTrack.playCount = (poolTrack.playCount || 0) + 1;
+                poolTrack.lastPlayedAt = createdAt || new Date();
+              }
+            }
+            if (Array.isArray(profile.aiSeededTracks)) {
+              const seedTrack = profile.aiSeededTracks.find(t => String(t.id || t.videoId) === trackId);
+              if (seedTrack) {
+                seedTrack.playCount = (seedTrack.playCount || 0) + 1;
+                seedTrack.lastPlayedAt = createdAt || new Date();
+              }
+            }
+          }
         } else if (eventType === 'progress') {
           if (listenedSec >= 30) {
             if (artist) this._updateArtistAffinity(profile, artist, +1.5, false, false, false, false, createdAt);
@@ -698,6 +718,8 @@ class LearningEngineService {
     profile.markModified('featureUsage');
     profile.markModified('interests');
     profile.markModified('signalsSummary');
+    if (profile.aiHomepagePool) profile.markModified('aiHomepagePool');
+    if (profile.aiSeededTracks) profile.markModified('aiSeededTracks');
     await profile.save();
 
     // 7. Mark processed events in DB
@@ -1245,6 +1267,228 @@ class LearningEngineService {
     return {
       tracks: profile?.aiSeededTracks || [],
       meta: profile?.aiSeededMeta || null
+    };
+  }
+
+  /**
+   * Fisher-Yates array shuffle helper
+   */
+  _shuffleArray(array) {
+    const arr = [...array];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  /**
+   * Builds, updates, prunes, and retrieves the personalized 200+ song AI Intelligence Homepage pool.
+   * - Minimum 200 valid songs (>= 75s duration, single song, clean thumbnail).
+   * - 7-day weekly evolution: tracks unplayed during the 7 days are pruned while keeping played tracks and core profile matches.
+   * - New categories/genres added from user's AI intelligence profile and topped up to at least 200 tracks.
+   * - Returns randomly shuffled order on every call via Fisher-Yates shuffle.
+   */
+  async getAiHomepagePool(userId, { forceRefresh = false, shuffle = true } = {}) {
+    if (!userId) throw new Error('userId is required');
+    const uObjId = new mongoose.Types.ObjectId(userId.toString());
+
+    let profile = await UserLearningProfile.findOne({ userId: uObjId });
+    if (!profile) {
+      profile = new UserLearningProfile({
+        userId: uObjId,
+        modelVersion: MODEL_VERSION,
+        confidenceScore: 0.1,
+        learningStatus: 'active'
+      });
+    }
+
+    const now = new Date();
+    const meta = profile.aiHomepagePoolMeta || {};
+    const lastEvolvedAt = meta.lastEvolvedAt ? new Date(meta.lastEvolvedAt) : null;
+    const isWeeklyDue = !lastEvolvedAt || (now - lastEvolvedAt) >= (7 * 24 * 60 * 60 * 1000);
+    let existingPool = Array.isArray(profile.aiHomepagePool) ? [...profile.aiHomepagePool] : [];
+
+    let poolModified = false;
+
+    // 1. Weekly Pruning & Evolution (7-Day Cycle)
+    if (isWeeklyDue && existingPool.length > 0) {
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const topArtistsSet = new Set((profile.favoriteArtists || []).slice(0, 5).map(a => a.name.toLowerCase()));
+      const topGenresSet = new Set((profile.learnedGenres || []).slice(0, 3).map(g => g.name.toLowerCase()));
+
+      // Retain tracks played recently OR frequently played (> 2) OR core favorite artist/genre matches
+      existingPool = existingPool.filter(t => {
+        const wasPlayedThisWeek = t.lastPlayedAt && new Date(t.lastPlayedAt) >= sevenDaysAgo;
+        const isFrequentlyPlayed = (t.playCount || 0) >= 2;
+        const isCoreArtist = t.artist && topArtistsSet.has(t.artist.toLowerCase());
+        const isCoreGenre = t.genre && topGenresSet.has(t.genre.toLowerCase());
+        return wasPlayedThisWeek || isFrequentlyPlayed || isCoreArtist || isCoreGenre;
+      });
+
+      meta.lastEvolvedAt = now;
+      meta.cycleCount = (meta.cycleCount || 0) + 1;
+      poolModified = true;
+    }
+
+    // 2. Top-Up Pool to at least 200 songs if below target or forced refresh
+    const TARGET_POOL_SIZE = 200;
+    if (existingPool.length < TARGET_POOL_SIZE || forceRefresh) {
+      const poolMap = new Map();
+      const seenTitles = new Set();
+
+      const addCandidateTrack = (t) => {
+        if (!t) return;
+        const vid = String(t.id || t.videoId || '').trim();
+        if (!vid || poolMap.has(vid)) return;
+
+        const durSec = t.durationSec || parseDurationToSeconds(t);
+        if (durSec && durSec < 75) return; // Strict duration >= 75s
+
+        if (!isSingleSong(t) || !isValidMusicTrack(t)) return;
+
+        const titleClean = String(t.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (titleClean.length >= 6 && seenTitles.has(titleClean)) return;
+        if (titleClean.length >= 6) seenTitles.add(titleClean);
+
+        const thumb = getCleanTrackThumbnail(t.thumbnail || t.image || t.coverArt, vid);
+        if (!isValidThumbnailUrlFormat(thumb)) return;
+
+        const durFormatted = t.duration || (durSec ? `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}` : '3:45');
+
+        poolMap.set(vid, {
+          id: vid,
+          videoId: vid,
+          title: t.title,
+          artist: t.artist || t.channel || 'Loopra Artist',
+          channel: t.channel || t.artist || 'Loopra Artist',
+          thumbnail: thumb,
+          image: thumb,
+          duration: durFormatted,
+          durationSec: durSec || 210,
+          genre: t.genre || 'Bollywood',
+          category: t.category || 'Personalized',
+          mood: t.mood || 'Feel-Good',
+          playCount: t.playCount || 0,
+          lastPlayedAt: t.lastPlayedAt || null,
+          addedAt: t.addedAt || new Date()
+        });
+      };
+
+      // Keep existing valid items
+      for (const t of existingPool) {
+        addCandidateTrack(t);
+      }
+
+      // Collect user's learned genres and artists to match new categories/genres
+      const learnedGenres = (profile.learnedGenres || []).map(g => g.name).filter(Boolean);
+      const favoriteArtists = (profile.favoriteArtists || []).map(a => a.name).filter(Boolean);
+
+      // (A) First Priority: CachedSong matching user's learned genres/artists
+      try {
+        if (mongoose.connection && mongoose.connection.readyState === 1) {
+          const matchQueries = [];
+          if (learnedGenres.length > 0) {
+            matchQueries.push({ genre: { $in: learnedGenres.map(g => new RegExp(g, 'i')) } });
+          }
+          if (favoriteArtists.length > 0) {
+            matchQueries.push({ artist: { $in: favoriteArtists.map(a => new RegExp(a, 'i')) } });
+          }
+
+          if (matchQueries.length > 0) {
+            const userMatches = await CachedSong.find({
+              durationSec: { $gte: 75 },
+              isCleanSingleSong: true,
+              $or: matchQueries
+            })
+              .sort({ playCount: -1, lastPlayedAt: -1 })
+              .limit(100)
+              .lean()
+              .catch(() => []);
+
+            for (const t of userMatches) {
+              if (poolMap.size >= TARGET_POOL_SIZE + 20) break;
+              addCandidateTrack(t);
+            }
+          }
+        }
+      } catch (_) {}
+
+      // (B) Second Priority: Curated Stations Tracks (290+ high-quality catalog songs)
+      try {
+        if (typeof CURATED_STATION_TRACKS === 'object' && CURATED_STATION_TRACKS !== null) {
+          const allCurated = Object.values(CURATED_STATION_TRACKS).flat();
+          // Prioritize curated songs matching user's genres/artists if possible
+          const sortedCurated = [...allCurated].sort((a, b) => {
+            const aMatch = learnedGenres.some(g => (a.genre || '').toLowerCase().includes(g.toLowerCase())) ||
+                           favoriteArtists.some(art => (a.artist || '').toLowerCase().includes(art.toLowerCase()));
+            const bMatch = learnedGenres.some(g => (b.genre || '').toLowerCase().includes(g.toLowerCase())) ||
+                           favoriteArtists.some(art => (b.artist || '').toLowerCase().includes(art.toLowerCase()));
+            return (bMatch ? 1 : 0) - (aMatch ? 1 : 0);
+          });
+
+          for (const t of sortedCurated) {
+            if (poolMap.size >= TARGET_POOL_SIZE + 20) break;
+            addCandidateTrack(t);
+          }
+        }
+      } catch (_) {}
+
+      // (C) Third Priority: Core Catalog Tracks
+      if (Array.isArray(CORE_CATALOG_TRACKS)) {
+        for (const t of CORE_CATALOG_TRACKS) {
+          if (poolMap.size >= TARGET_POOL_SIZE + 20) break;
+          addCandidateTrack(t);
+        }
+      }
+
+      // (D) Fourth Priority: General CachedSong table top up
+      try {
+        if (poolMap.size < TARGET_POOL_SIZE && mongoose.connection && mongoose.connection.readyState === 1) {
+          const generalMatches = await CachedSong.find({
+            durationSec: { $gte: 75 },
+            isCleanSingleSong: true
+          })
+            .sort({ playCount: -1, lastPlayedAt: -1 })
+            .limit(150)
+            .lean()
+            .catch(() => []);
+
+          for (const t of generalMatches) {
+            if (poolMap.size >= TARGET_POOL_SIZE + 20) break;
+            addCandidateTrack(t);
+          }
+        }
+      } catch (_) {}
+
+      existingPool = Array.from(poolMap.values());
+      meta.totalCount = existingPool.length;
+      if (!meta.lastEvolvedAt) meta.lastEvolvedAt = now;
+      poolModified = true;
+    }
+
+    if (poolModified) {
+      profile.aiHomepagePool = existingPool;
+      profile.aiHomepagePoolMeta = meta;
+      profile.markModified('aiHomepagePool');
+      profile.markModified('aiHomepagePoolMeta');
+      try {
+        await profile.save();
+      } catch (saveErr) {
+        console.warn('[LearningEngineService] Profile pool save warning:', saveErr.message);
+      }
+    }
+
+    // Display order: Fisher-Yates shuffle on every fetch so positions change dynamically
+    const returnTracks = shuffle ? this._shuffleArray(existingPool) : existingPool;
+
+    return {
+      success: true,
+      totalCount: existingPool.length,
+      returnedCount: returnTracks.length,
+      lastEvolvedAt: meta.lastEvolvedAt || now,
+      cycleCount: meta.cycleCount || 0,
+      tracks: returnTracks
     };
   }
 }

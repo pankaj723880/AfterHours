@@ -75,6 +75,26 @@ export default function DiscoverView({
   const [selectedChip, setSelectedChip] = useState(null);
   const searchInputRef = useRef(null);
 
+  // Fisher-Yates array shuffle helper
+  const shuffleArray = (arr) => {
+    if (!Array.isArray(arr)) return [];
+    const copy = [...arr];
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  };
+
+  // Randomized & expanded views for Trending & Popular Albums on Discover/Search page load/refresh
+  const displayTrendingSongs = React.useMemo(() => {
+    return shuffleArray(trendingSongs || []);
+  }, [trendingSongs]);
+
+  const displayPopularAlbums = React.useMemo(() => {
+    return shuffleArray(popularAlbums || []);
+  }, [popularAlbums]);
+
   // Trigger search from popular chip or promo card
   const handleChipClick = (item) => {
     const q = typeof item === 'string' ? item : item.query;
@@ -571,7 +591,7 @@ export default function DiscoverView({
       {!hasSearched && searchResults.length === 0 && !isLoading && (
         <div className="space-y-6 sm:space-y-8 pt-2">
           {/* Trending Hits Carousel */}
-          {trendingSongs && trendingSongs.length > 0 && (
+          {displayTrendingSongs && displayTrendingSongs.length > 0 && (
             <section aria-label="Trending Hits" className="space-y-3">
               <div className="flex items-center justify-between px-1">
                 <div className="flex items-center gap-2">
@@ -588,7 +608,7 @@ export default function DiscoverView({
               </div>
 
               <div className="flex items-stretch gap-3 overflow-x-auto pb-2 scrollbar-none -mx-3 px-3 sm:mx-0 sm:px-0">
-                {trendingSongs.map((track, idx) => {
+                {displayTrendingSongs.map((track, idx) => {
                   const trackId = track.id || track.videoId;
                   const thumb = getCleanThumbnail(track, trackId);
                   if (!thumb || !isThumbnailUrlFormatValid(thumb)) return null;
@@ -646,7 +666,7 @@ export default function DiscoverView({
           )}
 
           {/* Popular Albums Carousel */}
-          {popularAlbums && popularAlbums.length > 0 && (
+          {displayPopularAlbums && displayPopularAlbums.length > 0 && (
             <section aria-label="Popular Albums" className="space-y-3">
               <div className="flex items-center justify-between px-1">
                 <div className="flex items-center gap-2">
@@ -663,7 +683,7 @@ export default function DiscoverView({
               </div>
 
               <div className="flex items-stretch gap-3 overflow-x-auto pb-2 scrollbar-none -mx-3 px-3 sm:mx-0 sm:px-0">
-                {popularAlbums.map((album, idx) => {
+                {displayPopularAlbums.map((album, idx) => {
                   const albumId = album.id || album.videoId;
                   const thumb = getCleanThumbnail(album, albumId);
                   if (!thumb || !isThumbnailUrlFormatValid(thumb)) return null;
