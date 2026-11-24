@@ -5,31 +5,52 @@ import { safeParseJsonResponse, fetchWithRetry, pingServerHealth, subscribeToWak
 import { CURATED_STATION_TRACKS } from './constants/curatedPlaylists';
 import HomeSearchBar from './components/Search/HomeSearchBar';
 
-// Lazy-loaded heavy views and modals
-const AdminDashboard = lazy(() => import('./components/Admin/AdminDashboard'));
-const Turntable3D = lazy(() => import('./components/Player/Turntable3D'));
-const AudioSpectrumVisualizer = lazy(() => import('./components/Player/AudioSpectrumVisualizer'));
-const StudioLoungeAtmosphere = lazy(() => import('./components/Player/StudioLoungeAtmosphere'));
-const OfflineLibraryView = lazy(() => import('./components/Offline/OfflineLibraryView'));
-const OfflineEligibleExploreView = lazy(() => import('./components/Offline/OfflineEligibleExploreView'));
-const ListeningRoomsModal = lazy(() => import('./components/Social/ListeningRoomsModal'));
-const ListeningRoomsView = lazy(() => import('./components/Social/ListeningRoomsView'));
-const SimilarSongsModal = lazy(() => import('./components/Recommendations/SimilarSongsModal'));
-const LyricsModal = lazy(() => import('./components/Player/LyricsModal'));
-const SleepTimerModal = lazy(() => import('./components/Player/SleepTimerModal'));
-const PlayerSettingsModal = lazy(() => import('./components/Player/PlayerSettingsModal'));
-const SuggestedForYouSection = lazy(() => import('./components/Player/SuggestedForYouSection'));
-const MoodToMusicSection = lazy(() => import('./components/Mood/MoodToMusicSection'));
-const PersonalizedRecommendationsSection = lazy(() => import('./components/Recommendations/PersonalizedRecommendationsSection'));
-const LoopraAiCompanion = lazy(() => import('./components/AiMusicCompanion/LoopraAiCompanion'));
-const VoiceAgentModal = lazy(() => import('./components/VoiceAgent/VoiceAgentModal'));
-const LoopraCanvas = lazy(() => import('./components/Player/LoopraCanvas'));
-const NostalgiaStationView = lazy(() => import('./components/Radio/NostalgiaStationView'));
-const ListeningStatsModal = lazy(() => import('./components/Stats/ListeningStatsModal'));
-const UserProfileModal = lazy(() => import('./components/Profile/UserProfileModal'));
-const DiscoverSwipe = lazy(() => import('./components/Discover/DiscoverSwipe'));
-const DjClubPage = lazy(() => import('./components/DjClub/DjClubPage'));
-const RelaxModeView = lazy(() => import('./components/Relax/RelaxModeView'));
+// Lazy-loaded heavy views and modals with automatic retry on stale/transient dynamic import failures
+const lazyWithRetry = (importFn, key = 'loopra_chunk_retry') =>
+  lazy(() =>
+    importFn().catch((error) => {
+      console.warn('[DynamicImport] Chunk load error, attempting recovery:', error?.message);
+      const hasRetried = sessionStorage.getItem(key);
+      if (!hasRetried) {
+        sessionStorage.setItem(key, '1');
+        // Clear caches if service worker is active and reload
+        try {
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then((regs) => {
+              for (const reg of regs) reg.update();
+            });
+          }
+        } catch (_) {}
+        window.location.reload();
+      }
+      throw error;
+    })
+  );
+
+const AdminDashboard = lazyWithRetry(() => import('./components/Admin/AdminDashboard'), 'retry_admin');
+const Turntable3D = lazyWithRetry(() => import('./components/Player/Turntable3D'), 'retry_turntable');
+const AudioSpectrumVisualizer = lazyWithRetry(() => import('./components/Player/AudioSpectrumVisualizer'), 'retry_spectrum');
+const StudioLoungeAtmosphere = lazyWithRetry(() => import('./components/Player/StudioLoungeAtmosphere'), 'retry_studio');
+const OfflineLibraryView = lazyWithRetry(() => import('./components/Offline/OfflineLibraryView'), 'retry_offline_lib');
+const OfflineEligibleExploreView = lazyWithRetry(() => import('./components/Offline/OfflineEligibleExploreView'), 'retry_offline_explore');
+const ListeningRoomsModal = lazyWithRetry(() => import('./components/Social/ListeningRoomsModal'), 'retry_rooms_modal');
+const ListeningRoomsView = lazyWithRetry(() => import('./components/Social/ListeningRoomsView'), 'retry_rooms_view');
+const SimilarSongsModal = lazyWithRetry(() => import('./components/Recommendations/SimilarSongsModal'), 'retry_similar');
+const LyricsModal = lazyWithRetry(() => import('./components/Player/LyricsModal'), 'retry_lyrics');
+const SleepTimerModal = lazyWithRetry(() => import('./components/Player/SleepTimerModal'), 'retry_sleep');
+const PlayerSettingsModal = lazyWithRetry(() => import('./components/Player/PlayerSettingsModal'), 'retry_settings');
+const SuggestedForYouSection = lazyWithRetry(() => import('./components/Player/SuggestedForYouSection'), 'retry_suggested');
+const MoodToMusicSection = lazyWithRetry(() => import('./components/Mood/MoodToMusicSection'), 'retry_mood');
+const PersonalizedRecommendationsSection = lazyWithRetry(() => import('./components/Recommendations/PersonalizedRecommendationsSection'), 'retry_recs');
+const LoopraAiCompanion = lazyWithRetry(() => import('./components/AiMusicCompanion/LoopraAiCompanion'), 'retry_ai');
+const VoiceAgentModal = lazyWithRetry(() => import('./components/VoiceAgent/VoiceAgentModal'), 'retry_voice');
+const LoopraCanvas = lazyWithRetry(() => import('./components/Player/LoopraCanvas'), 'retry_canvas');
+const NostalgiaStationView = lazyWithRetry(() => import('./components/Radio/NostalgiaStationView'), 'retry_nostalgia');
+const ListeningStatsModal = lazyWithRetry(() => import('./components/Stats/ListeningStatsModal'), 'retry_stats');
+const UserProfileModal = lazyWithRetry(() => import('./components/Profile/UserProfileModal'), 'retry_profile');
+const DiscoverSwipe = lazyWithRetry(() => import('./components/Discover/DiscoverSwipe'), 'retry_swipe');
+const DjClubPage = lazyWithRetry(() => import('./components/DjClub/DjClubPage'), 'retry_dj');
+const RelaxModeView = lazyWithRetry(() => import('./components/Relax/RelaxModeView'), 'retry_relax');
 import CinematicVideoPlayer from './components/Player/CinematicVideoPlayer';
 import { requestVideoPictureInPicture, requestAudioPictureInPicture } from './utils/pictureInPictureManager';
 const AppSplashScreen = lazy(() => import('./components/Common/AppSplashScreen'));
@@ -82,8 +103,8 @@ import { listeningStatsService } from './services/listeningStatsService';
 import { recommendationsClient } from './services/recommendationsClient';
 import { learningIntelligenceClient } from './services/learningIntelligenceClient';
 import { validatePlaybackTrack } from './services/musicValidationClient';
-const TimeMachineRadio = lazy(() => import('./components/Radio/TimeMachineRadio'));
-const IndianRadioView = lazy(() => import('./components/Radio/IndianRadioView'));
+const TimeMachineRadio = lazyWithRetry(() => import('./components/Radio/TimeMachineRadio'), 'retry_timemachine');
+const IndianRadioView = lazyWithRetry(() => import('./components/Radio/IndianRadioView'), 'retry_indian_radio');
 
 // Lazy load HLS library only when an HLS radio stream is played
 let hlsModulePromise = null;
@@ -98,11 +119,11 @@ const loadHls = async () => {
   }
   return hlsModulePromise;
 };
-const ActivityFeed = lazy(() => import('./components/Activity/ActivityFeed'));
+const ActivityFeed = lazyWithRetry(() => import('./components/Activity/ActivityFeed'), 'retry_activity');
 import MobileBottomNav from './components/Navigation/MobileBottomNav';
 import LoopraFooter from './components/Navigation/LoopraFooter';
-const AndroidApkDownloadSection = lazy(() => import('./components/Common/AndroidApkDownloadSection'));
-const ArtistProfileView = lazy(() => import('./components/Artist/ArtistProfileView'));
+const AndroidApkDownloadSection = lazyWithRetry(() => import('./components/Common/AndroidApkDownloadSection'), 'retry_apk_dl');
+const ArtistProfileView = lazyWithRetry(() => import('./components/Artist/ArtistProfileView'), 'retry_artist');
 import { voiceControlService } from './services/voiceControlService';
 import { useVoiceRollout } from './hooks/useVoiceRollout';
 import { useUiConfig } from './context/UiConfigContext';
@@ -110,7 +131,7 @@ import { useServerKeepAlive } from './hooks/useServerKeepAlive';
 import shuffleService from './services/shuffleService';
 import { filterSingleSongs, isSingleSong, isCleanMusicTrack, isValidMusicTrack, sanitizeTrack, parseDurationToSeconds } from './services/songFilter';
 import { curateSwipeDeck, filterStrictSoloTracks } from './services/swipeCurationService';
-const RatingPopupModal = lazy(() => import('./components/Rating/RatingPopupModal'));
+const RatingPopupModal = lazyWithRetry(() => import('./components/Rating/RatingPopupModal'), 'retry_rating');
 import HomepageReviewsSection from './components/Rating/HomepageReviewsSection';
 import { updateRouteMetadata } from './utils/seo';
 import { formatTrackDuration } from './utils/duration';
@@ -186,6 +207,7 @@ if (typeof window !== 'undefined') {
 
 let hasLoggedSocketWarn = false;
 let socketReconnectAttempts = 0;
+let hasLoggedSocketConnect = false;
 
 socket.on('connect_error', (err) => {
   socketReconnectAttempts++;
@@ -198,7 +220,10 @@ socket.on('connect_error', (err) => {
 socket.on('connect', () => {
   hasLoggedSocketWarn = false;
   socketReconnectAttempts = 0;
-  console.log('[Socket.io] Real-time connection established successfully.');
+  if (!hasLoggedSocketConnect) {
+    hasLoggedSocketConnect = true;
+    console.log('[Socket.io] Real-time connection established successfully.');
+  }
 });
 
 socket.on('disconnect', (reason) => {
@@ -4532,17 +4557,21 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     socket.on('room:playback:start', handleRoomPlaybackSyncEvent);
     socket.on('room:playback:prepare', handleRoomPlaybackPrepareEvent);
 
-    socket.on('connect', () => {
+    const handleSocketConnect = () => {
       setIsLiveCountStale(false);
       const curToken = getTabAuthToken();
       if (curToken) {
         socket.emit('authenticate', { token: curToken, sessionId: getOrCreateSessionId() });
       }
       syncLiveUsersCount();
-    });
-    socket.on('disconnect', () => {
+    };
+
+    const handleSocketDisconnect = () => {
       setIsLiveCountStale(true);
-    });
+    };
+
+    socket.on('connect', handleSocketConnect);
+    socket.on('disconnect', handleSocketDisconnect);
 
     return () => {
       clearInterval(clockInterval);
@@ -4553,8 +4582,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       socket.off('room:playback:sync', handleRoomPlaybackSyncEvent);
       socket.off('room:playback:start', handleRoomPlaybackSyncEvent);
       socket.off('room:playback:prepare', handleRoomPlaybackPrepareEvent);
-      socket.off('connect');
-      socket.off('disconnect');
+      socket.off('connect', handleSocketConnect);
+      socket.off('disconnect', handleSocketDisconnect);
     };
   }, []);
   const ytReadyCallbacksRef = useRef([]);
@@ -6758,6 +6787,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       setSelectedArtistId(target.params?.id || target.params?.slug || 'arijit-singh');
     } else if (target.tab === 'downloads') {
       setOfflineSubView(target.params?.subView || 'library');
+    } else if (target.tab === 'rooms') {
+      if (!target.params?.roomId && !target.params?.roomCode && !target.params?.room) {
+        setActiveRoom(null);
+      }
     } else if (target.tab === 'playlists') {
       if (!target.params?.id) {
         setSelectedPlaylistForView(null);
