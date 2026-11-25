@@ -119,7 +119,7 @@ export default function MobileBottomNav({
               onClick={item.onClick}
               aria-label={item.label}
               aria-current={active ? 'page' : undefined}
-              className={`flex flex-col items-center justify-center gap-1 py-1.5 transition-all duration-200 relative group cursor-pointer active:scale-95 touch-manipulation focus:outline-none ${active
+              className={`flex flex-col items-center justify-center gap-1 py-1.5 transition-colors duration-180 ease-out relative group cursor-pointer active:scale-95 touch-manipulation focus:outline-none select-none ${active
                   ? 'text-amber-400 font-semibold'
                   : 'text-neutral-400 hover:text-neutral-200'
                 }`}
@@ -127,14 +127,14 @@ export default function MobileBottomNav({
               {/* Subtle top indicator bar for active item */}
               {active && (
                 <span
-                  className="absolute top-0 w-8 h-0.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.8)]"
+                  className="absolute top-0 w-8 h-0.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.8)] animate-fadeIn"
                   aria-hidden="true"
                 />
               )}
 
               <div className="relative">
                 <IconComponent
-                  className={`w-5 h-5 transition-transform duration-200 ${active ? 'scale-110 drop-shadow-[0_0_6px_rgba(245,158,11,0.5)] stroke-[2.25]' : 'stroke-[1.75]'
+                  className={`w-5 h-5 transition-transform duration-180 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform ${active ? 'scale-110 drop-shadow-[0_0_6px_rgba(245,158,11,0.5)] stroke-[2.25]' : 'stroke-[1.75]'
                     }`}
                   aria-hidden="true"
                 />

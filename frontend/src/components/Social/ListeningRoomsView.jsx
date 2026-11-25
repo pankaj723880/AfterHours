@@ -2440,13 +2440,14 @@ export default function ListeningRoomsView({
                       showToast(next ? '🎧 Listen Together enabled! Your player is now synced.' : 'Independent listening enabled');
                     }
                   }}
-                  className={`relative w-11 h-6 rounded-full transition-colors p-0.5 shrink-0 cursor-pointer ${
-                    isRoomPlaybackSyncEnabled ? 'bg-amber-500' : 'bg-neutral-700'
+                  className={`relative w-11 h-6 rounded-full transition-colors duration-200 ease-out p-0.5 shrink-0 cursor-pointer ${
+                    isRoomPlaybackSyncEnabled ? 'bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.4)]' : 'bg-neutral-700'
                   }`}
                   title="Toggle Synchronized Listen-Along"
+                  aria-label="Toggle Synchronized Listen-Along"
                 >
                   <div
-                    className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                    className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform ${
                       isRoomPlaybackSyncEnabled ? 'translate-x-5' : 'translate-x-0'
                     }`}
                   />
@@ -2488,12 +2489,14 @@ export default function ListeningRoomsView({
                   <button
                     type="button"
                     onClick={() => setIsChatOpen(prev => !prev)}
-                    className={`p-2 rounded-xl border transition cursor-pointer active:scale-95 flex items-center gap-1.5 text-xs font-semibold ${
+                    className={`p-2 rounded-xl border transition-all duration-200 ease-out cursor-pointer active:scale-95 flex items-center gap-1.5 text-xs font-semibold select-none ${
                       isChatOpen
-                        ? 'bg-amber-500 text-neutral-950 border-amber-400 font-bold'
+                        ? 'bg-amber-500 text-neutral-950 border-amber-400 font-bold shadow-md shadow-amber-500/20'
                         : 'bg-neutral-800/80 hover:bg-neutral-700/80 text-neutral-300 hover:text-white border-neutral-700/50'
                     }`}
                     title={isChatOpen ? 'Close Room Chat' : 'Open Room Chat'}
+                    aria-label={isChatOpen ? 'Close Room Chat' : 'Open Room Chat'}
+                    aria-expanded={isChatOpen}
                   >
                     <MessageSquare className="w-4 h-4 text-amber-400" />
                     <span className="hidden sm:inline">Chat</span>
@@ -2641,7 +2644,7 @@ export default function ListeningRoomsView({
 
           {/* Collapsible Mini Room Chat Box */}
           {isChatOpen && (
-            <div className="p-3 rounded-2xl bg-neutral-950/90 border border-amber-500/30 space-y-2.5 animate-fadeIn">
+            <div className="p-3 rounded-2xl bg-neutral-950/95 border border-amber-500/30 space-y-2.5 chat-box-enter shadow-2xl backdrop-blur-xl">
               <div className="flex items-center justify-between text-xs text-neutral-400 font-semibold border-b border-neutral-800 pb-2">
                 <span className="flex items-center gap-1.5">
                   <MessageSquare className="w-3.5 h-3.5 text-amber-400" />

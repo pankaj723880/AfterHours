@@ -11734,7 +11734,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           role="region"
           aria-label="Audio player mini bar"
           onClick={() => handleOpenExpandedPlayer('player')}
-          className={`fixed md:relative z-40 transition-all duration-300 ease-in-out select-none cursor-pointer ${showQueuePanel ? 'hidden' : 'block'}
+          className={`fixed md:relative z-40 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] select-none cursor-pointer ${showQueuePanel ? 'hidden' : 'block'}
             bottom-[calc(3.75rem+max(0.5rem,var(--safe-area-bottom,0px),env(safe-area-inset-bottom,0px)))] left-1/2 -translate-x-1/2
             rounded-2xl border border-amber-500/30 hover:border-amber-500/50 bg-neutral-950/95 backdrop-blur-2xl
             shadow-[0_10px_35px_rgba(0,0,0,0.8),0_0_20px_rgba(var(--accent-rgb,245,158,11),0.06)]
@@ -12054,7 +12054,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               : 'max(var(--safe-area-top, 0px), env(safe-area-inset-top, 0px))',
             paddingBottom: 'max(var(--safe-area-bottom, 0px), env(safe-area-inset-bottom, 0px))'
           }}
-          className="fixed inset-0 z-[120] bg-neutral-950 flex flex-col md:flex-row overflow-hidden animate-fadeIn"
+          className="fixed inset-0 z-[120] bg-neutral-950 flex flex-col md:flex-row overflow-hidden drawer-enter"
         >
           {/* Mobile Tab Header with Segmented Switcher & Close Button */}
           <div className="md:hidden flex items-center justify-between px-3 py-1.5 border-b border-neutral-800/80 bg-neutral-900/95 backdrop-blur-xl shrink-0 z-50">

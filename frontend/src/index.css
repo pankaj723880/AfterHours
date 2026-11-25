@@ -3,12 +3,14 @@
 @theme {
   --font-sans: 'Inter', sans-serif;
   --font-display: 'Outfit', sans-serif;
-  --animate-scaleIn: scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  --animate-fadeIn: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  --animate-slideUp: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-scaleIn: scaleIn 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-scaleUp: scaleUp 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-fadeIn: fadeIn 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-slideUp: slideUp 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-drawerUp: drawerUp 0.24s cubic-bezier(0.22, 1, 0.36, 1);
   --animate-floatUp: floatUp 2.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  --animate-pageTransition: pageTransitionEnter 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-pageTransition: pageTransitionEnter 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
 
   @keyframes floatUp {
     0% {
@@ -36,48 +38,72 @@
   @keyframes pageTransitionEnter {
     0% {
       opacity: 0;
-      transform: translateY(6px);
+      transform: translate3d(0, 4px, 0);
     }
 
     100% {
       opacity: 1;
-      transform: translateY(0);
+      transform: translate3d(0, 0, 0);
     }
   }
 
   @keyframes scaleIn {
     0% {
       opacity: 0;
-      transform: scale(0.95) translateY(10px);
+      transform: translate3d(0, 6px, 0) scale(0.96);
     }
 
     100% {
       opacity: 1;
-      transform: scale(1) translateY(0);
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @keyframes scaleUp {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, 8px, 0) scale(0.95);
+    }
+
+    100% {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
     }
   }
 
   @keyframes fadeIn {
     0% {
       opacity: 0;
-      transform: translateY(5px);
+      transform: translate3d(0, 4px, 0);
     }
 
     100% {
       opacity: 1;
-      transform: translateY(0);
+      transform: translate3d(0, 0, 0);
     }
   }
 
   @keyframes slideUp {
     0% {
       opacity: 0;
-      transform: translateY(20px);
+      transform: translate3d(0, 16px, 0);
     }
 
     100% {
       opacity: 1;
-      transform: translateY(0);
+      transform: translate3d(0, 0, 0);
+    }
+  }
+
+  @keyframes drawerUp {
+    0% {
+      opacity: 0.7;
+      transform: translate3d(0, 100%, 0);
+    }
+
+    100% {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
     }
   }
 
@@ -348,15 +374,45 @@ html, body {
   }
 }
 
-/* Fast, smooth page transition (180ms fade + subtle slide) */
+/* Fast, smooth page transition (180ms fade + GPU-composited subtle slide) */
 .page-transition {
-  animation: pageTransitionEnter 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: pageTransitionEnter 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
   will-change: opacity, transform;
+  transform: translateZ(0);
+}
+
+/* Fast modal, drawer, and interactive easing primitives */
+.modal-enter {
+  animation: scaleUp 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: opacity, transform;
+  transform: translateZ(0);
+}
+
+.drawer-enter {
+  animation: drawerUp 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: opacity, transform;
+  transform: translateZ(0);
+}
+
+.chat-box-enter {
+  animation: scaleIn 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: opacity, transform;
+  transform: translateZ(0);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .page-transition {
+  .page-transition,
+  .modal-enter,
+  .drawer-enter,
+  .chat-box-enter,
+  .animate-fadeIn,
+  .animate-scaleUp,
+  .animate-scaleIn,
+  .animate-slideUp,
+  .animate-drawerUp,
+  .animate-floatUp {
     animation: none !important;
+    transition: none !important;
     opacity: 1 !important;
     transform: none !important;
   }
