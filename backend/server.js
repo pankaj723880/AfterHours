@@ -665,7 +665,32 @@ io.on('connection', (socket) => {
 
       const activeRoomId = persistentRoom.roomId;
       socket.join(`room_${activeRoomId}`);
-      socket.emit('room:state', persistentRoom);
+
+      // Compute live playback snapshot with canonical server position
+      const now = Date.now();
+      let calculatedPositionSec = persistentRoom.seekTime || 0;
+      if (persistentRoom.isPlaying && persistentRoom.playbackState?.anchorServerTimeMs) {
+        const elapsedSec = Math.max(0, (now - persistentRoom.playbackState.anchorServerTimeMs) / 1000);
+        calculatedPositionSec += elapsedSec * (persistentRoom.playbackState.playbackRate || 1.0);
+      } else if (persistentRoom.isPlaying && persistentRoom.playbackUpdatedAt) {
+        const elapsedSec = Math.max(0, (now - new Date(persistentRoom.playbackUpdatedAt).getTime()) / 1000);
+        calculatedPositionSec += elapsedSec;
+      }
+
+      const roomSnapshot = {
+        ...persistentRoom,
+        calculatedPositionSec,
+        serverTimeMs: now,
+        playbackState: {
+          trackId: persistentRoom.currentSong?.id || persistentRoom.currentSong?.videoId || '',
+          isPlaying: Boolean(persistentRoom.isPlaying),
+          positionMs: Math.round(calculatedPositionSec * 1000),
+          anchorServerTimeMs: now,
+          playbackRate: persistentRoom.playbackState?.playbackRate || 1.0
+        }
+      };
+
+      socket.emit('room:state', roomSnapshot);
       io.to(`room_${activeRoomId}`).emit('room:members:updated', {
         roomId: activeRoomId,
         members: persistentRoom.members
@@ -836,14 +861,15 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Collaborative room playback sync (Upgraded Listen-Along sync)
-  socket.on('room:playback:sync', async ({ roomId, currentSong, isPlaying, seekTime, user }, callback) => {
+  // Collaborative room playback sync (Upgraded Listen-Along sync with canonical server state)
+  socket.on('room:playback:sync', async ({ roomId, currentSong, isPlaying, seekTime, playbackRate = 1.0, user }, callback) => {
     try {
       if (!roomId) return;
       const res = await collaborativeRoomService.syncPlaybackState(roomId, {
         currentSong,
         isPlaying,
         seekTime,
+        playbackRate,
         user
       });
       // Also update playback session state for accurate mid-song sync
@@ -863,19 +889,159 @@ io.on('connection', (socket) => {
         });
       }
 
-      // Broadcast to room members (timestamp for elapsed time adjustment)
+      // Broadcast canonical server-timestamped sync to room members
+      const serverNow = Date.now();
       socket.to(`room_${roomId}`).emit('room:playback:sync', {
         roomId,
         currentSong: res.currentSong,
         isPlaying: res.isPlaying,
         seekTime: res.seekTime,
-        timestamp: Date.now(),
+        playbackRate: res.playbackState?.playbackRate || playbackRate || 1.0,
+        positionMs: res.playbackState?.positionMs || Math.round((res.seekTime || 0) * 1000),
+        anchorServerTimeMs: res.playbackState?.anchorServerTimeMs || serverNow,
+        timestamp: serverNow,
         sender: user?.displayName || user?.username || 'Host'
       });
       if (typeof callback === 'function') callback({ success: true, ...res });
     } catch (e) {
       if (typeof callback === 'function') callback({ success: false, error: e.message });
     }
+  });
+
+  // Room Queue & Permission Handlers
+  socket.on('room:permission:update', async ({ roomId, permissionMode, user }, callback) => {
+    try {
+      if (!roomId || !permissionMode) return;
+      const res = await collaborativeRoomService.updatePermissionMode(roomId, permissionMode, user);
+      io.to(`room_${roomId}`).emit('room:permission:updated', {
+        roomId,
+        permissionMode: res.permissionMode
+      });
+      io.to(`room_${roomId}`).emit('room:activities:updated', {
+        roomId,
+        activities: res.room.activities
+      });
+      if (typeof callback === 'function') callback({ success: true, permissionMode: res.permissionMode });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  });
+
+  socket.on('room:queue:add', async ({ roomId, track, user }, callback) => {
+    try {
+      if (!roomId || !track) return;
+      const res = await collaborativeRoomService.addQueueTrack(roomId, { track, user });
+      io.to(`room_${roomId}`).emit('room:queue:updated', {
+        roomId,
+        queue: res.queue
+      });
+      io.to(`room_${roomId}`).emit('room:activities:updated', {
+        roomId,
+        activities: res.room.activities
+      });
+      if (typeof callback === 'function') callback({ success: true, queueItem: res.queueItem, queue: res.queue });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  });
+
+  socket.on('room:queue:playNext', async ({ roomId, track, user }, callback) => {
+    try {
+      if (!roomId || !track) return;
+      const res = await collaborativeRoomService.addPlayNextTrack(roomId, { track, user });
+      io.to(`room_${roomId}`).emit('room:queue:updated', {
+        roomId,
+        queue: res.queue
+      });
+      io.to(`room_${roomId}`).emit('room:activities:updated', {
+        roomId,
+        activities: res.room.activities
+      });
+      if (typeof callback === 'function') callback({ success: true, queueItem: res.queueItem, queue: res.queue });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  });
+
+  socket.on('room:queue:reorder', async ({ roomId, queue, user }, callback) => {
+    try {
+      if (!roomId || !Array.isArray(queue)) return;
+      const res = await collaborativeRoomService.reorderQueue(roomId, queue, user);
+      io.to(`room_${roomId}`).emit('room:queue:updated', {
+        roomId,
+        queue: res.queue
+      });
+      if (typeof callback === 'function') callback({ success: true, queue: res.queue });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  });
+
+  socket.on('room:queue:vote', async ({ roomId, queueItemId, user }, callback) => {
+    try {
+      if (!roomId || !queueItemId) return;
+      const res = await collaborativeRoomService.toggleQueueVote(roomId, queueItemId, user);
+      io.to(`room_${roomId}`).emit('room:queue:updated', {
+        roomId,
+        queue: res.queue
+      });
+      if (typeof callback === 'function') callback({ success: true, ...res });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  });
+
+  socket.on('room:queue:remove', async ({ roomId, queueItemId, user }, callback) => {
+    try {
+      if (!roomId || !queueItemId) return;
+      const res = await collaborativeRoomService.removeQueueTrack(roomId, queueItemId, user);
+      io.to(`room_${roomId}`).emit('room:queue:updated', {
+        roomId,
+        queue: res.queue
+      });
+      if (typeof callback === 'function') callback({ success: true, removedId: res.removedId });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  });
+
+  socket.on('room:queue:popNext', async ({ roomId }, callback) => {
+    try {
+      if (!roomId) return;
+      const res = await collaborativeRoomService.popNextQueueTrack(roomId);
+      if (res && res.nextTrack) {
+        io.to(`room_${roomId}`).emit('room:queue:updated', {
+          roomId,
+          queue: res.queue
+        });
+        io.to(`room_${roomId}`).emit('room:playback:sync', {
+          roomId,
+          currentSong: res.nextTrack,
+          isPlaying: true,
+          seekTime: 0,
+          playbackRate: 1.0,
+          positionMs: 0,
+          anchorServerTimeMs: Date.now(),
+          timestamp: Date.now(),
+          sender: 'Queue Auto-Advance'
+        });
+        if (typeof callback === 'function') callback({ success: true, nextTrack: res.nextTrack, queue: res.queue });
+      } else {
+        if (typeof callback === 'function') callback({ success: true, nextTrack: null });
+      }
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  });
+
+  // Member Status Sync (e.g. 'Buffering' | 'Ready' | 'Playing')
+  socket.on('room:member:status', ({ roomId, userId, status }) => {
+    if (!roomId || !userId) return;
+    socket.to(`room_${roomId}`).emit('room:member:status', {
+      roomId,
+      userId,
+      status: status || 'Ready'
+    });
   });
 
   // Collaborative room playback: Request to play song together (Ready-Check flow)
@@ -2036,23 +2202,33 @@ app.use(['/api/learning-intelligence', '/learning-intelligence'], learningRoutes
 
 // YouTube API Search with In-Memory Caching & Rotating Keys
 const searchCache = new Map();
-const SEARCH_CACHE_TTL = 12 * 60 * 60 * 1000; // 12 hours TTL
+const SEARCH_CACHE_TTL = 12 * 60 * 60 * 1000; // 12 hours TTL for general queries
+const POPULAR_SEARCH_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours TTL for high-frequency/popular queries
 const deadApiKeys = new Map(); // key -> { reason, time }
-
 const isKeyDead = (key) => {
-  if (!deadApiKeys.has(key)) return false;
-  const { reason, time } = deadApiKeys.get(key);
-  if (reason === 'invalid') return true; // permanently bad key
-  if (reason === 'quota' && Date.now() - time < 6 * 60 * 60 * 1000) return true; // 6-hour quota cooldown
-  if (reason === 'rate_limit' && Date.now() - time < 15 * 60 * 1000) return true; // 15-min 429 cooldown
-  if (reason === 'server_error' && Date.now() - time < 2 * 60 * 1000) return true; // 2-min 5xx cooldown
-  deadApiKeys.delete(key);
-  return false;
+  if (!key) return true;
+  const dead = deadApiKeys.get(key);
+  if (!dead) return false;
+  // If dead for over 15 minutes, allow retrying (e.g. rate limit window passed)
+  if (Date.now() - dead.time > 15 * 60 * 1000 && dead.reason !== 'invalid') {
+    deadApiKeys.delete(key);
+    return false;
+  }
+  return true;
 };
 
-const getCachedSearch = (key) => {
+// Curated list of popular queries to prioritize with extended caching
+const POPULAR_QUERY_PATTERNS = [
+  /arijit/i, /bollywood/i, /punjabi/i, /lofi/i, /90s/i, /kk/i, /coke studio/i,
+  /anuv jain/i, /sufi/i, /trending/i, /hits/i, /romantic/i, /sad songs/i, /retro/i
+];
+
+const getCachedSearch = (key, queryStr = '') => {
   const cached = searchCache.get(key);
-  if (cached && Date.now() - cached.timestamp < SEARCH_CACHE_TTL) {
+  if (!cached) return null;
+  const isPopular = queryStr && POPULAR_QUERY_PATTERNS.some(p => p.test(queryStr));
+  const ttl = isPopular ? POPULAR_SEARCH_CACHE_TTL : SEARCH_CACHE_TTL;
+  if (Date.now() - cached.timestamp < ttl) {
     return cached.data;
   }
   searchCache.delete(key);
@@ -2060,7 +2236,7 @@ const getCachedSearch = (key) => {
 };
 
 const setCachedSearch = (key, data) => {
-  if (searchCache.size > 500) {
+  if (searchCache.size > 1000) {
     const oldestKey = searchCache.keys().next().value;
     searchCache.delete(oldestKey);
   }
@@ -2323,7 +2499,7 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
     } catch (e) {}
   }
 
-  const cached = getCachedSearch(cacheKey);
+  const cached = getCachedSearch(cacheKey, queryStr);
   if (cached) {
     if (Array.isArray(cached)) {
       return res.json({ items: cached, nextPageToken: null });

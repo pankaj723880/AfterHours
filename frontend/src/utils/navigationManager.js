@@ -125,6 +125,11 @@ export function parseRoute(pathname = '/', search = '') {
   if (cleanPath === '/truck') {
     return { tab: 'truck', path: '/truck', params: {} };
   }
+  if (cleanPath.startsWith('/rooms/')) {
+    const rawCode = pathname.replace(/^\/rooms\//i, '').split('/')[0].split('?')[0];
+    const decoded = decodeURIComponent(rawCode).trim().toUpperCase();
+    return { tab: 'rooms', path: `/rooms/${decoded}`, params: { room: decoded, roomCode: decoded, code: decoded } };
+  }
   if (cleanPath === '/rooms' || cleanPath === '/listening-rooms') {
     return { tab: 'rooms', path: '/rooms', params: {} };
   }

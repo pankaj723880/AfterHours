@@ -204,17 +204,21 @@ export const listeningEventService = {
         pref = new UserMusicPreference(query);
       }
 
-      const { trackId, title, artist, eventType, completionPercent, language } = event;
+      const { trackId, title, artist, eventType, completionPercent, language, genre, mood, isQuickSkip } = event;
       const cleanArtist = (artist || '').trim();
 
       // Track artist affinity
       if (cleanArtist && cleanArtist !== 'Unknown Artist' && cleanArtist !== 'Various Artists') {
         const existingArtist = pref.topArtists.find(a => a.name.toLowerCase() === cleanArtist.toLowerCase());
-        const weightDelta = eventType === 'completed' ? 3 :
+        // Quick skip penalty is harsher (-4) than standard skip (-2); likes (+5), playlist adds (+5), completed (+3)
+        const weightDelta = eventType === 'like' ? 5 :
+                            eventType === 'playlist_add' ? 5 :
                             eventType === 'repeat' ? 4 :
-                            eventType === 'like' ? 5 :
-                            eventType === 'skip' ? -2 :
-                            eventType === 'dislike' ? -5 : 1;
+                            eventType === 'completed' ? 3 :
+                            eventType === 'search_pick' ? 3 :
+                            eventType === 'chip_pick' ? 3 :
+                            eventType === 'dislike' ? -5 :
+                            eventType === 'skip' ? (isQuickSkip ? -4 : -2) : 1;
 
         if (existingArtist) {
           if (eventType === 'play_start') existingArtist.playCount += 1;
@@ -234,6 +238,35 @@ export const listeningEventService = {
         // Sort top artists descending by affinity score and keep top 25
         pref.topArtists.sort((a, b) => b.score - a.score);
         pref.topArtists = pref.topArtists.slice(0, 25);
+      }
+
+      // Track genre affinity (chip picks, search picks, or track metadata)
+      const targetGenre = genre || (title && /lo-?fi/i.test(title) ? 'Lo-Fi' : null);
+      if (targetGenre) {
+        if (!pref.topGenres) pref.topGenres = [];
+        const existingGenre = pref.topGenres.find(g => g.name.toLowerCase() === targetGenre.toLowerCase());
+        const genreDelta = (eventType === 'like' || eventType === 'chip_pick') ? 4 : (eventType === 'completed' ? 2 : 1);
+        if (existingGenre) {
+          existingGenre.score += genreDelta;
+        } else {
+          pref.topGenres.push({ name: targetGenre, score: genreDelta });
+        }
+        pref.topGenres.sort((a, b) => b.score - a.score);
+        pref.topGenres = pref.topGenres.slice(0, 10);
+      }
+
+      // Track mood affinity
+      if (mood) {
+        if (!pref.topMoods) pref.topMoods = [];
+        const existingMood = pref.topMoods.find(m => m.name.toLowerCase() === mood.toLowerCase());
+        const moodDelta = eventType === 'chip_pick' ? 5 : 2;
+        if (existingMood) {
+          existingMood.score += moodDelta;
+        } else {
+          pref.topMoods.push({ name: mood, score: moodDelta });
+        }
+        pref.topMoods.sort((a, b) => b.score - a.score);
+        pref.topMoods = pref.topMoods.slice(0, 10);
       }
 
       // Track language affinity

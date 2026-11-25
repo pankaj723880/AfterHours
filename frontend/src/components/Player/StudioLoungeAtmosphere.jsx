@@ -96,12 +96,12 @@ export default function StudioLoungeAtmosphere({ isPlaying = false, theme }) {
   }, [isPlaying, showParticles, rgb.r, rgb.g, rgb.b]);
 
   return (
-    <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden select-none">
+    <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden select-none will-change-[opacity,transform]">
       {/* 3D Dynamic Mesh: Stage Spotlights & Plinth Halo */}
       {showMesh && (
         <>
           <div 
-            className="absolute -top-32 left-1/4 w-96 h-96 rounded-full blur-[120px] transition-opacity duration-1000"
+            className="absolute -top-32 left-1/4 w-96 h-96 rounded-full blur-[120px] transition-opacity duration-1000 transform-gpu will-change-transform"
             style={{
               background: isPlaying 
                 ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.16)` 
@@ -109,7 +109,7 @@ export default function StudioLoungeAtmosphere({ isPlaying = false, theme }) {
             }}
           />
           <div 
-            className="absolute -top-32 right-1/4 w-96 h-96 rounded-full blur-[120px] transition-opacity duration-1000"
+            className="absolute -top-32 right-1/4 w-96 h-96 rounded-full blur-[120px] transition-opacity duration-1000 transform-gpu will-change-transform"
             style={{
               background: isPlaying 
                 ? `rgba(${Math.min(rgb.r + 20, 255)}, ${Math.max(rgb.g - 20, 0)}, ${rgb.b}, 0.12)` 
@@ -119,7 +119,7 @@ export default function StudioLoungeAtmosphere({ isPlaying = false, theme }) {
 
           {/* Center Plinth Backlight Halo */}
           <div 
-            className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[600px] h-[350px] rounded-full blur-[140px] transition-all duration-1000"
+            className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[600px] h-[350px] rounded-full blur-[140px] transition-all duration-1000 transform-gpu will-change-transform"
             style={{
               background: isPlaying 
                 ? `radial-gradient(circle, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.18) 0%, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.06) 50%, transparent 80%)` 
@@ -133,7 +133,7 @@ export default function StudioLoungeAtmosphere({ isPlaying = false, theme }) {
       {showParticles && (
         <canvas 
           ref={canvasRef} 
-          className="absolute inset-0 w-full h-full opacity-70"
+          className="absolute inset-0 w-full h-full opacity-70 transform-gpu"
         />
       )}
     </div>

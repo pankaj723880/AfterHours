@@ -138,6 +138,14 @@ const NON_MUSIC_PATTERNS = {
     /\bzumba\b/i,
     /\bfitness\s+dance\b/i,
     /\bdancers?\b/i,
+    // Off-topic brand films, commercial ads, and automotive/car videos
+    /\b(brand\s+film|commercial\s+ad|advertisement|tv\s+commercial|sponsored\s+ad|promotional\s+video)\b/i,
+    /\b(car\s+review|walkaround\s+review|test\s+drive|mileage\s+test|ownership\s+review|drag\s+race|car\s+buying|buying\s+permission|used\s+cars?)\b/i,
+    /\b(cars24|spinny|cardekho|carwale|zigwheels|motoroctane)\b/i,
+    // Nursery rhymes and kids animations
+    /\b(nursery\s+rhymes?|kids\s+rhymes?|rhymes\s+for\s+kids|kids\s+songs?|balgeet|bal\s+geet)\b/i,
+    /\b(aloo\s+kacha[lu]oo?|machli\s+jal\s+ki\s+rani|chanda\s+mama|lakdi\s+ki\s+kathi|johny\s+johny)\b/i,
+    /\b(cocomelon|chuchu\s*tv|infobells|baby\s*bus|peppa\s*pig|chhota\s+bheem|motu\s+patlu)\b/i,
     /\bringtonix\b/i,
     /\bsayyed\s+ismail\b/i,
     /\bfact\s+boy\b/i,

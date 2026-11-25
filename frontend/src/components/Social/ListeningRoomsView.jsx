@@ -99,6 +99,7 @@ export default function ListeningRoomsView({
   const [isListenTogetherMenuOpen, setIsListenTogetherMenuOpen] = useState(false);
   const [openTrackMenuId, setOpenTrackMenuId] = useState(null);
   const [copiedCodeNotice, setCopiedCodeNotice] = useState(false);
+  const [isMemberPopoverOpen, setIsMemberPopoverOpen] = useState(false);
   
   // Workspace tabs
   const [activeTab, setActiveTab] = useState('playlists'); // 'playlists' | 'activity' | 'members'
@@ -154,6 +155,23 @@ export default function ListeningRoomsView({
     }
   };
 
+  const handleCopyInviteLink = (code) => {
+    if (!code) return;
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const inviteLink = `${origin}/rooms/${encodeURIComponent(code)}`;
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(inviteLink).then(() => {
+        setCopiedLink(true);
+        setTimeout(() => setCopiedLink(false), 2000);
+        if (showToast) showToast('Invite link copied to clipboard!');
+      }).catch(() => {
+        if (showToast) showToast(inviteLink);
+      });
+    } else if (showToast) {
+      showToast(inviteLink);
+    }
+  };
+
   // Helper to deduplicate members by userId
   const getUniqueMembers = (mList) => {
     if (!Array.isArray(mList)) return [];
@@ -175,6 +193,8 @@ export default function ListeningRoomsView({
   const currentMember = (participants || []).find(m => 
     m.userId && currentUserId && String(m.userId) === String(currentUserId)
   );
+  const hostMember = (participants || []).find(m => m.role === 'host') || 
+    (activeRoom?.createdBy?.userId ? { displayName: activeRoom.createdBy.displayName || activeRoom.createdBy.username, userId: activeRoom.createdBy.userId, role: 'host' } : null);
   const userRole = currentMember?.role || (activeRoom?.createdBy?.userId === currentUserId ? 'host' : 'listener');
   const isHost = userRole === 'host';
   const isCoHost = userRole === 'co-host' || isHost;
@@ -1363,15 +1383,96 @@ export default function ListeningRoomsView({
     }
   };
 
-  // 8. Send Live Emoji Reaction
+  // 8. Send Live Emoji Reaction (Throttled to 350ms to prevent flood/lag)
   const handleSendReaction = (emoji) => {
     if (!activeRoom) return;
+    const now = Date.now();
+    if (now - (lastReactionTimeRef.current || 0) < 350) return;
+    lastReactionTimeRef.current = now;
+
     const rId = activeRoom.roomId || activeRoom.id;
     if (socket) {
       socket.emit('room:react', {
         roomId: rId,
         emoji,
-        user: { displayName: user?.displayName || user?.username || 'Listener' }
+        user: { 
+          displayName: user?.displayName || user?.username || 'Listener',
+          username: user?.username || 'Listener',
+          avatarUrl: user?.avatarUrl || ''
+        }
+      });
+    }
+  };
+
+  // Queue Handlers
+  const handleAddTrackToQueue = (track) => {
+    if (!activeRoom || !track) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+    if (socket) {
+      socket.emit('room:queue:add', { roomId: rId, track, user }, (res) => {
+        if (res && res.success) {
+          if (showToast) showToast(`Added "${track.title}" to Room Queue`);
+          setIsAddingQueueSong(false);
+          setQueueSearchQuery('');
+        } else if (res && res.error) {
+          if (showToast) showToast(res.error, 'warning');
+        }
+      });
+    }
+  };
+
+  const handlePlayNextInRoom = (track) => {
+    if (!activeRoom || !track) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+    if (socket) {
+      socket.emit('room:queue:playNext', { roomId: rId, track, user }, (res) => {
+        if (res && res.success) {
+          if (showToast) showToast(`Set "${track.title}" to Play Next in Room`);
+          setIsAddingQueueSong(false);
+          setQueueSearchQuery('');
+        } else if (res && res.error) {
+          if (showToast) showToast(res.error, 'warning');
+        }
+      });
+    }
+  };
+
+  const handleReorderRoomQueue = (newQueue) => {
+    if (!activeRoom || !Array.isArray(newQueue)) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+    if (socket) {
+      socket.emit('room:queue:reorder', { roomId: rId, queue: newQueue, user }, (res) => {
+        if (res && res.error) {
+          if (showToast) showToast(res.error, 'warning');
+        }
+      });
+    }
+  };
+
+  const handleToggleQueueVote = (queueItemId) => {
+    if (!activeRoom || !queueItemId) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+    if (socket) {
+      socket.emit('room:queue:vote', { roomId: rId, queueItemId, user });
+    }
+  };
+
+  const handleRemoveQueueItem = (queueItemId) => {
+    if (!activeRoom || !queueItemId) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+    if (socket) {
+      socket.emit('room:queue:remove', { roomId: rId, queueItemId, user });
+    }
+  };
+
+  const handleUpdatePermissionMode = (newMode) => {
+    if (!activeRoom || !isHost) return;
+    const rId = activeRoom.roomId || activeRoom.id;
+    if (socket) {
+      socket.emit('room:permission:update', { roomId: rId, permissionMode: newMode, user }, (res) => {
+        if (res && res.success) {
+          setRoomPermissionMode(newMode);
+        }
       });
     }
   };
@@ -1926,7 +2027,7 @@ export default function ListeningRoomsView({
   });
 
   return (
-    <div className="page-transition w-full px-2 sm:px-4 md:px-8 space-y-6 relative z-10 pb-32">
+    <div className={`page-transition w-full px-2 sm:px-4 md:px-8 space-y-6 relative z-10 ${currentSong ? 'pb-44 sm:pb-48 md:pb-32' : 'pb-28 sm:pb-32 md:pb-16'}`}>
       {/* Floating live emoji reactions layer */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden z-50">
         {floatingReactions.map(r => (
@@ -2121,9 +2222,9 @@ export default function ListeningRoomsView({
 
           {/* Quick Active Room Members Strip */}
           <div 
-            onClick={() => setActiveTab('members')}
+            onClick={() => setIsMemberPopoverOpen(true)}
             className="p-2.5 sm:p-3 rounded-2xl bg-neutral-900/60 border border-neutral-800/80 hover:border-neutral-700 transition flex items-center justify-between gap-3 cursor-pointer group"
-            title="Click to view full Members list"
+            title="Click to view Room Members & invite code"
           >
             <div className="flex items-center gap-2.5 overflow-x-auto py-0.5 scrollbar-none">
               <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider shrink-0 flex items-center gap-1.5">
@@ -2157,9 +2258,16 @@ export default function ListeningRoomsView({
                 </span>
               )}
             </div>
-            <span className="text-[11px] text-amber-400 font-semibold group-hover:underline shrink-0">
-              View All ({participants.length}) →
-            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsMemberPopoverOpen(true);
+              }}
+              className="text-[11px] text-amber-400 font-semibold hover:underline shrink-0 flex items-center gap-0.5 cursor-pointer"
+            >
+              <span>View All ({participants.length}) →</span>
+            </button>
           </div>
 
           {/* Minimal Listen Together Card With Three-Dot (⋮) Menu */}
@@ -2194,7 +2302,7 @@ export default function ListeningRoomsView({
                   </div>
                   <p className="text-[11px] text-neutral-400 truncate">
                     {isRoomPlaybackSyncEnabled 
-                      ? 'Active: Auto-syncs with host audio & seek' 
+                      ? (isHost ? 'Synced with Room · Broadcasting Live' : `Synced with Host (${hostMember?.displayName || activeRoom?.createdBy?.displayName || 'Host'}) · Live`)
                       : 'Off: Listen independently to any song'}
                   </p>
                 </div>
@@ -2413,19 +2521,19 @@ export default function ListeningRoomsView({
           )}
 
           {/* Navigation Sub-Tabs: Playlists, Activity Feed, Members */}
-          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-neutral-900/80 border border-neutral-800/80">
+          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-neutral-900/80 border border-neutral-800/80 overflow-x-auto scrollbar-none w-full max-w-full">
             {isUiVisible('card.roomPlaylists') && (
               <button
                 type="button"
                 onClick={() => setActiveTab('playlists')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`flex-1 min-w-[90px] py-2 px-2.5 sm:px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
                   activeTab === 'playlists'
                     ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
                     : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
                 }`}
               >
                 <Music className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">Room Playlists ({(roomPlaylists || []).length})</span>
+                <span className="truncate">Playlists ({(roomPlaylists || []).length})</span>
               </button>
             )}
 
@@ -2436,14 +2544,14 @@ export default function ListeningRoomsView({
                   setActiveTab('activity');
                   setUnreadActivityCount(0);
                 }}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer relative ${
+                className={`flex-1 min-w-[85px] py-2 px-2.5 sm:px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer relative whitespace-nowrap shrink-0 ${
                   activeTab === 'activity'
                     ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
                     : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
                 }`}
               >
                 <Radio className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">Live Activity</span>
+                <span className="truncate">Activity</span>
                 {unreadActivityCount > 0 && (
                   <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping ml-0.5" />
                 )}
@@ -2454,7 +2562,7 @@ export default function ListeningRoomsView({
               <button
                 type="button"
                 onClick={() => setActiveTab('members')}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`flex-1 min-w-[95px] py-2 px-2.5 sm:px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
                   activeTab === 'members'
                     ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
                     : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
@@ -2475,16 +2583,23 @@ export default function ListeningRoomsView({
                   <span className="text-xs font-bold text-neutral-300 uppercase tracking-wider">Playlists</span>
                   <button
                     type="button"
-                    onClick={() => setSortByVotes(!sortByVotes)}
-                    className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold border flex items-center gap-1 transition cursor-pointer active:scale-95 ${
+                    onClick={() => {
+                      const next = !sortByVotes;
+                      setSortByVotes(next);
+                      if (showToast) {
+                        showToast(next ? '👍 Sorting tracks by upvotes' : '🎵 Default playlist order');
+                      }
+                    }}
+                    className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold border flex items-center gap-1.5 transition cursor-pointer active:scale-95 ${
                       sortByVotes 
-                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' 
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm' 
                         : 'bg-neutral-800/80 text-neutral-400 hover:text-white border-neutral-700/60'
                     }`}
-                    title="Toggle sorting songs by vote count"
+                    title={sortByVotes ? "Active: Songs sorted by highest upvotes. Click for default order." : "Click to sort songs by most upvotes."}
+                    aria-label="Sort tracks by upvotes"
                   >
-                    <ArrowUpDown className="w-3 h-3" />
-                    <span>{sortByVotes ? 'Upvotes' : 'Default'}</span>
+                    <ArrowUpDown className="w-3 h-3 text-amber-400" />
+                    <span>{sortByVotes ? 'Sort: Upvotes' : 'Sort: Default'}</span>
                   </button>
                 </div>
 
@@ -2508,7 +2623,7 @@ export default function ListeningRoomsView({
                       className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs border border-amber-500/40 transition flex items-center gap-1 cursor-pointer active:scale-95"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      <span>{isCreatingPlaylist ? 'Cancel' : '+ New Room Playlist'}</span>
+                      <span>{isCreatingPlaylist ? 'Cancel' : 'New Room Playlist'}</span>
                     </button>
                   )}
                 </div>
@@ -2571,31 +2686,7 @@ export default function ListeningRoomsView({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      {(isHost || isCoHost) && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteRoomPlaylist(activeSelectedPlaylist)}
-                          className="px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center gap-1.5 font-semibold text-[11px] transition cursor-pointer active:scale-95"
-                          title="Delete this room playlist"
-                        >
-                          <Trash2 className="w-3 h-3 text-rose-400" />
-                          <span>Delete Playlist</span>
-                        </button>
-                      )}
-
-                      {isUiVisible('btn.saveToLibrary') && (
-                        <button
-                          type="button"
-                          onClick={() => handleForkPlaylist(activeSelectedPlaylist)}
-                          className="px-2.5 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 flex items-center gap-1.5 font-semibold text-[11px] transition cursor-pointer active:scale-95"
-                          title="Copy all songs from this room playlist to your personal library"
-                        >
-                          <Copy className="w-3 h-3 text-amber-400" />
-                          <span>Save to My Library</span>
-                        </button>
-                      )}
-
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
                       {activeSelectedPlaylist.songs?.length > 0 && (
                         <button
                           type="button"
@@ -2605,27 +2696,70 @@ export default function ListeningRoomsView({
                               handleRoomSongClick(s);
                             }
                           }}
-                          className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/20 active:scale-95"
+                          className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/20 active:scale-95"
                         >
                           <Play className="w-3.5 h-3.5 fill-current" />
                           <span>Play All</span>
                         </button>
+                      )}
+
+                      {isUiVisible('btn.saveToLibrary') && (
+                        <button
+                          type="button"
+                          onClick={() => handleForkPlaylist(activeSelectedPlaylist)}
+                          className="px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 flex items-center gap-1.5 font-semibold text-[11px] transition cursor-pointer active:scale-95"
+                          title="Copy all songs from this room playlist to your personal library"
+                        >
+                          <Copy className="w-3 h-3 text-amber-400" />
+                          <span>Save to My Library</span>
+                        </button>
+                      )}
+
+                      {(isHost || isCoHost) && (
+                        <div className="flex items-center pl-1 sm:border-l sm:border-neutral-800">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRoomPlaylist(activeSelectedPlaylist)}
+                            className="px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 flex items-center gap-1.5 font-semibold text-[11px] transition cursor-pointer active:scale-95"
+                            title="Delete this room playlist"
+                          >
+                            <Trash2 className="w-3 h-3 text-rose-400" />
+                            <span>Delete Playlist</span>
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
 
                   {/* Songs List */}
                   {(!activeSelectedPlaylist.songs || activeSelectedPlaylist.songs.length === 0) ? (
-                    <div className="text-center py-10 text-neutral-500 text-xs border border-dashed border-neutral-800 rounded-xl space-y-2">
+                    <div className="text-center py-10 text-neutral-500 text-xs border border-dashed border-neutral-800 rounded-xl space-y-3 px-4">
                       <Music className="w-8 h-8 text-neutral-600 mx-auto" />
-                      <p className="font-semibold text-neutral-300">This room playlist is empty</p>
-                      <p className="text-[11px] text-neutral-400 max-w-sm mx-auto">
-                        Add songs using the global <span className="text-amber-400 font-bold">"Add to Playlist"</span> menu on any song in Loopra and select the Room tab!
-                      </p>
+                      <div>
+                        <p className="font-semibold text-neutral-300">This room playlist is empty</p>
+                        <p className="text-[11px] text-neutral-400 max-w-sm mx-auto mt-1">
+                          0 tracks · Tap below or use the global <span className="text-amber-400 font-bold">"Add to Playlist"</span> menu on any song in Loopra!
+                        </p>
+                      </div>
+                      {onOpenAddToPlaylist && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenAddToPlaylist(currentSong || null)}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold text-xs transition active:scale-95 cursor-pointer shadow-sm"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>+ Add Song to Playlist</span>
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1 scrollbar-thin">
-                      {(activeSelectedPlaylist.songs || []).map((song, idx) => {
+                      {([...(activeSelectedPlaylist.songs || [])].sort((a, b) => {
+                        if (!sortByVotes) return 0;
+                        const vA = (a.votes && a.votes.length) || 0;
+                        const vB = (b.votes && b.votes.length) || 0;
+                        return vB - vA;
+                      })).map((song, idx) => {
                         const songId = song.id || song.videoId || `track_${idx}`;
                         const voteCount = song.votes ? song.votes.length : 0;
                         const hasVoted = song.votes && song.votes.includes(currentUserId);
@@ -2769,41 +2903,43 @@ export default function ListeningRoomsView({
                 </div>
               ) : (
                 /* PLAYLIST CARD GRID (Matching Personal Playlists page) */
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4 mt-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 sm:gap-4 mt-2">
                   {/* Card 1: Create New Playlist Action Card */}
                   <div
                     onClick={() => setIsCreatingPlaylist(true)}
-                    className="p-4 rounded-2xl border border-dashed border-amber-500/35 bg-gradient-to-br from-amber-500/10 via-neutral-900/40 to-neutral-950/80 hover:border-amber-400 hover:bg-amber-500/15 active:scale-[0.98] cursor-pointer flex flex-col items-center justify-center gap-2.5 transition-all group text-center aspect-square shadow-lg backdrop-blur-md"
+                    className="p-3 sm:p-4 rounded-2xl border border-dashed border-amber-500/35 bg-gradient-to-br from-amber-500/10 via-neutral-900/40 to-neutral-950/80 hover:border-amber-400 hover:bg-amber-500/15 active:scale-[0.98] cursor-pointer flex flex-col items-center justify-center gap-2 sm:gap-2.5 transition-all group text-center aspect-square shadow-lg backdrop-blur-md"
                   >
-                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-amber-500/20 border border-amber-400/30 text-amber-400 group-hover:scale-110 flex items-center justify-center transition shadow-[0_0_15px_rgba(245,158,11,0.2)]">
-                      <Plus className="w-6 h-6" />
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-amber-500/20 border border-amber-400/30 text-amber-400 group-hover:scale-110 flex items-center justify-center transition shadow-[0_0_15px_rgba(245,158,11,0.2)] shrink-0">
+                      <Plus className="w-5 h-5 sm:w-6 sm:h-6" />
                     </div>
-                    <div>
-                      <h3 className="font-black text-white text-xs sm:text-sm truncate w-full group-hover:text-amber-300 transition">
+                    <div className="w-full px-1">
+                      <h3 className="font-black text-white text-[11px] sm:text-sm truncate w-full group-hover:text-amber-300 transition">
                         New Playlist
                       </h3>
-                      <p className="text-[10px] text-amber-400/80 font-mono mt-0.5">+ Shared List</p>
+                      <p className="text-[9px] sm:text-[10px] text-amber-400/90 font-mono mt-0.5 truncate">+ Shared List</p>
                     </div>
                   </div>
 
                   {/* Card 2: Import My Playlists Action Card */}
                   <div
                     onClick={() => setIsImportModalOpen(true)}
-                    className="p-4 rounded-2xl border border-dashed border-purple-500/35 bg-gradient-to-br from-purple-500/10 via-neutral-900/40 to-neutral-950/80 hover:border-purple-400 hover:bg-purple-500/15 active:scale-[0.98] cursor-pointer flex flex-col items-center justify-center gap-2.5 transition-all group text-center aspect-square shadow-lg backdrop-blur-md"
+                    className="p-3 sm:p-4 rounded-2xl border border-dashed border-purple-500/35 bg-gradient-to-br from-purple-500/10 via-neutral-900/40 to-neutral-950/80 hover:border-purple-400 hover:bg-purple-500/15 active:scale-[0.98] cursor-pointer flex flex-col items-center justify-center gap-2 sm:gap-2.5 transition-all group text-center aspect-square shadow-lg backdrop-blur-md"
                   >
-                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-purple-500/20 border border-purple-400/30 text-purple-400 group-hover:scale-110 flex items-center justify-center transition shadow-[0_0_15px_rgba(168,85,247,0.2)]">
-                      <FolderPlus className="w-6 h-6" />
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-purple-500/20 border border-purple-400/30 text-purple-400 group-hover:scale-110 flex items-center justify-center transition shadow-[0_0_15px_rgba(168,85,247,0.2)] shrink-0">
+                      <FolderPlus className="w-5 h-5 sm:w-6 sm:h-6" />
                     </div>
-                    <div>
-                      <h3 className="font-black text-white text-xs sm:text-sm truncate w-full group-hover:text-purple-300 transition">
+                    <div className="w-full px-1">
+                      <h3 className="font-black text-white text-[11px] sm:text-sm truncate w-full group-hover:text-purple-300 transition">
                         Import Playlists
                       </h3>
-                      <p className="text-[10px] text-purple-400/80 font-mono mt-0.5">Multi-Select</p>
+                      <p className="text-[9px] sm:text-[10px] text-purple-400/90 font-mono mt-0.5 truncate">Multi-Select</p>
                     </div>
                   </div>
 
                   {/* Room Playlist Cards with Cassette Vinyl / Artwork Thumbnails */}
                   {(roomPlaylists || []).map(pl => {
+                    const songCount = pl.songs?.length || 0;
+                    const isEmpty = songCount === 0;
                     const songThumbs = (pl.songs || [])
                       .slice(0, 4)
                       .map(s => s.thumbnail || (s.id || s.videoId ? `https://i.ytimg.com/vi/${s.id || s.videoId}/mqdefault.jpg` : null))
@@ -2816,18 +2952,39 @@ export default function ListeningRoomsView({
                           setSelectedPlaylistId(pl.id);
                           setDetailedPlaylistView(true);
                         }}
-                        className="relative p-3 rounded-2xl border border-white/5 hover:border-amber-500/40 bg-gradient-to-br from-neutral-900/90 via-[#121216] to-[#0c0c0e] active:scale-[0.98] cursor-pointer flex flex-col justify-between transition-all group aspect-square shadow-xl backdrop-blur-md overflow-hidden"
+                        className="relative p-2.5 sm:p-3 rounded-2xl border border-white/5 hover:border-amber-500/40 bg-gradient-to-br from-neutral-900/90 via-[#121216] to-[#0c0c0e] active:scale-[0.98] cursor-pointer flex flex-col justify-between transition-all group aspect-square shadow-xl backdrop-blur-md overflow-hidden"
                       >
                         {/* Ambient glow on hover */}
                         <div className="absolute inset-0 bg-amber-500/0 group-hover:bg-amber-500/5 transition-colors pointer-events-none" />
 
-                        {/* Top row: Track Count Micro-Pill & Quick Play/Fork */}
+                        {/* Top row: Track Count Micro-Pill & Quick Play/Fork/Add */}
                         <div className="flex items-center justify-between w-full relative z-10" onClick={(e) => e.stopPropagation()}>
-                          <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-neutral-800/90 text-amber-400 border border-neutral-700/60 font-semibold">
-                            {pl.songs?.length === 1 ? '1 Track' : !pl.songs?.length ? 'Empty' : `${pl.songs.length} Tracks`}
+                          <span className={`text-[9px] font-mono px-1.5 sm:px-2 py-0.5 rounded-full border font-semibold ${
+                            isEmpty 
+                              ? 'bg-amber-500/10 text-amber-300/90 border-amber-500/30' 
+                              : songCount === 1 
+                              ? 'bg-neutral-800/90 text-amber-400 border-neutral-700/60' 
+                              : 'bg-neutral-800/90 text-amber-400 border-neutral-700/60'
+                          }`}>
+                            {isEmpty ? '0 tracks' : songCount === 1 ? '1 Track' : `${songCount} Tracks`}
                           </span>
 
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {isEmpty && onOpenAddToPlaylist && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onOpenAddToPlaylist(currentSong || null);
+                                }}
+                                className="p-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition flex items-center gap-0.5 text-[9px] font-bold"
+                                title="Add song to this playlist"
+                                aria-label="Add song to this playlist"
+                              >
+                                <Plus className="w-3 h-3" />
+                                <span className="hidden sm:inline">Add</span>
+                              </button>
+                            )}
                             {(isHost || isCoHost) && (
                               <button
                                 type="button"
@@ -2876,18 +3033,18 @@ export default function ListeningRoomsView({
                         {/* Center Artwork Preview / Disc Icon */}
                         <div className="relative z-10 w-full flex items-center justify-center my-auto">
                           {songThumbs.length >= 4 ? (
-                            <div className="grid grid-cols-2 gap-1 w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden shadow-lg border border-white/10">
+                            <div className="grid grid-cols-2 gap-1 w-12 h-12 sm:w-16 sm:h-16 rounded-xl overflow-hidden shadow-lg border border-white/10">
                               {songThumbs.map((t, idx) => (
                                 <img key={idx} src={t} alt="" className="w-full h-full object-cover" />
                               ))}
                             </div>
                           ) : songThumbs.length > 0 ? (
-                            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden shadow-lg border border-amber-500/20">
+                            <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl overflow-hidden shadow-lg border border-amber-500/20">
                               <img src={songThumbs[0]} alt="" className="w-full h-full object-cover" />
                             </div>
                           ) : (
-                            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-neutral-800/80 border border-white/10 group-hover:border-amber-500/30 text-amber-400 flex items-center justify-center shadow-inner group-hover:scale-105 transition">
-                              <Disc className="w-6 h-6 sm:w-7 sm:h-7" />
+                            <div className="w-10 h-10 sm:w-14 sm:h-14 rounded-2xl bg-neutral-800/80 border border-white/10 group-hover:border-amber-500/30 text-amber-400 flex items-center justify-center shadow-inner group-hover:scale-105 transition">
+                              <Disc className="w-5 h-5 sm:w-7 sm:h-7" />
                             </div>
                           )}
                         </div>
@@ -2897,7 +3054,9 @@ export default function ListeningRoomsView({
                           <h3 className="font-extrabold text-white text-xs sm:text-sm truncate w-full group-hover:text-amber-300 transition">
                             {pl.name}
                           </h3>
-                          <p className="text-[10px] text-zinc-400 truncate">Tap to open songs</p>
+                          <p className="text-[10px] text-zinc-400 truncate">
+                            {isEmpty ? '0 tracks · Tap to add' : 'Tap to open songs'}
+                          </p>
                         </div>
                       </div>
                     );
@@ -2907,8 +3066,8 @@ export default function ListeningRoomsView({
             </div>
           )}
 
-          {/* TAB 2: LIVE ACTIVITY FEED */}
-          {activeTab === 'activity' && isUiVisible('card.liveActivity') && (
+          {/* TAB 2: LIVE ACTIVITY */}
+          {activeTab === 'activity' && isUiVisible('card.roomActivity') && (
             <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 space-y-3">
               <div className="flex items-center justify-between">
                 <h5 className="font-bold text-white text-xs uppercase tracking-wider">Live Activity Log</h5>
@@ -3014,25 +3173,42 @@ export default function ListeningRoomsView({
                     <div key={m.userId || m.socketId} className="p-3 rounded-xl bg-neutral-950/70 border border-neutral-800 flex items-center justify-between gap-3 hover:border-neutral-700 transition">
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="relative shrink-0">
-                          <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shadow-md border ${
-                            isHostRole 
-                              ? 'bg-amber-600/30 text-amber-300 border-amber-500/50' 
-                              : isCoHostRole 
-                              ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/50' 
-                              : 'bg-neutral-800 text-neutral-200 border-neutral-700'
-                          }`}>
-                            {m.displayName ? m.displayName.charAt(0).toUpperCase() : 'U'}
-                          </div>
-                          <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-neutral-950" title="Online Live" />
+                          {m.avatar || m.avatarUrl ? (
+                            <img
+                              src={m.avatar || m.avatarUrl}
+                              alt=""
+                              className="w-9 h-9 rounded-full object-cover border border-amber-500/30"
+                              onError={(e) => { e.target.style.display = 'none'; }}
+                            />
+                          ) : (
+                            <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shadow-md border ${
+                              isHostRole 
+                                ? 'bg-amber-600/30 text-amber-300 border-amber-500/50' 
+                                : isCoHostRole 
+                                ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/50' 
+                                : 'bg-neutral-800 text-neutral-200 border-neutral-700'
+                            }`}>
+                              {m.displayName ? m.displayName.charAt(0).toUpperCase() : 'U'}
+                            </div>
+                          )}
+                          <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full ring-2 ring-neutral-950 ${
+                            memberStatuses[m.userId] === 'Buffering' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
+                          }`} title={memberStatuses[m.userId] || 'Online Live'} />
                         </div>
 
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-xs text-white truncate">{m.displayName || m.username}</span>
                             {isUser && <span className="text-[10px] text-amber-400 font-mono font-semibold">(You)</span>}
-                            <span className="inline-flex items-center gap-1 text-[9px] font-mono font-medium text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                              <span>Active</span>
+                            <span className={`inline-flex items-center gap-1 text-[9px] font-mono font-medium px-1.5 py-0.5 rounded-full ${
+                              memberStatuses[m.userId] === 'Buffering'
+                                ? 'text-amber-400 bg-amber-500/15'
+                                : 'text-emerald-400 bg-emerald-500/10'
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${
+                                memberStatuses[m.userId] === 'Buffering' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400 animate-pulse'
+                              }`} />
+                              <span>{memberStatuses[m.userId] || 'Active'}</span>
                             </span>
                           </div>
                           <div className="flex items-center gap-1.5 mt-0.5">
@@ -3205,12 +3381,16 @@ export default function ListeningRoomsView({
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-3 mt-1 text-xs text-neutral-400">
+                    <div className="flex items-center gap-3 mt-1 text-xs text-neutral-400 flex-wrap">
                       <span>Host: <strong className="text-white">{searchPreviewRoom.createdBy?.displayName || searchPreviewRoom.createdBy?.username || 'Host'}</strong></span>
                       <span>•</span>
                       <span className="text-emerald-400 font-mono font-medium">{searchPreviewRoom.memberCount || 1} online</span>
                       <span>•</span>
-                      <span>{searchPreviewRoom.playlistsCount || 0} playlists</span>
+                      <span>
+                        {(searchPreviewRoom.playlistsCount || 0) === 1
+                          ? '1 playlist'
+                          : `${searchPreviewRoom.playlistsCount || 0} playlists`}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -3425,10 +3605,23 @@ export default function ListeningRoomsView({
                 const currentDeleted = deletedRoomIds || [];
                 return r.status !== 'deleted' && !r.isDeleted && !currentDeleted.includes(id) && (!code || !currentDeleted.includes(code));
               }).length === 0 && (
-                <div className="text-center py-12 text-neutral-500 text-xs border border-dashed border-neutral-800 rounded-2xl space-y-2">
+                <div className="text-center py-12 text-neutral-500 text-xs border border-dashed border-neutral-800 rounded-2xl space-y-3 px-4">
                   <Archive className="w-10 h-10 text-neutral-600 mx-auto" />
-                  <p className="font-medium text-neutral-400 text-sm">No archived rooms</p>
-                  <p className="text-neutral-500">Rooms you archive will appear here so you can restore them anytime.</p>
+                  <div>
+                    <p className="font-bold text-neutral-300 text-sm">No archived rooms</p>
+                    <p className="text-neutral-500 text-xs mt-1 max-w-sm mx-auto">
+                      Rooms you archive will appear here so you can restore them anytime.
+                    </p>
+                  </div>
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setFilterTab('all')}
+                      className="px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold text-xs transition cursor-pointer active:scale-95"
+                    >
+                      Browse Active Rooms
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -3536,10 +3729,23 @@ export default function ListeningRoomsView({
                 const currentDeleted = deletedRoomIds || [];
                 return r.status !== 'deleted' && !r.isDeleted && r.status !== 'archived' && !r.isArchived && !currentDeleted.includes(id) && (!code || !currentDeleted.includes(code));
               }).length === 0 && (
-                <div className="text-center py-12 text-neutral-500 text-xs border border-dashed border-neutral-800 rounded-2xl space-y-2">
+                <div className="text-center py-12 text-neutral-500 text-xs border border-dashed border-neutral-800 rounded-2xl space-y-3 px-4">
                   <LogOut className="w-10 h-10 text-neutral-600 mx-auto" />
-                  <p className="font-medium text-neutral-400 text-sm">No left rooms</p>
-                  <p className="text-neutral-500">Rooms you leave will appear here if you ever wish to request to re-join.</p>
+                  <div>
+                    <p className="font-bold text-neutral-300 text-sm">No left rooms</p>
+                    <p className="text-neutral-500 text-xs mt-1 max-w-sm mx-auto">
+                      Rooms you leave will appear here if you ever wish to request to re-join.
+                    </p>
+                  </div>
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setFilterTab('all')}
+                      className="px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold text-xs transition cursor-pointer active:scale-95"
+                    >
+                      Browse Active Rooms
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -3620,7 +3826,7 @@ export default function ListeningRoomsView({
                     <div className="pt-2 border-t border-neutral-800/80 flex items-center justify-between text-[10px] text-neutral-400">
                       <span className="flex items-center gap-1">
                         <Music className="w-3 h-3 text-amber-400/80" />
-                        <span>{r.playlistsCount || 0} playlists</span>
+                        <span>{(r.playlistsCount || 0) === 1 ? '1 playlist' : `${r.playlistsCount || 0} playlists`}</span>
                       </span>
                       <span className="font-semibold text-amber-400 group-hover:underline">
                         Preview Room →
@@ -3632,11 +3838,45 @@ export default function ListeningRoomsView({
             </div>
           )}
 
-          {filterTab !== 'left' && filteredRooms.length === 0 && (
-            <div className="text-center py-12 text-neutral-500 text-xs border border-dashed border-neutral-800 rounded-2xl space-y-2">
+          {filterTab !== 'left' && filterTab !== 'archived' && filteredRooms.length === 0 && (
+            <div className="text-center py-12 text-neutral-500 text-xs border border-dashed border-neutral-800 rounded-2xl space-y-3 px-4">
               <Radio className="w-10 h-10 text-neutral-600 mx-auto" />
-              <p className="font-medium text-neutral-400 text-sm">No rooms found in this tab</p>
-              <p className="text-neutral-500">Create a room above or join with a room code to get started!</p>
+              <div>
+                <p className="font-bold text-neutral-300 text-sm">
+                  {filterTab === 'created'
+                    ? 'You haven’t created any rooms yet'
+                    : filterTab === 'joined'
+                    ? 'No joined rooms found'
+                    : 'No rooms available'}
+                </p>
+                <p className="text-neutral-500 text-xs mt-1 max-w-sm mx-auto">
+                  {filterTab === 'created'
+                    ? 'Create your own listening room to host synced playback with friends.'
+                    : filterTab === 'joined'
+                    ? 'Enter a room code or browse all public rooms to join a live session.'
+                    : 'Create a room or search with an invite code to start listening together.'}
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-2 pt-1">
+                {filterTab === 'joined' ? (
+                  <button
+                    type="button"
+                    onClick={() => setFilterTab('all')}
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs transition cursor-pointer shadow-md shadow-amber-500/20 active:scale-95"
+                  >
+                    Browse All Rooms
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsCreating(true)}
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs transition cursor-pointer shadow-md shadow-amber-500/20 active:scale-95 flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Create a Room</span>
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -3815,9 +4055,47 @@ export default function ListeningRoomsView({
               <div>
                 <h2 className="text-lg font-black text-white">{selectedPreviewRoom.name}</h2>
                 {selectedPreviewRoom.code && (
-                  <span className="text-xs font-mono text-neutral-400 mt-0.5 inline-block">
-                    Code: <strong className="text-amber-400">{selectedPreviewRoom.code}</strong>
-                  </span>
+                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                    <span className="text-xs font-mono text-neutral-400">
+                      Code: <strong className="text-amber-400 font-bold">{selectedPreviewRoom.code}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyCodeOnly(selectedPreviewRoom.code)}
+                      className="px-2 py-0.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-[11px] font-medium border border-neutral-700 flex items-center gap-1 transition cursor-pointer active:scale-95"
+                      title="Copy Room Code"
+                    >
+                      {copiedCodeNotice ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-400" />
+                          <span className="text-emerald-300 font-bold">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3 text-amber-400" />
+                          <span>Copy Code</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyInviteLink(selectedPreviewRoom.code)}
+                      className="px-2 py-0.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-[11px] font-medium border border-neutral-700 flex items-center gap-1 transition cursor-pointer active:scale-95"
+                      title="Copy Direct Invite Link"
+                    >
+                      {copiedLink ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-400" />
+                          <span className="text-emerald-300 font-bold">Copied Link!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Share2 className="w-3 h-3 text-amber-400" />
+                          <span>Copy Invite Link</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 )}
                 {selectedPreviewRoom.description && (
                   <p className="text-xs text-neutral-400 mt-2 p-2.5 rounded-xl bg-neutral-950/60 border border-neutral-800">
@@ -3837,8 +4115,18 @@ export default function ListeningRoomsView({
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-neutral-400">Room Playlists:</span>
-                  <span className="text-neutral-300 font-mono">{selectedPreviewRoom.playlistsCount || 0} playlists</span>
+                  <span className="text-neutral-300 font-mono">
+                    {(selectedPreviewRoom.playlistsCount || 0) === 1 ? '1 playlist' : `${selectedPreviewRoom.playlistsCount || 0} playlists`}
+                  </span>
                 </div>
+                {(selectedPreviewRoom.queueCount !== undefined) && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-neutral-400">Upcoming Queue:</span>
+                    <span className="text-amber-300 font-mono font-medium">
+                      {selectedPreviewRoom.queueCount === 1 ? '1 song' : `${selectedPreviewRoom.queueCount} songs`}
+                    </span>
+                  </div>
+                )}
                 {selectedPreviewRoom.currentSong?.title && (
                   <div className="flex items-center justify-between">
                     <span className="text-neutral-400">Now Playing:</span>
@@ -3850,7 +4138,7 @@ export default function ListeningRoomsView({
               <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-[11px] text-neutral-300 flex items-start gap-2">
                 <Shield className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <span>
-                  Viewing this preview does not join you to the room. Click <strong>"Join Room"</strong> below to officially enter the collaborative session and join the member list.
+                  Viewing this preview does not join you to the room. Click <strong>"Join & Sync"</strong> below to enter the collaborative session with live audio sync.
                 </span>
               </div>
             </div>
@@ -3880,7 +4168,7 @@ export default function ListeningRoomsView({
                     ? 'Entering...'
                     : selectedPreviewRoom.isMember || (rooms.some(r => (r.roomId || r.id) === (selectedPreviewRoom.roomId || selectedPreviewRoom.id) && r.createdBy?.userId === currentUserId))
                       ? 'Enter Room'
-                      : 'Join Room'}
+                      : 'Join & Sync'}
                 </span>
               </button>
             </div>
@@ -4049,6 +4337,154 @@ export default function ListeningRoomsView({
               >
                 {isDeletingPlaylist ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                 <span>{isDeletingPlaylist ? 'Deleting...' : 'Delete Playlist'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Compact Room Members & Code Popover */}
+      {isMemberPopoverOpen && activeRoom && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn"
+          onClick={() => setIsMemberPopoverOpen(false)}
+        >
+          <div 
+            className="w-full max-w-sm bg-neutral-900 border border-neutral-700/80 rounded-2xl p-5 shadow-2xl space-y-4 animate-scaleUp"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-amber-400" />
+                <h3 className="font-bold text-sm text-white">Room Members ({participants.length})</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMemberPopoverOpen(false)}
+                className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Quick Room Code & Invite Share */}
+            {activeRoom.code && (
+              <div className="p-3 rounded-xl bg-neutral-950/80 border border-amber-500/30 flex items-center justify-between gap-2">
+                <div>
+                  <span className="text-[10px] text-neutral-400 uppercase font-mono block">Room Code</span>
+                  <span className="text-sm font-mono font-black text-amber-300">{activeRoom.code}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyCodeOnly(activeRoom.code)}
+                    className="px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs border border-amber-500/40 transition flex items-center gap-1 cursor-pointer active:scale-95"
+                    title="Copy room code"
+                  >
+                    {copiedCodeNotice ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-300">Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy Code</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCopyLink}
+                    className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition cursor-pointer active:scale-95 flex items-center gap-1"
+                    title="Share room link"
+                  >
+                    {copiedLink ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <Share2 className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Member List */}
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1 scrollbar-thin">
+              {participants.map(m => {
+                const mRole = m.role || 'listener';
+                const isHostRole = mRole === 'host';
+                const isCoHostRole = mRole === 'co-host';
+                const isUser = m.userId === currentUserId || m.username === currentUsername;
+
+                return (
+                  <div 
+                    key={m.userId || m.socketId}
+                    className="p-2.5 rounded-xl bg-neutral-950/60 border border-neutral-800/80 flex items-center justify-between gap-2.5"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="relative shrink-0">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${
+                          isHostRole 
+                            ? 'bg-amber-600/30 text-amber-300 border border-amber-500/50' 
+                            : isCoHostRole 
+                            ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/50' 
+                            : 'bg-neutral-800 text-neutral-200 border border-neutral-700'
+                        }`}>
+                          {m.displayName ? m.displayName.charAt(0).toUpperCase() : 'U'}
+                        </div>
+                        <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400 ring-1 ring-neutral-950" title="Online Live" />
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-xs text-white truncate max-w-[120px]">
+                            {m.displayName || m.username || 'Listener'}
+                          </span>
+                          {isUser && <span className="text-[10px] text-amber-400 font-mono font-semibold">(You)</span>}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className={`text-[9px] font-mono uppercase font-bold px-1.5 py-0.2 rounded border ${
+                            isHostRole 
+                              ? 'text-amber-300 bg-amber-500/15 border-amber-500/30' 
+                              : isCoHostRole 
+                              ? 'text-emerald-300 bg-emerald-500/15 border-emerald-500/30' 
+                              : 'text-neutral-400 bg-neutral-800 border-neutral-700'
+                          }`}>
+                            {isHostRole ? 'Host' : isCoHostRole ? 'Co-Host' : 'Listener'}
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-[9px] text-emerald-400 font-mono">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            <span>Online</span>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer with switch to Members tab */}
+            <div className="flex items-center justify-between pt-2 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMemberPopoverOpen(false);
+                  setActiveTab('members');
+                }}
+                className="text-xs text-amber-400 hover:text-amber-300 font-semibold cursor-pointer"
+              >
+                Open Full Members & Roles →
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsMemberPopoverOpen(false)}
+                className="px-3 py-1.5 text-xs font-semibold text-neutral-400 hover:text-white transition cursor-pointer"
+              >
+                Close
               </button>
             </div>
           </div>

@@ -117,6 +117,17 @@ class CollaborativeRoomService {
     });
     if (!Array.isArray(r.activities)) r.activities = [];
     if (!Array.isArray(r.chatMessages)) r.chatMessages = [];
+    if (!Array.isArray(r.queue)) r.queue = [];
+    if (!r.permissionMode) r.permissionMode = 'open_queue';
+    if (!r.playbackState) {
+      r.playbackState = {
+        trackId: r.currentSong?.id || r.currentSong?.videoId || '',
+        isPlaying: Boolean(r.isPlaying),
+        positionMs: Math.round((r.seekTime || 0) * 1000),
+        anchorServerTimeMs: Date.now(),
+        playbackRate: 1.0
+      };
+    }
     if (!r.status) r.status = 'active';
   }
 
@@ -273,6 +284,9 @@ class CollaborativeRoomService {
       createdBy: r.createdBy,
       memberCount: r.members ? r.members.length : 1,
       playlistsCount: r.playlists ? r.playlists.length : 0,
+      queueCount: Array.isArray(r.queue) ? r.queue.length : 0,
+      permissionMode: r.permissionMode || 'open_queue',
+      playbackState: r.playbackState || null,
       currentSong: r.currentSong,
       isPlaying: Boolean(r.isPlaying),
       isPublic: r.isPublic !== false,
@@ -1034,17 +1048,29 @@ class CollaborativeRoomService {
     return { message, chatMessages: room.chatMessages, room };
   }
 
-  async syncPlaybackState(roomId, { currentSong, isPlaying, seekTime, user }) {
+  async syncPlaybackState(roomId, { currentSong, isPlaying, seekTime, playbackRate = 1.0, user }) {
     const room = await this.getRoom(roomId);
     if (!room) throw new Error('Room not found');
     this.normalizeRoomState(room);
 
     const now = new Date();
+    const nowMs = now.getTime();
     if (currentSong !== undefined) room.currentSong = currentSong;
     if (isPlaying !== undefined) room.isPlaying = Boolean(isPlaying);
     if (seekTime !== undefined && !isNaN(seekTime)) room.seekTime = Number(seekTime);
     room.playbackUpdatedAt = now;
     room.lastActiveAt = now;
+
+    const rate = typeof playbackRate === 'number' && playbackRate > 0 ? playbackRate : 1.0;
+    const posMs = Math.round((Number(room.seekTime) || 0) * 1000);
+
+    room.playbackState = {
+      trackId: room.currentSong?.id || room.currentSong?.videoId || '',
+      isPlaying: Boolean(room.isPlaying),
+      positionMs: posMs,
+      anchorServerTimeMs: nowMs,
+      playbackRate: rate
+    };
 
     this.roomsCache.set(room.roomId, room);
 
@@ -1057,6 +1083,7 @@ class CollaborativeRoomService {
             isPlaying: room.isPlaying, 
             seekTime: room.seekTime,
             playbackUpdatedAt: now,
+            playbackState: room.playbackState,
             lastActiveAt: now 
           } 
         }
@@ -1068,8 +1095,378 @@ class CollaborativeRoomService {
       isPlaying: room.isPlaying,
       seekTime: room.seekTime,
       playbackUpdatedAt: now,
+      playbackState: room.playbackState,
       room
     };
+  }
+
+  // --- Collaborative Queue & Permission Controls ---
+
+  async updatePermissionMode(roomId, permissionMode, requesterUser) {
+    const room = await this.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+    this.normalizeRoomState(room);
+
+    const validModes = ['host_only', 'open_queue', 'co_dj'];
+    if (!validModes.includes(permissionMode)) {
+      throw new Error(`Invalid permission mode. Must be one of: ${validModes.join(', ')}`);
+    }
+
+    const requesterId = requesterUser?._id?.toString?.() || requesterUser?.userId;
+    const isCreator = Boolean(
+      (room.createdBy?.userId && requesterId && room.createdBy.userId === requesterId) ||
+      (room.createdBy?.username && requesterUser?.username && room.createdBy.username === requesterUser.username)
+    );
+    const requester = room.members.find(m => m.userId === requesterId || m.username === requesterUser?.username);
+    const isHost = isCreator || (requester && this.normalizeRole(requester.role) === 'host');
+    if (!isHost) {
+      throw new Error('Only the room Host can change permission mode');
+    }
+
+    room.permissionMode = permissionMode;
+    room.lastActiveAt = new Date();
+
+    const modeLabels = {
+      host_only: 'Host Only',
+      open_queue: 'Open Queue + Votes',
+      co_dj: 'Co-DJ Handoff'
+    };
+
+    room.activities.unshift({
+      id: `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      type: 'permission_changed',
+      text: `${requester?.displayName || 'Host'} changed room permissions to ${modeLabels[permissionMode] || permissionMode}`,
+      user: { displayName: requester?.displayName || 'Host' },
+      timestamp: new Date()
+    });
+    if (room.activities.length > 50) room.activities.pop();
+
+    this.roomsCache.set(room.roomId, room);
+
+    try {
+      await CollaborativeRoom.updateOne(
+        { roomId: room.roomId },
+        { $set: { permissionMode: room.permissionMode, activities: room.activities, lastActiveAt: new Date() } }
+      );
+    } catch (e) {
+      console.warn('[CollaborativeRoomService] updatePermissionMode DB error:', e.message);
+    }
+
+    return { permissionMode: room.permissionMode, room };
+  }
+
+  canUserManageQueue(room, user) {
+    if (!room || !user) return false;
+    const uid = user?._id?.toString?.() || user?.userId;
+    const isCreator = room.createdBy?.userId === uid;
+    const member = (room.members || []).find(m => m.userId === uid || m.username === user.username);
+    const role = member ? this.normalizeRole(member.role) : (isCreator ? 'host' : 'listener');
+    const isHostOrCoHost = isCreator || role === 'host' || role === 'co-host';
+
+    if (isHostOrCoHost) return true;
+    if (room.permissionMode === 'host_only') return false;
+    if (room.permissionMode === 'co_dj') return role === 'co-host';
+    return true; // open_queue allows all members
+  }
+
+  canUserControlPlayback(room, user) {
+    if (!room || !user) return false;
+    const uid = user?._id?.toString?.() || user?.userId;
+    const isCreator = room.createdBy?.userId === uid;
+    const member = (room.members || []).find(m => m.userId === uid || m.username === user.username);
+    const role = member ? this.normalizeRole(member.role) : (isCreator ? 'host' : 'listener');
+    if (isCreator || role === 'host') return true;
+    if (room.permissionMode === 'co_dj' && role === 'co-host') return true;
+    return false;
+  }
+
+  async addQueueTrack(roomId, { track, user }) {
+    const room = await this.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+    this.normalizeRoomState(room);
+
+    if (!track || (!track.id && !track.videoId && !track.trackId)) {
+      throw new Error('Valid track is required');
+    }
+
+    if (!this.canUserManageQueue(room, user)) {
+      throw new Error('You do not have permission to add tracks to the queue in this room');
+    }
+
+    const tId = String(track.id || track.videoId || track.trackId);
+    // Duplicate / spam guard: reject if already in queue
+    const existsInQueue = (room.queue || []).some(q => String(q.trackId || q.id || q.videoId) === tId);
+    if (existsInQueue) {
+      throw new Error('Track is already in the room queue');
+    }
+
+    const uid = user?._id?.toString?.() || user?.userId || 'guest';
+    const queueItem = {
+      id: `q_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      trackId: tId,
+      videoId: track.videoId || tId,
+      title: track.title || 'Untitled Song',
+      artist: track.artist || track.channel || 'Unknown Artist',
+      thumbnail: track.thumbnail || '',
+      durationSec: Number(track.durationSec || track.duration) || 0,
+      addedBy: {
+        userId: uid,
+        username: user?.username || 'Listener',
+        displayName: user?.displayName || user?.username || 'Listener'
+      },
+      votes: [uid], // Author automatically upvotes
+      addedAt: new Date()
+    };
+
+    room.queue.push(queueItem);
+    this.sortQueueByVotes(room.queue);
+    room.lastActiveAt = new Date();
+
+    room.activities.unshift({
+      id: `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      type: 'queue_track_added',
+      text: `${queueItem.addedBy.displayName} added "${queueItem.title}" to the queue`,
+      user: { displayName: queueItem.addedBy.displayName },
+      timestamp: new Date()
+    });
+    if (room.activities.length > 50) room.activities.pop();
+
+    this.roomsCache.set(room.roomId, room);
+
+    try {
+      await CollaborativeRoom.updateOne(
+        { roomId: room.roomId },
+        { $set: { queue: room.queue, activities: room.activities, lastActiveAt: new Date() } }
+      );
+    } catch (e) {
+      console.warn('[CollaborativeRoomService] addQueueTrack DB error:', e.message);
+    }
+
+    return { queueItem, queue: room.queue, room };
+  }
+
+  async toggleQueueVote(roomId, queueItemId, user) {
+    const room = await this.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+    this.normalizeRoomState(room);
+
+    const item = (room.queue || []).find(q => q.id === queueItemId);
+    if (!item) throw new Error('Queue item not found');
+
+    const uid = String(user?._id?.toString?.() || user?.userId || 'guest');
+    if (!Array.isArray(item.votes)) item.votes = [];
+
+    const idx = item.votes.indexOf(uid);
+    let voted = false;
+    if (idx > -1) {
+      item.votes.splice(idx, 1);
+      voted = false;
+    } else {
+      item.votes.push(uid);
+      voted = true;
+    }
+
+    // Dynamically reorder queue based on vote count descending, then FIFO addedAt
+    this.sortQueueByVotes(room.queue);
+    room.lastActiveAt = new Date();
+    this.roomsCache.set(room.roomId, room);
+
+    try {
+      await CollaborativeRoom.updateOne(
+        { roomId: room.roomId },
+        { $set: { queue: room.queue, lastActiveAt: new Date() } }
+      );
+    } catch (e) {
+      console.warn('[CollaborativeRoomService] toggleQueueVote DB error:', e.message);
+    }
+
+    return {
+      queueItemId,
+      votes: item.votes,
+      voteCount: item.votes.length,
+      voted,
+      queue: room.queue,
+      room
+    };
+  }
+
+  async removeQueueTrack(roomId, queueItemId, user) {
+    const room = await this.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+    this.normalizeRoomState(room);
+
+    const uid = user?._id?.toString?.() || user?.userId;
+    const item = (room.queue || []).find(q => q.id === queueItemId);
+    if (!item) throw new Error('Queue item not found');
+
+    const isAuthor = item.addedBy?.userId === uid;
+    const canControl = this.canUserControlPlayback(room, user);
+    if (!isAuthor && !canControl) {
+      throw new Error('Permission denied to remove this item from queue');
+    }
+
+    room.queue = room.queue.filter(q => q.id !== queueItemId);
+    room.lastActiveAt = new Date();
+    this.roomsCache.set(room.roomId, room);
+
+    try {
+      await CollaborativeRoom.updateOne(
+        { roomId: room.roomId },
+        { $set: { queue: room.queue, lastActiveAt: new Date() } }
+      );
+    } catch (e) {}
+
+    return { removedId: queueItemId, queue: room.queue, room };
+  }
+
+  async popNextQueueTrack(roomId) {
+    const room = await this.getRoom(roomId);
+    if (!room) return null;
+    this.normalizeRoomState(room);
+
+    if (!Array.isArray(room.queue) || room.queue.length === 0) {
+      return null;
+    }
+
+    this.sortQueueByVotes(room.queue);
+    const nextTrackItem = room.queue.shift();
+    room.lastActiveAt = new Date();
+
+    const nextTrack = {
+      id: nextTrackItem.trackId || nextTrackItem.id,
+      videoId: nextTrackItem.videoId || nextTrackItem.trackId || nextTrackItem.id,
+      title: nextTrackItem.title,
+      artist: nextTrackItem.artist,
+      thumbnail: nextTrackItem.thumbnail,
+      duration: nextTrackItem.durationSec
+    };
+
+    // Automatically set next track as currentSong and anchor server time at 0s
+    await this.syncPlaybackState(room.roomId, {
+      currentSong: nextTrack,
+      isPlaying: true,
+      seekTime: 0,
+      playbackRate: 1.0
+    });
+
+    try {
+      await CollaborativeRoom.updateOne(
+        { roomId: room.roomId },
+        { $set: { queue: room.queue, lastActiveAt: new Date() } }
+      );
+    } catch (e) {}
+
+    return { nextTrack, queue: room.queue, room };
+  }
+
+  async addPlayNextTrack(roomId, { track, user }) {
+    const room = await this.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+    this.normalizeRoomState(room);
+
+    if (!this.canUserManageQueue(room, user)) {
+      throw new Error('You do not have permission to manage the queue in this room');
+    }
+
+    const tId = String(track.id || track.videoId || track.trackId);
+    // Remove if already in queue to reposition as play-next
+    room.queue = (room.queue || []).filter(q => String(q.trackId || q.id || q.videoId) !== tId);
+
+    const uid = user?._id?.toString?.() || user?.userId || 'guest';
+    const queueItem = {
+      id: `q_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      trackId: tId,
+      videoId: track.videoId || track.id || tId,
+      title: track.title || 'Untitled Track',
+      artist: track.artist || track.channel || 'Unknown Artist',
+      thumbnail: track.thumbnail || track.thumbnailUrl || '/loopra-logo.png',
+      durationSec: track.duration || 0,
+      addedBy: {
+        userId: uid,
+        displayName: user?.displayName || user?.name || 'Listener'
+      },
+      votes: [uid], // Give play-next top initial vote weight
+      playNext: true,
+      addedAt: new Date()
+    };
+
+    // Prepend to top of queue
+    room.queue.unshift(queueItem);
+    room.lastActiveAt = new Date();
+
+    room.activities.unshift({
+      id: `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      type: 'queue_track_play_next',
+      text: `${queueItem.addedBy.displayName} prioritized "${queueItem.title}" to play next`,
+      user: { displayName: queueItem.addedBy.displayName },
+      timestamp: new Date()
+    });
+    if (room.activities.length > 50) room.activities.pop();
+
+    this.roomsCache.set(room.roomId, room);
+
+    try {
+      await CollaborativeRoom.updateOne(
+        { roomId: room.roomId },
+        { $set: { queue: room.queue, activities: room.activities, lastActiveAt: new Date() } }
+      );
+    } catch (e) {
+      console.warn('[CollaborativeRoomService] addPlayNextTrack DB error:', e.message);
+    }
+
+    return { queueItem, queue: room.queue, room };
+  }
+
+  async reorderQueue(roomId, newQueue, user) {
+    const room = await this.getRoom(roomId);
+    if (!room) throw new Error('Room not found');
+    this.normalizeRoomState(room);
+
+    if (!this.canUserManageQueue(room, user)) {
+      throw new Error('Permission denied to reorder queue in this room');
+    }
+
+    if (!Array.isArray(newQueue)) {
+      throw new Error('Invalid queue structure: expected an array');
+    }
+
+    // Preserve existing item properties while syncing the reordered index
+    const existingMap = new Map((room.queue || []).map(q => [q.id, q]));
+    const reordered = [];
+
+    for (const item of newQueue) {
+      const match = existingMap.get(item.id || item.trackId);
+      if (match) {
+        reordered.push(match);
+      } else if (item.trackId || item.id) {
+        reordered.push(item);
+      }
+    }
+
+    room.queue = reordered;
+    room.lastActiveAt = new Date();
+    this.roomsCache.set(room.roomId, room);
+
+    try {
+      await CollaborativeRoom.updateOne(
+        { roomId: room.roomId },
+        { $set: { queue: room.queue, lastActiveAt: new Date() } }
+      );
+    } catch (e) {
+      console.warn('[CollaborativeRoomService] reorderQueue DB error:', e.message);
+    }
+
+    return { queue: room.queue, room };
+  }
+
+  sortQueueByVotes(queue) {
+    if (!Array.isArray(queue)) return;
+    queue.sort((a, b) => {
+      const vA = (a.votes && a.votes.length) || 0;
+      const vB = (b.votes && b.votes.length) || 0;
+      if (vB !== vA) return vB - vA;
+      return new Date(a.addedAt || 0) - new Date(b.addedAt || 0);
+    });
   }
 
   async recordReaction(roomId, { emoji, user, role }) {

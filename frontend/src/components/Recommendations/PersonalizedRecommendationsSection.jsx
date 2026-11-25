@@ -150,11 +150,36 @@ export default function PersonalizedRecommendationsSection({
 
   const fetchRecommendations = useCallback(async (isRefresh = false) => {
     if (!authToken) {
-      // Unauthenticated: fetch general discovery tracks with strictly disjoint pools
+      // Unauthenticated: fetch general discovery tracks with strictly disjoint pools and local taste ranking
       try {
         setLoading(true);
         const res = await recommendationsClient.getDiscover(backendUrl, null, { limit: 35 });
-        const items = sanitizeThumbnailTracks(res.items || []);
+        let items = sanitizeThumbnailTracks(res.items || []);
+
+        // Re-rank items using local taste profile if available
+        const localTaste = recommendationsClient.getLocalTasteProfile();
+        if (localTaste && (localTaste.likes?.length || Object.keys(localTaste.topArtists || {}).length)) {
+          const likesSet = new Set(localTaste.likes || []);
+          const skipsSet = new Set(localTaste.skips || []);
+          const artistScores = localTaste.topArtists || {};
+
+          items = [...items].sort((a, b) => {
+            const aId = a.id || a.videoId;
+            const bId = b.id || b.videoId;
+            let scoreA = likesSet.has(aId) ? 30 : skipsSet.has(aId) ? -30 : 0;
+            let scoreB = likesSet.has(bId) ? 30 : skipsSet.has(bId) ? -30 : 0;
+            scoreA += (artistScores[a.artist] || 0);
+            scoreB += (artistScores[b.artist] || 0);
+            return scoreB - scoreA;
+          });
+        }
+
+        // Apply dynamic rotation when user clicks [Refresh Mix]
+        if (isRefresh && items.length > 2) {
+          const offset = Math.floor(Math.random() * (items.length - 1)) + 1;
+          items = [...items.slice(offset), ...items.slice(0, offset)];
+        }
+
         const deduplicator = new TrackDeduplicator();
 
         const madeForYou = [];
@@ -194,6 +219,7 @@ export default function PersonalizedRecommendationsSection({
         setError('Failed to load music suggestions');
       } finally {
         setLoading(false);
+        setRefreshing(false);
       }
       return;
     }
@@ -375,7 +401,10 @@ export default function PersonalizedRecommendationsSection({
 
   const handleManualRefresh = async () => {
     if (!authToken) {
-      onOpenAuth?.();
+      // Guest or local user: meaningfully rotate and re-rank recommendations using local taste
+      setRefreshing(true);
+      await fetchRecommendations(true);
+      showToast?.('Refreshed mix with fresh local rotation');
       return;
     }
     try {
@@ -864,10 +893,10 @@ export default function PersonalizedRecommendationsSection({
 
       {/* Recommendation Rows */}
       <div className="space-y-6 sm:space-y-8">
-        {/* Row 1: Made For You */}
+        {/* Row 1: Made For You (with dynamic time-of-day label) */}
         {renderRow(
-          'Made For You',
-          'Handpicked matching your overall music affinity and mood',
+          data?.timeOfDay?.label ? `Made For You • ${data.timeOfDay.label}` : 'Made For You',
+          data?.timeOfDay?.subtitle || 'Handpicked matching your overall music affinity and mood',
           data?.madeForYou,
           'madeForYou'
         )}
@@ -885,7 +914,7 @@ export default function PersonalizedRecommendationsSection({
         {/* Row 3: Your Daily Mix */}
         {renderRow(
           'Your Daily Mix',
-          'A cohesive, uninterrupted flow of your favorite genres',
+          'A cohesive, uninterrupted flow of your favorite genres and daily picks',
           data?.dailyMix,
           'dailyMix'
         )}

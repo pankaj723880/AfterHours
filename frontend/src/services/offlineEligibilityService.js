@@ -78,6 +78,7 @@ class OfflineEligibilityService {
    * Queue track IDs for batch verification
    */
   queueEligibilityCheck(trackIds = []) {
+    if (!this.downloadsEnabled) return;
     if (!Array.isArray(trackIds)) return;
     const unverified = trackIds.filter(id => id && !this.cache.has(id));
     if (unverified.length === 0) return;
@@ -91,23 +92,26 @@ class OfflineEligibilityService {
   }
 
   async _flushPendingChecks() {
+    if (!this.downloadsEnabled) {
+      if (this.pendingIds.size > 0) {
+        this.pendingIds.forEach(id => {
+          this.cache.set(id, {
+            eligible: false,
+            license: null,
+            reason: 'Offline downloads are disabled by administrator.',
+            checkedAt: Date.now()
+          });
+        });
+        this.pendingIds.clear();
+        this.notifyListeners();
+      }
+      return;
+    }
+
     if (this.pendingIds.size === 0) return;
 
     const idsToFetch = Array.from(this.pendingIds).slice(0, 100);
     idsToFetch.forEach(id => this.pendingIds.delete(id));
-
-    if (!this.downloadsEnabled) {
-      idsToFetch.forEach(id => {
-        this.cache.set(id, {
-          eligible: false,
-          license: null,
-          reason: 'Offline downloads are disabled by administrator.',
-          checkedAt: Date.now()
-        });
-      });
-      this.notifyListeners();
-      return;
-    }
 
     try {
       const url = `${this.backendUrl}/api/offline/eligibility/batch`;
@@ -139,6 +143,9 @@ class OfflineEligibilityService {
       }
 
       const data = await res.json();
+      if (data?.downloadsEnabled === false) {
+        this.downloadsEnabled = false;
+      }
       if (data && Array.isArray(data.results)) {
         data.results.forEach(item => {
           this.cache.set(item.trackId, {

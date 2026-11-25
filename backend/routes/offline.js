@@ -28,17 +28,32 @@ const checkGlobalDownloadsEnabled = async (req, res, next) => {
 };
 
 // Batch eligibility check for songs in search results, queues, playlists, home sections
-router.post('/eligibility/batch', checkGlobalDownloadsEnabled, async (req, res) => {
+router.post('/eligibility/batch', async (req, res) => {
   try {
+    const isDownloadsEnabled = await cmsService.isDownloadsEnabled();
     const { trackIds } = req.body || {};
     if (!Array.isArray(trackIds)) {
       return res.status(400).json({ error: 'trackIds must be an array of track IDs.' });
+    }
+
+    if (!isDownloadsEnabled) {
+      return res.json({
+        success: true,
+        count: trackIds.length,
+        downloadsEnabled: false,
+        results: trackIds.map(id => ({
+          trackId: id,
+          offlineEligible: false,
+          reason: 'Global download and offline audio caching is currently disabled by administrator.'
+        }))
+      });
     }
 
     const results = await checkBatchEligibility(trackIds);
     res.json({
       success: true,
       count: results.length,
+      downloadsEnabled: true,
       results
     });
   } catch (err) {
@@ -48,12 +63,25 @@ router.post('/eligibility/batch', checkGlobalDownloadsEnabled, async (req, res) 
 });
 
 // Single track eligibility check
-router.get('/eligibility/:trackId', checkGlobalDownloadsEnabled, async (req, res) => {
+router.get('/eligibility/:trackId', async (req, res) => {
   try {
+    const isDownloadsEnabled = await cmsService.isDownloadsEnabled();
     const { trackId } = req.params;
+
+    if (!isDownloadsEnabled) {
+      return res.json({
+        success: true,
+        trackId,
+        offlineEligible: false,
+        downloadsEnabled: false,
+        reason: 'Global download and offline audio caching is currently disabled by administrator.'
+      });
+    }
+
     const result = await checkTrackEligibility(trackId);
     res.json({
       success: true,
+      downloadsEnabled: true,
       ...result
     });
   } catch (err) {

@@ -15,6 +15,7 @@ export default function LyricsModal({
   const [showSearchInput, setShowSearchInput] = useState(false);
   const activeLineRef = useRef(null);
   const scrollContainerRef = useRef(null);
+  const lastActiveIndexRef = useRef(-1);
 
   // Poll current playback time when lyrics modal is open
   useEffect(() => {
@@ -28,7 +29,7 @@ export default function LyricsModal({
           }
         }
       } catch (e) {}
-    }, 250);
+    }, 150);
     return () => clearInterval(interval);
   }, [isOpen, playerRef]);
 
@@ -66,18 +67,6 @@ export default function LyricsModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Auto-scroll active line into view smoothly
-  useEffect(() => {
-    if (activeLineRef.current && scrollContainerRef.current) {
-      activeLineRef.current.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center'
-      });
-    }
-  }, [currentTime]);
-
-  if (!isOpen) return null;
-
   // Determine active line index
   let activeIndex = -1;
   if (lyricsData?.isSynced && lyricsData.syncedLines.length > 0) {
@@ -89,6 +78,21 @@ export default function LyricsModal({
       }
     }
   }
+
+  // Auto-scroll active line into view smoothly only when the active line changes
+  useEffect(() => {
+    if (activeIndex !== -1 && activeIndex !== lastActiveIndexRef.current) {
+      lastActiveIndexRef.current = activeIndex;
+      if (activeLineRef.current && scrollContainerRef.current) {
+        activeLineRef.current.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center'
+        });
+      }
+    }
+  }, [activeIndex]);
+
+  if (!isOpen) return null;
 
   const handleCustomSearchSubmit = (e) => {
     e.preventDefault();

@@ -369,6 +369,7 @@ export default function CinematicVideoPlayer({
 
   // Subtitle/Caption Tracks Loader & Synchronizer
   const currentVideoId = activeSong?.id || activeSong?.videoId;
+  const abortControllerRef = useRef(null);
 
   useEffect(() => {
     // When song changes, reset active subtitles immediately so old text does not linger
@@ -376,17 +377,23 @@ export default function CinematicVideoPlayer({
     setSubtitleLines([]);
     setSubtitleTracks([]);
 
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
     if (!currentVideoId) return;
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     let isCancelled = false;
     setIsLoadingCaptions(true);
 
     const backendCaptionsUrl = `${getApiUrl('/api/youtube/captions')}/${encodeURIComponent(currentVideoId)}`;
 
-    fetch(backendCaptionsUrl)
+    fetch(backendCaptionsUrl, { signal: controller.signal })
       .then(res => res.json())
       .then(data => {
-        if (isCancelled) return;
+        if (isCancelled || controller.signal.aborted) return;
         setIsLoadingCaptions(false);
         const tracks = Array.isArray(data?.tracks) ? data.tracks : [];
         setSubtitleTracks(tracks);
@@ -403,13 +410,14 @@ export default function CinematicVideoPlayer({
         }
       })
       .catch(err => {
-        if (isCancelled) return;
+        if (isCancelled || err?.name === 'AbortError') return;
         setIsLoadingCaptions(false);
         setSubtitleTracks([]);
       });
 
     return () => {
       isCancelled = true;
+      controller.abort();
       setActiveSubtitleText('');
       setSubtitleLines([]);
     };

@@ -1,6 +1,72 @@
 // Frontend client for Loopra Gemini AI-Powered Recommendations & Listening Events
 
+// LocalStorage preference keys
+const LOCAL_TASTE_KEY = 'afterhours_taste_profile_v2';
+const LOCAL_RECS_CACHE_KEY = 'afterhours_personalized_recs_v2';
+
 export const recommendationsClient = {
+  /**
+   * Helper to retrieve offline/local taste profile
+   */
+  getLocalTasteProfile() {
+    try {
+      const raw = localStorage.getItem(LOCAL_TASTE_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (_) {
+      return null;
+    }
+  },
+
+  /**
+   * Updates offline/local taste profile from user interactions (likes, skips, search, plays)
+   */
+  updateLocalTasteProfile(eventData) {
+    try {
+      const current = this.getLocalTasteProfile() || {
+        likes: [],
+        skips: [],
+        searchPicks: [],
+        chipPicks: [],
+        topArtists: {},
+        recentTracks: [],
+        updatedAt: Date.now()
+      };
+
+      const { trackId, title, artist, eventType, chip, query } = eventData || {};
+      if (trackId && eventType === 'like') {
+        if (!current.likes.includes(trackId)) current.likes.push(trackId);
+        current.skips = current.skips.filter(id => id !== trackId);
+      } else if (trackId && (eventType === 'skip' || eventType === 'dislike')) {
+        if (!current.skips.includes(trackId)) current.skips.push(trackId);
+        current.likes = current.likes.filter(id => id !== trackId);
+      }
+
+      if (artist && artist !== 'Unknown Artist') {
+        const delta = eventType === 'like' ? 5 : eventType === 'skip' ? -3 : 2;
+        current.topArtists[artist] = Math.max(0, (current.topArtists[artist] || 0) + delta);
+      }
+
+      if (chip && !current.chipPicks.includes(chip)) {
+        current.chipPicks.push(chip);
+      }
+
+      if (query && !current.searchPicks.includes(query)) {
+        current.searchPicks.push(query);
+      }
+
+      if (trackId && title) {
+        current.recentTracks = [
+          { trackId, title, artist, timestamp: Date.now() },
+          ...current.recentTracks.filter(t => t.trackId !== trackId)
+        ].slice(0, 20);
+      }
+
+      current.updatedAt = Date.now();
+      localStorage.setItem(LOCAL_TASTE_KEY, JSON.stringify(current));
+    } catch (_) {}
+  },
+
   /**
    * Fetches personalized recommendations for the authenticated user.
    */
@@ -136,6 +202,9 @@ export const recommendationsClient = {
         ...eventData,
         guestId: guestId || eventData?.guestId
       };
+
+      // Also persist to local taste profile for instant offline/guest personalization
+      this.updateLocalTasteProfile(payload);
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);

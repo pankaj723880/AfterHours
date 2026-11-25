@@ -16,6 +16,27 @@ import {
 } from 'lucide-react';
 import { getCleanThumbnail, isThumbnailUrlFormatValid } from '../../utils/thumbnailValidator';
 
+// Helper to normalize noisy video titles for clean display while preserving movie/artist names
+const cleanDisplayTitle = (rawTitle = '') => {
+  if (!rawTitle || typeof rawTitle !== 'string') return '';
+  return rawTitle
+    // Decode HTML entities
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    // Remove brackets with video metadata: [Official Video], (4K 60fps), [Full Song], etc.
+    .replace(/\s*[([{\u3010][^)\]}\u3011]*(?:official|4k|8k|hd|audio|video|lyric|lyrics|full song|video song|visualizer|remix|lo-?fi|slowed|reverb|teaser|trailer|uhd|prod\.)[^)\]}\u3011]*[)\]}\u3011]/gi, '')
+    // Remove trailing promo suffixes after pipe or dash e.g. " | Official Music Video"
+    .replace(/\s*\|\s*(?:official\s*(?:video|audio|music|lyric)?|full\s*song|hd|4k).*$/gi, '')
+    .replace(/\s*-\s*(?:official\s*(?:video|audio|music|lyric)|full\s*song).*$/gi, '')
+    // Strip emojis
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim() || rawTitle;
+};
+
 // Popular search shortcuts configured for fast 1-tap discovery
 const POPULAR_SEARCH_CHIPS = [
   { label: 'Arijit Singh', query: 'Arijit Singh hits' },
@@ -106,6 +127,16 @@ export default function DiscoverView({
     if (fetchYouTubeMusic) fetchYouTubeMusic(q);
   };
 
+  // Sync selectedChip if user clears search or changes query manually
+  React.useEffect(() => {
+    if (!searchQuery) {
+      setSelectedChip(null);
+    } else {
+      const match = POPULAR_SEARCH_CHIPS.find(c => c.query.toLowerCase() === searchQuery.toLowerCase() || c.label.toLowerCase() === searchQuery.toLowerCase());
+      if (match) setSelectedChip(match.label);
+    }
+  }, [searchQuery]);
+
   return (
     <div className={`w-full px-2 sm:px-4 md:px-8 relative z-10 ${USE_V2_DISCOVER_UI ? 'space-y-4 sm:space-y-6 pb-36 md:pb-24' : 'space-y-6 sm:space-y-8 pb-32 md:pb-20'}`}>
       {USE_V2_DISCOVER_UI ? (
@@ -143,17 +174,23 @@ export default function DiscoverView({
               </span>
               {POPULAR_SEARCH_CHIPS.map((chip, idx) => {
                 const isSelected = selectedChip === chip.label;
+                const isChipLoading = isSelected && isLoading;
                 return (
                   <button
                     key={idx}
                     type="button"
                     onClick={() => handleChipClick(chip)}
-                    className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-150 cursor-pointer active:scale-95 shrink-0 select-none ${
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer active:scale-95 shrink-0 select-none ${
                       isSelected
-                        ? 'bg-amber-400 text-neutral-950 font-bold shadow-sm shadow-amber-500/20'
+                        ? 'bg-amber-400 text-neutral-950 font-bold shadow-md shadow-amber-500/25 ring-2 ring-amber-400/50'
                         : 'bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10 hover:border-amber-400/30'
                     }`}
                   >
+                    {isChipLoading ? (
+                      <Sparkles className="w-3 h-3 text-neutral-950 animate-spin" />
+                    ) : (
+                      <Search className={`w-3 h-3 ${isSelected ? 'text-neutral-950' : 'text-amber-400/80'}`} />
+                    )}
                     <span>{chip.label}</span>
                   </button>
                 );
@@ -245,6 +282,7 @@ export default function DiscoverView({
               <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none -mx-3 px-3 sm:mx-0 sm:px-0">
                 {POPULAR_SEARCH_CHIPS.map((chip, idx) => {
                   const isSelected = selectedChip === chip.label;
+                  const isChipLoading = isSelected && isLoading;
                   return (
                     <button
                       key={idx}
@@ -252,11 +290,15 @@ export default function DiscoverView({
                       onClick={() => handleChipClick(chip)}
                       className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer active:scale-95 shrink-0 min-h-[44px] select-none ${
                         isSelected
-                          ? 'bg-amber-500 text-neutral-950 font-bold shadow-md shadow-amber-500/20'
+                          ? 'bg-amber-500 text-neutral-950 font-bold shadow-md shadow-amber-500/25 ring-2 ring-amber-400/50'
                           : 'bg-neutral-900/90 hover:bg-neutral-850 text-neutral-300 hover:text-white border border-neutral-800 hover:border-amber-500/40 shadow-sm'
                       }`}
                     >
-                      <Search className={`w-3.5 h-3.5 ${isSelected ? 'text-neutral-950' : 'text-amber-400'}`} />
+                      {isChipLoading ? (
+                        <Sparkles className="w-3.5 h-3.5 text-neutral-950 animate-spin" />
+                      ) : (
+                        <Search className={`w-3.5 h-3.5 ${isSelected ? 'text-neutral-950' : 'text-amber-400'}`} />
+                      )}
                       <span>{chip.label}</span>
                     </button>
                   );
@@ -658,10 +700,10 @@ export default function DiscoverView({
                         </div>
                       </div>
 
-                      <h4 className="text-xs font-semibold text-white truncate group-hover:text-amber-300 transition line-clamp-1">
-                        {track.title}
+                      <h4 className="text-xs font-semibold text-white truncate group-hover:text-amber-300 transition line-clamp-1" title={track.title}>
+                        {cleanDisplayTitle(track.title)}
                       </h4>
-                      <p className="text-[10px] text-zinc-400 truncate mt-0.5 select-none pointer-events-none line-clamp-1">
+                      <p className="text-[10px] text-zinc-400 truncate mt-0.5 select-none pointer-events-none line-clamp-1" title={track.artist || track.channel}>
                         {track.artist || track.channel}
                       </p>
                     </div>
@@ -733,10 +775,10 @@ export default function DiscoverView({
                         </div>
                       </div>
 
-                      <h4 className="text-xs font-semibold text-white truncate group-hover:text-amber-300 transition line-clamp-1">
-                        {album.title}
+                      <h4 className="text-xs font-semibold text-white truncate group-hover:text-amber-300 transition line-clamp-1" title={album.title}>
+                        {cleanDisplayTitle(album.title)}
                       </h4>
-                      <p className="text-[10px] text-zinc-400 truncate mt-0.5 select-none pointer-events-none line-clamp-1">
+                      <p className="text-[10px] text-zinc-400 truncate mt-0.5 select-none pointer-events-none line-clamp-1" title={album.artist || 'Bollywood Classic'}>
                         {album.artist || 'Bollywood Classic'}
                       </p>
                     </div>

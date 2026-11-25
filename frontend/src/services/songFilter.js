@@ -87,7 +87,12 @@ export const STRICT_TEXT_BLOCKLIST = [
   'ringtone', 'ringtones', 'mobile ringtone', 'phone ringtone', 'love ringtone', 'new ringtone', 'caller tune',
   'whatsapp status', 'status video', 'edit', 'voice comparison', 'vs', 'song ideas',
   'dance cover', 'dance performance', 'couple dance', 'zumba', 'fitness dance', 'dancer',
-  'karaoke', 'karoake', 'instrumental only', 'bhat geet', 'banni geet', 'beach', 'anniversary'
+  'karaoke', 'karoake', 'instrumental only', 'bhat geet', 'banni geet', 'beach', 'anniversary',
+  // Commercial ads, car reviews, unboxing, automotive noise, deal platforms
+  'car review', 'walkaround review', 'test drive', 'mileage test', 'ownership review',
+  'car buying', 'buying permission', 'used car', 'second hand car', 'used cars',
+  'cars24', '#cars24', 'spinny', '#spinny', 'cardekho', '#cardekho', 'carwale', '#carwale',
+  'commercial ad', 'brand film', 'advertisement', 'promo ad', 'tv commercial', 'sponsored ad'
 ];
 
 export const URL_METADATA_SHORTS_REGEX = /(?:#shorts|\/shorts\/|\bshorts\b|\breels?\b|\bringtones?\b|\bwhatsapp\s+status\b|\bstatus\s+video\b)/i;
@@ -162,7 +167,9 @@ export const SPAM_CHANNEL_HANDLES = [
   /\bfact\s+boy\b/i,
   /\bcinemix\b/i,
   /\bstatus\b/i,
-  /\bedits?\b/i
+  /\bedits?\b/i,
+  // Commercial portals, used-car dealership channels, and unboxing/auto review platforms
+  /\b(cars24|spinny|cardekho|carwale|zigwheels|autocar(?:\s+india)?|motoroctane|faisal\s+khan)\b/i
 ];
 
 export const STRICT_BLOCKLIST_REGEXES = STRICT_TEXT_BLOCKLIST.map(kw => {
@@ -296,6 +303,10 @@ export const NON_MUSIC_DISQUALIFIERS = [
   /\b(music\s+quiz|song\s+quiz|name\s+the\s+song|finish\s+the\s+lyrics?|blind\s+karaoke)\b/i,
   // Reaction & Review videos
   /\b(reaction\s+video|reacts?\s+to|reacting\s+to|first\s+time\s+hearing|song\s+reaction|trailer\s+reaction)\b/i,
+  // Commercial ads, brand films, automotive/dealership channels, and car reviews
+  /\b(brand\s+film|commercial\s+ad|advertisement|tv\s+commercial|sponsored\s+ad|promotional\s+video|product\s+launch)\b/i,
+  /\b(car\s+review|walkaround\s+review|test\s+drive|mileage\s+test|ownership\s+review|drag\s+race|top\s+speed\s+run|facelift\s+review|car\s+buying|buying\s+permission|used\s+cars?)\b/i,
+  /\b(cars24|spinny|cardekho|carwale|zigwheels|motoroctane)\b/i,
   // Gaming content
   /\b(gameplay|walkthrough|playthrough|let'?s\s+play|speedrun|stream\s+highlights|pro\s+gameplay)\b/i,
   /\b(minecraft|roblox|valorant|gta\s*[v5]|fortnite|pubg|bgmi|free\s*fire|apex\s+legends)\b/i,

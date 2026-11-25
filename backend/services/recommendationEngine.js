@@ -8,6 +8,46 @@ import { getCanonicalSongKey, cleanSongTitle, cleanArtistName, areTracksSame, Tr
 import { getCleanTrackThumbnail, isValidThumbnailUrlFormat, filterTracksWithValidThumbnailsSync, isKnownInvalidId } from './thumbnailValidationService.js';
 import { isCleanMusicTrack } from './songFilter.js';
 
+/**
+ * Helper to determine current time of day context and associated mood/genre weights.
+ */
+export function getTimeOfDayContext(date = new Date()) {
+  const hour = date.getHours(); // 0 - 23
+  if (hour >= 5 && hour < 12) {
+    return {
+      period: 'morning',
+      label: 'Morning Acoustic & Energizing Mix',
+      subtitle: 'Gentle melodies, fresh acoustics, and bright morning rhythms',
+      preferredMoods: ['morning', 'acoustic', 'energizing', 'feel-good', 'fresh', 'uplifting', 'devotional'],
+      preferredGenres: ['acoustic', 'pop', 'bollywood', 'indie']
+    };
+  } else if (hour >= 12 && hour < 17) {
+    return {
+      period: 'afternoon',
+      label: 'Afternoon Focus & Upbeat Beats',
+      subtitle: 'Midday vibes, steady tempos, and upbeat rhythms to power your day',
+      preferredMoods: ['focus', 'upbeat', 'energetic', 'drive', 'groovy', 'feel-good'],
+      preferredGenres: ['pop', 'bollywood', 'punjabi', 'dance']
+    };
+  } else if (hour >= 17 && hour < 22) {
+    return {
+      period: 'evening',
+      label: 'Evening Sunset & Chill Melodies',
+      subtitle: 'Unwind with romantic melodies, sunset acoustics, and golden hits',
+      preferredMoods: ['romantic', 'chill', 'sunset', 'unwind', 'melodic', 'soulful'],
+      preferredGenres: ['romantic', 'bollywood', 'sufi', 'indie', 'desi pop']
+    };
+  } else {
+    return {
+      period: 'late_night',
+      label: 'Late Night Chill & Lo-Fi Lounge',
+      subtitle: 'Atmospheric lo-fi, tranquil acoustics, and midnight deep thoughts',
+      preferredMoods: ['lo-fi', 'lofi', 'ambient', 'relax', 'night', 'slowed', 'reverb', 'calm', 'underrated'],
+      preferredGenres: ['lo-fi', 'indie', 'acoustic', 'ambient', 'sufi']
+    };
+  }
+}
+
 // Configuration
 const CACHE_TTL_HOURS = 6;
 const MIN_NEW_EVENTS_TO_INVALIDATE = 4; // Refresh if user has completed >= 4 new songs
@@ -134,7 +174,7 @@ export const recommendationEngine = {
 
     // 4. If new user with no history, return clean Discovery Starter Mix
     if (userProfile.isNewUser) {
-      const starterResult = this.buildDiscoveryStarterMix(candidates);
+      const starterResult = this.buildDiscoveryStarterMix(candidates, { forceRefresh });
       starterResult.recommendations = this.sanitizeRecommendations(starterResult.recommendations, candidates, userProfile);
       await this.saveCache(userId, starterResult, 'discovery_starter', 'none', 0);
       return {
@@ -148,7 +188,7 @@ export const recommendationEngine = {
 
     // 5. Attempt Gemini AI Personalized Recommendation
     let aiResult = null;
-    if (geminiRecommendationService.isConfigured()) {
+    if (geminiRecommendationService.isConfigured() && !forceRefresh) {
       aiResult = await geminiRecommendationService.generateRecommendations(userProfile, candidates);
     }
 
@@ -167,8 +207,8 @@ export const recommendationEngine = {
       };
     }
 
-    // 7. Fallback: Intelligent Heuristic Hybrid Engine
-    const fallbackResult = this.generateHeuristicRecommendations(userProfile, candidates);
+    // 7. Fallback: Intelligent Heuristic Hybrid Engine with Time-Of-Day context & dynamic diversity
+    const fallbackResult = this.generateHeuristicRecommendations(userProfile, candidates, { forceRefresh });
     fallbackResult.recommendations = this.sanitizeRecommendations(fallbackResult.recommendations, candidates, userProfile);
     const totalEvents = await UserListeningEvent.countDocuments({ userId }).maxTimeMS(2000);
     await this.saveCache(userId, fallbackResult, 'catalog_fallback', 'heuristic_hybrid', totalEvents);
@@ -190,24 +230,49 @@ export const recommendationEngine = {
    * - Discover: Novel indie, acoustic, and diverse sounds (e.g. Anuv Jain, Prateek Kuhad, Sufi Rock).
    * ZERO overlap across the entire starter ecosystem!
    */
-  buildDiscoveryStarterMix(candidates = []) {
-    const validCandidates = filterTracksWithValidThumbnailsSync(candidates);
-    const deduplicator = new TrackDeduplicator();
+  buildDiscoveryStarterMix(candidates = [], options = {}) {
+    let validCandidates = filterTracksWithValidThumbnailsSync(candidates);
+    const { forceRefresh = false } = options;
+    const timeOfDay = getTimeOfDayContext();
 
-    // 1. Made For You: Diverse starter showcase (Romantic, Bollywood, Pop hits)
+    // If refreshing, rotate candidate pool order so fresh songs surface immediately
+    if (forceRefresh && validCandidates.length > 1) {
+      const rotated = [...validCandidates];
+      const offset = Math.floor(Math.random() * (validCandidates.length - 1)) + 1;
+      validCandidates = [...rotated.slice(offset), ...rotated.slice(0, offset)];
+    }
+
+    const deduplicator = new TrackDeduplicator();
+    const artistCounts = {};
+    const maxTracksPerArtist = 2; // Strict artist diversity rule
+
+    // Helper to check artist cap
+    const canAddArtist = (track) => {
+      const art = (track.artist || track.channel || 'various').toLowerCase().trim();
+      return (artistCounts[art] || 0) < maxTracksPerArtist;
+    };
+
+    const recordArtist = (track) => {
+      const art = (track.artist || track.channel || 'various').toLowerCase().trim();
+      artistCounts[art] = (artistCounts[art] || 0) + 1;
+    };
+
+    // 1. Made For You: Diverse starter showcase (Romantic, Bollywood, Pop hits tuned to time-of-day)
     const madeForYou = [];
     for (const track of validCandidates) {
-      if (deduplicator.isDuplicate(track)) continue;
+      if (deduplicator.isDuplicate(track) || !canAddArtist(track)) continue;
 
       const genre = (track.genre || '').toLowerCase();
       const mood = (track.mood || '').toLowerCase();
       const isMainstream = genre.includes('romantic') || genre.includes('bollywood') || genre.includes('pop') || mood.includes('love') || mood.includes('feel-good');
+      const matchesTime = timeOfDay.preferredMoods.some(m => mood.includes(m)) || timeOfDay.preferredGenres.some(g => genre.includes(g));
 
-      if (isMainstream || madeForYou.length < 5) {
+      if (matchesTime || isMainstream || madeForYou.length < 5) {
         deduplicator.add(track);
+        recordArtist(track);
         madeForYou.push({
           ...track,
-          reason: 'Trending on Loopra',
+          reason: matchesTime ? `${timeOfDay.period.toUpperCase().replace('_', ' ')} PICK: ${track.mood || 'Melodic'}` : 'Trending on Loopra',
           source: 'starter'
         });
       }
@@ -217,7 +282,7 @@ export const recommendationEngine = {
     // 2. Select familiar mainstream hits for Daily Mix (STRICTLY DISJOINT from Made For You)
     const dailyMix = [];
     for (const track of validCandidates) {
-      if (deduplicator.isDuplicate(track)) continue;
+      if (deduplicator.isDuplicate(track) || !canAddArtist(track)) continue;
 
       const genre = (track.genre || '').toLowerCase();
       const mood = (track.mood || '').toLowerCase();
@@ -225,6 +290,7 @@ export const recommendationEngine = {
 
       if (isMainstream || dailyMix.length < 5) {
         deduplicator.add(track);
+        recordArtist(track);
         dailyMix.push({
           ...track,
           reason: 'Popular Daily Mix',
@@ -238,7 +304,7 @@ export const recommendationEngine = {
     // STRICTLY DISJOINT from Made For You and Daily Mix
     const discover = [];
     for (const track of validCandidates) {
-      if (deduplicator.isDuplicate(track)) continue;
+      if (deduplicator.isDuplicate(track) || !canAddArtist(track)) continue;
 
       const genre = (track.genre || '').toLowerCase();
       const mood = (track.mood || '').toLowerCase();
@@ -246,6 +312,7 @@ export const recommendationEngine = {
 
       if (isNovel || discover.length < 5) {
         deduplicator.add(track);
+        recordArtist(track);
         discover.push({
           ...track,
           reason: 'Explore new sounds',
@@ -257,10 +324,15 @@ export const recommendationEngine = {
 
     return {
       source: 'discovery_starter',
+      timeOfDay: {
+        period: timeOfDay.period,
+        label: timeOfDay.label,
+        subtitle: timeOfDay.subtitle
+      },
       insights: {
-        dominantMood: 'Trending Hits',
-        topGenres: ['Bollywood', 'Desi Pop', 'Nostalgia'],
-        summary: 'Welcome to Loopra! Play a few songs to train your AI-powered personalized mix.'
+        dominantMood: timeOfDay.label,
+        topGenres: ['Bollywood', 'Desi Pop', 'Nostalgia', 'Indie'],
+        summary: `Welcome to Loopra! Here is your ${timeOfDay.label.toLowerCase()} tailored for your session.`
       },
       recommendations: {
         madeForYou,
@@ -278,8 +350,18 @@ export const recommendationEngine = {
    * Runs when Gemini API is unconfigured or temporarily unavailable.
    * Enforces 100% mutual disjointness across ALL sections using TrackDeduplicator.
    */
-  generateHeuristicRecommendations(userProfile, candidates = []) {
-    candidates = filterTracksWithValidThumbnailsSync(candidates);
+  generateHeuristicRecommendations(userProfile, candidates = [], options = {}) {
+    let validCandidates = filterTracksWithValidThumbnailsSync(candidates);
+    const { forceRefresh = false } = options;
+    const timeOfDay = getTimeOfDayContext();
+
+    // If refreshing mix, inject rotation/exploration offset to shuffle candidate priority
+    if (forceRefresh && validCandidates.length > 2) {
+      const copy = [...validCandidates];
+      const shift = Math.floor(Math.random() * (copy.length - 1)) + 1;
+      validCandidates = [...copy.slice(shift), ...copy.slice(0, shift)];
+    }
+
     const skippedSet = new Set(userProfile.skippedTrackIds || []);
     const dislikedSet = new Set(userProfile.dislikedTrackIds || []);
     const favouriteSet = new Set(userProfile.favouriteTrackIds || []);
@@ -287,6 +369,7 @@ export const recommendationEngine = {
     const topArtistNames = (userProfile.topArtists || []).map(a => a.name.toLowerCase());
     const primaryArtist = topArtistNames[0] || 'Arijit Singh';
     const topGenres = (userProfile.topGenres || []).map(g => g.name.toLowerCase());
+    const topMoods = (userProfile.topMoods || []).map(m => m.name.toLowerCase());
 
     const deduplicator = new TrackDeduplicator();
     const recentBase = userProfile?.recentTracks?.[0] || null;
@@ -294,15 +377,20 @@ export const recommendationEngine = {
       deduplicator.add(recentBase);
     }
 
-    // 1. Score candidates for familiarity and affinity
+    // Strict cross-shelf artist diversity tracker (cap max 2 tracks per artist globally/per shelf)
+    const globalArtistCount = {};
+    const maxGlobalPerArtist = 3;
+
+    // 1. Score candidates for familiarity, affinity and time-of-day contextualization
     const scoredCandidates = [];
-    for (const track of candidates) {
+    for (const track of validCandidates) {
       const trackId = track.id || track.videoId;
       if (!trackId || dislikedSet.has(trackId)) continue;
 
       let familiarityScore = 10;
       const trackArtist = (track.artist || track.channel || '').toLowerCase();
       const trackGenre = (track.genre || '').toLowerCase();
+      const trackMood = (track.mood || '').toLowerCase();
 
       // Top artist match (+25)
       if (topArtistNames.some(art => trackArtist.includes(art))) {
@@ -312,6 +400,14 @@ export const recommendationEngine = {
       if (topGenres.some(g => trackGenre.includes(g))) {
         familiarityScore += 15;
       }
+      // Top mood match (+15)
+      if (topMoods.some(m => trackMood.includes(m))) {
+        familiarityScore += 15;
+      }
+      // Time-of-day contextual boost (+15)
+      if (timeOfDay.preferredMoods.some(m => trackMood.includes(m)) || timeOfDay.preferredGenres.some(g => trackGenre.includes(g))) {
+        familiarityScore += 15;
+      }
       // Favourites / repeats (+20)
       if (favouriteSet.has(trackId)) {
         familiarityScore += 20;
@@ -319,6 +415,10 @@ export const recommendationEngine = {
       // Heavily penalize skipped tracks (-30)
       if (skippedSet.has(trackId)) {
         familiarityScore -= 30;
+      }
+      // Random exploration factor for refreshing (0 to 10 points jitter)
+      if (forceRefresh) {
+        familiarityScore += Math.floor(Math.random() * 12);
       }
 
       scoredCandidates.push({
@@ -336,18 +436,25 @@ export const recommendationEngine = {
 
     for (const item of scoredCandidates) {
       if (deduplicator.isDuplicate(item.track)) continue;
-      const art = (item.track.artist || 'various').toLowerCase();
-      if ((mArtistCount[art] || 0) >= 2) continue;
+      const art = (item.track.artist || 'various').toLowerCase().trim();
+      if ((mArtistCount[art] || 0) >= 2 || (globalArtistCount[art] || 0) >= maxGlobalPerArtist) continue;
 
       mArtistCount[art] = (mArtistCount[art] || 0) + 1;
+      globalArtistCount[art] = (globalArtistCount[art] || 0) + 1;
       deduplicator.add(item.track);
+
+      const trackMood = (item.track.mood || '').toLowerCase();
+      const isTimeMatch = timeOfDay.preferredMoods.some(m => trackMood.includes(m));
+
       madeForYou.push({
         ...item.track,
-        reason: favouriteSet.has(item.track.id || item.track.videoId)
-          ? 'Based on your favourites'
-          : topArtistNames.some(a => art.includes(a))
-            ? `Because you love ${item.track.artist}`
-            : 'Matches your listening vibe',
+        reason: isTimeMatch
+          ? `${timeOfDay.period.toUpperCase().replace('_', ' ')}: ${item.track.mood || 'Vibe'}`
+          : favouriteSet.has(item.track.id || item.track.videoId)
+            ? 'Based on your favourites'
+            : topArtistNames.some(a => art.includes(a))
+              ? `Because you love ${item.track.artist}`
+              : 'Matches your listening vibe',
         source: 'hybrid'
       });
       if (madeForYou.length >= 6) break;
@@ -511,10 +618,15 @@ export const recommendationEngine = {
 
     return {
       source: 'catalog_fallback',
+      timeOfDay: {
+        period: timeOfDay.period,
+        label: timeOfDay.label,
+        subtitle: timeOfDay.subtitle
+      },
       insights: {
-        dominantMood: 'Melodic & Nostalgic',
-        topGenres: ['Bollywood Melodies', 'Desi Lounge'],
-        summary: `Crafted around your affinity for ${primaryArtist} and curated favorites.`
+        dominantMood: timeOfDay.label,
+        topGenres: (userProfile.topGenres || []).map(g => g.name).slice(0, 3),
+        summary: `Crafted around your affinity for ${primaryArtist} and your ${timeOfDay.label.toLowerCase()}.`
       },
       recommendations: {
         madeForYou,

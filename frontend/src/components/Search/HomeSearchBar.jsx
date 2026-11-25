@@ -38,7 +38,7 @@ export default function HomeSearchBar({
   onPlaySong,
   onArtistClick,
   initialQuery = '',
-  placeholder = "Search songs, artists, or paste link...",
+  placeholder = "Search songs, artists, nostalgic gems, or paste YouTube link...",
   suggestions,
   showQuickTags = true,
   user = null,
@@ -70,6 +70,11 @@ export default function HomeSearchBar({
 
   // Load recent searches on mount and when user identity changes
   useEffect(() => {
+    const list = getRecentSearches(currentUserId);
+    setRecentSearches(list);
+  }, [currentUserId]);
+
+  const refreshRecentSearches = useCallback(() => {
     const list = getRecentSearches(currentUserId);
     setRecentSearches(list);
   }, [currentUserId]);
@@ -347,6 +352,7 @@ export default function HomeSearchBar({
             onFocus={() => {
               setIsFocused(true);
               setIsOpen(true);
+              refreshRecentSearches();
             }}
             onBlur={() => setIsFocused(false)}
             onKeyDown={handleKeyDown}

@@ -11,7 +11,7 @@ export const getStorageKey = (userId) => {
 };
 
 /**
- * Retrieve recent search queries (max 10)
+ * Retrieve recent search queries (max 8)
  */
 export const getRecentSearches = (userId = null) => {
   if (typeof window === 'undefined') return [];
@@ -23,7 +23,7 @@ export const getRecentSearches = (userId = null) => {
     if (!Array.isArray(parsed)) return [];
     return parsed
       .filter((item) => typeof item === 'string' && item.trim().length > 0)
-      .slice(0, 10);
+      .slice(0, 8);
   } catch (err) {
     console.warn('[Search History] Failed to read recent searches:', err.message);
     return [];
@@ -66,7 +66,7 @@ export const saveRecentSearch = (query, userId = null, { token = null, backendUr
     const filtered = current.filter(
       (item) => item.toLowerCase() !== trimmed.toLowerCase()
     );
-    const updated = [trimmed, ...filtered].slice(0, 10);
+    const updated = [trimmed, ...filtered].slice(0, 8);
 
     localStorage.setItem(key, JSON.stringify(updated));
 

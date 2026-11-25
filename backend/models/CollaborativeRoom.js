@@ -30,6 +30,23 @@ const roomPlaylistSchema = new mongoose.Schema({
   songs: { type: [roomSongSchema], default: [] }
 }, { _id: false });
 
+const roomQueueItemSchema = new mongoose.Schema({
+  id: { type: String, required: true },
+  trackId: { type: String, default: '' },
+  videoId: { type: String, default: '' },
+  title: { type: String, required: true, trim: true },
+  artist: { type: String, default: 'Unknown Artist', trim: true },
+  thumbnail: { type: String, default: '' },
+  durationSec: { type: Number, default: 0 },
+  addedBy: {
+    userId: { type: String, default: '' },
+    username: { type: String, default: 'Listener' },
+    displayName: { type: String, default: '' }
+  },
+  votes: { type: [String], default: [] },
+  addedAt: { type: Date, default: Date.now }
+}, { _id: false });
+
 const roomMemberSchema = new mongoose.Schema({
   userId: { type: String, default: '' },
   username: { type: String, default: 'Listener' },
@@ -126,6 +143,22 @@ const collaborativeRoomSchema = new mongoose.Schema({
   playlists: {
     type: [roomPlaylistSchema],
     default: []
+  },
+  queue: {
+    type: [roomQueueItemSchema],
+    default: []
+  },
+  permissionMode: {
+    type: String,
+    enum: ['host_only', 'open_queue', 'co_dj'],
+    default: 'open_queue'
+  },
+  playbackState: {
+    trackId: { type: String, default: '' },
+    isPlaying: { type: Boolean, default: false },
+    positionMs: { type: Number, default: 0 },
+    anchorServerTimeMs: { type: Number, default: 0 },
+    playbackRate: { type: Number, default: 1.0 }
   },
   currentSong: {
     type: mongoose.Schema.Types.Mixed,

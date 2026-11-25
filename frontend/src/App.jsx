@@ -1757,6 +1757,7 @@ export default function App() {
           setCmsConfig(resolved);
           if (typeof resolved.featureControls?.offlineDownloadsEnabled === 'boolean') {
             offlineStorageService.setDownloadsEnabled(resolved.featureControls.offlineDownloadsEnabled);
+            offlineEligibilityService.setDownloadsEnabled(resolved.featureControls.offlineDownloadsEnabled);
           }
           applyThemeToDom(resolved.theme, true);
         }
@@ -1783,6 +1784,7 @@ export default function App() {
         setCmsConfig(resolved);
         if (typeof resolved.featureControls?.offlineDownloadsEnabled === 'boolean') {
           offlineStorageService.setDownloadsEnabled(resolved.featureControls.offlineDownloadsEnabled);
+          offlineEligibilityService.setDownloadsEnabled(resolved.featureControls.offlineDownloadsEnabled);
         }
         try {
           localStorage.setItem('afterhours_cms_public_config', JSON.stringify(normalizeCmsConfig(data.config)));
@@ -1795,6 +1797,7 @@ export default function App() {
             setCmsConfig(resolved);
             if (typeof resolved.featureControls?.offlineDownloadsEnabled === 'boolean') {
               offlineStorageService.setDownloadsEnabled(resolved.featureControls.offlineDownloadsEnabled);
+              offlineEligibilityService.setDownloadsEnabled(resolved.featureControls.offlineDownloadsEnabled);
             }
             applyThemeToDom(resolved.theme, true);
           }

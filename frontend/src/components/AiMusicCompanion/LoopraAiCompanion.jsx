@@ -315,11 +315,11 @@ export default function LoopraAiCompanion({
       // Bottom mini player (when active) is ~64px + 8px gap.
       // Offset button safely upward away from music player and navbar
       const btnBottom = isBottomPlayerVisible
-        ? 'calc(152px + env(safe-area-inset-bottom, 0px))'
-        : 'calc(82px + env(safe-area-inset-bottom, 0px))';
+        ? 'calc(160px + env(safe-area-inset-bottom, 0px))'
+        : 'calc(88px + env(safe-area-inset-bottom, 0px))';
       const panelBottom = isBottomPlayerVisible
-        ? `calc(152px + ${barHeight} + 10px + env(safe-area-inset-bottom, 0px))`
-        : `calc(82px + ${barHeight} + 10px + env(safe-area-inset-bottom, 0px))`;
+        ? `calc(160px + ${barHeight} + 10px + env(safe-area-inset-bottom, 0px))`
+        : `calc(88px + ${barHeight} + 10px + env(safe-area-inset-bottom, 0px))`;
       const maxH = isBottomPlayerVisible
         ? `calc(100dvh - ${hasVoiceAccess ? '295px' : '230px'} - env(safe-area-inset-bottom, 0px))`
         : `calc(100dvh - ${hasVoiceAccess ? '225px' : '160px'} - env(safe-area-inset-bottom, 0px))`;
@@ -1597,7 +1597,7 @@ export default function LoopraAiCompanion({
             style={{
               position: 'fixed',
               bottom: bottomOffsets.btnBottom,
-              right: isMobile ? '14px' : '20px',
+              right: isMobile ? '16px' : '24px',
               zIndex: 2147483642
             }}
             className="flex flex-col items-center gap-2.5 pointer-events-auto"
