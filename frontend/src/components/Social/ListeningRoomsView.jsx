@@ -150,6 +150,7 @@ export default function ListeningRoomsView({
   const isSendingChatRef = useRef(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [floatingReactions, setFloatingReactions] = useState([]);
+  const lastReactionTimeRef = useRef(0);
   const [unreadActivityCount, setUnreadActivityCount] = useState(0);
   const autoRestoredRoomRef = useRef(false);
 
