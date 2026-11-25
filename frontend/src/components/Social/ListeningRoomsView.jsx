@@ -14,6 +14,7 @@ import { useUiConfig } from '../../context/UiConfigContext';
 
 const QUICK_REACTIONS = ['🔥', '❤️', '🕺', '😭'];
 const STORAGE_KEY_DELETED_ROOMS = 'afterhours_deleted_room_ids';
+const STORAGE_KEY_ACTIVE_ROOM_CODE = 'loopra_active_room_code';
 
 const loadDeletedRoomIds = () => {
   try {
@@ -112,6 +113,7 @@ export default function ListeningRoomsView({
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [floatingReactions, setFloatingReactions] = useState([]);
   const [unreadActivityCount, setUnreadActivityCount] = useState(0);
+  const autoRestoredRoomRef = useRef(false);
 
   // Synchronized Playback Request & Ready-Check state
   const [activePlaybackRequest, setActivePlaybackRequest] = useState(null);
@@ -266,6 +268,27 @@ export default function ListeningRoomsView({
     refreshRooms();
   }, [currentUserId, token]);
 
+  // Restore persisted active room on page refresh / load
+  useEffect(() => {
+    if (activeRoom || autoRestoredRoomRef.current || !token) return;
+    let targetCode = null;
+    if (typeof window !== 'undefined') {
+      try {
+        const url = new URL(window.location.href);
+        targetCode = (url.searchParams.get('room') || url.searchParams.get('roomCode') || '').trim();
+      } catch (e) {}
+      if (!targetCode) {
+        try {
+          targetCode = (sessionStorage.getItem(STORAGE_KEY_ACTIVE_ROOM_CODE) || '').trim();
+        } catch (e) {}
+      }
+    }
+    if (targetCode) {
+      autoRestoredRoomRef.current = true;
+      handleOpenRoomByCodeOrId(targetCode);
+    }
+  }, [token, activeRoom]);
+
   // Keep selected playlist active or select first
   useEffect(() => {
     if (roomPlaylists && roomPlaylists.length > 0) {
@@ -277,9 +300,29 @@ export default function ListeningRoomsView({
     }
   }, [roomPlaylists, selectedPlaylistId]);
 
-  // Initial load of room details when activeRoom changes
+  // Initial load of room details and state persistence when activeRoom changes
   useEffect(() => {
-    if (!activeRoom) return;
+    if (!activeRoom) {
+      try {
+        sessionStorage.removeItem(STORAGE_KEY_ACTIVE_ROOM_CODE);
+      } catch (e) {}
+      return;
+    }
+    const identifier = activeRoom.code || activeRoom.roomId || activeRoom.id;
+    if (identifier) {
+      try {
+        sessionStorage.setItem(STORAGE_KEY_ACTIVE_ROOM_CODE, identifier);
+      } catch (e) {}
+      if (typeof window !== 'undefined' && window.history) {
+        try {
+          const url = new URL(window.location.href);
+          if (url.searchParams.get('room') !== identifier && url.searchParams.get('roomCode') !== identifier) {
+            url.searchParams.set('room', identifier);
+            window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : '') + (url.hash || ''));
+          }
+        } catch (e) {}
+      }
+    }
     setParticipants(activeRoom.members || []);
     setJoinRequests(activeRoom.joinRequests || []);
     setActivities(activeRoom.activities || []);
@@ -594,6 +637,34 @@ export default function ListeningRoomsView({
     };
   }, [socket, activeRoom, currentUserId, activeTab, setRoomPlaylists, setActiveRoom, showToast]);
 
+  // Open room by code or ID directly (used for restoring active room on refresh or deep link)
+  const handleOpenRoomByCodeOrId = async (targetCodeOrId) => {
+    if (!targetCodeOrId) return;
+    const cleanCode = targetCodeOrId.trim();
+    if (!cleanCode) return;
+    try {
+      const res = await fetch(getApiUrl(`/api/rooms/lookup/${encodeURIComponent(cleanCode)}`), {
+        headers: authHeaders
+      });
+      const data = await res.json();
+      if (res.ok && data?.success && data?.preview) {
+        setSearchPreviewRoom(null);
+        setSelectedPreviewRoom(null);
+        setPreviewLeftRoom(null);
+        if (setActiveRoom) setActiveRoom(data.preview);
+        if (setRoomPlaylists) setRoomPlaylists(data.preview.playlists || []);
+        setParticipants(getUniqueMembers(data.preview.members || []));
+        setActivities(data.preview.activities || []);
+        setChatMessages(data.preview.chatMessages || []);
+        const rId = data.preview.roomId || data.preview.id;
+        socket?.emit('join_listening_room', { roomId: rId, user });
+        socket?.emit('room:join', { roomId: rId, user });
+      }
+    } catch (e) {
+      console.warn('[ListeningRooms] Failed to restore room on refresh:', e);
+    }
+  };
+
   // Helper to check if current user is already an active member or creator of a room
   const isUserMemberOrHost = (roomItem) => {
     if (!roomItem || !currentUserId) return false;
@@ -780,6 +851,9 @@ export default function ListeningRoomsView({
 
   // 2. Leave Room
   const handleLeave = () => {
+    try {
+      sessionStorage.removeItem(STORAGE_KEY_ACTIVE_ROOM_CODE);
+    } catch (e) {}
     // Immediately clear ?room= or ?roomCode= query parameters from URL so auto-join doesn't re-trigger
     if (typeof window !== 'undefined' && window.history && window.location) {
       try {
@@ -1729,7 +1803,10 @@ export default function ListeningRoomsView({
     const isFromLeftRooms = roomToDelete._isLeftRoom || filterTab === 'left';
     setIsDeletingRoom(true);
 
-    // Clean URL query param if active
+    // Clean URL query param and stored session room if active
+    try {
+      sessionStorage.removeItem(STORAGE_KEY_ACTIVE_ROOM_CODE);
+    } catch (e) {}
     if (typeof window !== 'undefined' && window.history && window.location) {
       try {
         const url = new URL(window.location.href);
@@ -2071,6 +2148,17 @@ export default function ListeningRoomsView({
                 type="button"
                 onClick={() => {
                   // Leave active view without disconnecting
+                  try {
+                    sessionStorage.removeItem(STORAGE_KEY_ACTIVE_ROOM_CODE);
+                  } catch (e) {}
+                  if (typeof window !== 'undefined' && window.history) {
+                    try {
+                      const url = new URL(window.location.href);
+                      url.searchParams.delete('room');
+                      url.searchParams.delete('roomCode');
+                      window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : '') + (url.hash || ''));
+                    } catch (e) {}
+                  }
                   setActiveRoom(null);
                 }}
                 className="p-2 sm:px-3 sm:py-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 text-neutral-300 hover:text-white transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer border border-neutral-700/50 shrink-0"
@@ -2613,31 +2701,6 @@ export default function ListeningRoomsView({
                     <ArrowUpDown className="w-3 h-3 text-amber-400" />
                     <span>{sortByVotes ? 'Sort: Upvotes' : 'Sort: Default'}</span>
                   </button>
-                </div>
-
-                <div className="flex items-center gap-2 flex-wrap">
-                  {isUiVisible('btn.importPlaylist') && (
-                    <button
-                      type="button"
-                      onClick={() => setIsImportModalOpen(true)}
-                      className="px-3 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-bold text-xs border border-purple-500/40 transition flex items-center gap-1.5 cursor-pointer active:scale-95"
-                      title="Import one of your personal playlists into this room"
-                    >
-                      <FolderPlus className="w-3.5 h-3.5" />
-                      <span>Import My Playlist</span>
-                    </button>
-                  )}
-
-                  {isUiVisible('btn.newRoomPlaylist') && (
-                    <button
-                      type="button"
-                      onClick={() => setIsCreatingPlaylist(!isCreatingPlaylist)}
-                      className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs border border-amber-500/40 transition flex items-center gap-1 cursor-pointer active:scale-95"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>{isCreatingPlaylist ? 'Cancel' : 'New Room Playlist'}</span>
-                    </button>
-                  )}
                 </div>
               </div>
 

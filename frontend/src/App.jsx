@@ -8278,14 +8278,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     const roomParam = (params.get('room') || params.get('roomCode') || '').trim();
     if (!initialRoomCheckedRef.current && roomParam) {
       initialRoomCheckedRef.current = true;
-      // Clean room parameter from URL so leaving room or reloading does not re-trigger
-      try {
-        const cleanUrl = new URL(window.location.href);
-        cleanUrl.searchParams.delete('room');
-        cleanUrl.searchParams.delete('roomCode');
-        window.history.replaceState({}, document.title, cleanUrl.pathname + (cleanUrl.search ? cleanUrl.search : '') + (cleanUrl.hash || ''));
-      } catch (e) {}
-
       // Prompt to log in if unauthenticated, or navigate to rooms
       if (!user) {
         showToast?.('Please sign in to view and join Collaborative Rooms', 'warning');
