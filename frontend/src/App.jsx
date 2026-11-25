@@ -10,9 +10,11 @@ const lazyWithRetry = (importFn, key = 'loopra_chunk_retry') =>
   lazy(() =>
     importFn().catch((error) => {
       console.warn('[DynamicImport] Chunk load error, attempting recovery:', error?.message);
-      const hasRetried = sessionStorage.getItem(key);
-      if (!hasRetried) {
-        sessionStorage.setItem(key, '1');
+      const lastRetryTime = sessionStorage.getItem(key);
+      const now = Date.now();
+      // Only reload if we haven't retried this key within the last 15 seconds (prevents reload storms)
+      if (!lastRetryTime || now - parseInt(lastRetryTime, 10) > 15000) {
+        sessionStorage.setItem(key, String(now));
         // Clear caches if service worker is active and reload
         try {
           if ('serviceWorker' in navigator) {
@@ -2360,6 +2362,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     };
   }, []); // Run on mount / page load
   const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
+  const [selectedModalRoomIds, setSelectedModalRoomIds] = useState([]);
+  const [selectedModalPlaylistIds, setSelectedModalPlaylistIds] = useState([]);
+  const [isSavingPlaylistTargets, setIsSavingPlaylistTargets] = useState(false);
+  const [modalRooms, setModalRooms] = useState([]);
   const [selectedSongForPlaylist, setSelectedSongForPlaylist] = useState(null);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [isCreatePlaylistModalOpen, setIsCreatePlaylistModalOpen] = useState(false);
@@ -2815,6 +2821,30 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     activeRoomSessionRef.current = activeRoom;
   }, [activeRoom]);
   const [roomPlaylists, setRoomPlaylists] = useState([]);
+  useEffect(() => {
+    if (!isPlaylistModalOpen || !authToken) return;
+    let cancelled = false;
+    fetch(getApiUrl('/api/rooms'), {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (cancelled) return;
+        const fetched = Array.isArray(data?.rooms) ? data.rooms : (Array.isArray(data) ? data : []);
+        const merged = [...fetched];
+        if (activeRoom) {
+          const aId = activeRoom.roomId || activeRoom.id;
+          if (aId && !merged.some(rm => (rm.roomId || rm.id) === aId)) {
+            merged.unshift(activeRoom);
+          }
+        }
+        setModalRooms(merged);
+      })
+      .catch(() => {
+        if (!cancelled && activeRoom) setModalRooms([activeRoom]);
+      });
+    return () => { cancelled = true; };
+  }, [isPlaylistModalOpen, authToken, activeRoom]);
   const [isRoomPlaybackSyncEnabled, setIsRoomPlaybackSyncEnabled] = useState(() => {
     try {
       return localStorage.getItem('loopra_listen_together_enabled') === 'true';
@@ -2835,6 +2865,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const activeRoomSessionRef = useRef(null);
   const playbackScheduledTimerRef = useRef(null);
   const lastSyncCorrectionTimeRef = useRef(0);
+  const isIncomingRoomSyncRef = useRef(false);
+  const lastBroadcastSignatureRef = useRef(null);
   const [selectedPlaylistCategory, setSelectedPlaylistCategory] = useState('personal'); // 'personal' | 'room'
   const [selectedRoomPlaylistForSong, setSelectedRoomPlaylistForSong] = useState(null);
   const [similarSongsTrack, setSimilarSongsTrack] = useState(null);
@@ -4335,17 +4367,45 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     } catch (_) {}
   }, [stationCache]);
 
-  useEffect(() => {
-    const handleBeforeInstallPrompt = (e) => {
-      // Intentionally NOT calling e.preventDefault() to suppress the Chrome warning
-      // while still allowing the native install prompt to potentially trigger.
-      setDeferredPrompt(e);
-      setShowInstallBtn(true);
-    };
+  // Site-wide Listen Together Playback Sync Broadcaster:
+  // When Listen Together is ON and active room is present, broadcasts track change, play/pause, and seeks
+  // across the entire site (Home, Search, Liked, Playlists, Rooms, Recommendations) with echo prevention
+  const broadcastPlaybackToRoom = useCallback((track, playingState, seekPosition, force = false) => {
+    if (!isRoomPlaybackSyncEnabledRef.current) return;
+    if (isIncomingRoomSyncRef.current) return; // Prevent echo loop from incoming server socket events
+    const currentRoom = activeRoomSessionRef.current;
+    if (!currentRoom) return;
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-  }, []);
+    const rId = currentRoom.roomId || currentRoom.id;
+    if (!rId) return;
+
+    const activeTrack = track || currentSong;
+    if (!activeTrack) return;
+
+    const trackId = activeTrack.id || activeTrack.videoId;
+    if (!trackId) return;
+
+    const pos = typeof seekPosition === 'number' ? Math.max(0, seekPosition) : (currentTimeRef.current || 0);
+    const isPlay = playingState !== undefined ? Boolean(playingState) : Boolean(isPlaying);
+
+    const sig = `${trackId}_${isPlay ? '1' : '0'}_${Math.round(pos * 2)}`;
+    if (!force && lastBroadcastSignatureRef.current === sig) {
+      return; // Skip identical duplicate broadcasts
+    }
+    lastBroadcastSignatureRef.current = sig;
+
+    if (socket && socket.connected) {
+      const curUser = user || { userId: getOrCreateSessionId() };
+      socket.emit('room:playback:sync', {
+        roomId: rId,
+        currentSong: activeTrack,
+        isPlaying: isPlay,
+        seekTime: pos,
+        playbackRate: 1.0,
+        user: curUser
+      });
+    }
+  }, [currentSong, isPlaying, user]);
 
   const handleInstallClick = async () => {
     if (!deferredPrompt) {
@@ -4431,15 +4491,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     syncServerClock();
     const clockSyncInterval = setInterval(syncServerClock, 15000);
 
-    // Active Server Warm-Up & Keep-Alive Ping while Room / Listen Together is active
-    const keepServerWarmInterval = setInterval(() => {
-      // Open-app execution only
-      if (document.hidden) return;
-      if (isRoomPlaybackSyncEnabledRef.current || activeRoomSessionRef.current) {
-        fetch(getApiUrl('/api/health'), { method: 'GET', keepalive: true }).catch(() => {});
-      }
-    }, 25000);
-
     const handleRoomPlaybackPrepareEvent = (data) => {
       if (!isRoomPlaybackSyncEnabledRef.current || !data) return;
       // Enforce open-app-only execution
@@ -4490,6 +4541,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
       const targetTrack = data.currentSong || data.track;
       if (targetTrack) {
+        // Set incoming sync flag to block echo broadcast back to the server
+        isIncomingRoomSyncRef.current = true;
+        setTimeout(() => {
+          isIncomingRoomSyncRef.current = false;
+        }, 1200);
+
         const curId = currentSong?.id || currentSong?.videoId;
         const targetId = targetTrack?.id || targetTrack?.videoId;
         let adjustedSeek = typeof data.basePositionSec === 'number' 
@@ -4579,7 +4636,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     return () => {
       clearInterval(clockInterval);
       clearInterval(clockSyncInterval);
-      clearInterval(keepServerWarmInterval);
       if (playbackScheduledTimerRef.current) clearTimeout(playbackScheduledTimerRef.current);
       socket.off('active_users', handleActiveUsersUpdate);
       socket.off('room:playback:sync', handleRoomPlaybackSyncEvent);
@@ -5053,6 +5109,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     // Execute playback instantly for immediate UI and audio response without 2-3 second latency
     executeVerifiedPlayback();
 
+    // Broadcast track play event to Room members if Listen Together is ON
+    if (!options?.fromRoomSync) {
+      broadcastPlaybackToRoom(song, true, 0, true);
+    }
+
     // Background validation (non-blocking) for unknown external video playback
     if (!song?.isRadio && !song?.streamUrl && !song?.isInternalAudio && !song?.isOffline && !song?.audioBlob && targetVideoId) {
       offlineStorageService.isTrackDownloaded(targetVideoId).then(isCached => {
@@ -5069,7 +5130,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }).catch(() => {});
     }
   };
-}, [activeTab, currentSong, stationsMap, authToken, showToast, BACKEND_URL, user]);
+}, [activeTab, currentSong, stationsMap, authToken, showToast, BACKEND_URL, user, broadcastPlaybackToRoom]);
 
   const handleNextSong = useCallback(async () => {
     // Log skip or completed listen signal for AI recommendations and listening insights
@@ -5534,7 +5595,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       localStorage.setItem('afterhours_current_time', seekTime.toString());
     } catch (e) {}
     playerRef.current?.seekTo?.(seekTime, true);
-  }, []);
+    // Broadcast seek position to Room members if Listen Together is ON
+    broadcastPlaybackToRoom(currentSong, isPlaying, seekTime);
+  }, [broadcastPlaybackToRoom, currentSong, isPlaying]);
 
   const toggleRepeatMode = () => {
     if (isRepeat === false || isRepeat === 'off') {
@@ -5851,13 +5914,33 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     };
   }, []);
 
-  const initPlayerInstance = useCallback((videoId, shouldAutoPlay = true, startSeconds = 0) => {
+  const initPlayerInstance = useCallback((videoId, shouldAutoPlay = true, startSeconds = 0, retryCount = 0) => {
     if (!window.YT || !window.YT.Player) {
       ensureYouTubeIframeApi();
       ytReadyCallbacksRef.current.push(() => {
-        initPlayerInstance(videoId, shouldAutoPlay, startSeconds);
+        initPlayerInstance(videoId, shouldAutoPlay, startSeconds, 0);
       });
       return;
+    }
+
+    // Reuse existing ready YouTube player instance instead of destroying & re-mounting
+    if (
+      playerRef.current &&
+      isPlayerReadyRef.current &&
+      typeof playerRef.current.loadVideoById === 'function'
+    ) {
+      try {
+        const iframe = typeof playerRef.current.getIframe === 'function' ? playerRef.current.getIframe() : null;
+        if (iframe && document.contains(iframe)) {
+          const start = startSeconds > 0 ? Math.floor(startSeconds) : 0;
+          if (shouldAutoPlay) {
+            playerRef.current.loadVideoById({ videoId, startSeconds: start });
+          } else {
+            playerRef.current.cueVideoById({ videoId, startSeconds: start });
+          }
+          return;
+        }
+      } catch (e) {}
     }
 
     // Prevent duplicate player instances: destroy existing instance before creating a new one
@@ -5875,8 +5958,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       mountTarget = document.getElementById('yt-player-instance');
     }
     if (!mountTarget) {
-      // Defer initialization until mount target is attached to DOM
-      setTimeout(() => initPlayerInstance(videoId, shouldAutoPlay, startSeconds), 50);
+      if (retryCount < 10) {
+        // Defer initialization until mount target is attached to DOM (capped at 10 retries)
+        setTimeout(() => initPlayerInstance(videoId, shouldAutoPlay, startSeconds, retryCount + 1), 50);
+      }
       return;
     }
 
@@ -7108,11 +7193,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       if (silentAudioRef.current) silentAudioRef.current.pause();
       setIsPlaying(false);
       updateMediaSessionImmediate(currentSong, false);
+      // Broadcast pause state to Room members if Listen Together is ON
+      broadcastPlaybackToRoom(currentSong, false, currentTimeRef.current || 0);
     } else {
       isUserPausedRef.current = false;
       userIntentPlayingRef.current = true;
       startPwaAudioWakeLock();
       updateMediaSessionImmediate(currentSong, true);
+      // Broadcast play state to Room members if Listen Together is ON
+      broadcastPlaybackToRoom(currentSong, true, currentTimeRef.current || 0);
       if (!playerRef.current || !isPlayerReadyRef.current || typeof playerRef.current.playVideo !== 'function') {
         let savedSeek = 0;
         try {
@@ -7570,6 +7659,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const handleAddToPlaylistClick = (song, e) => {
     e?.stopPropagation();
     setSelectedSongForPlaylist(song);
+    setSelectedModalRoomIds([]);
+    setSelectedModalPlaylistIds([]);
     setIsPlaylistModalOpen(true);
   };
 
@@ -7731,6 +7822,122 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       })
       .catch(() => {});
 
+    setIsPlaylistModalOpen(false);
+    setSelectedSongForPlaylist(null);
+  };
+
+  const handleConfirmAddToSelectedTargets = async () => {
+    if (!selectedSongForPlaylist || isSavingPlaylistTargets) return;
+    const totalSelected = selectedModalRoomIds.length + selectedModalPlaylistIds.length;
+    if (totalSelected === 0) return;
+
+    setIsSavingPlaylistTargets(true);
+    const songToAdd = {
+      ...selectedSongForPlaylist,
+      id: selectedSongForPlaylist.id || selectedSongForPlaylist.videoId,
+      videoId: selectedSongForPlaylist.videoId || selectedSongForPlaylist.id
+    };
+    const songId = songToAdd.id || songToAdd.videoId;
+
+    let addedPlaylists = 0;
+    let alreadyPresentPlaylists = 0;
+    const addedPlaylistNames = [];
+
+    if (selectedModalPlaylistIds.length > 0) {
+      const selectedSet = new Set(selectedModalPlaylistIds.map(String));
+      const updatedPlaylists = playlists.map(pl => {
+        if (!selectedSet.has(String(pl.id))) return pl;
+        const exists = pl.songs.some(s => (s.id || s.videoId) === songId);
+        if (exists) {
+          alreadyPresentPlaylists++;
+          return pl;
+        }
+        addedPlaylists++;
+        addedPlaylistNames.push(pl.name);
+        return { ...pl, songs: [...pl.songs, songToAdd] };
+      });
+
+      if (addedPlaylists > 0) {
+        setPlaylists(updatedPlaylists);
+        try {
+          if (user) {
+            localStorage.setItem('playlists', JSON.stringify(updatedPlaylists));
+          } else {
+            localStorage.setItem('guest_playlists', JSON.stringify(updatedPlaylists));
+          }
+        } catch (e) {}
+
+        if (authToken) {
+          addedPlaylistNames.forEach(playlistName => {
+            learningIntelligenceClient.recordEvent(BACKEND_URL, authToken, {
+              category: 'music',
+              eventType: 'playlist_add',
+              metadata: {
+                trackId: songId,
+                songTitle: songToAdd.title,
+                artistName: songToAdd.artist || songToAdd.channel,
+                playlistName
+              }
+            });
+          });
+        }
+      }
+    }
+
+    let addedRooms = 0;
+    let failedRooms = 0;
+    if (selectedModalRoomIds.length > 0) {
+      const availableRooms = modalRooms.length > 0 ? modalRooms : (activeRoom ? [activeRoom] : []);
+      for (const chosenRoomId of selectedModalRoomIds) {
+        const chosenRoom = availableRooms.find(rm => String(rm.roomId || rm.id) === String(chosenRoomId));
+        try {
+          let targetPlId = chosenRoom?.playlists?.[0]?.id;
+          if (!targetPlId && activeRoom && String(activeRoom.roomId || activeRoom.id) === String(chosenRoomId)) {
+            targetPlId = roomPlaylists?.[0]?.id;
+          }
+          if (!targetPlId) {
+            const createRes = await fetch(getApiUrl(`/api/rooms/${encodeURIComponent(chosenRoomId)}/playlists`), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+              body: JSON.stringify({ name: 'Room Queue', description: 'Collaborative room tracks' })
+            });
+            const createData = await createRes.json().catch(() => ({}));
+            targetPlId = createData?.playlist?.id || createData?.id;
+          }
+          if (targetPlId) {
+            const addRes = await fetch(getApiUrl(`/api/rooms/${encodeURIComponent(chosenRoomId)}/playlists/${encodeURIComponent(targetPlId)}/songs`), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+              body: JSON.stringify({ song: songToAdd })
+            });
+            if (addRes.ok) {
+              addedRooms++;
+            } else {
+              failedRooms++;
+            }
+          } else {
+            failedRooms++;
+          }
+        } catch (_) {
+          failedRooms++;
+        }
+      }
+    }
+
+    const totalAdded = addedPlaylists + addedRooms;
+    if (totalAdded > 0 && alreadyPresentPlaylists > 0) {
+      showToast?.(`Added to ${totalAdded} target(s); ${alreadyPresentPlaylists} already had this track`);
+    } else if (totalAdded > 0) {
+      showToast?.(`Added to ${totalAdded} selected target${totalAdded === 1 ? '' : 's'}`);
+    } else if (alreadyPresentPlaylists > 0 && failedRooms === 0) {
+      showToast?.('Track already in selected playlist(s)');
+    } else if (failedRooms > 0) {
+      showToast?.('Failed to add song to selected room(s)', 'error');
+    }
+
+    setIsSavingPlaylistTargets(false);
+    setSelectedModalRoomIds([]);
+    setSelectedModalPlaylistIds([]);
     setIsPlaylistModalOpen(false);
     setSelectedSongForPlaylist(null);
   };
@@ -8034,17 +8241,29 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         }
       } catch (_) {}
     }
-    const cachedEntry = mapEntry || searchCache[trimmedQuery];
+        const cachedEntry = mapEntry || searchCache[trimmedQuery];
     if (cachedEntry && !Array.isArray(cachedEntry) && Array.isArray(cachedEntry.items) && cachedEntry.items.length > 0) {
-      if (!mapEntry) {
-        searchCacheMapRef.current.set(trimmedQuery, cachedEntry);
+      // Re-validate cached items to ensure non-music tracks never leak from storage/cache
+      const cleanCachedItems = cachedEntry.items.filter(t => isValidMusicTrack(t));
+      if (cleanCachedItems.length === 0) {
+        searchCacheMapRef.current.delete(trimmedQuery);
+        try {
+          if (typeof window !== 'undefined' && window.sessionStorage) {
+            sessionStorage.removeItem(`loopra_search_cache_${trimmedQuery}`);
+          }
+        } catch (_) {}
+      } else {
+        const validatedEntry = { ...cachedEntry, items: cleanCachedItems };
+        if (!mapEntry || cleanCachedItems.length !== cachedEntry.items.length) {
+          searchCacheMapRef.current.set(trimmedQuery, validatedEntry);
+        }
+        setSearchResults(cleanCachedItems);
+        setSearchVisibleCount(cleanCachedItems.length);
+        setSearchNextPageToken(validatedEntry.nextPageToken || null);
+        setHasMoreSearchResults(Boolean(validatedEntry.nextPageToken));
+        setIsLoading(false);
+        return;
       }
-      setSearchResults(cachedEntry.items);
-      setSearchVisibleCount(cachedEntry.items.length);
-      setSearchNextPageToken(cachedEntry.nextPageToken || null);
-      setHasMoreSearchResults(Boolean(cachedEntry.nextPageToken));
-      setIsLoading(false);
-      return;
     }
 
     // Give immediate visual loading feedback without blocking new searches
@@ -12531,7 +12750,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               </button>
             </div>
             {selectedSongForPlaylist && (
-              <div className="flex items-center gap-3 mb-6 p-3 rounded-2xl bg-neutral-800/50">
+              <div className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-neutral-800/50">
                 <img src={getCleanThumbnail(selectedSongForPlaylist)} className="w-10 h-10 rounded object-cover" alt={selectedSongForPlaylist.title || ""} onError={(e) => handleImageError(e, selectedSongForPlaylist.title, selectedSongForPlaylist.id)} />
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-white truncate">{selectedSongForPlaylist.title}</p>
@@ -12539,30 +12758,103 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 </div>
               </div>
             )}
-            <div className="mb-4 relative">
-              <select
-                className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500/50 appearance-none cursor-pointer"
-                onChange={(e) => {
-                  if (e.target.value) {
-                    handleAddSongToExistingPlaylist(e.target.value);
-                  }
-                }}
-                defaultValue=""
-              >
-                <option value="" disabled>Select a playlist...</option>
-                {playlists.map(pl => {
-                  const hasSong = selectedSongForPlaylist && pl.songs.some(s => s.id === selectedSongForPlaylist.id);
-                  return (
-                    <option key={pl.id} value={pl.id} disabled={hasSong}>
-                      {pl.name} {hasSong ? '(Already added)' : `(${pl.songs.length} songs)`}
-                    </option>
-                  );
-                })}
-              </select>
-              <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-neutral-500">
-                <Icon name="chevronDown" className="w-4 h-4" />
+            {selectedSongForPlaylist && (modalRooms.length > 0 || activeRoom) && (
+              <div className="mb-4">
+                <p className="text-xs font-bold text-amber-400/90 uppercase tracking-wider mb-2">Rooms</p>
+                <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1">
+                  {(modalRooms.length > 0 ? modalRooms : (activeRoom ? [activeRoom] : [])).map(rm => {
+                    const rId = String(rm.roomId || rm.id);
+                    const isActive = activeRoom && String(activeRoom.roomId || activeRoom.id) === rId;
+                    const isChecked = selectedModalRoomIds.includes(rId);
+                    return (
+                      <label
+                        key={rId}
+                        className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border text-sm cursor-pointer transition ${
+                          isChecked
+                            ? 'bg-amber-500/15 border-amber-500/50 text-amber-200'
+                            : 'bg-neutral-950 border-neutral-800 text-neutral-300 hover:border-neutral-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {
+                              setSelectedModalRoomIds(prev =>
+                                prev.includes(rId) ? prev.filter(id => id !== rId) : [...prev, rId]
+                              );
+                            }}
+                            className="w-4 h-4 rounded accent-amber-500 cursor-pointer shrink-0"
+                          />
+                          <span className="truncate font-medium">{rm.name || 'Listening Room'}</span>
+                        </div>
+                        {isActive && (
+                          <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 shrink-0">
+                            Active
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            <div className="mb-4">
+              <p className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2">Playlists</p>
+              <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                {playlists.length === 0 ? (
+                  <p className="text-xs text-neutral-500 px-1 py-2">No playlists yet. Create one below.</p>
+                ) : (
+                  playlists.map(pl => {
+                    const pId = String(pl.id);
+                    const songId = selectedSongForPlaylist?.id || selectedSongForPlaylist?.videoId;
+                    const hasSong = Boolean(selectedSongForPlaylist && pl.songs.some(s => (s.id || s.videoId) === songId));
+                    const isChecked = selectedModalPlaylistIds.includes(pId);
+                    return (
+                      <label
+                        key={pId}
+                        className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border text-sm transition ${
+                          hasSong
+                            ? 'bg-neutral-950/60 border-neutral-800/60 text-neutral-500 cursor-not-allowed'
+                            : isChecked
+                              ? 'bg-amber-500/15 border-amber-500/50 text-white cursor-pointer'
+                              : 'bg-neutral-950 border-neutral-800 text-neutral-200 hover:border-neutral-700 cursor-pointer'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            disabled={hasSong}
+                            onChange={() => {
+                              if (hasSong) return;
+                              setSelectedModalPlaylistIds(prev =>
+                                prev.includes(pId) ? prev.filter(id => id !== pId) : [...prev, pId]
+                              );
+                            }}
+                            className="w-4 h-4 rounded accent-amber-500 cursor-pointer disabled:cursor-not-allowed shrink-0"
+                          />
+                          <span className="truncate font-medium">{pl.name}</span>
+                        </div>
+                        <span className="text-xs text-neutral-500 shrink-0">
+                          {hasSong ? 'Already added' : `${pl.songs.length} songs`}
+                        </span>
+                      </label>
+                    );
+                  })
+                )}
               </div>
             </div>
+            <button
+              type="button"
+              onClick={handleConfirmAddToSelectedTargets}
+              disabled={isSavingPlaylistTargets || (selectedModalRoomIds.length + selectedModalPlaylistIds.length === 0)}
+              className="w-full py-2.5 px-4 bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-white font-semibold text-sm rounded-2xl transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {isSavingPlaylistTargets
+                ? 'Adding...'
+                : `Add to Selected (${selectedModalRoomIds.length + selectedModalPlaylistIds.length})`}
+            </button>
             <form onSubmit={handleCreatePlaylist} className="mt-4 pt-4 border-t border-neutral-800">
               <p className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-2">Create New Playlist</p>
               <div className="flex items-center gap-2">

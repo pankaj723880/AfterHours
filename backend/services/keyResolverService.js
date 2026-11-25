@@ -20,6 +20,30 @@ const keyPoolCache = {
   gemini: { keys: [], lastFetch: 0 }
 };
 
+// In-memory non-secret per-key call telemetry (keyed by maskedKey)
+const youtubeKeyTelemetry = new Map();
+let hasLoggedYoutubeStartupSummary = false;
+
+const updateYoutubeTelemetry = (keyInfo, statusLabel, incrementCall = false) => {
+  if (!keyInfo || !keyInfo.maskedKey) return;
+  const prev = youtubeKeyTelemetry.get(keyInfo.maskedKey) || {
+    maskedKey: keyInfo.maskedKey,
+    source: keyInfo.source || 'unknown',
+    label: keyInfo.label || 'Unknown',
+    callCount: 0,
+    lastStatus: 'unused',
+    lastStatusAt: null
+  };
+  youtubeKeyTelemetry.set(keyInfo.maskedKey, {
+    ...prev,
+    source: keyInfo.source || prev.source,
+    label: keyInfo.label || prev.label,
+    callCount: incrementCall ? prev.callCount + 1 : prev.callCount,
+    lastStatus: statusLabel || prev.lastStatus,
+    lastStatusAt: statusLabel ? new Date().toISOString() : prev.lastStatusAt
+  });
+};
+
 const CACHE_TTL_MS = 5000;
 
 export const invalidateKeyPoolCache = (service) => {
@@ -214,14 +238,47 @@ export const getEligibleKeys = async (service) => {
     lastFetch: now
   };
 
+  if (s === 'youtube' && !hasLoggedYoutubeStartupSummary) {
+    hasLoggedYoutubeStartupSummary = true;
+    const summary = prioritized.map((k, idx) => `#${idx + 1}:${k.maskedKey}(${k.source})`).join(', ');
+    console.log(`[YouTube KeyManager] Loaded ${prioritized.length} active key(s) [DB=${dbKeys.length}, Env=${distinctEnvKeys.length}]: ${summary || 'none'}`);
+  }
+
   return prioritized;
+};
+
+/**
+ * Returns a non-secret status summary of all loaded YouTube API keys.
+ */
+export const getYoutubeKeyStatusSummary = async () => {
+  const eligible = await getEligibleKeys('youtube');
+  const keys = eligible.map((k, idx) => {
+    const telemetry = youtubeKeyTelemetry.get(k.maskedKey);
+    return {
+      index: idx + 1,
+      maskedKey: k.maskedKey,
+      source: k.source,
+      label: k.label,
+      callCount: telemetry?.callCount ?? (k.successCount || 0) + (k.failureCount || 0),
+      lastStatus: telemetry?.lastStatus ?? 'unused',
+      lastStatusAt: telemetry?.lastStatusAt ?? null
+    };
+  });
+  return {
+    totalLoaded: keys.length,
+    dbCount: keys.filter(k => k.source === 'database').length,
+    envCount: keys.filter(k => k.source === 'environment').length,
+    keys
+  };
 };
 
 /**
  * Records key success in the database telemetry.
  */
 export const recordKeySuccess = async (keyInfo) => {
-  if (!keyInfo || !keyInfo.isDbKey || !keyInfo._id) return;
+  if (!keyInfo) return;
+  updateYoutubeTelemetry(keyInfo, 'ok', true);
+  if (!keyInfo.isDbKey || !keyInfo._id) return;
   try {
     await ApiKey.updateOne(
       { _id: keyInfo._id },
@@ -247,6 +304,7 @@ export const recordKeySuccess = async (keyInfo) => {
 export const recordKeyFailure = async (keyInfo, errorDetails) => {
   if (!keyInfo) return;
   const { status, reason, message } = errorDetails;
+  updateYoutubeTelemetry(keyInfo, `${status || 'err'}:${reason || 'unknown'}`, true);
 
   const isQuota = status === 403 || reason === 'quotaExceeded' || reason === 'dailyLimitExceeded' || (message && message.toLowerCase().includes('quota'));
   const isRateLimit = status === 429 || reason === 'rateLimitExceeded' || reason === 'userRateLimitExceeded';

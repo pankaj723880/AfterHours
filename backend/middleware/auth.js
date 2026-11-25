@@ -25,19 +25,22 @@ export const verifyToken = (token) => {
 
 export const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+  const rawToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1]?.trim() : null;
+  const token = rawToken && rawToken !== 'null' && rawToken !== 'undefined' ? rawToken : null;
+  req.guestId = (req.headers['x-guest-id'] || '').toString().trim() || null;
 
   if (!token) {
     return res.status(401).json({ error: 'Unauthorized: Authentication token is required' });
   }
 
   const decoded = verifyToken(token);
-  if (!decoded || !decoded.userId) {
+  const decodedUserId = decoded?.userId || decoded?.id || decoded?._id;
+  if (!decoded || !decodedUserId) {
     return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
   }
 
   try {
-    const user = await User.findById(decoded.userId).select('-password').maxTimeMS(4000);
+    const user = await User.findById(decodedUserId).select('-password').maxTimeMS(4000);
     if (!user) {
       return res.status(401).json({ error: 'Unauthorized: User account not found' });
     }
@@ -57,7 +60,8 @@ export const authenticateToken = async (req, res, next) => {
 };
 
 export const requireAdmin = (req, res, next) => {
-  if (!req.user || req.user.role !== 'admin') {
+  const role = (req.user?.role || '').toLowerCase();
+  if (!req.user || (role !== 'admin' && role !== 'superadmin')) {
     return res.status(403).json({ error: 'Forbidden: Administrator privileges required' });
   }
   next();
@@ -65,19 +69,27 @@ export const requireAdmin = (req, res, next) => {
 
 export const optionalAuth = async (req, res, next) => {
   const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+  const rawToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1]?.trim() : null;
+  const token = rawToken && rawToken !== 'null' && rawToken !== 'undefined' ? rawToken : null;
+  req.guestId = (req.headers['x-guest-id'] || '').toString().trim() || null;
+
   if (!token) {
     req.user = null;
     return next();
   }
   const decoded = verifyToken(token);
-  if (!decoded || !decoded.userId) {
+  const decodedUserId = decoded?.userId || decoded?.id || decoded?._id;
+  if (!decoded || !decodedUserId) {
     req.user = null;
     return next();
   }
   try {
-    const user = await User.findById(decoded.userId).select('-password').maxTimeMS(4000);
-    req.user = user || null;
+    const user = await User.findById(decodedUserId).select('-password').maxTimeMS(4000);
+    if (user && user.status !== 'suspended' && user.status !== 'deactivated') {
+      req.user = user;
+    } else {
+      req.user = null;
+    }
   } catch (_) {
     req.user = null;
   }

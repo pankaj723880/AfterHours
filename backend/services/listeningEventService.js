@@ -143,6 +143,9 @@ export const listeningEventService = {
     });
 
     // Update UserMusicPreference for authenticated or guest user
+    const isVerifiedPlay = eventType === 'completed' || Number(listenedDuration) >= 30 || Number(completionPercent) >= 25;
+    const effectiveEventType = (eventType === 'play_start' && isVerifiedPlay) ? 'completed' : eventType;
+
     setImmediate(async () => {
       try {
         await this.updateUserPreferences({ userId, guestId: effectiveGuestId }, {
@@ -150,9 +153,10 @@ export const listeningEventService = {
           title,
           artist: artist || channel,
           thumbnail,
-          eventType,
+          eventType: effectiveEventType,
           completionPercent,
-          language
+          language,
+          isQuickSkip: eventType === 'skip' && Number(listenedDuration) > 0 && Number(listenedDuration) < 15
         });
       } catch (_) {}
     });
@@ -338,10 +342,11 @@ export const listeningEventService = {
     let user = null;
     if (mongoose.connection && mongoose.connection.readyState === 1) {
       pref = await UserMusicPreference.findOne({ userId }).lean().maxTimeMS(2000);
-      user = await User.findById(userId).select('likedSongs history').lean().maxTimeMS(2000);
+      user = await User.findById(userId).select('likedSongs history playlists').lean().maxTimeMS(2000);
     }
 
-    const likedTrackIds = (user?.likedSongs || []).map(s => s.id || s.videoId).filter(Boolean);
+    const playlistTracks = (user?.playlists || []).flatMap(p => Array.isArray(p?.tracks) ? p.tracks : []);
+    const likedTrackIds = [...(user?.likedSongs || []), ...playlistTracks].map(s => s.id || s.videoId).filter(Boolean);
     const historyTracks = (user?.history || []).map(s => ({
       trackId: s.id || s.videoId,
       title: s.title,

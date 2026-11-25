@@ -39,11 +39,19 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '335095702236-g3n6b7mgq2d3vbdg9qj9vv53b3nuohs7.apps.googleusercontent.com';
 
-// Handle stale chunk errors after deployment (Vite preload error)
+// Handle stale chunk errors after deployment (Vite preload error) with infinite reload loop prevention
 if (typeof window !== 'undefined') {
   window.addEventListener('vite:preloadError', (event) => {
-    console.warn('[Vite] Chunk preload error detected, reloading for latest deployment...', event);
-    window.location.reload();
+    console.warn('[Vite] Chunk preload error detected:', event);
+    const retryKey = 'loopra_vite_preload_retry';
+    const lastRetry = sessionStorage.getItem(retryKey);
+    const now = Date.now();
+    if (!lastRetry || now - parseInt(lastRetry, 10) > 15000) {
+      sessionStorage.setItem(retryKey, String(now));
+      window.location.reload();
+    } else {
+      console.warn('[Vite] Suppressed infinite reload loop on chunk error.');
+    }
   });
 }
 
@@ -73,8 +81,24 @@ class RootErrorBoundary extends Component {
     window.location.reload();
   };
 
+  handleResetAndReload = () => {
+    try {
+      if (typeof window !== 'undefined') {
+        // Clear session storage and transient caches
+        sessionStorage.clear();
+        if ('caches' in window) {
+          caches.keys().then((keys) => {
+            keys.forEach((k) => caches.delete(k));
+          });
+        }
+      }
+    } catch (_) {}
+    window.location.href = '/';
+  };
+
   render() {
     if (this.state.hasError) {
+      const errorMsg = this.state.error?.message || 'A transient script error occurred.';
       return (
         <div style={{
           minHeight: '100vh',
@@ -100,25 +124,61 @@ class RootErrorBoundary extends Component {
             <h1 style={{ fontSize: '20px', fontWeight: 'bold', margin: '0 0 8px 0', color: '#f59e0b' }}>
               Loopra Loading Recovery
             </h1>
-            <p style={{ fontSize: '13px', color: '#a1a1aa', margin: '0 0 24px 0', lineHeight: 1.5 }}>
-              Loopra encountered a temporary script initialization issue. Click below to refresh with the latest version.
+            <p style={{ fontSize: '13px', color: '#a1a1aa', margin: '0 0 16px 0', lineHeight: 1.5 }}>
+              Loopra encountered a temporary script initialization issue. You can reload or reset your active session.
             </p>
-            <button
-              onClick={this.handleReload}
-              style={{
-                backgroundColor: '#f59e0b',
-                color: '#000000',
-                border: 'none',
-                borderRadius: '12px',
-                padding: '12px 24px',
-                fontSize: '14px',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                width: '100%'
-              }}
-            >
-              Reload Loopra
-            </button>
+            <div style={{
+              background: 'rgba(0, 0, 0, 0.4)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '10px',
+              padding: '10px 12px',
+              fontSize: '11px',
+              fontFamily: 'monospace',
+              color: '#d4d4d8',
+              textAlign: 'left',
+              wordBreak: 'break-all',
+              maxHeight: '90px',
+              overflowY: 'auto',
+              marginBottom: '20px'
+            }}>
+              {errorMsg}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                onClick={this.handleReload}
+                style={{
+                  backgroundColor: '#f59e0b',
+                  color: '#000000',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '12px 24px',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  width: '100%',
+                  transition: 'opacity 0.2s'
+                }}
+              >
+                Reload Loopra
+              </button>
+              <button
+                onClick={this.handleResetAndReload}
+                style={{
+                  backgroundColor: 'rgba(39, 39, 42, 0.8)',
+                  color: '#e4e4e7',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '12px',
+                  padding: '10px 20px',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  width: '100%',
+                  transition: 'background 0.2s'
+                }}
+              >
+                Reset Session & Return Home
+              </button>
+            </div>
           </div>
         </div>
       );

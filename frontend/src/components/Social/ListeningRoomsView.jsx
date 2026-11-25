@@ -16,6 +16,44 @@ const QUICK_REACTIONS = ['🔥', '❤️', '🕺', '😭'];
 const STORAGE_KEY_DELETED_ROOMS = 'afterhours_deleted_room_ids';
 const STORAGE_KEY_ACTIVE_ROOM_CODE = 'loopra_active_room_code';
 
+export const normalizeRoomTrack = (raw) => {
+  if (!raw) return null;
+  const rawId = raw.id || raw.videoId || raw._id;
+  if (!rawId || typeof rawId !== 'string') return null;
+  const trimmedId = rawId.trim();
+  if (trimmedId.length < 5) return null;
+
+  const title = raw.title && typeof raw.title === 'string' && raw.title.trim().length > 0 
+    ? raw.title.trim() 
+    : 'Untitled Song';
+  const artist = raw.artist || raw.channel || raw.uploader || 'Loopra Artist';
+  const channel = raw.channel || raw.artist || raw.uploader || 'Loopra Channel';
+  const thumbnail = raw.thumbnail || raw.image || `https://i.ytimg.com/vi/${trimmedId}/mqdefault.jpg`;
+  
+  let duration = raw.duration;
+  let durationSec = raw.durationSec;
+  if (!durationSec && raw.duration) {
+    durationSec = parseDurationToSeconds ? parseDurationToSeconds(raw) : 0;
+  }
+  if (!duration && durationSec) {
+    const mins = Math.floor(durationSec / 60);
+    const secs = (durationSec % 60).toString().padStart(2, '0');
+    duration = `${mins}:${secs}`;
+  }
+
+  return {
+    ...raw,
+    id: trimmedId,
+    videoId: trimmedId,
+    title,
+    artist,
+    channel,
+    thumbnail,
+    duration: duration || '3:30',
+    durationSec: durationSec || 210
+  };
+};
+
 const loadDeletedRoomIds = () => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_DELETED_ROOMS);
@@ -572,12 +610,18 @@ export default function ListeningRoomsView({
       setActivePlaybackRequest(null);
       setHasRespondedToRequest(false);
       if (data?.track) {
+        const normTrack = normalizeRoomTrack(data.track);
         setLivePlaybackSession({
-          track: data.track,
+          track: normTrack || data.track,
           basePositionSec: typeof data.basePositionSec === 'number' ? data.basePositionSec : 0,
           startedAt: data.startedAt || Date.now(),
           isPlaying: data.isPlaying !== undefined ? Boolean(data.isPlaying) : true
         });
+
+        // Trigger local playback so the audio player actually plays the room track
+        if (onPlaySong && normTrack) {
+          onPlaySong(normTrack);
+        }
       }
     };
 
@@ -587,6 +631,19 @@ export default function ListeningRoomsView({
           ...prev,
           [data.userId]: data.status
         }));
+      }
+    };
+
+    const handleRoomPlaybackSync = (data) => {
+      const track = data?.currentSong || data?.track;
+      if (track) {
+        const normTrack = normalizeRoomTrack(track);
+        setLivePlaybackSession({
+          track: normTrack || track,
+          basePositionSec: typeof data.seekTime === 'number' ? data.seekTime : (typeof data.basePositionSec === 'number' ? data.basePositionSec : 0),
+          startedAt: data.timestamp || Date.now(),
+          isPlaying: data.isPlaying !== undefined ? Boolean(data.isPlaying) : true
+        });
       }
     };
 
@@ -611,6 +668,7 @@ export default function ListeningRoomsView({
     socket.on('room:playback:request', handleRoomPlaybackRequest);
     socket.on('room:playback:response', handleRoomPlaybackResponse);
     socket.on('room:playback:start', handleRoomPlaybackStart);
+    socket.on('room:playback:sync', handleRoomPlaybackSync);
 
     return () => {
       socket.off('room:state', handleRoomState);
@@ -634,6 +692,7 @@ export default function ListeningRoomsView({
       socket.off('room:playback:request', handleRoomPlaybackRequest);
       socket.off('room:playback:response', handleRoomPlaybackResponse);
       socket.off('room:playback:start', handleRoomPlaybackStart);
+      socket.off('room:playback:sync', handleRoomPlaybackSync);
     };
   }, [socket, activeRoom, currentUserId, activeTab, setRoomPlaylists, setActiveRoom, showToast]);
 
@@ -1084,18 +1143,48 @@ export default function ListeningRoomsView({
   };
 
   // Handler when user clicks a song to play in Room View
-  const handleRoomSongClick = (song) => {
-    if (!song) return;
-    const durSec = parseDurationToSeconds ? parseDurationToSeconds(song) : (song.durationSec || 0);
+  const handleRoomSongClick = (song, queueRemaining = []) => {
+    if (!song) {
+      if (showToast) showToast('No song selected', 'error');
+      return;
+    }
+
+    const normTrack = normalizeRoomTrack(song);
+    if (!normTrack) {
+      if (showToast) showToast('Unable to play song: Missing or invalid video ID', 'error');
+      return;
+    }
+
+    // If remaining tracks were passed for queueing (e.g. Play All), enqueue them cleanly
+    if (Array.isArray(queueRemaining) && queueRemaining.length > 0 && typeof onAddToQueue === 'function') {
+      queueRemaining.forEach(t => {
+        const norm = normalizeRoomTrack(t);
+        if (norm) onAddToQueue(norm);
+      });
+    }
 
     // If Listen Together is ON, trigger the Request & "Okay" ready-check flow
     if (isRoomPlaybackSyncEnabled && activeRoom) {
       const rId = activeRoom.roomId || activeRoom.id;
+      const otherParticipants = (participants || []).filter(p => {
+        const pId = String(p.userId || p.id || '');
+        return pId && pId !== String(currentUserId || '');
+      });
+
+      // If user is alone in the room, start playback immediately with sync state without waiting on non-existent users
+      if (otherParticipants.length === 0) {
+        handleTriggerStartPlayback(normTrack);
+        if (showToast) {
+          showToast(`Playing "${normTrack.title}" in room`);
+        }
+        return;
+      }
+
       const reqId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const reqPayload = {
         roomId: rId,
         requestId: reqId,
-        track: song,
+        track: normTrack,
         initiatorId: currentUserId,
         initiatorName: user?.displayName || user?.username || 'Host',
         user
@@ -1104,7 +1193,7 @@ export default function ListeningRoomsView({
       // Set local active request immediately for initiator
       setActivePlaybackRequest({
         requestId: reqId,
-        track: song,
+        track: normTrack,
         initiatorId: String(currentUserId || ''),
         initiatorName: user?.displayName || user?.username || 'You',
         createdAt: Date.now(),
@@ -1117,11 +1206,15 @@ export default function ListeningRoomsView({
         socket.emit('room:playback:request', reqPayload);
       }
       if (showToast) {
-        showToast(`Sent Listen Together request for "${song.title}"`);
+        showToast(`Sent Listen Together request for "${normTrack.title}"`);
       }
     } else {
       // Listen Together is OFF: play independently without disrupting anyone
-      if (onPlaySong) onPlaySong(song);
+      if (onPlaySong) {
+        onPlaySong(normTrack);
+      } else if (showToast) {
+        showToast('Playback service not ready', 'error');
+      }
     }
   };
 
@@ -1177,8 +1270,9 @@ export default function ListeningRoomsView({
   // Initiator triggers playback start once ready check is confirmed with pre-buffer and tight sync
   const handleTriggerStartPlayback = (trackToStart) => {
     if (!activeRoom) return;
-    const song = trackToStart || activePlaybackRequest?.track;
-    if (!song) return;
+    const rawSong = trackToStart || activePlaybackRequest?.track;
+    if (!rawSong) return;
+    const song = normalizeRoomTrack(rawSong) || rawSong;
     const rId = activeRoom.roomId || activeRoom.id;
     const reqId = activePlaybackRequest?.requestId || `prep_${Date.now()}`;
 
@@ -2189,8 +2283,20 @@ export default function ListeningRoomsView({
               </div>
             </div>
 
-            {/* Header Right Actions: Invite Button + Three-Dot (⋮) Menu */}
-            <div className="flex items-center gap-2 shrink-0">
+            {/* Header Right Actions: Members + Invite Button + Three-Dot (⋮) Menu */}
+            <div className="flex items-center flex-wrap justify-end gap-1.5 sm:gap-2 shrink-0">
+              {isUiVisible('card.roomMembers') && (
+                <button
+                  type="button"
+                  onClick={() => setIsMemberPopoverOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 text-neutral-200 hover:text-white border border-neutral-700/60 font-bold text-xs transition cursor-pointer active:scale-95"
+                  title="View Room Members & Roles"
+                >
+                  <Users className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Members ({participants.length})</span>
+                </button>
+              )}
+
               {isUiVisible('btn.inviteRoom') && (
                 <button
                   type="button"
@@ -2320,56 +2426,6 @@ export default function ListeningRoomsView({
             </div>
           </div>
 
-          {/* Quick Active Room Members Strip */}
-          <div 
-            onClick={() => setIsMemberPopoverOpen(true)}
-            className="p-2.5 sm:p-3 rounded-2xl bg-neutral-900/60 border border-neutral-800/80 hover:border-neutral-700 transition flex items-center justify-between gap-3 cursor-pointer group"
-            title="Click to view Room Members & invite code"
-          >
-            <div className="flex items-center gap-2.5 overflow-x-auto py-0.5 scrollbar-none">
-              <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider shrink-0 flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5 text-amber-400" />
-                <span>Room Members ({participants.length}):</span>
-              </span>
-              <div className="flex items-center -space-x-1.5 overflow-hidden">
-                {participants.slice(0, 6).map((m, idx) => {
-                  const mRole = m.role || 'listener';
-                  const isHostMember = mRole === 'host';
-                  const isCoHostMember = mRole === 'co-host';
-                  return (
-                    <div
-                      key={m.userId || m.socketId || idx}
-                      className={`relative w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white border-2 border-neutral-900 shadow-sm ${
-                        isHostMember ? 'bg-amber-600 text-amber-100 ring-1 ring-amber-400' :
-                        isCoHostMember ? 'bg-emerald-600 text-emerald-100 ring-1 ring-emerald-400' :
-                        'bg-neutral-700 text-neutral-200'
-                      }`}
-                      title={`${m.displayName || m.username || 'Listener'} (${mRole.toUpperCase()}) - Online`}
-                    >
-                      {m.displayName ? m.displayName.charAt(0).toUpperCase() : 'U'}
-                      <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400 ring-1 ring-black" />
-                    </div>
-                  );
-                })}
-              </div>
-              {participants.length > 6 && (
-                <span className="text-[10px] text-neutral-400 font-bold bg-neutral-800 px-1.5 py-0.5 rounded-full">
-                  +{participants.length - 6}
-                </span>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsMemberPopoverOpen(true);
-              }}
-              className="text-[11px] text-amber-400 font-semibold hover:underline shrink-0 flex items-center gap-0.5 cursor-pointer"
-            >
-              <span>View All ({participants.length}) →</span>
-            </button>
-          </div>
-
           {/* Minimal Listen Together Card With Three-Dot (⋮) Menu */}
           {isUiVisible('btn.listenTogether') && (
             <div className="p-3 sm:p-3.5 rounded-2xl bg-neutral-900/90 border border-neutral-800 flex items-center justify-between gap-3">
@@ -2408,102 +2464,114 @@ export default function ListeningRoomsView({
                 </div>
               </div>
 
-              {/* Right: Three-Dot (⋮) Menu for Listen Together Tools & Reactions */}
-              <div className="relative shrink-0" data-dropdown>
-                <button
-                  type="button"
-                  onClick={() => setIsListenTogetherMenuOpen(prev => !prev)}
-                  className={`p-2 rounded-xl border transition cursor-pointer active:scale-95 ${
-                    isListenTogetherMenuOpen
-                      ? 'bg-neutral-700 text-white border-neutral-600'
-                      : 'bg-neutral-800/80 hover:bg-neutral-700/80 text-neutral-300 hover:text-white border-neutral-700/50'
-                  }`}
-                  title="Playback Sync Tools & Reactions"
-                  aria-label="Playback Sync Menu"
-                >
-                  <MoreVertical className="w-4 h-4" />
-                </button>
-
-                {isListenTogetherMenuOpen && (
-                  <div className="absolute right-0 top-full mt-1.5 w-60 rounded-2xl bg-neutral-900 border border-neutral-700/90 shadow-2xl py-2 z-50 animate-fadeIn backdrop-blur-xl space-y-2">
-                    <div className="px-3 pb-1.5 border-b border-neutral-800">
-                      <span className="text-[10px] uppercase font-mono tracking-wider text-neutral-400 font-bold block mb-1.5">
-                        Sync Actions
-                      </span>
-                      <div className="space-y-1">
-                        {isUiVisible('btn.syncLive') && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsListenTogetherMenuOpen(false);
-                              handleSyncToLivePlayback();
-                            }}
-                            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold text-emerald-300 hover:bg-emerald-500/15 transition flex items-center gap-2 cursor-pointer"
-                            title="Sync player to room's live playback timestamp"
-                          >
-                            <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                            <span>Sync Live Playback</span>
-                          </button>
-                        )}
-
-                        {isCoHost && isUiVisible('btn.broadcast') && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsListenTogetherMenuOpen(false);
-                              handleBroadcastSync();
-                            }}
-                            disabled={!currentSong}
-                            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold text-amber-300 hover:bg-amber-500/15 transition flex items-center gap-2 cursor-pointer disabled:opacity-40"
-                            title="Broadcast your current playing song & timestamp to room"
-                          >
-                            <Radio className="w-3.5 h-3.5 text-amber-400" />
-                            <span>Broadcast My Playback</span>
-                          </button>
-                        )}
-
-                        {isUiVisible('btn.roomChat') && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsListenTogetherMenuOpen(false);
-                              setIsChatOpen(prev => !prev);
-                            }}
-                            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2 cursor-pointer"
-                          >
-                            <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
-                            <span>{isChatOpen ? 'Close Room Chat' : 'Open Room Chat'}</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Quick Reactions inside menu */}
-                    {isUiVisible('btn.roomReactions') && (
-                      <div className="px-3 pt-0.5">
-                        <span className="text-[10px] uppercase font-mono tracking-wider text-neutral-400 font-bold block mb-1.5">
-                          Quick Reactions
-                        </span>
-                        <div className="grid grid-cols-4 gap-1">
-                          {QUICK_REACTIONS.map(emoji => (
-                            <button
-                              key={emoji}
-                              type="button"
-                              onClick={() => {
-                                handleSendReaction(emoji);
-                                setIsListenTogetherMenuOpen(false);
-                              }}
-                              className="text-lg p-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 hover:scale-110 active:scale-95 transition flex items-center justify-center cursor-pointer"
-                              title={`Send ${emoji}`}
-                            >
-                              {emoji}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+              {/* Right: Quick Reactions Bar & Three-Dot (⋮) Menu */}
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                {/* Always-visible Tightly Spaced Reaction Emojis */}
+                {isUiVisible('btn.roomReactions') && (
+                  <div className="flex items-center gap-1 bg-neutral-900/90 border border-neutral-700/60 rounded-xl px-1.5 py-1">
+                    {QUICK_REACTIONS.map(emoji => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => handleSendReaction(emoji)}
+                        className="text-base sm:text-lg w-7 h-7 sm:w-8 sm:h-8 rounded-lg hover:bg-neutral-800 hover:scale-110 active:scale-90 transition flex items-center justify-center cursor-pointer select-none"
+                        title={`React with ${emoji}`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
                   </div>
                 )}
+
+                {/* Room Chat Toggle Button */}
+                {isUiVisible('btn.roomChat') && (
+                  <button
+                    type="button"
+                    onClick={() => setIsChatOpen(prev => !prev)}
+                    className={`p-2 rounded-xl border transition cursor-pointer active:scale-95 flex items-center gap-1.5 text-xs font-semibold ${
+                      isChatOpen
+                        ? 'bg-amber-500 text-neutral-950 border-amber-400 font-bold'
+                        : 'bg-neutral-800/80 hover:bg-neutral-700/80 text-neutral-300 hover:text-white border-neutral-700/50'
+                    }`}
+                    title={isChatOpen ? 'Close Room Chat' : 'Open Room Chat'}
+                  >
+                    <MessageSquare className="w-4 h-4 text-amber-400" />
+                    <span className="hidden sm:inline">Chat</span>
+                  </button>
+                )}
+
+                {/* Three-Dot (⋮) Menu for Sync Tools */}
+                <div className="relative shrink-0" data-dropdown>
+                  <button
+                    type="button"
+                    onClick={() => setIsListenTogetherMenuOpen(prev => !prev)}
+                    className={`p-2 rounded-xl border transition cursor-pointer active:scale-95 ${
+                      isListenTogetherMenuOpen
+                        ? 'bg-neutral-700 text-white border-neutral-600'
+                        : 'bg-neutral-800/80 hover:bg-neutral-700/80 text-neutral-300 hover:text-white border-neutral-700/50'
+                    }`}
+                    title="Playback Sync Tools"
+                    aria-label="Playback Sync Menu"
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+
+                  {isListenTogetherMenuOpen && (
+                    <div className="absolute right-0 top-full mt-1.5 w-60 rounded-2xl bg-neutral-900 border border-neutral-700/90 shadow-2xl py-2 z-50 animate-fadeIn backdrop-blur-xl space-y-2">
+                      <div className="px-3 pb-1.5 border-b border-neutral-800">
+                        <span className="text-[10px] uppercase font-mono tracking-wider text-neutral-400 font-bold block mb-1.5">
+                          Sync Actions
+                        </span>
+                        <div className="space-y-1">
+                          {isUiVisible('btn.syncLive') && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsListenTogetherMenuOpen(false);
+                                handleSyncToLivePlayback();
+                              }}
+                              className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold text-emerald-300 hover:bg-emerald-500/15 transition flex items-center gap-2 cursor-pointer"
+                              title="Sync player to room's live playback timestamp"
+                            >
+                              <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                              <span>Sync Live Playback</span>
+                            </button>
+                          )}
+
+                          {isCoHost && isUiVisible('btn.broadcast') && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsListenTogetherMenuOpen(false);
+                                handleBroadcastSync();
+                              }}
+                              disabled={!currentSong}
+                              className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold text-amber-300 hover:bg-amber-500/15 transition flex items-center gap-2 cursor-pointer disabled:opacity-40"
+                              title="Broadcast your current playing song & timestamp to room"
+                            >
+                              <Radio className="w-3.5 h-3.5 text-amber-400" />
+                              <span>Broadcast My Playback</span>
+                            </button>
+                          )}
+
+                          {isUiVisible('btn.roomChat') && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsListenTogetherMenuOpen(false);
+                                setIsChatOpen(prev => !prev);
+                              }}
+                              className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2 cursor-pointer"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+                              <span>{isChatOpen ? 'Close Room Chat' : 'Open Room Chat'}</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -2620,62 +2688,128 @@ export default function ListeningRoomsView({
             </div>
           )}
 
-          {/* Navigation Sub-Tabs: Playlists, Activity Feed, Members */}
-          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-neutral-900/80 border border-neutral-800/80 overflow-x-auto scrollbar-none w-full max-w-full">
-            {isUiVisible('card.roomPlaylists') && (
-              <button
-                type="button"
-                onClick={() => setActiveTab('playlists')}
-                className={`flex-1 min-w-[90px] py-2 px-2.5 sm:px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeTab === 'playlists'
-                    ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
-                    : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
-                }`}
-              >
-                <Music className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">Playlists ({(roomPlaylists || []).length})</span>
-              </button>
-            )}
+          {/* Direct Room Songs List (replaces Playlists & Activity Feed tabs) */}
+          {activeTab !== 'members' && (() => {
+            const allRoomSongs = [];
+            const seenSongIds = new Set();
+            for (const pl of (roomPlaylists || [])) {
+              for (const s of (pl.songs || [])) {
+                const sid = s.id || s.videoId;
+                if (sid && !seenSongIds.has(sid)) {
+                  seenSongIds.add(sid);
+                  allRoomSongs.push({ ...s, _playlistId: pl.id });
+                }
+              }
+            }
+            const sortedSongs = [...allRoomSongs].sort((a, b) => {
+              if (!sortByVotes) return 0;
+              return ((b.votes && b.votes.length) || 0) - ((a.votes && a.votes.length) || 0);
+            });
 
-            {isUiVisible('card.liveActivity') && (
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('activity');
-                  setUnreadActivityCount(0);
-                }}
-                className={`flex-1 min-w-[85px] py-2 px-2.5 sm:px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer relative whitespace-nowrap shrink-0 ${
-                  activeTab === 'activity'
-                    ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
-                    : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
-                }`}
-              >
-                <Radio className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">Activity</span>
-                {unreadActivityCount > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping ml-0.5" />
+            return (
+              <div className="p-3 sm:p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800/80 space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap border-b border-neutral-800/80 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <Music className="w-4 h-4 text-amber-400" />
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">Room Songs</span>
+                    <span className="text-[10px] bg-neutral-800 text-amber-400 font-mono px-2 py-0.5 rounded-full border border-neutral-700/60 font-semibold">
+                      {sortedSongs.length === 1 ? '1 Track' : `${sortedSongs.length} Tracks`}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSortByVotes(prev => !prev)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition cursor-pointer ${
+                        sortByVotes
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                          : 'bg-neutral-800/80 text-neutral-400 border-neutral-700/60 hover:text-white'
+                      }`}
+                    >
+                      {sortByVotes ? '👍 Top Voted' : 'Default Order'}
+                    </button>
+                    {sortedSongs.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const firstSong = sortedSongs[0];
+                          const remaining = sortedSongs.slice(1);
+                          handleRoomSongClick(firstSong, remaining);
+                        }}
+                        className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-[11px] transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <Play className="w-3 h-3 fill-current" />
+                        <span>Play All</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {sortedSongs.length === 0 ? (
+                  <div className="text-center py-8 text-neutral-500 text-xs space-y-2">
+                    <p>No songs in this room yet.</p>
+                    <p className="text-neutral-600">Use "Add to Playlist" on any song to add it straight to this room.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1 scrollbar-thin">
+                    {sortedSongs.map((song, idx) => {
+                      const songId = song.id || song.videoId || `track_${idx}`;
+                      const voteCount = song.votes ? song.votes.length : 0;
+                      const hasVoted = song.votes && song.votes.includes(currentUserId);
+                      const canDeleteTrack = isCoHost || song.addedBy?.userId === currentUserId;
+                      return (
+                        <div
+                          key={songId}
+                          onClick={() => handleRoomSongClick(song)}
+                          className="group p-2.5 rounded-xl bg-neutral-950/70 border border-neutral-800/80 hover:border-amber-500/40 flex items-center justify-between gap-3 transition cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            <div className="relative w-9 h-9 rounded-lg overflow-hidden bg-neutral-800 shrink-0">
+                              <img
+                                src={song.thumbnail || `https://i.ytimg.com/vi/${song.id || song.videoId}/mqdefault.jpg`}
+                                alt={song.title}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-bold text-white truncate group-hover:text-amber-300 transition">{song.title}</p>
+                              <p className="text-[11px] text-neutral-400 truncate">{song.artist || song.channel || 'Loopra Artist'}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => handleVoteSong(song._playlistId, songId)}
+                              className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition flex items-center gap-1 cursor-pointer ${
+                                hasVoted
+                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                  : 'bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-white'
+                              }`}
+                            >
+                              <ThumbsUp className="w-3 h-3" />
+                              <span>{voteCount}</span>
+                            </button>
+                            {canDeleteTrack && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveSongFromRoom(song._playlistId, songId)}
+                                className="p-1.5 rounded-lg text-neutral-500 hover:text-rose-400 hover:bg-rose-500/10 transition cursor-pointer"
+                                title="Remove from room"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
-              </button>
-            )}
+              </div>
+            );
+          })()}
 
-            {isUiVisible('card.roomMembers') && (
-              <button
-                type="button"
-                onClick={() => setActiveTab('members')}
-                className={`flex-1 min-w-[95px] py-2 px-2.5 sm:px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeTab === 'members'
-                    ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
-                    : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">Members ({participants.length})</span>
-              </button>
-            )}
-          </div>
-
-          {/* TAB 1: COLLABORATIVE PLAYLISTS */}
-          {activeTab === 'playlists' && isUiVisible('card.roomPlaylists') && (
+          {false && (
             <div className="space-y-4">
               {/* Clean Playlist Toolbar */}
               <div className="flex items-center justify-between gap-2.5 flex-wrap">
@@ -2766,9 +2900,10 @@ export default function ListeningRoomsView({
                         <button
                           type="button"
                           onClick={() => {
-                            const s = activeSelectedPlaylist.songs[0];
-                            if (s) {
-                              handleRoomSongClick(s);
+                            const firstSong = activeSelectedPlaylist.songs[0];
+                            const remaining = activeSelectedPlaylist.songs.slice(1);
+                            if (firstSong) {
+                              handleRoomSongClick(firstSong, remaining);
                             }
                           }}
                           className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/20 active:scale-95"
@@ -3092,7 +3227,7 @@ export default function ListeningRoomsView({
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   if (pl.songs[0]) {
-                                    handleRoomSongClick(pl.songs[0]);
+                                    handleRoomSongClick(pl.songs[0], pl.songs.slice(1));
                                   }
                                 }}
                                 className="p-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 transition"
@@ -3141,8 +3276,8 @@ export default function ListeningRoomsView({
             </div>
           )}
 
-          {/* TAB 2: LIVE ACTIVITY */}
-          {activeTab === 'activity' && isUiVisible('card.roomActivity') && (
+          {/* TAB 2: LIVE ACTIVITY (Removed) */}
+          {false && activeTab === 'activity' && isUiVisible('card.roomActivity') && (
             <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 space-y-3">
               <div className="flex items-center justify-between">
                 <h5 className="font-bold text-white text-xs uppercase tracking-wider">Live Activity Log</h5>
@@ -3171,8 +3306,8 @@ export default function ListeningRoomsView({
             </div>
           )}
 
-          {/* TAB 3: MEMBERS & ROLES */}
-          {activeTab === 'members' && isUiVisible('card.roomMembers') && (
+          {/* TAB 3: MEMBERS & ROLES (Moved to Header Popover) */}
+          {false && activeTab === 'members' && isUiVisible('card.roomMembers') && (
             <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 space-y-4">
               {/* Host Section: Pending Join Requests */}
               {isHost && (
@@ -4542,22 +4677,12 @@ export default function ListeningRoomsView({
               })}
             </div>
 
-            {/* Footer with switch to Members tab */}
-            <div className="flex items-center justify-between pt-2 border-t border-neutral-800">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsMemberPopoverOpen(false);
-                  setActiveTab('members');
-                }}
-                className="text-xs text-amber-400 hover:text-amber-300 font-semibold cursor-pointer"
-              >
-                Open Full Members & Roles →
-              </button>
+            {/* Footer with Close button */}
+            <div className="flex items-center justify-end pt-2 border-t border-neutral-800">
               <button
                 type="button"
                 onClick={() => setIsMemberPopoverOpen(false)}
-                className="px-3 py-1.5 text-xs font-semibold text-neutral-400 hover:text-white transition cursor-pointer"
+                className="px-4 py-1.5 text-xs font-semibold bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl transition cursor-pointer"
               >
                 Close
               </button>

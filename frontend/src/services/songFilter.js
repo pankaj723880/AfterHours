@@ -90,7 +90,7 @@ export const STRICT_TEXT_BLOCKLIST = [
   'karaoke', 'karoake', 'instrumental only', 'bhat geet', 'banni geet', 'beach', 'anniversary',
   // Commercial ads, car reviews, unboxing, automotive noise, deal platforms
   'car review', 'walkaround review', 'test drive', 'mileage test', 'ownership review',
-  'car buying', 'buying permission', 'used car', 'second hand car', 'used cars',
+  'car buying', 'buying permission', 'car buying permission', 'used car', 'second hand car', 'used cars',
   'cars24', '#cars24', 'spinny', '#spinny', 'cardekho', '#cardekho', 'carwale', '#carwale',
   'commercial ad', 'brand film', 'advertisement', 'promo ad', 'tv commercial', 'sponsored ad'
 ];
@@ -526,6 +526,7 @@ export function filterSingleSongs(tracks = []) {
 
     if (!isValidYouTubeId(track.id)) continue;
     if (seenIds.has(track.id)) continue;
+    if (!isCleanMusicTrack(track)) continue;
     if (!isSingleSong(track)) continue;
 
     seenIds.add(track.id);

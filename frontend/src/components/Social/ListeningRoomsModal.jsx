@@ -60,6 +60,8 @@ export default function ListeningRoomsModal({
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [floatingReactions, setFloatingReactions] = useState([]);
   const [unreadActivityCount, setUnreadActivityCount] = useState(0);
+  const [isSendingChatMessage, setIsSendingChatMessage] = useState(false);
+  const isSendingChatMessageRef = useRef(false);
 
   const currentUserId = user?._id?.toString?.() || user?.userId || 'guest';
   const currentUsername = user?.username || 'Listener';
@@ -563,9 +565,6 @@ export default function ListeningRoomsModal({
   };
 
   // 8. Mini Chat Send with Strict Deduplication & Double-Submission Guards
-  const [isSendingChatMessage, setIsSendingChatMessage] = useState(false);
-  const isSendingChatMessageRef = useRef(false);
-
   const handleSendChatMessage = (e) => {
     if (e && typeof e.preventDefault === 'function') e.preventDefault();
     const text = chatInput.trim();
@@ -876,7 +875,7 @@ export default function ListeningRoomsModal({
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition cursor-pointer"
+            className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-white transition cursor-pointer shrink-0"
             aria-label="Close Listening Rooms"
           >
             ✕
@@ -884,14 +883,14 @@ export default function ListeningRoomsModal({
         </div>
 
         {/* Modal Body */}
-        <div className="p-4 sm:p-5 overflow-y-auto space-y-5 flex-1">
+        <div className="p-4 sm:p-5 pb-24 sm:pb-8 overflow-y-auto space-y-5 flex-1">
           {activeRoom ? (
             /* INSIDE ACTIVE ROOM */
             <div className="space-y-4">
               {/* Room Hero Banner */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-500/15 via-neutral-900 to-neutral-950 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
+              <div className="p-3.5 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-500/15 via-neutral-900 to-neutral-950 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+                <div className="space-y-1.5 min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[10px] font-mono uppercase text-amber-400 tracking-wider font-bold">
                       Active Room
                     </span>
@@ -918,7 +917,19 @@ export default function ListeningRoomsModal({
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto sm:justify-end shrink-0">
+                  <button
+                    onClick={() => setActiveTab(prev => prev === 'members' ? 'playlists' : 'members')}
+                    className={`px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 border shrink-0 whitespace-nowrap ${
+                      activeTab === 'members'
+                        ? 'bg-amber-500 text-neutral-950 border-amber-400'
+                        : 'bg-neutral-900 hover:bg-neutral-800 border-neutral-700 text-neutral-200'
+                    }`}
+                    title="View Room Members"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Members ({participants?.length || 0})</span>
+                  </button>
                   <button
                     onClick={handleCopyLink}
                     className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-neutral-950 text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-amber-500/10"
@@ -990,17 +1001,17 @@ export default function ListeningRoomsModal({
               )}
 
               {/* Quick Floating Emoji Reactions Bar */}
-              <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-neutral-950/60 border border-neutral-800/80">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 p-2 sm:p-2.5 rounded-xl bg-neutral-950/60 border border-neutral-800/80">
+                <div className="flex items-center gap-1 min-w-0">
                   {isUiVisible('btn.roomReactions') && (
                     <>
-                      <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider pl-1">Reactions:</span>
-                      <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] sm:text-xs font-bold text-neutral-400 uppercase tracking-wider shrink-0">Reactions:</span>
+                      <div className="flex items-center gap-0.5 sm:gap-1">
                         {QUICK_REACTIONS.map(emoji => (
                           <button
                             key={emoji}
                             onClick={() => handleSendReaction(emoji)}
-                            className="text-lg p-1.5 rounded-lg hover:bg-neutral-800 hover:scale-125 active:scale-95 transition cursor-pointer"
+                            className="text-base sm:text-lg p-1 rounded-lg hover:bg-neutral-800 hover:scale-125 active:scale-95 transition cursor-pointer shrink-0"
                             title={`Send ${emoji}`}
                           >
                             {emoji}
@@ -1015,7 +1026,7 @@ export default function ListeningRoomsModal({
                 {isUiVisible('btn.roomChat') && (
                   <button
                     onClick={() => setIsChatOpen(!isChatOpen)}
-                    className="px-3 py-1 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-medium flex items-center gap-1.5 transition"
+                    className="px-2.5 py-1 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-medium flex items-center gap-1.5 transition shrink-0 whitespace-nowrap ml-auto"
                   >
                     <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
                     <span>Room Chat</span>
@@ -1078,59 +1089,115 @@ export default function ListeningRoomsModal({
                 </div>
               )}
 
-              {/* Navigation Tabs (Playlists / Activity Feed / Members) */}
-              <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
-                <button
-                  onClick={() => setActiveTab('playlists')}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 ${
-                    activeTab === 'playlists'
-                      ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
-                      : 'bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  <Music className="w-3.5 h-3.5" />
-                  <span>Playlists</span>
-                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20">
-                    {roomPlaylists?.length || 0}
-                  </span>
-                </button>
+              {/* DIRECT ROOM SONGS LIST */}
+              {activeTab !== 'members' && (() => {
+                const allRoomSongs = [];
+                const seenIds = new Set();
+                for (const pl of (roomPlaylists || [])) {
+                  for (const s of (pl.songs || [])) {
+                    const sid = s.id || s.videoId;
+                    if (sid && !seenIds.has(sid)) {
+                      seenIds.add(sid);
+                      allRoomSongs.push({ ...s, _playlistId: pl.id });
+                    }
+                  }
+                }
+                const sortedSongs = [...allRoomSongs].sort((a, b) => {
+                  if (!sortByVotes) return 0;
+                  return ((b.votes && b.votes.length) || 0) - ((a.votes && a.votes.length) || 0);
+                });
 
-                <button
-                  onClick={() => {
-                    setActiveTab('activity');
-                    setUnreadActivityCount(0);
-                  }}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 relative ${
-                    activeTab === 'activity'
-                      ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
-                      : 'bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Activity Feed</span>
-                  {unreadActivityCount > 0 && (
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping absolute -top-0.5 -right-0.5" />
-                  )}
-                </button>
+                return (
+                  <div className="p-4 rounded-2xl bg-neutral-950/70 border border-neutral-800 space-y-3">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <Music className="w-4 h-4 text-amber-400" />
+                        <h5 className="text-xs font-bold text-white uppercase tracking-wider">ROOM SONGS</h5>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-800 text-amber-400 font-mono font-semibold">
+                          {sortedSongs.length}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setSortByVotes(!sortByVotes)}
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-medium border transition flex items-center gap-1 ${
+                          sortByVotes
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                            : 'bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-white'
+                        }`}
+                      >
+                        <ThumbsUp className="w-3 h-3" />
+                        <span>{sortByVotes ? 'Top Voted' : 'Default'}</span>
+                      </button>
+                    </div>
 
-                <button
-                  onClick={() => setActiveTab('members')}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 ${
-                    activeTab === 'members'
-                      ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
-                      : 'bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  <span>Members</span>
-                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20">
-                    {participants?.length || 0}
-                  </span>
-                </button>
-              </div>
+                    {sortedSongs.length === 0 ? (
+                      <div className="text-center py-6 text-neutral-500 text-xs">
+                        No songs in this room yet. Use "Add to Playlist" on any song to add it here.
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                        {sortedSongs.map((song, idx) => {
+                          const sid = song.id || song.videoId;
+                          const voteCount = song.votes ? song.votes.length : 0;
+                          const hasVoted = song.votes && song.votes.includes(currentUserId);
+                          return (
+                            <div
+                              key={sid || idx}
+                              className="group p-2.5 rounded-xl bg-neutral-900/70 border border-neutral-800/80 hover:border-amber-500/40 flex items-center justify-between gap-3 transition"
+                            >
+                              <div
+                                onClick={() => onPlaySong && onPlaySong(song)}
+                                className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
+                              >
+                                <img
+                                  src={song.thumbnail || `https://i.ytimg.com/vi/${sid}/mqdefault.jpg`}
+                                  alt={song.title}
+                                  className="w-9 h-9 rounded-lg object-cover shrink-0 bg-neutral-800"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-bold text-white truncate group-hover:text-amber-300 transition">{song.title}</p>
+                                  <p className="text-[11px] text-neutral-400 truncate">{song.artist || song.channel || 'Loopra Artist'}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  onClick={() => handleVoteTrack(song._playlistId, sid)}
+                                  className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition flex items-center gap-1 ${
+                                    hasVoted
+                                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                      : 'bg-neutral-800 text-neutral-400 border-neutral-700 hover:text-white'
+                                  }`}
+                                >
+                                  <ThumbsUp className="w-3 h-3" />
+                                  <span>{voteCount}</span>
+                                </button>
+                                <button
+                                  onClick={() => onPlaySong && onPlaySong(song)}
+                                  className="p-1.5 rounded-lg bg-neutral-800 hover:bg-amber-500 hover:text-neutral-950 text-neutral-300 transition"
+                                  title="Play track"
+                                >
+                                  <Play className="w-3.5 h-3.5 fill-current" />
+                                </button>
+                                {isCoHost && (
+                                  <button
+                                    onClick={() => handleRemoveTrackFromRoomPlaylist(song._playlistId, sid)}
+                                    className="p-1.5 rounded-lg bg-neutral-800 hover:bg-rose-500/20 hover:text-rose-400 text-neutral-500 transition"
+                                    title="Remove from room"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
-              {/* TAB 1: PLAYLISTS & UPVOTE QUEUE */}
-              {activeTab === 'playlists' && (
+              {false && (
                 <div className="p-4 rounded-2xl bg-neutral-950/70 border border-neutral-800 space-y-4">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div>
@@ -1370,8 +1437,8 @@ export default function ListeningRoomsModal({
                 </div>
               )}
 
-              {/* TAB 2: LIVE ACTIVITY FEED */}
-              {activeTab === 'activity' && (
+              {/* TAB 2: LIVE ACTIVITY FEED (Removed) */}
+              {false && activeTab === 'activity' && (
                 <div className="p-4 rounded-2xl bg-neutral-950/70 border border-neutral-800 space-y-3">
                   <div className="flex items-center justify-between">
                     <h5 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">

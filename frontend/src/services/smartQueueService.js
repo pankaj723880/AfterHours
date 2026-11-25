@@ -44,12 +44,16 @@ export const smartQueueService = {
     const title = track?.title || '';
     const artist = track?.artist || track?.channel || '';
     const genre = track?.genre || '';
+    const mood = track?.mood || '';
+    const category = track?.category || '';
+    const songType = track?.songType || track?.type || '';
+    const movie = track?.movie || track?.album || '';
 
     if (!trackId && !title) {
       return { related: [], discover: [], items: [] };
     }
 
-    const cacheKey = `${trackId}_${title}_${artist}`;
+    const cacheKey = `${trackId}_${title}_${artist}_${genre}_${mood}_${movie}`;
     if (!forceRefresh && smartQueueCache.has(cacheKey)) {
       return smartQueueCache.get(cacheKey);
     }
@@ -60,6 +64,10 @@ export const smartQueueService = {
       artist,
       genre
     });
+    if (mood) params.set('mood', mood);
+    if (category) params.set('category', category);
+    if (songType) params.set('songType', songType);
+    if (movie) params.set('movie', movie);
     if (forceRefresh) params.set('refresh', 'true');
 
     const endpointUrl = getApiUrl(`/api/recommendations/similar?${params.toString()}`);

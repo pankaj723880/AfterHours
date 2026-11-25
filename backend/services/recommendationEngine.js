@@ -370,6 +370,7 @@ export const recommendationEngine = {
     const primaryArtist = topArtistNames[0] || 'Arijit Singh';
     const topGenres = (userProfile.topGenres || []).map(g => g.name.toLowerCase());
     const topMoods = (userProfile.topMoods || []).map(m => m.name.toLowerCase());
+    const preferredLanguages = (userProfile.preferredLanguages || []).map(l => l.name.toLowerCase());
 
     const deduplicator = new TrackDeduplicator();
     const recentBase = userProfile?.recentTracks?.[0] || null;
@@ -403,6 +404,14 @@ export const recommendationEngine = {
       // Top mood match (+15)
       if (topMoods.some(m => trackMood.includes(m))) {
         familiarityScore += 15;
+      }
+      // Preferred language / era match (+12)
+      const trackLang = (track.language || '').toLowerCase();
+      if (preferredLanguages.length > 0 && trackLang && preferredLanguages.some(l => trackLang.includes(l))) {
+        familiarityScore += 12;
+      }
+      if (topGenres.some(g => (g.includes('90s') || g.includes('retro')) && (trackGenre.includes('90s') || trackGenre.includes('retro') || trackMood.includes('nostalgic')))) {
+        familiarityScore += 10;
       }
       // Time-of-day contextual boost (+15)
       if (timeOfDay.preferredMoods.some(m => trackMood.includes(m)) || timeOfDay.preferredGenres.some(g => trackGenre.includes(g))) {

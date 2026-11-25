@@ -8,7 +8,7 @@ import UserMusicPreference from '../models/UserMusicPreference.js';
 import { catalogService } from '../services/catalogService.js';
 import { TrackDeduplicator, getCanonicalSongKey, cleanSongTitle } from '../services/recommendationHistoryService.js';
 import { getCleanTrackThumbnail, isValidThumbnailUrlFormat, filterTracksWithValidThumbnailsSync } from '../services/thumbnailValidationService.js';
-import { isSingleSong, verifySingleSong, isValidMusicTrack } from '../services/songFilter.js';
+import { isSingleSong, verifySingleSong, isValidMusicTrack, classifySongType } from '../services/songFilter.js';
 
 const router = express.Router();
 
@@ -381,6 +381,10 @@ router.get('/similar', async (req, res) => {
     const title = (req.query.title || '').trim();
     const artist = (req.query.artist || '').trim();
     const genre = (req.query.genre || '').trim();
+    const mood = (req.query.mood || '').trim();
+    const category = (req.query.category || '').trim();
+    const songType = (req.query.songType || req.query.type || '').trim();
+    const movie = (req.query.movie || req.query.album || '').trim();
     const language = (req.query.language || '').trim();
     const forceRefresh = req.query.refresh === 'true';
 
@@ -410,7 +414,7 @@ router.get('/similar', async (req, res) => {
     const cleanArtist = artist.replace(/vevo|official|channel|topic|records/gi, '').trim();
 
     // Check in-memory cache unless client explicitly requests forceRefresh
-    const cacheKey = `${trackId.toLowerCase()}_${cleanTitle.toLowerCase()}_${cleanArtist.toLowerCase()}_${genre.toLowerCase()}`;
+    const cacheKey = `${trackId.toLowerCase()}_${cleanTitle.toLowerCase()}_${cleanArtist.toLowerCase()}_${genre.toLowerCase()}_${mood.toLowerCase()}_${movie.toLowerCase()}`;
     if (!forceRefresh && similarSongsCache.has(cacheKey)) {
       const cached = similarSongsCache.get(cacheKey);
       if (Date.now() - cached.timestamp < SIMILAR_CACHE_TTL && Array.isArray(cached.data?.items) && cached.data.items.length > 0) {
@@ -418,9 +422,23 @@ router.get('/similar', async (req, res) => {
       }
     }
 
-    // 1. Language & Context Detection from signals
-    const combinedText = `${cleanTitle} ${cleanArtist} ${genre} ${language}`.toLowerCase();
+    // 1. Language, Context & Movie Detection from signals
+    const combinedText = `${cleanTitle} ${cleanArtist} ${genre} ${mood} ${category} ${movie} ${language}`.toLowerCase();
     
+    // Extract movie from title if not explicitly provided
+    let detectedMovie = movie ? movie.trim() : '';
+    if (!detectedMovie) {
+      if (/(?:from|film|movie)\s*[:\-]\s*["']?([^"'|•\(\)\[\]]+)["']?/i.test(title)) {
+        const match = title.match(/(?:from|film|movie)\s*[:\-]\s*["']?([^"'|•\(\)\[\]]+)["']?/i);
+        if (match && match[1]) detectedMovie = match[1].trim();
+      } else if (title.includes(' - ') && !title.toLowerCase().includes('official') && !title.toLowerCase().includes('lyric')) {
+        const parts = title.split(' - ');
+        if (parts.length >= 2 && parts[1].trim().length >= 3 && !/video|song|audio|feat|ft\./i.test(parts[1])) {
+          detectedMovie = parts[1].replace(/\(.*?\)|\[.*?\]/g, '').trim();
+        }
+      }
+    }
+
     let detectedLang = language.toLowerCase();
     if (!detectedLang) {
       if (/bhojpuri|pawan singh|khesari|silpi raj|ritesh pandey|manoj tiwari|nirahua|neelkamal|arvind akela|kallu|pramod premi|sharda sinha|chaita|purvi/i.test(combinedText)) {
@@ -524,11 +542,29 @@ router.get('/similar', async (req, res) => {
       secondaryQueries.push(`trending acoustic pop songs`);
       secondaryQueries.push(`best international pop songs`);
     } else {
-      // Hindi / Bollywood Romantic / Melodic
-      if (cleanArtist && cleanArtist.toLowerCase() !== 'unknown') {
-        primaryQueries.push(`${cleanArtist} top hindi songs`);
+      // Hindi / Bollywood Romantic / Melodic / Specific Mood & Movie
+      if (detectedMovie) {
+        primaryQueries.push(`${detectedMovie} movie hit songs official`);
       }
-      relatedArtists.slice(0, 2).forEach(rel => primaryQueries.push(`${rel} hindi romantic hit songs`));
+      if (cleanArtist && cleanArtist.toLowerCase() !== 'unknown') {
+        if (mood) {
+          primaryQueries.push(`${cleanArtist} ${mood} hit songs`);
+        } else if (/romantic|love|ishq|dil|sanam/i.test(combinedText)) {
+          primaryQueries.push(`${cleanArtist} romantic hit songs`);
+        } else {
+          primaryQueries.push(`${cleanArtist} top hindi songs`);
+        }
+      }
+      relatedArtists.slice(0, 2).forEach(rel => {
+        if (/romantic|love|ishq|dil|sanam/i.test(combinedText)) {
+          primaryQueries.push(`${rel} hindi romantic hit songs`);
+        } else {
+          primaryQueries.push(`${rel} top hindi songs`);
+        }
+      });
+      if (detectedMovie) {
+        secondaryQueries.push(`${detectedMovie} original soundtrack songs`);
+      }
       if (/romantic|love|ishq|dil|sanam/i.test(combinedText)) {
         primaryQueries.push(`bollywood romantic love hit songs`);
       } else {
@@ -540,6 +576,9 @@ router.get('/similar', async (req, res) => {
 
     if (genre) {
       primaryQueries.push(`${genre} hit music`);
+    }
+    if (mood && !primaryQueries.some(q => q.includes(mood))) {
+      primaryQueries.push(`${mood} hit songs`);
     }
 
     // 4. Candidate collection and multi-tier fetching ensuring >= 5 unique valid suggestions
@@ -585,13 +624,27 @@ router.get('/similar', async (req, res) => {
     };
 
     const results = [];
+    const baseTitleCounts = new Map();
 
     const addTrack = (track, reasonText) => {
       if (!isValidAndDistinct(track)) return false;
       const id = track.id || track.videoId;
       const key = getCanonicalSongKey(track);
+
+      // Deduplication / Variant capping: Prevent multiple versions/remixes of the same base title from flooding the suggestions (max 1 variant per song)
+      const baseTitle = cleanSongTitle(track.title);
+      if (baseTitle && baseTitle.length >= 3) {
+        const currentCount = baseTitleCounts.get(baseTitle) || 0;
+        if (currentCount >= 1) {
+          return false; // Already have a version of this song in the recommendation list
+        }
+      }
+
       seenIds.add(id);
       if (key) seenKeys.add(key);
+      if (baseTitle && baseTitle.length >= 3) {
+        baseTitleCounts.set(baseTitle, (baseTitleCounts.get(baseTitle) || 0) + 1);
+      }
 
       const cleanThumb = getCleanTrackThumbnail(track.thumbnail, id);
       results.push({
@@ -627,8 +680,82 @@ router.get('/similar', async (req, res) => {
       catalogService.getCuratedTracks().catch(() => [])
     ]);
 
-    // Tier A: Add primary candidates
-    for (const track of primaryCandidates) {
+    // Function to calculate relevance score for ranking recommendations
+    // Prioritizes matching current track's genre, category/mood, type, same movie and artist
+    const scoreCandidateRelevance = (candidate) => {
+      let score = 0;
+      const cTitle = (candidate.title || '').toLowerCase();
+      const cArtist = (candidate.artist || candidate.channel || '').toLowerCase();
+      const cGenre = (candidate.genre || '').toLowerCase();
+      const cMood = (candidate.mood || '').toLowerCase();
+      const cType = (candidate.songType || classifySongType(candidate.title, candidate.channel)).toLowerCase();
+
+      // 1. Same Movie / Soundtrack affinity (+60 pts)
+      if (detectedMovie) {
+        const cleanMovie = detectedMovie.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const cleanCTitle = cTitle.replace(/[^a-z0-9]/g, '');
+        if (cleanMovie.length >= 3 && cleanCTitle.includes(cleanMovie)) {
+          score += 60;
+        }
+      }
+
+      // 2. Same primary artist or related artist (+40 / +25 pts)
+      if (cleanArtist && cleanArtist.toLowerCase() !== 'unknown') {
+        const normArtist = cleanArtist.toLowerCase();
+        if (cArtist.includes(normArtist) || normArtist.includes(cArtist)) {
+          score += 40;
+        } else if (relatedArtists.some(rel => cArtist.includes(rel.toLowerCase()) || cTitle.includes(rel.toLowerCase()))) {
+          score += 25;
+        }
+      }
+
+      // 3. Genre matching (+30 pts)
+      if (genre) {
+        const normGenre = genre.toLowerCase();
+        if (cGenre.includes(normGenre) || normGenre.includes(cGenre) || cTitle.includes(normGenre)) {
+          score += 30;
+        }
+      }
+
+      // 4. Mood & Category matching (+20 pts)
+      if (mood) {
+        const normMood = mood.toLowerCase();
+        if (cMood.includes(normMood) || normMood.includes(cMood) || cTitle.includes(normMood)) {
+          score += 20;
+        }
+      }
+      if (category) {
+        const normCat = category.toLowerCase();
+        if (cTitle.includes(normCat) || cGenre.includes(normCat) || cMood.includes(normCat)) {
+          score += 15;
+        }
+      }
+
+      // 5. Track type matching (+15 pts) (e.g. acoustic to acoustic, remix to remix)
+      if (songType) {
+        const normType = songType.toLowerCase();
+        if (cType === normType) {
+          score += 15;
+        }
+      }
+
+      // 6. Language matching penalty: if current is Hindi/Regional, severely down-rank completely discordant languages
+      if (detectedLang === 'hindi' || isRegionalLanguage) {
+        // If candidate is obviously unrelated English classic rock or pop while listening to Hindi/Bhojpuri/Punjabi
+        if (/\b(queen|bohemian rhapsody|rick astley|never gonna give you up|metallica|ac\/dc|beatles)\b/i.test(cTitle + ' ' + cArtist)) {
+          score -= 100;
+        }
+      }
+
+      return score;
+    };
+
+    // Tier A: Rank and add primary candidates with variant capping
+    const rankedPrimaryCandidates = [...primaryCandidates].sort((a, b) => {
+      return scoreCandidateRelevance(b) - scoreCandidateRelevance(a);
+    });
+
+    for (const track of rankedPrimaryCandidates) {
       addTrack(track);
       if (results.length >= 15) break;
     }
@@ -699,7 +826,11 @@ router.get('/similar', async (req, res) => {
     }
 
     // Also pull from curated catalog to guarantee varied genres and languages
-    const shuffledCurated = [...curated].sort(() => 0.5 - Math.random());
+    // If current song is Hindi/regional, filter out jarring/discordant tracks (e.g. Queen Bohemian Rhapsody) from discovery pool
+    const filteredCurated = (detectedLang === 'hindi' || isRegionalLanguage)
+      ? curated.filter(t => !/\b(queen|bohemian rhapsody|rick astley|never gonna give you up|metallica|ac\/dc|beatles)\b/i.test((t.title || '') + ' ' + (t.artist || '')))
+      : curated;
+    const shuffledCurated = [...filteredCurated].sort(() => 0.5 - Math.random());
     for (const t of shuffledCurated) {
       discoverCandidatePool.push(t);
     }
@@ -709,6 +840,13 @@ router.get('/similar', async (req, res) => {
     for (const track of discoverCandidatePool) {
       if (discoverResults.length >= 5) break;
       if (!isValidAndDistinct(track)) continue;
+
+      // Deduplication / Variant capping in discover pool
+      const baseTitle = cleanSongTitle(track.title);
+      if (baseTitle && baseTitle.length >= 3) {
+        const currentCount = baseTitleCounts.get(baseTitle) || 0;
+        if (currentCount >= 1) continue;
+      }
 
       const trackGenre = (track.genre || 'Various').toLowerCase();
       const currentGenreCount = discoverSeenGenres.get(trackGenre) || 0;
@@ -721,6 +859,9 @@ router.get('/similar', async (req, res) => {
       const key = getCanonicalSongKey(track);
       seenIds.add(id);
       if (key) seenKeys.add(key);
+      if (baseTitle && baseTitle.length >= 3) {
+        baseTitleCounts.set(baseTitle, (baseTitleCounts.get(baseTitle) || 0) + 1);
+      }
       discoverSeenGenres.set(trackGenre, currentGenreCount + 1);
 
       const cleanThumb = getCleanTrackThumbnail(track.thumbnail, id);
@@ -739,10 +880,19 @@ router.get('/similar', async (req, res) => {
         if (discoverResults.length >= 5) break;
         if (!isValidAndDistinct(track)) continue;
 
+        const baseTitle = cleanSongTitle(track.title);
+        if (baseTitle && baseTitle.length >= 3) {
+          const currentCount = baseTitleCounts.get(baseTitle) || 0;
+          if (currentCount >= 1) continue;
+        }
+
         const id = track.id || track.videoId;
         const key = getCanonicalSongKey(track);
         seenIds.add(id);
         if (key) seenKeys.add(key);
+        if (baseTitle && baseTitle.length >= 3) {
+          baseTitleCounts.set(baseTitle, (baseTitleCounts.get(baseTitle) || 0) + 1);
+        }
 
         const cleanThumb = getCleanTrackThumbnail(track.thumbnail, id);
         discoverResults.push({
@@ -769,10 +919,19 @@ router.get('/similar', async (req, res) => {
         if (discoverResults.length >= 5) break;
         if (!isValidAndDistinct(track)) continue;
 
+        const baseTitle = cleanSongTitle(track.title);
+        if (baseTitle && baseTitle.length >= 3) {
+          const currentCount = baseTitleCounts.get(baseTitle) || 0;
+          if (currentCount >= 1) continue;
+        }
+
         const id = track.id || track.videoId;
         const key = getCanonicalSongKey(track);
         seenIds.add(id);
         if (key) seenKeys.add(key);
+        if (baseTitle && baseTitle.length >= 3) {
+          baseTitleCounts.set(baseTitle, (baseTitleCounts.get(baseTitle) || 0) + 1);
+        }
 
         const cleanThumb = getCleanTrackThumbnail(track.thumbnail, id);
         discoverResults.push({

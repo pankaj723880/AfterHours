@@ -12,7 +12,7 @@ import { OAuth2Client } from 'google-auth-library';
 import User from './models/User.js';
 import AuditLog from './models/AuditLog.js';
 import ApiKey from './models/ApiKeyConfig.js';
-import { getEligibleKeys, recordKeySuccess, recordKeyFailure } from './services/keyResolverService.js';
+import { getEligibleKeys, recordKeySuccess, recordKeyFailure, getYoutubeKeyStatusSummary } from './services/keyResolverService.js';
 import { recordQuotaUsage, recordQuotaError } from './services/youtubeQuotaTracker.js';
 import { generateToken, verifyToken, authenticateToken, requireAdmin, optionalAuth } from './middleware/auth.js';
 import { metricsService } from './services/metrics.js';
@@ -40,7 +40,7 @@ import { analyticsService } from './services/analyticsService.js';
 import analyticsRoutes from './routes/analytics.js';
 import aiMusicRoutes from './routes/aiMusic.js';
 import chatRouter from './routes/chat.js';
-import { isSingleSong, filterSingleSongs, isMainstreamArtist, isOfficialChannel, isCleanMusicTrack } from './services/songFilter.js';
+import { isSingleSong, filterSingleSongs, isMainstreamArtist, isOfficialChannel, isCleanMusicTrack, isValidMusicTrack } from './services/songFilter.js';
 import { liveUsersService } from './services/liveUsersService.js';
 import learningRoutes from './routes/learningIntelligence.js';
 import { learningEngineService } from './services/learningEngineService.js';
@@ -2229,6 +2229,27 @@ const getCachedSearch = (key, queryStr = '') => {
   const isPopular = queryStr && POPULAR_QUERY_PATTERNS.some(p => p.test(queryStr));
   const ttl = isPopular ? POPULAR_SEARCH_CACHE_TTL : SEARCH_CACHE_TTL;
   if (Date.now() - cached.timestamp < ttl) {
+    // Sanitize cached items to ensure no non-music items persist from earlier queries
+    if (cached.data && Array.isArray(cached.data.items)) {
+      const cleanItems = cached.data.items.filter(item => {
+        const vid = item?.id?.videoId || (typeof item?.id === 'string' ? item.id : null) || item?.videoId;
+        const testTrack = {
+          id: vid,
+          title: item?.snippet?.title || item?.title || '',
+          channel: item?.snippet?.channelTitle || item?.channel || item?.artist || '',
+          artist: item?.snippet?.channelTitle || item?.channel || item?.artist || ''
+        };
+        return isValidMusicTrack(testTrack);
+      });
+      if (cleanItems.length === 0) {
+        searchCache.delete(key);
+        return null;
+      }
+      return {
+        ...cached.data,
+        items: cleanItems
+      };
+    }
     return cached.data;
   }
   searchCache.delete(key);
@@ -2236,11 +2257,31 @@ const getCachedSearch = (key, queryStr = '') => {
 };
 
 const setCachedSearch = (key, data) => {
+  if (!data) return;
+  // Strictly filter items before caching so non-music items never persist in cached responses
+  let cleanData = data;
+  if (data && Array.isArray(data.items)) {
+    const cleanItems = data.items.filter(item => {
+      const vid = item?.id?.videoId || (typeof item?.id === 'string' ? item.id : null) || item?.videoId;
+      const testTrack = {
+        id: vid,
+        title: item?.snippet?.title || item?.title || '',
+        channel: item?.snippet?.channelTitle || item?.channel || item?.artist || '',
+        artist: item?.snippet?.channelTitle || item?.channel || item?.artist || ''
+      };
+      return isValidMusicTrack(testTrack);
+    });
+    cleanData = {
+      ...data,
+      items: cleanItems
+    };
+  }
+
   if (searchCache.size > 1000) {
     const oldestKey = searchCache.keys().next().value;
     searchCache.delete(oldestKey);
   }
-  searchCache.set(key, { data, timestamp: Date.now() });
+  searchCache.set(key, { data: cleanData, timestamp: Date.now() });
 };
 
 const rawSearchPoolCache = new Map();
@@ -2275,6 +2316,14 @@ const createPageToken = (offset) => {
 };
 
 // Curated fallbacks if YouTube scrapers hit 429 rate limit or keys are exhausted
+app.get('/api/youtube/keys/status', async (req, res) => {
+  try {
+    const summary = await getYoutubeKeyStatusSummary();
+    res.json(summary);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve YouTube key status summary' });
+  }
+});
 // Strictly single-song entries only (no jukeboxes, albums, mashups or medleys)
 const FALLBACK_TRENDING = [
   { id: { videoId: 'RLzC55ai0eo' }, snippet: { title: 'Heeriye (Official Video) - Jasleen Royal ft Arijit Singh', channelTitle: 'Jasleen Royal', thumbnails: { high: { url: 'https://i.ytimg.com/vi/RLzC55ai0eo/hqdefault.jpg' } } } },

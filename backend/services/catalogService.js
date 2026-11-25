@@ -1,8 +1,14 @@
 import mongoose from 'mongoose';
 import CuratedCollection from '../models/CuratedCollection.js';
+import CachedSong from '../models/CachedSong.js';
 import ytSearch from 'yt-search';
 import { filterSingleSongs, isSingleSong, verifySingleSong } from './songFilter.js';
 import { getCleanTrackThumbnail, isValidThumbnailUrlFormat, filterTracksWithValidThumbnailsSync } from './thumbnailValidationService.js';
+
+// In-memory TTL cache for YouTube dynamic search results (6 hours TTL) to minimize YouTube API credit usage
+const DYNAMIC_SEARCH_CACHE = new Map();
+const DYNAMIC_SEARCH_TTL_MS = 6 * 60 * 60 * 1000;
+const MIN_LOCAL_CANDIDATES_THRESHOLD = 30;
 
 // Clean decode for HTML entities commonly present in YouTube responses
 const decodeHtml = (str = '') => {
@@ -213,9 +219,30 @@ export const catalogService = {
     const dynamicTracks = [];
     const seenIds = new Set();
     const activeQueries = queries.slice(0, 3).filter(q => q && typeof q === 'string');
+    const now = Date.now();
 
-    const searchPromises = activeQueries.map(query => {
+    const queriesToFetch = [];
+    for (const query of activeQueries) {
       const trimmed = query.trim();
+      const cacheKey = trimmed.toLowerCase();
+      const cached = DYNAMIC_SEARCH_CACHE.get(cacheKey);
+      if (cached && (now - cached.timestamp) < DYNAMIC_SEARCH_TTL_MS) {
+        for (const t of cached.tracks.slice(0, maxPerQuery)) {
+          if (t.videoId && !seenIds.has(t.videoId)) {
+            seenIds.add(t.videoId);
+            dynamicTracks.push(t);
+          }
+        }
+      } else {
+        queriesToFetch.push(trimmed);
+      }
+    }
+
+    if (queriesToFetch.length === 0) {
+      return filterTracksWithValidThumbnailsSync(dynamicTracks);
+    }
+
+    const searchPromises = queriesToFetch.map(trimmed => {
       return Promise.race([
         ytSearch({ query: trimmed, page: 1 }),
         new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 4500))
@@ -229,6 +256,7 @@ export const catalogService = {
       const { query, res: searchResult } = item.value;
       const videos = (searchResult?.videos || []).slice(0, 10);
       const filtered = filterSingleSongs(videos);
+      const queryTracks = [];
 
       for (const v of filtered.slice(0, maxPerQuery)) {
         if (!v.videoId || seenIds.has(v.videoId)) continue;
@@ -244,7 +272,7 @@ export const catalogService = {
           artist: v.artist || v.author?.name,
           channel: v.channel || v.author?.name
         });
-        dynamicTracks.push({
+        const trackObj = {
           id: v.videoId,
           videoId: v.videoId,
           title: meta.title,
@@ -256,6 +284,15 @@ export const catalogService = {
           mood: 'Personalized',
           songType: verification.songType,
           verificationStatus: verification.verificationStatus
+        };
+        dynamicTracks.push(trackObj);
+        queryTracks.push(trackObj);
+      }
+
+      if (queryTracks.length > 0) {
+        DYNAMIC_SEARCH_CACHE.set(query.toLowerCase(), {
+          tracks: queryTracks,
+          timestamp: Date.now()
         });
       }
     }
@@ -523,9 +560,44 @@ export const catalogService = {
       }
     }
 
-    // 2 & 3. Parallelize dynamic intent and user preference YouTube candidate queries concurrently
+    // 1b. Supplement from CachedSong DB collection (zero YouTube API cost)
+    if (mongoose.connection && mongoose.connection.readyState === 1) {
+      try {
+        const dbCachedSongs = await CachedSong.find({
+          durationSec: { $gte: 75 },
+          isCleanSingleSong: true
+        })
+          .sort({ playCount: -1, lastPlayedAt: -1 })
+          .limit(120)
+          .lean()
+          .maxTimeMS(2000);
+
+        for (const s of dbCachedSongs) {
+          const id = s.videoId || s.id;
+          if (id && !candidateMap.has(id)) {
+            candidateMap.set(id, {
+              id,
+              videoId: id,
+              title: s.title,
+              artist: s.artist || s.channel || 'Loopra Artist',
+              channel: s.channel || s.artist || 'Loopra Artist',
+              thumbnail: s.thumbnail,
+              duration: s.durationStr || '3:30',
+              durationSec: s.durationSec || 210,
+              genre: s.genre || 'Bollywood',
+              mood: s.mood || 'Melodic',
+              language: s.language || 'hindi',
+              isCachedDb: true
+            });
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2 & 3. Only trigger YouTube search fallback if local/cached candidates are insufficient
+    const needsYouTubeFallback = candidateMap.size < MIN_LOCAL_CANDIDATES_THRESHOLD;
     const queryPromises = [];
-    if (intent.dynamicQueries && intent.dynamicQueries.length > 0) {
+    if (needsYouTubeFallback && intent.dynamicQueries && intent.dynamicQueries.length > 0) {
       queryPromises.push(
         this.fetchDynamicCandidates(intent.dynamicQueries, 5)
           .then(tracks => ({ type: 'dynamic', tracks }))
@@ -536,7 +608,7 @@ export const catalogService = {
       );
     }
 
-    if (userPreferences) {
+    if (needsYouTubeFallback && userPreferences) {
       const topArtists = (userPreferences.topArtists || []).slice(0, 2).map(a => `${a.name} best single songs`);
       const topGenres = (userPreferences.topGenres || []).slice(0, 1).map(g => `${g.name} hit songs`);
       const prefQueries = [...topArtists, ...topGenres];

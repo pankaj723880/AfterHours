@@ -23,6 +23,10 @@ export default function SuggestedForYouSection({
   const trackTitle = currentSong?.title || '';
   const trackArtist = currentSong?.artist || currentSong?.channel || '';
   const trackGenre = currentSong?.genre || '';
+  const trackMood = currentSong?.mood || '';
+  const trackCategory = currentSong?.category || '';
+  const trackType = currentSong?.songType || currentSong?.type || '';
+  const trackMovie = currentSong?.movie || currentSong?.album || '';
 
   const fetchSuggestions = useCallback((forceRefresh = false) => {
     if (!trackId && !trackTitle) {
@@ -32,7 +36,7 @@ export default function SuggestedForYouSection({
       return;
     }
 
-    const cacheKey = `${trackId}_${trackTitle}_${trackArtist}`;
+    const cacheKey = `${trackId}_${trackTitle}_${trackArtist}_${trackGenre}_${trackMood}_${trackCategory}_${trackMovie}`;
     if (!forceRefresh && suggestionsCache.has(cacheKey)) {
       const cachedList = suggestionsCache.get(cacheKey) || [];
       setSuggestions(cachedList);
@@ -60,6 +64,10 @@ export default function SuggestedForYouSection({
       artist: trackArtist,
       genre: trackGenre
     });
+    if (trackMood) params.set('mood', trackMood);
+    if (trackCategory) params.set('category', trackCategory);
+    if (trackType) params.set('songType', trackType);
+    if (trackMovie) params.set('movie', trackMovie);
     if (forceRefresh) {
       params.set('refresh', 'true');
     }
@@ -82,6 +90,7 @@ export default function SuggestedForYouSection({
 
           const seenIds = new Set();
           if (currentId) seenIds.add(currentId);
+          const baseTitleVariantCounts = new Map();
 
           const sanitizeGroup = (rawList) => {
             const cleaned = [];
@@ -97,10 +106,20 @@ export default function SuggestedForYouSection({
               if (cleanCurTitle.length >= 4 && cleanItemTitle === cleanCurTitle) continue;
               if (cleanCurTitle.length >= 4 && itemTitleLower.includes(currentTitleLower)) continue;
 
+              // Deduplication & variant capping: Avoid flooding multiple versions/remixes of the same song
+              const rootTitle = cleanItemTitle.slice(0, 15);
+              if (rootTitle.length >= 4) {
+                const count = baseTitleVariantCounts.get(rootTitle) || 0;
+                if (count >= 1) continue;
+              }
+
               const thumb = getCleanThumbnail(item, id);
               if (!isThumbnailUrlFormatValid(thumb)) continue;
 
               seenIds.add(id.toLowerCase());
+              if (rootTitle.length >= 4) {
+                baseTitleVariantCounts.set(rootTitle, (baseTitleVariantCounts.get(rootTitle) || 0) + 1);
+              }
               cleaned.push({
                 ...item,
                 id,
@@ -155,7 +174,7 @@ export default function SuggestedForYouSection({
       .finally(() => {
         setLoading(false);
       });
-  }, [trackId, trackTitle, trackArtist, trackGenre, onSuggestionsLoaded]);
+  }, [trackId, trackTitle, trackArtist, trackGenre, trackMood, trackCategory, trackType, trackMovie, onSuggestionsLoaded]);
 
   useEffect(() => {
     fetchSuggestions(false);
