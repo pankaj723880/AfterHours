@@ -117,6 +117,7 @@ export default function ListeningRoomsView({
   const [activePlaybackRequest, setActivePlaybackRequest] = useState(null);
   const [hasRespondedToRequest, setHasRespondedToRequest] = useState(false);
   const [livePlaybackSession, setLivePlaybackSession] = useState(null);
+  const [memberStatuses, setMemberStatuses] = useState({});
 
   const currentUserId = user?._id?.toString?.() || user?.userId || null;
   const currentUsername = user?.username || user?.displayName || 'Listener';
@@ -537,8 +538,18 @@ export default function ListeningRoomsView({
       }
     };
 
+    const handleMemberStatus = (data) => {
+      if (data?.userId && data?.status) {
+        setMemberStatuses(prev => ({
+          ...prev,
+          [data.userId]: data.status
+        }));
+      }
+    };
+
     socket.on('room:state', handleRoomState);
     socket.on('room:members:updated', handleMembersUpdated);
+    socket.on('room:member:status', handleMemberStatus);
     socket.on('room:join:request', handleJoinRequest);
     socket.on('room:join:approved', handleJoinApproved);
     socket.on('room:join:rejected', handleJoinRejected);
@@ -561,6 +572,7 @@ export default function ListeningRoomsView({
     return () => {
       socket.off('room:state', handleRoomState);
       socket.off('room:members:updated', handleMembersUpdated);
+      socket.off('room:member:status', handleMemberStatus);
       socket.off('room:join:request', handleJoinRequest);
       socket.off('room:join:approved', handleJoinApproved);
       socket.off('room:join:rejected', handleJoinRejected);
@@ -3192,8 +3204,8 @@ export default function ListeningRoomsView({
                             </div>
                           )}
                           <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full ring-2 ring-neutral-950 ${
-                            memberStatuses[m.userId] === 'Buffering' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
-                          }`} title={memberStatuses[m.userId] || 'Online Live'} />
+                            memberStatuses?.[m.userId] === 'Buffering' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
+                          }`} title={memberStatuses?.[m.userId] || 'Online Live'} />
                         </div>
 
                         <div className="min-w-0">
@@ -3201,14 +3213,14 @@ export default function ListeningRoomsView({
                             <span className="font-bold text-xs text-white truncate">{m.displayName || m.username}</span>
                             {isUser && <span className="text-[10px] text-amber-400 font-mono font-semibold">(You)</span>}
                             <span className={`inline-flex items-center gap-1 text-[9px] font-mono font-medium px-1.5 py-0.5 rounded-full ${
-                              memberStatuses[m.userId] === 'Buffering'
+                              memberStatuses?.[m.userId] === 'Buffering'
                                 ? 'text-amber-400 bg-amber-500/15'
                                 : 'text-emerald-400 bg-emerald-500/10'
                             }`}>
                               <span className={`w-1.5 h-1.5 rounded-full ${
-                                memberStatuses[m.userId] === 'Buffering' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400 animate-pulse'
+                                memberStatuses?.[m.userId] === 'Buffering' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400 animate-pulse'
                               }`} />
-                              <span>{memberStatuses[m.userId] || 'Active'}</span>
+                              <span>{memberStatuses?.[m.userId] || 'Active'}</span>
                             </span>
                           </div>
                           <div className="flex items-center gap-1.5 mt-0.5">
