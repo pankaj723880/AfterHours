@@ -446,8 +446,9 @@ export default function ListeningRoomsModal({
   };
 
   // 6. Upvote Song with Instant Optimistic State Update
-  const handleVoteSong = (songId) => {
-    if (!activeRoom || !selectedPlaylistId || !songId) return;
+  const handleVoteTrack = (playlistId, songId) => {
+    const targetPlaylistId = playlistId || selectedPlaylistId;
+    if (!activeRoom || !targetPlaylistId || !songId) return;
     const rId = activeRoom.roomId || activeRoom.id;
     const uidStr = String(currentUserId);
 
@@ -456,7 +457,7 @@ export default function ListeningRoomsModal({
       setRoomPlaylists(prev => {
         prevPlaylistsSnapshot = prev;
         return (prev || []).map(pl => {
-          if (pl.id !== selectedPlaylistId) return pl;
+          if (pl.id !== targetPlaylistId) return pl;
           return {
             ...pl,
             songs: (pl.songs || []).map(s => {
@@ -478,7 +479,7 @@ export default function ListeningRoomsModal({
     if (socket) {
       socket.emit('room:playlist:vote', {
         roomId: rId,
-        playlistId: selectedPlaylistId,
+        playlistId: targetPlaylistId,
         songId,
         userId: currentUserId
       }, (res) => {
@@ -487,7 +488,7 @@ export default function ListeningRoomsModal({
         }
       });
     } else {
-      fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/playlists/${encodeURIComponent(selectedPlaylistId)}/songs/${encodeURIComponent(songId)}/vote`), {
+      fetch(getApiUrl(`/api/rooms/${encodeURIComponent(rId)}/playlists/${encodeURIComponent(targetPlaylistId)}/songs/${encodeURIComponent(songId)}/vote`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUserId })
@@ -505,6 +506,8 @@ export default function ListeningRoomsModal({
         });
     }
   };
+
+  const handleVoteSong = (songId) => handleVoteTrack(selectedPlaylistId, songId);
 
   // 7. Emoji Quick Reaction
   const handleSendReaction = (emoji) => {
