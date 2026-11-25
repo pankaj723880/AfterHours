@@ -2516,6 +2516,11 @@ export const normalizeMusicSearchQuery = (rawQuery = '') => {
 };
 
 app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async (req, res) => {
+  try {
+  const SEARCH_DEADLINE_MS = 5500;
+  const searchStartMs = Date.now();
+  const hasSearchBudget = () => (Date.now() - searchStartMs) < SEARCH_DEADLINE_MS;
+
   const { q, pageToken } = req.query;
   if (!q || !q.toString().trim()) {
     return res.json({ items: [], nextPageToken: null });
@@ -2557,11 +2562,17 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
   }
 
   // 1. Try YouTube Data API v3 with centralized key resolver (DB prioritized, then env fallback)
-  const eligibleKeyRecords = (await getEligibleKeys('youtube')).filter(k => !isKeyDead(k.key));
+  let eligibleKeyRecords = [];
+  try {
+    eligibleKeyRecords = (await getEligibleKeys('youtube')).filter(k => !isKeyDead(k.key));
+  } catch (keyErr) {
+    console.warn('[YouTube Search] Key lookup failed:', keyErr.message);
+  }
 
   if (eligibleKeyRecords.length > 0) {
-    const maxKeyTries = Math.min(eligibleKeyRecords.length, 5);
+    const maxKeyTries = Math.min(eligibleKeyRecords.length, 2);
     for (let i = 0; i < maxKeyTries; i++) {
+      if (!hasSearchBudget()) break;
       const keyInfo = eligibleKeyRecords[i];
       const apiKey = keyInfo.key;
       try {
@@ -2580,7 +2591,7 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
 
         const response = await axios.get('https://www.googleapis.com/youtube/v3/search', {
           params,
-          timeout: 8000
+          timeout: 4500
         });
 
         if (response.data && Array.isArray(response.data.items)) {
@@ -2722,14 +2733,14 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
 
     // Top up the pool if needed until we have enough tracks for this page
     let fetchPage = Math.floor(cachedPool.videos.length / 20) + 1;
-    while (cachedPool.videos.length < pageOffset + limit && fetchPage <= 3) {
+    while (cachedPool.videos.length < pageOffset + limit && fetchPage <= 2 && hasSearchBudget()) {
       try {
         const searchPromise = ytSearch({
           query: queryStr,
           page: fetchPage
         });
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('yt-search timeout after 7000ms')), 7000)
+          setTimeout(() => reject(new Error('yt-search timeout after 5000ms')), 5000)
         );
         const searchResult = await Promise.race([searchPromise, timeoutPromise]);
         let incoming = (searchResult?.videos || []);
@@ -2872,6 +2883,17 @@ app.get(['/api/youtube/search', '/api/search', '/search'], searchLimiter, async 
   }
 
   return res.json({ items: [], nextPageToken: null });
+  } catch (outerErr) {
+    console.error('[Search Route Error]:', outerErr?.message || outerErr);
+    if (!res.headersSent) {
+      const status = outerErr?.response?.status === 429 ? 429 : 503;
+      return res.status(status).json({
+        error: status === 429 ? 'Search rate limit reached. Please retry shortly.' : 'Search temporarily unavailable.',
+        items: [],
+        nextPageToken: null
+      });
+    }
+  }
 });
 
 // Stream / Audio Proxy endpoint for Browser Caching & Offline Storage

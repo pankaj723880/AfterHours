@@ -35,7 +35,6 @@ const AudioSpectrumVisualizer = lazyWithRetry(() => import('./components/Player/
 const StudioLoungeAtmosphere = lazyWithRetry(() => import('./components/Player/StudioLoungeAtmosphere'), 'retry_studio');
 const OfflineLibraryView = lazyWithRetry(() => import('./components/Offline/OfflineLibraryView'), 'retry_offline_lib');
 const OfflineEligibleExploreView = lazyWithRetry(() => import('./components/Offline/OfflineEligibleExploreView'), 'retry_offline_explore');
-const ListeningRoomsModal = lazyWithRetry(() => import('./components/Social/ListeningRoomsModal'), 'retry_rooms_modal');
 const ListeningRoomsView = lazyWithRetry(() => import('./components/Social/ListeningRoomsView'), 'retry_rooms_view');
 const SimilarSongsModal = lazyWithRetry(() => import('./components/Recommendations/SimilarSongsModal'), 'retry_similar');
 const LyricsModal = lazyWithRetry(() => import('./components/Player/LyricsModal'), 'retry_lyrics');
@@ -2532,7 +2531,16 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   const [currentBgIndex, setCurrentBgIndex] = useState(0);
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
-    return typeof window !== 'undefined' ? window.innerWidth >= 768 : false;
+    if (typeof window !== 'undefined') {
+      const path = (window.location.pathname || '').toLowerCase();
+      const search = window.location.search || '';
+      // Left sidebar closed by default on room view or direct room link
+      if (path.startsWith('/rooms') || search.includes('room=') || search.includes('roomCode=')) {
+        return false;
+      }
+      return window.innerWidth >= 768;
+    }
+    return false;
   });
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
@@ -2815,8 +2823,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       return false;
     }
   });
-  const [isListeningRoomsOpen, setIsListeningRoomsOpen] = useState(false);
   const [activeRoom, setActiveRoom] = useState(null);
+  const lastHistoryLogRef = useRef({ trackId: null, time: 0 });
+
+  useEffect(() => {
+    if (activeRoom || activeTab === 'rooms') {
+      setIsSidebarOpen(false);
+    }
+  }, [activeRoom, activeTab]);
   useEffect(() => {
     activeRoomSessionRef.current = activeRoom;
   }, [activeRoom]);
@@ -3498,8 +3512,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       // Increment user-isolated aggregate listening time
       listeningStatsService.recordListeningTime?.(1, user);
 
-      // Once user listens for at least 30 seconds, record as a valid play and broadcast activity
-      if (activeListeningDurationRef.current >= 30 && !hasLoggedListenForCurrentSongRef.current) {
+      // Log play immediately (>= 1s) so even short plays/skips are recorded in history & stats
+      if (activeListeningDurationRef.current >= 1 && !hasLoggedListenForCurrentSongRef.current) {
         hasLoggedListenForCurrentSongRef.current = true;
         listeningStatsService.recordPlay?.(currentSong, activeListeningDurationRef.current, user);
 
@@ -5058,32 +5072,40 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         }
       }
 
-      if (authToken && song) {
-        recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
-          trackId: song.id || song.videoId,
-          title: song.title,
-          artist: song.artist || song.channel || 'Unknown Artist',
-          channel: song.channel || '',
-          thumbnail: song.thumbnail || song.image || '',
-          eventType: 'play_start',
-          duration: 0,
-          listenedDuration: 0,
-          completionPercent: 0,
-          playSessionId: playSessionIdRef.current,
-          source: activeTab || 'player'
-        });
-        listeningStatsService.recordEvent?.({
-          backendUrl: BACKEND_URL,
-          token: authToken,
-          user,
-          track: song,
-          eventType: 'play_start',
-          duration: 0,
-          listenedDuration: 0,
-          playbackPosition: 0,
-          playSessionId: playSessionIdRef.current,
-          completed: false
-        });
+      if (song) {
+        const songId = song.id || song.videoId;
+        const nowMs = Date.now();
+        const isSameTickDup = lastHistoryLogRef.current.trackId === songId && (nowMs - lastHistoryLogRef.current.time) < 1500;
+        if (!isSameTickDup) {
+          lastHistoryLogRef.current = { trackId: songId, time: nowMs };
+          setHistory(prev => [song, ...prev.filter(s => (s.id || s.videoId) !== songId)].slice(0, 50));
+
+          recommendationsClient.logListeningEvent(BACKEND_URL, authToken, {
+            trackId: songId,
+            title: song.title,
+            artist: song.artist || song.channel || 'Unknown Artist',
+            channel: song.channel || '',
+            thumbnail: song.thumbnail || song.image || '',
+            eventType: 'play_start',
+            duration: 0,
+            listenedDuration: 0,
+            completionPercent: 0,
+            playSessionId: playSessionIdRef.current,
+            source: activeTab || 'player'
+          });
+          listeningStatsService.recordEvent?.({
+            backendUrl: BACKEND_URL,
+            token: authToken,
+            user,
+            track: song,
+            eventType: 'play_start',
+            duration: 0,
+            listenedDuration: 0,
+            playbackPosition: 0,
+            playSessionId: playSessionIdRef.current,
+            completed: false
+          });
+        }
       }
 
       if (!song?.isRadio) {
@@ -7011,10 +7033,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       setSelectedSongForPlaylist(null);
       return;
     }
-    if (isListeningRoomsOpen) {
-      setIsListeningRoomsOpen(false);
-      return;
-    }
     if (similarSongsTrack) {
       setSimilarSongsTrack(null);
       return;
@@ -7439,7 +7457,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         activeAssistantPanel ||
         (isSidebarOpen && isMobileScreen) ||
         isPlaylistModalOpen ||
-        isListeningRoomsOpen ||
         Boolean(similarSongsTrack) ||
         isLyricsOpen ||
         isSleepTimerOpen ||
@@ -7465,7 +7482,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     isSidebarOpen,
     isMobileScreen,
     isPlaylistModalOpen,
-    isListeningRoomsOpen,
     similarSongsTrack,
     isLyricsOpen,
     isSleepTimerOpen,
@@ -8271,7 +8287,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     try {
       const data = await fetchFromBackend(trimmedQuery, {
         limit: 25,
-        timeoutMs: 30000,
+        timeoutMs: 8000,
         signal: searchController.signal
       });
 
@@ -8493,7 +8509,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       fetchYouTubeMusic(q);
     }
 
-    // Room URL share link e.g. ?room=room_123 or ?roomCode=XYZ (Preview & Navigate to Rooms)
+    // Room URL share link e.g. ?room=room_123 or ?roomCode=XYZ (Direct Active Room View)
     const roomParam = (params.get('room') || params.get('roomCode') || '').trim();
     if (!initialRoomCheckedRef.current && roomParam) {
       initialRoomCheckedRef.current = true;
@@ -8503,7 +8519,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         openAuthModal?.();
       } else {
         setActiveTab('rooms');
-        setIsListeningRoomsOpen(true);
+        setIsSidebarOpen(false);
       }
     }
   }, []);
@@ -8519,7 +8535,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     isSidebarOpen: false,
     isMobileScreen: false,
     isPlaylistModalOpen: false,
-    isListeningRoomsOpen: false,
     similarSongsTrack: null,
     isLyricsOpen: false,
     isSleepTimerOpen: false,
@@ -8549,7 +8564,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       deleteModalPlaylist,
       activeAssistantPanel,
       isPlaylistModalOpen: Boolean(isPlaylistModalOpen),
-      isListeningRoomsOpen: Boolean(isListeningRoomsOpen),
       similarSongsTrack,
       isLyricsOpen: Boolean(isLyricsOpen),
       isSleepTimerOpen: Boolean(isSleepTimerOpen),
@@ -8582,7 +8596,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     deleteModalPlaylist ||
     activeAssistantPanel ||
     isPlaylistModalOpen ||
-    isListeningRoomsOpen ||
     Boolean(similarSongsTrack) ||
     isLyricsOpen ||
     isSleepTimerOpen ||
@@ -8662,7 +8675,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         state.activeAssistantPanel ||
         state.isSidebarOpen ||
         state.isPlaylistModalOpen ||
-        state.isListeningRoomsOpen ||
         state.similarSongsTrack ||
         state.isLyricsOpen ||
         state.isSleepTimerOpen ||
@@ -11389,7 +11401,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                           </div>
 
                           {/* Col 2: Thumbnail + Title + Artist */}
-                          <div className="col-span-8 sm:col-span-7 flex items-center gap-3 min-w-0 pr-2">
+                          <div className="col-span-8 sm:col-span-7 flex items-center gap-3 min-w-0">
                             <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-11 h-11 rounded-xl object-cover shrink-0 border border-white/10 shadow-md" onError={(e) => handleImageError(e, track.title, track.id)} />
                             <div className="min-w-0 flex-1">
                               <h4 className="font-bold text-xs sm:text-sm text-white truncate group-hover:text-amber-400 transition">{track.title}</h4>
@@ -11702,24 +11714,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       </main>
     );
   })()}
-      <ListeningRoomsModal
-        isOpen={isListeningRoomsOpen}
-        onClose={() => setIsListeningRoomsOpen(false)}
-        socket={socket}
-        user={user}
-        currentSong={currentSong}
-        isPlaying={isPlaying}
-        onPlaySong={playSong}
-        showToast={showToast}
-        activeRoom={activeRoom}
-        setActiveRoom={setActiveRoom}
-        roomPlaylists={roomPlaylists}
-        setRoomPlaylists={setRoomPlaylists}
-        onOpenAddToPlaylist={(track) => handleAddToPlaylistClick(track || currentSong)}
-        onToggleLike={toggleLike}
-        isLiked={isSongLiked}
-      />
-
       <SimilarSongsModal
         isOpen={Boolean(similarSongsTrack)}
         onClose={() => setSimilarSongsTrack(null)}
@@ -13200,7 +13194,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           }
         }}
         onOpenLyrics={() => setIsLyricsOpen(true)}
-        onOpenListeningRooms={() => setIsListeningRoomsOpen(true)}
+        onOpenListeningRooms={() => {
+          setActiveTab('rooms');
+          setIsSidebarOpen(false);
+        }}
         onOpenSimilarSongs={(track) => setSimilarSongsTrack(track || currentSong)}
         onOpenPlayerSettings={() => setIsPlayerSettingsOpen(true)}
         onOpenSleepTimer={() => setIsSleepTimerOpen(true)}
@@ -13387,7 +13384,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           }
         }}
         onOpenLyrics={() => setIsLyricsOpen(true)}
-        onOpenListeningRooms={() => setIsListeningRoomsOpen(true)}
+        onOpenListeningRooms={() => {
+          setActiveTab('rooms');
+          setIsSidebarOpen(false);
+        }}
         onOpenSimilarSongs={(track) => setSimilarSongsTrack(track || currentSong)}
         onOpenPlayerSettings={() => setIsPlayerSettingsOpen(true)}
         onOpenSleepTimer={() => setIsSleepTimerOpen(true)}

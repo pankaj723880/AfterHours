@@ -790,22 +790,24 @@ export const listeningStatsService = {
       stats.longestSessionSeconds = listenedSec;
     }
 
-    if (completed || (listenedSec >= 30 && !stats.trackPlayCounts[trackId]?.creditedThisSession)) {
+    if (completed || eventType === 'play_start' || (listenedSec >= 1 && !stats.trackPlayCounts[trackId]?.creditedThisSession)) {
       if (!stats.trackPlayCounts[trackId]) {
         stats.trackPlayCounts[trackId] = { title, artist, thumbnail, count: 0, seconds: 0, lastPlayed: now.toISOString() };
       }
-      stats.trackPlayCounts[trackId].count += 1;
+      if (eventType === 'play_start' || completed || listenedSec >= 1) {
+        stats.trackPlayCounts[trackId].count += (eventType === 'play_start' ? 1 : 0);
+      }
       stats.trackPlayCounts[trackId].seconds = (stats.trackPlayCounts[trackId].seconds || 0) + listenedSec;
       stats.trackPlayCounts[trackId].lastPlayed = now.toISOString();
 
-      if (artist && artist !== 'Unknown Artist') {
+      if (artist && artist !== 'Unknown Artist' && eventType === 'play_start') {
         stats.artistPlayCounts[artist] = (stats.artistPlayCounts[artist] || 0) + 1;
       }
     }
 
-    // Add event to playEvents log (max 100)
-    if (listenedSec >= 15 || completed) {
-      const filtered = (stats.playEvents || []).filter(e => e.playSessionId !== playSessionId);
+    // Add event to playEvents log immediately on play_start or any >=1s play (max 100, deduped by playSessionId)
+    if (eventType === 'play_start' || listenedSec >= 1 || completed) {
+      const filtered = (stats.playEvents || []).filter(e => !playSessionId || e.playSessionId !== playSessionId);
       stats.playEvents = [
         { trackId, title, artist, thumbnail, timestamp: now.toISOString(), seconds: listenedSec, playSessionId, eventType },
         ...filtered.slice(0, 99)

@@ -100,6 +100,7 @@ export default function HomeSearchBar({
     setIsSearching(true);
     const controller = new AbortController();
     const currentReqId = ++requestIdRef.current;
+    let requestTimeoutId = null;
 
     const timer = setTimeout(async () => {
       try {
@@ -108,7 +109,11 @@ export default function HomeSearchBar({
           ? `${cleanBase}/api/youtube/search?q=${encodeURIComponent(trimmed)}&limit=15`
           : `/api/youtube/search?q=${encodeURIComponent(trimmed)}&limit=15`;
 
-        const res = await fetchWithRetry(targetUrl, { signal: controller.signal }, { maxRetries: 1, delays: [1000] });
+        requestTimeoutId = setTimeout(() => {
+          try { controller.abort(); } catch (_) {}
+        }, 7000);
+
+        const res = await fetchWithRetry(targetUrl, { signal: controller.signal }, { maxRetries: 0, delays: [] });
 
         // If another search started in the meantime, ignore this response
         if (currentReqId !== requestIdRef.current) return;
@@ -154,14 +159,16 @@ export default function HomeSearchBar({
           console.warn('[Autocomplete Request Notice]:', err.message);
         }
       } finally {
+        if (requestTimeoutId) clearTimeout(requestTimeoutId);
         if (currentReqId === requestIdRef.current) {
           setIsSearching(false);
         }
       }
-    }, 280);
+    }, 400);
 
     return () => {
       clearTimeout(timer);
+      if (requestTimeoutId) clearTimeout(requestTimeoutId);
       controller.abort();
     };
   }, [query, backendUrl]);

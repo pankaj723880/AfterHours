@@ -7,7 +7,7 @@ import { personalizedFeedService, detectTrackLanguage, parseDurationSec } from '
 
 // Cache recent events in-memory to discard rapid frontend debounce/re-render duplicates (3 seconds window)
 const recentEventsCache = new Map();
-const DEDUPE_WINDOW_MS = 3000;
+const DEDUPE_WINDOW_MS = 1500;
 
 // In-memory cache for computed listening statistics (30 seconds TTL)
 const statsCache = new Map();

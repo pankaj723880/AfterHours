@@ -10,8 +10,7 @@ const uiConfigSchema = new mongoose.Schema(
     key: {
       type: String,
       default: 'global_ui_visibility',
-      unique: true,
-      index: true
+      unique: true
     },
     // Map of element ID to boolean visibility state (e.g. 'nav.home': true, 'btn.listenTogether': false)
     visibility: {
@@ -32,9 +31,6 @@ const uiConfigSchema = new mongoose.Schema(
     timestamps: true
   }
 );
-
-// Ensure index
-uiConfigSchema.index({ key: 1 });
 
 const UiConfig = mongoose.models.UiConfig || mongoose.model('UiConfig', uiConfigSchema);
 

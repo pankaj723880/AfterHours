@@ -118,7 +118,6 @@ export default function ListeningRoomsView({
   const [joinRequests, setJoinRequests] = useState([]);
   const [pendingRejoinRoomIds, setPendingRejoinRoomIds] = useState([]);
   const [previewLeftRoom, setPreviewLeftRoom] = useState(null); // Restricted/preview state for room in Left Rooms
-  const [selectedPreviewRoom, setSelectedPreviewRoom] = useState(null); // Preview / details state before explicitly joining
   const [searchPreviewRoom, setSearchPreviewRoom] = useState(null); // Preview card for searched room code (never auto-joins)
   const [isSearchingCode, setIsSearchingCode] = useState(false);
   const [isJoiningRoom, setIsJoiningRoom] = useState(false);
@@ -709,7 +708,6 @@ export default function ListeningRoomsView({
       const data = await res.json();
       if (res.ok && data?.success && data?.preview) {
         setSearchPreviewRoom(null);
-        setSelectedPreviewRoom(null);
         setPreviewLeftRoom(null);
         if (setActiveRoom) setActiveRoom(data.preview);
         if (setRoomPlaylists) setRoomPlaylists(data.preview.playlists || []);
@@ -736,8 +734,8 @@ export default function ListeningRoomsView({
     return Boolean(roomItem.isMember || roomItem.isHost);
   };
 
-  // Helper to open room preview / details page cleanly without auto-joining
-  const handleOpenRoomPreview = async (roomItem) => {
+  // Helper to open room directly as active room screen
+  const handleOpenRoomDirectly = async (roomItem) => {
     if (!roomItem) return;
     const rId = roomItem.roomId || roomItem.id;
     const code = roomItem.code;
@@ -753,31 +751,21 @@ export default function ListeningRoomsView({
       return;
     }
 
-    // Helper: directly open room workspace when user is already a participant
-    const openRoomDirectly = (targetRoom) => {
-      setSearchPreviewRoom(null);
-      setSelectedPreviewRoom(null);
-      setPreviewLeftRoom(null);
-      if (setActiveRoom) setActiveRoom(targetRoom);
-      if (setRoomPlaylists) setRoomPlaylists(targetRoom.playlists || []);
-      setParticipants(getUniqueMembers(targetRoom.members || []));
-      setActivities(targetRoom.activities || []);
-      setChatMessages(targetRoom.chatMessages || []);
-      const rId = targetRoom.roomId || targetRoom.id;
-      socket?.emit('join_listening_room', { roomId: rId, user });
-      socket?.emit('room:join', { roomId: rId, user });
-    };
-
-    // If user is already host or member, immediately open room workspace directly!
-    if (isUserMemberOrHost(roomItem)) {
-      openRoomDirectly(roomItem);
-      return;
+    // Directly open room workspace
+    setSearchPreviewRoom(null);
+    setPreviewLeftRoom(null);
+    if (setActiveRoom) setActiveRoom(roomItem);
+    if (setRoomPlaylists) setRoomPlaylists(roomItem.playlists || []);
+    setParticipants(getUniqueMembers(roomItem.members || []));
+    setActivities(roomItem.activities || []);
+    setChatMessages(roomItem.chatMessages || []);
+    const targetRoomId = rId;
+    if (targetRoomId) {
+      socket?.emit('join_listening_room', { roomId: targetRoomId, user });
+      socket?.emit('room:join', { roomId: targetRoomId, user });
     }
 
-    // Set immediate preview from summary
-    setSelectedPreviewRoom(roomItem);
-
-    // Try fetching fresh preview & member details from lookup
+    // Try fetching fresh room details from lookup or join if needed
     const lookupCode = code || rId;
     if (lookupCode) {
       try {
@@ -786,15 +774,11 @@ export default function ListeningRoomsView({
         });
         const data = await res.json();
         if (res.ok && data?.success && data?.preview) {
-          // If fresh lookup shows user is already member/host, open room directly!
-          if (data.preview.isMember || data.preview.isHost) {
-            openRoomDirectly({ ...roomItem, ...data.preview });
-            return;
-          }
-          setSelectedPreviewRoom(prev => ({
-            ...(prev || roomItem),
-            ...data.preview
-          }));
+          if (setActiveRoom) setActiveRoom(data.preview);
+          if (setRoomPlaylists) setRoomPlaylists(data.preview.playlists || []);
+          setParticipants(getUniqueMembers(data.preview.members || []));
+          setActivities(data.preview.activities || []);
+          setChatMessages(data.preview.chatMessages || []);
         }
       } catch (_) {}
     }
@@ -823,7 +807,6 @@ export default function ListeningRoomsView({
         // If the user is already a member or host, open the room directly!
         if (data.preview.isMember || data.preview.isHost) {
           setSearchPreviewRoom(null);
-          setSelectedPreviewRoom(null);
           setPreviewLeftRoom(null);
           setJoinCodeInput('');
           if (showToast) showToast(`Opening "${data.preview.name}"`);
@@ -892,7 +875,6 @@ export default function ListeningRoomsView({
         if (showToast) showToast(`Joined "${data.room.name}"`);
         setJoinCodeInput('');
         setSearchPreviewRoom(null);
-        setSelectedPreviewRoom(null);
         setPreviewLeftRoom(null);
         refreshRooms();
         return;
@@ -966,6 +948,30 @@ export default function ListeningRoomsView({
     setActivities([]);
     setChatMessages([]);
     if (showToast) showToast('Left Listening Room');
+    refreshRooms();
+  };
+
+  // Exit active room view back to Room Lobby without leaving membership
+  const handleLeaveView = () => {
+    try {
+      sessionStorage.removeItem(STORAGE_KEY_ACTIVE_ROOM_CODE);
+    } catch (e) {}
+    if (typeof window !== 'undefined' && window.history && window.location) {
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('room') || url.searchParams.has('roomCode')) {
+          url.searchParams.delete('room');
+          url.searchParams.delete('roomCode');
+          window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : '') + (url.hash || ''));
+        }
+      } catch (e) {}
+    }
+    setIsMemberPopoverOpen(false);
+    setIsRoomMenuOpen(false);
+    setIsListenTogetherMenuOpen(false);
+    setIsChatOpen(false);
+    if (setActiveRoom) setActiveRoom(null);
+    if (setRoomPlaylists) setRoomPlaylists([]);
     refreshRooms();
   };
 
@@ -1593,8 +1599,6 @@ export default function ListeningRoomsView({
       socket.emit('room:queue:add', { roomId: rId, track, user }, (res) => {
         if (res && res.success) {
           if (showToast) showToast(`Added "${track.title}" to Room Queue`);
-          setIsAddingQueueSong(false);
-          setQueueSearchQuery('');
         } else if (res && res.error) {
           if (showToast) showToast(res.error, 'warning');
         }
@@ -1609,8 +1613,6 @@ export default function ListeningRoomsView({
       socket.emit('room:queue:playNext', { roomId: rId, track, user }, (res) => {
         if (res && res.success) {
           if (showToast) showToast(`Set "${track.title}" to Play Next in Room`);
-          setIsAddingQueueSong(false);
-          setQueueSearchQuery('');
         } else if (res && res.error) {
           if (showToast) showToast(res.error, 'warning');
         }
@@ -1650,11 +1652,7 @@ export default function ListeningRoomsView({
     if (!activeRoom || !isHost) return;
     const rId = activeRoom.roomId || activeRoom.id;
     if (socket) {
-      socket.emit('room:permission:update', { roomId: rId, permissionMode: newMode, user }, (res) => {
-        if (res && res.success) {
-          setRoomPermissionMode(newMode);
-        }
-      });
+      socket.emit('room:permission:update', { roomId: rId, permissionMode: newMode, user });
     }
   };
 
@@ -2211,7 +2209,7 @@ export default function ListeningRoomsView({
   });
 
   return (
-    <div className={`page-transition w-full px-2 sm:px-4 md:px-8 space-y-6 relative z-10 ${currentSong ? 'pb-44 sm:pb-48 md:pb-32' : 'pb-28 sm:pb-32 md:pb-16'}`}>
+    <div className={`page-transition w-full min-h-[calc(100vh-5rem)] px-2 sm:px-4 md:px-8 space-y-6 relative z-10 ${currentSong ? 'pb-44 sm:pb-48 md:pb-32' : 'pb-28 sm:pb-32 md:pb-16'}`}>
       {/* Floating live emoji reactions layer */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden z-50">
         {floatingReactions.map(r => (
@@ -2235,57 +2233,48 @@ export default function ListeningRoomsView({
 
       {/* VIEW A: DEDICATED ROOM WORKSPACE (When a room is active/opened) */}
       {activeRoom ? (
-        <div className="space-y-4 animate-fadeIn">
-          {/* Header Bar: Clean, uncluttered with Three-Dot Overflow Menu */}
-          <div className="flex items-center justify-between gap-3 pt-1">
-            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-              <button
-                type="button"
-                onClick={() => {
-                  // Leave active view without disconnecting
-                  try {
-                    sessionStorage.removeItem(STORAGE_KEY_ACTIVE_ROOM_CODE);
-                  } catch (e) {}
-                  if (typeof window !== 'undefined' && window.history) {
-                    try {
-                      const url = new URL(window.location.href);
-                      url.searchParams.delete('room');
-                      url.searchParams.delete('roomCode');
-                      window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : '') + (url.hash || ''));
-                    } catch (e) {}
-                  }
-                  setActiveRoom(null);
-                }}
-                className="p-2 sm:px-3 sm:py-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700/80 text-neutral-300 hover:text-white transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer border border-neutral-700/50 shrink-0"
-                title="Back to All Rooms"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span className="hidden sm:inline">All Rooms</span>
-              </button>
-
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-lg sm:text-2xl font-display font-black tracking-tight text-white truncate max-w-[200px] sm:max-w-md">
-                    {activeRoom.name}
-                  </h2>
-                  {activeRoom.code && (
-                    <button
-                      type="button"
-                      onClick={() => handleCopyCodeOnly(activeRoom.code)}
-                      className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-amber-300 bg-neutral-800/90 hover:bg-neutral-700 px-2 py-0.5 rounded-lg border border-amber-500/30 transition cursor-pointer active:scale-95 shrink-0"
-                      title="Click to copy room code"
-                    >
-                      <Copy className="w-3 h-3 text-amber-400" />
-                      <span>{activeRoom.code}</span>
-                      {copiedCodeNotice && <span className="text-[9px] text-emerald-400 font-sans font-semibold ml-1">Copied!</span>}
-                    </button>
-                  )}
-                </div>
+        <div className="space-y-4 animate-fadeIn w-full">
+          {/* Room Hero Banner: Collaborative Listening Room Header */}
+          <div className="p-3.5 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-500/15 via-neutral-900 to-neutral-950 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 relative w-full">
+            <div className="space-y-1.5 min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] font-mono uppercase text-amber-400 tracking-wider font-bold bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                  Active Room
+                </span>
+                {activeRoom.code && (
+                  <button
+                    type="button"
+                    onClick={() => handleCopyCodeOnly(activeRoom.code)}
+                    className="inline-flex items-center gap-1 text-[10px] font-mono bg-neutral-800 text-amber-300 px-2 py-0.5 rounded-md border border-neutral-700 hover:bg-neutral-700 transition cursor-pointer active:scale-95"
+                    title="Click to copy room code"
+                  >
+                    <Copy className="w-3 h-3 text-amber-400" />
+                    <span>Code: {activeRoom.code}</span>
+                    {copiedCodeNotice && <span className="text-[9px] text-emerald-400 font-sans font-semibold ml-1">Copied!</span>}
+                  </button>
+                )}
+                <span className={`text-[10px] px-2 py-0.5 rounded-md font-semibold flex items-center gap-1 ${
+                  activeRoom.isPublic ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                }`}>
+                  {activeRoom.isPublic ? <Globe className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                  <span>{activeRoom.isPublic ? 'Public' : 'Invite-Only'}</span>
+                </span>
+                <span className="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded-md uppercase font-mono">
+                  Your Role: {userRole}
+                </span>
               </div>
+              <h2 className="text-lg sm:text-2xl font-display font-black tracking-tight text-white truncate max-w-full">
+                {activeRoom.name}
+              </h2>
+              <p className="text-xs text-neutral-300 truncate">
+                Host: <span className="text-amber-400 font-medium">{hostMember?.displayName || activeRoom.createdBy?.displayName || activeRoom.createdBy?.username || 'Host'}</span>
+                {' • '}
+                <span className="text-emerald-400 font-mono font-semibold">{participants.length} live {participants.length === 1 ? 'member' : 'members'}</span>
+              </p>
             </div>
 
-            {/* Header Right Actions: Members + Invite Button + Three-Dot (⋮) Menu */}
-            <div className="flex items-center flex-wrap justify-end gap-1.5 sm:gap-2 shrink-0">
+            {/* Header Right Actions: Members + Invite + Leave + Settings Menu */}
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full sm:w-auto sm:justify-end shrink-0">
               {isUiVisible('card.roomMembers') && (
                 <button
                   type="button"
@@ -2309,6 +2298,16 @@ export default function ListeningRoomsView({
                   <span>{copiedLink ? 'Copied!' : 'Invite'}</span>
                 </button>
               )}
+
+              <button
+                type="button"
+                onClick={handleLeave}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 font-bold text-xs transition cursor-pointer active:scale-95"
+                title="Leave Room"
+              >
+                <LogOut className="w-3.5 h-3.5 text-rose-400" />
+                <span>Leave</span>
+              </button>
 
               {/* Three-Dot (⋮) Overflow Menu */}
               <div className="relative" data-dropdown>
@@ -2393,6 +2392,18 @@ export default function ListeningRoomsView({
                         )}
                       </>
                     )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsRoomMenuOpen(false);
+                        handleLeaveView();
+                      }}
+                      className="w-full text-left px-3.5 py-2 text-xs font-medium text-neutral-300 hover:text-white hover:bg-neutral-800 transition flex items-center gap-2 cursor-pointer"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Back to All Rooms</span>
+                    </button>
 
                     <button
                       type="button"
@@ -2783,7 +2794,7 @@ export default function ListeningRoomsView({
                           <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                             <button
                               type="button"
-                              onClick={() => handleVoteSong(song._playlistId, songId)}
+                              onClick={() => handleVoteTrack(song._playlistId, songId)}
                               className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition flex items-center gap-1 cursor-pointer ${
                                 hasVoted
                                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
@@ -2796,7 +2807,7 @@ export default function ListeningRoomsView({
                             {canDeleteTrack && (
                               <button
                                 type="button"
-                                onClick={() => handleRemoveSongFromRoom(song._playlistId, songId)}
+                                onClick={() => handleRemoveTrackFromRoomPlaylist(song._playlistId, songId)}
                                 className="p-1.5 rounded-lg text-neutral-500 hover:text-rose-400 hover:bg-rose-500/10 transition cursor-pointer"
                                 title="Remove from room"
                               >
@@ -3990,7 +4001,7 @@ export default function ListeningRoomsView({
                 return (
                   <div
                     key={rId}
-                    onClick={() => handleOpenRoomPreview(r)}
+                    onClick={() => handleOpenRoomDirectly(r)}
                     className="group relative p-3 sm:p-4 rounded-2xl bg-neutral-900/80 hover:bg-neutral-800/90 border border-neutral-800 hover:border-amber-500/40 transition-all flex flex-col justify-between aspect-square cursor-pointer shadow-lg hover:shadow-amber-500/10 active:scale-[0.98]"
                   >
                     {/* Top Badges & Actions */}
@@ -4043,7 +4054,7 @@ export default function ListeningRoomsView({
                         <span>{(r.playlistsCount || 0) === 1 ? '1 playlist' : `${r.playlistsCount || 0} playlists`}</span>
                       </span>
                       <span className="font-semibold text-amber-400 group-hover:underline">
-                        Preview Room →
+                        Open Room →
                       </span>
                     </div>
                   </div>
@@ -4225,166 +4236,6 @@ export default function ListeningRoomsView({
                   )}
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: Room Preview / Details Modal (Open without auto-joining, with explicit Join / Open Action) */}
-      {selectedPreviewRoom && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-          <div 
-            className="w-full max-w-md bg-neutral-900 border border-neutral-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-scaleUp"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="p-4 border-b border-neutral-800 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30">
-                  <Radio className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm text-white">Room Details & Preview</h3>
-                  <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded border ${
-                    selectedPreviewRoom.isPublic !== false
-                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                      : 'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                  }`}>
-                    {selectedPreviewRoom.isPublic !== false ? 'Public Room' : 'Invite-Only Room'}
-                  </span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedPreviewRoom(null)}
-                className="p-1.5 rounded-xl text-neutral-400 hover:text-white hover:bg-neutral-800 transition cursor-pointer"
-                title="Close"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="p-5 space-y-4">
-              <div>
-                <h2 className="text-lg font-black text-white">{selectedPreviewRoom.name}</h2>
-                {selectedPreviewRoom.code && (
-                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                    <span className="text-xs font-mono text-neutral-400">
-                      Code: <strong className="text-amber-400 font-bold">{selectedPreviewRoom.code}</strong>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyCodeOnly(selectedPreviewRoom.code)}
-                      className="px-2 py-0.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-[11px] font-medium border border-neutral-700 flex items-center gap-1 transition cursor-pointer active:scale-95"
-                      title="Copy Room Code"
-                    >
-                      {copiedCodeNotice ? (
-                        <>
-                          <Check className="w-3 h-3 text-emerald-400" />
-                          <span className="text-emerald-300 font-bold">Copied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3 h-3 text-amber-400" />
-                          <span>Copy Code</span>
-                        </>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyInviteLink(selectedPreviewRoom.code)}
-                      className="px-2 py-0.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white text-[11px] font-medium border border-neutral-700 flex items-center gap-1 transition cursor-pointer active:scale-95"
-                      title="Copy Direct Invite Link"
-                    >
-                      {copiedLink ? (
-                        <>
-                          <Check className="w-3 h-3 text-emerald-400" />
-                          <span className="text-emerald-300 font-bold">Copied Link!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Share2 className="w-3 h-3 text-amber-400" />
-                          <span>Copy Invite Link</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
-                {selectedPreviewRoom.description && (
-                  <p className="text-xs text-neutral-400 mt-2 p-2.5 rounded-xl bg-neutral-950/60 border border-neutral-800">
-                    {selectedPreviewRoom.description}
-                  </p>
-                )}
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-neutral-950/80 border border-neutral-800 space-y-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-neutral-400">Host:</span>
-                  <span className="text-white font-bold">{selectedPreviewRoom.createdBy?.displayName || selectedPreviewRoom.createdBy?.username || 'Host'}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-neutral-400">Active Listeners:</span>
-                  <span className="text-emerald-400 font-mono font-semibold">{selectedPreviewRoom.memberCount || 1} online</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-neutral-400">Room Playlists:</span>
-                  <span className="text-neutral-300 font-mono">
-                    {(selectedPreviewRoom.playlistsCount || 0) === 1 ? '1 playlist' : `${selectedPreviewRoom.playlistsCount || 0} playlists`}
-                  </span>
-                </div>
-                {(selectedPreviewRoom.queueCount !== undefined) && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-400">Upcoming Queue:</span>
-                    <span className="text-amber-300 font-mono font-medium">
-                      {selectedPreviewRoom.queueCount === 1 ? '1 song' : `${selectedPreviewRoom.queueCount} songs`}
-                    </span>
-                  </div>
-                )}
-                {selectedPreviewRoom.currentSong?.title && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-400">Now Playing:</span>
-                    <span className="text-amber-300 font-medium truncate max-w-[200px]">{selectedPreviewRoom.currentSong.title}</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-[11px] text-neutral-300 flex items-start gap-2">
-                <Shield className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <span>
-                  Viewing this preview does not join you to the room. Click <strong>"Join & Sync"</strong> below to enter the collaborative session with live audio sync.
-                </span>
-              </div>
-            </div>
-
-            {/* Footer with Explicit Join button */}
-            <div className="p-4 border-t border-neutral-800 bg-neutral-950/60 flex items-center justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={() => setSelectedPreviewRoom(null)}
-                className="px-3.5 py-2 text-xs font-semibold text-neutral-400 hover:text-white transition cursor-pointer"
-              >
-                Close Preview
-              </button>
-
-              <button
-                type="button"
-                disabled={isJoiningRoom}
-                onClick={() => {
-                  const targetCodeOrId = selectedPreviewRoom.code || selectedPreviewRoom.roomId || selectedPreviewRoom.id;
-                  handleJoin(targetCodeOrId);
-                }}
-                className="px-4 py-2 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-neutral-950 active:scale-95 cursor-pointer shadow-amber-500/25"
-              >
-                {isJoiningRoom ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Radio className="w-3.5 h-3.5" />}
-                <span>
-                  {isJoiningRoom
-                    ? 'Entering...'
-                    : selectedPreviewRoom.isMember || (rooms.some(r => (r.roomId || r.id) === (selectedPreviewRoom.roomId || selectedPreviewRoom.id) && r.createdBy?.userId === currentUserId))
-                      ? 'Enter Room'
-                      : 'Join & Sync'}
-                </span>
-              </button>
             </div>
           </div>
         </div>
