@@ -41,6 +41,8 @@ import {
   BEAT_STYLES,
   BASS_LIBRARY,
   SFX_LIBRARY,
+  INSTRUMENT_CATEGORIES,
+  INSTRUMENT_LIBRARY,
   BEAT_PATTERNS
 } from './djAudioEngine';
 import { getCleanThumbnail } from '../../utils/thumbnailValidator';
@@ -137,6 +139,7 @@ export default function DjClubPage({
   const [isDjBeatsPlaying, setIsDjBeatsPlaying] = useState(false);
   const [djBeatsVolume, setDjBeatsVolume] = useState(80);
   const [djSfxVolume, setDjSfxVolume] = useState(85);
+  const [djInstrumentVolume, setDjInstrumentVolume] = useState(80);
   const [djStyle, setDjStyle] = useState('big-room');
   const [djCategory, setDjCategory] = useState('edm');
   const [djBpm, setDjBpm] = useState(128);
@@ -148,17 +151,25 @@ export default function DjClubPage({
   const [djEcho, setDjEcho] = useState(15);
   const [djReverb, setDjReverb] = useState(20);
   const [isDjAudioMuted, setIsDjAudioMuted] = useState(false);
+  const [isBeatsMuted, setIsBeatsMuted] = useState(false);
+  const [isInstrumentsMuted, setIsInstrumentsMuted] = useState(false);
+  const [isSfxMuted, setIsSfxMuted] = useState(false);
+  const [soloChannel, setSoloChannel] = useState(null); // null | 'beats' | 'instruments' | 'sfx'
   const [lastSfxTriggered, setLastSfxTriggered] = useState(null);
   const [lastBassTriggered, setLastBassTriggered] = useState(null);
-  const [audioSubTab, setAudioSubTab] = useState('styles'); // 'styles' | 'mixer' | 'bass' | 'sfx'
+  const [lastInstrumentTriggered, setLastInstrumentTriggered] = useState(null);
+  const [audioSubTab, setAudioSubTab] = useState('styles'); // 'styles' | 'mixer' | 'instruments' | 'bass' | 'sfx'
+  const [instrumentCategory, setInstrumentCategory] = useState('all'); // 'all' | 'keys' | 'strings' | 'wind' | 'horns' | 'drums' | 'synth'
   const tapTimesRef = useRef([]);
 
   // Multi-Item Continuous Auto-Loop State
   const [activeLoops, setActiveLoops] = useState([]);
   const [activeBassCount, setActiveBassCount] = useState(0);
   const [activeFxCount, setActiveFxCount] = useState(0);
+  const [activeInstrumentCount, setActiveInstrumentCount] = useState(0);
   const [globalBassInterval, setGlobalBassInterval] = useState(2.0);
   const [globalFxInterval, setGlobalFxInterval] = useState(4.0);
+  const [globalInstrumentInterval, setGlobalInstrumentInterval] = useState(2.0);
   const [triggerFlashMap, setTriggerFlashMap] = useState({});
 
   // Active track info
@@ -173,8 +184,10 @@ export default function DjClubPage({
       setActiveLoops(state.activeLoops);
       setActiveBassCount(state.activeBassCount);
       setActiveFxCount(state.activeFxCount);
+      setActiveInstrumentCount(state.activeInstrumentCount || 0);
       setGlobalBassInterval(state.globalBassInterval);
       setGlobalFxInterval(state.globalFxInterval);
+      setGlobalInstrumentInterval(state.globalInstrumentInterval || 2.0);
     });
 
     const unsubTrigger = djAudio.onLoopTrigger((evt) => {
@@ -356,9 +369,35 @@ export default function DjClubPage({
     djAudio.setSfxVolume(val / 100);
   };
 
+  const handleDjInstrumentVolumeChange = (e) => {
+    const val = Number(e.target.value);
+    setDjInstrumentVolume(val);
+    djAudio.setInstrumentVolume(val / 100);
+  };
+
   const handleToggleDjAudioMute = () => {
     const muted = djAudio.toggleMute();
     setIsDjAudioMuted(muted);
+  };
+
+  const handleToggleBeatsMute = () => {
+    const muted = djAudio.toggleBeatsMute();
+    setIsBeatsMuted(muted);
+  };
+
+  const handleToggleInstrumentsMute = () => {
+    const muted = djAudio.toggleInstrumentsMute();
+    setIsInstrumentsMuted(muted);
+  };
+
+  const handleToggleSfxMute = () => {
+    const muted = djAudio.toggleSfxMute();
+    setIsSfxMuted(muted);
+  };
+
+  const handleToggleSolo = (channel) => {
+    const currentSolo = djAudio.setSoloChannel(channel);
+    setSoloChannel(currentSolo);
   };
 
   const handleTriggerBass = (bassId) => {
@@ -373,6 +412,12 @@ export default function DjClubPage({
     djAudio.triggerSfxItem(sfxId);
   };
 
+  const handleTriggerInstrument = (instId) => {
+    setLastInstrumentTriggered(instId);
+    setTimeout(() => setLastInstrumentTriggered(null), 350);
+    djAudio.triggerInstrumentItem(instId);
+  };
+
   // Continuous Multi-Loop Item Toggles
   const handleToggleBassLoop = (bassId) => {
     setLastBassTriggered(bassId);
@@ -384,6 +429,12 @@ export default function DjClubPage({
     setLastSfxTriggered(sfxId);
     setTimeout(() => setLastSfxTriggered(null), 350);
     djAudio.toggleLoop(sfxId, 'fx');
+  };
+
+  const handleToggleInstrumentLoop = (instId) => {
+    setLastInstrumentTriggered(instId);
+    setTimeout(() => setLastInstrumentTriggered(null), 350);
+    djAudio.toggleLoop(instId, 'instrument');
   };
 
   const handleSetItemInterval = (id, newInterval, e) => {
@@ -403,6 +454,12 @@ export default function DjClubPage({
     djAudio.setGlobalFxInterval(num);
   };
 
+  const handleGlobalInstrumentIntervalChange = (val) => {
+    const num = Number(val);
+    setGlobalInstrumentInterval(num);
+    djAudio.setGlobalInstrumentInterval(num);
+  };
+
   const handleStopAllBass = (e) => {
     e?.stopPropagation?.();
     djAudio.stopAllBass();
@@ -411,6 +468,11 @@ export default function DjClubPage({
   const handleStopAllFx = (e) => {
     e?.stopPropagation?.();
     djAudio.stopAllFx();
+  };
+
+  const handleStopAllInstruments = (e) => {
+    e?.stopPropagation?.();
+    djAudio.stopAllInstruments();
   };
 
   const handleStopAll = () => {
@@ -837,7 +899,12 @@ export default function DjClubPage({
                               FX: {activeFxCount} ON
                             </span>
                           )}
-                          {activeBassCount === 0 && activeFxCount === 0 && (
+                          {activeInstrumentCount > 0 && (
+                            <span className="text-[7px] font-mono px-1 py-0.2 rounded bg-emerald-500/25 text-emerald-300 font-bold animate-pulse">
+                              Inst: {activeInstrumentCount} ON
+                            </span>
+                          )}
+                          {activeBassCount === 0 && activeFxCount === 0 && activeInstrumentCount === 0 && (
                             <p className="text-[8px] sm:text-[9px] text-neutral-400 truncate max-w-[110px] sm:max-w-[130px]">
                               {BEAT_STYLES.find((s) => s.id === djStyle)?.name || 'Club Mix'}
                             </p>
@@ -848,7 +915,7 @@ export default function DjClubPage({
 
                     <div className="flex items-center gap-1 sm:gap-1.5">
                       {/* Emergency Stop All Button */}
-                      {(activeBassCount > 0 || activeFxCount > 0 || isDjBeatsPlaying) && (
+                      {(activeBassCount > 0 || activeFxCount > 0 || activeInstrumentCount > 0 || isDjBeatsPlaying) && (
                         <button
                           type="button"
                           onClick={handleStopAll}
@@ -929,10 +996,11 @@ export default function DjClubPage({
                 </div>
 
                 {/* 2. CONSOLE SUB-NAVIGATION TABS */}
-                <div className="grid grid-cols-4 p-0.5 rounded-lg bg-neutral-950 border border-white/10 text-[8.5px] sm:text-[9.5px] font-semibold">
+                <div className="grid grid-cols-5 p-0.5 rounded-lg bg-neutral-950 border border-white/10 text-[8px] sm:text-[9px] font-semibold">
                   {[
                     { id: 'styles', label: 'Styles', icon: Music },
                     { id: 'mixer', label: 'EQ/Mix', icon: Sliders },
+                    { id: 'instruments', label: activeInstrumentCount > 0 ? `Inst (${activeInstrumentCount})` : `Inst (${INSTRUMENT_LIBRARY.length})`, icon: Sparkles },
                     { id: 'bass', label: activeBassCount > 0 ? `Bass (${activeBassCount})` : 'Bass (8)', icon: Speaker },
                     { id: 'sfx', label: activeFxCount > 0 ? `FX (${activeFxCount})` : 'FX (12)', icon: Zap }
                   ].map((tab) => (
@@ -940,7 +1008,7 @@ export default function DjClubPage({
                       key={tab.id}
                       type="button"
                       onClick={() => setAudioSubTab(tab.id)}
-                      className={`py-1 rounded-md flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 transition cursor-pointer ${
+                      className={`py-1 rounded-md flex flex-col items-center justify-center gap-0.5 transition cursor-pointer ${
                         audioSubTab === tab.id
                           ? 'bg-orange-500 text-neutral-950 font-bold shadow-sm'
                           : 'text-neutral-400 hover:text-white'
@@ -1212,31 +1280,37 @@ export default function DjClubPage({
                       </div>
                     </div>
 
-                    {/* Dual Vertical Mixer Faders */}
+                    {/* Multi-Channel Vertical Mixer Faders */}
                     <div className="p-2 sm:p-2.5 rounded-xl bg-neutral-900/90 border border-white/10 space-y-1">
                       <div className="flex items-center justify-between text-[10px] font-bold text-neutral-300">
                         <div className="flex items-center gap-1.5">
                           <Volume2 className="w-3 h-3 text-orange-400" />
                           <span>DJ Sound Faders</span>
                         </div>
-                        <span className="text-[8px] text-neutral-400 font-mono">CH1 / CH2</span>
+                        <span className="text-[8px] text-neutral-400 font-mono">CH1 / CH2 / CH3</span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 pt-0.5">
+                      <div className="grid grid-cols-3 gap-1.5 pt-0.5">
                         {/* Channel 1: Beats Volume Vertical Fader */}
-                        <div className="flex flex-col items-center bg-neutral-950/80 p-1.5 rounded-lg border border-white/5">
-                          <div className="flex items-center justify-between w-full text-[8.5px] font-semibold text-neutral-400 mb-1">
-                            <span>Beats</span>
-                            <span className="text-orange-400 font-mono font-bold">{djBeatsVolume}%</span>
+                        <div className={`flex flex-col items-center p-1.5 rounded-lg border transition-all ${
+                          soloChannel === 'beats'
+                            ? 'bg-orange-500/20 border-orange-400/80 shadow-[0_0_10px_rgba(249,115,22,0.3)]'
+                            : isBeatsMuted
+                            ? 'bg-neutral-950/60 border-red-500/30 opacity-70'
+                            : 'bg-neutral-950/80 border-white/5'
+                        }`}>
+                          <div className="flex items-center justify-between w-full text-[8px] font-semibold text-neutral-400 mb-1">
+                            <span className="truncate">Beats</span>
+                            <span className="text-orange-400 font-mono font-bold text-[7.5px]">{djBeatsVolume}%</span>
                           </div>
-                          <div className="h-18 sm:h-20 flex items-center justify-center my-0.5">
+                          <div className="h-16 sm:h-18 flex items-center justify-center my-0.5">
                             <input
                               type="range"
                               min="0"
                               max="100"
                               value={djBeatsVolume}
                               onChange={handleDjBeatsVolumeChange}
-                              className="h-18 sm:h-20 w-2 accent-orange-500 cursor-pointer"
+                              className="h-16 sm:h-18 w-2 accent-orange-500 cursor-pointer"
                               style={{
                                 writingMode: 'vertical-lr',
                                 direction: 'rtl'
@@ -1245,23 +1319,114 @@ export default function DjClubPage({
                               aria-label="DJ Beats Vertical Volume"
                             />
                           </div>
-                          <span className="text-[7px] text-neutral-500 uppercase tracking-wider font-mono">Fader 1</span>
+                          {/* Channel 1 Solo / Mute Controls */}
+                          <div className="flex items-center gap-1 mt-1 pt-1 border-t border-white/10 w-full justify-center">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSolo('beats')}
+                              className={`px-1 py-0.2 rounded text-[6.5px] font-bold font-mono transition cursor-pointer ${
+                                soloChannel === 'beats'
+                                  ? 'bg-amber-400 text-neutral-950 shadow-sm'
+                                  : 'bg-neutral-900 text-neutral-400 hover:text-white'
+                              }`}
+                              title="Solo Beats"
+                            >
+                              S
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleToggleBeatsMute}
+                              className={`px-1 py-0.2 rounded text-[6.5px] font-bold font-mono transition cursor-pointer ${
+                                isBeatsMuted
+                                  ? 'bg-red-500 text-white shadow-sm'
+                                  : 'bg-neutral-900 text-neutral-400 hover:text-white'
+                              }`}
+                              title="Mute Beats"
+                            >
+                              M
+                            </button>
+                          </div>
+                          <span className="text-[6.5px] text-neutral-500 uppercase tracking-wider font-mono mt-0.5">CH1</span>
                         </div>
 
-                        {/* Channel 2: SFX Volume Vertical Fader */}
-                        <div className="flex flex-col items-center bg-neutral-950/80 p-1.5 rounded-lg border border-white/5">
-                          <div className="flex items-center justify-between w-full text-[8.5px] font-semibold text-neutral-400 mb-1">
-                            <span>Effects</span>
-                            <span className="text-amber-400 font-mono font-bold">{djSfxVolume}%</span>
+                        {/* Channel 2: Instruments Volume Vertical Fader */}
+                        <div className={`flex flex-col items-center p-1.5 rounded-lg border transition-all ${
+                          soloChannel === 'instruments'
+                            ? 'bg-emerald-500/20 border-emerald-400/80 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                            : isInstrumentsMuted
+                            ? 'bg-neutral-950/60 border-red-500/30 opacity-70'
+                            : 'bg-neutral-950/80 border-white/5'
+                        }`}>
+                          <div className="flex items-center justify-between w-full text-[8px] font-semibold text-neutral-400 mb-1">
+                            <span className="truncate">Inst</span>
+                            <span className="text-emerald-400 font-mono font-bold text-[7.5px]">{djInstrumentVolume}%</span>
                           </div>
-                          <div className="h-18 sm:h-20 flex items-center justify-center my-0.5">
+                          <div className="h-16 sm:h-18 flex items-center justify-center my-0.5">
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              value={djInstrumentVolume}
+                              onChange={handleDjInstrumentVolumeChange}
+                              className="h-16 sm:h-18 w-2 accent-emerald-500 cursor-pointer"
+                              style={{
+                                writingMode: 'vertical-lr',
+                                direction: 'rtl'
+                              }}
+                              title={`Instruments Volume: ${djInstrumentVolume}%`}
+                              aria-label="DJ Instruments Vertical Volume"
+                            />
+                          </div>
+                          {/* Channel 2 Solo / Mute Controls */}
+                          <div className="flex items-center gap-1 mt-1 pt-1 border-t border-white/10 w-full justify-center">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSolo('instruments')}
+                              className={`px-1 py-0.2 rounded text-[6.5px] font-bold font-mono transition cursor-pointer ${
+                                soloChannel === 'instruments'
+                                  ? 'bg-amber-400 text-neutral-950 shadow-sm'
+                                  : 'bg-neutral-900 text-neutral-400 hover:text-white'
+                              }`}
+                              title="Solo Instruments"
+                            >
+                              S
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleToggleInstrumentsMute}
+                              className={`px-1 py-0.2 rounded text-[6.5px] font-bold font-mono transition cursor-pointer ${
+                                isInstrumentsMuted
+                                  ? 'bg-red-500 text-white shadow-sm'
+                                  : 'bg-neutral-900 text-neutral-400 hover:text-white'
+                              }`}
+                              title="Mute Instruments"
+                            >
+                              M
+                            </button>
+                          </div>
+                          <span className="text-[6.5px] text-neutral-500 uppercase tracking-wider font-mono mt-0.5">CH2</span>
+                        </div>
+
+                        {/* Channel 3: SFX Volume Vertical Fader */}
+                        <div className={`flex flex-col items-center p-1.5 rounded-lg border transition-all ${
+                          soloChannel === 'sfx'
+                            ? 'bg-amber-500/20 border-amber-400/80 shadow-[0_0_10px_rgba(245,158,11,0.3)]'
+                            : isSfxMuted
+                            ? 'bg-neutral-950/60 border-red-500/30 opacity-70'
+                            : 'bg-neutral-950/80 border-white/5'
+                        }`}>
+                          <div className="flex items-center justify-between w-full text-[8px] font-semibold text-neutral-400 mb-1">
+                            <span className="truncate">Effects</span>
+                            <span className="text-amber-400 font-mono font-bold text-[7.5px]">{djSfxVolume}%</span>
+                          </div>
+                          <div className="h-16 sm:h-18 flex items-center justify-center my-0.5">
                             <input
                               type="range"
                               min="0"
                               max="100"
                               value={djSfxVolume}
                               onChange={handleDjSfxVolumeChange}
-                              className="h-18 sm:h-20 w-2 accent-amber-500 cursor-pointer"
+                              className="h-16 sm:h-18 w-2 accent-amber-500 cursor-pointer"
                               style={{
                                 writingMode: 'vertical-lr',
                                 direction: 'rtl'
@@ -1270,9 +1435,212 @@ export default function DjClubPage({
                               aria-label="DJ Effects Vertical Volume"
                             />
                           </div>
-                          <span className="text-[7px] text-neutral-500 uppercase tracking-wider font-mono">Fader 2</span>
+                          {/* Channel 3 Solo / Mute Controls */}
+                          <div className="flex items-center gap-1 mt-1 pt-1 border-t border-white/10 w-full justify-center">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSolo('sfx')}
+                              className={`px-1 py-0.2 rounded text-[6.5px] font-bold font-mono transition cursor-pointer ${
+                                soloChannel === 'sfx'
+                                  ? 'bg-amber-400 text-neutral-950 shadow-sm'
+                                  : 'bg-neutral-900 text-neutral-400 hover:text-white'
+                              }`}
+                              title="Solo SFX"
+                            >
+                              S
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleToggleSfxMute}
+                              className={`px-1 py-0.2 rounded text-[6.5px] font-bold font-mono transition cursor-pointer ${
+                                isSfxMuted
+                                  ? 'bg-red-500 text-white shadow-sm'
+                                  : 'bg-neutral-900 text-neutral-400 hover:text-white'
+                              }`}
+                              title="Mute SFX"
+                            >
+                              M
+                            </button>
+                          </div>
+                          <span className="text-[6.5px] text-neutral-500 uppercase tracking-wider font-mono mt-0.5">CH3</span>
                         </div>
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SUB-TAB: REAL MUSICAL INSTRUMENTS (24 Authentic Acoustic, Indian & Orchestral Instruments) */}
+                {audioSubTab === 'instruments' && (
+                  <div className="space-y-1.5 animate-fadeIn">
+                    {/* Global Instrument Interval & Action Bar */}
+                    <div className="p-2 rounded-xl bg-neutral-900/95 border border-white/10 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <Timer className="w-3 h-3 text-emerald-400" />
+                          <span className="text-[9px] font-bold text-neutral-200">Instrument Loop Interval</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9.5px] font-mono font-bold text-emerald-400">{globalInstrumentInterval.toFixed(1)}s</span>
+                          {activeInstrumentCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={handleStopAllInstruments}
+                              className="px-1.5 py-0.5 rounded text-[7px] font-bold bg-red-500/20 text-red-400 border border-red-500/40 hover:bg-red-500/30 transition cursor-pointer"
+                              title="Stop all active instrument loops"
+                            >
+                              Stop All ({activeInstrumentCount})
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min="0.5"
+                          max="8"
+                          step="0.5"
+                          value={globalInstrumentInterval}
+                          onChange={(e) => handleGlobalInstrumentIntervalChange(e.target.value)}
+                          className="flex-1 h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between text-[7px] text-neutral-400">
+                        <span>0.5s Rapid</span>
+                        <div className="flex gap-1">
+                          {[1, 2, 4].map((sec) => (
+                            <button
+                              key={sec}
+                              type="button"
+                              onClick={() => handleGlobalInstrumentIntervalChange(sec)}
+                              className={`px-1.5 py-0.2 rounded font-mono ${
+                                Math.abs(globalInstrumentInterval - sec) < 0.1
+                                  ? 'bg-emerald-500 text-neutral-950 font-bold'
+                                  : 'bg-neutral-950 text-neutral-400 hover:text-white'
+                              }`}
+                            >
+                              {sec}s
+                            </button>
+                          ))}
+                        </div>
+                        <span>8s Slow</span>
+                      </div>
+                    </div>
+
+                    {/* Category Filter Pills */}
+                    <div className="flex gap-1 overflow-x-auto custom-scrollbar pb-0.5">
+                      {INSTRUMENT_CATEGORIES.map((cat) => (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => setInstrumentCategory(cat.id)}
+                          className={`px-2 py-0.5 rounded-full text-[8px] font-bold whitespace-nowrap transition cursor-pointer ${
+                            instrumentCategory === cat.id
+                              ? 'bg-emerald-500/30 text-emerald-400 border border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.3)]'
+                              : 'bg-neutral-900 text-neutral-400 hover:text-white border border-white/5'
+                          }`}
+                        >
+                          {cat.name}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Quick Play Trigger vs Loop Note */}
+                    <div className="flex items-center justify-between px-1 text-[7.5px] text-neutral-400">
+                      <span>Click card to toggle Loop Layer</span>
+                      <span className="font-mono text-emerald-400 font-semibold">{INSTRUMENT_LIBRARY.filter((i) => instrumentCategory === 'all' || i.category === instrumentCategory).length} Presets</span>
+                    </div>
+
+                    {/* Musical Instruments Cards Grid */}
+                    <div className="grid grid-cols-2 gap-1.5 max-h-56 overflow-y-auto custom-scrollbar pr-0.5">
+                      {INSTRUMENT_LIBRARY.filter(
+                        (inst) => instrumentCategory === 'all' || inst.category === instrumentCategory
+                      ).map((item) => {
+                        const loopConfig = activeLoops.find((l) => l.id === item.id);
+                        const isActive = Boolean(loopConfig);
+                        const isFlashing = Boolean(triggerFlashMap[item.id]) || lastInstrumentTriggered === item.id;
+                        const currentInterval = loopConfig ? loopConfig.interval : globalInstrumentInterval;
+
+                        return (
+                          <div
+                            key={item.id}
+                            onClick={() => handleToggleInstrumentLoop(item.id)}
+                            className={`p-2 rounded-xl text-left border transition-all cursor-pointer relative select-none ${
+                              isActive
+                                ? isFlashing
+                                  ? 'bg-emerald-500/30 border-emerald-300 shadow-[0_0_16px_rgba(16,185,129,0.85)] scale-[1.01]'
+                                  : 'bg-emerald-500/15 border-emerald-400/80 shadow-[0_0_10px_rgba(16,185,129,0.35)]'
+                                : 'bg-neutral-950/80 border-white/10 hover:border-white/20 hover:bg-neutral-900/60 text-white'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1 min-w-0">
+                                <span className="text-xs">{item.icon}</span>
+                                <span className={`text-[9px] font-bold truncate ${isActive ? 'text-emerald-400' : 'text-white'}`}>
+                                  {item.name}
+                                </span>
+                              </div>
+                              <span
+                                className={`text-[6.5px] font-mono px-1 py-0.2 rounded font-bold shrink-0 ${
+                                  isActive ? 'bg-emerald-500 text-neutral-950 animate-pulse' : 'bg-white/10 text-neutral-400'
+                                }`}
+                              >
+                                {isActive ? '● PLAYING' : item.tag}
+                              </span>
+                            </div>
+
+                            <span className="text-[7.5px] text-neutral-400 block mt-0.5 line-clamp-1">
+                              {item.desc}
+                            </span>
+
+                            {/* Active Loop Control Strip & One-Shot Play Button */}
+                            <div className="flex items-center justify-between mt-1.5 pt-1 border-t border-white/10">
+                              <div className="flex items-center gap-1">
+                                <Clock className="w-2.5 h-2.5 text-neutral-400" />
+                                <span className="text-[7.5px] font-mono text-neutral-300">
+                                  {currentInterval.toFixed(1)}s
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                {/* Quick One-Shot Trigger Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleTriggerInstrument(item.id)}
+                                  className="px-1.5 py-0.2 rounded bg-neutral-900 hover:bg-emerald-500/20 text-neutral-300 hover:text-emerald-300 border border-white/10 text-[7px] font-bold transition active:scale-95"
+                                  title="Test play one note"
+                                >
+                                  ▶ Hit
+                                </button>
+
+                                {isActive ? (
+                                  <div className="flex items-center gap-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleSetItemInterval(item.id, Math.max(0.5, currentInterval - 0.5), e)}
+                                      className="w-4 h-4 rounded bg-neutral-900 hover:bg-neutral-800 text-neutral-200 text-[8px] flex items-center justify-center font-bold"
+                                      title="Speed up loop interval (-0.5s)"
+                                    >
+                                      -
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleSetItemInterval(item.id, Math.min(8, currentInterval + 0.5), e)}
+                                      className="w-4 h-4 rounded bg-neutral-900 hover:bg-neutral-800 text-neutral-200 text-[8px] flex items-center justify-center font-bold"
+                                      title="Slow down loop interval (+0.5s)"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className="text-[6.5px] text-neutral-500">Tap loop</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

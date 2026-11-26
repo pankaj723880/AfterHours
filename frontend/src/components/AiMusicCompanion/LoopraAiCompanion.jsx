@@ -85,6 +85,72 @@ const loadSavedDimensions = () => {
   return defaults;
 };
 
+const AI_QUICK_MOOD_CHIPS = [
+  { label: '😊 Happy Vibe', prompt: 'happy vibe songs' },
+  { label: '💔 Sad Songs', prompt: 'sad songs batao' },
+  { label: '🎉 Party Vibe', prompt: 'party vibe bollywood songs' },
+  { label: '🌙 Lofi Chill', prompt: 'lofi late night chill songs' },
+  { label: '📻 90s Bollywood', prompt: '90s bollywood romantic hits' },
+  { label: '🔥 Punjabi Hits', prompt: 'punjabi hit songs' }
+];
+
+const NON_ORIGINAL_TRACK_REGEX = /\b(playlist|timestamps?|with\s+timestamps|compilation|jukebox|mashup|remix|slowed|reverb|reberb|lofi|lo-fi|nonstop|non-stop|hour\s+mix|best\s+of|full\s+album|audio\s+jukebox|megamix|medley)\b/i;
+
+const isOriginalIndividualTrack = (track) => {
+  if (!track || !track.id || !isValidMusicTrack(track)) return false;
+  const title = (track.title || '').toLowerCase();
+  if (NON_ORIGINAL_TRACK_REGEX.test(title)) return false;
+  return true;
+};
+
+const isExplicitNavigationOnly = (text = '') => {
+  const lower = text.toLowerCase().trim();
+  return /^(?:please\s+)?(?:open|go to|show|kholo|dikhao)\s+(?:my\s+)?(?:playlists?|favorites?|favourites?|liked songs|history|activity|listening rooms?|rooms?|downloads?|home|discover|queue|stats|insights|profile|settings)\b/i.test(lower);
+};
+
+const extractMoodCategoryQuery = (text = '', currentSong = null) => {
+  const trimmed = (text || '').trim();
+  const lower = trimmed.toLowerCase();
+  if (!trimmed || isExplicitNavigationOnly(trimmed)) return null;
+
+  // Context-aware: "more like current song", "similar to this song"
+  if (/\b(more\s+like\s+(?:this|current|playing)|similar\s+(?:to\s+)?(?:this|current|playing)\s*(?:song|track)?|aise\s+aur\s+gaane)\b/i.test(lower)) {
+    if (currentSong && (currentSong.title || currentSong.artist || currentSong.channel)) {
+      const cleanTitle = (currentSong.title || '').replace(/\(.*?\)|\[.*?\]/g, '').trim();
+      const artist = (currentSong.artist || currentSong.channel || '').trim();
+      return {
+        query: `${cleanTitle} ${artist} songs`.trim(),
+        label: `Similar to ${cleanTitle || artist}`
+      };
+    }
+    return { query: 'top bollywood hit songs', label: 'Recommended Hits' };
+  }
+
+  // Negative play constraint: don't auto-trigger
+  if (/\b(don'?t|do\s+not|mat|never)\s+(?:play|chalao|bajao)\b/i.test(lower)) return null;
+
+  const hasMoodOrCategorySignal = /\b(vibe|mood|happy|sad|party|dance|chill|lofi|romantic|love|workout|gym|sufi|devotional|bhajan|ghazal|punjabi|himachali|pahadi|haryanvi|bhojpuri|marathi|tamil|telugu|english|hindi|bollywood|retro|90s|80s|2000s|indie|acoustic|garhwali|kumaoni|rap|hip\s*hop|rock|pop|jazz|classical|unplugged|rain|monsoon|night|drive|travel|road\s*trip)\b/i.test(lower);
+  const hasListOrRecSignal = /\b(\d+\s+(?:\w+\s+){0,2}(?:songs?|gaane|tracks?|hits?)|suggest|recommend|batao|sunao|list|playlist\s+(?:of|for)|songs?\s+(?:of|for|like|batao|dikhao|sunao))\b/i.test(lower);
+
+  if (!hasMoodOrCategorySignal && !hasListOrRecSignal) return null;
+
+  // Clean filler/count words to build a focused YouTube music query
+  let cleaned = lower
+    .replace(/\b(\d+|ten|five|some|top|best|please|plz|can you|could you|give me|i am|i'm|im|feeling|feel|play|chalao|chala do|baja do|sunao|batao|dikhao|suggest|recommend|find|search|create|make|playlist|for me|karo|de|do|yar|yaar|mujhe|mere liye|ke|ki|ka)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleaned) cleaned = 'bollywood hit';
+  if (!/\b(songs?|gaane|music|hits?|tracks?)\b/i.test(cleaned)) {
+    cleaned = `${cleaned} songs`;
+  }
+
+  return {
+    query: cleaned,
+    label: trimmed
+  };
+};
+
 export default function LoopraAiCompanion({
   backendUrl,
   authToken,
@@ -103,6 +169,7 @@ export default function LoopraAiCompanion({
   onToggleLike,
   isLiked,
   onAddToPlaylist,
+  onAddToQueue,
   onNavigate,
   onOpenInsights,
   onOpenQueue,
@@ -414,6 +481,18 @@ export default function LoopraAiCompanion({
   });
 
   const [inputText, setInputText] = useState('');
+  const [openCardMenu, setOpenCardMenu] = useState(null);
+
+  useEffect(() => {
+    if (!openCardMenu) return;
+    const handleDismiss = () => setOpenCardMenu(null);
+    document.addEventListener('mousedown', handleDismiss);
+    window.addEventListener('scroll', handleDismiss, true);
+    return () => {
+      document.removeEventListener('mousedown', handleDismiss);
+      window.removeEventListener('scroll', handleDismiss, true);
+    };
+  }, [openCardMenu]);
   const [isTyping, setIsTyping] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const [isVoiceListening, setIsVoiceListening] = useState(false);
@@ -654,6 +733,89 @@ export default function LoopraAiCompanion({
             window.__loopraSetAvatarExecuting(false);
           }
         }
+      }
+    }
+
+    // 0B. Mood / Vibe / Category / List Recommendation Handler (Returns >= 10 playable tracks, auto-plays 1st, NO auto-queue)
+    const moodRec = extractMoodCategoryQuery(text, currentSong);
+    if (moodRec) {
+      try {
+        const cleanUrl = (backendUrl || '').replace(/\/+$/, '');
+        const fetchBatch = async (q) => {
+          const res = await fetch(`${cleanUrl}/api/youtube/search?q=${encodeURIComponent(q)}&limit=25`);
+          if (!res.ok) return [];
+          const data = await res.json();
+          const items = Array.isArray(data.items) ? data.items : [];
+          return items
+            .map(i => {
+              const vid = i.id?.videoId || (typeof i.id === 'string' ? i.id : null) || i.videoId;
+              return {
+                id: vid,
+                videoId: vid,
+                title: i.snippet?.title || 'Untitled Track',
+                artist: i.snippet?.channelTitle || 'Loopra Artist',
+                channel: i.snippet?.channelTitle || 'Loopra Artist',
+                duration: i.duration || '3:30',
+                durationSec: i.durationSec,
+                thumbnail: i.snippet?.thumbnails?.high?.url || i.snippet?.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`
+              };
+            })
+            .filter(t => isOriginalIndividualTrack(t));
+        };
+
+        const primaryTracks = await fetchBatch(moodRec.query);
+        const seenIds = new Set();
+        const combinedTracks = [];
+        for (const t of primaryTracks) {
+          if (!seenIds.has(t.id)) {
+            seenIds.add(t.id);
+            combinedTracks.push(t);
+          }
+        }
+
+        // Top up if fewer than 10 original individual tracks returned
+        if (combinedTracks.length < 10) {
+          const broaderTracks = await fetchBatch(`${moodRec.query} official audio`);
+          for (const t of broaderTracks) {
+            if (!seenIds.has(t.id)) {
+              seenIds.add(t.id);
+              combinedTracks.push(t);
+            }
+          }
+        }
+        if (combinedTracks.length < 10) {
+          const lyricalTracks = await fetchBatch(`${moodRec.query} lyrical`);
+          for (const t of lyricalTracks) {
+            if (!seenIds.has(t.id)) {
+              seenIds.add(t.id);
+              combinedTracks.push(t);
+            }
+          }
+        }
+
+        const finalTracks = combinedTracks.slice(0, 15);
+        if (finalTracks.length > 0) {
+          // Auto-play the first track immediately; do NOT auto-push the rest into playback queue
+          if (onPlayTrack) onPlayTrack(finalTracks[0]);
+
+          const aiMsg = {
+            id: 'ai_' + Date.now(),
+            role: 'model',
+            text: `Playing "${finalTracks[0].title}" now! Here are ${finalTracks.length} playable tracks for "${moodRec.label}". Use + Queue or Add All to Queue whenever you're ready.`,
+            tracks: finalTracks,
+            isRecommendationList: true,
+            timestamp: Date.now()
+          };
+          setMessages(prev => [...prev, aiMsg]);
+          if (voiceBuddyService.isVoiceOutputEnabled && !voiceBuddyService.isMusicPlaying()) {
+            voiceBuddyService.speak(`Playing ${finalTracks[0].title} and loaded ${finalTracks.length} tracks for you.`);
+          }
+          return;
+        }
+      } catch (err) {
+        console.warn('[LoopraAiCompanion] Mood/category fetch error:', err);
+      } finally {
+        setIsTyping(false);
       }
     }
 
@@ -1361,6 +1523,23 @@ export default function LoopraAiCompanion({
                     {/* PLAYABLE RECOMMENDATION CARDS (Only rendered when tracks exist) */}
                     {msg.tracks && msg.tracks.length > 0 && (
                       <div className="w-full mt-2.5 space-y-2 max-w-full overflow-hidden">
+                        {msg.tracks.length > 1 && onAddToQueue && (
+                          <div className="flex items-center justify-between gap-2 px-1 pb-1">
+                            <span className="text-[11px] font-mono text-neutral-400">
+                              {msg.tracks.length} playable tracks
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                msg.tracks.forEach((t) => onAddToQueue(t));
+                                showToast?.(`Added ${msg.tracks.length} tracks to Queue`);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-bold transition cursor-pointer active:scale-95"
+                            >
+                              + Add All to Queue
+                            </button>
+                          </div>
+                        )}
                         {msg.tracks.map((track, idx) => {
                           const isFav = isLiked ? isLiked(track) : false;
                           const activePlaying = isTrackPlaying(track);
@@ -1396,13 +1575,13 @@ export default function LoopraAiCompanion({
                                 </button>
                               </div>
 
-                              {/* Title & Artist */}
+                              {/* Title, Artist & Duration */}
                               <div className="flex-1 min-w-0 pr-1">
                                 <h5 className={`font-semibold truncate text-xs transition ${activePlaying ? 'text-amber-400' : 'text-white group-hover:text-amber-300'}`}>
                                   {track.title}
                                 </h5>
                                 <p className="text-[11px] text-neutral-400 truncate">
-                                  {track.artist || track.channel || 'Artist'}
+                                  {track.artist || track.channel || 'Artist'}{track.duration ? ` • ${track.duration}` : ''}
                                 </p>
                                 {track.reason && (
                                   <p className="text-[10px] text-amber-400/90 truncate italic">
@@ -1411,42 +1590,62 @@ export default function LoopraAiCompanion({
                                 )}
                               </div>
 
-                              {/* Action Buttons: Like & Play/Pause */}
-                              <div className="flex items-center gap-1 shrink-0">
+                              {/* Action Buttons: + Menu (Add to Queue / Add to Playlist), Favorite & Icon-Only Play/Pause */}
+                              <div className="flex items-center gap-1 shrink-0 relative">
+                                {(onAddToQueue || onAddToPlaylist) && (
+                                  <button
+                                    type="button"
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const menuKey = `${msg.id}_${track.id || idx}`;
+                                      if (openCardMenu?.key === menuKey) {
+                                        setOpenCardMenu(null);
+                                        return;
+                                      }
+                                      const rect = e.currentTarget.getBoundingClientRect();
+                                      const openUpwards = rect.top > 110;
+                                      setOpenCardMenu({
+                                        key: menuKey,
+                                        track,
+                                        top: openUpwards ? rect.top - 6 : rect.bottom + 6,
+                                        right: Math.max(8, window.innerWidth - rect.right),
+                                        openUpwards
+                                      });
+                                    }}
+                                    className="w-7 h-7 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-amber-300 border border-neutral-700 text-sm font-bold transition cursor-pointer active:scale-95 flex items-center justify-center"
+                                    title="Add to Queue or Playlist"
+                                    aria-label="Add to Queue or Playlist"
+                                  >
+                                    +
+                                  </button>
+                                )}
                                 {onToggleLike && (
                                   <button
+                                    type="button"
                                     onClick={() => onToggleLike(track)}
-                                    className={`p-1.5 rounded-lg text-xs transition cursor-pointer ${
-                                      isFav ? 'text-red-500' : 'text-neutral-500 hover:text-white'
+                                    className={`w-7 h-7 rounded-lg text-xs transition cursor-pointer flex items-center justify-center ${
+                                      isFav ? 'text-red-500' : 'text-neutral-400 hover:text-white'
                                     }`}
                                     title={isFav ? 'Remove like' : 'Like'}
+                                    aria-label={isFav ? 'Remove like' : 'Like'}
                                   >
                                     {isFav ? '❤️' : '🤍'}
                                   </button>
                                 )}
 
                                 <button
+                                  type="button"
                                   onClick={() => handleCardPlayPauseClick(track)}
-                                  className={`px-2.5 py-1.5 font-bold text-[11px] rounded-lg shadow-sm active:scale-95 transition flex items-center gap-1 cursor-pointer shrink-0 ${
+                                  className={`w-7 h-7 rounded-lg shadow-sm active:scale-95 transition flex items-center justify-center cursor-pointer shrink-0 ${
                                     activePlaying
                                       ? 'bg-neutral-800 text-amber-400 border border-amber-500/40 hover:bg-neutral-700'
                                       : 'bg-amber-500 hover:bg-amber-400 text-neutral-950'
                                   }`}
-                                  title={activePlaying ? 'Pause playback' : 'Play song in Loopra'}
+                                  title={activePlaying ? 'Pause' : 'Play'}
+                                  aria-label={activePlaying ? 'Pause' : 'Play'}
                                 >
-                                  {activePlaying ? (
-                                    <>
-                                      <span>⏸️</span> Pause
-                                    </>
-                                  ) : activeLoaded ? (
-                                    <>
-                                      <span>▶</span> Resume
-                                    </>
-                                  ) : (
-                                    <>
-                                      <span>▶</span> Play
-                                    </>
-                                  )}
+                                  {activePlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
                                 </button>
                               </div>
                             </div>
@@ -1500,6 +1699,31 @@ export default function LoopraAiCompanion({
                 </button>
               </div>
             )}
+
+            {/* Quick-Tap Mood & Context-Aware Suggestion Chips */}
+            <div className="px-3 py-1.5 bg-neutral-900/80 border-t border-white/5 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+              {currentSong && (
+                <button
+                  type="button"
+                  disabled={isTyping}
+                  onClick={() => handleSendMessage('more like current song')}
+                  className="px-2.5 py-1 rounded-full bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-[11px] font-semibold whitespace-nowrap transition cursor-pointer shrink-0 disabled:opacity-40"
+                >
+                  ✨ More like current song
+                </button>
+              )}
+              {AI_QUICK_MOOD_CHIPS.map((chip) => (
+                <button
+                  key={chip.label}
+                  type="button"
+                  disabled={isTyping}
+                  onClick={() => handleSendMessage(chip.prompt)}
+                  className="px-2.5 py-1 rounded-full bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-white/10 text-[11px] font-medium whitespace-nowrap transition cursor-pointer shrink-0 disabled:opacity-40"
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
 
             {/* Input Bar */}
             <form
@@ -1588,6 +1812,50 @@ export default function LoopraAiCompanion({
           </div>
         )}
 
+        {openCardMenu && typeof document !== 'undefined' && ReactDOM.createPortal(
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              top: `${openCardMenu.top}px`,
+              right: `${openCardMenu.right}px`,
+              transform: openCardMenu.openUpwards ? 'translateY(-100%)' : 'none',
+              zIndex: 2147483647
+            }}
+            className="w-40 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl overflow-hidden"
+          >
+            {onAddToQueue && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddToQueue(openCardMenu.track, e);
+                  showToast?.(`Added "${openCardMenu.track.title}" to Queue`);
+                  setOpenCardMenu(null);
+                }}
+                className="w-full text-left px-3.5 py-2.5 text-xs font-medium text-neutral-200 hover:bg-neutral-800 hover:text-amber-300 transition cursor-pointer"
+              >
+                Add to Queue
+              </button>
+            )}
+            {onAddToPlaylist && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddToPlaylist(openCardMenu.track, e);
+                  setOpenCardMenu(null);
+                }}
+                className="w-full text-left px-3.5 py-2.5 text-xs font-medium text-neutral-200 hover:bg-neutral-800 hover:text-amber-300 transition cursor-pointer"
+              >
+                Add to Playlist
+              </button>
+            )}
+          </div>,
+          document.body
+        )}
+
         {/* ------------------------------------------------------------- */}
         {/* 2. FLOATING SEPARATE AI CHAT & AVATAR MUTE TRIGGER COLUMN     */}
         {/* Vertically centered column fixed at bottom-right of viewport  */}
@@ -1648,6 +1916,50 @@ export default function LoopraAiCompanion({
               )}
             </button>
           </div>
+        )}
+
+        {openCardMenu && typeof document !== 'undefined' && ReactDOM.createPortal(
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              top: `${openCardMenu.top}px`,
+              right: `${openCardMenu.right}px`,
+              transform: openCardMenu.openUpwards ? 'translateY(-100%)' : 'none',
+              zIndex: 2147483647
+            }}
+            className="w-40 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl overflow-hidden"
+          >
+            {onAddToQueue && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddToQueue(openCardMenu.track, e);
+                  showToast?.(`Added "${openCardMenu.track.title}" to Queue`);
+                  setOpenCardMenu(null);
+                }}
+                className="w-full text-left px-3.5 py-2.5 text-xs font-medium text-neutral-200 hover:bg-neutral-800 hover:text-amber-300 transition cursor-pointer"
+              >
+                Add to Queue
+              </button>
+            )}
+            {onAddToPlaylist && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddToPlaylist(openCardMenu.track, e);
+                  setOpenCardMenu(null);
+                }}
+                className="w-full text-left px-3.5 py-2.5 text-xs font-medium text-neutral-200 hover:bg-neutral-800 hover:text-amber-300 transition cursor-pointer"
+              >
+                Add to Playlist
+              </button>
+            )}
+          </div>,
+          document.body
         )}
       </>,
       document.body

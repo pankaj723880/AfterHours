@@ -96,6 +96,30 @@ export default function DiscoverView({
 }) {
   const { isVisible: isUiVisible } = useUiConfig();
   const [selectedChip, setSelectedChip] = useState(null);
+  const [searchFilter, setSearchFilter] = useState('all'); // 'all' | 'official' | 'short'
+
+  const filteredSearchResults = React.useMemo(() => {
+    if (!Array.isArray(searchResults) || searchResults.length === 0) return [];
+    if (searchFilter === 'official') {
+      return searchResults.filter(t => {
+        const text = `${t.title || ''} ${t.channel || ''} ${t.artist || ''}`.toLowerCase();
+        return /(official|audio|lyrical|lyrics|t-series|sony|zee|yrf|saregama|tips|vevo|universal|warner)/i.test(text);
+      });
+    }
+    if (searchFilter === 'short') {
+      return searchResults.filter(t => {
+        if (typeof t.durationSec === 'number' && t.durationSec > 0) {
+          return t.durationSec <= 330;
+        }
+        const parts = String(t.duration || '').split(':').map(Number);
+        if (parts.length === 2 && !parts.some(isNaN)) {
+          return (parts[0] * 60 + parts[1]) <= 330;
+        }
+        return true;
+      });
+    }
+    return searchResults;
+  }, [searchResults, searchFilter]);
   const searchInputRef = useRef(null);
 
   // Fisher-Yates array shuffle helper
@@ -318,18 +342,38 @@ export default function DiscoverView({
       {/* 5A. ACTIVE SEARCH RESULTS */}
       {searchResults.length > 0 && (
         <section aria-label="Search Results" className="space-y-3 pt-2">
-          <div className="flex justify-between items-center px-1">
+          <div className="flex flex-wrap justify-between items-center gap-2 px-1">
             <h3 className="text-sm sm:text-base md:text-lg font-display font-extrabold tracking-tight text-white flex items-center gap-2">
               <span className="text-amber-500">⚡</span>
               <span>Search Results</span>
             </h3>
-            <span className="text-xs text-neutral-400 font-mono">
-              {searchResults.length} {searchResults.length === 1 ? 'song' : 'songs'}
-            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {[
+                { id: 'all', label: 'All' },
+                { id: 'official', label: 'Official / Audio' },
+                { id: 'short', label: 'Short / Standard' }
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setSearchFilter(f.id)}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition cursor-pointer border ${
+                    searchFilter === f.id
+                      ? 'bg-amber-500 text-neutral-950 border-amber-400'
+                      : 'bg-neutral-900/80 text-neutral-300 border-neutral-800 hover:border-amber-500/40 hover:text-white'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+              <span className="text-xs text-neutral-400 font-mono ml-1">
+                {filteredSearchResults.length} {filteredSearchResults.length === 1 ? 'song' : 'songs'}
+              </span>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-2 sm:gap-2.5">
-            {searchResults.map((track, i) => {
+            {filteredSearchResults.map((track, i) => {
               const trackId = track.id || track.videoId;
               const isCurrent = currentSong && (currentSong.id === trackId || currentSong.videoId === trackId);
               const isMenuOpen = openMenuId === `${trackId}-${i}`;

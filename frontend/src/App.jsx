@@ -60,7 +60,7 @@ import CmsHeroBanner from './components/Common/CmsHeroBanner';
 import CmsMaintenanceOverlay from './components/Common/CmsMaintenanceOverlay';
 import CmsCuratedCollectionsRow from './components/Common/CmsCuratedCollectionsRow';
 import AppUpdateModal from './components/Common/AppUpdateModal';
-import { triggerApkDownload, checkForAppUpdate, fetchPublishedAppVersion, getInstalledAppVersion, getDirectApkDownloadUrl, isRunningInAndroidApp } from './services/appUpdateService';
+import { triggerApkDownload, checkForAppUpdate, isUpdateSnoozed, fetchPublishedAppVersion, getInstalledAppVersion, getDirectApkDownloadUrl, isRunningInAndroidApp } from './services/appUpdateService';
 import { getCachedCmsConfig, fetchPublicCmsConfig, applyThemeToDom, normalizeCmsConfig, resolvePlatformConfig } from './services/cmsClient';
 import { offlineEligibilityService } from './services/offlineEligibilityService';
 import { offlineStorageService } from './services/offlineStorageService';
@@ -1860,6 +1860,11 @@ export default function App() {
       const iCode = detail.installedVersionCode ? parseInt(detail.installedVersionCode, 10) : 0;
       if (pCode > 0 && iCode > 0 && pCode <= iCode) {
         return; // Already up to date
+      }
+
+      // Check 3-hour snooze cooldown: skip silently if user tapped "Not Now" on this or newer version
+      if (isUpdateSnoozed(pCode)) {
+        return;
       }
 
       setPendingAppUpdate({
@@ -8291,8 +8296,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         signal: searchController.signal
       });
 
-      // Stale response guard: Ignore if user has initiated a newer search
-      if (currentReqId !== searchRequestIdRef.current) return;
+      // Stale response guard: Ignore if user has initiated a newer search or query changed
+      if (currentReqId !== searchRequestIdRef.current || activeSearchQueryRef.current !== trimmedQuery) return;
 
       if (data && Array.isArray(data.items) && data.items.length > 0) {
         const fetchedTracks = data.items.map(item => {
@@ -8354,47 +8359,13 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         return;
       }
 
-      if (currentReqId === searchRequestIdRef.current) {
+      if (currentReqId === searchRequestIdRef.current && activeSearchQueryRef.current === trimmedQuery) {
         console.warn("[Search Notice]:", err.message);
-
-        // Resilient Fallback: Search local curated library when backend is spinning up or offline
-        const localMatches = Object.values(CURATED_STATION_TRACKS || {})
-          .flat()
-          .filter(t => {
-            if (!t || !t.title) return false;
-            const fullStr = `${t.title} ${t.artist || ''} ${t.channel || ''}`.toLowerCase();
-            const words = trimmedQuery.split(/\s+/).filter(Boolean);
-            return words.some(w => fullStr.includes(w));
-          })
-          .map(t => ({
-            id: t.id || t.videoId,
-            videoId: t.id || t.videoId,
-            title: t.title,
-            channel: t.channel || t.artist || 'Loopra Curated',
-            artist: t.artist || t.channel || 'Loopra Curated',
-            thumbnail: t.thumbnail || t.coverArt || '/presets/loopra-dj-art.jpg'
-          }))
-          .filter(t => t.id);
-
-        if (localMatches.length > 0) {
-          const seen = new Set();
-          const uniqueLocal = localMatches.filter(t => {
-            if (seen.has(t.id)) return false;
-            seen.add(t.id);
-            return true;
-          });
-          setSearchResults(uniqueLocal);
-          setSearchVisibleCount(uniqueLocal.length);
-          setSearchNextPageToken(null);
-          setHasMoreSearchResults(false);
-          setSearchError('Search service is connecting. Showing instant curated recommendations.');
-        } else {
-          setSearchError(err.message?.includes('timed out') ? 'Search service is connecting. Please retry in a few moments.' : (err.message || 'Unable to connect to search service. Please try again.'));
-          setSearchResults([]);
-          setSearchVisibleCount(0);
-          setSearchNextPageToken(null);
-          setHasMoreSearchResults(false);
-        }
+        setSearchError(err.message?.includes('timed out') ? 'Search timed out. Please retry in a moment.' : (err.message || 'Unable to connect to search service. Please try again.'));
+        setSearchResults([]);
+        setSearchVisibleCount(0);
+        setSearchNextPageToken(null);
+        setHasMoreSearchResults(false);
       }
     } finally {
       if (currentReqId === searchRequestIdRef.current) {
@@ -8946,6 +8917,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         onToggleLike={toggleLike}
         isLiked={isSongLiked(videoModalSong || currentSong)}
         onAddToPlaylist={handleAddToPlaylistClick}
+        onAddToQueue={addToQueue}
         onShare={handleShareTrack}
         playbackSpeed={playbackSpeed}
         onPlaybackSpeedChange={(speed) => {
@@ -10061,6 +10033,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               onToggleLike={toggleLike}
               isLiked={isSongLiked}
               onAddToPlaylist={handleAddToPlaylistClick}
+        onAddToQueue={addToQueue}
               onAddToQueue={(track) => {
                 setQueue(prev => [...prev, track]);
                 showToast(`Added "${track.title}" to queue`);
@@ -10164,6 +10137,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               onToggleLike={toggleLike}
               isLiked={isSongLiked}
               onAddToPlaylist={handleAddToPlaylistClick}
+        onAddToQueue={addToQueue}
               showToast={showToast}
               onArtistClick={handleArtistClick}
             />
@@ -10404,6 +10378,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                 onToggleLike={toggleLike}
                 isLiked={isSongLiked}
                 onAddToPlaylist={handleAddToPlaylistClick}
+        onAddToQueue={addToQueue}
                 showToast={showToast}
                 onTracksRendered={handlePersonalizedTracksRendered}
                 onArtistClick={handleArtistClick}
@@ -13158,6 +13133,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         onToggleLike={toggleLike}
         isLiked={isSongLiked}
         onAddToPlaylist={handleAddToPlaylistClick}
+        onAddToQueue={addToQueue}
         onNavigate={(page, extra) => {
           if (page === 'admin' && !isAdmin) {
             return { success: false, reason: 'NO_ACCESS' };

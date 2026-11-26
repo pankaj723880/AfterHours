@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Download, RefreshCw, X, Sparkles, Smartphone, ShieldCheck, Loader2, AlertCircle, Globe } from 'lucide-react';
-import { triggerApkDownload, dismissUpdateForSession, clearAppCachesAndReload, isRunningInAndroidApp } from '../../services/appUpdateService';
+import { triggerApkDownload, snoozeUpdate, dismissUpdateForSession, clearAppCachesAndReload, isRunningInAndroidApp } from '../../services/appUpdateService';
 
 export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
   const [downloadStatus, setDownloadStatus] = useState(null); // null | 'downloading' | 'verifying' | 'ready_to_install' | 'permission_required' | 'installer_opened' | 'reloading' | 'error'
@@ -93,6 +93,9 @@ export default function AppUpdateModal({ updateInfo, onClose, showToast }) {
   };
 
   const handleDismiss = () => {
+    // Snooze update popup for 3 hours and track snoozed version code
+    const targetCode = updateInfo?.latestVersionCode || manifest?.versionCode || publishedCode;
+    snoozeUpdate(targetCode);
     dismissUpdateForSession(latestVersion, latestBuildId);
     onClose();
   };

@@ -2354,17 +2354,18 @@ const FALLBACK_RADIO = [
 
 const getCuratedFallback = (queryStr) => {
   const q = (queryStr || '').toLowerCase().trim();
-  if (q.includes('album') || q.includes('jukebox')) return FALLBACK_ALBUMS;
-  if (q.includes('radio') || q.includes('lofi')) return FALLBACK_RADIO;
-  if (q.includes('trending') || q.includes('hit')) return FALLBACK_TRENDING;
+  if (!q) return null;
+  if (q === 'trending' || q === 'trending songs') return FALLBACK_TRENDING;
 
-  if (Array.isArray(CORE_CATALOG_TRACKS) && CORE_CATALOG_TRACKS.length > 0) {
+  const queryWords = q.split(/\s+/).filter(w => w.length > 2);
+  if (Array.isArray(CORE_CATALOG_TRACKS) && CORE_CATALOG_TRACKS.length > 0 && queryWords.length > 0) {
     const catalogMatches = CORE_CATALOG_TRACKS.filter(t => {
       const title = (t.title || '').toLowerCase();
       const artist = (t.artist || t.channel || '').toLowerCase();
       const genre = (t.genre || '').toLowerCase();
       const mood = (t.mood || '').toLowerCase();
-      return title.includes(q) || artist.includes(q) || genre.includes(q) || mood.includes(q) || q.includes(artist);
+      const combined = `${title} ${artist} ${genre} ${mood}`;
+      return queryWords.every(w => combined.includes(w)) || (artist.length > 2 && q.includes(artist));
     });
 
     if (catalogMatches.length > 0) {
@@ -2383,7 +2384,7 @@ const getCuratedFallback = (queryStr) => {
     }
   }
 
-  // If no curated match found, return null so callers don't substitute fixed trending songs
+  // Never substitute unrelated default/90s tracks for specific queries
   return null;
 };
 

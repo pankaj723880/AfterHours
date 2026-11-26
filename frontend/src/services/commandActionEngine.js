@@ -423,8 +423,12 @@ export function parseCommandToAction(rawInput = '', context = {}) {
   }
 
   // 10. Strict Priority Check via Interaction Registry (Pages, Stations, Sub-views, Modals)
-  // Ensures "Saloon FM kholo" maps strictly to Saloon FM ('barber') and NEVER Time Machine
-  const registryItem = websiteInteractionRegistry.findBestMatch(cleanLower);
+  // Guard: Do NOT route mood/vibe/category/recommendation requests (e.g. "happy vibe playlist", "10 himachali songs") to OPEN_PAGE: playlists
+  const isMoodOrCategorySongRequest =
+    /\b(vibe|mood|happy|sad|party|chill|lofi|romantic|workout|gym|sufi|punjabi|himachali|pahadi|bollywood|retro|90s|80s|indie|acoustic|batao|suggest|recommend|more like|similar to)\b/i.test(cleanLower) &&
+    !/\b(open|kholo|show|dikhao)\s+(my\s+)?(playlists?|favorites?|favourites?|history|activity|rooms?|downloads?)\b/i.test(cleanLower);
+
+  const registryItem = isMoodOrCategorySongRequest ? null : websiteInteractionRegistry.findBestMatch(cleanLower);
   if (registryItem) {
     if (registryItem.type === 'modal' || registryItem.action === 'open_insights' || registryItem.id === 'recap_stats') {
       const act = registryItem.action || (registryItem.id === 'recap_stats' ? 'open_insights' : `open_${registryItem.id}`);

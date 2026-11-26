@@ -2,6 +2,93 @@ import { BACKEND_URL } from '../utils/apiUrl.js';
 
 const MANIFEST_CACHE_KEY = 'loopra_app_version_manifest';
 const DISMISSED_UPDATE_SESSION_KEY = 'loopra_dismissed_update_version';
+export const UPDATE_SNOOZE_TIMESTAMP_KEY = 'updateSnoozeUntil';
+export const UPDATE_SNOOZE_VERSION_KEY = 'snoozedUpdateVersion';
+export const DEFAULT_UPDATE_SNOOZE_DURATION_MS = 3 * 60 * 60 * 1000; // 3 hours (configurable between 2-3 hours)
+
+/**
+ * Checks whether the update prompt is currently snoozed for the given target version code.
+ * Snooze is active only if:
+ * 1. Current time is before `updateSnoozeUntil`
+ * 2. AND the available version is NOT strictly newer than the version that was snoozed (`snoozedUpdateVersion`).
+ */
+export function isUpdateSnoozed(targetVersionCode = 0) {
+  if (typeof window === 'undefined') return false;
+  try {
+    const rawSnoozeUntil = localStorage.getItem(UPDATE_SNOOZE_TIMESTAMP_KEY);
+    const rawSnoozedVersion = localStorage.getItem(UPDATE_SNOOZE_VERSION_KEY);
+
+    if (!rawSnoozeUntil) return false;
+
+    const snoozeUntil = Number(rawSnoozeUntil) || 0;
+    const now = Date.now();
+
+    // If cooldown expired, clear stale keys and allow prompt
+    if (now >= snoozeUntil) {
+      clearUpdateSnooze();
+      return false;
+    }
+
+    const snoozedCode = Number(rawSnoozedVersion) || 0;
+    const currentTargetCode = Number(targetVersionCode) || 0;
+
+    // If a newer version than snoozedUpdateVersion has been released, break snooze immediately!
+    if (currentTargetCode > 0 && snoozedCode > 0 && currentTargetCode > snoozedCode) {
+      clearUpdateSnooze();
+      return false;
+    }
+
+    // Within snooze cooldown for the same or older version code
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Stores snooze timestamp & target version when user taps "Not Now".
+ * Sets updateSnoozeUntil to Date.now() + durationMs (default 3 hours)
+ * and snoozedUpdateVersion to latestVersionCode.
+ * Also synchronizes with native Android SharedPreferences via LoopraAndroid bridge if present.
+ */
+export function snoozeUpdate(latestVersionCode = 0, durationMs = DEFAULT_UPDATE_SNOOZE_DURATION_MS) {
+  if (typeof window === 'undefined') return;
+  try {
+    const validDuration = (typeof durationMs === 'number' && durationMs >= 2 * 60 * 60 * 1000 && durationMs <= 3 * 60 * 60 * 1000)
+      ? durationMs
+      : DEFAULT_UPDATE_SNOOZE_DURATION_MS;
+    const snoozeUntil = Date.now() + validDuration;
+    const targetCode = Number(latestVersionCode) || 0;
+
+    localStorage.setItem(UPDATE_SNOOZE_TIMESTAMP_KEY, String(snoozeUntil));
+    if (targetCode > 0) {
+      localStorage.setItem(UPDATE_SNOOZE_VERSION_KEY, String(targetCode));
+    }
+
+    // Sync with native Android layer if bridge is available
+    if (window.LoopraAndroid && typeof window.LoopraAndroid.snoozeUpdatePrompt === 'function') {
+      try {
+        window.LoopraAndroid.snoozeUpdatePrompt(targetCode, snoozeUntil);
+      } catch (_) {}
+    }
+  } catch (_) {}
+}
+
+/**
+ * Clears or resets the update snooze state.
+ */
+export function clearUpdateSnooze() {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(UPDATE_SNOOZE_TIMESTAMP_KEY);
+    localStorage.removeItem(UPDATE_SNOOZE_VERSION_KEY);
+    if (window.LoopraAndroid && typeof window.LoopraAndroid.clearUpdateSnooze === 'function') {
+      try {
+        window.LoopraAndroid.clearUpdateSnooze();
+      } catch (_) {}
+    }
+  } catch (_) {}
+}
 
 /**
  * Built-in client version and build metadata stamped during Vite build.
@@ -441,7 +528,13 @@ export async function checkForAppUpdate(backendUrl = '') {
     return { shouldPrompt: false, reason: 'MANIFEST_UNAVAILABLE' };
   }
 
-  // Dismissal check: If dismissed in this session and published version/build hasn't changed, suppress prompt
+  // 2. Snooze Check: If user snoozed within 2-3 hours and target version hasn't incremented, suppress prompt
+  const targetCode = Number(published.versionCode) || 0;
+  if (isUpdateSnoozed(targetCode)) {
+    return { shouldPrompt: false, reason: 'UPDATE_SNOOZED', published, installed };
+  }
+
+  // 3. Dismissal check: If dismissed in this session and published version/build hasn't changed, suppress prompt
   try {
     const dismissedKey = sessionStorage.getItem(DISMISSED_UPDATE_SESSION_KEY);
     if (dismissedKey) {
