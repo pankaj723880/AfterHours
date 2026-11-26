@@ -3,14 +3,14 @@
 @theme {
   --font-sans: 'Inter', sans-serif;
   --font-display: 'Outfit', sans-serif;
-  --animate-scaleIn: scaleIn 0.2s cubic-bezier(0.22, 1, 0.36, 1);
-  --animate-scaleUp: scaleUp 0.2s cubic-bezier(0.22, 1, 0.36, 1);
-  --animate-fadeIn: fadeIn 0.18s cubic-bezier(0.22, 1, 0.36, 1);
-  --animate-slideUp: slideUp 0.22s cubic-bezier(0.22, 1, 0.36, 1);
-  --animate-drawerUp: drawerUp 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-scaleIn: scaleIn 0.14s cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-scaleUp: scaleUp 0.14s cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-fadeIn: fadeIn 0.12s cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-slideUp: slideUp 0.15s cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-drawerUp: drawerUp 0.16s cubic-bezier(0.22, 1, 0.36, 1);
   --animate-floatUp: floatUp 2.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  --animate-pageTransition: pageTransitionEnter 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-pageTransition: pageTransitionEnter 0.12s cubic-bezier(0.22, 1, 0.36, 1) both;
 
   @keyframes floatUp {
     0% {

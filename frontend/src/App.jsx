@@ -1559,7 +1559,7 @@ const POPULAR_RADIO = [
   { id: "T94PHkuydcw", videoId: "T94PHkuydcw", title: "Kun Faya Kun", artist: "A.R. Rahman, Javed Ali, Mohit Chauhan", image: "https://i.ytimg.com/vi/T94PHkuydcw/hqdefault.jpg", thumbnail: "https://i.ytimg.com/vi/T94PHkuydcw/hqdefault.jpg", query: "Kun Faya Kun Rockstar Official Video AR Rahman" }
 ];
 
-const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlledShowAll, setShowAll: setControlledShowAll, fallbackItems = [] }) => {
+const ScrollableRow = React.memo(({ items, renderItem, title, subtitle, showAll: controlledShowAll, setShowAll: setControlledShowAll, fallbackItems = [] }) => {
   const scrollRef = React.useRef(null);
   const [internalShowAll, setInternalShowAll] = React.useState(false);
 
@@ -1623,7 +1623,7 @@ const ScrollableRow = ({ items, renderItem, title, subtitle, showAll: controlled
       )}
     </div>
   );
-};
+});
 export default function App() {
   const initialNav = useMemo(() => {
     if (typeof window !== 'undefined') {
@@ -10438,12 +10438,25 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                                 </div>
                               </div>
                             </div>
-                            <h3 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-amber-400 transition-colors leading-tight">
-                              {song.title}
-                            </h3>
-                            <p className="text-[11px] text-neutral-400 truncate mt-1 font-medium">
-                              {song.artist || song.channel || 'Featured Track'}
-                            </p>
+                            <div className="flex items-start justify-between gap-1.5">
+                              <div className="min-w-0 flex-1">
+                                <h3 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-amber-400 transition-colors leading-tight">
+                                  {song.title}
+                                </h3>
+                                <p className="text-[11px] text-neutral-400 truncate mt-1 font-medium">
+                                  {song.artist || song.channel || 'Featured Track'}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => handleTrackContextMenu(e, song)}
+                                className="p-1 text-neutral-400 hover:text-white rounded-lg hover:bg-white/10 transition shrink-0 cursor-pointer"
+                                title="More Options"
+                                aria-label="More Options"
+                              >
+                                <Icon name="moreVertical" className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
                         )}
                       />
@@ -10506,8 +10519,21 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                                 </div>
                               </div>
                             </div>
-                            <h3 className="text-xs md:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{album.title}</h3>
-                            <p className="text-[11px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1">{album.artist}</p>
+                            <div className="flex items-start justify-between gap-1.5">
+                              <div className="min-w-0 flex-1">
+                                <h3 className="text-xs md:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{album.title}</h3>
+                                <p className="text-[11px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1">{album.artist}</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => handleTrackContextMenu(e, album)}
+                                className="p-1 text-neutral-400 hover:text-white rounded-lg hover:bg-white/10 transition shrink-0 cursor-pointer"
+                                title="More Options"
+                                aria-label="More Options"
+                              >
+                                <Icon name="moreVertical" className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
                         )}
                       />
@@ -10533,8 +10559,21 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                                 </div>
                               </div>
                             </div>
-                            <h3 className="text-xs md:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{radio.title}</h3>
-                            <p className="text-[11px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1">{radio.artist}</p>
+                            <div className="flex items-start justify-between gap-1.5">
+                              <div className="min-w-0 flex-1">
+                                <h3 className="text-xs md:text-sm font-bold text-white truncate group-hover:text-amber-400 transition">{radio.title}</h3>
+                                <p className="text-[11px] md:text-xs text-neutral-400 truncate mt-0.5 md:mt-1">{radio.artist}</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => handleTrackContextMenu(e, radio)}
+                                className="p-1 text-neutral-400 hover:text-white rounded-lg hover:bg-white/10 transition shrink-0 cursor-pointer"
+                                title="More Options"
+                                aria-label="More Options"
+                              >
+                                <Icon name="moreVertical" className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
                         )}
                       />
@@ -11354,41 +11393,36 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     <p className="text-xs text-neutral-500 p-4 text-center border border-dashed border-neutral-800 rounded-2xl">Empty playlist.</p>
                   ) : (
                     selectedPlaylistForView.songs.map((track, i) => {
-                      const isMenuOpen = openMenuId === `${track.id}-${i}`;
+                      const isCurrent = (currentSong?.id || currentSong?.videoId) === (track.id || track.videoId);
+                      const isMenuOpen = openMenuId === `${track.id || track.videoId}-${i}`;
                       return (
                         <div
-                          key={track.id + i}
+                          key={`${track.id || track.videoId}-${i}`}
                           onClick={() => playSong(track)}
-                          onContextMenu={(e) => handleTrackContextMenu(e, track)}
-                          className={`px-3.5 py-2.5 rounded-2xl border grid grid-cols-12 items-center gap-2 cursor-pointer transition-all duration-200 group relative backdrop-blur-md select-none ${
-                            isMenuOpen ? 'z-30' : 'z-auto'
-                          } ${
-                            (currentSong?.id || currentSong?.videoId) === (track.id || track.videoId)
-                              ? 'bg-amber-500/15 border-amber-500/60 shadow-[0_0_20px_rgba(245,158,11,0.2)]'
-                              : 'bg-neutral-900/50 hover:bg-neutral-900/90 border-neutral-800 hover:border-amber-500/30 active:scale-[0.99]'
+                          className={`group grid grid-cols-12 items-center gap-3 px-3 sm:px-4 py-2.5 rounded-2xl transition cursor-pointer border ${
+                            isCurrent
+                              ? 'bg-amber-500/10 border-amber-500/40'
+                              : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/5 hover:border-white/10'
                           }`}
                         >
-                          {/* Col 1: # Index */}
-                          <div className="col-span-1 flex items-center justify-center">
-                            <span className="text-xs font-mono font-medium text-zinc-500 group-hover:text-amber-300">
-                              {i + 1}
+                          <div className="col-span-9 sm:col-span-10 flex items-center gap-3 min-w-0">
+                            <span className="text-xs font-mono text-zinc-500 w-5 text-center shrink-0">
+                              {isCurrent && isPlaying ? '▶' : i + 1}
                             </span>
-                          </div>
-
-                          {/* Col 2: Thumbnail + Title + Artist */}
-                          <div className="col-span-8 sm:col-span-7 flex items-center gap-3 min-w-0">
-                            <img src={getCleanThumbnail(track)} alt={track.title || ""} loading="lazy" className="w-11 h-11 rounded-xl object-cover shrink-0 border border-white/10 shadow-md" onError={(e) => handleImageError(e, track.title, track.id)} />
+                            <img
+                              src={getCleanThumbnail(track)}
+                              alt={track.title || ''}
+                              className="w-10 h-10 rounded-lg object-cover shrink-0 bg-neutral-800"
+                              onError={(e) => handleImageError(e, track.title, track.id)}
+                            />
                             <div className="min-w-0 flex-1">
-                              <h4 className="font-bold text-xs sm:text-sm text-white truncate group-hover:text-amber-400 transition">{track.title}</h4>
-                              <p className="text-[11px] text-zinc-400 truncate mt-0.5">{track.channel || track.artist || 'Artist'}</p>
+                              <p className={`text-sm font-bold truncate ${isCurrent ? 'text-amber-400' : 'text-white'}`}>
+                                {track.title}
+                              </p>
+                              <p className="text-xs text-zinc-400 truncate">
+                                {track.artist || track.channel || 'Unknown Artist'}
+                              </p>
                             </div>
-                          </div>
-
-                          {/* Col 3: Duration */}
-                          <div className="hidden sm:flex col-span-2 items-center justify-center text-xs font-mono text-zinc-400">
-                            <span>{formatTrackDuration(track.duration)}</span>
-                          </div>
-
                           {/* Col 4: Hover Actions [Play, ✕ Remove, ⋮ More] */}
                           <div className={`col-span-3 sm:col-span-2 flex items-center justify-end gap-1.5 relative ${isMenuOpen ? 'z-40' : ''}`} onClick={(e) => e.stopPropagation()}>
                             {/* Quick Play on hover */}
@@ -11451,6 +11485,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                               </div>
                             )}
                           </div>
+                        </div>
                         </div>
                       );
                     })
@@ -12705,7 +12740,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       )}
 
       {isPlaylistModalOpen && (
-        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-neutral-950/80 backdrop-blur-md" onClick={() => { setIsPlaylistModalOpen(false); setSelectedSongForPlaylist(null); }}></div>
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-sm relative z-10 p-6 shadow-2xl animate-scaleIn">
             <div className="flex items-center justify-between mb-4">

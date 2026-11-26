@@ -8,8 +8,119 @@ import { getCleanThumbnail, isThumbnailUrlFormatValid } from '../utils/thumbnail
 import { isValidMusicTrack } from './songFilter';
 
 const smartQueueCache = new Map();
+const SMART_Q_LS_KEY = 'loopra_smart_q_cache_v1';
+const SMART_Q_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const SMART_Q_MAX_ENTRIES = 80;
+const inFlightPrefetches = new Set();
+
+const readLsCacheMap = () => {
+  if (typeof window === 'undefined' || !window.localStorage) return {};
+  try {
+    const raw = localStorage.getItem(SMART_Q_LS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return (parsed && typeof parsed === 'object') ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+};
+
+const writeLsCacheMap = (mapObj) => {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    const entries = Object.entries(mapObj);
+    if (entries.length > SMART_Q_MAX_ENTRIES) {
+      entries.sort((a, b) => (b[1]?.timestamp || 0) - (a[1]?.timestamp || 0));
+      mapObj = Object.fromEntries(entries.slice(0, SMART_Q_MAX_ENTRIES));
+    }
+    localStorage.setItem(SMART_Q_LS_KEY, JSON.stringify(mapObj));
+  } catch (_) {}
+};
 
 export const smartQueueService = {
+  /**
+   * Stable normalized cache key for a track (ID or normalized title+artist)
+   */
+  getTrackCacheKey(track) {
+    if (!track) return '';
+    const id = this.getTrackId(track).toLowerCase();
+    if (id) return `id:${id}`;
+    const title = String(track.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const artist = String(track.artist || track.channel || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return title ? `ta:${title}_${artist}` : '';
+  },
+
+  /**
+   * Read valid (<24h TTL) related tracks from localStorage cache map
+   */
+  getCachedRelated(track) {
+    const key = this.getTrackCacheKey(track);
+    if (!key) return null;
+    const map = readLsCacheMap();
+    const entry = map[key];
+    if (!entry || !Array.isArray(entry.items) || entry.items.length === 0) return null;
+    if (Date.now() - (entry.timestamp || 0) > SMART_Q_TTL_MS) {
+      delete map[key];
+      writeLsCacheMap(map);
+      return null;
+    }
+    return entry.items;
+  },
+
+  /**
+   * Persist ~10 related tracks for a track into localStorage cache map
+   */
+  setCachedRelated(track, items) {
+    const key = this.getTrackCacheKey(track);
+    if (!key || !Array.isArray(items) || items.length === 0) return;
+    const map = readLsCacheMap();
+    map[key] = {
+      timestamp: Date.now(),
+      items: items.slice(0, 10)
+    };
+    writeLsCacheMap(map);
+  },
+
+  /**
+   * Shuffle & re-arrange list cleanly so top tracks vary and never repeat back-to-back
+   */
+  shuffleAndArrange(items, currentSong = null) {
+    const list = [...(items || [])];
+    for (let i = list.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [list[i], list[j]] = [list[j], list[i]];
+    }
+    if (currentSong) {
+      return list.filter(t => !this.isSameTrack(t, currentSong));
+    }
+    return list;
+  },
+
+  /**
+   * Background pre-fetch ~10 related tracks for each track in the Smart Q list
+   */
+  async prefetchRelatedForList(tracks = []) {
+    const targets = (tracks || []).filter(t => t && !this.getCachedRelated(t)).slice(0, 10);
+    if (targets.length === 0) return;
+
+    const concurrency = 2;
+    let idx = 0;
+    const worker = async () => {
+      while (idx < targets.length) {
+        const t = targets[idx++];
+        const key = this.getTrackCacheKey(t);
+        if (!key || inFlightPrefetches.has(key) || this.getCachedRelated(t)) continue;
+        inFlightPrefetches.add(key);
+        try {
+          await this.fetchRecommendations(t, { forceRefresh: false });
+        } catch (_) {
+          // Non-blocking background prefetch
+        } finally {
+          inFlightPrefetches.delete(key);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, targets.length) }, worker));
+  },
   /**
    * Retrieves or derives a stable track ID
    */
@@ -53,9 +164,30 @@ export const smartQueueService = {
       return { related: [], discover: [], items: [] };
     }
 
+    // 1. Zero-extra-call instant lookup from localStorage cache map
+    if (!forceRefresh) {
+      const lsCached = this.getCachedRelated(track);
+      if (lsCached && lsCached.length > 0) {
+        const arranged = this.shuffleAndArrange(lsCached, track);
+        return {
+          related: arranged.slice(0, 5),
+          discover: arranged.slice(5, 10),
+          items: arranged,
+          fromCache: true
+        };
+      }
+    }
+
     const cacheKey = `${trackId}_${title}_${artist}_${genre}_${mood}_${movie}`;
     if (!forceRefresh && smartQueueCache.has(cacheKey)) {
-      return smartQueueCache.get(cacheKey);
+      const memCached = smartQueueCache.get(cacheKey);
+      const arranged = this.shuffleAndArrange(memCached.items || [], track);
+      return {
+        related: arranged.slice(0, 5),
+        discover: arranged.slice(5, 10),
+        items: arranged,
+        fromCache: true
+      };
     }
 
     const params = new URLSearchParams({
@@ -131,10 +263,14 @@ export const smartQueueService = {
       }
     }
 
+    const rawItems = [...validRelated, ...validDiscover];
+    this.setCachedRelated(track, rawItems);
+
+    const arranged = this.shuffleAndArrange(rawItems, track);
     const combined = {
-      related: validRelated,
-      discover: validDiscover,
-      items: [...validRelated, ...validDiscover]
+      related: arranged.slice(0, 5),
+      discover: arranged.slice(5, 10),
+      items: arranged
     };
 
     smartQueueCache.set(cacheKey, combined);

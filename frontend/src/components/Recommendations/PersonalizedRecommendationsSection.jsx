@@ -95,6 +95,7 @@ export default function PersonalizedRecommendationsSection({
   onToggleLike,
   isLiked,
   onAddToPlaylist,
+  onAddToQueue,
   showToast,
   onTracksRendered,
   onArtistClick
@@ -106,6 +107,7 @@ export default function PersonalizedRecommendationsSection({
   const [error, setError] = useState(null);
   const [recommendationsEnabled, setRecommendationsEnabled] = useState(true);
   const [showPrivacySettings, setShowPrivacySettings] = useState(false);
+  const [openActionMenuKey, setOpenActionMenuKey] = useState(null);
   const backupPoolRef = useRef([]);
 
   // Filter helper to ensure tracks have clean, valid, non-placeholder thumbnails and are clean music tracks
@@ -677,19 +679,65 @@ export default function PersonalizedRecommendationsSection({
               </svg>
             </button>
 
-            {onAddToPlaylist && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAddToPlaylist(playableTrack, e);
-                }}
-                className="p-1 rounded-lg text-neutral-500 hover:text-white transition"
-                title="Add to playlist"
-              >
-                <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                  <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                </svg>
-              </button>
+            {(onAddToPlaylist || onAddToQueue || onToggleLike) && (
+              <div className="relative" onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const menuKey = `${sectionKey}_${trackId || idx}`;
+                    setOpenActionMenuKey(prev => prev === menuKey ? null : menuKey);
+                  }}
+                  className="p-1 rounded-lg text-neutral-500 hover:text-white transition"
+                  title="More actions"
+                >
+                  <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                  </svg>
+                </button>
+                {openActionMenuKey === `${sectionKey}_${trackId || idx}` && (
+                  <div className="absolute bottom-full left-0 mb-1.5 z-50 w-40 rounded-xl bg-neutral-900 border border-neutral-700/90 shadow-2xl py-1 text-left">
+                    {onAddToPlaylist && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenActionMenuKey(null);
+                          onAddToPlaylist(playableTrack, e);
+                        }}
+                        className="w-full text-left px-3 py-2 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800 transition"
+                      >
+                        Add to Playlist
+                      </button>
+                    )}
+                    {onToggleLike && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenActionMenuKey(null);
+                          onToggleLike(playableTrack);
+                        }}
+                        className="w-full text-left px-3 py-2 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800 transition"
+                      >
+                        {trackLiked ? 'Remove Favourite' : 'Add to Favourite'}
+                      </button>
+                    )}
+                    {onAddToQueue && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenActionMenuKey(null);
+                          onAddToQueue(playableTrack);
+                        }}
+                        className="w-full text-left px-3 py-2 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800 transition"
+                      >
+                        Add to Queue
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
           </div>
 

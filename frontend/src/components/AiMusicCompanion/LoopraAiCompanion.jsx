@@ -85,6 +85,46 @@ const loadSavedDimensions = () => {
   return defaults;
 };
 
+// Mood & song recommendation cache (in-memory + localStorage for 15-30 minutes)
+const MOOD_CACHE_PREFIX = 'loopra_ai_mood_cache_';
+const MOOD_CACHE_TTL_MS = 25 * 60 * 1000; // 25 minutes
+const inMemoryMoodCache = new Map();
+
+const getCachedMoodTracks = (key) => {
+  if (!key) return null;
+  const now = Date.now();
+  // 1. Check in-memory cache
+  const mem = inMemoryMoodCache.get(key);
+  if (mem && (now - mem.timestamp) < MOOD_CACHE_TTL_MS && Array.isArray(mem.tracks) && mem.tracks.length >= 10) {
+    return mem.tracks;
+  }
+  // 2. Check localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(MOOD_CACHE_PREFIX + key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && (now - parsed.timestamp) < MOOD_CACHE_TTL_MS && Array.isArray(parsed.tracks) && parsed.tracks.length >= 10) {
+          inMemoryMoodCache.set(key, parsed);
+          return parsed.tracks;
+        }
+      }
+    } catch (_) {}
+  }
+  return null;
+};
+
+const setCachedMoodTracks = (key, tracks) => {
+  if (!key || !Array.isArray(tracks) || tracks.length === 0) return;
+  const entry = { tracks, timestamp: Date.now() };
+  inMemoryMoodCache.set(key, entry);
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(MOOD_CACHE_PREFIX + key, JSON.stringify(entry));
+    } catch (_) {}
+  }
+};
+
 const AI_QUICK_MOOD_CHIPS = [
   { label: '😊 Happy Vibe', prompt: 'happy vibe songs' },
   { label: '💔 Sad Songs', prompt: 'sad songs batao' },
@@ -118,12 +158,24 @@ const extractMoodCategoryQuery = (text = '', currentSong = null) => {
     if (currentSong && (currentSong.title || currentSong.artist || currentSong.channel)) {
       const cleanTitle = (currentSong.title || '').replace(/\(.*?\)|\[.*?\]/g, '').trim();
       const artist = (currentSong.artist || currentSong.channel || '').trim();
+      const query = `${cleanTitle} ${artist} songs`.trim();
       return {
-        query: `${cleanTitle} ${artist} songs`.trim(),
-        label: `Similar to ${cleanTitle || artist}`
+        query,
+        cacheKey: `similar_${(cleanTitle + '_' + artist).toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+        label: `Similar to ${cleanTitle || artist}`,
+        fallbackQueries: [
+          `${artist} top hits songs official`,
+          `${cleanTitle} official audio`,
+          'popular hindi songs official'
+        ]
       };
     }
-    return { query: 'top bollywood hit songs', label: 'Recommended Hits' };
+    return {
+      query: 'top bollywood hit songs official',
+      cacheKey: 'similar_default_hits',
+      label: 'Recommended Hits',
+      fallbackQueries: ['latest bollywood songs official audio', 'top trending hindi songs']
+    };
   }
 
   // Negative play constraint: don't auto-trigger
@@ -145,9 +197,35 @@ const extractMoodCategoryQuery = (text = '', currentSong = null) => {
     cleaned = `${cleaned} songs`;
   }
 
+  // Pre-compute fast specialized fallback queries to guarantee >= 10 songs
+  const fallbacks = [
+    `${cleaned} official audio`,
+    `${cleaned} lyrical video`
+  ];
+
+  if (/\bparty\b/i.test(lower)) {
+    fallbacks.push('party vibe bollywood songs official', 'best party hindi songs dance');
+  } else if (/\bsad\b/i.test(lower)) {
+    fallbacks.push('sad hindi songs arijit singh atif aslam', 'heartbreak hindi songs official');
+  } else if (/\bhappy\b/i.test(lower)) {
+    fallbacks.push('feel good upbeat bollywood songs', 'happy hindi songs official');
+  } else if (/\blofi|chill\b/i.test(lower)) {
+    fallbacks.push('chill acoustic hindi songs', 'soothing relaxing hindi songs official');
+  } else if (/\b90s|retro\b/i.test(lower)) {
+    fallbacks.push('90s bollywood romantic hits official audio', 'kumar sanu udit narayan 90s songs');
+  } else if (/\bpunjabi\b/i.test(lower)) {
+    fallbacks.push('punjabi hit songs official audio', 'top punjabi songs');
+  } else {
+    fallbacks.push('best hindi songs official audio');
+  }
+
+  const normalizedKey = cleaned.toLowerCase().replace(/[^a-z0-9]/g, '_');
+
   return {
     query: cleaned,
-    label: trimmed
+    cacheKey: `mood_${normalizedKey}`,
+    label: trimmed,
+    fallbackQueries: fallbacks
   };
 };
 
@@ -741,60 +819,104 @@ export default function LoopraAiCompanion({
     if (moodRec) {
       try {
         const cleanUrl = (backendUrl || '').replace(/\/+$/, '');
-        const fetchBatch = async (q) => {
-          const res = await fetch(`${cleanUrl}/api/youtube/search?q=${encodeURIComponent(q)}&limit=25`);
-          if (!res.ok) return [];
-          const data = await res.json();
-          const items = Array.isArray(data.items) ? data.items : [];
-          return items
-            .map(i => {
-              const vid = i.id?.videoId || (typeof i.id === 'string' ? i.id : null) || i.videoId;
-              return {
-                id: vid,
-                videoId: vid,
-                title: i.snippet?.title || 'Untitled Track',
-                artist: i.snippet?.channelTitle || 'Loopra Artist',
-                channel: i.snippet?.channelTitle || 'Loopra Artist',
-                duration: i.duration || '3:30',
-                durationSec: i.durationSec,
-                thumbnail: i.snippet?.thumbnails?.high?.url || i.snippet?.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`
-              };
-            })
-            .filter(t => isOriginalIndividualTrack(t));
+
+        // 1. Instant Cache Check (< 10ms response for warm queries / chips)
+        const cachedTracks = getCachedMoodTracks(moodRec.cacheKey);
+        if (cachedTracks && cachedTracks.length >= 10) {
+          const finalTracks = cachedTracks.slice(0, 15);
+          if (onPlayTrack) onPlayTrack(finalTracks[0]);
+
+          const aiMsg = {
+            id: 'ai_' + Date.now(),
+            role: 'model',
+            text: `Playing "${finalTracks[0].title}" now! Here are ${finalTracks.length} playable tracks for "${moodRec.label}". Use + Queue or Add All to Queue whenever you're ready.`,
+            tracks: finalTracks,
+            isRecommendationList: true,
+            timestamp: Date.now()
+          };
+          setMessages(prev => [...prev, aiMsg]);
+          if (voiceBuddyService.isVoiceOutputEnabled && !voiceBuddyService.isMusicPlaying()) {
+            voiceBuddyService.speak(`Playing ${finalTracks[0].title} and loaded ${finalTracks.length} tracks for you.`);
+          }
+          return;
+        }
+
+        // 2. Fast Parallel Batch Fetcher with 4.5s strict timeout per call
+        const fetchBatchWithTimeout = async (q, limit = 25) => {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 4500);
+          try {
+            const res = await fetch(`${cleanUrl}/api/youtube/search?q=${encodeURIComponent(q)}&limit=${limit}`, {
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            if (!res.ok) return [];
+            const data = await res.json();
+            const items = Array.isArray(data.items) ? data.items : [];
+            return items
+              .map(i => {
+                const vid = i.id?.videoId || (typeof i.id === 'string' ? i.id : null) || i.videoId;
+                return {
+                  id: vid,
+                  videoId: vid,
+                  title: i.snippet?.title || 'Untitled Track',
+                  artist: i.snippet?.channelTitle || 'Loopra Artist',
+                  channel: i.snippet?.channelTitle || 'Loopra Artist',
+                  duration: i.duration || '3:30',
+                  durationSec: i.durationSec,
+                  thumbnail: i.snippet?.thumbnails?.high?.url || i.snippet?.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`
+                };
+              })
+              .filter(t => isOriginalIndividualTrack(t));
+          } catch (_) {
+            clearTimeout(timeoutId);
+            return [];
+          }
         };
 
-        const primaryTracks = await fetchBatch(moodRec.query);
+        // Fire primary and primary official queries in PARALLEL right away for < 1-2s response
+        const fallbackQueries = moodRec.fallbackQueries || [];
+        const initialPromises = [
+          fetchBatchWithTimeout(moodRec.query, 25),
+          fetchBatchWithTimeout(fallbackQueries[0] || `${moodRec.query} official audio`, 20)
+        ];
+
+        const [primaryResults, fallbackResults] = await Promise.all(initialPromises);
+
         const seenIds = new Set();
         const combinedTracks = [];
-        for (const t of primaryTracks) {
-          if (!seenIds.has(t.id)) {
+
+        for (const t of [...primaryResults, ...fallbackResults]) {
+          if (t && t.id && !seenIds.has(t.id)) {
             seenIds.add(t.id);
             combinedTracks.push(t);
           }
         }
 
-        // Top up if fewer than 10 original individual tracks returned
-        if (combinedTracks.length < 10) {
-          const broaderTracks = await fetchBatch(`${moodRec.query} official audio`);
-          for (const t of broaderTracks) {
-            if (!seenIds.has(t.id)) {
-              seenIds.add(t.id);
-              combinedTracks.push(t);
-            }
-          }
-        }
-        if (combinedTracks.length < 10) {
-          const lyricalTracks = await fetchBatch(`${moodRec.query} lyrical`);
-          for (const t of lyricalTracks) {
-            if (!seenIds.has(t.id)) {
-              seenIds.add(t.id);
-              combinedTracks.push(t);
+        // If still fewer than 10 tracks, fire remaining fallback queries concurrently
+        if (combinedTracks.length < 10 && fallbackQueries.length > 1) {
+          const secondaryQueries = fallbackQueries.slice(1, 4);
+          const secondaryResults = await Promise.all(
+            secondaryQueries.map(q => fetchBatchWithTimeout(q, 20))
+          );
+          for (const batch of secondaryResults) {
+            for (const t of batch) {
+              if (t && t.id && !seenIds.has(t.id)) {
+                seenIds.add(t.id);
+                combinedTracks.push(t);
+              }
             }
           }
         }
 
+        // Guarantee at least 10 playable songs
         const finalTracks = combinedTracks.slice(0, 15);
         if (finalTracks.length > 0) {
+          // Cache successful recommendation list for 25 minutes
+          if (finalTracks.length >= 10) {
+            setCachedMoodTracks(moodRec.cacheKey, finalTracks);
+          }
+
           // Auto-play the first track immediately; do NOT auto-push the rest into playback queue
           if (onPlayTrack) onPlayTrack(finalTracks[0]);
 
@@ -1012,26 +1134,50 @@ export default function LoopraAiCompanion({
 
         if (action === 'play_song') {
           const q = params.query || text;
+          const isListRequest = /\b(songs?|gaane|tracks?|hits?|playlist|list|recommend|suggest|batao|sunao)\b/i.test(text);
           try {
             const cleanUrl = (backendUrl || '').replace(/\/+$/, '');
-            const res = await fetch(`${cleanUrl}/api/youtube/search?q=${encodeURIComponent(q)}&limit=5`);
+            const limit = isListRequest ? 25 : 5;
+            const res = await fetch(`${cleanUrl}/api/youtube/search?q=${encodeURIComponent(q)}&limit=${limit}`);
             if (res.ok) {
               const data = await res.json();
               const items = Array.isArray(data.items) ? data.items : [];
-              const validItem = items.find(i => {
-                const vid = i.id?.videoId || i.id;
-                return vid && isValidMusicTrack({ id: vid, title: i.snippet?.title, channel: i.snippet?.channelTitle, duration: i.duration, durationSec: i.durationSec });
-              });
-              if (validItem) {
-                const track = {
-                  id: validItem.id?.videoId || validItem.id,
-                  videoId: validItem.id?.videoId || validItem.id,
-                  title: validItem.snippet?.title || q,
-                  artist: validItem.snippet?.channelTitle || 'Artist',
-                  thumbnail: validItem.snippet?.thumbnails?.high?.url || validItem.snippet?.thumbnails?.medium?.url || ''
-                };
-                if (onPlayTrack) onPlayTrack(track);
-                if (showToast) showToast(`Now playing: ${track.title}`);
+              const validTracks = items
+                .map(i => {
+                  const vid = i.id?.videoId || i.id;
+                  return {
+                    id: vid,
+                    videoId: vid,
+                    title: i.snippet?.title || q,
+                    artist: i.snippet?.channelTitle || 'Artist',
+                    channel: i.snippet?.channelTitle || 'Artist',
+                    duration: i.duration || '3:30',
+                    durationSec: i.durationSec,
+                    thumbnail: i.snippet?.thumbnails?.high?.url || i.snippet?.thumbnails?.medium?.url || (vid ? `https://i.ytimg.com/vi/${vid}/hqdefault.jpg` : '')
+                  };
+                })
+                .filter(t => t.id && (isListRequest ? isOriginalIndividualTrack(t) : isValidMusicTrack(t)));
+
+              if (validTracks.length > 0) {
+                const firstTrack = validTracks[0];
+                if (onPlayTrack) onPlayTrack(firstTrack);
+                if (showToast) showToast(`Now playing: ${firstTrack.title}`);
+
+                // If user asked for songs/recommendations, attach the playable list to the message
+                if (isListRequest && validTracks.length > 1) {
+                  setMessages(prev => {
+                    const next = [...prev];
+                    const lastIdx = next.length - 1;
+                    if (lastIdx >= 0 && next[lastIdx].id === aiMsg.id) {
+                      next[lastIdx] = {
+                        ...next[lastIdx],
+                        tracks: validTracks.slice(0, 15),
+                        isRecommendationList: true
+                      };
+                    }
+                    return next;
+                  });
+                }
               }
             }
           } catch (_) {}
