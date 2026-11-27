@@ -3997,8 +3997,26 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       localStorage.setItem('liked_songs', JSON.stringify(sanitizeList(userLiked)));
 
       const userHistory = (data.user.history || []).slice(0, 50);
-      setHistory(sanitizeList(userHistory));
-      localStorage.setItem('history_songs', JSON.stringify(sanitizeList(userHistory)));
+      setHistory(prev => {
+        const uid = loggedInUser.userId;
+        let savedUserHist = [];
+        try { savedUserHist = JSON.parse(localStorage.getItem(`history_songs_${uid}`) || '[]'); } catch (_) {}
+        const seen = new Set();
+        const merged = [];
+        for (const item of [...(prev || []), ...sanitizeList(userHistory), ...sanitizeList(savedUserHist)]) {
+          const tid = item?.id || item?.videoId;
+          if (tid && !seen.has(tid)) {
+            seen.add(tid);
+            merged.push(item);
+          }
+        }
+        const finalHist = merged.slice(0, 50);
+        try {
+          localStorage.setItem('history_songs', JSON.stringify(finalHist));
+          if (uid) localStorage.setItem(`history_songs_${uid}`, JSON.stringify(finalHist));
+        } catch (_) {}
+        return finalHist;
+      });
 
       const userPlaylists = data.user.playlists || [];
       setPlaylists(sanitizeList(userPlaylists));
@@ -4196,8 +4214,26 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         localStorage.setItem('liked_songs', JSON.stringify(sanitizeList(userLiked)));
 
         const userHistory = (data.user.history || []).slice(0, 50);
-        setHistory(sanitizeList(userHistory));
-        localStorage.setItem('history_songs', JSON.stringify(sanitizeList(userHistory)));
+        setHistory(prev => {
+          const uid = loggedInUser.userId;
+          let savedUserHist = [];
+          try { savedUserHist = JSON.parse(localStorage.getItem(`history_songs_${uid}`) || '[]'); } catch (_) {}
+          const seen = new Set();
+          const merged = [];
+          for (const item of [...(prev || []), ...sanitizeList(userHistory), ...sanitizeList(savedUserHist)]) {
+            const tid = item?.id || item?.videoId;
+            if (tid && !seen.has(tid)) {
+              seen.add(tid);
+              merged.push(item);
+            }
+          }
+          const finalHist = merged.slice(0, 50);
+          try {
+            localStorage.setItem('history_songs', JSON.stringify(finalHist));
+            if (uid) localStorage.setItem(`history_songs_${uid}`, JSON.stringify(finalHist));
+          } catch (_) {}
+          return finalHist;
+        });
 
         if (Array.isArray(data.user.searchHistory) && data.user.searchHistory.length > 0) {
           localStorage.setItem(`afterhours_recent_searches_${loggedInUser.userId}`, JSON.stringify(data.user.searchHistory.slice(0, 10)));
@@ -12740,7 +12776,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       )}
 
       {isPlaylistModalOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[2147483646] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-neutral-950/80 backdrop-blur-md" onClick={() => { setIsPlaylistModalOpen(false); setSelectedSongForPlaylist(null); }}></div>
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-sm relative z-10 p-6 shadow-2xl animate-scaleIn">
             <div className="flex items-center justify-between mb-4">

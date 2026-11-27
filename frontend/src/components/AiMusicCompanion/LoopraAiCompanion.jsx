@@ -135,6 +135,7 @@ const AI_QUICK_MOOD_CHIPS = [
 ];
 
 const NON_ORIGINAL_TRACK_REGEX = /\b(playlist|timestamps?|with\s+timestamps|compilation|jukebox|mashup|remix|slowed|reverb|reberb|lofi|lo-fi|nonstop|non-stop|hour\s+mix|best\s+of|full\s+album|audio\s+jukebox|megamix|medley)\b/i;
+const aiMoodTrackCache = new Map();
 
 const isOriginalIndividualTrack = (track) => {
   if (!track || !track.id || !isValidMusicTrack(track)) return false;

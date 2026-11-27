@@ -169,11 +169,11 @@ export default function MoodToMusicSection({
   };
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto w-full min-w-0">
+    <div className="space-y-4 sm:space-y-5 max-w-4xl mx-auto w-full min-w-0 pb-36 md:pb-24">
       {/* Hero Header */}
-      <div className="relative rounded-3xl p-5 sm:p-8 bg-gradient-to-r from-neutral-900 via-neutral-900/90 to-neutral-950 border border-amber-500/30 shadow-2xl backdrop-blur-2xl overflow-hidden">
+      <div className="relative rounded-3xl p-4 sm:p-6 bg-gradient-to-r from-neutral-900 via-neutral-900/90 to-neutral-950 border border-amber-500/30 shadow-2xl backdrop-blur-2xl overflow-hidden">
         <div className="absolute top-0 right-1/4 w-72 h-72 rounded-full bg-amber-500/10 blur-[80px] pointer-events-none" />
-        <div className="relative z-10 space-y-4">
+        <div className="relative z-10 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <span className="p-2 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 text-lg sm:text-xl">
@@ -196,14 +196,14 @@ export default function MoodToMusicSection({
           </div>
 
           {/* Natural Language Input */}
-          <form onSubmit={handleGenerate} className="space-y-3 pt-2">
+          <form onSubmit={handleGenerate} className="space-y-2.5 pt-1">
             <div className="relative">
               <input
                 type="text"
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder='E.g., "Raat mein baarish ho rahi hai, sad Hindi songs chahiye" or "Workout Punjabi dhol beats"'
-                className="w-full bg-neutral-950/80 border border-neutral-800 focus:border-amber-500/60 rounded-2xl px-4 py-3.5 pr-28 text-sm text-white placeholder-neutral-500 focus:outline-none transition-all shadow-inner"
+                className="w-full bg-neutral-950/80 border border-neutral-800 focus:border-amber-500/60 rounded-2xl px-3.5 py-3 pr-24 text-sm text-white placeholder-neutral-500 focus:outline-none transition-all shadow-inner min-h-[44px]"
               />
               <button
                 type="submit"
@@ -219,11 +219,11 @@ export default function MoodToMusicSection({
             </div>
 
             {/* Mode Selector Tabs: Moods, Activities, Music Journey */}
-            <div className="flex items-center gap-2 pt-1 border-b border-neutral-800/60 pb-2">
+            <div className="flex items-center gap-2 pt-0.5 border-b border-neutral-800/60 pb-2 overflow-x-auto no-scrollbar">
               <button
                 type="button"
                 onClick={() => setDiscoveryMode('mood')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0 min-h-[38px] ${
                   discoveryMode === 'mood'
                     ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
                     : 'bg-neutral-800/80 text-neutral-400 hover:text-white'
@@ -297,7 +297,7 @@ export default function MoodToMusicSection({
               <p className="text-[11px] font-mono uppercase tracking-wider text-neutral-400">
                 {discoveryMode === 'activity' ? 'Activity Filters:' : 'Popular Mood Shortcuts:'}
               </p>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1.5 sm:gap-2">
                 {(discoveryMode === 'activity' ? ACTIVITY_SHORTCUTS : MOOD_SHORTCUTS).map((s) => {
                   const isActive = selectedMood === s.id;
                   return (
@@ -305,7 +305,7 @@ export default function MoodToMusicSection({
                       key={s.id}
                       type="button"
                       onClick={() => handleShortcutClick(s)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer ${
+                      className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer min-h-[36px] ${
                         isActive
                           ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-[0_0_12px_rgba(var(--accent-rgb,245,158,11),0.2)]'
                           : 'bg-neutral-800/80 text-neutral-300 border-neutral-700/60 hover:bg-neutral-700/80 hover:text-white'
@@ -320,7 +320,7 @@ export default function MoodToMusicSection({
             </div>
 
             {/* Granular Preference Filters */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
               {/* Language */}
               <div>
                 <label className="block text-[10px] font-mono uppercase text-neutral-400 mb-1">Language</label>

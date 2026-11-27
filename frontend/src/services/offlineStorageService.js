@@ -45,7 +45,14 @@ class OfflineStorageService {
     }
   }
 
+  isNativeAppWrapper() {
+    return typeof window !== 'undefined' && Boolean(window.LoopraAndroid);
+  }
+
   isDownloadsGloballyEnabled() {
+    if (this.isNativeAppWrapper()) {
+      return false;
+    }
     return this.isDownloadsEnabled !== false;
   }
 
@@ -604,16 +611,45 @@ class OfflineStorageService {
       try {
         res = await fetch(streamUrl, { signal: controller.signal });
       } catch (fetchErr) {
+        console.error('[OfflineStorage] Stream fetch failed at connecting stage:', {
+          videoId,
+          streamUrl,
+          name: fetchErr?.name,
+          message: fetchErr?.message
+        });
         if (fetchErr.name === 'AbortError') {
           throw new Error('Streaming connection timed out after 20s. Backend is waking up or provider is unreachable.');
         }
-        throw fetchErr;
+        throw new Error(`Network/CORS error while fetching audio stream: ${fetchErr?.message || 'Unknown error'}`);
       } finally {
         clearTimeout(timeoutId);
       }
 
       if (!res.ok) {
-        throw new Error(`Failed to fetch audio stream for caching (HTTP ${res.status})`);
+        let errorBody = '';
+        try {
+          errorBody = await res.text();
+        } catch (_) {}
+        console.error('[OfflineStorage] Stream HTTP error at 1% stage:', {
+          videoId,
+          streamUrl,
+          status: res.status,
+          statusText: res.statusText,
+          contentType: res.headers.get('content-type'),
+          contentLength: res.headers.get('content-length'),
+          body: errorBody.slice(0, 300)
+        });
+        let parsedMsg = '';
+        try {
+          const jsonErr = JSON.parse(errorBody);
+          parsedMsg = jsonErr?.error || jsonErr?.message || '';
+        } catch (_) {}
+        throw new Error(
+          parsedMsg ||
+          (res.status === 403 || res.status === 404 || res.status === 502
+            ? `Direct audio caching is unavailable for this YouTube track (HTTP ${res.status}).`
+            : `Failed to fetch audio stream for caching (HTTP ${res.status})`)
+        );
       }
 
       const contentLengthHeader = res.headers.get('content-length');

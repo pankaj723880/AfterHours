@@ -173,7 +173,7 @@ export default function TimeMachineRadio({
   };
 
   return (
-    <div className={`w-full max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6 text-white ${USE_COMPACT_TIMEMACHINE_V2 ? 'pb-32' : 'pb-24'}`}>
+    <div className="w-full max-w-7xl mx-auto px-3 sm:px-6 py-3 sm:py-5 text-white pb-36 md:pb-24">
       {USE_COMPACT_TIMEMACHINE_V2 ? (
         /* ========================================================================= */
         /* V2 COMPACT RETRO TUNER & HIGH-DENSITY JUKEBOX (Feature Flag Gated)        */
@@ -471,12 +471,12 @@ export default function TimeMachineRadio({
 
       {/* Tracks Grid / List */}
       {isLoading ? (
-        <div className="py-20 flex flex-col items-center justify-center text-center">
-          <div className="relative w-16 h-16 mb-4">
-            <div className="absolute inset-0 rounded-full border-4 border-amber-500/20 animate-ping" />
-            <div className="w-16 h-16 rounded-full border-4 border-amber-500 border-t-transparent animate-spin" />
+        <div className="py-8 px-4 my-3 rounded-2xl bg-neutral-900/50 border border-amber-500/20 flex flex-col items-center justify-center text-center">
+          <div className="relative w-10 h-10 mb-3">
+            <div className="absolute inset-0 rounded-full border-2 border-amber-500/20 animate-ping" />
+            <div className="w-10 h-10 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
           </div>
-          <p className="text-sm font-mono text-amber-400 animate-pulse">
+          <p className="text-xs sm:text-sm font-mono text-amber-400 animate-pulse">
             Tuning into {activeEra?.decade} radio frequency...
           </p>
         </div>
