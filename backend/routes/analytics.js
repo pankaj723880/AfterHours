@@ -1,6 +1,7 @@
 import express from 'express';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, verifyToken } from '../middleware/auth.js';
 import { analyticsService } from '../services/analyticsService.js';
+import UserLocation from '../models/UserLocation.js';
 
 const router = express.Router();
 
@@ -260,6 +261,64 @@ router.post('/website-session-end', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('[Analytics Session End Error]:', err.message);
     res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * 11. POST /api/analytics/location
+ * Stores user-consented geolocation + reverse-geocoded regional metadata.
+ */
+router.post('/location', async (req, res) => {
+  try {
+    const {
+      latitude,
+      longitude,
+      accuracyMeters = null,
+      city = '',
+      state = '',
+      country = '',
+      formattedAddress = '',
+      consentGiven = false,
+      sessionId = null
+    } = req.body || {};
+
+    if (consentGiven !== true) {
+      return res.status(400).json({ success: false, error: 'Explicit location consent is required' });
+    }
+
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return res.status(400).json({ success: false, error: 'Valid latitude and longitude are required' });
+    }
+
+    let userId = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const decoded = verifyToken(authHeader.slice(7));
+        userId = decoded?.userId || decoded?._id || decoded?.id || null;
+      } catch (_) {}
+    }
+
+    const doc = await UserLocation.create({
+      userId,
+      sessionId: sessionId ? String(sessionId).slice(0, 128) : null,
+      latitude: lat,
+      longitude: lng,
+      accuracyMeters: Number.isFinite(Number(accuracyMeters)) ? Number(accuracyMeters) : null,
+      city: String(city || '').trim().slice(0, 120),
+      state: String(state || '').trim().slice(0, 120),
+      country: String(country || '').trim().slice(0, 120),
+      formattedAddress: String(formattedAddress || '').trim().slice(0, 300),
+      consentGiven: true,
+      source: 'browser_geolocation'
+    });
+
+    return res.json({ success: true, location: doc });
+  } catch (err) {
+    console.error('[Analytics Location Error]:', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to save location' });
   }
 });
 

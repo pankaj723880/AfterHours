@@ -65,8 +65,10 @@ import { getCachedCmsConfig, fetchPublicCmsConfig, applyThemeToDom, normalizeCms
 import { offlineEligibilityService } from './services/offlineEligibilityService';
 import { offlineStorageService } from './services/offlineStorageService';
 import { smartQueueService } from './services/smartQueueService';
+import { locationAnalyticsService, LOOPRA_REGIONS } from './services/locationAnalyticsService';
 import { getCachedAudioFromDB, isTrackCachedInDB, cacheSongToDB, extractCleanVideoId } from './utils/offlineAudioCache';
 import DownloadTrackButton from './components/Offline/DownloadTrackButton';
+import RegionalMusicSection from './components/Home/RegionalMusicSection';
 import UserAvatar from './components/Common/UserAvatar';
 import { getAvatarUrl } from './utils/avatar';
 import DiscoverView from './components/Discover/DiscoverView';
@@ -2368,6 +2370,9 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     };
   }, []); // Run on mount / page load
   const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
+  const [showLocationConsentBanner, setShowLocationConsentBanner] = useState(false);
+  const [showLocationDeniedModal, setShowLocationDeniedModal] = useState(false);
+  const [selectedRegion, setSelectedRegion] = useState(() => locationAnalyticsService.getSavedRegion());
   const [selectedModalRoomIds, setSelectedModalRoomIds] = useState([]);
   const [selectedModalPlaylistIds, setSelectedModalPlaylistIds] = useState([]);
   const [isSavingPlaylistTargets, setIsSavingPlaylistTargets] = useState(false);
@@ -2461,6 +2466,36 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       setToastMessage(null);
     }, duration);
   }, []);
+
+  const handleDetectLocation = useCallback(async () => {
+    const sessionId = localStorage.getItem('afterhours_session_id') || null;
+    const result = await locationAnalyticsService.requestAndSaveLocation({ token: authToken, sessionId });
+    if (result.success) {
+      if (result.region) setSelectedRegion(result.region);
+      showToast(`Regional Music set to ${result.region || 'India (Hindi)'}`);
+    } else if (result.reason === 'denied') {
+      setShowLocationDeniedModal(true);
+    } else if (result.reason === 'timeout') {
+      showToast('Location request timed out. You can pick a region manually.');
+      setShowLocationDeniedModal(true);
+    } else {
+      showToast('Location unavailable. You can pick a region manually.');
+    }
+  }, [authToken, showToast]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !navigator.geolocation) return;
+    if (locationAnalyticsService.getConsentStatus() !== null) return;
+    const t = setTimeout(async () => {
+      const perm = await locationAnalyticsService.getPermissionState();
+      if (perm === 'granted') {
+        handleDetectLocation();
+      } else if (perm === 'prompt') {
+        setShowLocationConsentBanner(true);
+      }
+    }, 6000);
+    return () => clearTimeout(t);
+  }, [handleDetectLocation]);
 
   // Continuous Listening (Autoplay Smart Queue when manual queue is exhausted)
   const [isContinuousListening, setIsContinuousListening] = useState(() => {
@@ -10407,6 +10442,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             </div>
 
             {/* Gemini AI-Powered Personalized Recommendations Lounge */}
+            {isUiVisible('section.regionalMusic') !== false && (
+              <RegionalMusicSection
+                onPlayTrack={(song, list) => handlePlayTrending(song.query || song.title, song, list)}
+                onContextMenu={handleTrackContextMenu}
+                getCleanThumbnail={getCleanThumbnail}
+                handleImageError={handleImageError}
+                fallbackTracks={uniqueTrendingSongs}
+              />
+            )}
             {isUiVisible('section.aiForYou') && (
               <PersonalizedRecommendationsSection
                 backendUrl={BACKEND_URL}
@@ -11374,47 +11418,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       </button>
                     )}
 
-                    {/* Save to Library (Rendered if this is a Shared / external playlist not yet in user's library) */}
-                    {(!playlists.some(p => p.id === selectedPlaylistForView.id) || selectedPlaylistForView.isShared) && (
-                      <button
-                        type="button"
-                        onClick={() => handleSaveSharedPlaylistToLibrary(selectedPlaylistForView)}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-500/20 border border-emerald-400/30 transition active:scale-95 cursor-pointer"
-                        title="Save Playlist to Library"
-                        aria-label="Save Playlist to Library"
-                      >
-                        <Icon name="plus" className="w-3.5 h-3.5" />
-                        <span>Save to Library</span>
-                      </button>
-                    )}
-
-                    {/* Only show Rename and Delete if it's the user's own local playlist */}
-                    {playlists.some(p => p.id === selectedPlaylistForView.id) && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleRenamePlaylist(selectedPlaylistForView.id)}
-                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 text-neutral-200 border border-neutral-700/60 text-xs font-semibold transition active:scale-95 cursor-pointer"
-                          title="Rename Playlist"
-                          aria-label="Rename Playlist"
-                        >
-                          <Icon name="edit" className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                          <span>Rename</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeletePlaylist(selectedPlaylistForView.id)}
-                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-800/80 hover:bg-red-500/20 text-neutral-200 hover:text-red-300 border border-neutral-700/60 hover:border-red-500/40 text-xs font-semibold transition active:scale-95 cursor-pointer"
-                          title="Delete Playlist"
-                          aria-label="Delete Playlist"
-                        >
-                          <Icon name="trash" className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                          <span>Delete</span>
-                        </button>
-                      </>
-                    )}
-
                     {/* Share Playlist Button */}
                     <button
                       type="button"
@@ -11765,6 +11768,102 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       </main>
     );
   })()}
+      {showLocationConsentBanner && (
+        <div className="fixed bottom-36 sm:bottom-28 left-4 sm:left-auto sm:right-20 mb-[env(safe-area-inset-bottom)] z-[9990] max-w-xs p-3.5 rounded-2xl bg-neutral-900/95 border border-amber-500/30 shadow-2xl backdrop-blur-xl space-y-2.5 animate-fadeIn">
+          <div className="text-xs text-white font-semibold">
+            Share your approximate region?
+          </div>
+          <p className="text-[11px] text-neutral-400 leading-relaxed">
+            Optional: helps Loopra improve regional music discovery. You can skip anytime without affecting playback.
+          </p>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                locationAnalyticsService.setConsentStatus('dismissed');
+                setShowLocationConsentBanner(false);
+              }}
+              className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-neutral-400 hover:text-white cursor-pointer"
+            >
+              Not Now
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                setShowLocationConsentBanner(false);
+                await handleDetectLocation();
+              }}
+              className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 text-[11px] font-bold cursor-pointer"
+            >
+              Use My Location
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showLocationDeniedModal && (
+        <div className="fixed inset-0 z-[2147483645] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl bg-neutral-900 border border-neutral-800 p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white">Regional Music & Location</h3>
+              <button
+                type="button"
+                onClick={() => setShowLocationDeniedModal(false)}
+                className="text-xs text-neutral-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-neutral-300 leading-relaxed">
+              Location permission is currently blocked. To re-enable it, click the <strong>Tune / Lock icon</strong> in your browser address bar → <strong>Site settings</strong> → <strong>Reset permissions</strong> (or allow Location), then tap <strong>Detect Location</strong>.
+            </p>
+            <div className="space-y-2">
+              <p className="text-[11px] font-mono uppercase text-neutral-400">Or select your region manually ({selectedRegion}):</p>
+              <div className="flex flex-wrap gap-1.5">
+                {LOOPRA_REGIONS.map((region) => (
+                  <button
+                    key={region}
+                    type="button"
+                    onClick={() => {
+                      setSelectedRegion(region);
+                      locationAnalyticsService.setSavedRegion(region);
+                      setShowLocationDeniedModal(false);
+                      showToast(`Regional Music set to ${region}`, 'success');
+                    }}
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold border transition cursor-pointer ${
+                      selectedRegion === region
+                        ? 'bg-amber-500 text-neutral-950 border-amber-400'
+                        : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:text-white'
+                    }`}
+                  >
+                    {region}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={() => setShowLocationDeniedModal(false)}
+                className="px-3 py-1.5 rounded-xl text-xs text-neutral-400 hover:text-white cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLocationDeniedModal(false);
+                  handleDetectLocation();
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 text-xs font-bold cursor-pointer"
+              >
+                Detect Location
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <SimilarSongsModal
         isOpen={Boolean(similarSongsTrack)}
         onClose={() => setSimilarSongsTrack(null)}

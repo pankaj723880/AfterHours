@@ -1430,18 +1430,18 @@ export default function CmsGlobalSettings({
       {/* V2 Sticky Frosted Save & Publish Action Bar docked above mini-player */}
       {(onSaveDraft || onPublishLive) && (
         USE_V2_CMS_PAGES ? (
-          <div className="sticky bottom-20 z-20 backdrop-blur-md bg-black/80 border-t border-white/10 p-3 rounded-2xl flex items-center justify-between gap-2.5 shadow-2xl">
+          <div className="w-fit max-w-full sm:max-w-md mx-auto sticky bottom-4 z-20 backdrop-blur-md bg-neutral-950/90 border border-white/15 px-3 py-2 rounded-2xl flex flex-wrap items-center justify-center gap-2.5 shadow-2xl">
             <div className="text-[11px] text-zinc-400 truncate flex items-center gap-1.5 min-w-0">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
               <span className="truncate">Draft: <strong className="text-white capitalize">{activeTab}</strong></span>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
               {onSaveDraft && (
                 <button
                   type="button"
                   disabled={isSavingDraft}
                   onClick={onSaveDraft}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-zinc-200 text-xs font-semibold border border-white/15 transition cursor-pointer disabled:opacity-50"
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-zinc-200 text-xs font-semibold border border-white/15 transition cursor-pointer disabled:opacity-50"
                 >
                   <Save className="w-3.5 h-3.5" />
                   <span>{isSavingDraft ? 'Saving...' : 'Save Draft'}</span>
@@ -1452,7 +1452,7 @@ export default function CmsGlobalSettings({
                   type="button"
                   disabled={isPublishingLive}
                   onClick={onPublishLive}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 text-xs font-bold transition shadow-md shadow-amber-500/20 cursor-pointer disabled:opacity-50"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 text-xs font-bold transition shadow-md shadow-amber-500/20 cursor-pointer disabled:opacity-50"
                 >
                   <UploadCloud className="w-3.5 h-3.5" />
                   <span>{isPublishingLive ? 'Publishing...' : 'Publish Live'}</span>

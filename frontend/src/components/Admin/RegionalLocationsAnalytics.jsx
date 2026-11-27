@@ -1,0 +1,188 @@
+import React, { useEffect, useState, useCallback } from 'react';
+import { MapPin, RefreshCw, Globe, Navigation } from 'lucide-react';
+import { getApiUrl } from '../../utils/apiUrl';
+
+export default function RegionalLocationsAnalytics({ token, backendUrl }) {
+  const [data, setData] = useState({ total: 0, byCountry: [], byRegion: [], byCity: [], recentLocations: [] });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const fetchLocations = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    setError('');
+    try {
+      const endpoint = backendUrl
+        ? `${String(backendUrl).replace(/\/$/, '')}/api/admin/locations`
+        : getApiUrl('/api/admin/locations');
+      const res = await fetch(endpoint, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error(`Location API returned non-JSON response (HTTP ${res.status}). Check backend/proxy URL.`);
+      }
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `Failed to load location analytics (HTTP ${res.status})`);
+      }
+      setData(json);
+    } catch (err) {
+      setError(err.message || 'Unable to fetch regional locations');
+    } finally {
+      setLoading(false);
+    }
+  }, [token, backendUrl]);
+
+  useEffect(() => {
+    fetchLocations();
+  }, [fetchLocations]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-amber-400" />
+            <span>User Locations & Regional Analytics</span>
+          </h2>
+          <p className="text-xs text-neutral-400">
+            Permitted user locations saved with explicit browser Geolocation consent
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={fetchLocations}
+          disabled={loading}
+          className="px-3.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-white border border-neutral-700 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          <span>Refresh</span>
+        </button>
+      </div>
+
+      {error && (
+        <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300">
+          {error}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800">
+          <p className="text-[11px] font-mono uppercase text-neutral-400">Permitted Locations</p>
+          <p className="text-2xl font-black text-white mt-1">{data.total || 0}</p>
+        </div>
+        <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800">
+          <p className="text-[11px] font-mono uppercase text-neutral-400">Top Country</p>
+          <p className="text-lg font-bold text-amber-400 mt-1 truncate">
+            {data.byCountry?.[0]?.country || '—'} {data.byCountry?.[0] ? `(${data.byCountry[0].count})` : ''}
+          </p>
+        </div>
+        <div className="p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800">
+          <p className="text-[11px] font-mono uppercase text-neutral-400">Top City</p>
+          <p className="text-lg font-bold text-emerald-400 mt-1 truncate">
+            {data.byCity?.[0]?.city || '—'} {data.byCity?.[0] ? `(${data.byCity[0].count})` : ''}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="p-4 rounded-2xl bg-neutral-900/70 border border-neutral-800 space-y-2">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-1.5">
+            <Globe className="w-3.5 h-3.5 text-amber-400" />
+            <span>By Country</span>
+          </h3>
+          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+            {(data.byCountry || []).length === 0 ? (
+              <p className="text-xs text-neutral-500">No country data yet.</p>
+            ) : (
+              data.byCountry.map((item) => (
+                <div key={item.country} className="flex items-center justify-between text-xs py-1 border-b border-neutral-800/60">
+                  <span className="text-neutral-200 truncate">{item.country}</span>
+                  <span className="font-mono text-amber-400 font-bold">{item.count}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-neutral-900/70 border border-neutral-800 space-y-2">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-300">By State / Region</h3>
+          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+            {(data.byRegion || []).length === 0 ? (
+              <p className="text-xs text-neutral-500">No region data yet.</p>
+            ) : (
+              data.byRegion.map((item, i) => (
+                <div key={`${item.state}-${i}`} className="flex items-center justify-between text-xs py-1 border-b border-neutral-800/60">
+                  <span className="text-neutral-200 truncate">{item.state}{item.country ? `, ${item.country}` : ''}</span>
+                  <span className="font-mono text-amber-400 font-bold">{item.count}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-neutral-900/70 border border-neutral-800 space-y-2">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-300">By City</h3>
+          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+            {(data.byCity || []).length === 0 ? (
+              <p className="text-xs text-neutral-500">No city data yet.</p>
+            ) : (
+              data.byCity.map((item, i) => (
+                <div key={`${item.city}-${i}`} className="flex items-center justify-between text-xs py-1 border-b border-neutral-800/60">
+                  <span className="text-neutral-200 truncate">{item.city}{item.state ? `, ${item.state}` : ''}</span>
+                  <span className="font-mono text-emerald-400 font-bold">{item.count}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl bg-neutral-900/70 border border-neutral-800 overflow-hidden">
+        <div className="px-4 py-3 border-b border-neutral-800 flex items-center gap-2">
+          <Navigation className="w-4 h-4 text-amber-400" />
+          <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-300">Recent Permitted Locations</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-neutral-950/60 text-neutral-400 font-mono text-[11px]">
+              <tr>
+                <th className="px-4 py-2.5">User / Session</th>
+                <th className="px-4 py-2.5">City / State / Country</th>
+                <th className="px-4 py-2.5">Coordinates</th>
+                <th className="px-4 py-2.5">Timestamp</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-800/70">
+              {(data.recentLocations || []).length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-4 py-6 text-center text-neutral-500">
+                    No permitted user locations recorded yet.
+                  </td>
+                </tr>
+              ) : (
+                data.recentLocations.map((loc) => (
+                  <tr key={loc._id} className="hover:bg-neutral-800/40">
+                    <td className="px-4 py-2.5 text-neutral-200">
+                      {loc.userId?.username || loc.userId?.displayName || loc.sessionId || 'Guest'}
+                    </td>
+                    <td className="px-4 py-2.5 text-neutral-300">
+                      {[loc.city, loc.state, loc.country].filter(Boolean).join(', ') || 'Unknown'}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-[11px] text-amber-300">
+                      {Number(loc.latitude).toFixed(4)}, {Number(loc.longitude).toFixed(4)}
+                    </td>
+                    <td className="px-4 py-2.5 text-neutral-400">
+                      {loc.createdAt ? new Date(loc.createdAt).toLocaleString() : '—'}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

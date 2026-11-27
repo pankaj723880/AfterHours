@@ -2198,4 +2198,48 @@ router.post('/relax/verify-audio', authenticateToken, requireAdmin, async (req, 
   }
 });
 
+router.get('/locations', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { default: UserLocation } = await import('../models/UserLocation.js');
+    const [total, byCountry, byRegion, byCity, recentLocations] = await Promise.all([
+      UserLocation.countDocuments(),
+      UserLocation.aggregate([
+        { $match: { country: { $ne: '' } } },
+        { $group: { _id: '$country', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 20 }
+      ]),
+      UserLocation.aggregate([
+        { $match: { state: { $ne: '' } } },
+        { $group: { _id: { state: '$state', country: '$country' }, count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 20 }
+      ]),
+      UserLocation.aggregate([
+        { $match: { city: { $ne: '' } } },
+        { $group: { _id: { city: '$city', state: '$state', country: '$country' }, count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 20 }
+      ]),
+      UserLocation.find()
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .populate('userId', 'username displayName email')
+        .lean()
+    ]);
+
+    return res.json({
+      success: true,
+      total,
+      byCountry: byCountry.map(c => ({ country: c._id, count: c.count })),
+      byRegion: byRegion.map(r => ({ state: r._id.state, country: r._id.country, count: r.count })),
+      byCity: byCity.map(c => ({ city: c._id.city, state: c._id.state, country: c._id.country, count: c.count })),
+      recentLocations
+    });
+  } catch (err) {
+    console.error('[Admin Locations Error]:', err.message);
+    return res.status(500).json({ success: false, error: 'Failed to load regional location analytics' });
+  }
+});
+
 export default router;

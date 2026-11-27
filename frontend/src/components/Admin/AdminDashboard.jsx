@@ -48,6 +48,7 @@ import LiveTraffic from './LiveTraffic';
 import UserManagement from './UserManagement';
 import ServerHealth from './ServerHealth';
 import MusicAnalytics from './MusicAnalytics';
+import RegionalLocationsAnalytics from './RegionalLocationsAnalytics';
 import AuditLogs from './AuditLogs';
 import ActivityModeration from './ActivityModeration';
 import OfflineLicenseManagement from './OfflineLicenseManagement';
@@ -464,6 +465,7 @@ export default function AdminDashboard({
     { id: 'activity', label: 'Activity Moderation', icon: Activity },
     { id: 'health', label: 'API & Diagnostics', icon: Server },
     { id: 'music', label: 'Music Analytics', icon: Music2 },
+    { id: 'locations', label: 'User Locations', icon: Activity },
     { id: 'audit', label: 'Audit Logs', icon: ShieldCheck }
   ];
 
@@ -1068,6 +1070,13 @@ export default function AdminDashboard({
             <MusicAnalytics 
               token={token} 
               backendUrl={cleanBackendUrl} 
+            />
+          )}
+
+          {activeSubTab === 'locations' && (
+            <RegionalLocationsAnalytics
+              token={token}
+              backendUrl={cleanBackendUrl}
             />
           )}
 
