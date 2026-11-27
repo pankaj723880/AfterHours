@@ -1826,6 +1826,8 @@ export default function App() {
           if (!isMounted) return;
           if (updateResult && updateResult.shouldPrompt && isRunningInAndroidApp()) {
             setPendingAppUpdate(updateResult);
+          } else {
+            setPendingAppUpdate(null);
           }
         })
         .catch((err) => {
