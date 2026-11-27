@@ -3190,9 +3190,13 @@ app.get([
   const invidiousSuccess = await streamViaInvidious(cleanId, res);
   if (invidiousSuccess) return;
 
-  // Last resort error
+  // Last resort structured JSON error (never hang past Render's request timeout)
   if (!res.headersSent) {
+    console.warn(`[AudioStream] All providers failed for videoId=${cleanId}`);
     res.status(502).json({
+      status: 502,
+      code: 'STREAM_UNAVAILABLE',
+      reason: 'All audio stream providers failed or were blocked by cloud IP restrictions.',
       error: 'Failed to stream real audio for track across all providers',
       videoId: cleanId
     });

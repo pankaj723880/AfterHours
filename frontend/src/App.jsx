@@ -6970,7 +6970,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   }, [activeTab]);
 
   const handleDownloadApk = useCallback(async (e) => {
-    if (e && typeof e.stopPropagation === 'function') {
+    if (!e || (e.type !== 'click' && !e.isTrusted)) {
+      return;
+    }
+    if (typeof e.stopPropagation === 'function') {
       e.stopPropagation();
     }
     try {
@@ -6987,7 +6990,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             showToast(`Loopra is already up to date (v${installed.versionName}).`, 'success');
             return;
           }
-          const triggered = triggerApkDownload(getDirectApkDownloadUrl(manifest), manifest);
+          const triggered = triggerApkDownload(getDirectApkDownloadUrl(manifest), manifest, { userInitiated: true });
           if (triggered) {
             showToast(`Downloading Loopra update (v${manifest.versionName})...`, 'success');
           } else {
@@ -7000,7 +7003,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       // Web Browser Environment: Directly initiate real APK file download via dedicated direct URL
       const targetManifest = publishedVersionInfo || await fetchPublishedAppVersion(BACKEND_URL);
       const apkUrl = getDirectApkDownloadUrl(targetManifest);
-      const triggered = triggerApkDownload(apkUrl, targetManifest);
+      const triggered = triggerApkDownload(apkUrl, targetManifest, { userInitiated: true });
       if (triggered) {
         showToast('Downloading Loopra Android APK...', 'success');
       } else {

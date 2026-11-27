@@ -348,7 +348,16 @@ export function getDirectApkDownloadUrl(manifest = null) {
 /**
  * Initiates APK download for Android users.
  */
-export function triggerApkDownload(downloadUrl, manifest = null) {
+export function triggerApkDownload(downloadUrl, manifest = null, options = {}) {
+  const { userInitiated = false } = options || {};
+  const hasUserActivation = typeof navigator !== 'undefined' && navigator.userActivation
+    ? navigator.userActivation.isActive
+    : false;
+
+  if (!userInitiated && !hasUserActivation) {
+    console.warn('[appUpdateService] Blocked automatic APK download without explicit user click.');
+    return false;
+  }
   const publishedCode = manifest?.versionCode || 21;
   const directUrl = downloadUrl || getDirectApkDownloadUrl(manifest);
 
