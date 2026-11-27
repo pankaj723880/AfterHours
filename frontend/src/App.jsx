@@ -54,7 +54,7 @@ const DjClubPage = lazyWithRetry(() => import('./components/DjClub/DjClubPage'),
 const RelaxModeView = lazyWithRetry(() => import('./components/Relax/RelaxModeView'), 'retry_relax');
 import CinematicVideoPlayer from './components/Player/CinematicVideoPlayer';
 import { requestVideoPictureInPicture, requestAudioPictureInPicture } from './utils/pictureInPictureManager';
-const AppSplashScreen = lazy(() => import('./components/Common/AppSplashScreen'));
+import AppSplashScreen from './components/Common/AppSplashScreen';
 import CmsAnnouncementBar from './components/Common/CmsAnnouncementBar';
 import CmsHeroBanner from './components/Common/CmsHeroBanner';
 import CmsMaintenanceOverlay from './components/Common/CmsMaintenanceOverlay';
