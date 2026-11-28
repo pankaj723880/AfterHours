@@ -2108,6 +2108,9 @@ app.post(['/api/user/:id/sync', '/user/:id/sync'], async (req, res) => {
   }
 });
 
+// Mount UI Element Visibility Configuration (Public GET /api/ui-config, Admin PATCH /api/admin/ui-config)
+app.use(['/api/admin/ui-config', '/api/ui-config/admin/ui-config', '/api/ui-config', '/ui-config'], uiConfigRoutes);
+
 // Mount Protected Admin Routes
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/cms', adminCmsRoutes);

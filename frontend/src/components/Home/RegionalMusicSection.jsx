@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { MapPin, Play, MoreVertical, RefreshCw } from 'lucide-react';
 import { getApiUrl } from '../../utils/apiUrl';
 import { REGIONAL_SEED_POOLS } from '../../constants/regionalSeedPools';
+import { locationAnalyticsService, mapGeoToLoopraRegionId } from '../../services/locationAnalyticsService';
 
 const REGIONS = [
   { id: 'in-hindi', label: 'India (Hindi)', query: 'latest hindi trending songs official audio' },
@@ -76,33 +77,8 @@ const LANGUAGES = [
   'English'
 ];
 
-function mapLocationToRegionId(state = '', country = '', city = '') {
-  const s = `${city} ${state} ${country}`.toLowerCase();
-  // Bihar sub-regions
-  if (/(darbhanga|madhubani|samastipur|begusarai|saharsa|supaul|mithila)/i.test(s)) return 'in-maithili';
-  if (/(patna|gaya|nalanda|nawada|aurangabad|jehanabad|magadh)/i.test(s)) return 'in-magahi';
-  if (/(bhagalpur|munger|banka|jamui|lakhisarai|anga)/i.test(s)) return 'in-angika';
-  if (/(champaran|motihari|bettiah|saran|chhapra|siwan|gopalganj|bhojpur|ara|buxar|bihar)/i.test(s)) return 'in-bhojpuri';
-  // UP sub-regions
-  if (/(varanasi|gorakhpur|azamgarh|ballia|ghazipur|jaunpur|deoria|mau|basti|mirzapur|prayagraj|purvanchal)/i.test(s)) return 'in-bhojpuri';
-  if (/(lucknow|ayodhya|faizabad|kanpur|barabanki|sitapur|awadh|agra|mathura|vrindavan|aligarh|meerut|noida|ghaziabad|bareilly|braj|uttar pradesh)/i.test(s)) return 'in-hindi';
-  // Uttarakhand sub-regions
-  if (/(nainital|haldwani|almora|pithoragarh|bageshwar|champawat|udham singh nagar|kumaon)/i.test(s)) return 'in-kumaoni';
-  if (/(dehradun|rishikesh|haridwar|tehri|pauri|chamoli|uttarkashi|rudraprayag|garhwal|uttarakhand)/i.test(s)) return 'in-garhwali';
-  // Himachal Pradesh & Jharkhand & North Bengal
-  if (/(himachal|shimla|manali|kullu|kangra|dharamshala|mandi|solan|chamba|hamirpur|una|bilaspur|kinnaur|lahaul|spiti)/i.test(s)) return 'in-himachali';
-  if (/(jharkhand|ranchi|jamshedpur|dhanbad|bokaro|hazaribagh|deoghar|dumka|giridih|palamu|singhbhum)/i.test(s)) return 'in-jharkhand';
-  if (/(siliguri|darjeeling|jalpaiguri|cooch behar|alipurduar|kalimpong|malda|north bengal|bengal|kolkata)/i.test(s)) return 'in-bengal';
-  // Major states
-  if (s.includes('punjab') || s.includes('chandigarh') || s.includes('haryana')) return 'in-punjab';
-  if (s.includes('maharashtra') || s.includes('mumbai') || s.includes('pune')) return 'in-maharashtra';
-  if (s.includes('tamil') || s.includes('chennai')) return 'in-tamil';
-  if (s.includes('telangana') || s.includes('andhra') || s.includes('hyderabad')) return 'in-telugu';
-  if (s.includes('karnataka') || s.includes('bengaluru') || s.includes('bangalore')) return 'in-karnataka';
-  if (s.includes('kerala') || s.includes('kochi')) return 'in-kerala';
-  if (s.includes('gujarat') || s.includes('ahmedabad') || s.includes('surat')) return 'in-gujarat';
-  if (s.includes('india')) return 'in-hindi';
-  return 'global';
+function mapLocationToRegionId(state = '', country = '', city = '', district = '') {
+  return mapGeoToLoopraRegionId({ state, country, city, district });
 }
 
 export default function RegionalMusicSection({
@@ -231,6 +207,38 @@ export default function RegionalMusicSection({
     fetchRegionalTracks(activeRegion);
   }, [activeRegion, fetchRegionalTracks]);
 
+  // Sync immediately when silent location detection detects a fresh region on app open or resume
+  useEffect(() => {
+    const handleRegionDetected = (e) => {
+      const { regionId, label, source } = e.detail || {};
+      if (regionId && REGIONS.some(r => r.id === regionId)) {
+        setSelectedRegionId(regionId);
+        if (source) setRegionSource(source);
+        if (label) setDetectedLabel(label);
+      }
+    };
+
+    const handleStorageChange = (e) => {
+      if (e.key === 'loopra_user_region_v2' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed?.regionId && REGIONS.some(r => r.id === parsed.regionId)) {
+            setSelectedRegionId(parsed.regionId);
+            if (parsed.source) setRegionSource(parsed.source);
+            if (parsed.label) setDetectedLabel(parsed.label);
+          }
+        } catch (_) {}
+      }
+    };
+
+    window.addEventListener('loopra:region:detected', handleRegionDetected);
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('loopra:region:detected', handleRegionDetected);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+
   const fallbackToIpLocation = useCallback(async (showDeniedHint = false) => {
     try {
       const res = await fetch('https://ipapi.co/json/');
@@ -256,65 +264,22 @@ export default function RegionalMusicSection({
     setLocationNotice('');
     setIsDetecting(true);
     try {
-      if (typeof navigator === 'undefined' || !navigator.geolocation) {
-        await fallbackToIpLocation(false);
-        return;
-      }
-
-      let permState = 'prompt';
-      if (navigator.permissions?.query) {
-        try {
-          const status = await navigator.permissions.query({ name: 'geolocation' });
-          permState = status.state;
-        } catch (_) {}
-      }
-
-      if (permState === 'denied') {
+      const sessionId = localStorage.getItem('afterhours_session_id') || null;
+      const res = await locationAnalyticsService.requestAndSaveLocation({ sessionId });
+      if (res?.success && res?.regionId) {
+        setSelectedRegionId(res.regionId);
+        setRegionSource('gps');
+        if (res.location?.city || res.location?.state) {
+          const l = res.location.city ? `${res.location.city}, ${res.location.state || res.location.country}` : (res.location.state || res.location.country);
+          setDetectedLabel(l);
+        }
+      } else if (res?.reason === 'denied') {
         await fallbackToIpLocation(true);
-        return;
+      } else {
+        await fallbackToIpLocation(false);
       }
-
-      await new Promise((resolve) => {
-        navigator.geolocation.getCurrentPosition(
-          async (pos) => {
-            try {
-              const controller = new AbortController();
-              const timer = setTimeout(() => controller.abort(), 5000);
-              const res = await fetch(
-                `https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`,
-                { signal: controller.signal }
-              );
-              clearTimeout(timer);
-              if (res.ok) {
-                const geo = await res.json();
-                const addr = geo?.address || {};
-                const city = addr.city || addr.town || addr.state_district || '';
-                const state = addr.state || '';
-                const country = addr.country || '';
-                const label = city ? `${city}, ${state || country}` : state || country;
-                const mapped = mapLocationToRegionId(state, country, city);
-                setSelectedRegionId(mapped);
-                setRegionSource('gps');
-                setDetectedLabel(label);
-                saveRegionMeta({
-                  regionId: mapped,
-                  source: 'gps',
-                  label,
-                  coords: { lat: pos.coords.latitude, lng: pos.coords.longitude }
-                });
-              }
-            } catch (_) {
-              await fallbackToIpLocation(false);
-            }
-            resolve();
-          },
-          async (err) => {
-            await fallbackToIpLocation(err?.code === 1);
-            resolve();
-          },
-          { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
-        );
-      });
+    } catch (_) {
+      await fallbackToIpLocation(false);
     } finally {
       setIsDetecting(false);
     }

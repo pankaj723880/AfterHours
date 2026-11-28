@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { MapPin, RefreshCw, Globe, Navigation, Power } from 'lucide-react';
+import { MapPin, RefreshCw, Globe, Navigation, Power, Radio } from 'lucide-react';
 import { getApiUrl } from '../../utils/apiUrl';
 import { useUiConfig } from '../../context/UiConfigContext';
+import { socket as fallbackSocket } from '../../App';
 
-export default function RegionalLocationsAnalytics({ token, backendUrl }) {
+export default function RegionalLocationsAnalytics({ token, backendUrl, socket }) {
   const { isVisible, updateVisibility } = useUiConfig();
   const isRegionalEnabled = isVisible('section.regionalMusic') !== false;
   const [isToggling, setIsToggling] = useState(false);
@@ -42,16 +43,49 @@ export default function RegionalLocationsAnalytics({ token, backendUrl }) {
     fetchLocations();
   }, [fetchLocations]);
 
+  // Real-time live location reporting over Socket.io
+  useEffect(() => {
+    const activeSocket = socket || fallbackSocket;
+    if (!activeSocket) return;
+
+    const handleLocationRecorded = (payload) => {
+      const newLoc = payload?.location;
+      if (!newLoc || !newLoc._id) return;
+
+      setData((prev) => {
+        const prevRecent = prev.recentLocations || [];
+        if (prevRecent.some(r => r._id === newLoc._id)) return prev;
+
+        return {
+          ...prev,
+          total: (prev.total || 0) + 1,
+          recentLocations: [newLoc, ...prevRecent].slice(0, 50)
+        };
+      });
+    };
+
+    activeSocket.on('location:recorded', handleLocationRecorded);
+    return () => {
+      activeSocket.off('location:recorded', handleLocationRecorded);
+    };
+  }, [socket]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <MapPin className="w-5 h-5 text-amber-400" />
-            <span>User Locations & Regional Analytics</span>
-          </h2>
-          <p className="text-xs text-neutral-400">
-            Permitted user locations saved with explicit browser Geolocation consent
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-amber-400" />
+              <span>User Locations & Regional Analytics</span>
+            </h2>
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              Live Sync
+            </span>
+          </div>
+          <p className="text-xs text-neutral-400 mt-0.5">
+            Real-time permitted user locations sent on every app open with exact GPS coordinates & district/sub-region
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -168,44 +202,88 @@ export default function RegionalLocationsAnalytics({ token, backendUrl }) {
       </div>
 
       <div className="rounded-2xl bg-neutral-900/70 border border-neutral-800 overflow-hidden">
-        <div className="px-4 py-3 border-b border-neutral-800 flex items-center gap-2">
-          <Navigation className="w-4 h-4 text-amber-400" />
-          <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-300">Recent Permitted Locations</h3>
+        <div className="px-4 py-3 border-b border-neutral-800 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Navigation className="w-4 h-4 text-amber-400" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-300">Recent Permitted Locations</h3>
+          </div>
+          <span className="text-[11px] font-mono text-neutral-400">
+            Showing {(data.recentLocations || []).length} most recent
+          </span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-neutral-950/60 text-neutral-400 font-mono text-[11px]">
               <tr>
                 <th className="px-4 py-2.5">User / Session</th>
-                <th className="px-4 py-2.5">City / State / Country</th>
-                <th className="px-4 py-2.5">Coordinates</th>
+                <th className="px-4 py-2.5">City & District</th>
+                <th className="px-4 py-2.5">Sub-Region / State</th>
+                <th className="px-4 py-2.5">Exact Coordinates</th>
                 <th className="px-4 py-2.5">Timestamp</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-800/70">
               {(data.recentLocations || []).length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-neutral-500">
+                  <td colSpan={5} className="px-4 py-6 text-center text-neutral-500">
                     No permitted user locations recorded yet.
                   </td>
                 </tr>
               ) : (
-                data.recentLocations.map((loc) => (
-                  <tr key={loc._id} className="hover:bg-neutral-800/40">
-                    <td className="px-4 py-2.5 text-neutral-200">
-                      {loc.userId?.username || loc.userId?.displayName || loc.sessionId || 'Guest'}
-                    </td>
-                    <td className="px-4 py-2.5 text-neutral-300">
-                      {[loc.city, loc.state, loc.country].filter(Boolean).join(', ') || 'Unknown'}
-                    </td>
-                    <td className="px-4 py-2.5 font-mono text-[11px] text-amber-300">
-                      {Number(loc.latitude).toFixed(4)}, {Number(loc.longitude).toFixed(4)}
-                    </td>
-                    <td className="px-4 py-2.5 text-neutral-400">
-                      {loc.createdAt ? new Date(loc.createdAt).toLocaleString() : '—'}
-                    </td>
-                  </tr>
-                ))
+                data.recentLocations.map((loc) => {
+                  const cityPart = loc.city || '';
+                  const districtPart = loc.district && loc.district !== loc.city ? loc.district : '';
+                  const subregionPart = loc.subregion || '';
+                  const stateCountry = [loc.state, loc.country].filter(Boolean).join(', ');
+
+                  return (
+                    <tr key={loc._id} className="hover:bg-neutral-800/40">
+                      <td className="px-4 py-2.5 text-neutral-200">
+                        <div className="font-medium text-white truncate max-w-[140px]">
+                          {loc.userId?.displayName || loc.userId?.username || 'Guest'}
+                        </div>
+                        {loc.sessionId && (
+                          <div className="text-[10px] font-mono text-neutral-500 truncate max-w-[140px]">
+                            {loc.sessionId.slice(0, 14)}...
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-neutral-300">
+                        <div className="font-semibold text-neutral-100">
+                          {cityPart || districtPart || 'Unknown'}
+                        </div>
+                        {districtPart && districtPart !== cityPart && (
+                          <div className="text-[11px] text-amber-400/90 font-medium">
+                            District: {districtPart}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-neutral-300">
+                        {subregionPart && (
+                          <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 mb-0.5">
+                            {subregionPart}
+                          </span>
+                        )}
+                        <div className="text-xs text-neutral-400">
+                          {stateCountry || '—'}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-[11px] text-amber-300 whitespace-nowrap">
+                        <div>
+                          {Number(loc.latitude).toFixed(4)}, {Number(loc.longitude).toFixed(4)}
+                        </div>
+                        {Number.isFinite(loc.accuracyMeters) && loc.accuracyMeters > 0 && (
+                          <div className="text-[10px] text-neutral-400">
+                            ±{Math.round(loc.accuracyMeters)}m
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-neutral-400 whitespace-nowrap">
+                        {loc.createdAt ? new Date(loc.createdAt).toLocaleString() : '—'}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

@@ -401,6 +401,23 @@ export default function PersonalizedRecommendationsSection({
     fetchRecommendations(false);
   }, [fetchRecommendations, onTracksRendered]);
 
+  
+  // Fallback curated data when no recommendations and no cache (e.g., API down)
+  useEffect(() => {
+    if (!data && !loading) {
+      const allCurated = Object.values(CURATED_STATION_TRACKS || {}).flat().filter(t => isSingleSong(t));
+      if (allCurated.length > 0) {
+        const fallbackData = {
+          madeForYou: allCurated.slice(0, 6),
+          dailyMix: allCurated.slice(6, 12),
+          discover: allCurated.slice(12, 18),
+          isGuest: true
+        };
+        setData(fallbackData);
+      }
+    }
+  }, [data, loading]);
+
   const handleManualRefresh = async () => {
     if (!authToken) {
       // Guest or local user: meaningfully rotate and re-rank recommendations using local taste
@@ -803,19 +820,8 @@ export default function PersonalizedRecommendationsSection({
     );
   }
 
-  if (!data) {
-    // If data is temporarily empty, populate instant curated fallback (strictly single songs)
-    const allCurated = Object.values(CURATED_STATION_TRACKS || {}).flat().filter(t => isSingleSong(t));
-    if (allCurated.length > 0) {
-      const fallbackData = {
-        madeForYou: allCurated.slice(0, 6),
-        dailyMix: allCurated.slice(6, 12),
-        discover: allCurated.slice(12, 18),
-        isGuest: true
-      };
-      setData(fallbackData);
-    }
-  }
+  // NOTE: Fallback data population moved to useEffect to avoid state updates during render.
+
 
   const isGeminiPowered = data?.source === 'gemini';
   const isNewUser = Boolean(data?.isNewUser || data?.isGuest);

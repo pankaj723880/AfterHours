@@ -32,11 +32,19 @@ const userLocationSchema = new mongoose.Schema(
       type: String,
       default: ''
     },
+    district: {
+      type: String,
+      default: ''
+    },
     state: {
       type: String,
       default: ''
     },
     country: {
+      type: String,
+      default: ''
+    },
+    subregion: {
       type: String,
       default: ''
     },

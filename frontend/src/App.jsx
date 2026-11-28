@@ -2289,8 +2289,15 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     return sanitizeList(u ? JSON.parse(localStorage.getItem('liked_songs') || '[]') : []);
   });
   const [history, setHistory] = useState(() => {
-    const u = getTabAuthUser();
-    return sanitizeList(u ? JSON.parse(localStorage.getItem('history_songs') || '[]') : []);
+    try {
+      const u = getTabAuthUser();
+      const saved = u
+        ? (localStorage.getItem(`history_songs_${u.userId}`) || localStorage.getItem('history_songs') || localStorage.getItem('guest_history_songs'))
+        : (localStorage.getItem('guest_history_songs') || localStorage.getItem('history_songs'));
+      return sanitizeList(saved ? JSON.parse(saved) : []);
+    } catch (_) {
+      return [];
+    }
   });
   const [playlists, setPlaylists] = useState(() => {
     try {
@@ -2493,17 +2500,49 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       return;
     }
     if (typeof window === 'undefined' || !navigator.geolocation) return;
-    if (locationAnalyticsService.getConsentStatus() !== null) return;
-    const t = setTimeout(async () => {
-      const perm = await locationAnalyticsService.getPermissionState();
-      if (perm === 'granted') {
-        handleDetectLocation();
-      } else if (perm === 'prompt') {
-        setShowLocationConsentBanner(true);
+    let cancelled = false;
+
+    const syncLocationIfPermitted = async () => {
+      try {
+        const sessionId = localStorage.getItem('afterhours_session_id') || null;
+        const result = await locationAnalyticsService.checkAndSyncExactLocation({
+          token: authToken,
+          sessionId
+        });
+        if (!cancelled && result?.success && result?.region) {
+          setSelectedRegion(result.region);
+        }
+
+        const perm = await locationAnalyticsService.getPermissionState();
+        if (!cancelled && perm === 'prompt' && locationAnalyticsService.getConsentStatus() === null) {
+          setTimeout(() => {
+            if (!cancelled) setShowLocationConsentBanner(true);
+          }, 6000);
+        }
+      } catch (_) {}
+    };
+
+    // Trigger exact location fetch on every app open when permitted
+    syncLocationIfPermitted();
+
+    // Also trigger on app resume (e.g. Android TWA returning from background or window focus)
+    let lastResumeSync = Date.now();
+    const handleAppResume = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastResumeSync > 45000) {
+        lastResumeSync = Date.now();
+        syncLocationIfPermitted();
       }
-    }, 6000);
-    return () => clearTimeout(t);
-  }, [handleDetectLocation, isRegionalLocationEnabled]);
+    };
+
+    document.addEventListener('visibilitychange', handleAppResume);
+    window.addEventListener('focus', handleAppResume);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', handleAppResume);
+      window.removeEventListener('focus', handleAppResume);
+    };
+  }, [authToken, isRegionalLocationEnabled]);
 
   // Continuous Listening (Autoplay Smart Queue when manual queue is exhausted)
   const [isContinuousListening, setIsContinuousListening] = useState(() => {
@@ -4292,23 +4331,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         setQueue(sanitizeList(userQueue));
         localStorage.setItem('afterhours_queue', JSON.stringify(sanitizeList(userQueue)));
       } else {
-        // Register mode: Brand new account starts with clean, empty data
-        setLikedSongs([]);
-        localStorage.removeItem('liked_songs');
-        setHistory([]);
-        localStorage.removeItem('history_songs');
-        setPlaylists([]);
-        localStorage.removeItem('playlists');
-        setQueue([]);
-        localStorage.removeItem('afterhours_queue');
-        setCurrentSong(null);
-        localStorage.removeItem('afterhours_current_song');
-        localStorage.removeItem('afterhours_current_time');
-        localStorage.removeItem('afterhours_duration');
-        setIsPlaying(false);
-        if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
-          try { playerRef.current.stopVideo(); } catch (e) {}
-        }
+        // Register mode: Carry over active guest session, likes, and listening history into new account
+        try {
+          if (loggedInUser?.userId) {
+            if (history && history.length > 0) {
+              localStorage.setItem(`history_songs_${loggedInUser.userId}`, JSON.stringify(history));
+            }
+            if (likedSongs && likedSongs.length > 0) {
+              localStorage.setItem(`liked_songs_${loggedInUser.userId}`, JSON.stringify(likedSongs));
+            }
+          }
+        } catch (_) {}
       }
     } catch (err) {
       if (slowTimer) clearTimeout(slowTimer);
@@ -4436,8 +4469,29 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   }, [isRepeat]);
 
 
-  useEffect(() => { if (user) { localStorage.setItem('liked_songs', JSON.stringify(likedSongs)); } else { localStorage.removeItem('liked_songs'); } }, [likedSongs, user]);
-  useEffect(() => { if (user) { localStorage.setItem('history_songs', JSON.stringify(history)); } else { localStorage.removeItem('history_songs'); } }, [history, user]);
+  useEffect(() => {
+    try {
+      if (user) {
+        localStorage.setItem('liked_songs', JSON.stringify(likedSongs));
+        if (user.userId) localStorage.setItem(`liked_songs_${user.userId}`, JSON.stringify(likedSongs));
+      } else {
+        localStorage.setItem('guest_liked_songs', JSON.stringify(likedSongs));
+        localStorage.setItem('liked_songs', JSON.stringify(likedSongs));
+      }
+    } catch (_) {}
+  }, [likedSongs, user]);
+
+  useEffect(() => {
+    try {
+      if (user) {
+        localStorage.setItem('history_songs', JSON.stringify(history));
+        if (user.userId) localStorage.setItem(`history_songs_${user.userId}`, JSON.stringify(history));
+      } else {
+        localStorage.setItem('guest_history_songs', JSON.stringify(history));
+        localStorage.setItem('history_songs', JSON.stringify(history));
+      }
+    } catch (_) {}
+  }, [history, user]);
   useEffect(() => { 
     try {
       if (user) { 
@@ -7360,8 +7414,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
   const addToQueue = (song, e) => {
     if (e) e.stopPropagation();
+    if (!song) return;
     setQueue(prev => {
-      if (prev.some(s => s.id === song.id)) {
+      const songId = song.id || song.videoId;
+      if (songId && prev.some(s => (s.id || s.videoId) === songId)) {
         showToast('Track already in queue');
         return prev;
       }
@@ -7642,8 +7698,23 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
           localStorage.setItem('liked_songs', JSON.stringify(sanitizeList(userLiked)));
 
           const userHistory = (u.history || []).slice(0, 50);
-          setHistory(sanitizeList(userHistory));
-          localStorage.setItem('history_songs', JSON.stringify(sanitizeList(userHistory)));
+          setHistory(prev => {
+            const seen = new Set();
+            const merged = [];
+            for (const item of [...(prev || []), ...sanitizeList(userHistory)]) {
+              const tid = item?.id || item?.videoId;
+              if (tid && !seen.has(tid)) {
+                seen.add(tid);
+                merged.push(item);
+              }
+            }
+            const finalHist = merged.slice(0, 50);
+            try {
+              localStorage.setItem('history_songs', JSON.stringify(finalHist));
+              if (loggedInUser.userId) localStorage.setItem(`history_songs_${loggedInUser.userId}`, JSON.stringify(finalHist));
+            } catch (_) {}
+            return finalHist;
+          });
 
           const userPlaylists = u.playlists || [];
           setPlaylists(sanitizeList(userPlaylists));
@@ -10118,10 +10189,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               isLiked={isSongLiked}
               onAddToPlaylist={handleAddToPlaylistClick}
         onAddToQueue={addToQueue}
-              onAddToQueue={(track) => {
-                setQueue(prev => [...prev, track]);
-                showToast(`Added "${track.title}" to queue`);
-              }}
+              onAddToQueue={(track) => addToQueue(track)}
               onArtistClick={handleArtistClick}
               onGoBack={handleGoBack}
               showToast={showToast}
@@ -10450,15 +10518,6 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
             </div>
 
             {/* Gemini AI-Powered Personalized Recommendations Lounge */}
-            {isUiVisible('section.regionalMusic') !== false && (
-              <RegionalMusicSection
-                onPlayTrack={(song, list) => handlePlayTrending(song.query || song.title, song, list)}
-                onContextMenu={handleTrackContextMenu}
-                getCleanThumbnail={getCleanThumbnail}
-                handleImageError={handleImageError}
-                fallbackTracks={uniqueTrendingSongs}
-              />
-            )}
             {isUiVisible('section.aiForYou') && (
               <PersonalizedRecommendationsSection
                 backendUrl={BACKEND_URL}
@@ -10483,6 +10542,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               const sections = (cmsConfig?.sections && cmsConfig.sections.length > 0)
                 ? cmsConfig.sections
                 : [
+                    { id: 'regional-music', title: 'Regional Music', subtitle: 'Local & regional hits tailored to your area', enabled: true, order: 0 },
                     { id: 'trending', title: 'Trending songs', subtitle: 'The most played hits right now', enabled: true, order: 1 },
                     { id: 'curated', title: 'Curated Featured Collections', subtitle: 'Handpicked mixes, nostalgia sets, and soundtracks curated by our editors', enabled: true, order: 2 },
                     { id: 'artists', title: 'Popular artists', subtitle: 'Find your favorite singers', enabled: true, order: 3 },
@@ -10493,6 +10553,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
               const sortedSections = [...sections]
                 .filter(s => s && s.enabled !== false)
                 .filter(s => {
+                  if (s.id === 'regional-music' && !isUiVisible('section.regionalMusic')) return false;
                   if (s.id === 'trending' && !isUiVisible('section.trendingOnLoopra')) return false;
                   if (s.id === 'albums' && !isUiVisible('section.popularAlbums')) return false;
                   if (s.id === 'artists' && !isUiVisible('section.popularArtists')) return false;
@@ -10503,6 +10564,17 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
 
               return sortedSections.map(sec => {
                 switch (sec.id) {
+                  case 'regional-music':
+                    return (
+                      <RegionalMusicSection
+                        key="regional-music"
+                        onPlayTrack={(song, list) => handlePlayTrending(song.query || song.title, song, list)}
+                        onContextMenu={handleTrackContextMenu}
+                        getCleanThumbnail={getCleanThumbnail}
+                        handleImageError={handleImageError}
+                        fallbackTracks={uniqueTrendingSongs}
+                      />
+                    );
                   case 'trending':
                     return (
                       <ScrollableRow
@@ -11399,18 +11471,14 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                     </div>
                   </div>
 
-                  {/* Action Buttons: Play All, Save to Library (if shared/external), Rename, Delete, Share */}
-                  <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-                    {/* Play All Tracks in Playlist */}
-                    {selectedPlaylistForView.songs && selectedPlaylistForView.songs.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    {selectedPlaylistForView.songs.length > 0 && (
                       <button
                         type="button"
                         onClick={() => {
-                          const firstTrack = selectedPlaylistForView.songs[0];
-                          if (firstTrack) {
-                            playSong(firstTrack);
-                            // Queue the rest of the playlist
-                            const rest = selectedPlaylistForView.songs.slice(1);
+                          if (selectedPlaylistForView.songs.length > 0) {
+                            const [first, ...rest] = selectedPlaylistForView.songs;
+                            playSong(first);
                             if (rest.length > 0) {
                               setQueue(rest);
                             }
@@ -11426,8 +11494,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                       </button>
                     )}
                     <button
-                        type="button"
-                        onClick={() => handleSharePlaylist(selectedPlaylistForView)}
+                      type="button"
+                      onClick={() => handleSharePlaylist(selectedPlaylistForView)}
                       className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition shadow-sm cursor-pointer active:scale-95"
                       title="Share Playlist"
                       aria-label="Share Playlist"
@@ -13501,8 +13569,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         onAddToQueue={(track) => {
           const songToAdd = track || currentSong;
           if (songToAdd) {
-            setQueue(prev => [...prev, songToAdd]);
-            showToast?.(`Added "${songToAdd.title}" to queue`);
+            addToQueue(songToAdd);
           }
         }}
         onNavigate={(page, extra) => {

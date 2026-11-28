@@ -27,6 +27,7 @@ export const UI_VISIBILITY_REGISTRY = [
   { key: 'nav.downloads', label: 'Downloaded Songs (Offline)', category: 'nav', defaultValue: true },
 
   // Cards & Page Sections
+  { key: 'section.regionalMusic', label: 'Regional Music Section', category: 'section', defaultValue: true },
   { key: 'section.aiForYou', label: 'Personalized "AI For You" Recommendations', category: 'section', defaultValue: true },
   { key: 'section.trendingOnLoopra', label: 'Trending on Loopra Carousel', category: 'section', defaultValue: true },
   { key: 'section.popularAlbums', label: 'Popular Albums & Soundtracks', category: 'section', defaultValue: true },

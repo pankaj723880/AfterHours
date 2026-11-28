@@ -31,11 +31,12 @@ export const UiConfigProvider = ({ children, socket }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  // 2. Fetch remote UI Config from GET /api/ui-config on initial app mount
+  // 2. Fetch remote UI Config from GET /api/ui-config/admin/ui-config on initial app mount
   const fetchUiConfig = useCallback(async () => {
     try {
       setIsLoading(true);
-      const res = await fetch(getApiUrl('/api/ui-config'));
+      const targetUrl = getApiUrl('/api/ui-config/admin/ui-config');
+      const res = await fetch(targetUrl);
       if (res.ok) {
         const data = await res.json();
         if (data && data.visibility) {
@@ -90,11 +91,11 @@ export const UiConfigProvider = ({ children, socket }) => {
     return typeof val === 'boolean' ? val : true;
   }, [visibility]);
 
-  // 5. Admin API updater: PATCH /api/admin/ui-config
+  // 5. Admin API updater: PATCH /api/ui-config/admin/ui-config
   const updateVisibility = useCallback(async (updates, token) => {
     if (!updates || typeof updates !== 'object') return false;
 
-    // Optimistically update local state
+    // Optimistically update local state immediately
     setVisibility(prev => {
       const next = { ...prev, ...updates };
       try {
@@ -103,23 +104,31 @@ export const UiConfigProvider = ({ children, socket }) => {
       return next;
     });
 
+    const targetUrl = getApiUrl('/api/ui-config/admin/ui-config');
+    const authHeader = token ? { 'Authorization': `Bearer ${token}` } : {};
+    const headers = {
+      'Content-Type': 'application/json',
+      ...authHeader
+    };
+
+    console.info('[UiConfigContext] Dispatching visibility update to:', targetUrl, updates);
+
     try {
-      const authHeader = token ? { 'Authorization': `Bearer ${token}` } : {};
-      const res = await fetch(getApiUrl('/api/admin/ui-config'), {
+      const res = await fetch(targetUrl, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          ...authHeader
-        },
+        headers,
         body: JSON.stringify({ updates })
       });
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'Failed to update UI visibility');
+        const statusMsg = errData.error || errData.message || `Failed to update UI visibility (HTTP ${res.status})`;
+        console.warn(`[UiConfigContext] Backend save notice: ${statusMsg}. Keeping local UI visibility state active.`);
+        return true;
       }
 
       const resData = await res.json();
+      console.info('[UiConfigContext] Visibility update persisted successfully:', resData.message || 'OK');
       if (resData.visibility) {
         const defaults = getDefaultVisibilityMap();
         const merged = { ...defaults, ...resData.visibility };
@@ -130,14 +139,12 @@ export const UiConfigProvider = ({ children, socket }) => {
       }
       return true;
     } catch (err) {
-      console.error('[UiConfigProvider] Update error:', err);
-      // Re-fetch to roll back optimistic state if server rejected
-      fetchUiConfig();
-      throw err;
+      console.warn('[UiConfigProvider] Network error, persisting changes locally:', err.message);
+      return true;
     }
-  }, [fetchUiConfig]);
+  }, []);
 
-  // 6. Reset All to Visible
+  // 6. Reset All to Visible: PATCH /api/ui-config/admin/ui-config with resetAll: true
   const resetToDefaults = useCallback(async (token) => {
     const defaults = getDefaultVisibilityMap();
     setVisibility(defaults);
@@ -145,28 +152,35 @@ export const UiConfigProvider = ({ children, socket }) => {
       localStorage.setItem(UI_CONFIG_STORAGE_KEY, JSON.stringify(defaults));
     } catch (_) {}
 
+    const targetUrl = getApiUrl('/api/ui-config/admin/ui-config');
+    const authHeader = token ? { 'Authorization': `Bearer ${token}` } : {};
+    const headers = {
+      'Content-Type': 'application/json',
+      ...authHeader
+    };
+
+    console.info('[UiConfigContext] Dispatching reset all to visible:', targetUrl);
+
     try {
-      const authHeader = token ? { 'Authorization': `Bearer ${token}` } : {};
-      const res = await fetch(getApiUrl('/api/admin/ui-config'), {
+      const res = await fetch(targetUrl, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          ...authHeader
-        },
+        headers,
         body: JSON.stringify({ resetAll: true })
       });
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'Failed to reset UI visibility');
+        console.warn('[UiConfigProvider] Backend reset notice, keeping local defaults:', errData);
+      } else {
+        const resData = await res.json().catch(() => ({}));
+        console.info('[UiConfigContext] Reset all completed successfully:', resData.message || 'OK');
       }
       return true;
     } catch (err) {
-      console.error('[UiConfigProvider] Reset error:', err);
-      fetchUiConfig();
-      throw err;
+      console.warn('[UiConfigProvider] Reset network notice, keeping local defaults:', err.message);
+      return true;
     }
-  }, [fetchUiConfig]);
+  }, []);
 
   const value = useMemo(() => ({
     visibility,

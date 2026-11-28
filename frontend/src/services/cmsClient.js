@@ -37,6 +37,7 @@ export const DEFAULT_CMS_CONFIG = {
     allowedRoles: ['admin']
   },
   sections: [
+    { id: 'regional-music', title: 'Regional Music', subtitle: 'Local & regional hits tailored to your area', enabled: true, order: 0, displayLimit: 15 },
     { id: 'trending', title: 'Trending songs', subtitle: 'The most played hits right now', enabled: true, order: 1, displayLimit: 12 },
     { id: 'artists', title: 'Popular artists', subtitle: 'Find your favorite singers', enabled: true, order: 2, displayLimit: 18 },
     { id: 'albums', title: 'Popular albums and singles', subtitle: 'Latest releases', enabled: true, order: 3, displayLimit: 12 },

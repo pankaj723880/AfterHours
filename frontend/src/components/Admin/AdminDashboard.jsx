@@ -1077,6 +1077,7 @@ export default function AdminDashboard({
             <RegionalLocationsAnalytics
               token={token}
               backendUrl={cleanBackendUrl}
+              socket={socketRef.current}
             />
           )}
 

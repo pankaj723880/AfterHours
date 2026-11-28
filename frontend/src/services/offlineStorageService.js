@@ -46,7 +46,17 @@ class OfflineStorageService {
   }
 
   isNativeAppWrapper() {
-    return typeof window !== 'undefined' && Boolean(window.LoopraAndroid);
+    if (typeof window === 'undefined') return false;
+    if (Boolean(window.LoopraAndroid)) return true;
+    if (typeof navigator !== 'undefined' && navigator.userAgent) {
+      if (navigator.userAgent.includes('LoopraNativeAndroid') || (navigator.userAgent.includes('Capacitor') && /android/i.test(navigator.userAgent))) {
+        return true;
+      }
+    }
+    if (typeof document !== 'undefined' && document.referrer && document.referrer.includes('android-app://')) {
+      return true;
+    }
+    return false;
   }
 
   isDownloadsGloballyEnabled() {

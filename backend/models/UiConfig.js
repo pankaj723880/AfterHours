@@ -3,7 +3,8 @@ import mongoose from 'mongoose';
 /**
  * UiConfig Schema
  * Stores key-value boolean visibility flags for all buttons, sections, cards, and navigation items.
- * Guaranteed to default to true for any non-existent key.
+ * Uses Mixed type to support dot-separated element keys (e.g. 'nav.discover': true, 'btn.listenTogether': false)
+ * without triggering Mongoose "Mongoose maps do not support keys that contain '.'" validation errors.
  */
 const uiConfigSchema = new mongoose.Schema(
   {
@@ -14,8 +15,7 @@ const uiConfigSchema = new mongoose.Schema(
     },
     // Map of element ID to boolean visibility state (e.g. 'nav.home': true, 'btn.listenTogether': false)
     visibility: {
-      type: Map,
-      of: Boolean,
+      type: mongoose.Schema.Types.Mixed,
       default: () => ({})
     },
     updatedBy: {
@@ -28,10 +28,16 @@ const uiConfigSchema = new mongoose.Schema(
     }
   },
   {
-    timestamps: true
+    timestamps: true,
+    minimize: false
   }
 );
 
-const UiConfig = mongoose.models.UiConfig || mongoose.model('UiConfig', uiConfigSchema);
+// Force re-compilation of model so schema changes take effect immediately across imports
+if (mongoose.models.UiConfig) {
+  delete mongoose.models.UiConfig;
+}
+
+const UiConfig = mongoose.model('UiConfig', uiConfigSchema);
 
 export default UiConfig;

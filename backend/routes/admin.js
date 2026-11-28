@@ -27,8 +27,12 @@ import {
   mergePullRequest, 
   rollbackPatchBranch 
 } from '../services/githubService.js';
+import uiConfigRoutes from './uiConfig.js';
 
 const router = express.Router();
+
+// Mount UI Visibility Configuration on admin router
+router.use(['/ui-config', '/ui_config', '/visibility'], uiConfigRoutes);
 
 // Helper to sanitize IP
 const getClientIp = (req) => {

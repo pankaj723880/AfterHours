@@ -275,8 +275,10 @@ router.post('/location', async (req, res) => {
       longitude,
       accuracyMeters = null,
       city = '',
+      district = '',
       state = '',
       country = '',
+      subregion = '',
       formattedAddress = '',
       consentGiven = false,
       sessionId = null
@@ -293,11 +295,16 @@ router.post('/location', async (req, res) => {
     }
 
     let userId = null;
+    let userDoc = null;
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
       try {
         const decoded = verifyToken(authHeader.slice(7));
         userId = decoded?.userId || decoded?._id || decoded?.id || null;
+        if (userId) {
+          const { default: User } = await import('../models/User.js');
+          userDoc = await User.findById(userId).select('username displayName email').lean();
+        }
       } catch (_) {}
     }
 
@@ -308,12 +315,27 @@ router.post('/location', async (req, res) => {
       longitude: lng,
       accuracyMeters: Number.isFinite(Number(accuracyMeters)) ? Number(accuracyMeters) : null,
       city: String(city || '').trim().slice(0, 120),
+      district: String(district || '').trim().slice(0, 120),
       state: String(state || '').trim().slice(0, 120),
       country: String(country || '').trim().slice(0, 120),
+      subregion: String(subregion || '').trim().slice(0, 120),
       formattedAddress: String(formattedAddress || '').trim().slice(0, 300),
       consentGiven: true,
       source: 'browser_geolocation'
     });
+
+    // Broadcast in real-time to Admin Dashboard via Socket.io
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        const populatedLoc = {
+          ...doc.toObject(),
+          userId: userDoc || null
+        };
+        io.to('admin_room').emit('location:recorded', { location: populatedLoc });
+        io.emit('location:recorded', { location: populatedLoc });
+      }
+    } catch (_) {}
 
     return res.json({ success: true, location: doc });
   } catch (err) {
