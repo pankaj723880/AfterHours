@@ -120,6 +120,13 @@ export const UI_VISIBILITY_REGISTRY = [
   // CATEGORY 2: CARDS & PAGE SECTIONS
   // ==========================================
   {
+    key: 'section.regionalMusic',
+    label: 'Regional Music Section',
+    description: 'Location-based regional & language music shelf on the Home page.',
+    category: UI_ELEMENT_CATEGORIES.SECTION,
+    defaultValue: true
+  },
+  {
     key: 'section.aiForYou',
     label: 'Personalized "AI For You" Recommendations',
     description: 'Gemini AI-powered personalized suggestions row on the Homepage.',

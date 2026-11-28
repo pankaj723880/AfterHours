@@ -11424,7 +11424,8 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         <Icon name="play" className="w-4 h-4 fill-current shrink-0" />
                         <span>Play All</span>
                       </button>
-                      <button
+                    )}
+                    <button
                         type="button"
                         onClick={() => handleSharePlaylist(selectedPlaylistForView)}
                       className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition shadow-sm cursor-pointer active:scale-95"

@@ -5,13 +5,21 @@ import { REGIONAL_SEED_POOLS } from '../../constants/regionalSeedPools';
 
 const REGIONS = [
   { id: 'in-hindi', label: 'India (Hindi)', query: 'latest hindi trending songs official audio' },
+  { id: 'in-bhojpuri', label: 'UP East / Bihar (Bhojpuri + Hindi)', query: 'latest bhojpuri hindi hit songs official audio' },
+  { id: 'in-maithili', label: 'Mithilanchal (Maithili + Hindi)', query: 'maithili hindi hit songs official audio' },
+  { id: 'in-magahi', label: 'Magadh (Magahi + Hindi)', query: 'magahi hindi hit songs official audio' },
+  { id: 'in-angika', label: 'Anga / Bhagalpur (Angika + Hindi)', query: 'angika hindi hit songs official audio' },
+  { id: 'in-garhwali', label: 'Garhwal (Garhwali + Hindi)', query: 'garhwali songs official audio' },
+  { id: 'in-kumaoni', label: 'Kumaon (Kumaoni + Hindi)', query: 'kumaoni hindi hit songs official audio' },
+  { id: 'in-himachali', label: 'Himachal (Pahadi + Hindi)', query: 'himachali pahadi hindi hit songs official audio' },
+  { id: 'in-jharkhand', label: 'Jharkhand (Nagpuri/Khortha + Hindi)', query: 'nagpuri khortha hindi hit songs official audio' },
   { id: 'in-punjab', label: 'Punjab', query: 'latest punjabi hit songs official audio' },
   { id: 'in-maharashtra', label: 'Maharashtra', query: 'latest marathi hit songs official audio' },
   { id: 'in-tamil', label: 'Tamil Nadu', query: 'latest tamil hit songs official audio' },
   { id: 'in-telugu', label: 'Telugu', query: 'latest telugu hit songs official audio' },
   { id: 'in-karnataka', label: 'Karnataka', query: 'latest kannada hit songs official audio' },
   { id: 'in-kerala', label: 'Kerala', query: 'latest malayalam hit songs official audio' },
-  { id: 'in-bengal', label: 'West Bengal', query: 'latest bengali hit songs official audio' },
+  { id: 'in-bengal', label: 'West Bengal / North Bengal', query: 'latest bengali hit songs official audio' },
   { id: 'in-gujarat', label: 'Gujarat', query: 'latest gujarati hit songs official audio' },
   { id: 'global', label: 'Global', query: 'global top hits english pop official audio' },
 ];
@@ -41,6 +49,19 @@ function saveRegionMeta(meta) {
 }
 const LANGUAGE_STORAGE_KEY = 'loopra_user_language';
 
+const LANGUAGE_TO_POOL_ID = {
+  'Hindi': 'in-hindi',
+  'Punjabi': 'in-punjab',
+  'Marathi': 'in-maharashtra',
+  'Tamil': 'in-tamil',
+  'Telugu': 'in-telugu',
+  'Kannada': 'in-karnataka',
+  'Malayalam': 'in-kerala',
+  'Bengali': 'in-bengal',
+  'Gujarati': 'in-gujarat',
+  'English': 'global'
+};
+
 const LANGUAGES = [
   'All / Regional',
   'Hindi',
@@ -55,15 +76,30 @@ const LANGUAGES = [
   'English'
 ];
 
-function mapLocationToRegionId(state = '', country = '') {
-  const s = `${state} ${country}`.toLowerCase();
+function mapLocationToRegionId(state = '', country = '', city = '') {
+  const s = `${city} ${state} ${country}`.toLowerCase();
+  // Bihar sub-regions
+  if (/(darbhanga|madhubani|samastipur|begusarai|saharsa|supaul|mithila)/i.test(s)) return 'in-maithili';
+  if (/(patna|gaya|nalanda|nawada|aurangabad|jehanabad|magadh)/i.test(s)) return 'in-magahi';
+  if (/(bhagalpur|munger|banka|jamui|lakhisarai|anga)/i.test(s)) return 'in-angika';
+  if (/(champaran|motihari|bettiah|saran|chhapra|siwan|gopalganj|bhojpur|ara|buxar|bihar)/i.test(s)) return 'in-bhojpuri';
+  // UP sub-regions
+  if (/(varanasi|gorakhpur|azamgarh|ballia|ghazipur|jaunpur|deoria|mau|basti|mirzapur|prayagraj|purvanchal)/i.test(s)) return 'in-bhojpuri';
+  if (/(lucknow|ayodhya|faizabad|kanpur|barabanki|sitapur|awadh|agra|mathura|vrindavan|aligarh|meerut|noida|ghaziabad|bareilly|braj|uttar pradesh)/i.test(s)) return 'in-hindi';
+  // Uttarakhand sub-regions
+  if (/(nainital|haldwani|almora|pithoragarh|bageshwar|champawat|udham singh nagar|kumaon)/i.test(s)) return 'in-kumaoni';
+  if (/(dehradun|rishikesh|haridwar|tehri|pauri|chamoli|uttarkashi|rudraprayag|garhwal|uttarakhand)/i.test(s)) return 'in-garhwali';
+  // Himachal Pradesh & Jharkhand & North Bengal
+  if (/(himachal|shimla|manali|kullu|kangra|dharamshala|mandi|solan|chamba|hamirpur|una|bilaspur|kinnaur|lahaul|spiti)/i.test(s)) return 'in-himachali';
+  if (/(jharkhand|ranchi|jamshedpur|dhanbad|bokaro|hazaribagh|deoghar|dumka|giridih|palamu|singhbhum)/i.test(s)) return 'in-jharkhand';
+  if (/(siliguri|darjeeling|jalpaiguri|cooch behar|alipurduar|kalimpong|malda|north bengal|bengal|kolkata)/i.test(s)) return 'in-bengal';
+  // Major states
   if (s.includes('punjab') || s.includes('chandigarh') || s.includes('haryana')) return 'in-punjab';
   if (s.includes('maharashtra') || s.includes('mumbai') || s.includes('pune')) return 'in-maharashtra';
   if (s.includes('tamil') || s.includes('chennai')) return 'in-tamil';
   if (s.includes('telangana') || s.includes('andhra') || s.includes('hyderabad')) return 'in-telugu';
   if (s.includes('karnataka') || s.includes('bengaluru') || s.includes('bangalore')) return 'in-karnataka';
   if (s.includes('kerala') || s.includes('kochi')) return 'in-kerala';
-  if (s.includes('bengal') || s.includes('kolkata')) return 'in-bengal';
   if (s.includes('gujarat') || s.includes('ahmedabad') || s.includes('surat')) return 'in-gujarat';
   if (s.includes('india')) return 'in-hindi';
   return 'global';
@@ -82,14 +118,34 @@ export default function RegionalMusicSection({
   const [detectedLabel, setDetectedLabel] = useState(initialMeta.label || '');
   const [locationNotice, setLocationNotice] = useState('');
   const [isDetecting, setIsDetecting] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState(() => {
+    try {
+      return localStorage.getItem(LANGUAGE_STORAGE_KEY) || 'All / Regional';
+    } catch (_) {
+      return 'All / Regional';
+    }
+  });
+  const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
+  const [draftLanguage, setDraftLanguage] = useState(selectedLanguage);
   const [tracks, setTracks] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const activeRegion = REGIONS.find(r => r.id === selectedRegionId) || REGIONS[0];
 
-  const fetchRegionalTracks = useCallback(async (region, forceReshuffle = false) => {
-    const seededPool = REGIONAL_SEED_POOLS[region.id];
-    const rotationKey = `loopra_regional_rotation_${region.id}`;
+  const fetchRegionalTracks = useCallback(async (region, forceReshuffle = false, langOverride = null) => {
+    const effectiveLang = langOverride || selectedLanguage;
+    const targetPoolId = (effectiveLang && effectiveLang !== 'All / Regional' && LANGUAGE_TO_POOL_ID[effectiveLang])
+      ? LANGUAGE_TO_POOL_ID[effectiveLang]
+      : region.id;
+
+    const nativePool = REGIONAL_SEED_POOLS[targetPoolId] || [];
+    const hindiPool = REGIONAL_SEED_POOLS['in-hindi'] || [];
+    const seededPool = nativePool.length > 0
+      ? (effectiveLang && effectiveLang !== 'All / Regional'
+          ? nativePool
+          : (targetPoolId === 'in-hindi' || targetPoolId === 'global' ? nativePool : [...nativePool.slice(0, 60), ...hindiPool.slice(0, 20)]))
+      : [];
+    const rotationKey = `loopra_regional_rotation_${targetPoolId}_${effectiveLang || 'all'}`;
 
     // 1. Use seeded 100-song pool locally (ZERO external API calls)
     if (Array.isArray(seededPool) && seededPool.length > 0) {
@@ -129,7 +185,7 @@ export default function RegionalMusicSection({
     }
 
     // 2. Fallback to live fetch only if region has no seeded pool
-    const cacheKey = `loopra_regional_cache_${region.id}`;
+    const cacheKey = `loopra_regional_cache_${targetPoolId}_${effectiveLang || 'all'}`;
     try {
       const cachedRaw = localStorage.getItem(cacheKey);
       if (cachedRaw) {
@@ -236,7 +292,7 @@ export default function RegionalMusicSection({
                 const state = addr.state || '';
                 const country = addr.country || '';
                 const label = city ? `${city}, ${state || country}` : state || country;
-                const mapped = mapLocationToRegionId(state, country);
+                const mapped = mapLocationToRegionId(state, country, city);
                 setSelectedRegionId(mapped);
                 setRegionSource('gps');
                 setDetectedLabel(label);
@@ -278,11 +334,13 @@ export default function RegionalMusicSection({
   const handleLanguageDone = (e) => {
     e?.preventDefault();
     e?.stopPropagation();
-    setSelectedLanguage(draftLanguage);
+    const chosenLang = draftLanguage;
+    setSelectedLanguage(chosenLang);
     try {
-      localStorage.setItem(LANGUAGE_STORAGE_KEY, draftLanguage);
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, chosenLang);
     } catch (_) {}
     setIsLanguageModalOpen(false);
+    fetchRegionalTracks(activeRegion, true, chosenLang);
   };
 
   const displayTracks = tracks.length > 0 ? tracks : fallbackTracks.slice(0, 12);
