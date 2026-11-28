@@ -2467,7 +2467,10 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
     }, duration);
   }, []);
 
+  const isRegionalLocationEnabled = isUiVisible('section.regionalMusic') !== false;
+
   const handleDetectLocation = useCallback(async () => {
+    if (!isRegionalLocationEnabled) return;
     const sessionId = localStorage.getItem('afterhours_session_id') || null;
     const result = await locationAnalyticsService.requestAndSaveLocation({ token: authToken, sessionId });
     if (result.success) {
@@ -2484,6 +2487,11 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
   }, [authToken, showToast]);
 
   useEffect(() => {
+    if (!isRegionalLocationEnabled) {
+      setShowLocationConsentBanner(false);
+      setShowLocationDeniedModal(false);
+      return;
+    }
     if (typeof window === 'undefined' || !navigator.geolocation) return;
     if (locationAnalyticsService.getConsentStatus() !== null) return;
     const t = setTimeout(async () => {
@@ -2495,7 +2503,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       }
     }, 6000);
     return () => clearTimeout(t);
-  }, [handleDetectLocation]);
+  }, [handleDetectLocation, isRegionalLocationEnabled]);
 
   // Continuous Listening (Autoplay Smart Queue when manual queue is exhausted)
   const [isContinuousListening, setIsContinuousListening] = useState(() => {
@@ -11413,15 +11421,12 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
                         title="Play All"
                         aria-label="Play All"
                       >
-                        <Icon name="play" className="w-3.5 h-3.5 fill-current" />
+                        <Icon name="play" className="w-4 h-4 fill-current shrink-0" />
                         <span>Play All</span>
                       </button>
-                    )}
-
-                    {/* Share Playlist Button */}
-                    <button
-                      type="button"
-                      onClick={() => handleSharePlaylist(selectedPlaylistForView)}
+                      <button
+                        type="button"
+                        onClick={() => handleSharePlaylist(selectedPlaylistForView)}
                       className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition shadow-sm cursor-pointer active:scale-95"
                       title="Share Playlist"
                       aria-label="Share Playlist"
@@ -11768,7 +11773,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
       </main>
     );
   })()}
-      {showLocationConsentBanner && (
+      {isRegionalLocationEnabled && showLocationConsentBanner && (
         <div className="fixed bottom-36 sm:bottom-28 left-4 sm:left-auto sm:right-20 mb-[env(safe-area-inset-bottom)] z-[9990] max-w-xs p-3.5 rounded-2xl bg-neutral-900/95 border border-amber-500/30 shadow-2xl backdrop-blur-xl space-y-2.5 animate-fadeIn">
           <div className="text-xs text-white font-semibold">
             Share your approximate region?
@@ -11801,7 +11806,7 @@ const isValidMongoId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.tes
         </div>
       )}
 
-      {showLocationDeniedModal && (
+      {isRegionalLocationEnabled && showLocationDeniedModal && (
         <div className="fixed inset-0 z-[2147483645] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl bg-neutral-900 border border-neutral-800 p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">

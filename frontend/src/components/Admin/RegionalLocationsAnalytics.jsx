@@ -1,8 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { MapPin, RefreshCw, Globe, Navigation } from 'lucide-react';
+import { MapPin, RefreshCw, Globe, Navigation, Power } from 'lucide-react';
 import { getApiUrl } from '../../utils/apiUrl';
+import { useUiConfig } from '../../context/UiConfigContext';
 
 export default function RegionalLocationsAnalytics({ token, backendUrl }) {
+  const { isVisible, updateVisibility } = useUiConfig();
+  const isRegionalEnabled = isVisible('section.regionalMusic') !== false;
+  const [isToggling, setIsToggling] = useState(false);
   const [data, setData] = useState({ total: 0, byCountry: [], byRegion: [], byCity: [], recentLocations: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -50,15 +54,39 @@ export default function RegionalLocationsAnalytics({ token, backendUrl }) {
             Permitted user locations saved with explicit browser Geolocation consent
           </p>
         </div>
-        <button
-          type="button"
-          onClick={fetchLocations}
-          disabled={loading}
-          className="px-3.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-white border border-neutral-700 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          <span>Refresh</span>
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            disabled={isToggling}
+            onClick={async () => {
+              setIsToggling(true);
+              try {
+                await updateVisibility({ 'section.regionalMusic': !isRegionalEnabled }, token);
+              } finally {
+                setIsToggling(false);
+              }
+            }}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold border flex items-center gap-1.5 cursor-pointer transition disabled:opacity-50 ${
+              isRegionalEnabled
+                ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/40'
+                : 'bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border-rose-500/40'
+            }`}
+            title="Toggle Location Prompt & Home Regional Music Section"
+          >
+            <Power className="w-3.5 h-3.5" />
+            <span>{isRegionalEnabled ? 'ON' : 'OFF'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={fetchLocations}
+            disabled={loading}
+            className="px-3.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-xs font-semibold text-white border border-neutral-700 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+        </div>
       </div>
 
       {error && (

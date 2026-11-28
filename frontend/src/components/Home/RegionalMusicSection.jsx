@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { MapPin, Play, MoreVertical, RefreshCw } from 'lucide-react';
 import { getApiUrl } from '../../utils/apiUrl';
+import { REGIONAL_SEED_POOLS } from '../../constants/regionalSeedPools';
 
 const REGIONS = [
   { id: 'in-hindi', label: 'India (Hindi)', query: 'latest hindi trending songs official audio' },
@@ -17,6 +18,42 @@ const REGIONS = [
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const REGION_STORAGE_KEY = 'loopra_user_region';
+const REGION_META_KEY = 'loopra_user_region_v2';
+
+function loadSavedRegionMeta() {
+  try {
+    const raw = localStorage.getItem(REGION_META_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.regionId) return parsed;
+    }
+    const legacy = localStorage.getItem(REGION_STORAGE_KEY);
+    if (legacy) return { regionId: legacy, source: 'manual', label: '' };
+  } catch (_) {}
+  return { regionId: 'in-hindi', source: 'default', label: '' };
+}
+
+function saveRegionMeta(meta) {
+  try {
+    localStorage.setItem(REGION_META_KEY, JSON.stringify(meta));
+    localStorage.setItem(REGION_STORAGE_KEY, meta.regionId);
+  } catch (_) {}
+}
+const LANGUAGE_STORAGE_KEY = 'loopra_user_language';
+
+const LANGUAGES = [
+  'All / Regional',
+  'Hindi',
+  'Punjabi',
+  'Marathi',
+  'Tamil',
+  'Telugu',
+  'Kannada',
+  'Malayalam',
+  'Bengali',
+  'Gujarati',
+  'English'
+];
 
 function mapLocationToRegionId(state = '', country = '') {
   const s = `${state} ${country}`.toLowerCase();
@@ -39,27 +76,66 @@ export default function RegionalMusicSection({
   handleImageError,
   fallbackTracks = []
 }) {
-  const [selectedRegionId, setSelectedRegionId] = useState(() => {
-    try {
-      return localStorage.getItem(REGION_STORAGE_KEY) || 'in-hindi';
-    } catch (_) {
-      return 'in-hindi';
-    }
-  });
-  const [detectedLabel, setDetectedLabel] = useState('');
+  const initialMeta = loadSavedRegionMeta();
+  const [selectedRegionId, setSelectedRegionId] = useState(initialMeta.regionId);
+  const [regionSource, setRegionSource] = useState(initialMeta.source || 'default');
+  const [detectedLabel, setDetectedLabel] = useState(initialMeta.label || '');
+  const [locationNotice, setLocationNotice] = useState('');
+  const [isDetecting, setIsDetecting] = useState(false);
   const [tracks, setTracks] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const activeRegion = REGIONS.find(r => r.id === selectedRegionId) || REGIONS[0];
 
-  const fetchRegionalTracks = useCallback(async (region) => {
+  const fetchRegionalTracks = useCallback(async (region, forceReshuffle = false) => {
+    const seededPool = REGIONAL_SEED_POOLS[region.id];
+    const rotationKey = `loopra_regional_rotation_${region.id}`;
+
+    // 1. Use seeded 100-song pool locally (ZERO external API calls)
+    if (Array.isArray(seededPool) && seededPool.length > 0) {
+      let picked = null;
+      if (!forceReshuffle) {
+        try {
+          const saved = JSON.parse(localStorage.getItem(rotationKey) || 'null');
+          if (saved && Array.isArray(saved.tracks) && saved.tracks.length === 15) {
+            picked = saved.tracks;
+          }
+        } catch (_) {}
+      }
+
+      if (!picked) {
+        // Fisher-Yates shuffle over the 100-song pool and pick 15 unique tracks
+        const copy = [...seededPool];
+        for (let i = copy.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [copy[i], copy[j]] = [copy[j], copy[i]];
+        }
+        const seen = new Set();
+        picked = [];
+        for (const t of copy) {
+          if (!seen.has(t.id)) {
+            seen.add(t.id);
+            picked.push(t);
+            if (picked.length >= 15) break;
+          }
+        }
+        try {
+          localStorage.setItem(rotationKey, JSON.stringify({ ts: Date.now(), tracks: picked }));
+        } catch (_) {}
+      }
+
+      setTracks(picked);
+      return;
+    }
+
+    // 2. Fallback to live fetch only if region has no seeded pool
     const cacheKey = `loopra_regional_cache_${region.id}`;
     try {
       const cachedRaw = localStorage.getItem(cacheKey);
       if (cachedRaw) {
         const parsed = JSON.parse(cachedRaw);
         if (parsed && Array.isArray(parsed.tracks) && parsed.tracks.length > 0 && (Date.now() - parsed.ts < CACHE_TTL_MS)) {
-          setTracks(parsed.tracks);
+          setTracks(parsed.tracks.slice(0, 15));
           return;
         }
       }
@@ -67,11 +143,11 @@ export default function RegionalMusicSection({
 
     setLoading(true);
     try {
-      const res = await fetch(getApiUrl(`/api/search?q=${encodeURIComponent(region.query)}&limit=12`));
+      const res = await fetch(getApiUrl(`/api/search?q=${encodeURIComponent(region.query)}&limit=15`));
       if (res.ok) {
         const data = await res.json();
         const items = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : []);
-        const cleaned = items.slice(0, 12).map(item => ({
+        const cleaned = items.slice(0, 15).map(item => ({
           ...item,
           id: item.id || item.videoId,
           videoId: item.videoId || item.id,
@@ -91,7 +167,7 @@ export default function RegionalMusicSection({
     }
 
     if (fallbackTracks.length > 0) {
-      setTracks(fallbackTracks.slice(0, 12));
+      setTracks(fallbackTracks.slice(0, 15));
     }
   }, [fallbackTracks]);
 
@@ -99,16 +175,55 @@ export default function RegionalMusicSection({
     fetchRegionalTracks(activeRegion);
   }, [activeRegion, fetchRegionalTracks]);
 
-  // Passive location check if permission is already granted
-  useEffect(() => {
-    if (typeof navigator === 'undefined' || !navigator.permissions || !navigator.geolocation) return;
-    navigator.permissions.query({ name: 'geolocation' }).then((status) => {
-      if (status.state === 'granted') {
+  const fallbackToIpLocation = useCallback(async (showDeniedHint = false) => {
+    try {
+      const res = await fetch('https://ipapi.co/json/');
+      if (res.ok) {
+        const ipData = await res.json();
+        const city = ipData.city || '';
+        const state = ipData.region || '';
+        const country = ipData.country_name || '';
+        const mapped = mapLocationToRegionId(state, country);
+        const label = city ? `${city}, ${state || country}` : state || country;
+        setSelectedRegionId(mapped);
+        setRegionSource('ip');
+        setDetectedLabel(label);
+        saveRegionMeta({ regionId: mapped, source: 'ip', label });
+      }
+    } catch (_) {}
+    if (showDeniedHint) {
+      setLocationNotice('Location permission is blocked. Click the Tune / Lock icon in your browser address bar to allow Location, or pick a region manually.');
+    }
+  }, []);
+
+  const handleDetectLocation = useCallback(async () => {
+    setLocationNotice('');
+    setIsDetecting(true);
+    try {
+      if (typeof navigator === 'undefined' || !navigator.geolocation) {
+        await fallbackToIpLocation(false);
+        return;
+      }
+
+      let permState = 'prompt';
+      if (navigator.permissions?.query) {
+        try {
+          const status = await navigator.permissions.query({ name: 'geolocation' });
+          permState = status.state;
+        } catch (_) {}
+      }
+
+      if (permState === 'denied') {
+        await fallbackToIpLocation(true);
+        return;
+      }
+
+      await new Promise((resolve) => {
         navigator.geolocation.getCurrentPosition(
           async (pos) => {
             try {
               const controller = new AbortController();
-              const timer = setTimeout(() => controller.abort(), 4000);
+              const timer = setTimeout(() => controller.abort(), 5000);
               const res = await fetch(
                 `https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`,
                 { signal: controller.signal }
@@ -120,29 +235,54 @@ export default function RegionalMusicSection({
                 const city = addr.city || addr.town || addr.state_district || '';
                 const state = addr.state || '';
                 const country = addr.country || '';
-                if (city || state) {
-                  setDetectedLabel(city ? `${city}, ${state || country}` : state);
-                }
-                if (!localStorage.getItem(REGION_STORAGE_KEY)) {
-                  const mapped = mapLocationToRegionId(state, country);
-                  setSelectedRegionId(mapped);
-                }
+                const label = city ? `${city}, ${state || country}` : state || country;
+                const mapped = mapLocationToRegionId(state, country);
+                setSelectedRegionId(mapped);
+                setRegionSource('gps');
+                setDetectedLabel(label);
+                saveRegionMeta({
+                  regionId: mapped,
+                  source: 'gps',
+                  label,
+                  coords: { lat: pos.coords.latitude, lng: pos.coords.longitude }
+                });
               }
-            } catch (_) {}
+            } catch (_) {
+              await fallbackToIpLocation(false);
+            }
+            resolve();
           },
-          () => {},
-          { timeout: 4000 }
+          async (err) => {
+            await fallbackToIpLocation(err?.code === 1);
+            resolve();
+          },
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
         );
-      }
-    }).catch(() => {});
-  }, []);
+      });
+    } finally {
+      setIsDetecting(false);
+    }
+  }, [fallbackToIpLocation]);
 
   const handleRegionChange = (e) => {
     const nextId = e.target.value;
     setSelectedRegionId(nextId);
+    setRegionSource('manual');
+    setDetectedLabel('');
+    setLocationNotice('');
+    saveRegionMeta({ regionId: nextId, source: 'manual', label: '' });
+    setDraftLanguage(selectedLanguage);
+    setIsLanguageModalOpen(true);
+  };
+
+  const handleLanguageDone = (e) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    setSelectedLanguage(draftLanguage);
     try {
-      localStorage.setItem(REGION_STORAGE_KEY, nextId);
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, draftLanguage);
     } catch (_) {}
+    setIsLanguageModalOpen(false);
   };
 
   const displayTracks = tracks.length > 0 ? tracks : fallbackTracks.slice(0, 12);
@@ -159,14 +299,28 @@ export default function RegionalMusicSection({
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
               <MapPin className="w-3 h-3" />
               {detectedLabel || activeRegion.label}
+              <span className="text-[9px] uppercase opacity-75">({regionSource})</span>
             </span>
           </div>
           <p className="text-neutral-400 mt-0.5 text-xs md:text-sm font-medium">
             Sounds curated for {activeRegion.label}
           </p>
+          {locationNotice && (
+            <p className="text-[11px] text-amber-300/90 mt-1">{locationNotice}</p>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleDetectLocation}
+            disabled={isDetecting}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-amber-500/40 text-xs text-neutral-200 cursor-pointer transition disabled:opacity-50"
+            title="Detect my region"
+          >
+            <MapPin className={`w-3.5 h-3.5 text-amber-400 ${isDetecting ? 'animate-pulse' : ''}`} />
+            <span className="hidden sm:inline">{isDetecting ? 'Detecting...' : 'Detect'}</span>
+          </button>
           <select
             value={selectedRegionId}
             onChange={handleRegionChange}
@@ -179,7 +333,7 @@ export default function RegionalMusicSection({
           </select>
           <button
             type="button"
-            onClick={() => fetchRegionalTracks(activeRegion)}
+            onClick={() => fetchRegionalTracks(activeRegion, true)}
             className="p-1.5 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-amber-500/40 text-neutral-400 hover:text-white transition cursor-pointer"
             title="Refresh regional tracks"
             aria-label="Refresh regional tracks"
@@ -233,6 +387,56 @@ export default function RegionalMusicSection({
           </div>
         ))}
       </div>
+
+      {isLanguageModalOpen && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+          onClick={() => setIsLanguageModalOpen(false)}
+        >
+          <div className="absolute inset-0 bg-neutral-950/80 backdrop-blur-sm" />
+          <div
+            className="relative z-10 w-full max-w-sm bg-neutral-900 border border-neutral-800 rounded-2xl p-5 shadow-2xl animate-scaleIn"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-bold text-white mb-1">Select Language</h3>
+            <p className="text-xs text-neutral-400 mb-4">
+              Choose a language for {activeRegion.label}
+            </p>
+            <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto mb-4">
+              {LANGUAGES.map((lang) => (
+                <button
+                  key={lang}
+                  type="button"
+                  onClick={() => setDraftLanguage(lang)}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold border text-left transition cursor-pointer ${
+                    draftLanguage === lang
+                      ? 'bg-amber-500/20 border-amber-500/60 text-amber-300'
+                      : 'bg-neutral-950 border-neutral-800 text-neutral-300 hover:border-neutral-700'
+                  }`}
+                >
+                  {lang}
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsLanguageModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-neutral-400 hover:text-white bg-neutral-800 hover:bg-neutral-700 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleLanguageDone}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-neutral-950 bg-amber-400 hover:bg-amber-300 transition cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
